@@ -100,6 +100,10 @@
             android:name=".MessageService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".LocalModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

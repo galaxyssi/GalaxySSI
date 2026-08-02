@@ -141,7 +141,10 @@ object LocalModelAcceleratorDetector {
         val systemVendorLibraries = vendorSystemLibraryRoots()
             .flatMap { root -> vendorLibraryNames.map { name -> File(root, name) } }
             .filter(File::isFile)
-        val cpuRuntime = File(nativeLibraryDirectory, System.mapLibraryName("whisper")).isFile ||
+        val localLlmRuntime = LocalModelInferenceRuntime.available()
+        val smeExposed = localLlmRuntime && LocalModelInferenceRuntime.osExposesSme()
+        val cpuRuntime = localLlmRuntime ||
+            File(nativeLibraryDirectory, System.mapLibraryName("whisper")).isFile ||
             providers.any { it == "CPU" || it == "CPU_EXECUTION_PROVIDER" }
         val gpuRuntimeLibraries = setOf(
             "libggml-vulkan.so",
@@ -158,9 +161,16 @@ object LocalModelAcceleratorDetector {
                     append(Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
                     append(" cores / ")
                     append(Build.SUPPORTED_ABIS.joinToString().ifBlank { "unknown ABI" })
+                    append(if (smeExposed) " / SME-QMX exposed" else " / NEON fallback")
                 },
                 cpuRuntimeAvailable = cpuRuntime,
-                cpuRuntimeDescription = if (cpuRuntime) {
+                cpuRuntimeDescription = if (localLlmRuntime) {
+                    if (smeExposed) {
+                        "llama.cpp can dispatch compatible operations to KleidiAI SME kernels"
+                    } else {
+                        "llama.cpp will use its runtime-dispatched NEON CPU backend"
+                    }
+                } else if (cpuRuntime) {
                     "Bundled GGML or ONNX Runtime CPU backend detected"
                 } else {
                     "No bundled CPU inference backend detected"

@@ -72,6 +72,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -89,7 +90,9 @@ jobs:
             "build-tools;36.0.0" \
             "platform-tools" \
             "ndk;25.2.9519653" \
-            "cmake;3.22.1"
+            "ndk;29.0.13113456" \
+            "cmake;3.22.1" \
+            "cmake;3.31.6"
       - name: Android unit tests and debug APK
         working-directory: apps/android
         run: |

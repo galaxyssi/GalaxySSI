@@ -105,7 +105,9 @@ object LocalWhisperAsr {
         language: String = "auto",
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         source: String = "audio_record_pcm16"
-    ): LocalWhisperTranscriptionOutcome = mutex.withLock {
+    ): LocalWhisperTranscriptionOutcome {
+        LocalModelInferenceRuntime.releaseForAsr()
+        return mutex.withLock {
         require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
         require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
         val startedAtNs = SystemClock.elapsedRealtimeNanos()
@@ -248,6 +250,7 @@ object LocalWhisperAsr {
             )
             throw error
         }
+        }
     }
 
     internal suspend fun decodePcmWindow(
@@ -259,7 +262,9 @@ object LocalWhisperAsr {
         traceId: String,
         source: String,
         modelProfileId: String
-    ): LocalWhisperDecodeOutcome = mutex.withLock {
+    ): LocalWhisperDecodeOutcome {
+        LocalModelInferenceRuntime.releaseForAsr()
+        return mutex.withLock {
         require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
             "Local Whisper Runtime v2 is disabled"
         }
@@ -307,7 +312,8 @@ object LocalWhisperAsr {
         if (!result.successful) {
             throw LocalWhisperException(result.code, result.message ?: "Whisper decode failed (${result.code})")
         }
-        LocalWhisperDecodeOutcome(profile.id, normalizeResultScript(result, language))
+            LocalWhisperDecodeOutcome(profile.id, normalizeResultScript(result, language))
+        }
     }
 
     fun requestAbort(reason: AbortReason = AbortReason.USER_STOP) {

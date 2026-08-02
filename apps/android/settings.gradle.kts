@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SignalASI"
 include(":app")
+include(":llama-runtime")

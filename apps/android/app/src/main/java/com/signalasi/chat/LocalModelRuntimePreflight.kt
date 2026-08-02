@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.File
 import kotlin.math.roundToLong
 
@@ -38,8 +39,50 @@ data class LocalModelRuntimeProfile(
     val headDimension: Int,
     val defaultContextTokens: Int,
     val maximumContextTokens: Int,
-    val quantizationLabel: String
-)
+    val quantizationLabel: String,
+    val repositoryId: String = "",
+    val fileName: String = "",
+    val sha256: String = "",
+    val parameterCountBillions: Double = 0.0,
+    val defaultNoThink: Boolean = false,
+    val visionCapable: Boolean = false,
+    val sourceTrust: LocalModelSourceTrust = LocalModelSourceTrust.CURATED
+) {
+    val downloadable: Boolean
+        get() = repositoryId.matches(REPOSITORY_PATTERN) && validArtifactPath(fileName) &&
+            expectedModelFileBytes > 0L && sha256.matches(Regex("[a-f0-9]{64}"))
+
+    fun sourceUrls(preferChinaMirror: Boolean): List<String> {
+        if (!downloadable) return emptyList()
+        val primary = modelUrl("https://huggingface.co/")
+        val mirror = modelUrl("https://hf-mirror.com/")
+        return if (preferChinaMirror) listOf(mirror, primary) else listOf(primary, mirror)
+    }
+
+    private fun modelUrl(baseUrl: String): String = baseUrl.toHttpUrl().newBuilder()
+        .addPathSegments(repositoryId)
+        .addPathSegment("resolve")
+        .addPathSegment("main")
+        .addPathSegments(fileName)
+        .build()
+        .toString()
+
+    companion object {
+        private val REPOSITORY_PATTERN = Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+        private fun validArtifactPath(value: String): Boolean =
+            value.endsWith(".gguf", ignoreCase = true) &&
+                '\\' !in value &&
+                value.split('/').all { segment ->
+                    segment.isNotBlank() && segment != "." && segment != ".."
+                }
+    }
+}
+
+enum class LocalModelSourceTrust {
+    CURATED,
+    HUB_VERIFIED
+}
 
 data class LocalModelRuntimeRequest(
     val profile: LocalModelRuntimeProfile,
@@ -82,50 +125,164 @@ data class LocalModelRuntimeEstimate(
 }
 
 object LocalModelRuntimeProfiles {
-    val GEMMA_3_1B_Q4 = LocalModelRuntimeProfile(
-        id = "gemma-3-1b-q4",
-        displayName = "Gemma 3 1B Q4",
-        expectedModelFileBytes = 820L * MIB,
+    val GEMMA_3_1B_Q4 = profile(
+        id = "gemma-3-1b-it-q4-k-m",
+        displayName = "Gemma 3 1B Instruct",
+        repositoryId = "ggml-org/gemma-3-1b-it-GGUF",
+        fileName = "gemma-3-1b-it-Q4_K_M.gguf",
+        expectedModelFileBytes = 806_058_240L,
+        sha256 = "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
+        parameterCountBillions = 1.0,
         layerCount = 26,
         keyValueHeadCount = 1,
         headDimension = 256,
-        defaultContextTokens = 4_096,
-        maximumContextTokens = 32_768,
-        quantizationLabel = "Q4"
+        maximumContextTokens = 32_768
     )
-    val GEMMA_3_4B_Q4 = LocalModelRuntimeProfile(
-        id = "gemma-3-4b-q4",
-        displayName = "Gemma 3 4B Q4",
-        expectedModelFileBytes = 2_650L * MIB,
+    val GEMMA_3_4B_Q4 = profile(
+        id = "gemma-3-4b-it-q4-k-m",
+        displayName = "Gemma 3 4B Instruct",
+        repositoryId = "ggml-org/gemma-3-4b-it-GGUF",
+        fileName = "gemma-3-4b-it-Q4_K_M.gguf",
+        expectedModelFileBytes = 2_489_757_856L,
+        sha256 = "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
+        parameterCountBillions = 4.0,
         layerCount = 34,
         keyValueHeadCount = 4,
         headDimension = 256,
-        defaultContextTokens = 4_096,
-        maximumContextTokens = 32_768,
-        quantizationLabel = "Q4"
+        maximumContextTokens = 128_000,
+        visionCapable = true
     )
-    val QWEN_2_5_7B_Q4 = LocalModelRuntimeProfile(
-        id = "qwen-2.5-7b-q4",
-        displayName = "Qwen 2.5 7B Q4",
-        expectedModelFileBytes = 4_450L * MIB,
-        layerCount = 28,
-        keyValueHeadCount = 4,
+    val QWEN_3_4B_Q4_K_M = profile(
+        id = "qwen3-4b-q4-k-m",
+        displayName = "Qwen3 4B",
+        repositoryId = "Qwen/Qwen3-4B-GGUF",
+        fileName = "Qwen3-4B-Q4_K_M.gguf",
+        expectedModelFileBytes = 2_497_280_256L,
+        sha256 = "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+        parameterCountBillions = 4.0,
+        layerCount = 36,
+        keyValueHeadCount = 8,
         headDimension = 128,
-        defaultContextTokens = 4_096,
         maximumContextTokens = 32_768,
-        quantizationLabel = "Q4"
+        defaultNoThink = true
     )
+    val QWEN_3_8B_Q4_K_M = profile(
+        id = "qwen3-8b-q4-k-m",
+        displayName = "Qwen3 8B",
+        repositoryId = "Qwen/Qwen3-8B-GGUF",
+        fileName = "Qwen3-8B-Q4_K_M.gguf",
+        expectedModelFileBytes = 5_027_783_488L,
+        sha256 = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+        parameterCountBillions = 8.2,
+        layerCount = 36,
+        keyValueHeadCount = 8,
+        headDimension = 128,
+        maximumContextTokens = 32_768,
+        defaultNoThink = true
+    )
+    val QWEN_3_5_9B_Q4_K_M = profile(
+        id = "qwen3-5-9b-q4-k-m",
+        displayName = "Qwen3.5 9B",
+        repositoryId = "bartowski/Qwen_Qwen3.5-9B-GGUF",
+        fileName = "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+        expectedModelFileBytes = 6_169_341_984L,
+        sha256 = "d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43",
+        parameterCountBillions = 9.0,
+        layerCount = 32,
+        keyValueHeadCount = 4,
+        headDimension = 256,
+        maximumContextTokens = 262_144,
+        visionCapable = true
+    )
+    val GEMMA_3_12B_Q4_K_M = profile(
+        id = "gemma-3-12b-it-q4-k-m",
+        displayName = "Gemma 3 12B Instruct",
+        repositoryId = "ggml-org/gemma-3-12b-it-GGUF",
+        fileName = "gemma-3-12b-it-Q4_K_M.gguf",
+        expectedModelFileBytes = 7_300_574_976L,
+        sha256 = "7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5",
+        parameterCountBillions = 12.0,
+        layerCount = 48,
+        keyValueHeadCount = 8,
+        headDimension = 256,
+        maximumContextTokens = 128_000,
+        visionCapable = true
+    )
+    val LLAMA_3_1_8B_Q4_K_M = profile(
+        id = "llama-3-1-8b-instruct-q4-k-m",
+        displayName = "Llama 3.1 8B Instruct",
+        repositoryId = "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+        fileName = "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        expectedModelFileBytes = 4_920_739_232L,
+        sha256 = "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+        parameterCountBillions = 8.0,
+        layerCount = 32,
+        keyValueHeadCount = 8,
+        headDimension = 128,
+        maximumContextTokens = 128_000
+    )
+    val DEEPSEEK_R1_DISTILL_LLAMA_8B_Q4_K_M = profile(
+        id = "deepseek-r1-distill-llama-8b-q4-k-m",
+        displayName = "DeepSeek R1 Distill Llama 8B",
+        repositoryId = "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
+        fileName = "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
+        expectedModelFileBytes = 4_920_737_216L,
+        sha256 = "0addb1339a82385bcd973186cd80d18dcc71885d45eabd899781a118d03827d9",
+        parameterCountBillions = 8.0,
+        layerCount = 32,
+        keyValueHeadCount = 8,
+        headDimension = 128,
+        maximumContextTokens = 128_000
+    )
+
+    @Deprecated("Use QWEN_3_8B_Q4_K_M")
+    val QWEN_2_5_7B_Q4: LocalModelRuntimeProfile = QWEN_3_8B_Q4_K_M
 
     val all: List<LocalModelRuntimeProfile> = listOf(
         GEMMA_3_1B_Q4,
         GEMMA_3_4B_Q4,
-        QWEN_2_5_7B_Q4
+        QWEN_3_4B_Q4_K_M,
+        QWEN_3_8B_Q4_K_M,
+        QWEN_3_5_9B_Q4_K_M,
+        LLAMA_3_1_8B_Q4_K_M,
+        DEEPSEEK_R1_DISTILL_LLAMA_8B_Q4_K_M,
+        GEMMA_3_12B_Q4_K_M
     )
 
     fun find(id: String): LocalModelRuntimeProfile =
-        all.firstOrNull { it.id == id } ?: GEMMA_3_4B_Q4
+        all.firstOrNull { it.id == id } ?: QWEN_3_8B_Q4_K_M
 
-    private const val MIB = 1024L * 1024L
+    private fun profile(
+        id: String,
+        displayName: String,
+        repositoryId: String,
+        fileName: String,
+        expectedModelFileBytes: Long,
+        sha256: String,
+        parameterCountBillions: Double,
+        layerCount: Int,
+        keyValueHeadCount: Int,
+        headDimension: Int,
+        maximumContextTokens: Int,
+        defaultNoThink: Boolean = false,
+        visionCapable: Boolean = false
+    ) = LocalModelRuntimeProfile(
+        id = id,
+        displayName = displayName,
+        expectedModelFileBytes = expectedModelFileBytes,
+        layerCount = layerCount,
+        keyValueHeadCount = keyValueHeadCount,
+        headDimension = headDimension,
+        defaultContextTokens = 4_096,
+        maximumContextTokens = maximumContextTokens,
+        quantizationLabel = "Q4_K_M",
+        repositoryId = repositoryId,
+        fileName = fileName,
+        sha256 = sha256,
+        parameterCountBillions = parameterCountBillions,
+        defaultNoThink = defaultNoThink,
+        visionCapable = visionCapable
+    )
 }
 
 object LocalModelRuntimeEstimator {
@@ -395,16 +552,17 @@ object LocalModelRuntimePreflight {
 
 object LocalModelRuntimeSettings {
     fun selectedProfile(context: Context): LocalModelRuntimeProfile =
-        LocalModelRuntimeProfiles.find(
+        LocalModelCatalog.find(
+            context,
             context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(KEY_PROFILE, LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id)
+                .getString(KEY_PROFILE, LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M.id)
                 .orEmpty()
         )
 
     fun setSelectedProfile(context: Context, profileId: String) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_PROFILE, LocalModelRuntimeProfiles.find(profileId).id)
+            .putString(KEY_PROFILE, LocalModelCatalog.find(context, profileId).id)
             .apply()
     }
 

@@ -35,6 +35,7 @@ import java.util.Locale
 import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.UUID
+import java.util.concurrent.Executors
 
 private const val INTERNAL_CONVERSATION_ID = "_signalasi_conversation_id"
 private const val INTERNAL_CONVERSATION_CONTEXT = "_signalasi_conversation_context"
@@ -9299,6 +9300,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             )
             val result = when {
+                connectorId == "local-llm" ->
+                    dispatchLocalModelTask(routedAction, prompt)
                 connectorAliases("cloud-models").any { it == connectorId } ->
                     dispatchCloudModelTask(routedAction, prompt)
                 AppStore.isCloudApiContact(context, connectorId) ->
@@ -9319,6 +9322,123 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             lastFailure = result
         }
         return lastFailure
+    }
+
+    private fun dispatchLocalModelTask(action: AgentAction, prompt: String): AgentActionResult {
+        val deliveryMode = deliveryMode(action)
+        val contactId = "local-llm"
+        val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        if (deliveryMode == AgentDeliveryMode.IGNORE) {
+            return AgentActionResult(
+                action.id,
+                true,
+                "",
+                mapOf("delivery_mode" to AgentDeliveryMode.IGNORE.name.lowercase(Locale.ROOT))
+            )
+        }
+        if (deliveryMode == AgentDeliveryMode.OBSERVE) {
+            observationContextStore.observe(
+                targetId = contactId,
+                text = prompt,
+                conversationId = conversationId,
+                taskId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+            )
+            return AgentActionResult(
+                action.id,
+                true,
+                "",
+                mapOf(
+                    "delivery_mode" to AgentDeliveryMode.OBSERVE.name.lowercase(Locale.ROOT),
+                    "observed_context" to "true",
+                    "resource_id" to contactId
+                )
+            )
+        }
+        val profile = LocalModelRuntimeSettings.selectedProfile(context)
+        if (!LocalModelInferenceRuntime.ready(context)) {
+            return AgentActionResult(
+                action.id,
+                false,
+                "${profile.displayName} is not installed or the local inference runtime is unavailable"
+            )
+        }
+        val historyPrompt = displayPromptForAction(action, prompt)
+        val messageId = ChatHistoryStore.appendOutgoing(
+            context = context,
+            contactId = contactId,
+            content = historyPrompt,
+            deliveryStatus = context.getString(R.string.delivery_status_requesting)
+        )
+        val observed = observationContextStore.peek(contactId, conversationId)
+        val requestPrompt = promptWithObservedContext(prompt, observed)
+        val startedAt = System.currentTimeMillis()
+        LOCAL_MODEL_EXECUTOR.execute {
+            val appContext = context.applicationContext
+            val result = runCatching {
+                LocalModelInferenceRuntime.generate(
+                    context = appContext,
+                    profile = profile,
+                    systemPrompt = CodexStyleResponsePolicy.prompt(appContext),
+                    userPrompt = promptWithLocalModelContext(action, requestPrompt)
+                )
+            }
+            val inference = result.getOrNull()
+            val succeeded = inference != null
+            if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
+            val reply = inference?.text ?: appContext.getString(
+                R.string.cloud_request_failed,
+                result.exceptionOrNull()?.message?.take(220)
+                    ?: appContext.getString(R.string.cloud_unknown_error)
+            )
+            resourceHealth.record("target:$contactId", succeeded, System.currentTimeMillis() - startedAt)
+            ChatHistoryStore.markOutgoingDelivery(
+                context = appContext,
+                contactId = contactId,
+                messageId = messageId,
+                stage = if (succeeded) "local_model_replied" else "local_model_failed",
+                detail = inference?.backend.orEmpty().ifBlank { profile.displayName },
+                status = appContext.getString(
+                    if (succeeded) R.string.delivery_status_replied else R.string.delivery_status_failed
+                )
+            )
+            ChatHistoryStore.appendIncoming(
+                appContext,
+                JSONObject()
+                    .put("sender", contactId)
+                    .put("contact_id", contactId)
+                    .put("content", reply)
+                    .toString()
+            )
+            AgentConnectorResponseBus.publish(
+                appContext,
+                AgentConnectorResponse(
+                    sourceMessageId = messageId,
+                    contactId = contactId,
+                    content = reply,
+                    conversationId = conversationId,
+                    turnId = action.parameters[INTERNAL_TURN_ID].orEmpty(),
+                    taskId = action.id,
+                    success = succeeded
+                )
+            )
+        }
+        return AgentActionResult(
+            actionId = action.id,
+            success = true,
+            message = "Waiting for ${profile.displayName} response",
+            metadata = mapOf(
+                "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),
+                "awaiting_response" to "true",
+                "source_message_id" to messageId.toString(),
+                "contact_id" to contactId,
+                "target" to profile.displayName,
+                "resource_id" to contactId,
+                "failure_domain" to "phone:local-model",
+                "resource_location" to "phone",
+                "resource_started_at" to startedAt.toString(),
+                "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
+            )
+        )
     }
 
     private fun dispatchAgentTeam(
@@ -9835,6 +9955,24 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         )
     }
 
+    private fun promptWithLocalModelContext(action: AgentAction, prompt: String): String {
+        val contextBlock = action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty()
+        val memoryBlock = action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty()
+        val knowledgeBlock = action.parameters[INTERNAL_AGENT_KNOWLEDGE_CONTEXT].orEmpty()
+        val screenBlock = action.parameters[INTERNAL_SCREEN_CONTEXT].orEmpty()
+        return assembleBoundedModelPrompt(
+            preamble = RICH_RESPONSE_CONTRACT,
+            optionalSections = listOf(
+                contextBlock,
+                memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),
+                knowledgeBlock.takeIf(String::isNotBlank)?.let { "Authorized knowledge results:\n$it" }.orEmpty(),
+                screenBlock.takeIf(String::isNotBlank)?.let { "Authorized current screen context:\n$it" }.orEmpty()
+            ),
+            currentRequest = prompt,
+            maximumTokens = 3_000
+        )
+    }
+
     private fun deliveryMode(action: AgentAction): AgentDeliveryMode = when (
         action.parameters["delivery_mode"].orEmpty().trim().lowercase(Locale.ROOT)
     ) {
@@ -9981,6 +10119,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         private const val AGENT_NOTIFICATION_CHANNEL_ID = "signalasi_agent_actions"
         private const val AGENT_NOTIFICATION_ID_BASE = 42000
         private const val MAX_KNOWLEDGE_PROMPT_CHARACTERS = 14_000
+        private val LOCAL_MODEL_EXECUTOR = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "SignalASI-LocalModel").apply { isDaemon = true }
+        }
         private const val RICH_RESPONSE_CONTRACT =
             "SignalASI can render optional rich output. When a visual, table, media preview, animation, or public web page " +
                 "would answer better than plain text, append one fenced signalasi-rich JSON document. " +
@@ -11170,6 +11311,12 @@ class AppStoreAgentConnectorRegistry(
 
     private fun statusFor(target: AgentCallableTarget): AgentConnectorStatus = when (target.id) {
         "cloud-models" -> if (hasConfiguredCloudModel()) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP
+        "local-llm" -> when {
+            LocalModelInferenceRuntime.ready(appContext) -> AgentConnectorStatus.AVAILABLE
+            LocalModelManager.profiles(appContext).any { LocalModelManager.isInstalled(appContext, it) } ->
+                AgentConnectorStatus.DISCONNECTED
+            else -> AgentConnectorStatus.NEEDS_SETUP
+        }
         "home-assistant" -> when {
             HomeAssistantSettingsStore.load(appContext).configured -> AgentConnectorStatus.AVAILABLE
             matchingContactIds(target.id).any { AppStore.outgoingTopicForContact(appContext, it) != null } ->

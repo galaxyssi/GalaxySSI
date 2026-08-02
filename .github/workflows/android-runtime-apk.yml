@@ -44,6 +44,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
@@ -367,7 +368,9 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+            "platforms;android-36" "build-tools;36.0.0" "platform-tools" \
+            "ndk;25.2.9519653" "ndk;29.0.13113456" \
+            "cmake;3.22.1" "cmake;3.31.6"
           ./gradlew :app:assembleDebug -Psignalasi.requireEmbeddedRuntime=true --no-daemon
 
       - name: Verify APK runtime contents

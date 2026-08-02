@@ -4,6 +4,20 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..", "..");
 const hanPattern = /[\u3400-\u9fff]/;
 
+function readSubmodulePaths() {
+  const config = path.join(root, ".gitmodules");
+  if (!fs.existsSync(config)) return new Set();
+  const paths = fs
+    .readFileSync(config, "utf8")
+    .split(/\r?\n/)
+    .map((line) => /^\s*path\s*=\s*(.+?)\s*$/.exec(line)?.[1])
+    .filter(Boolean)
+    .map((value) => value.replace(/\\/g, "/").replace(/\/$/, ""));
+  return new Set(paths);
+}
+
+const ignoredSubmodulePaths = readSubmodulePaths();
+
 const ignoredDirs = new Set([
   ".git",
   ".gradle",
@@ -58,7 +72,8 @@ function walk(dir, findings) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!ignoredDirs.has(entry.name)) walk(full, findings);
+      const rel = normalize(path.relative(root, full));
+      if (!ignoredDirs.has(entry.name) && !ignoredSubmodulePaths.has(rel)) walk(full, findings);
       continue;
     }
     if (entry.isSymbolicLink()) continue;
