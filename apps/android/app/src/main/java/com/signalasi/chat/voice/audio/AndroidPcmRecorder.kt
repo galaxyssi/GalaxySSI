@@ -22,6 +22,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.abs
@@ -144,7 +146,10 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
                             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                             .build()
                     )
-                    .setBufferSizeInBytes(maxOf(minBuffer, config.samplesPerFrame * 2 * 8))
+                    .setBufferSizeInBytes(maxOf(
+                        minBuffer,
+                        config.sampleRateHz * PCM16_BYTES_PER_SAMPLE * config.audioRecordBufferMs / 1_000
+                    ))
                     .build()
             }.getOrElse {
                 lastFailure = it
@@ -179,7 +184,11 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         channel: Channel<AudioFrame>
     ) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-        val discardBuffer = ShortArray(config.samplesPerFrame)
+        val discardBuffer = PcmFrameStorage(
+            samples = ShortArray(config.samplesPerFrame),
+            pcm16 = ByteBuffer.allocateDirect(config.samplesPerFrame * PCM16_BYTES_PER_SAMPLE)
+                .order(ByteOrder.LITTLE_ENDIAN)
+        )
         var sequence = 0L
         var capturedSamples = 0L
         var shortReads = 0L
@@ -194,21 +203,44 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
             while (running.get()) {
                 val pooled = pool.acquire()
                 val target = pooled ?: discardBuffer
-                val read = record.read(target, 0, config.samplesPerFrame, AudioRecord.READ_BLOCKING)
+                target.pcm16.clear()
+                val bytesRead = record.read(
+                    target.pcm16,
+                    config.samplesPerFrame * PCM16_BYTES_PER_SAMPLE,
+                    AudioRecord.READ_BLOCKING
+                )
                 val capturedAtNs = SystemClock.elapsedRealtimeNanos()
                 when {
-                    read > 0 -> {
+                    bytesRead > 0 -> {
+                        if (bytesRead % PCM16_BYTES_PER_SAMPLE != 0) {
+                            pooled?.let(pool::release)
+                            throw PcmCaptureException("unaligned_pcm_read", "AudioRecord returned incomplete PCM16 data")
+                        }
+                        val read = bytesRead / PCM16_BYTES_PER_SAMPLE
+                        target.pcm16.position(0)
+                        target.pcm16.limit(bytesRead)
+                        target.pcm16.duplicate()
+                            .order(ByteOrder.LITTLE_ENDIAN)
+                            .asShortBuffer()
+                            .get(target.samples, 0, read)
                         if (read < config.samplesPerFrame) shortReads += 1
                         if (lastFrameAtNs > 0L && capturedAtNs - lastFrameAtNs > config.frameDurationMs * 3_000_000L) {
                             suspectedOverruns += 1
                         }
                         lastFrameAtNs = capturedAtNs
                         capturedSamples += read
-                        val peak = peakAmplitude(target, read)
+                        val peak = peakAmplitude(target.samples, read)
                         if (pooled == null) {
                             droppedFrames += 1
                         } else {
-                            val frame = AudioFrame(sequence++, capturedAtNs, pooled, read, pool::release)
+                            val frame = AudioFrame(
+                                sequence = sequence++,
+                                captureTimeNanos = capturedAtNs,
+                                samples = pooled.samples,
+                                validSamples = read,
+                                releaseAction = { pool.release(pooled) },
+                                directPcm16 = pooled.pcm16
+                            )
                             if (channel.trySend(frame).isFailure) {
                                 val stale = channel.tryReceive().getOrNull()
                                 if (stale != null) {
@@ -245,25 +277,25 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
                             running.set(false)
                         }
                     }
-                    read == 0 -> {
+                    bytesRead == 0 -> {
                         zeroReads += 1
                         pooled?.let(pool::release)
                     }
-                    read == AudioRecord.ERROR_INVALID_OPERATION -> {
+                    bytesRead == AudioRecord.ERROR_INVALID_OPERATION -> {
                         pooled?.let(pool::release)
                         throw PcmCaptureException("invalid_recording_operation", "AudioRecord rejected the read operation")
                     }
-                    read == AudioRecord.ERROR_BAD_VALUE -> {
+                    bytesRead == AudioRecord.ERROR_BAD_VALUE -> {
                         pooled?.let(pool::release)
                         throw PcmCaptureException("invalid_audio_buffer", "AudioRecord rejected the PCM buffer")
                     }
-                    read == AudioRecord.ERROR_DEAD_OBJECT -> {
+                    bytesRead == AudioRecord.ERROR_DEAD_OBJECT -> {
                         pooled?.let(pool::release)
                         throw PcmCaptureException("audio_device_disconnected", "The active microphone device disconnected")
                     }
                     else -> {
                         pooled?.let(pool::release)
-                        throw PcmCaptureException("audio_read_failed", "AudioRecord read failed with code $read")
+                        throw PcmCaptureException("audio_read_failed", "AudioRecord read failed with code $bytesRead")
                     }
                 }
             }
@@ -368,5 +400,6 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         const val ROUTE_CHECK_FRAME_INTERVAL = 25L
         const val STOP_JOIN_TIMEOUT_MS = 500L
         const val STOP_FORCE_JOIN_TIMEOUT_MS = 250L
+        const val PCM16_BYTES_PER_SAMPLE = 2
     }
 }

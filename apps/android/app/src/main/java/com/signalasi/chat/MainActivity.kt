@@ -87,6 +87,7 @@ import com.signalasi.chat.voice.VoiceTtsRequest
 import com.signalasi.chat.voice.VoiceTtsRequestRegistry
 import com.signalasi.chat.voice.audio.AdaptiveEndpointConfig
 import com.signalasi.chat.voice.audio.AndroidPcmRecorder
+import com.signalasi.chat.voice.audio.DirectPcmFramePacket
 import com.signalasi.chat.voice.audio.EndpointReason
 import com.signalasi.chat.voice.audio.PcmCaptureConfig
 import com.signalasi.chat.voice.audio.PcmSnapshot
@@ -111,7 +112,13 @@ import com.signalasi.chat.voice.asr.remote.RemoteWhisperNodeRegistry
 import com.signalasi.chat.voice.asr.remote.RemoteWhisperRoutingPolicy
 import com.signalasi.chat.voice.asr.remote.SignalASILinkRemoteWhisperTransport
 import com.signalasi.chat.voice.asr.local.AbortReason
+import com.signalasi.chat.voice.asr.local.AsrConfig as HighAccuracyAsrConfig
+import com.signalasi.chat.voice.asr.local.AsrEvent as HighAccuracyAsrEvent
+import com.signalasi.chat.voice.asr.local.AsrPerformanceMode
 import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
+import com.signalasi.chat.voice.asr.local.HighAccuracyAsrResult
+import com.signalasi.chat.voice.asr.local.HighAccuracyLocalAsrController
+import com.signalasi.chat.voice.asr.local.HighAccuracyLocalAsrTurn
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
@@ -619,6 +626,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val whisperDecodeSchedulerLock = Any()
     private var whisperDecodeScheduler: WhisperDecodeScheduler? = null
     private val liveWhisperSessions = ConcurrentHashMap<String, LiveWhisperTranscriptionSession>()
+    private val highAccuracyAsrTurns = ConcurrentHashMap<String, HighAccuracyLocalAsrTurn>()
+    private val highAccuracyAsrFinals = ConcurrentHashMap<String, HighAccuracyAsrResult>()
     private val onlineRealtimeAsrTurns = ConcurrentHashMap<String, OnlineRealtimeAsrTurn>()
     private val onlineRealtimeAsrFinals = ConcurrentHashMap<String, TranscriptHypothesis>()
     private val onlineRealtimeAsrClient: OkHttpClient by lazy {
@@ -725,6 +734,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var wakeReplyPinnedUntilMs = 0L
     private var lastVoiceRecognitionStartAt = 0L
     private val voiceAssistantScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val highAccuracyAsrControllerDelegate = lazy(LazyThreadSafetyMode.NONE) {
+        HighAccuracyLocalAsrController.create(this, voiceAssistantScope)
+    }
+    private val highAccuracyAsrController by highAccuracyAsrControllerDelegate
     private var wakeWordEngine: WakeWordEngine? = null
     private var wakeWordDetectionJob: Job? = null
     private var androidTts: TextToSpeech? = null
@@ -1385,6 +1398,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (::agentHoldToTalkController.isInitialized) agentHoldToTalkController.release()
         liveWhisperSessions.values.forEach(LiveWhisperTranscriptionSession::close)
         liveWhisperSessions.clear()
+        highAccuracyAsrTurns.values.forEach(HighAccuracyLocalAsrTurn::cancel)
+        highAccuracyAsrTurns.clear()
+        highAccuracyAsrFinals.clear()
+        if (highAccuracyAsrControllerDelegate.isInitialized()) highAccuracyAsrController.close()
         onlineRealtimeAsrTurns.values.forEach(OnlineRealtimeAsrTurn::close)
         onlineRealtimeAsrTurns.clear()
         onlineRealtimeAsrFinals.clear()
@@ -1448,6 +1465,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
+        prepareHighAccuracyAsrIfSelected()
         traceResume("listeners")
         val initialResume = !completedInitialResume
         val reloadedAgentState = if (!initialResume) {
@@ -22509,6 +22527,58 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ).also { whisperDecodeScheduler = it }
     }
 
+    private fun isHighAccuracyQnnSelected(): Boolean {
+        val settings = VoiceAssistantSettings.get(this)
+        return settings.asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
+            WhisperModelManager.model(settings.asrModel).family == WhisperModelFamily.LARGE_V3_TURBO
+    }
+
+    private fun prepareHighAccuracyAsrIfSelected() {
+        if (isHighAccuracyQnnSelected()) highAccuracyAsrController.prepareAsync()
+    }
+
+    private fun startHighAccuracyAsrTurn(
+        purpose: String,
+        traceId: String
+    ): HighAccuracyLocalAsrTurn? {
+        if (!isHighAccuracyQnnSelected()) return null
+        val settings = VoiceAssistantSettings.get(this)
+        val profile = WhisperModelManager.model(settings.asrModel)
+        val performanceMode = if (settings.asrRuntimeMode == WhisperUserVoiceMode.FAST) {
+            AsrPerformanceMode.FAST
+        } else {
+            AsrPerformanceMode.BALANCED
+        }
+        val config = HighAccuracyAsrConfig(
+            language = LanguagePolicySettings.resolvedAsrLanguage(this)
+                .substringBefore('-')
+                .lowercase(Locale.ROOT)
+                .takeIf { it == "zh" }
+                ?: "auto",
+            updateIntervalMs = if (performanceMode == AsrPerformanceMode.FAST) 600L else 900L,
+            firstPartialDelayMs = 900L,
+            performanceMode = performanceMode
+        )
+        val turn = highAccuracyAsrController.startTurnIfReady(
+            config = config,
+            modelProfileId = profile.id,
+            onPartial = { partial ->
+                handleLocalAsrPartial(
+                    purpose = purpose,
+                    traceId = traceId,
+                    stableText = partial.stableText,
+                    unstableText = partial.unstableText,
+                    revision = partial.revision.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    providerId = "qnn_htp",
+                    modelProfileId = profile.id
+                )
+            }
+        ) ?: return null
+        highAccuracyAsrTurns.put(traceId, turn)?.cancel()
+        Log.i("SignalASIVoice", "High accuracy QNN streaming enabled purpose=$purpose trace=$traceId")
+        return turn
+    }
+
     private fun startLiveWhisperSession(purpose: String, traceId: String): LiveWhisperTranscriptionSession? {
         if (!VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(this) ||
             !VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(this)
@@ -22726,14 +22796,38 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ) {
         val transcript = update.transcript
         if (transcript.final || transcript.displayText.isBlank()) return
+        handleLocalAsrPartial(
+            purpose = purpose,
+            traceId = traceId,
+            stableText = transcript.stableText,
+            unstableText = transcript.unstableText,
+            revision = transcript.revision,
+            providerId = "whisper.cpp",
+            modelProfileId = update.modelProfileId,
+            realTimeFactor = update.realTimeFactor
+        )
+    }
+
+    private fun handleLocalAsrPartial(
+        purpose: String,
+        traceId: String,
+        stableText: String,
+        unstableText: String,
+        revision: Int,
+        providerId: String,
+        modelProfileId: String,
+        realTimeFactor: Double? = null
+    ) {
+        if (stableText.isBlank() && unstableText.isBlank()) return
         VoiceLatencyTelemetry.record(
             this,
             traceId,
             VoiceTraceEvents.ASR_FIRST_PARTIAL,
-            mapOf(
-                "model_profile_id" to update.modelProfileId,
-                "rtf" to String.format(Locale.US, "%.4f", update.realTimeFactor)
-            ),
+            buildMap {
+                put("asr_provider", providerId)
+                put("model_profile_id", modelProfileId)
+                realTimeFactor?.let { put("rtf", String.format(Locale.US, "%.4f", it)) }
+            },
             once = true
         )
         runOnUiThread {
@@ -22741,38 +22835,41 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val coordinatorSessionId = voiceCoordinatorSession(traceId)
             if (coordinatorSessionId.isNotBlank()) {
                 val hypothesis = TranscriptHypothesis(
-                    text = transcript.displayText,
-                    revision = transcript.revision,
-                    provider = "whisper.cpp",
-                    modelProfileId = update.modelProfileId
+                    text = stableText + unstableText,
+                    revision = revision,
+                    provider = providerId,
+                    modelProfileId = modelProfileId
                 )
                 dispatchVoiceCoordinator(VoiceInteractionEvent.TranscriptPartial(coordinatorSessionId, hypothesis))
-                if (transcript.stableText.isNotBlank()) {
+                if (stableText.isNotBlank()) {
                     dispatchVoiceCoordinator(
                         VoiceInteractionEvent.TranscriptStable(
                             coordinatorSessionId,
-                            hypothesis.copy(text = transcript.stableText)
+                            hypothesis.copy(text = stableText)
                         )
                     )
                     VoiceLatencyTelemetry.record(
                         this,
                         traceId,
                         VoiceTraceEvents.ASR_FIRST_STABLE,
-                        mapOf("model_profile_id" to update.modelProfileId),
+                        mapOf(
+                            "asr_provider" to providerId,
+                            "model_profile_id" to modelProfileId
+                        ),
                         once = true
                     )
                 }
             }
             when (purpose) {
                 "agent_input" -> if (::agentHoldToTalkController.isInitialized) {
-                    agentHoldToTalkController.updateTranscript(transcript.stableText, transcript.unstableText)
+                    agentHoldToTalkController.updateTranscript(stableText, unstableText)
                 }
                 "voice_wakeup" -> updateWakeVoiceUi(
                     getString(R.string.voice_status_recording),
-                    transcript.displayText
+                    stableText + unstableText
                 )
                 else -> if (::holdToTalkController.isInitialized) {
-                    holdToTalkController.updateTranscript(transcript.stableText, transcript.unstableText)
+                    holdToTalkController.updateTranscript(stableText, unstableText)
                 }
             }
         }
@@ -22781,6 +22878,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun closeLiveWhisperSession(traceId: String) {
         if (traceId.isBlank()) return
         liveWhisperSessions.remove(traceId)?.close()
+        highAccuracyAsrTurns.remove(traceId)?.cancel()
+        highAccuracyAsrFinals.remove(traceId)
     }
 
     // ===== Recording =====
@@ -22877,7 +22976,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
         val coordinatorSessionId = beginVoiceCoordinatorSession(purpose, traceId)
         val onlineAsrTurn = startOnlineRealtimeAsrTurn(purpose, traceId)
-        val liveWhisperSession = if (onlineAsrTurn == null) startLiveWhisperSession(purpose, traceId) else null
+        val highAccuracyAsrTurn = if (onlineAsrTurn == null) {
+            startHighAccuracyAsrTurn(purpose, traceId)
+        } else null
+        val liveWhisperSession = if (onlineAsrTurn == null && highAccuracyAsrTurn == null) {
+            startLiveWhisperSession(purpose, traceId)
+        } else null
         val partialSpeechStartedAt = AtomicLong(0L)
         activeVoiceTraceId = traceId
         recordingVoiceTraceId = traceId
@@ -22905,12 +23009,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
         val session = voiceAudioHub().start(
             VoiceAudioSessionConfig(
-                capture = PcmCaptureConfig(maxDurationMs = endpointConfig.maxDurationMs),
+                capture = PcmCaptureConfig(
+                    frameDurationMs = if (highAccuracyAsrTurn != null) 10 else 20,
+                    maxDurationMs = endpointConfig.maxDurationMs
+                ),
                 endpoint = endpointConfig,
                 autoEndpoint = autoEndpoint
             ),
             object : VoiceAudioHubListener {
+                override val acceptsDirectPcmFrames: Boolean = highAccuracyAsrTurn != null
                 override val acceptsPcmFrames: Boolean = onlineAsrTurn != null
+
+                override fun onDirectPcmFrame(session: VoiceAudioSession, frame: DirectPcmFramePacket) {
+                    highAccuracyAsrTurn?.offer(frame)
+                }
 
                 override fun onPcmFrame(
                     session: VoiceAudioSession,
@@ -23151,6 +23263,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceAssistantScope.launch {
             val captureResult = runCatching { hub.stop(session, stopReason) }
             val result = captureResult.getOrNull()
+            val highAccuracyTurn = highAccuracyAsrTurns.remove(traceId)
+            val highAccuracyCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true &&
+                highAccuracyTurn != null
+            ) {
+                runCatching { highAccuracyTurn.finish() }
+                    .onFailure { error ->
+                        Log.w("SignalASIVoice", "High accuracy QNN final failed; retained PCM will be used", error)
+                    }
+                    .getOrNull()
+            } else {
+                highAccuracyTurn?.cancel()
+                null
+            }
+            highAccuracyCompletion
+                ?.takeIf { it.text.isNotBlank() }
+                ?.let { highAccuracyAsrFinals[traceId] = it }
             val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
             val onlineCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
                 runCatching { onlineTurn.finish(pcmBufferComplete = captureResult.isSuccess) }.getOrNull()
@@ -24194,6 +24322,39 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onFailure: () -> Unit = {}
     ) {
         val language = LanguagePolicySettings.resolvedAsrLanguage(this)
+        val highAccuracyFinal = highAccuracyAsrFinals.remove(traceId)
+        if (highAccuracyFinal != null && pcmSamples != null && highAccuracyFinal.text.isNotBlank()) {
+            sourceFile.delete()
+            val pcmCopy = pcmSamples.copyOf()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.ASR_FINAL_RECEIVED,
+                mapOf(
+                    "asr_provider" to "qnn_htp",
+                    "model_profile_id" to highAccuracyFinal.modelProfileId,
+                    "duration_ms" to highAccuracyFinal.inferenceMs.toString(),
+                    "success" to "true"
+                ),
+                once = true
+            )
+            runOnUiThread {
+                handleVoiceFastTranscript(
+                    purpose = purpose,
+                    traceId = traceId,
+                    transcript = highAccuracyFinal.text,
+                    pcmSnapshot = pcmCopy,
+                    sampleRateHz = sampleRateHz,
+                    language = language,
+                    decodedModelProfileId = highAccuracyFinal.modelProfileId,
+                    confidence = null,
+                    providerId = "qnn_htp",
+                    onSuccess = onSuccess,
+                    onFailure = onFailure
+                )
+            }
+            return
+        }
         val onlineFinal = onlineRealtimeAsrFinals.remove(traceId)
         if (onlineFinal != null && pcmSamples != null) {
             sourceFile.delete()

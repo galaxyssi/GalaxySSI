@@ -1,6 +1,8 @@
 package com.signalasi.chat.voice.audio
 
 import android.media.MediaRecorder
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class PcmCaptureConfig(
@@ -14,6 +16,7 @@ data class PcmCaptureConfig(
     val enableAcousticEchoCanceler: Boolean = true,
     val enableNoiseSuppressor: Boolean = true,
     val enableAutomaticGainControl: Boolean = false,
+    val audioRecordBufferMs: Int = 500,
     val framePoolSize: Int = 16,
     val outputQueueCapacity: Int = 8
 ) {
@@ -25,6 +28,7 @@ data class PcmCaptureConfig(
         require(frameDurationMs in 10..100)
         require(maxDurationMs > 0L)
         require(preferredAudioSources.isNotEmpty())
+        require(audioRecordBufferMs in 500..2_000)
         require(framePoolSize >= 4)
         require(outputQueueCapacity >= 1)
     }
@@ -75,12 +79,39 @@ class AudioFrame internal constructor(
     val captureTimeNanos: Long,
     val samples: ShortArray,
     val validSamples: Int,
-    private val releaseAction: (ShortArray) -> Unit
+    private val releaseAction: (ShortArray) -> Unit,
+    private val directPcm16: ByteBuffer? = null
 ) : AutoCloseable {
     private val released = AtomicBoolean(false)
 
+    fun directPcm16Buffer(): ByteBuffer? {
+        val source = directPcm16 ?: return null
+        return source.asReadOnlyBuffer()
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .apply {
+                position(0)
+                limit((validSamples * PCM16_BYTES_PER_SAMPLE).coerceAtMost(capacity()))
+            }
+    }
+
     override fun close() {
         if (released.compareAndSet(false, true)) releaseAction(samples)
+    }
+}
+
+class DirectPcmFramePacket(
+    val sequence: Long,
+    val captureTimeNanos: Long,
+    val pcm16: ByteBuffer,
+    val sampleCount: Int,
+    val sampleRateHz: Int
+) {
+    init {
+        require(sequence >= 0L)
+        require(captureTimeNanos >= 0L)
+        require(pcm16.isDirect)
+        require(sampleCount > 0 && sampleCount * PCM16_BYTES_PER_SAMPLE <= pcm16.remaining())
+        require(sampleRateHz > 0)
     }
 }
 
@@ -125,3 +156,5 @@ class PcmCaptureException(
     message: String,
     cause: Throwable? = null
 ) : IllegalStateException(message, cause)
+
+private const val PCM16_BYTES_PER_SAMPLE = 2
