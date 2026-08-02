@@ -159,6 +159,7 @@ fun interface QnnAsrModelDirectoryValidator {
             "whisper_metadata.json",
             "tokenizer.tiktoken",
             "mel_filters.bin",
+            "generation_config.json",
             "manifest.json",
             "model.sha256"
         )
