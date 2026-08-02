@@ -130,7 +130,7 @@ async function main() {
     restoreAppFile(debugPrefs, "");
     adb(["shell", "am", "force-stop", packageName]);
 
-    log("writing non-default wake, ASR, TTS, welcome, and target settings");
+    log("writing ASR, TTS, welcome, and target settings while verifying the fixed wake word");
     adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_voice_settings_roundtrip", token]);
     const { xml, result } = await waitForRoundtrip(token);
     fs.writeFileSync(debugDump, xml || "");
@@ -142,6 +142,9 @@ async function main() {
     }
     if (result.wake_provider !== "android_asr" || result.asr_provider !== "local_whisper_cpp" || result.tts_provider !== "android") {
       fail(`Voice providers were not persisted: ${JSON.stringify(result)}`);
+    }
+    if (result.wake_word !== "hello") {
+      fail(`Wake word was not fixed to hello: ${JSON.stringify(result)}`);
     }
     if (result.asr_runtime_mode !== "ACCURATE") {
       fail(`Whisper runtime policy mode was not persisted: ${JSON.stringify(result)}`);
