@@ -2,16 +2,27 @@ package com.signalasi.chat.voice.asr.local
 
 import android.content.Context
 import java.io.File
+import java.nio.FloatBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class WhisperLargeTurboQnnRuntime private constructor(
     private val network: WhisperQnnNetwork,
     private val transcriber: WhisperGreedyTranscriber
-) : AutoCloseable {
+) : WhisperQnnTranscriberRuntime {
     private val closed = AtomicBoolean(false)
     private val inferenceLock = Any()
 
     fun transcribe(melFeatures: FloatArray, language: String = "zh", maxTokens: Int = 160): WhisperQnnTranscription =
+        synchronized(inferenceLock) {
+            check(!closed.get()) { "QNN Whisper runtime is closed" }
+            transcriber.transcribe(melFeatures, language, maxTokens)
+        }
+
+    override fun transcribe(
+        melFeatures: FloatBuffer,
+        language: String,
+        maxTokens: Int
+    ): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
             transcriber.transcribe(melFeatures, language, maxTokens)

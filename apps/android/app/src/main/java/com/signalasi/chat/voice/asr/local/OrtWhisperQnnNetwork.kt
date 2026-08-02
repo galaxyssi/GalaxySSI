@@ -10,6 +10,7 @@ import ai.onnxruntime.TensorInfo
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -59,11 +60,14 @@ internal class OrtWhisperQnnNetwork private constructor(
         resetDecoder()
     }
 
-    override fun encode(melFeatures: FloatArray): Long = synchronized(this) {
+    override fun encode(melFeatures: FloatBuffer): Long = synchronized(this) {
         checkOpen()
-        require(melFeatures.size == encoderInput.contract.elementCount)
+        require(melFeatures.remaining() == encoderInput.contract.elementCount)
+        val source = melFeatures.duplicate()
         val target = encoderInput.buffer.asShortBuffer()
-        melFeatures.forEachIndexed { index, value -> target.put(index, Float16Codec.encode(value)) }
+        repeat(encoderInput.contract.elementCount) { index ->
+            target.put(index, Float16Codec.encode(source.get()))
+        }
         val started = nanoTime()
         encoderSession.run(encoderInputs, encoderOutputs).use { }
         (nanoTime() - started).coerceAtLeast(0L)

@@ -4,6 +4,7 @@ set(SIGNALASI_ASR_CORE_SOURCES
     audio_ring_buffer.cpp
     log_mel_extractor.cpp
     rolling_window.cpp
+    streaming_frontend_session.cpp
     transcript_stabilizer.cpp
     vad_engine.cpp
 )

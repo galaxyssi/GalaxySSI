@@ -3,10 +3,12 @@
 #include "audio_ring_buffer.h"
 #include "log_mel_extractor.h"
 #include "rolling_window.h"
+#include "streaming_frontend_session.h"
 #include "transcript_stabilizer.h"
 #include "vad_engine.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -308,6 +310,42 @@ void test_audio_frontend_emits_snapshotable_windows() {
             "Frontend final window is not available in the native ring");
 }
 
+void test_streaming_session_queues_audio_and_finishes_no_speech() {
+    AudioFrontendConfig config;
+    StreamingFrontendSession session(config, MelFilterBank128(test_filter_bank()));
+    require(session.start(), "Streaming frontend did not start");
+    const std::vector<std::int16_t> silence(3'200, 0);
+    require(session.push_pcm16(silence.data(), silence.size()), "Streaming frontend rejected PCM");
+    session.pause();
+    require(!session.push_pcm16(silence.data(), 160), "Paused frontend accepted PCM");
+    require(session.resume(), "Streaming frontend did not resume");
+    session.stop();
+
+    std::vector<float> features(LogMelExtractor::kOutputValues);
+    FeatureWindowMetadata metadata;
+    std::string error;
+    const auto result = session.wait_for_features(
+        features.data(), features.size(), std::chrono::seconds(2), &metadata, &error);
+    require(result == FeatureWaitResult::kReady, "Streaming frontend did not finalize: " + error);
+    require(metadata.kind == FeatureWindowKind::kNoSpeechFinal,
+            "Silence must produce an explicit no-speech final event");
+    session.close();
+}
+
+void test_streaming_session_has_bounded_input_queue() {
+    AudioFrontendConfig config;
+    StreamingFrontendSession session(config, MelFilterBank128(test_filter_bank()));
+    require(session.start(), "Streaming frontend did not start");
+    const std::vector<std::int16_t> oversized(
+        static_cast<std::size_t>(config.input_sample_rate_hz) *
+            (StreamingFrontendSession::kInputQueueDurationSeconds + 1),
+        0);
+    require(!session.push_pcm16(oversized.data(), oversized.size()),
+            "Streaming frontend accepted audio beyond its fixed queue capacity");
+    session.cancel();
+    session.close();
+}
+
 }  // namespace
 
 int main() {
@@ -322,6 +360,8 @@ int main() {
         {"mel filter validation", test_mel_filter_loader_rejects_wrong_size},
         {"UTF-8 transcript stabilization", test_transcript_stabilizer_is_utf8_safe},
         {"audio frontend", test_audio_frontend_emits_snapshotable_windows},
+        {"streaming no-speech final", test_streaming_session_queues_audio_and_finishes_no_speech},
+        {"streaming bounded queue", test_streaming_session_has_bounded_input_queue},
     };
 
     int failures = 0;

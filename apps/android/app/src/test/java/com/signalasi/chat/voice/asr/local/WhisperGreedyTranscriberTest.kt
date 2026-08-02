@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.nio.FloatBuffer
 import java.util.ArrayDeque
 import java.util.Base64
 
@@ -79,8 +80,8 @@ class WhisperGreedyTranscriberTest {
         val inputTokens = mutableListOf<Int>()
         val positions = mutableListOf<Int>()
 
-        override fun encode(melFeatures: FloatArray): Long {
-            assertEquals(384_000, melFeatures.size)
+        override fun encode(melFeatures: FloatBuffer): Long {
+            assertEquals(384_000, melFeatures.remaining())
             return 2_000_000L
         }
 
