@@ -26169,7 +26169,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         container.removeAllViews()
         container.addView(localModelMessageRow(getString(R.string.local_model_searching)))
         cloudExecutor.execute {
-            val result = runCatching { HuggingFaceModelSearch().search(query) }
+            val result = runCatching {
+                HuggingFaceModelSearch(
+                    preferChinaSource = LocalModelManager.preferChinaMirror(this)
+                ).search(query)
+            }
             handler.post {
                 if (generation != localModelSearchGeneration.get()) return@post
                 container.removeAllViews()
@@ -26184,7 +26188,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                     R.string.local_model_repository_downloads,
                                     model.author,
                                     compactCount(model.downloads)
-                                ),
+                                ) + " · ${model.source.displayName}",
                                 R.drawable.ic_local_model,
                                 getString(R.string.common_select)
                             ).apply {
@@ -26216,7 +26220,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         container.addView(localModelMessageRow(getString(R.string.local_model_artifact_loading)))
         featureContent.addView(container)
         cloudExecutor.execute {
-            val result = runCatching { HuggingFaceModelSearch().artifacts(model.repositoryId) }
+            val result = runCatching {
+                HuggingFaceModelSearch(
+                    preferChinaSource = LocalModelManager.preferChinaMirror(this)
+                ).artifacts(model)
+            }
             handler.post {
                 if (generation != localModelSearchGeneration.get()) return@post
                 container.removeAllViews()

@@ -22,7 +22,8 @@ class HuggingFaceModelSearchTest {
             ))
             val search = HuggingFaceModelSearch(
                 client = OkHttpClient(),
-                baseUrl = server.url("/").toString()
+                baseUrl = server.url("/").toString(),
+                preferChinaSource = false
             )
 
             val results = search.search("Qwen3", limit = 10)
@@ -32,6 +33,76 @@ class HuggingFaceModelSearchTest {
             assertEquals("/api/models", request.requestUrl?.encodedPath)
             assertEquals("Qwen3", request.requestUrl?.queryParameter("search"))
             assertEquals("gguf", request.requestUrl?.queryParameter("filter"))
+        }
+    }
+
+    @Test
+    fun unavailableHuggingFaceFallsBackToModelScope() {
+        MockWebServer().use { huggingFace ->
+            MockWebServer().use { modelScope ->
+                huggingFace.enqueue(MockResponse().setResponseCode(503))
+                modelScope.enqueue(MockResponse().setResponseCode(200).setBody(
+                    """
+                    {
+                      "success": true,
+                      "data": {
+                        "models": [
+                          {
+                            "id":"Qwen/Qwen3-8B-GGUF",
+                            "display_name":"Qwen3 8B GGUF",
+                            "tags":["library:gguf"],
+                            "downloads":278702,
+                            "likes":46,
+                            "gated":false
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent()
+                ))
+                val search = HuggingFaceModelSearch(
+                    client = OkHttpClient(),
+                    baseUrl = huggingFace.url("/").toString(),
+                    modelScopeBaseUrl = modelScope.url("/").toString(),
+                    preferChinaSource = false
+                )
+
+                val results = search.search("Qwen3", limit = 10)
+
+                assertEquals(1, results.size)
+                assertEquals(LocalModelHubSource.MODELSCOPE, results.single().source)
+                assertEquals("/api/models", huggingFace.takeRequest().requestUrl?.encodedPath)
+                val mirrorRequest = modelScope.takeRequest().requestUrl
+                assertEquals("/openapi/v1/models", mirrorRequest?.encodedPath)
+                assertEquals("Qwen3 GGUF", mirrorRequest?.queryParameter("search"))
+            }
+        }
+    }
+
+    @Test
+    fun chinaSourcePreferenceSkipsHealthyHuggingFaceWhenModelScopeHasResults() {
+        MockWebServer().use { huggingFace ->
+            MockWebServer().use { modelScope ->
+                modelScope.enqueue(MockResponse().setResponseCode(200).setBody(
+                    """
+                    {"success":true,"data":{"models":[
+                      {"id":"Qwen/Qwen3-4B-GGUF","tags":["custom_tag:gguf"],"gated":false}
+                    ]}}
+                    """.trimIndent()
+                ))
+                val search = HuggingFaceModelSearch(
+                    client = OkHttpClient(),
+                    baseUrl = huggingFace.url("/").toString(),
+                    modelScopeBaseUrl = modelScope.url("/").toString(),
+                    preferChinaSource = true
+                )
+
+                val results = search.search("Qwen3")
+
+                assertEquals(LocalModelHubSource.MODELSCOPE, results.single().source)
+                assertEquals(0, huggingFace.requestCount)
+                assertEquals(1, modelScope.requestCount)
+            }
         }
     }
 
@@ -56,6 +127,37 @@ class HuggingFaceModelSearchTest {
         assertEquals(listOf("Test-8B-Q4_K_M.gguf", "Test-8B-Q8_0.gguf"), artifacts.map { it.fileName })
         assertEquals(8.0, artifacts.first().parameterCountBillions, 0.0)
         assertEquals("Q4_K_M", artifacts.first().quantization)
+    }
+
+    @Test
+    fun modelScopeArtifactsPreserveVerifiedMetadataAndDomesticDownloadSource() {
+        val artifacts = HuggingFaceModelSearch.parseModelScopeArtifacts(
+            repositoryId = "Qwen/Qwen3-8B-GGUF",
+            encoded = """
+                {
+                  "Success": true,
+                  "Data": {
+                    "Files": [
+                      {
+                        "Path":"Qwen3-8B-Q4_K_M.gguf",
+                        "Size":5027783488,
+                        "Sha256":"${"d".repeat(64)}"
+                      },
+                      {"Path":"README.md","Size":100,"Sha256":"${"e".repeat(64)}"}
+                    ]
+                  }
+                }
+            """.trimIndent(),
+            visionCapable = false
+        )
+
+        val artifact = artifacts.single()
+        assertEquals(LocalModelHubSource.MODELSCOPE, artifact.source)
+        assertEquals("Q4_K_M", artifact.quantization)
+        assertEquals(5_027_783_488L, artifact.sizeBytes)
+        val profile = artifact.toRuntimeProfile()
+        assertEquals(LocalModelHubSource.MODELSCOPE, profile.sourceHub)
+        assertTrue(profile.sourceUrls(preferChinaMirror = false).first().startsWith("https://modelscope.cn/"))
     }
 
     @Test

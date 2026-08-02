@@ -46,7 +46,8 @@ data class LocalModelRuntimeProfile(
     val parameterCountBillions: Double = 0.0,
     val defaultNoThink: Boolean = false,
     val visionCapable: Boolean = false,
-    val sourceTrust: LocalModelSourceTrust = LocalModelSourceTrust.CURATED
+    val sourceTrust: LocalModelSourceTrust = LocalModelSourceTrust.CURATED,
+    val sourceHub: LocalModelHubSource = LocalModelHubSource.HUGGING_FACE
 ) {
     val downloadable: Boolean
         get() = repositoryId.matches(REPOSITORY_PATTERN) && validArtifactPath(fileName) &&
@@ -56,7 +57,12 @@ data class LocalModelRuntimeProfile(
         if (!downloadable) return emptyList()
         val primary = modelUrl("https://huggingface.co/")
         val mirror = modelUrl("https://hf-mirror.com/")
-        return if (preferChinaMirror) listOf(mirror, primary) else listOf(primary, mirror)
+        val modelScope = modelScopeUrl()
+        return when {
+            sourceHub == LocalModelHubSource.MODELSCOPE -> listOf(modelScope, mirror, primary)
+            preferChinaMirror -> listOf(mirror, modelScope, primary)
+            else -> listOf(primary, modelScope, mirror)
+        }
     }
 
     private fun modelUrl(baseUrl: String): String = baseUrl.toHttpUrl().newBuilder()
@@ -64,6 +70,15 @@ data class LocalModelRuntimeProfile(
         .addPathSegment("resolve")
         .addPathSegment("main")
         .addPathSegments(fileName)
+        .build()
+        .toString()
+
+    private fun modelScopeUrl(): String = "https://modelscope.cn/".toHttpUrl().newBuilder()
+        .addPathSegments("api/v1/models")
+        .addPathSegments(repositoryId)
+        .addPathSegment("repo")
+        .addQueryParameter("Revision", "master")
+        .addQueryParameter("FilePath", fileName)
         .build()
         .toString()
 
@@ -82,6 +97,11 @@ data class LocalModelRuntimeProfile(
 enum class LocalModelSourceTrust {
     CURATED,
     HUB_VERIFIED
+}
+
+enum class LocalModelHubSource(val displayName: String) {
+    HUGGING_FACE("Hugging Face"),
+    MODELSCOPE("ModelScope")
 }
 
 data class LocalModelRuntimeRequest(

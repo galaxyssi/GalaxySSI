@@ -266,10 +266,10 @@
     <string name="local_model_metered_title">Use mobile data?</string>
     <string name="local_model_metered_message">%1$s is %2$s. Downloading over a metered network may incur data charges.</string>
     <string name="local_model_search_title">Search models</string>
-    <string name="local_model_search_subtitle">Find downloadable GGUF models on Hugging Face</string>
+    <string name="local_model_search_subtitle">Find downloadable GGUF models across trusted model hubs</string>
     <string name="local_model_search_hint">Model name or repository</string>
     <string name="local_model_search_action">Search</string>
-    <string name="local_model_searching">Searching Hugging Face…</string>
+    <string name="local_model_searching">Searching model hubs…</string>
     <string name="local_model_search_empty">No downloadable GGUF models found</string>
     <string name="local_model_search_error">Model search failed: %1$s</string>
     <string name="local_model_repository_downloads">%1$s · %2$s downloads</string>
