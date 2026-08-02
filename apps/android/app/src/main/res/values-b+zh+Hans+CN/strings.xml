@@ -235,10 +235,10 @@
     <string name="local_model_metered_title">使用移动数据？</string>
     <string name="local_model_metered_message">%1$s 大小为 %2$s，使用计费网络下载可能产生流量费用。</string>
     <string name="local_model_search_title">搜索模型</string>
-    <string name="local_model_search_subtitle">从 Hugging Face 查找可下载的 GGUF 模型</string>
+    <string name="local_model_search_subtitle">从可信模型平台查找可下载的 GGUF 模型</string>
     <string name="local_model_search_hint">模型名称或仓库</string>
     <string name="local_model_search_action">搜索</string>
-    <string name="local_model_searching">正在搜索 Hugging Face…</string>
+    <string name="local_model_searching">正在搜索模型平台…</string>
     <string name="local_model_search_empty">没有找到可下载的 GGUF 模型</string>
     <string name="local_model_search_error">模型搜索失败：%1$s</string>
     <string name="local_model_repository_downloads">%1$s · %2$s 次下载</string>
