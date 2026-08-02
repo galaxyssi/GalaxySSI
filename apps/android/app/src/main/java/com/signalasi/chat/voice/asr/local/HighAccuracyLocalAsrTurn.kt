@@ -17,6 +17,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 data class HighAccuracyAsrResult(
     val text: String,
@@ -138,8 +139,15 @@ class HighAccuracyLocalAsrTurn internal constructor(
     private val released = AtomicBoolean(false)
     private val pushLock = Any()
     private val pending = ArrayDeque<PendingFrame>()
+    private val assembler = WhisperTranscriptAssembler()
     private val finalResult = CompletableDeferred<HighAccuracyAsrResult>()
+    private val visibleRevision = AtomicLong(0L)
+    private val finishRequested = AtomicBoolean(false)
     private var pendingSamples = 0
+    private var accumulatedDurationMs = 0L
+    private var accumulatedInferenceMs = 0L
+    private var restartPending = false
+    private var stopAfterListening = false
     private val eventJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
         engine.events.collect(::consume)
     }
@@ -159,7 +167,10 @@ class HighAccuracyLocalAsrTurn internal constructor(
                     flushPendingLocked()
                     engine.pushPcm(frame.pcm16, frame.sampleCount)
                 }
-                is LocalAsrState.Starting -> {
+                is LocalAsrState.Starting,
+                is LocalAsrState.Stopping,
+                is LocalAsrState.Ready -> {
+                    if (finishRequested.get()) return false
                     retainStartupFrameLocked(frame)
                     true
                 }
@@ -170,7 +181,34 @@ class HighAccuracyLocalAsrTurn internal constructor(
 
     suspend fun finish(): HighAccuracyAsrResult {
         check(started.get() && !released.get()) { "High accuracy ASR turn is not active" }
-        engine.stop()
+        finishRequested.set(true)
+        val action = synchronized(pushLock) {
+            restartPending = false
+            when (engine.state.value) {
+                is LocalAsrState.Listening -> {
+                    flushPendingLocked()
+                    FinishAction.STOP
+                }
+                is LocalAsrState.Starting -> {
+                    stopAfterListening = true
+                    FinishAction.WAIT
+                }
+                is LocalAsrState.Ready -> if (pending.isEmpty()) {
+                    completeFinalLocked()
+                    FinishAction.WAIT
+                } else {
+                    stopAfterListening = true
+                    FinishAction.START
+                }
+                is LocalAsrState.Stopping -> FinishAction.WAIT
+                else -> FinishAction.STOP
+            }
+        }
+        when (action) {
+            FinishAction.START -> engine.start(config)
+            FinishAction.STOP -> engine.stop()
+            FinishAction.WAIT -> Unit
+        }
         return try {
             withTimeout(config.finalizationTimeoutMs + FINAL_TIMEOUT_GRACE_MS) { finalResult.await() }
         } catch (error: TimeoutCancellationException) {
@@ -194,17 +232,36 @@ class HighAccuracyLocalAsrTurn internal constructor(
     private fun consume(event: AsrEvent) {
         if (!started.get() || released.get()) return
         when (event) {
-            is AsrEvent.StateChanged -> if (event.state is LocalAsrState.Listening) {
-                synchronized(pushLock) { flushPendingLocked() }
+            is AsrEvent.StateChanged -> consumeState(event.state)
+            is AsrEvent.Partial -> {
+                val visible = synchronized(pushLock) {
+                    event.copy(
+                        stableText = assembler.preview(event.stableText),
+                        revision = visibleRevision.incrementAndGet()
+                    )
+                }
+                onPartial(visible)
             }
-            is AsrEvent.Partial -> onPartial(event)
             is AsrEvent.Final -> {
-                finalResult.complete(HighAccuracyAsrResult(
-                    text = event.text,
-                    durationMs = event.durationMs,
-                    inferenceMs = event.inferenceMs,
-                    modelProfileId = modelProfileId
-                ))
+                val visible = synchronized(pushLock) {
+                    assembler.append(event.text)
+                    accumulatedDurationMs += event.durationMs
+                    accumulatedInferenceMs += event.inferenceMs
+                    if (finishRequested.get()) {
+                        completeFinalLocked()
+                        null
+                    } else {
+                        restartPending = true
+                        AsrEvent.Partial(
+                            stableText = assembler.value(),
+                            unstableText = "",
+                            revision = visibleRevision.incrementAndGet(),
+                            audioDurationMs = accumulatedDurationMs,
+                            inferenceMs = accumulatedInferenceMs
+                        )
+                    }
+                }
+                visible?.let(onPartial)
             }
             is AsrEvent.Error -> if (!finalResult.isCompleted) {
                 finalResult.completeExceptionally(
@@ -213,6 +270,36 @@ class HighAccuracyLocalAsrTurn internal constructor(
             }
             is AsrEvent.Diagnostics -> Unit
         }
+    }
+
+    private fun consumeState(state: LocalAsrState) {
+        var start = false
+        var stop = false
+        synchronized(pushLock) {
+            when (state) {
+                is LocalAsrState.Ready -> {
+                    if (!finishRequested.get() && restartPending) {
+                        restartPending = false
+                        start = true
+                    } else if (finishRequested.get() && pending.isEmpty()) {
+                        completeFinalLocked()
+                    } else if (finishRequested.get() && pending.isNotEmpty()) {
+                        stopAfterListening = true
+                        start = true
+                    }
+                }
+                is LocalAsrState.Listening -> {
+                    flushPendingLocked()
+                    if (finishRequested.get() && stopAfterListening) {
+                        stopAfterListening = false
+                        stop = true
+                    }
+                }
+                else -> Unit
+            }
+        }
+        if (start) engine.start(config)
+        if (stop) engine.stop()
     }
 
     private fun retainStartupFrameLocked(frame: DirectPcmFramePacket) {
@@ -241,12 +328,24 @@ class HighAccuracyLocalAsrTurn internal constructor(
         pendingSamples = 0
     }
 
+    private fun completeFinalLocked() {
+        if (!finalResult.isCompleted) {
+            finalResult.complete(HighAccuracyAsrResult(
+                text = assembler.value(),
+                durationMs = accumulatedDurationMs,
+                inferenceMs = accumulatedInferenceMs,
+                modelProfileId = modelProfileId
+            ))
+        }
+    }
+
     private fun release(cancelEngine: Boolean) {
         if (!released.compareAndSet(false, true)) return
         if (cancelEngine) engine.cancel()
         synchronized(pushLock) {
             pending.clear()
             pendingSamples = 0
+            assembler.reset()
         }
         eventJob.cancel()
         onReleased(this)
@@ -256,5 +355,11 @@ class HighAccuracyLocalAsrTurn internal constructor(
         const val PCM16_BYTES_PER_SAMPLE = 2
         const val STARTUP_AUDIO_BUFFER_MS = 500
         const val FINAL_TIMEOUT_GRACE_MS = 750L
+    }
+
+    private enum class FinishAction {
+        START,
+        STOP,
+        WAIT
     }
 }

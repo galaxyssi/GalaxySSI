@@ -71,6 +71,34 @@ class HighAccuracyLocalAsrTurnTest {
         controller.close()
     }
 
+    @Test
+    fun vadFinalCommitsSegmentRestartsRuntimeAndStitchesNextSegment() = runBlocking {
+        val engine = FakeEngine()
+        engine.stopText = "lights in the kitchen"
+        val partials = mutableListOf<AsrEvent.Partial>()
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine }
+        )
+        assertTrue(controller.prepareNow())
+        val turn = requireNotNull(
+            controller.startTurnIfReady(AsrConfig(), "large_v3_turbo", partials::add)
+        )
+
+        engine.segmentFinal("turn on the lights", 1_000L, 100L)
+        assertEquals(2, engine.startCalls)
+        engine.partial("lights", " in the kitchen")
+        assertEquals("turn on the lights", partials.last().stableText)
+        assertEquals(" in the kitchen", partials.last().unstableText)
+
+        val result = turn.finish()
+        assertEquals("turn on the lights in the kitchen", result.text)
+        assertEquals(2_000L, result.durationMs)
+        assertEquals(112L, result.inferenceMs)
+        controller.close()
+    }
+
     private fun frame(sequence: Long, samples: ShortArray): DirectPcmFramePacket {
         val bytes = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         samples.forEach(bytes::putShort)
@@ -86,9 +114,11 @@ class HighAccuracyLocalAsrTurnTest {
         private val mutableState = MutableStateFlow<LocalAsrState>(LocalAsrState.Unprepared)
         private val mutableEvents = MutableSharedFlow<AsrEvent>(extraBufferCapacity = 32)
         var prepareCalls = 0
+        var startCalls = 0
+        var stopText = "hello world"
         val pushed = mutableListOf<ShortArray>()
         private var config = AsrConfig()
-        private var token = 1L
+        private var token = 0L
 
         override val state: StateFlow<LocalAsrState> = mutableState.asStateFlow()
         override val events: Flow<AsrEvent> = mutableEvents.asSharedFlow()
@@ -100,6 +130,8 @@ class HighAccuracyLocalAsrTurnTest {
 
         override fun start(config: AsrConfig) {
             this.config = config
+            token += 1L
+            startCalls += 1
             transition(LocalAsrState.Starting(token, config))
             if (autoListen) listen()
         }
@@ -120,7 +152,12 @@ class HighAccuracyLocalAsrTurnTest {
 
         override fun stop() {
             transition(LocalAsrState.Stopping(token, config))
-            mutableEvents.tryEmit(AsrEvent.Final("hello world", 30L, 12L))
+            mutableEvents.tryEmit(AsrEvent.Final(stopText, 1_000L, 12L))
+            transition(LocalAsrState.Ready("model", 1L))
+        }
+
+        fun segmentFinal(text: String, durationMs: Long, inferenceMs: Long) {
+            mutableEvents.tryEmit(AsrEvent.Final(text, durationMs, inferenceMs))
             transition(LocalAsrState.Ready("model", 1L))
         }
 
