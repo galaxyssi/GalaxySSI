@@ -1341,7 +1341,7 @@
     <string name="voice_asr_model_bundled">Included with the app</string>
     <string name="voice_asr_model_download_size">Download required</string>
     <string name="voice_asr_model_profile_detail">%1$s · %2$s</string>
-    <string name="voice_asr_model_installed_uncertified">Installed · Benchmark required before real-time use</string>
+    <string name="voice_asr_model_installed_uncertified">Installed · Ready to use</string>
     <string name="voice_asr_model_verifying">Verifying size and SHA-256</string>
     <string name="voice_asr_model_installing">Installing verified model</string>
     <string name="voice_asr_model_progress">%1$d%% downloaded</string>
@@ -1386,6 +1386,7 @@
     <string name="voice_asr_model_benchmark_progress">%1$s · %2$d%%</string>
     <string name="voice_asr_model_benchmark_complete">%1$s certification completed</string>
     <string name="voice_asr_model_benchmark_failed">Benchmark could not finish: %1$s</string>
+    <string name="voice_asr_model_benchmark_deferred">The device is warm. The model remains ready to use; try the optional performance test later.</string>
     <string name="voice_asr_model_benchmark_details_title">%1$s device certification</string>
     <string name="voice_asr_model_benchmark_metrics">RTF p50 / p95: %1$.2f / %2$.2f\nPeak PSS: %3$s\nBest threads: %4$d\nThermal status: %5$d\nCancellation p95: %6$d ms</string>
     <string name="voice_asr_model_benchmark_latency_metrics">Cold / hot load p95: %1$d / %2$d ms\nFirst partial / final tail p95: %3$d / %4$d ms</string>
@@ -1393,10 +1394,11 @@
     <string name="voice_asr_model_benchmark_recommendation">Recommended: %1$s</string>
     <string name="voice_asr_model_benchmark_failure_reason">Reason: %1$s</string>
     <string name="voice_asr_model_benchmark_stale">Previous result is stale and cannot control the current model build.</string>
-    <string name="voice_asr_model_use_and_test">Use and test</string>
     <string name="voice_asr_benchmark_stage_verifying">Verifying model</string>
     <string name="voice_asr_benchmark_stage_device">Checking device</string>
     <string name="voice_asr_benchmark_stage_threads">Searching threads</string>
+    <string name="voice_asr_benchmark_stage_loading">Loading model</string>
+    <string name="voice_asr_benchmark_stage_decoding">Running test transcription</string>
     <string name="voice_asr_benchmark_stage_stability">Testing stability</string>
     <string name="voice_asr_benchmark_stage_cancellation">Testing cancellation</string>
     <string name="voice_asr_benchmark_stage_certifying">Creating certification</string>

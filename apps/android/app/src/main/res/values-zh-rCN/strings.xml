@@ -1106,7 +1106,7 @@
     <string name="voice_asr_model_bundled">已随 App 内置</string>
     <string name="voice_asr_model_download_size">需要下载</string>
     <string name="voice_asr_model_profile_detail">%1$s · %2$s</string>
-    <string name="voice_asr_model_installed_uncertified">已安装 · 实时使用前需要基准测试</string>
+    <string name="voice_asr_model_installed_uncertified">已安装 · 可直接使用</string>
     <string name="voice_asr_model_verifying">正在校验大小和 SHA-256</string>
     <string name="voice_asr_model_installing">正在原子安装已验证模型</string>
     <string name="voice_asr_model_progress">已下载 %1$d%%</string>
@@ -1151,6 +1151,7 @@
     <string name="voice_asr_model_benchmark_progress">%1$s · %2$d%%</string>
     <string name="voice_asr_model_benchmark_complete">%1$s 设备认证完成</string>
     <string name="voice_asr_model_benchmark_failed">测试未能完成：%1$s</string>
+    <string name="voice_asr_model_benchmark_deferred">设备温度较高。模型仍可正常使用，请稍后再进行可选性能测试。</string>
     <string name="voice_asr_model_benchmark_details_title">%1$s 设备认证</string>
     <string name="voice_asr_model_benchmark_metrics">RTF p50 / p95：%1$.2f / %2$.2f\n峰值 PSS：%3$s\n最佳线程：%4$d\n最高温控状态：%5$d\n取消延迟 p95：%6$d ms</string>
     <string name="voice_asr_model_benchmark_latency_metrics">冷 / 热加载 p95：%1$d / %2$d ms\n首个 Partial / Final 尾延迟 p95：%3$d / %4$d ms</string>
@@ -1158,10 +1159,11 @@
     <string name="voice_asr_model_benchmark_recommendation">建议：%1$s</string>
     <string name="voice_asr_model_benchmark_failure_reason">原因：%1$s</string>
     <string name="voice_asr_model_benchmark_stale">上次结果已失效，不能用于当前模型或运行库。</string>
-    <string name="voice_asr_model_use_and_test">使用并测试</string>
     <string name="voice_asr_benchmark_stage_verifying">校验模型</string>
     <string name="voice_asr_benchmark_stage_device">检查设备</string>
     <string name="voice_asr_benchmark_stage_threads">搜索线程</string>
+    <string name="voice_asr_benchmark_stage_loading">正在加载模型</string>
+    <string name="voice_asr_benchmark_stage_decoding">正在运行测试转写</string>
     <string name="voice_asr_benchmark_stage_stability">测试稳定性</string>
     <string name="voice_asr_benchmark_stage_cancellation">测试取消响应</string>
     <string name="voice_asr_benchmark_stage_certifying">生成设备认证</string>

@@ -122,24 +122,39 @@ class WhisperRuntimePolicyEngineTest {
     }
 
     @Test
-    fun manualModeCannotBypassRemoteOrUnsupportedCertification() {
+    fun manualModeCanRetryRemoteRecommendedModelButNeverUnsupportedNativeModel() {
         val tiny = WhisperModelCatalog.require("tiny")
-        listOf(
-            WhisperCertificationLevel.REMOTE_RECOMMENDED,
-            WhisperCertificationLevel.UNSUPPORTED
-        ).forEach { level ->
-            val decision = WhisperRuntimePolicyEngine.decide(
-                WhisperRuntimePolicyInput(
-                    userMode = WhisperUserVoiceMode.MANUAL,
-                    selectedProfileId = tiny.id,
-                    candidates = listOf(candidate(tiny, level, WhisperExecutionMode.REMOTE_NODE, 2.0)),
-                    environment = environment()
-                )
+        val retry = WhisperRuntimePolicyEngine.decide(
+            WhisperRuntimePolicyInput(
+                userMode = WhisperUserVoiceMode.MANUAL,
+                selectedProfileId = tiny.id,
+                candidates = listOf(candidate(
+                    tiny,
+                    WhisperCertificationLevel.REMOTE_RECOMMENDED,
+                    WhisperExecutionMode.REMOTE_NODE,
+                    2.0
+                )),
+                environment = environment()
             )
+        )
+        val unsupported = WhisperRuntimePolicyEngine.decide(
+            WhisperRuntimePolicyInput(
+                userMode = WhisperUserVoiceMode.MANUAL,
+                selectedProfileId = tiny.id,
+                candidates = listOf(candidate(
+                    tiny,
+                    WhisperCertificationLevel.UNSUPPORTED,
+                    WhisperExecutionMode.REMOTE_NODE,
+                    2.0
+                )),
+                environment = environment()
+            )
+        )
 
-            assertEquals(WhisperProviderChoice.REMOTE, decision.provider)
-            assertNull(decision.fastProfileId)
-        }
+        assertEquals(WhisperProviderChoice.LOCAL, retry.provider)
+        assertEquals(WhisperExecutionMode.FINAL_ONLY, retry.fastMode)
+        assertEquals(WhisperProviderChoice.REMOTE, unsupported.provider)
+        assertNull(unsupported.fastProfileId)
     }
 
     @Test

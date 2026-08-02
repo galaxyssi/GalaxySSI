@@ -6,6 +6,7 @@ import android.os.Debug
 import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.signalasi.chat.VoiceAssistantSettings
 import com.signalasi.chat.WhisperModelManager
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.model.WhisperExecutionMode
@@ -25,6 +26,38 @@ import kotlin.math.sin
 
 @RunWith(AndroidJUnit4::class)
 class LocalWhisperRuntimeInstrumentedTest {
+    @Test
+    fun selectedDownloadedProfileLoadsAndCompletesFinalDecode() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val selected = WhisperModelCatalog.require(VoiceAssistantSettings.get(context).asrModel)
+        assertTrue("Selected model ${selected.id} is not installed", WhisperModelManager.isAvailable(context, selected))
+
+        val runtime = DefaultLocalWhisperRuntime(context)
+        try {
+            runtime.load(selected, WhisperLoadOptions(threadCount = 2, warmUp = false))
+            runtime.createSession(
+                LocalWhisperSessionConfig(
+                    language = "en",
+                    singleSegment = true,
+                    mode = WhisperExecutionMode.FINAL_ONLY
+                )
+            ).use { session ->
+                val result = withTimeout(120_000L) {
+                    session.decode(
+                        WhisperDecodeRequest(
+                            pcm16 = ShortArray(16_000),
+                            mode = WhisperExecutionMode.FINAL_ONLY
+                        )
+                    )
+                }
+                assertEquals("${selected.id} Final failed: ${result.message}", NativeWhisperCode.OK, result.code)
+            }
+        } finally {
+            runtime.close()
+        }
+        assertEquals(0 to 0, runtime.activeNativeHandles())
+    }
+
     @Test
     fun verifiedTinyCreatesSessionDecodesPcmAndReleasesHandles() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()

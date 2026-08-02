@@ -96,10 +96,11 @@ object WhisperRuntimePolicyEngine {
                     .thenBy { it.certification?.warmRtfP95 ?: Double.MAX_VALUE }
             )
         val selected = input.selectedProfileId?.let { id -> usable.firstOrNull { it.profile.id == id } }
-        val uncertifiedLocalFallbacks = input.candidates
+        val conservativeLocalFallbacks = input.candidates
             .filter { candidate ->
                 candidate.installed &&
-                    candidate.certification == null &&
+                    (candidate.certification == null ||
+                        candidate.certification.level == WhisperCertificationLevel.REMOTE_RECOMMENDED) &&
                     memoryAllowed(candidate, environment, reasons) &&
                     thermalAllowed(candidate, environment, reasons)
             }
@@ -129,8 +130,8 @@ object WhisperRuntimePolicyEngine {
                     if (remote.provider != WhisperProviderChoice.UNAVAILABLE) {
                         remote
                     } else {
-                        uncertifiedLocalFallbacks.firstOrNull()?.let { fallback ->
-                            reasons += "${fallback.profile.displayName} is used in conservative final-only mode until benchmarking completes"
+                        conservativeLocalFallbacks.firstOrNull()?.let { fallback ->
+                            reasons += "${fallback.profile.displayName} is used in conservative final-only mode"
                             uncertifiedLocalDecision(fallback, reasons)
                         } ?: remote
                     }
@@ -153,7 +154,7 @@ object WhisperRuntimePolicyEngine {
             WhisperUserVoiceMode.PRIVACY -> {
                 val fast = realtime.firstOrNull()
                 if (fast == null) {
-                    uncertifiedLocalFallbacks.firstOrNull()?.let { fallback ->
+                    conservativeLocalFallbacks.firstOrNull()?.let { fallback ->
                         reasons += "Privacy mode uses ${fallback.profile.displayName} in conservative final-only mode"
                         uncertifiedLocalDecision(fallback, reasons)
                     } ?: run {
@@ -188,10 +189,10 @@ object WhisperRuntimePolicyEngine {
 
             WhisperUserVoiceMode.MANUAL -> {
                 if (selected == null) {
-                    uncertifiedLocalFallbacks
+                    conservativeLocalFallbacks
                         .firstOrNull { it.profile.id == input.selectedProfileId }
                         ?.let { fallback ->
-                            reasons += "The selected model is used in conservative final-only mode until benchmarking completes"
+                            reasons += "The selected model is used in conservative final-only mode"
                             uncertifiedLocalDecision(fallback, reasons)
                         }
                         ?: run {
