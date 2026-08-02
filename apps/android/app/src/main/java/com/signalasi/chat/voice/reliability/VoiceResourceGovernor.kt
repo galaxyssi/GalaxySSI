@@ -44,6 +44,7 @@ data class VoiceWorkloadProfile(
     val feature: VoicePipelineFeature,
     val profileId: String = "",
     val estimatedPeakPssBytes: Long = 0L,
+    val estimatedIncrementalMemoryBytes: Long? = null,
     val certifiedPeakPssBytes: Long = 0L,
     val minimumSafetyMarginBytes: Long = DEFAULT_MINIMUM_SAFETY_MARGIN_BYTES,
     val localInference: Boolean = false,
@@ -79,9 +80,13 @@ class VoiceMemoryGate {
             workload.minimumSafetyMarginBytes,
             (snapshot.totalMemoryBytes.coerceAtLeast(0L) / 10L).coerceAtMost(MAX_DYNAMIC_SAFETY_MARGIN_BYTES)
         )
-        val measuredPeak = workload.certifiedPeakPssBytes.takeIf { it > 0L }
-            ?: workload.estimatedPeakPssBytes.coerceAtLeast(snapshot.currentPssBytes)
-        val incrementalPeak = (measuredPeak - snapshot.currentPssBytes).coerceAtLeast(0L)
+        val incrementalPeak = workload.estimatedIncrementalMemoryBytes
+            ?.coerceAtLeast(0L)
+            ?: run {
+                val measuredPeak = workload.certifiedPeakPssBytes.takeIf { it > 0L }
+                    ?: workload.estimatedPeakPssBytes.coerceAtLeast(snapshot.currentPssBytes)
+                (measuredPeak - snapshot.currentPssBytes).coerceAtLeast(0L)
+            }
         val required = saturatedAdd(
             saturatedAdd(incrementalPeak, safetyMargin),
             snapshot.otherLocalModelBytes.coerceAtLeast(0L)

@@ -125,7 +125,8 @@ object WhisperBenchmarkManager {
                     WhisperRuntimeCandidate(
                         profile = profile,
                         installed = WhisperModelManager.isAvailable(appContext, profile),
-                        certification = current(appContext, profile)?.certification
+                        certification = current(appContext, profile)?.certification,
+                        loaded = WhisperModelManager.isLoaded(profile)
                     )
                 },
                 environment = WhisperRuntimeEnvironment(

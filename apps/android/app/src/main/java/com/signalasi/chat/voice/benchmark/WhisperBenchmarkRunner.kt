@@ -11,6 +11,7 @@ import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
 import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
 import com.signalasi.chat.voice.model.WhisperExecutionMode
+import com.signalasi.chat.voice.model.WhisperMemoryAdmissionPolicy
 import com.signalasi.chat.voice.model.WhisperModelProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -511,7 +512,13 @@ class WhisperBenchmarkRunner(
         system: WhisperBenchmarkSystemSnapshot
     ): String? = when {
         system.systemLowMemory -> "Android reported system-wide low memory"
-        system.availableMemoryBytes < profile.minAvailableRamBytes + MEMORY_SAFETY_MARGIN_BYTES ->
+        !WhisperMemoryAdmissionPolicy.evaluate(
+            profile = profile,
+            availableMemoryBytes = system.availableMemoryBytes,
+            currentPssBytes = system.pssBytes,
+            lowMemory = system.systemLowMemory,
+            safetyMarginBytes = MEMORY_SAFETY_MARGIN_BYTES
+        ).allowed ->
             "The model does not have enough memory headroom on this device"
         system.thermalStatus >= THERMAL_SEVERE -> "The device is too hot to certify this model"
         else -> null

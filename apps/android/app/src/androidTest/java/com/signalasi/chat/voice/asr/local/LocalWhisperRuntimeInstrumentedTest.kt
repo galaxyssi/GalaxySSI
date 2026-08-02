@@ -10,6 +10,7 @@ import com.signalasi.chat.WhisperModelManager
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperModelCatalog
+import com.signalasi.chat.voice.model.WhisperMemoryAdmissionPolicy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -122,7 +123,12 @@ class LocalWhisperRuntimeInstrumentedTest {
         context.getSystemService(ActivityManager::class.java).getMemoryInfo(memoryInfo)
         val eligible = OPTIONAL_PROFILE_IDS.map(WhisperModelCatalog::require).filter { profile ->
             WhisperModelManager.isAvailable(context, profile) &&
-                memoryInfo.availMem >= profile.minAvailableRamBytes
+                WhisperMemoryAdmissionPolicy.evaluate(
+                    profile = profile,
+                    availableMemoryBytes = memoryInfo.availMem,
+                    currentPssBytes = Debug.getPss().toLong() * 1_024L,
+                    lowMemory = memoryInfo.lowMemory
+                ).allowed
         }
         Log.i(TAG, "Eligible optional Whisper Final profiles=${eligible.map { it.id }} availMem=${memoryInfo.availMem}")
 

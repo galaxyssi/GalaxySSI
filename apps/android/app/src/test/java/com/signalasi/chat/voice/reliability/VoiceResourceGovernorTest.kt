@@ -30,6 +30,19 @@ class VoiceResourceGovernorTest {
     }
 
     @Test
+    fun `incremental model footprint does not subtract memory already used by other models`() {
+        val decision = governor.evaluate(
+            snapshot(availableMb = 3_500, currentPssMb = 2_500),
+            localWorkload(certifiedPeakMb = 0).copy(
+                estimatedIncrementalMemoryBytes = 3_000L.mb
+            )
+        )
+
+        assertFalse(decision.allowed)
+        assertTrue(VoiceResourceReason.INSUFFICIENT_MEMORY_HEADROOM in decision.reasons)
+    }
+
+    @Test
     fun `low memory signal is a hard gate even with nominal bytes`() {
         val decision = governor.evaluate(
             snapshot(availableMb = 2_000, currentPssMb = 200).copy(lowMemory = true),

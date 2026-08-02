@@ -130,7 +130,7 @@ object WhisperModelCatalog {
             sha = "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
             quantization = WhisperQuantization.F16,
             mode = WhisperExecutionMode.SECOND_PASS,
-            ram = 5_000L * MIB,
+            ram = 0L,
             reserve = 4_000L * MIB,
             partialMs = 7_500L,
             windowMs = 20_000L,
