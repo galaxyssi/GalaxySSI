@@ -16,11 +16,14 @@ import org.junit.Test
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
+import kotlin.concurrent.thread
 
 class LargeTurboQnnModelLifecycleTest {
     private lateinit var root: File
@@ -166,6 +169,44 @@ class LargeTurboQnnModelLifecycleTest {
             downloader.download(manifest, QnnModelDownloadNetworkPolicy.ANY_VALIDATED_NETWORK)
         }
         assertTrue(error.message.orEmpty().contains("changed"))
+    }
+
+    @Test
+    fun `foreground pause cancels a blocked network read without losing resumable data`() {
+        val archiveBytes = ByteArray(64 * 1024) { index -> (index % 251).toByte() }
+        val supportBytes = ByteArray(128) { 3 }
+        val manifest = downloadManifest(archiveBytes, supportBytes)
+        val downloader = LargeTurboQnnModelDownloader(
+            root = File(root, "cancel-downloads"),
+            networkGate = QnnModelDownloadNetworkGate { true },
+            sourceUrlResolver = loopbackResolver(manifest),
+            allowInsecureLoopbackForTests = true
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("ETag", "\"archive-v1\"")
+                .setBody(Buffer().write(archiveBytes))
+                .throttleBody(1, 5, TimeUnit.SECONDS)
+        )
+        val failure = AtomicReference<Throwable?>()
+        val worker = thread(name = "qnn-download-cancel-test") {
+            failure.set(runCatching {
+                downloader.download(manifest, QnnModelDownloadNetworkPolicy.ANY_VALIDATED_NETWORK)
+            }.exceptionOrNull())
+        }
+
+        assertTrue(server.takeRequest(2, TimeUnit.SECONDS) != null)
+        Thread.sleep(150L)
+        downloader.cancelActiveDownload()
+        worker.join(2_000L)
+
+        assertFalse(worker.isAlive)
+        assertTrue(failure.get() != null)
+        assertTrue(
+            File(root, "cancel-downloads").listFiles().orEmpty()
+                .any { it.name.endsWith(".partial") && it.length() > 0L }
+        )
     }
 
     @Test

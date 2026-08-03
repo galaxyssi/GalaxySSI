@@ -71,7 +71,9 @@ object LargeTurboQnnModelManager {
     private val initialized = AtomicBoolean(false)
     private val cancellation = AtomicBoolean(false)
     private val stateLock = Any()
+    @Volatile private var applicationContext: Context? = null
     private var job: Future<*>? = null
+    private var activeDownloader: LargeTurboQnnModelDownloader? = null
     private var currentState = LargeTurboQnnModelState(LargeTurboQnnModelStatus.CHECKING)
 
     fun sizeLabel(): String {
@@ -80,7 +82,9 @@ object LargeTurboQnnModelManager {
     }
 
     fun state(context: Context, onChanged: () -> Unit = {}): LargeTurboQnnModelState {
-        ensureInitialized(context.applicationContext, onChanged)
+        val application = context.applicationContext
+        bindContext(application)
+        ensureInitialized(application, onChanged)
         return synchronized(stateLock) { currentState }
     }
 
@@ -94,6 +98,7 @@ object LargeTurboQnnModelManager {
     }
 
     fun deviceDecision(context: Context): QnnAsrDeviceDecision {
+        bindContext(context.applicationContext)
         val modelState = synchronized(stateLock) {
             when (currentState.status) {
                 LargeTurboQnnModelStatus.READY -> QnnContextModelState.INSTALLED
@@ -111,12 +116,24 @@ object LargeTurboQnnModelManager {
         networkPolicy: QnnModelDownloadNetworkPolicy,
         onChanged: () -> Unit = {}
     ) {
+        bindContext(context.applicationContext)
+        LargeTurboQnnModelDownloadService.start(context.applicationContext, networkPolicy)
+        notifyChanged(onChanged)
+    }
+
+    internal fun enqueueInProcess(
+        context: Context,
+        networkPolicy: QnnModelDownloadNetworkPolicy,
+        onChanged: () -> Unit = {}
+    ) {
         val application = context.applicationContext
+        bindContext(application)
         synchronized(stateLock) {
             if (job?.isDone == false) return
             cancellation.set(false)
             currentState = LargeTurboQnnModelState(LargeTurboQnnModelStatus.DOWNLOADING)
         }
+        LargeTurboQnnModelStateStore(application).write(snapshot())
         notifyChanged(onChanged)
         val runGeneration = generation.incrementAndGet()
         job = executor.submit {
@@ -135,6 +152,7 @@ object LargeTurboQnnModelManager {
                     root = store.downloadDirectory(),
                     networkGate = androidNetworkGate(application)
                 )
+                synchronized(stateLock) { activeDownloader = downloader }
                 var lastProgress = -1
                 var resumed = false
                 val downloaded = downloader.download(
@@ -212,23 +230,36 @@ object LargeTurboQnnModelManager {
                 }
             } finally {
                 synchronized(stateLock) {
-                    if (generation.get() == runGeneration) job = null
+                    if (generation.get() == runGeneration) {
+                        job = null
+                        activeDownloader = null
+                    }
                 }
             }
         }
     }
 
-    fun pause(onChanged: () -> Unit = {}) {
+    fun pause(context: Context, onChanged: () -> Unit = {}) {
+        bindContext(context.applicationContext)
+        LargeTurboQnnModelDownloadService.pause(context.applicationContext)
+        notifyChanged(onChanged)
+    }
+
+    internal fun pauseInProcess(onChanged: () -> Unit = {}) {
         cancellation.set(true)
-        synchronized(stateLock) {
+        val downloader = synchronized(stateLock) {
             job?.cancel(true)
             job = null
             currentState = currentState.copy(status = LargeTurboQnnModelStatus.PAUSED)
+            activeDownloader.also { activeDownloader = null }
         }
+        downloader?.cancelActiveDownload()
+        applicationContext?.let { LargeTurboQnnModelStateStore(it).write(snapshot()) }
         notifyChanged(onChanged)
     }
 
     fun select(context: Context) {
+        bindContext(context.applicationContext)
         if (snapshot().status != LargeTurboQnnModelStatus.READY) return
         VoiceAssistantSettings.setAsrModel(context.applicationContext, PROFILE_ID)
         VoiceAssistantSettings.setAsrAcceleration(
@@ -238,7 +269,8 @@ object LargeTurboQnnModelManager {
     }
 
     fun delete(context: Context, onChanged: () -> Unit = {}) {
-        pause()
+        bindContext(context.applicationContext)
+        pauseInProcess()
         generation.incrementAndGet()
         LargeTurboQnnModelStore(context.applicationContext.filesDir).deleteAll()
         if (VoiceAssistantSettings.get(context).asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
@@ -286,12 +318,38 @@ object LargeTurboQnnModelManager {
 
     private fun update(state: LargeTurboQnnModelState, callback: () -> Unit) {
         synchronized(stateLock) { currentState = state }
+        applicationContext?.let { LargeTurboQnnModelStateStore(it).write(state) }
         notifyChanged(callback)
     }
 
     private fun notifyChanged(callback: () -> Unit) {
         mainHandler.post(callback)
     }
+
+    private fun bindContext(context: Context) {
+        val application = context.applicationContext
+        applicationContext = application
+        val store = LargeTurboQnnModelStateStore(application)
+        val persisted = store.read() ?: return
+        val stale = persisted.state.status.isPersistedActiveState() &&
+            !LargeTurboQnnModelDownloadService.running &&
+            System.currentTimeMillis() - persisted.updatedAtMillis > STALE_ACTIVE_STATE_MS
+        val restored = if (stale) {
+            persisted.state.copy(status = LargeTurboQnnModelStatus.PAUSED).also(store::write)
+        } else {
+            persisted.state
+        }
+        synchronized(stateLock) { currentState = restored }
+        if (restored.status == LargeTurboQnnModelStatus.PAUSED || restored.status.isPersistedActiveState()) {
+            initialized.set(true)
+        }
+    }
+
+    private fun LargeTurboQnnModelStatus.isPersistedActiveState(): Boolean = this in setOf(
+        LargeTurboQnnModelStatus.DOWNLOADING,
+        LargeTurboQnnModelStatus.VERIFYING,
+        LargeTurboQnnModelStatus.INSTALLING
+    )
 
     private fun androidNetworkGate(context: Context) = QnnModelDownloadNetworkGate { policy ->
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -303,4 +361,6 @@ object LargeTurboQnnModelManager {
         validated && (policy == QnnModelDownloadNetworkPolicy.ANY_VALIDATED_NETWORK ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
     }
+
+    private const val STALE_ACTIVE_STATE_MS = 30_000L
 }

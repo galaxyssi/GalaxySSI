@@ -1,5 +1,6 @@
 package com.signalasi.chat.voice.asr.local
 
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -13,6 +14,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
 enum class QnnModelDownloadNetworkPolicy {
@@ -75,6 +77,8 @@ class LargeTurboQnnModelDownloader(
     private val sourceUrlResolver: (String) -> String = { it },
     private val allowInsecureLoopbackForTests: Boolean = false
 ) {
+    private val activeCall = AtomicReference<Call?>(null)
+
     init {
         check(root.mkdirs() || root.isDirectory) { "QNN ASR download storage is unavailable" }
     }
@@ -138,6 +142,10 @@ class LargeTurboQnnModelDownloader(
         return QnnContextModelDownloadResult(archive.file, archive.sha256, support, resumed)
     }
 
+    fun cancelActiveDownload() {
+        activeCall.getAndSet(null)?.cancel()
+    }
+
     private fun downloadOne(
         key: String,
         displayName: String,
@@ -190,72 +198,76 @@ class LargeTurboQnnModelDownloader(
             checkpoint(cancellation)
             requireNetwork(networkPolicy)
             val response = openResponse(sourceUrl, offset, resumeEtag, cancellation)
-            response.use { active ->
-                if (active.code == 416 && offset == expectedSize) return@use
-                if (active.code !in setOf(200, 206)) {
-                    throw QnnModelDownloadException("Model download returned HTTP ${active.code}")
-                }
-                val append = if (active.code == 206) {
-                    val range = parseContentRange(active.header("Content-Range"))
-                        ?: throw QnnModelDownloadException("Model source returned an invalid Content-Range")
-                    if (range.first != offset || range.total != expectedSize) {
-                        throw QnnModelDownloadException("Model source returned a mismatched resume range")
+            try {
+                response.use { active ->
+                    if (active.code == 416 && offset == expectedSize) return@use
+                    if (active.code !in setOf(200, 206)) {
+                        throw QnnModelDownloadException("Model download returned HTTP ${active.code}")
                     }
-                    offset > 0L
-                } else {
-                    if (offset > 0L) {
-                        partial.delete()
-                        offset = 0L
-                        resumed = false
+                    val append = if (active.code == 206) {
+                        val range = parseContentRange(active.header("Content-Range"))
+                            ?: throw QnnModelDownloadException("Model source returned an invalid Content-Range")
+                        if (range.first != offset || range.total != expectedSize) {
+                            throw QnnModelDownloadException("Model source returned a mismatched resume range")
+                        }
+                        offset > 0L
+                    } else {
+                        if (offset > 0L) {
+                            partial.delete()
+                            offset = 0L
+                            resumed = false
+                        }
+                        false
                     }
-                    false
-                }
-                val etag = active.header("ETag").orEmpty().take(MAX_HEADER_CHARS)
-                if (expectedEtag.isNotBlank() && etag.isNotBlank() && etag != expectedEtag) {
-                    throw QnnModelDownloadException("Official model archive changed without a manifest update")
-                }
-                if (append && resumeEtag.isNotBlank() && etag.isNotBlank() && etag != resumeEtag) {
-                    throw QnnModelDownloadException("Model archive changed while resuming")
-                }
-                active.header("x-amz-checksum-crc64nvme")?.takeIf(String::isNotBlank)?.let { checksum ->
-                    if (expectedCrc64Nvme.isNotBlank() && checksum != expectedCrc64Nvme) {
-                        throw QnnModelDownloadException("Official model archive checksum metadata changed")
+                    val etag = active.header("ETag").orEmpty().take(MAX_HEADER_CHARS)
+                    if (expectedEtag.isNotBlank() && etag.isNotBlank() && etag != expectedEtag) {
+                        throw QnnModelDownloadException("Official model archive changed without a manifest update")
                     }
-                }
-                resumeEtag = etag
-                writeResume(resumeFile, ResumeRecord(sourceUrl, expectedSize, expectedSha256.orEmpty(), etag))
-                val body = active.body ?: throw QnnModelDownloadException("Model download body is empty")
-                FileOutputStream(partial, append).buffered(BUFFER_BYTES).use { output ->
-                    body.byteStream().buffered(BUFFER_BYTES).use { input ->
-                        val buffer = ByteArray(BUFFER_BYTES)
-                        var downloaded = if (append) offset else 0L
-                        var sinceNetworkCheck = 0L
-                        while (true) {
-                            checkpoint(cancellation)
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            downloaded += read
-                            sinceNetworkCheck += read
-                            if (downloaded > expectedSize) {
-                                throw QnnModelDownloadException("Model source exceeded its manifest size")
+                    if (append && resumeEtag.isNotBlank() && etag.isNotBlank() && etag != resumeEtag) {
+                        throw QnnModelDownloadException("Model archive changed while resuming")
+                    }
+                    active.header("x-amz-checksum-crc64nvme")?.takeIf(String::isNotBlank)?.let { checksum ->
+                        if (expectedCrc64Nvme.isNotBlank() && checksum != expectedCrc64Nvme) {
+                            throw QnnModelDownloadException("Official model archive checksum metadata changed")
+                        }
+                    }
+                    resumeEtag = etag
+                    writeResume(resumeFile, ResumeRecord(sourceUrl, expectedSize, expectedSha256.orEmpty(), etag))
+                    val body = active.body ?: throw QnnModelDownloadException("Model download body is empty")
+                    FileOutputStream(partial, append).buffered(BUFFER_BYTES).use { output ->
+                        body.byteStream().buffered(BUFFER_BYTES).use { input ->
+                            val buffer = ByteArray(BUFFER_BYTES)
+                            var downloaded = if (append) offset else 0L
+                            var sinceNetworkCheck = 0L
+                            while (true) {
+                                checkpoint(cancellation)
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                downloaded += read
+                                sinceNetworkCheck += read
+                                if (downloaded > expectedSize) {
+                                    throw QnnModelDownloadException("Model source exceeded its manifest size")
+                                }
+                                output.write(buffer, 0, read)
+                                if (sinceNetworkCheck >= NETWORK_RECHECK_BYTES) {
+                                    requireNetwork(networkPolicy)
+                                    sinceNetworkCheck = 0L
+                                }
+                                onProgress(QnnModelDownloadProgress(
+                                    phase = phase,
+                                    assetName = displayName,
+                                    downloadedBytes = downloaded,
+                                    totalBytes = expectedSize,
+                                    aggregateDownloadedBytes = aggregateBase + downloaded,
+                                    aggregateTotalBytes = aggregateTotal,
+                                    resumed = resumed
+                                ))
                             }
-                            output.write(buffer, 0, read)
-                            if (sinceNetworkCheck >= NETWORK_RECHECK_BYTES) {
-                                requireNetwork(networkPolicy)
-                                sinceNetworkCheck = 0L
-                            }
-                            onProgress(QnnModelDownloadProgress(
-                                phase = phase,
-                                assetName = displayName,
-                                downloadedBytes = downloaded,
-                                totalBytes = expectedSize,
-                                aggregateDownloadedBytes = aggregateBase + downloaded,
-                                aggregateTotalBytes = aggregateTotal,
-                                resumed = resumed
-                            ))
                         }
                     }
                 }
+            } finally {
+                activeCall.getAndSet(null)
             }
             offset = partial.length()
             if (offset == expectedSize) break
@@ -300,14 +312,23 @@ class LargeTurboQnnModelDownloader(
                 }
                 .build()
             checkpoint(cancellation)
-            val response = client.newCall(request).execute()
+            val call = client.newCall(request)
+            activeCall.set(call)
+            val response = try {
+                call.execute()
+            } catch (error: Throwable) {
+                activeCall.compareAndSet(call, null)
+                throw error
+            }
             if (response.code in REDIRECT_CODES) {
                 if (redirectCount >= MAX_REDIRECTS) {
                     response.close()
+                    activeCall.compareAndSet(call, null)
                     throw QnnModelDownloadException("Model download has too many redirects")
                 }
                 val location = response.header("Location")
                 response.close()
+                activeCall.compareAndSet(call, null)
                 if (location.isNullOrBlank()) throw QnnModelDownloadException("Model redirect is missing a location")
                 current = URI(current).resolve(location).toString()
                 return@repeat
