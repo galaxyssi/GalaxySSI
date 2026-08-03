@@ -704,9 +704,12 @@ object AppStore {
             contact.put("display_name", defaultDisplayName)
         }
         contact.put("agent_name", agentName)
+        contact.put("type", "agent")
         contact.put("desktop_id", desktopId)
         contact.put("desktop_name", desktopName)
         contact.put("agent_id", agentId)
+        contact.put("parent_contact", desktopId)
+        contact.put("delivery_mode", "pc_connector")
         putSignalasiId(contact, id)
         contact.put("mqtt_topic", agent.optString("mqtt_topic").ifBlank {
             SignalASILinkProtocol.serverLink(context, desktopId)?.routes?.up.orEmpty()

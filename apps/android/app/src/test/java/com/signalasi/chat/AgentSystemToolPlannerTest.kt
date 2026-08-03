@@ -359,6 +359,27 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun explicitRecoveringCodexUsesPairedContactIdInsteadOfHardCodedAlias() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val recoveringCodex = AgentCallableTarget(
+            id = "desktop-installation-123:codex",
+            title = "Codex Agent - Desktop",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.DISCONNECTED,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING),
+            desktopAccessProfile = SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR
+        )
+
+        val plan = RuleBasedAgentPlanner().plan(
+            request("Use Codex Agent. Reply with only OK.", screen, emptyList(), listOf(recoveringCodex))
+        )
+
+        assertEquals(recoveringCodex.id, plan.actions.single().parameters["connector_id"])
+        assertEquals(AgentRouteKind.DESKTOP_AGENT, plan.route.kind)
+        assertTrue(plan.requiredPermissions.single { it.id == "paired_contact" }.granted)
+    }
+
+    @Test
     fun missingReasoningProviderReportsUnavailableInsteadOfLocalRuntime() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
 
