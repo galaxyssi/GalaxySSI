@@ -34,6 +34,23 @@ class WhisperTiktokenTokenizerTest {
         }
     }
 
+    @Test
+    fun `official multilingual empty token sentinel is accepted`() {
+        val tokenizerFile = temporaryFolder.newFile("multilingual.tiktoken").apply {
+            writeText(
+                "${encoded("hello")} 0\n" +
+                    "${encoded(" world")} 1\n" +
+                    "= 2\n",
+                Charsets.US_ASCII
+            )
+        }
+
+        val tokenizer = WhisperTiktokenTokenizer.load(tokenizerFile, generationConfig())
+
+        assertEquals(3, tokenizer.vocabularySize)
+        assertEquals("hello world", tokenizer.decode(listOf(0, 1, 2)))
+    }
+
     private fun tokenizer(): WhisperTiktokenTokenizer {
         val tokenizerFile = temporaryFolder.newFile("tokenizer-${System.nanoTime()}.tiktoken").apply {
             writeText(

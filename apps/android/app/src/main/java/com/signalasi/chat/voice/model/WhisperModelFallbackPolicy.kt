@@ -1,6 +1,8 @@
 package com.signalasi.chat.voice.model
 
 object WhisperModelFallbackPolicy {
+    private const val REALTIME_RESCUE_MAX_BYTES = 256L * 1024L * 1024L
+
     fun select(
         requested: WhisperModelProfile,
         installedProfiles: List<WhisperModelProfile>,
@@ -24,6 +26,22 @@ object WhisperModelFallbackPolicy {
                 .thenByDescending(WhisperModelProfile::expectedSizeBytes)
         )
         .toList()
+
+    fun selectRealtimeRescue(
+        installedProfiles: List<WhisperModelProfile>,
+        canRun: (WhisperModelProfile) -> Boolean
+    ): WhisperModelProfile? = installedProfiles
+        .asSequence()
+        .filter { candidate ->
+            candidate.expectedSizeBytes <= REALTIME_RESCUE_MAX_BYTES &&
+                candidate.recommendedMode == WhisperExecutionMode.REALTIME_PARTIAL
+        }
+        .distinctBy(WhisperModelProfile::id)
+        .sortedWith(
+            compareBy<WhisperModelProfile>(WhisperModelProfile::expectedSizeBytes)
+                .thenBy { it.id }
+        )
+        .firstOrNull(canRun)
 
     private fun qualityRank(family: WhisperModelFamily): Int = when (family) {
         WhisperModelFamily.TINY -> 1

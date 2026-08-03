@@ -9,10 +9,12 @@ import org.junit.Test
 class QnnHtpSessionPolicyTest {
     @Test
     fun enablesSharedAllocatorOnlyWhenCdsprpcIsAvailable() {
-        val enabled = QnnHtpSessionPolicy.providerOptions(sharedMemoryAvailable = true)
-        val disabled = QnnHtpSessionPolicy.providerOptions(sharedMemoryAvailable = false)
+        val backend = "/data/app/com.signalasi.chat/lib/arm64/libQnnHtp.so"
+        val enabled = QnnHtpSessionPolicy.providerOptions(backend, sharedMemoryAvailable = true)
+        val disabled = QnnHtpSessionPolicy.providerOptions(backend, sharedMemoryAvailable = false)
 
-        assertEquals("htp", enabled["backend_type"])
+        assertEquals(backend, enabled["backend_path"])
+        assertFalse(enabled.containsKey("backend_type"))
         assertEquals("0", enabled["offload_graph_io_quantization"])
         assertEquals("1", enabled[QnnHtpSessionPolicy.SHARED_MEMORY_OPTION])
         assertEquals("0", disabled[QnnHtpSessionPolicy.SHARED_MEMORY_OPTION])

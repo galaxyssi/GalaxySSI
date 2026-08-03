@@ -69,4 +69,22 @@ if (pageSizeAudit.error) {
   process.exit(1);
 }
 
-process.exit(pageSizeAudit.status || 0);
+if (pageSizeAudit.status) process.exit(pageSizeAudit.status);
+
+const qnnPackageAudit = spawnSync(
+  process.execPath,
+  [path.join(root, "tools", "dev", "check-android-qnn-package.js")],
+  {
+    cwd: root,
+    env,
+    stdio: "inherit",
+    shell: false
+  }
+);
+
+if (qnnPackageAudit.error) {
+  console.error(`Android QNN package audit failed to start: ${qnnPackageAudit.error.message}`);
+  process.exit(1);
+}
+
+process.exit(qnnPackageAudit.status || 0);

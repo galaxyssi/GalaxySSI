@@ -105,9 +105,17 @@ class LargeTurboQnnDevicePolicy(
         MIN_FREE_AFTER_INSTALL_BYTES
 
     private fun runtimeCompatible(version: String?): Boolean {
-        val actual = version?.split('.')?.take(2)?.joinToString(".") ?: return false
-        val expected = manifest.qairtVersion.split('.').take(2).joinToString(".")
-        return actual == expected
+        val actual = version.toMajorMinor() ?: return false
+        val required = manifest.qairtVersion.toMajorMinor() ?: return false
+        return actual.first == required.first && actual.second >= required.second
+    }
+
+    private fun String?.toMajorMinor(): Pair<Int, Int>? {
+        val components = this?.split('.') ?: return null
+        if (components.size < 2) return null
+        val major = components[0].toIntOrNull() ?: return null
+        val minor = components[1].toIntOrNull() ?: return null
+        return major to minor
     }
 
     private fun fallback(reason: String, detail: String) = QnnAsrDeviceDecision(

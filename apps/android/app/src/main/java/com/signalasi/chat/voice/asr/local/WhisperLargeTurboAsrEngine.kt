@@ -1,5 +1,6 @@
 package com.signalasi.chat.voice.asr.local
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
@@ -134,6 +135,7 @@ class WhisperLargeTurboAsrEngine(
                     }
                     transition(LocalAsrState.Ready(canonical, preparedAtMillis))
                 } catch (error: Throwable) {
+                    Log.e(TAG, "QNN ASR preparation failed", error)
                     val failed = LocalAsrState.Failed(
                         code = "qnn_prepare_failed",
                         message = error.message ?: "QNN ASR preparation failed",
@@ -412,6 +414,7 @@ class WhisperLargeTurboAsrEngine(
     }
 
     private companion object {
+        const val TAG = "SignalASIQnnAsr"
         const val EVENT_BUFFER_CAPACITY = 128
         const val PCM16_BYTES_PER_SAMPLE = 2
     }

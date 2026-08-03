@@ -19,6 +19,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Long-term memory benchmark | `npm run benchmark:memory-locomo` | A versioned LoCoMo-style multi-session corpus drives the production Android memory planner and prompt compiler, then scores retrieval, temporal reasoning, contamination, privacy, and abstention. |
 | Pull request core regressions | `npm run test:core-regressions` | Android, Desktop Agent Runtime, MQTT, memory, remote control, and Agent benchmark contracts pass together without packaging an APK or Desktop installer. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
+| Android QNN package | `npm run check:android:qnn-package` | The APK contains the pinned official QNN 2.47.0, ORT QNN 2.3.0, and complete arm64 HTP runtime without standalone vendor binaries in source. |
 | Android UI smoke | `npm run smoke:android:ui` | Main navigation, contacts, cloud model entry, security center, settings entry points, voice settings, backup, protocol quality, and destructive-data screens can be opened on a real device or emulator. |
 | Android friend flow | `npm run smoke:android:friends` | New-friend approval, deleted-contact blocking, re-add flow, contact detail routing, and contact deletion evidence work on Android. |
 | Android contact rename | `npm run smoke:android:contact-rename` | Agent contact display names can be renamed, persist with user-renamed evidence, and render on the contact detail page. |
