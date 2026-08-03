@@ -172,6 +172,45 @@ class LargeTurboQnnModelLifecycleTest {
     }
 
     @Test
+    fun `failed active release is quarantined and atomically rolls back to verified previous release`() {
+        val first = createInstallFixture("0.59.0", encoder = "encoder-one", decoder = "decoder-one")
+        val second = createInstallFixture("0.60.0", encoder = "encoder-two", decoder = "decoder-two")
+        val store = LargeTurboQnnModelStore(File(root, "recovery-files"), usableSpace = { Long.MAX_VALUE })
+        val installedFirst = store.install(first.manifest, first.archive, sha256(first.archive), first.supportFiles)
+        val installedSecond = store.install(second.manifest, second.archive, sha256(second.archive), second.supportFiles)
+
+        val recovery = store.quarantineActiveAndRollback(
+            second.manifest,
+            "qnn_model_corrupt",
+            "decoder context failed verification"
+        )
+
+        assertTrue(recovery.rolledBack)
+        assertEquals(installedSecond.directory.canonicalFile, recovery.quarantinedDirectory?.canonicalFile)
+        assertTrue(File(installedSecond.directory, ".quarantined.json").isFile)
+        assertEquals(installedFirst.directory.canonicalFile, recovery.active.directory?.canonicalFile)
+        assertEquals(QnnContextModelState.INSTALLED, store.inspectActive(first.manifest).state)
+        assertEquals(QnnContextModelState.INVALID, store.rollback(second.manifest).state)
+    }
+
+    @Test
+    fun `quarantined release without rollback remains invalid until replaced`() {
+        val fixture = createInstallFixture("0.59.0")
+        val store = LargeTurboQnnModelStore(File(root, "quarantine-files"), usableSpace = { Long.MAX_VALUE })
+        store.install(fixture.manifest, fixture.archive, sha256(fixture.archive), fixture.supportFiles)
+
+        val recovery = store.quarantineActiveAndRollback(
+            fixture.manifest,
+            "qnn_model_corrupt",
+            "encoder context is invalid"
+        )
+
+        assertFalse(recovery.rolledBack)
+        assertEquals(QnnContextModelState.INVALID, store.inspectActive(fixture.manifest).state)
+        assertTrue(store.inspectActive(fixture.manifest).detail.contains("qnn_model_corrupt"))
+    }
+
+    @Test
     fun `store rejects unexpected archive entries and incompatible chipset metadata`() {
         val fixture = createInstallFixture("0.59.0", extraEntry = "unexpected.txt" to "bad".toByteArray())
         val store = LargeTurboQnnModelStore(File(root, "files"), usableSpace = { Long.MAX_VALUE })

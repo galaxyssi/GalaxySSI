@@ -671,7 +671,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val pcm16: ShortArray,
         val modelProfileId: String,
         val confidence: Float?,
-        val fallbackFromProfileId: String? = null
+        val fallbackFromProfileId: String? = null,
+        val fallbackReasonCode: String = ""
     )
     private val voiceTurnContextsByTraceId = ConcurrentHashMap<String, VoiceTurnContext>()
     private lateinit var voiceInteractionCoordinator: VoiceInteractionCoordinator
@@ -22592,7 +22593,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     modelProfileId = profile.id
                 )
             }
-        ) ?: return null
+        )
+        if (turn == null) {
+            val status = highAccuracyAsrController.preparationStatus.value
+            Log.i(
+                "SignalASIVoice",
+                "High accuracy QNN unavailable reason=${status.reasonCode} " +
+                    "phase=${status.phase} attempts=${status.attempts}; retaining PCM fallback"
+            )
+            return null
+        }
         highAccuracyAsrTurns.put(traceId, turn)?.cancel()
         Log.i("SignalASIVoice", "High accuracy QNN streaming enabled purpose=$purpose trace=$traceId")
         return turn
@@ -24396,8 +24406,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val requestedLocalProfile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
-        var selectedLocalProfile = requestedLocalProfile
-        var fallbackFromProfileId: String? = null
+        val qnnPreparationStatus = highAccuracyAsrController.preparationStatus.value
+        val qnnFallback = if (isHighAccuracyQnnSelected()) {
+            selectWhisperMemoryFallback(requestedLocalProfile)
+        } else null
+        var selectedLocalProfile = qnnFallback ?: requestedLocalProfile
+        var fallbackFromProfileId: String? = qnnFallback?.let { requestedLocalProfile.id }
+        var fallbackReasonCode = qnnFallback?.let { qnnPreparationStatus.reasonCode }.orEmpty()
+        if (qnnFallback != null) {
+            Log.w(
+                "SignalASILocalASR",
+                "QNN transcription fallback reason=${qnnPreparationStatus.reasonCode} " +
+                    "from=${requestedLocalProfile.id} to=${qnnFallback.id}"
+            )
+        }
         if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
             val admission = localWhisperAdmission(selectedLocalProfile)
             if (!admission.allowed) {
@@ -24406,6 +24428,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 } else null
                 if (fallback != null) {
                     fallbackFromProfileId = selectedLocalProfile.id
+                    fallbackReasonCode = admission.fallbackReasonCode
                     selectedLocalProfile = fallback
                     Log.w(
                         "SignalASILocalASR",
@@ -24546,6 +24569,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             if (memoryFallbackFromProfileId == null) {
                                 memoryFallbackFromProfileId = activeProfile.id
                             }
+                            fallbackReasonCode = "qnn_out_of_memory"
                             Log.w(
                                 "SignalASILocalASR",
                                 "Whisper memory fallback from=${activeProfile.id} to=${fallback.id}",
@@ -24562,7 +24586,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     pcm16 = finalPcm,
                     modelProfileId = decoded.second,
                     confidence = decoded.third,
-                    fallbackFromProfileId = memoryFallbackFromProfileId
+                    fallbackFromProfileId = memoryFallbackFromProfileId,
+                    fallbackReasonCode = fallbackReasonCode
                 )
             }
             closeLiveWhisperSession(traceId)
@@ -24581,7 +24606,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             completed.modelProfileId
                         )
                     }
-                    completed.fallbackFromProfileId?.let { fallbackFromId ->
+                    completed.fallbackFromProfileId
+                        ?.takeIf { isWhisperMemoryAdmissionFailure(completed.fallbackReasonCode) ||
+                            completed.fallbackReasonCode == "qnn_out_of_memory" }
+                        ?.let { fallbackFromId ->
                         val fallbackFrom = WhisperModelManager.model(fallbackFromId)
                         val fallbackTo = WhisperModelManager.model(completed.modelProfileId)
                         Toast.makeText(

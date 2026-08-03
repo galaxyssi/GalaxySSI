@@ -100,6 +100,13 @@ data class QnnContextModelInstallResult(
     val replacedDirectory: File?
 )
 
+data class QnnContextModelRecoveryResult(
+    val active: QnnContextModelSnapshot,
+    val quarantinedDirectory: File?,
+    val rolledBack: Boolean,
+    val reasonCode: String
+)
+
 class QnnContextModelInstallException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 class LargeTurboQnnModelStore(
@@ -227,6 +234,61 @@ class LargeTurboQnnModelStore(
         val active = pointer.optString("active").takeIf(String::isNotBlank)?.let { secureChild(releases, it) }
         writeActivePointer(previous, active)
         return snapshot
+    }
+
+    @Synchronized
+    fun quarantineActiveAndRollback(
+        manifest: LargeTurboQnnModelManifest,
+        reasonCode: String,
+        detail: String
+    ): QnnContextModelRecoveryResult {
+        require(reasonCode.matches(REASON_CODE_PATTERN)) { "QNN ASR quarantine reason is invalid" }
+        val pointer = readActivePointer() ?: return QnnContextModelRecoveryResult(
+            active = QnnContextModelSnapshot(
+                QnnContextModelState.NOT_INSTALLED,
+                detail = "No active QNN ASR release exists"
+            ),
+            quarantinedDirectory = null,
+            rolledBack = false,
+            reasonCode = reasonCode
+        )
+        val activeName = pointer.optString("active")
+        if (activeName.isBlank()) return QnnContextModelRecoveryResult(
+            active = QnnContextModelSnapshot(
+                QnnContextModelState.NOT_INSTALLED,
+                detail = "No active QNN ASR release exists"
+            ),
+            quarantinedDirectory = null,
+            rolledBack = false,
+            reasonCode = reasonCode
+        )
+        val active = secureChild(releases, activeName)
+        writeQuarantineRecord(active, reasonCode, detail)
+
+        val previousName = pointer.optString("previous")
+        if (previousName.isBlank()) return QnnContextModelRecoveryResult(
+            active = inspectDirectory(active, manifest),
+            quarantinedDirectory = active,
+            rolledBack = false,
+            reasonCode = reasonCode
+        )
+        val previous = secureChild(releases, previousName)
+        val previousSnapshot = inspectCompatibleRelease(previous, manifest)
+        if (previousSnapshot.state != QnnContextModelState.INSTALLED) {
+            return QnnContextModelRecoveryResult(
+                active = inspectDirectory(active, manifest),
+                quarantinedDirectory = active,
+                rolledBack = false,
+                reasonCode = reasonCode
+            )
+        }
+        writeActivePointer(previous, active)
+        return QnnContextModelRecoveryResult(
+            active = previousSnapshot,
+            quarantinedDirectory = active,
+            rolledBack = true,
+            reasonCode = reasonCode
+        )
     }
 
     @Synchronized
@@ -369,6 +431,9 @@ class LargeTurboQnnModelStore(
         manifest: LargeTurboQnnModelManifest
     ): QnnContextModelSnapshot {
         if (!directory.isDirectory) return QnnContextModelSnapshot(QnnContextModelState.NOT_INSTALLED)
+        quarantineDetail(directory)?.let { detail ->
+            return QnnContextModelSnapshot(QnnContextModelState.INVALID, directory, detail = detail)
+        }
         val record = runCatching {
             QnnContextModelInstallRecord.fromJson(File(directory, INSTALL_RECORD_FILE).readText(Charsets.UTF_8))
         }.getOrElse {
@@ -399,6 +464,79 @@ class LargeTurboQnnModelStore(
             }
         }
         return QnnContextModelSnapshot(QnnContextModelState.INSTALLED, directory, record)
+    }
+
+    private fun inspectCompatibleRelease(
+        directory: File,
+        manifest: LargeTurboQnnModelManifest
+    ): QnnContextModelSnapshot {
+        if (!directory.isDirectory) return QnnContextModelSnapshot(QnnContextModelState.NOT_INSTALLED)
+        quarantineDetail(directory)?.let { detail ->
+            return QnnContextModelSnapshot(QnnContextModelState.INVALID, directory, detail = detail)
+        }
+        val record = runCatching {
+            QnnContextModelInstallRecord.fromJson(File(directory, INSTALL_RECORD_FILE).readText(Charsets.UTF_8))
+        }.getOrElse {
+            return QnnContextModelSnapshot(QnnContextModelState.INVALID, directory, detail = "Install record is missing")
+        }
+        if (record.modelId != manifest.modelId || record.qairtVersion != manifest.qairtVersion ||
+            record.targetChipset != manifest.targetChipset || record.htpVersion != manifest.htpVersion ||
+            !record.archiveSha256.matches(SHA256_PATTERN)
+        ) {
+            return QnnContextModelSnapshot(
+                QnnContextModelState.INVALID,
+                directory,
+                record,
+                "Rollback release is incompatible"
+            )
+        }
+        val requiredNames = manifest.archive.entries.map(QnnContextArchiveEntry::installedName).toSet() +
+            manifest.supportAssets.map(QnnContextSupportAsset::installedName).toSet()
+        if (!record.files.map(QnnContextInstalledFile::name).toSet().containsAll(requiredNames)) {
+            return QnnContextModelSnapshot(
+                QnnContextModelState.INVALID,
+                directory,
+                record,
+                "Rollback release file set is incomplete"
+            )
+        }
+        record.files.forEach { installed ->
+            val file = runCatching { secureChild(directory, installed.name) }.getOrNull()
+            if (file == null || !file.isFile || file.length() != installed.sizeBytes ||
+                !sha256(file).equals(installed.sha256, ignoreCase = true)
+            ) {
+                return QnnContextModelSnapshot(
+                    QnnContextModelState.INVALID,
+                    directory,
+                    record,
+                    "Rollback release verification failed for ${installed.name}"
+                )
+            }
+        }
+        return QnnContextModelSnapshot(QnnContextModelState.INSTALLED, directory, record)
+    }
+
+    private fun writeQuarantineRecord(directory: File, reasonCode: String, detail: String) {
+        require(directory.parentFile?.canonicalFile == releases.canonicalFile)
+        val value = JSONObject()
+            .put("schema_version", 1)
+            .put("reason_code", reasonCode)
+            .put("detail", detail.take(MAX_QUARANTINE_DETAIL_CHARS))
+            .put("quarantined_at_millis", clock())
+        val target = secureChild(directory, QUARANTINE_RECORD_FILE)
+        val temporary = secureChild(directory, ".quarantine-${clock()}.json")
+        writeAndSync(temporary, value.toString().toByteArray(Charsets.UTF_8))
+        atomicMove(temporary, target)
+    }
+
+    private fun quarantineDetail(directory: File): String? {
+        val file = secureChild(directory, QUARANTINE_RECORD_FILE)
+        if (!file.isFile) return null
+        return runCatching {
+            val value = JSONObject(file.readText(Charsets.UTF_8))
+            "Quarantined QNN ASR release: ${value.optString("reason_code", "unknown")}" +
+                value.optString("detail").takeIf(String::isNotBlank)?.let { ": $it" }.orEmpty()
+        }.getOrDefault("Quarantined QNN ASR release")
     }
 
     private fun activeDirectory(): File? {
@@ -498,6 +636,9 @@ class LargeTurboQnnModelStore(
         const val BUFFER_BYTES = 256 * 1024
         const val MEL_128_BYTES = 128L * 201L * 4L
         const val MIN_FREE_AFTER_INSTALL_BYTES = 512L * 1024L * 1024L
+        const val QUARANTINE_RECORD_FILE = ".quarantined.json"
+        const val MAX_QUARANTINE_DETAIL_CHARS = 512
         val SHA256_PATTERN = Regex("[a-fA-F0-9]{64}")
+        val REASON_CODE_PATTERN = Regex("[a-z0-9][a-z0-9_]{0,95}")
     }
 }
