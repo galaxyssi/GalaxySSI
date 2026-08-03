@@ -67,6 +67,29 @@ struct LanguagePolicySettings: Codable, Equatable {
     return Locale.current.identifier.replacingOccurrences(of: "_", with: "-").ifBlank(enUS)
   }
 
+  static func resolveInterface(
+    _ value: String,
+    locale: Locale = .autoupdatingCurrent,
+    timeZone: TimeZone = .autoupdatingCurrent
+  ) -> String {
+    let normalized = normalizeInterface(value)
+    guard normalized == auto else { return normalized }
+    return automaticInterfaceLanguage(locale: locale, timeZone: timeZone)
+  }
+
+  static func automaticInterfaceLanguage(locale: Locale, timeZone: TimeZone) -> String {
+    if locale.languageCode?.caseInsensitiveCompare("zh") == .orderedSame {
+      return zhCN
+    }
+    if let regionCode = locale.regionCode?.uppercased(), chineseInterfaceRegions.contains(regionCode) {
+      return zhCN
+    }
+    if chineseInterfaceTimeZones.contains(timeZone.identifier) {
+      return zhCN
+    }
+    return en
+  }
+
   static func localeIdentifier(for languageTag: String) -> String {
     resolve(languageTag).replacingOccurrences(of: "-", with: "_")
   }
@@ -88,6 +111,23 @@ struct LanguagePolicySettings: Codable, Equatable {
     default: return "Automatic"
     }
   }
+
+  private static let chineseInterfaceRegions: Set<String> = [
+    "CN",
+    "HK",
+    "MO",
+    "TW"
+  ]
+
+  private static let chineseInterfaceTimeZones: Set<String> = [
+    "Asia/Shanghai",
+    "Asia/Chongqing",
+    "Asia/Harbin",
+    "Asia/Urumqi",
+    "Asia/Hong_Kong",
+    "Asia/Macau",
+    "Asia/Taipei"
+  ]
 
   static func modelLanguageName(_ value: String) -> String {
     let resolved = resolve(value)
