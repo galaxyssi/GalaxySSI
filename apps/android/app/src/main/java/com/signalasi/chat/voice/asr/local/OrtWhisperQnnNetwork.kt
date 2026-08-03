@@ -13,6 +13,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 internal class OrtWhisperQnnNetwork private constructor(
     private val environment: OrtEnvironment,
@@ -23,6 +24,7 @@ internal class OrtWhisperQnnNetwork private constructor(
     private val nanoTime: () -> Long
 ) : WhisperQnnNetwork, QnnExecutionAttestationSource {
     private val closed = AtomicBoolean(false)
+    private val activeRunOptions = AtomicReference<OrtSession.RunOptions?>()
     private val arena = OrtTensorArena(environment)
     private val encoderInput = arena.create(WhisperLargeTurboQnnContract.encoder.inputs.single())
     private val crossCache = WhisperLargeTurboQnnContract.encoder.outputs.associateWith(arena::create)
@@ -71,7 +73,7 @@ internal class OrtWhisperQnnNetwork private constructor(
             target.put(index, Float16Codec.encode(source.get()))
         }
         val started = nanoTime()
-        encoderSession.run(encoderInputs, encoderOutputs).use { }
+        runSession(encoderSession, encoderInputs, encoderOutputs)
         executionTracker.recordEncoderExecution()
         (nanoTime() - started).coerceAtLeast(0L)
     }
@@ -101,7 +103,7 @@ internal class OrtWhisperQnnNetwork private constructor(
             Float16Codec.encode(0.0F)
         )
         val started = nanoTime()
-        decoderSession.run(decoderInputs, decoderOutputs).use { }
+        runSession(decoderSession, decoderInputs, decoderOutputs)
         executionTracker.recordDecoderExecution()
         val elapsed = (nanoTime() - started).coerceAtLeast(0L)
         val suppressed = when (selection) {
@@ -122,6 +124,7 @@ internal class OrtWhisperQnnNetwork private constructor(
 
     override fun close() = synchronized(this) {
         if (!closed.compareAndSet(false, true)) return
+        cancelActiveRun()
         runCatching { decoderSession.close() }
         runCatching { encoderSession.close() }
         arena.close()
@@ -129,6 +132,10 @@ internal class OrtWhisperQnnNetwork private constructor(
 
     override fun executionAttestation(warmupCompleted: Boolean): QnnExecutionAttestation =
         executionTracker.executionAttestation(warmupCompleted)
+
+    override fun cancelActiveRun() {
+        activeRunOptions.get()?.let { options -> runCatching { options.setTerminate(true) } }
+    }
 
     private fun bindDecoderTensors() {
         decoderInputs.clear()
@@ -144,6 +151,23 @@ internal class OrtWhisperQnnNetwork private constructor(
     }
 
     private fun checkOpen() = check(!closed.get()) { "QNN Whisper network is closed" }
+
+    private fun runSession(
+        session: OrtSession,
+        inputs: Map<String, OnnxTensor>,
+        outputs: Map<String, OnnxTensor>
+    ) {
+        OrtSession.RunOptions().use { options ->
+            check(activeRunOptions.compareAndSet(null, options)) { "A QNN run is already active" }
+            try {
+                // Every model output is pre-bound to a persistent tensor. Requested outputs must
+                // therefore stay empty; listing the same names twice makes ORT count them twice.
+                session.run(inputs, emptySet(), outputs, options).use { }
+            } finally {
+                activeRunOptions.compareAndSet(options, null)
+            }
+        }
+    }
 
     private data class SelfCacheSlot(
         val inputName: String,

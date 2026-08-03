@@ -22582,7 +22582,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 AsrPerformanceMode.BALANCED -> 900L
                 AsrPerformanceMode.POWER_SAVER -> 1_200L
             },
-            firstPartialDelayMs = 900L,
+            firstPartialDelayMs = when (performanceMode) {
+                AsrPerformanceMode.FAST -> 1_200L
+                AsrPerformanceMode.BALANCED -> 1_500L
+                AsrPerformanceMode.POWER_SAVER -> 2_000L
+            },
+            finalizationTimeoutMs = 8_000L,
             performanceMode = performanceMode
         )
         val turn = highAccuracyAsrController.startTurnIfReady(

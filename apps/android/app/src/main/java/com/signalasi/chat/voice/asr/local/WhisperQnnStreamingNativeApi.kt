@@ -2,6 +2,7 @@ package com.signalasi.chat.voice.asr.local
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -19,6 +20,7 @@ import kotlin.concurrent.withLock
 
 internal interface WhisperQnnTranscriberRuntime : AutoCloseable {
     fun transcribe(melFeatures: FloatBuffer, language: String, maxTokens: Int): WhisperQnnTranscription
+    fun cancelActive() = Unit
 }
 
 internal fun interface WhisperQnnTranscriberRuntimeFactory {
@@ -225,6 +227,9 @@ private class QnnStreamingSession(
 ) : AutoCloseable {
     private val terminal = AtomicBoolean(false)
     private val paused = AtomicBoolean(false)
+    private val finalPending = AtomicBoolean(false)
+    private val partialPreemptionRequested = AtomicBoolean(false)
+    private val activeInferenceKind = AtomicReference<NativeFeatureWindowKind?>()
     private val featureExecutor = namedSingleThreadExecutor("SignalASI-ASR-Feature")
     private val inferenceExecutor = namedSingleThreadExecutor("SignalASI-ASR-QNN")
     private val featureBuffers = ArrayBlockingQueue<ByteBuffer>(FEATURE_BUFFER_COUNT).apply {
@@ -252,7 +257,10 @@ private class QnnStreamingSession(
     }
 
     fun stop() {
-        if (!terminal.get()) runCatching(frontend::stop).onFailure(::failFrontend)
+        if (!terminal.get()) {
+            logPerformance("stage=stop_requested session=$sessionToken")
+            runCatching(frontend::stop).onFailure(::failFrontend)
+        }
     }
 
     fun pause() {
@@ -294,6 +302,7 @@ private class QnnStreamingSession(
                 Thread.currentThread().interrupt()
                 return
             }
+            val featureStartedAt = elapsedRealtimeMs().coerceAtLeast(0L)
             val window = try {
                 frontend.waitForFeatures(buffer, FEATURE_WAIT_MS)
             } catch (error: Throwable) {
@@ -305,9 +314,20 @@ private class QnnStreamingSession(
                 featureBuffers.offer(buffer)
                 continue
             }
+            logPerformance(
+                "stage=features kind=${window.kind.name.lowercase()} audio_ms=${window.durationMs} " +
+                    "wait_extract_ms=${(elapsedRealtimeMs().coerceAtLeast(0L) - featureStartedAt).coerceAtLeast(0L)}"
+            )
             if (paused.get()) {
                 featureBuffers.offer(buffer)
                 continue
+            }
+            if (window.final) {
+                finalPending.set(true)
+                if (activeInferenceKind.get() == NativeFeatureWindowKind.PARTIAL) {
+                    partialPreemptionRequested.set(true)
+                    runtime.cancelActive()
+                }
             }
             val packet = if (window.kind == NativeFeatureWindowKind.NO_SPEECH_FINAL) {
                 featureBuffers.offer(buffer)
@@ -340,20 +360,54 @@ private class QnnStreamingSession(
                 release(packet)
                 continue
             }
+            if (!packet.window.final && finalPending.get()) {
+                release(packet)
+                continue
+            }
 
+            activeInferenceKind.set(packet.window.kind)
+            if (!packet.window.final && finalPending.get()) {
+                activeInferenceKind.compareAndSet(packet.window.kind, null)
+                release(packet)
+                continue
+            }
+            val startedAt = elapsedRealtimeMs().coerceAtLeast(0L)
+            val tokenBudget = WhisperQnnTokenBudget.forAudioDuration(
+                packet.window.durationMs,
+                config.maxTokens
+            )
             val transcription = try {
                 val features = requireNotNull(packet.buffer)
                     .duplicate()
                     .order(ByteOrder.nativeOrder())
                     .asFloatBuffer()
-                runtime.transcribe(features, config.language, config.maxTokens)
+                runtime.transcribe(features, config.language, tokenBudget)
             } catch (error: Throwable) {
+                activeInferenceKind.compareAndSet(packet.window.kind, null)
                 release(packet)
+                if (!packet.window.final && finalPending.get() &&
+                    (partialPreemptionRequested.getAndSet(false) || error is QnnInferenceCancelledException)
+                ) {
+                    logPerformance("stage=partial_preempted audio_ms=${packet.window.durationMs}")
+                    continue
+                }
                 fail("qnn_inference_failed", error.message ?: "QNN Whisper inference failed", true)
                 return
             }
+            activeInferenceKind.compareAndSet(packet.window.kind, null)
+            partialPreemptionRequested.set(false)
+            val wallMs = (elapsedRealtimeMs().coerceAtLeast(0L) - startedAt).coerceAtLeast(0L)
+            logPerformance(
+                "stage=${if (packet.window.final) "final" else "partial"} " +
+                    "audio_ms=${packet.window.durationMs} wall_ms=$wallMs " +
+                    "encoder_ms=${transcription.encoderNanos / 1_000_000.0} " +
+                    "decoder_ms=${transcription.decoderNanos / 1_000_000.0} " +
+                    "decoder_steps=${transcription.decoderSteps} output_tokens=${transcription.tokenIds.size} " +
+                    "token_budget=$tokenBudget"
+            )
             release(packet)
             if (terminal.get()) return
+            if (!packet.window.final && finalPending.get()) continue
             val hypothesis = stabilizer.update(transcription.text, packet.window.final)
             if (packet.window.final) {
                 finishFinal(hypothesis, packet.window, transcription)
@@ -378,6 +432,10 @@ private class QnnStreamingSession(
         transcription: WhisperQnnTranscription?
     ) {
         if (!terminal.compareAndSet(false, true)) return
+        logPerformance(
+            "stage=final_callback audio_ms=${window.durationMs} " +
+                "inference_ms=${transcription?.inferenceMs ?: 0L} text_chars=${hypothesis.fullText.length}"
+        )
         mailbox.close().forEach(::release)
         closeFrontendSafely()
         onTerminal(this)
@@ -397,6 +455,11 @@ private class QnnStreamingSession(
         fail("native_frontend_failed", error.message ?: "Native ASR frontend failed", true)
     }
 
+    private fun logPerformance(message: String) {
+        // Android's Log methods throw in local JVM tests unless an Android runtime is present.
+        runCatching { Log.i(PERF_TAG, message) }
+    }
+
     private fun fail(code: String, message: String, recoverable: Boolean) {
         if (!terminal.compareAndSet(false, true)) return
         mailbox.close().forEach(::release)
@@ -408,6 +471,7 @@ private class QnnStreamingSession(
 
     private fun terminateWithoutCallback() {
         if (!terminal.compareAndSet(false, true)) return
+        runtime.cancelActive()
         mailbox.close().forEach(::release)
         closeFrontendSafely()
         onTerminal(this)
@@ -453,7 +517,10 @@ private class QnnStreamingSession(
 
     private fun shutdownWorkers() {
         featureExecutor.shutdownNow()
-        inferenceExecutor.shutdown()
+        inferenceExecutor.shutdownNow()
+        if (Thread.currentThread().name != INFERENCE_THREAD_NAME) {
+            runCatching { inferenceExecutor.awaitTermination(INFERENCE_CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS) }
+        }
     }
 
     private fun closeFrontendSafely() {
@@ -476,8 +543,25 @@ private class QnnStreamingSession(
         const val FEATURE_BUFFER_COUNT = 2
         const val FEATURE_CLOSE_TIMEOUT_MS = 750L
         const val FEATURE_THREAD_NAME = "SignalASI-ASR-Feature"
+        const val INFERENCE_CLOSE_TIMEOUT_MS = 750L
+        const val INFERENCE_THREAD_NAME = "SignalASI-ASR-QNN"
         const val FEATURE_WAIT_MS = 250
         const val FEATURE_POOL_WAIT_MS = 100L
+        const val PERF_TAG = "SignalASIQnnPerf"
+    }
+}
+
+internal object WhisperQnnTokenBudget {
+    private const val MIN_OUTPUT_TOKENS = 32
+    private const val OUTPUT_TOKENS_PER_SECOND = 10L
+    private const val OUTPUT_TOKEN_HEADROOM = 24L
+
+    fun forAudioDuration(audioDurationMs: Long, configuredMaximum: Int): Int {
+        require(configuredMaximum in 1..160)
+        val duration = audioDurationMs.coerceAtLeast(0L)
+        val estimated = ((duration * OUTPUT_TOKENS_PER_SECOND + 999L) / 1_000L) +
+            OUTPUT_TOKEN_HEADROOM
+        return estimated.toInt().coerceIn(minOf(MIN_OUTPUT_TOKENS, configuredMaximum), configuredMaximum)
     }
 }
 
