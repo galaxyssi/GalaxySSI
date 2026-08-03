@@ -1,4 +1,5 @@
 "signalasi.tab.agent" = "Agent";
+"signalasi.tab.messages" = "消息";
 "signalasi.tab.contacts" = "通讯录";
 "signalasi.tab.discover" = "发现";
 "signalasi.tab.settings" = "设置";
@@ -23,6 +24,23 @@
 "signalasi.status.ready" = "已就绪";
 "signalasi.status.waiting_pairing" = "等待 Desktop 配对";
 "signalasi.agent.mode" = "Agent 模式";
+"signalasi.agent.brand.subtitle" = "超级智能体";
+"signalasi.agent.tab.subtitle" = "手机本体超级智能体";
+"signalasi.agent.section.process" = "执行过程";
+"signalasi.agent.section.info" = "信息";
+"signalasi.agent.step.observe" = "读取当前屏幕结构";
+"signalasi.agent.step.analyze" = "分析用户目标";
+"signalasi.agent.step.plan" = "生成可执行计划";
+"signalasi.agent.step.act" = "确认后执行动作";
+"signalasi.agent.step.current" = "当前";
+"signalasi.agent.step.done" = "完成";
+"signalasi.agent.step.waiting" = "等待";
+"signalasi.agent.step.safe" = "安全";
+"signalasi.agent.current_app" = "当前 App：%@";
+"signalasi.agent.callable_targets" = "可调用对象：%d";
+"signalasi.agent.running_tasks" = "运行任务：%d";
+"signalasi.agent.goal_hint" = "输入消息...";
+"signalasi.agent.voice_button" = "按住说话";
 "signalasi.agent.native_tools" = "原生工具";
 "signalasi.agent.native_tools.subtitle" = "%d 个联系人、设备动作和本地安全控制";
 "signalasi.agent.native_tools.ready" = "原生工具已就绪";
@@ -66,6 +84,7 @@
 "signalasi.identifier.turn" = "轮次";
 "signalasi.identifier.remote_message" = "远程消息";
 "signalasi.settings.profile" = "资料";
+"signalasi.settings.pages" = "应用页面";
 "signalasi.settings.name" = "名称";
 "signalasi.settings.language" = "语言";
 "signalasi.settings.interface_language" = "界面语言";

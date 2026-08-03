@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 private func signalASIColor(light: UInt32, dark: UInt32) -> UIColor {
   UIColor { traits in
@@ -34,14 +35,6 @@ extension Color {
   static var signalASIInsightBackground: Color { Color(signalASIColor(light: 0xF2F6FE, dark: 0x202A36)) }
   static var signalASIInsightStroke: Color { Color(signalASIColor(light: 0xD8E6FB, dark: 0x34475C)) }
   static var signalASIInsightText: Color { Color(signalASIColor(light: 0x315B86, dark: 0xB8D5F2)) }
-}
-
-enum SignalASIRootTab: Hashable {
-  case agent
-  case messages
-  case contacts
-  case discover
-  case settings
 }
 
 struct SignalASILogoView: View {
@@ -118,9 +111,34 @@ struct SignalASIAndroidIconButton: View {
   }
 }
 
+private extension View {
+  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
+    frame(
+      minWidth: CGFloat(policy.minimumTouchTargetDp),
+      minHeight: CGFloat(policy.minimumTouchTargetDp)
+    )
+    .contentShape(Rectangle())
+  }
+}
+
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var draft = ""
+  @State private var attachments: [SignalASIDraftAttachment] = []
+  @State private var fileImporterPresented = false
+  @State private var photoPickerPresented = false
+  @State private var attachmentError = ""
+  @State private var selectedMessageForDetails: ChatMessage?
+
+  private var contact: SignalASIContact {
+    store.contact(id: "hermes") ?? SignalASIContact.hermes()
+  }
+
+  private var messages: [ChatMessage] {
+    store.messages(for: contact.id)
+  }
 
   private var unreadTotal: Int {
     store.visibleContacts.reduce(0) { total, contact in
@@ -128,58 +146,102 @@ struct AgentHomeView: View {
     }
   }
 
+  private var canSend: Bool {
+    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+  }
+
+  private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
+    AgentDeviceProfileDetector.detect().inputTargetPolicy
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        ScrollView {
-          VStack(spacing: 10) {
-            AgentInsightBanner(unreadTotal: unreadTotal)
-            SignalASIAndroidMenuLink(
-              title: "Hermes Agent",
-              subtitle: t("signalasi.agent.hermes.subtitle", "Continue desktop Agent conversations and task execution"),
-              systemImage: "bubble.left.and.bubble.right.fill",
-              tint: .signalASIAccent
-            ) {
-              ConversationView(contactId: "hermes")
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.agent.native_tools", "Native Tools"),
-              subtitle: String(
-                format: t("signalasi.agent.native_tools.subtitle", "%d contacts, device actions and local safety controls"),
-                store.visibleContacts.count
-              ),
-              systemImage: "hammer.fill",
-              tint: .signalASIInsightText
-            ) {
-              AgentSafetySettingsView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.agent.voice_wake", "Voice Wake"),
-              subtitle: t("signalasi.agent.voice_wake.subtitle", "Whisper ASR, microphone and reply playback settings"),
-              systemImage: "mic.fill",
-              tint: .signalASIAccent
-            ) {
-              VoiceSettingsView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.agent.data_sharing", "Data Sharing"),
-              subtitle: t("signalasi.agent.data_sharing.subtitle", "Review model disclosure events and destination blocks"),
-              systemImage: "lock.shield.fill",
-              tint: .signalASIUnreadRed
-            ) {
-              AgentDataDisclosureDashboardView()
-            }
-          }
-          .padding(.horizontal, 12)
-          .padding(.top, 8)
-          .padding(.bottom, 18)
-        }
+        agentOutput
+        Divider()
+          .background(Color.signalASISeparator)
+        agentComposer
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
+      .onAppear {
+        store.markContactRead(contact.id)
+      }
+      .fileImporter(
+        isPresented: $fileImporterPresented,
+        allowedContentTypes: [.item],
+        allowsMultipleSelection: true
+      ) { result in
+        switch result {
+        case .success(let urls):
+          urls.forEach(addAttachment)
+        case .failure(let error):
+          attachmentError = error.localizedDescription
+        }
+      }
+      .sheet(isPresented: $photoPickerPresented) {
+        PhotoLibraryPickerView { attachment in
+          appendAttachment(attachment)
+        }
+      }
+      .sheet(item: $selectedMessageForDetails) { message in
+        MessageDetailView(message: message, contact: contact)
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var agentOutput: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(spacing: 10) {
+          if messages.isEmpty {
+            AgentInsightBanner(unreadTotal: unreadTotal)
+            AgentProcessCard()
+            AgentInfoCard(
+              currentApp: "SignalASI iOS",
+              callableTargets: store.visibleContacts.count,
+              runningTasks: 0
+            )
+          } else {
+            ForEach(messages) { message in
+              MessageBubble(message: message)
+                .id(message.id)
+                .contextMenu {
+                  Button {
+                    selectedMessageForDetails = message
+                  } label: {
+                    Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
+                  }
+                  Button {
+                    UIPasteboard.general.string = message.content
+                  } label: {
+                    Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+                  }
+                  Button(role: .destructive) {
+                    store.deleteMessage(message.id, contactId: contact.id)
+                  } label: {
+                    Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+                  }
+                }
+            }
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+      }
+      .background(Color.signalASIPageBackground)
+      .onChange(of: messages.count) { _ in
+        if let last = messages.last {
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(last.id, anchor: .bottom)
+          }
+        }
+        store.markContactRead(contact.id)
+      }
+    }
   }
 
   private var header: some View {
@@ -189,7 +251,7 @@ struct AgentHomeView: View {
         Text("SignalASI")
           .font(.system(size: 14.5, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-        Text(t("signalasi.agent.mode", "Agent Mode"))
+        Text(t("signalasi.agent.brand.subtitle", "Super Agent"))
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
       }
@@ -199,7 +261,7 @@ struct AgentHomeView: View {
           .font(.system(size: 14, weight: .bold))
           .foregroundColor(.signalASIAgentSessionTitle)
           .lineLimit(1)
-        Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.native_tools.ready", "Native tools ready"))
+        Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.tab.subtitle", "Phone-native super agent"))
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
@@ -217,6 +279,201 @@ struct AgentHomeView: View {
     .padding(.vertical, 8)
     .frame(height: 76)
     .background(Color.signalASIPageBackground)
+  }
+
+  private var agentComposer: some View {
+    VStack(spacing: 8) {
+      if !attachments.isEmpty {
+        AttachmentPreviewStrip(attachments: attachments) { attachment in
+          attachments.removeAll { $0.id == attachment.id }
+        }
+      }
+      if !attachmentError.isEmpty {
+        Text(attachmentError)
+          .font(.caption)
+          .foregroundColor(.red)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      HStack(spacing: 4) {
+        NavigationLink(destination: VoiceSettingsView()) {
+          Text(t("signalasi.agent.voice_button", "Hold to Talk"))
+            .font(.system(size: 15, weight: .bold))
+            .foregroundColor(Color(signalASIColor(0x087CFF)))
+            .frame(width: 112, height: 54)
+            .background(Color.signalASISurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .agentDeviceTouchTarget(deviceInputPolicy)
+
+        HStack(spacing: 6) {
+          TextField(t("signalasi.agent.goal_hint", "Type a message..."), text: $draft)
+            .textInputAutocapitalization(.sentences)
+            .lineLimit(1)
+          Button {
+            fileImporterPresented = true
+          } label: {
+            Image(systemName: "plus.circle")
+              .font(.system(size: 21, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+          }
+          .agentDeviceTouchTarget(deviceInputPolicy)
+          Button {
+            photoPickerPresented = true
+          } label: {
+            Image(systemName: "photo")
+              .font(.system(size: 20, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+          }
+          .agentDeviceTouchTarget(deviceInputPolicy)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .frame(minHeight: 54)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+        Button {
+          sendAgentMessage()
+        } label: {
+          Image(systemName: "arrow.up")
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(canSend ? .white : .signalASITextSecondary)
+            .frame(width: 54, height: 54)
+            .background(
+              RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(canSend ? Color.signalASIAccent : Color.signalASIButtonSoft)
+            )
+        }
+        .buttonStyle(.plain)
+        .agentDeviceTouchTarget(deviceInputPolicy)
+        .disabled(!canSend)
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .background(Color.signalASIBarBackground)
+  }
+
+  private func sendAgentMessage() {
+    let text = draft
+    let outgoingAttachments = attachments
+    draft = ""
+    attachments.removeAll()
+    attachmentError = ""
+    Task {
+      await coordinator.send(text, to: contact, attachments: outgoingAttachments)
+    }
+  }
+
+  private func addAttachment(url: URL) {
+    do {
+      let attachment = try SignalASIAttachmentPayloadBuilder.makeAttachment(from: url)
+      appendAttachment(attachment)
+    } catch {
+      attachmentError = error.localizedDescription
+    }
+  }
+
+  private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
+    guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
+      attachmentError = t("signalasi.attachment.limit", "Attachment limit reached or file is too large.")
+      return
+    }
+    attachments.append(attachment)
+    attachmentError = ""
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct AgentProcessCard: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(t("signalasi.agent.section.process", "Process"))
+        .font(.system(size: 13, weight: .bold))
+        .foregroundColor(.signalASITextPrimary)
+      AgentProcessStepRow(
+        title: t("signalasi.agent.step.observe", "Read current screen structure"),
+        status: t("signalasi.agent.step.current", "Current"),
+        active: true
+      )
+      AgentProcessStepRow(
+        title: t("signalasi.agent.step.analyze", "Analyze user goal"),
+        status: t("signalasi.agent.step.waiting", "Waiting"),
+        active: false
+      )
+      AgentProcessStepRow(
+        title: t("signalasi.agent.step.plan", "Generate executable plan"),
+        status: t("signalasi.agent.step.waiting", "Waiting"),
+        active: false
+      )
+      AgentProcessStepRow(
+        title: t("signalasi.agent.step.act", "Execute after confirmation"),
+        status: t("signalasi.agent.step.safe", "Safe"),
+        active: false
+      )
+    }
+    .padding(12)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct AgentProcessStepRow: View {
+  var title: String
+  var status: String
+  var active: Bool
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Circle()
+        .fill(active ? Color.signalASIAccent : Color.signalASISeparator)
+        .frame(width: 9, height: 9)
+      Text(title)
+        .font(.system(size: 13))
+        .foregroundColor(.signalASITextPrimary)
+      Spacer(minLength: 8)
+      Text(status)
+        .font(.system(size: 11, weight: .bold))
+        .foregroundColor(active ? .signalASIAccent : .signalASITextSecondary)
+    }
+  }
+}
+
+private struct AgentInfoCard: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var currentApp: String
+  var callableTargets: Int
+  var runningTasks: Int
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(t("signalasi.agent.section.info", "Info"))
+        .font(.system(size: 13, weight: .bold))
+        .foregroundColor(.signalASITextPrimary)
+      Text(String(format: t("signalasi.agent.current_app", "Current App: %@"), currentApp))
+      Text(String(format: t("signalasi.agent.callable_targets", "Callable targets: %d"), callableTargets))
+      Text(String(format: t("signalasi.agent.running_tasks", "Running tasks: %d"), runningTasks))
+    }
+    .font(.system(size: 13))
+    .foregroundColor(.signalASIInsightText)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(12)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
