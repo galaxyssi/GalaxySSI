@@ -576,6 +576,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var encryptedAgentRegistry: EncryptedAgentRegistry
     @Volatile private var lastAgentRegistrySyncAtMillis = 0L
     private val agentTurnGoals = ConcurrentHashMap<String, String>()
+    private val agentContextBeforeTurn = ConcurrentHashMap<String, AgentConversationContext>()
     private val agentRecoveryActionsInFlight = linkedSetOf<String>()
     private lateinit var agentMcpRegistry: AgentMcpRegistry
     private lateinit var remoteSelfEvolutionStore: EncryptedAgentRemoteSelfEvolutionStore
@@ -1480,6 +1481,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AppForegroundTracker.onActivityForeground(this)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
+        agentRoutingExecutor.execute {
+            val conversationId = runCatching { agentTranscriptStore.activeConversation().id }
+                .getOrDefault("")
+            if (conversationId.isNotBlank()) {
+                runCatching { agentTranscriptStore.context(conversationId) }
+            }
+        }
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
         if (isHighAccuracyQnnSelected() || highAccuracyAsrControllerDelegate.isInitialized()) {
@@ -5057,6 +5065,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val conversation = agentTranscriptStore.activeConversation()
         val turnId = UUID.randomUUID().toString()
+        agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
+            agentContextBeforeTurn[turnId] = prepared
+        }
+        if (agentContextBeforeTurn.size > 2_000) {
+            agentContextBeforeTurn.keys.take(400).forEach(agentContextBeforeTurn::remove)
+        }
         if (voiceTraceId.isNotBlank()) {
             activeVoiceTraceId = voiceTraceId
             voiceTraceIdsByTurn[turnId] = voiceTraceId
@@ -5241,9 +5255,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             handleAgentSkillCommand(goal, conversationId, turnId)
         ) return
         agentRoutingExecutor.execute {
-            val baseConversationContext = agentTranscriptStore.context(
-                conversationId = conversationId,
-                excludeTurnId = turnId
+            val baseConversationContext = agentContextBeforeTurn.remove(turnId)
+                ?: agentTranscriptStore.context(
+                    conversationId = conversationId,
+                    excludeTurnId = turnId
+                )
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=context_loaded turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
             )
             val correctionContext = voiceCorrectionJournal.contextBlock(conversationId)
             val localConversationContext = if (correctionContext.isBlank()) {
@@ -5373,11 +5393,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 localConversationContext,
                 executionGoal
             )
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=context_augmented turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
+            )
             val skillMatch = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
                 null
             } else {
                 agentSkillMatcher.match(executionGoal)
             }
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=skill_matched turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
+            )
             val requestedForcedAction = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
                 null
             } else {
@@ -5392,6 +5422,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             val deterministicAction = resolvedForcedAction
                 ?: deterministicSystemActionFor(executionGoal, conversationContext)
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=action_resolved turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
+            )
             Log.d(
                 "SignalASIAgent",
                 "route_resolved turn=${turnId.take(8)} tool=${deterministicAction?.parameters?.get("tool_id").orEmpty()} " +
@@ -5402,6 +5437,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 conversationId = conversationId,
                 request = executionGoal,
                 activeSkillId = if (deterministicAction == null) skillMatch?.installation?.id.orEmpty() else ""
+            )
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=run_recorded turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
             )
             val selectedRouteAction = resolvedForcedAction ?: deterministicAction
             val selectedAgentId = selectedRouteAction
@@ -5455,6 +5495,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = turnId,
                 agentId = selectedAgentId,
                 type = AgentRunControlEventType.RUN_STARTED
+            )
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=run_events_recorded turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
             )
             Log.d(
                 "SignalASIAgent",
@@ -5667,6 +5712,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         deterministicAction: AgentAction? = null,
         executionMode: AgentTaskExecutionMode? = null
     ) {
+        val submissionStartedAt = SystemClock.elapsedRealtime()
         val workspace = AgentWorkspace(
             workspaceId = turnId,
             sessionId = turnId,
@@ -5685,7 +5731,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             AgentTaskLane.READ_REASONING,
             AgentTaskPriority.FOREGROUND
         ) {
+            Log.i(
+                "SignalASILatency",
+                "agent_runtime stage=task_started turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
+            )
             progress("planning", "Planning task")
+            Log.i(
+                "SignalASILatency",
+                "agent_runtime stage=planning_recorded turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
+            )
             val runtime = MobileNativeAgent(
                 this@MainActivity,
                 planner = deterministicAction?.let { selectedAction ->

@@ -597,6 +597,7 @@ class AgentTranscriptStore(context: Context) {
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
     private var draftConversation: AgentConversation? = null
     private var emptyConversationsPruned = false
+    private val preparedContextCache = linkedMapOf<String, AgentConversationContext>()
 
     init {
         AgentSessionMemoryBudgetRuntime.start(appContext)
@@ -939,6 +940,7 @@ class AgentTranscriptStore(context: Context) {
     fun deleteEntry(entryId: String): Boolean {
         val removed = entryDatabase.findById(entryId) ?: return false
         if (!entryDatabase.deleteById(entryId)) return false
+        preparedContextCache.remove(removed.conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(removed.conversationId, listOf(removed))
         conversationForEvent(removed.conversationId)?.let { conversation ->
@@ -953,6 +955,7 @@ class AgentTranscriptStore(context: Context) {
         if (cleanKey.isBlank()) return false
         val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
         if (!entryDatabase.deleteById(removed.id)) return false
+        preparedContextCache.remove(conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(conversationId, listOf(removed))
         conversationForEvent(conversationId)?.let { conversation ->
@@ -977,14 +980,20 @@ class AgentTranscriptStore(context: Context) {
         val turns = compacted.messages.mapNotNull { item ->
             entriesById[item.id]?.copy(text = item.content)
         }
-        return AgentConversationContext(
+        val prepared = AgentConversationContext(
             conversationId = window.conversation.id,
             summary = compacted.summary,
             turns = turns,
             privateMode = window.conversation.privateMode,
             trackingPaused = window.conversation.trackingPaused
         )
+        if (excludeTurnId.isBlank()) preparedContextCache[window.conversation.id] = prepared
+        return prepared
     }
+
+    @Synchronized
+    fun preparedContext(conversationId: String): AgentConversationContext? =
+        preparedContextCache[conversationId.trim()]
 
     @Synchronized
     fun metrics(conversationId: String): AgentConversationMetrics {
@@ -1093,6 +1102,9 @@ class AgentTranscriptStore(context: Context) {
             entryDatabase.insert(eventEntry)
         }
         check(written) { "Agent transcript entry write failed" }
+        if (role == AgentTranscriptRole.USER && previous != null) {
+            preparedContextCache.remove(conversationId)
+        }
         changedPriorEntry?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
             touchConversation(conversationId, role, cleanText, timestampMillis)
@@ -1113,6 +1125,7 @@ class AgentTranscriptStore(context: Context) {
     fun clear() {
         draftConversation = null
         emptyConversationsPruned = false
+        preparedContextCache.clear()
         preferences.clear()
         entryDatabase.clear()
     }
@@ -1128,6 +1141,7 @@ class AgentTranscriptStore(context: Context) {
     internal fun restoreEntriesJson(input: JSONArray) {
         val fallbackConversationId = preferences.readString(KEY_ACTIVE_CONVERSATION, "")
         saveEntries(decodeEntries(input.toString(), fallbackConversationId))
+        preparedContextCache.clear()
         emptyConversationsPruned = false
     }
 
@@ -1282,6 +1296,16 @@ class AgentTranscriptStore(context: Context) {
             .firstOrNull { it.id == conversationId } ?: return
         val window = unsummarizedDialogue(conversation)
         val compacted = compileContext(window.conversation, window.dialogue)
+        val entriesById = window.dialogue.associateBy(AgentTranscriptEntry::id)
+        preparedContextCache[conversationId] = AgentConversationContext(
+            conversationId = conversationId,
+            summary = compacted.summary,
+            turns = compacted.messages.mapNotNull { item ->
+                entriesById[item.id]?.copy(text = item.content)
+            },
+            privateMode = window.conversation.privateMode,
+            trackingPaused = window.conversation.trackingPaused
+        )
         if (!compacted.compacted) return
         val cursor = window.dialogue.lastOrNull { it.id in compacted.compactedMessageIds }
         updateConversation(conversationId) {
