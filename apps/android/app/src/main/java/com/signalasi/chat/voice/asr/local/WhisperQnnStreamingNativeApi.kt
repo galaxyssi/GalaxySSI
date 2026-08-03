@@ -372,10 +372,14 @@ private class QnnStreamingSession(
                 continue
             }
             val startedAt = elapsedRealtimeMs().coerceAtLeast(0L)
-            val tokenBudget = WhisperQnnTokenBudget.forAudioDuration(
-                packet.window.durationMs,
+            // Partial text is revisable, so a bounded budget keeps it responsive. Final text must
+            // retain the configured hard maximum because duration-derived caps can silently cut
+            // fast speech, numbers, URLs, or dense multilingual tokens before EOT.
+            val tokenBudget = if (packet.window.final) {
                 config.maxTokens
-            )
+            } else {
+                WhisperQnnPartialTokenBudget.forAudioDuration(packet.window.durationMs, config.maxTokens)
+            }
             val transcription = try {
                 val features = requireNotNull(packet.buffer)
                     .duplicate()
@@ -403,7 +407,7 @@ private class QnnStreamingSession(
                     "encoder_ms=${transcription.encoderNanos / 1_000_000.0} " +
                     "decoder_ms=${transcription.decoderNanos / 1_000_000.0} " +
                     "decoder_steps=${transcription.decoderSteps} output_tokens=${transcription.tokenIds.size} " +
-                    "token_budget=$tokenBudget"
+                    "token_budget=$tokenBudget termination=${transcription.termination.name.lowercase()}"
             )
             release(packet)
             if (terminal.get()) return
@@ -434,7 +438,8 @@ private class QnnStreamingSession(
         if (!terminal.compareAndSet(false, true)) return
         logPerformance(
             "stage=final_callback audio_ms=${window.durationMs} " +
-                "inference_ms=${transcription?.inferenceMs ?: 0L} text_chars=${hypothesis.fullText.length}"
+                "inference_ms=${transcription?.inferenceMs ?: 0L} text_chars=${hypothesis.fullText.length} " +
+                "termination=${transcription?.termination?.name?.lowercase() ?: "no_speech"}"
         )
         mailbox.close().forEach(::release)
         closeFrontendSafely()
@@ -445,7 +450,8 @@ private class QnnStreamingSession(
                 sessionToken,
                 hypothesis.fullText,
                 window.durationMs,
-                transcription?.inferenceMs ?: 0L
+                transcription?.inferenceMs ?: 0L,
+                transcription?.termination ?: AsrTranscriptTermination.NO_SPEECH
             )
         }
         shutdownWorkers()
@@ -551,7 +557,12 @@ private class QnnStreamingSession(
     }
 }
 
-internal object WhisperQnnTokenBudget {
+internal data class FeaturePacket(
+    val window: NativeFeatureWindow,
+    val buffer: ByteBuffer?
+)
+
+internal object WhisperQnnPartialTokenBudget {
     private const val MIN_OUTPUT_TOKENS = 32
     private const val OUTPUT_TOKENS_PER_SECOND = 10L
     private const val OUTPUT_TOKEN_HEADROOM = 24L
@@ -564,11 +575,6 @@ internal object WhisperQnnTokenBudget {
         return estimated.toInt().coerceIn(minOf(MIN_OUTPUT_TOKENS, configuredMaximum), configuredMaximum)
     }
 }
-
-internal data class FeaturePacket(
-    val window: NativeFeatureWindow,
-    val buffer: ByteBuffer?
-)
 
 internal class FeatureMailbox {
     private val lock = ReentrantLock()

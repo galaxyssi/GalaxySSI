@@ -60,7 +60,7 @@ class PcmRingBuffer(capacitySamples: Int) {
 
 data class SegmentRange(
     val preRollMs: Int = 300,
-    val postRollMs: Int = 200,
+    val postRollMs: Int = 400,
     val includeAllWhenSpeechMissing: Boolean = true
 )
 

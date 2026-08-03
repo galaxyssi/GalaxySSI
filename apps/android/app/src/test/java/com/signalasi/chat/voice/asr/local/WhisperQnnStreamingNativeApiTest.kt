@@ -42,6 +42,8 @@ class WhisperQnnStreamingNativeApiTest {
 
         assertEquals(listOf("hello world"), callback.finals)
         assertEquals(2, runtime.calls.get())
+        assertTrue(runtime.maxTokenBudgets.first() < AsrConfig().maxTokens)
+        assertEquals(AsrConfig().maxTokens, runtime.maxTokenBudgets.last())
         assertFalse(runtime.closed.get())
         assertTrue(callback.diagnostics.isNotEmpty())
         assertEquals(0, callback.diagnostics.last().encoderNpuLayers)
@@ -80,11 +82,23 @@ class WhisperQnnStreamingNativeApiTest {
     }
 
     @Test
-    fun shortUtterancesUseABoundedDecoderTokenBudget() {
-        assertEquals(32, WhisperQnnTokenBudget.forAudioDuration(0L, 160))
-        assertEquals(37, WhisperQnnTokenBudget.forAudioDuration(1_300L, 160))
-        assertEquals(124, WhisperQnnTokenBudget.forAudioDuration(10_000L, 160))
-        assertEquals(160, WhisperQnnTokenBudget.forAudioDuration(28_000L, 160))
+    fun finalInferenceUsesConfiguredMaximumInsteadOfDurationDerivedLimit() {
+        val runtime = FakeRuntime("dense short utterance")
+        val frontendFactory = FakeFrontendFactory()
+        val callback = RecordingCallback()
+        val api = AndroidWhisperQnnAsrApi(WhisperQnnTranscriberRuntimeFactory { runtime }, frontendFactory)
+        val handle = api.create(
+            temporaryFolder.newFolder("model-full-budget").path,
+            temporaryFolder.newFolder("runtime-full-budget").path,
+            callback
+        )
+
+        assertTrue(api.start(handle, 15L, AsrConfig(maxTokens = 137)))
+        frontendFactory.latest().emit(window(NativeFeatureWindowKind.FINAL, 0L, 8_000L))
+        assertTrue(callback.finalLatch.await(2, TimeUnit.SECONDS))
+
+        assertEquals(listOf(137), runtime.maxTokenBudgets)
+        api.destroy(handle)
     }
 
     @Test
@@ -242,6 +256,7 @@ class WhisperQnnStreamingNativeApiTest {
     private class FakeRuntime(vararg private val responses: String) : WhisperQnnTranscriberRuntime {
         val calls = AtomicInteger(0)
         val closed = AtomicBoolean(false)
+        val maxTokenBudgets = CopyOnWriteArrayList<Int>()
         @Volatile var qnnExecution: QnnExecutionAttestation? = null
 
         override fun transcribe(
@@ -251,6 +266,7 @@ class WhisperQnnStreamingNativeApiTest {
         ): WhisperQnnTranscription {
             assertEquals(384_000, melFeatures.remaining())
             assertEquals("zh", language)
+            maxTokenBudgets += maxTokens
             val index = calls.getAndIncrement().coerceAtMost(responses.lastIndex)
             return WhisperQnnTranscription(
                 text = responses[index],
@@ -363,6 +379,7 @@ class WhisperQnnStreamingNativeApiTest {
         val finalLatch = CountDownLatch(1)
         val errorLatch = CountDownLatch(1)
         val finals = CopyOnWriteArrayList<String>()
+        val terminations = CopyOnWriteArrayList<AsrTranscriptTermination>()
         val errors = CopyOnWriteArrayList<ErrorRecord>()
         val diagnostics = CopyOnWriteArrayList<AsrEvent.Diagnostics>()
 
@@ -376,8 +393,15 @@ class WhisperQnnStreamingNativeApiTest {
             partialLatch.countDown()
         }
 
-        override fun onFinal(sessionToken: Long, text: String, durationMs: Long, inferenceMs: Long) {
+        override fun onFinal(
+            sessionToken: Long,
+            text: String,
+            durationMs: Long,
+            inferenceMs: Long,
+            termination: AsrTranscriptTermination
+        ) {
             finals += text
+            terminations += termination
             finalLatch.countDown()
         }
 

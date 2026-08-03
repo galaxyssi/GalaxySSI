@@ -117,6 +117,7 @@ import com.signalasi.chat.voice.asr.local.AsrEvent as HighAccuracyAsrEvent
 import com.signalasi.chat.voice.asr.local.AsrPerformanceMode
 import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.HighAccuracyAsrResult
+import com.signalasi.chat.voice.asr.local.AsrTranscriptCompletenessPolicy
 import com.signalasi.chat.voice.asr.local.HighAccuracyLocalAsrController
 import com.signalasi.chat.voice.asr.local.HighAccuracyLocalAsrTurn
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
@@ -22587,6 +22588,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 AsrPerformanceMode.BALANCED -> 1_500L
                 AsrPerformanceMode.POWER_SAVER -> 2_000L
             },
+            postRollMs = 400L,
             finalizationTimeoutMs = 8_000L,
             performanceMode = performanceMode
         )
@@ -23045,7 +23047,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             longUtteranceSilenceMs = 500L,
             maxDurationMs = 60_000L,
             preRollMs = 300,
-            postRollMs = 200
+            postRollMs = 400
         )
         val session = voiceAudioHub().start(
             VoiceAudioSessionConfig(
@@ -23316,9 +23318,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 highAccuracyTurn?.cancel()
                 null
             }
-            highAccuracyCompletion
-                ?.takeIf { it.text.isNotBlank() }
-                ?.let { highAccuracyAsrFinals[traceId] = it }
+            highAccuracyCompletion?.let { completion ->
+                val completeness = AsrTranscriptCompletenessPolicy.evaluate(
+                    text = completion.text,
+                    decoderComplete = completion.complete,
+                    decodedAudioMs = completion.durationMs,
+                    capturedSpeechMs = result?.snapshot?.speechDurationMs
+                )
+                if (completeness.accepted) {
+                    highAccuracyAsrFinals[traceId] = completion
+                } else {
+                    Log.w(
+                        "SignalASIVoice",
+                        "QNN final rejected reason=${completeness.reasonCode} " +
+                            "termination=${completion.termination.name.lowercase()} " +
+                            "decodedMs=${completion.durationMs} " +
+                            "speechMs=${result?.snapshot?.speechDurationMs ?: -1L} " +
+                            "missingMs=${completeness.missingCoverageMs}; retained PCM will be used"
+                    )
+                }
+            }
             val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
             val onlineCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
                 runCatching { onlineTurn.finish(pcmBufferComplete = captureResult.isSuccess) }.getOrNull()

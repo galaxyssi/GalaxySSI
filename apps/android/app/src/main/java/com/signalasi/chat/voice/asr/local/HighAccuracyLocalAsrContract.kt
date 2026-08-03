@@ -115,7 +115,7 @@ data class AsrConfig(
     val activeWindowMs: Long = 10_000L,
     val overlapMs: Long = 2_000L,
     val preRollMs: Long = 200L,
-    val postRollMs: Long = 150L,
+    val postRollMs: Long = 400L,
     val maxTokens: Int = 160,
     val enableTimestamps: Boolean = false,
     val performanceMode: AsrPerformanceMode = AsrPerformanceMode.BALANCED,
@@ -185,7 +185,8 @@ sealed interface AsrEvent {
     data class Final(
         val text: String,
         val durationMs: Long,
-        val inferenceMs: Long
+        val inferenceMs: Long,
+        val termination: AsrTranscriptTermination = AsrTranscriptTermination.UNKNOWN
     ) : AsrEvent
 
     data class Error(
@@ -205,6 +206,17 @@ sealed interface AsrEvent {
         val residentBytes: Long,
         val qnnExecution: QnnExecutionAttestation? = null
     ) : AsrEvent
+}
+
+enum class AsrTranscriptTermination {
+    END_OF_TEXT,
+    TOKEN_LIMIT,
+    CONTEXT_LIMIT,
+    NO_SPEECH,
+    UNKNOWN;
+
+    val isComplete: Boolean
+        get() = this != TOKEN_LIMIT && this != CONTEXT_LIMIT
 }
 
 interface LocalAsrEngine : AutoCloseable {
@@ -231,7 +243,13 @@ interface QnnAsrNativeCallback {
         inferenceMs: Long
     )
 
-    fun onFinal(sessionToken: Long, text: String, durationMs: Long, inferenceMs: Long)
+    fun onFinal(
+        sessionToken: Long,
+        text: String,
+        durationMs: Long,
+        inferenceMs: Long,
+        termination: AsrTranscriptTermination
+    )
     fun onError(sessionToken: Long, code: String, message: String, recoverable: Boolean)
     fun onDiagnostics(sessionToken: Long, diagnostics: AsrEvent.Diagnostics)
 }

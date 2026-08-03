@@ -285,7 +285,13 @@ class WhisperLargeTurboAsrEngineTest {
         }
 
         fun emitFinal(token: Long, text: String) {
-            callback?.onFinal(token, text, 1_100L, 410L)
+            callback?.onFinal(
+                token,
+                text,
+                1_100L,
+                410L,
+                AsrTranscriptTermination.END_OF_TEXT
+            )
         }
     }
 }

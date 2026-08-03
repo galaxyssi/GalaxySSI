@@ -26,7 +26,9 @@ data class HighAccuracyAsrResult(
     val text: String,
     val durationMs: Long,
     val inferenceMs: Long,
-    val modelProfileId: String
+    val modelProfileId: String,
+    val complete: Boolean = true,
+    val termination: AsrTranscriptTermination = AsrTranscriptTermination.UNKNOWN
 )
 
 class HighAccuracyLocalAsrController internal constructor(
@@ -211,6 +213,8 @@ class HighAccuracyLocalAsrTurn internal constructor(
     private var pendingSamples = 0
     private var accumulatedDurationMs = 0L
     private var accumulatedInferenceMs = 0L
+    private var transcriptComplete = true
+    private var transcriptTermination = AsrTranscriptTermination.UNKNOWN
     private var restartPending = false
     private var stopAfterListening = false
     private val eventJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -312,6 +316,12 @@ class HighAccuracyLocalAsrTurn internal constructor(
                     assembler.append(event.text)
                     accumulatedDurationMs += event.durationMs
                     accumulatedInferenceMs += event.inferenceMs
+                    if (!event.termination.isComplete) {
+                        transcriptComplete = false
+                        transcriptTermination = event.termination
+                    } else if (transcriptTermination == AsrTranscriptTermination.UNKNOWN) {
+                        transcriptTermination = event.termination
+                    }
                     if (finishRequested.get()) {
                         completeFinalLocked()
                         null
@@ -399,7 +409,9 @@ class HighAccuracyLocalAsrTurn internal constructor(
                 text = assembler.value(),
                 durationMs = accumulatedDurationMs,
                 inferenceMs = accumulatedInferenceMs,
-                modelProfileId = modelProfileId
+                modelProfileId = modelProfileId,
+                complete = transcriptComplete,
+                termination = transcriptTermination
             ))
         }
     }

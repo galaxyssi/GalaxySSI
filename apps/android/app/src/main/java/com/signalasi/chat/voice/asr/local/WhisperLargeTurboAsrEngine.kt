@@ -73,13 +73,26 @@ class WhisperLargeTurboAsrEngine(
             ))
         }
 
-        override fun onFinal(sessionToken: Long, text: String, durationMs: Long, inferenceMs: Long) {
+        override fun onFinal(
+            sessionToken: Long,
+            text: String,
+            durationMs: Long,
+            inferenceMs: Long,
+            termination: AsrTranscriptTermination
+        ) {
             val ready = synchronized(stateLock) {
                 if (sessionToken != activeSessionToken || closed.get()) return
                 clearActiveSessionLocked()
                 readyStateLocked()
             }
-            publish(AsrEvent.Final(text.trim(), durationMs.coerceAtLeast(0L), inferenceMs.coerceAtLeast(0L)))
+            publish(
+                AsrEvent.Final(
+                    text.trim(),
+                    durationMs.coerceAtLeast(0L),
+                    inferenceMs.coerceAtLeast(0L),
+                    termination
+                )
+            )
             transition(ready)
         }
 
