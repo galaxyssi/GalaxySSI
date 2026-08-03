@@ -28,19 +28,42 @@ struct SignalASIApp: App {
 }
 
 struct RootView: View {
+  @State private var selection: SignalASIRootTab = .agent
+
   var body: some View {
-    TabView {
+    TabView(selection: $selection) {
+      AgentHomeView()
+        .tabItem { Label("Agent", systemImage: "sparkles") }
+        .tag(SignalASIRootTab.agent)
       ChatListView()
-        .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+        .tabItem { Label("SignalASI", systemImage: "bubble.left.and.bubble.right") }
+        .tag(SignalASIRootTab.messages)
       ContactsView()
-        .tabItem { Label("Contacts", systemImage: "person.2") }
-      PairingView()
-        .tabItem { Label("Pairing", systemImage: "qrcode.viewfinder") }
-      VoiceSettingsView()
-        .tabItem { Label("Voice", systemImage: "mic") }
+        .tabItem {
+          Label(
+            SignalASILocalization.string("signalasi.tab.contacts", fallback: "Contacts"),
+            systemImage: "person.2"
+          )
+        }
+        .tag(SignalASIRootTab.contacts)
+      DiscoverView()
+        .tabItem {
+          Label(
+            SignalASILocalization.string("signalasi.tab.discover", fallback: "Discover"),
+            systemImage: "safari"
+          )
+        }
+        .tag(SignalASIRootTab.discover)
       SettingsView()
-        .tabItem { Label("Settings", systemImage: "gearshape") }
+        .tabItem {
+          Label(
+            SignalASILocalization.string("signalasi.tab.settings", fallback: "Settings"),
+            systemImage: "gearshape"
+          )
+        }
+        .tag(SignalASIRootTab.settings)
     }
+    .accentColor(.signalASIAccent)
   }
 }
 
@@ -90,21 +113,58 @@ struct ChatListView: View {
 
   var body: some View {
     NavigationView {
-      List {
-        if filteredContacts.isEmpty {
-          Text("No matching chats")
-            .foregroundColor(.secondary)
-        } else {
-          ForEach(filteredContacts) { contact in
-            NavigationLink(destination: ConversationView(contactId: contact.id)) {
-              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+      VStack(spacing: 0) {
+        SignalASITopBar(
+          title: "SignalASI",
+          leading: { Color.clear },
+          trailing: { Color.clear }
+        )
+        VStack(spacing: 10) {
+          HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+              .foregroundColor(.signalASITextSecondary)
+            TextField("Search chats", text: $searchText)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled(true)
+          }
+          .font(.system(size: 15))
+          .padding(.horizontal, 12)
+          .frame(height: 36)
+          .background(Color.signalASISearchBackground)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          ScrollView {
+            LazyVStack(spacing: 0) {
+              if filteredContacts.isEmpty {
+                Text("No matching chats")
+                  .font(.system(size: 15))
+                  .foregroundColor(.signalASITextSecondary)
+                  .frame(maxWidth: .infinity, minHeight: 90)
+              } else {
+                ForEach(filteredContacts) { contact in
+                  NavigationLink(destination: ConversationView(contactId: contact.id)) {
+                    ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+                  }
+                  .buttonStyle(.plain)
+                  if contact.id != filteredContacts.last?.id {
+                    Divider()
+                      .background(Color.signalASISeparator)
+                      .padding(.leading, 66)
+                  }
+                }
+              }
             }
+            .background(Color.signalASISurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
           }
         }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       }
-      .navigationTitle("SignalASI")
-      .searchable(text: $searchText, prompt: "Search chats")
+      .background(Color.signalASIPageBackground.ignoresSafeArea())
+      .navigationBarHidden(true)
     }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 }
 
@@ -118,19 +178,19 @@ struct ContactRow: View {
       VStack(alignment: .leading, spacing: 4) {
         HStack {
           Text(contact.displayName)
-            .font(.headline)
-            .fontWeight(summary.hasUnreadMessages ? .semibold : .regular)
+            .font(.system(size: 16, weight: summary.hasUnreadMessages ? .semibold : .regular))
+            .foregroundColor(.signalASITextPrimary)
           Spacer()
           if let latestMessage = summary.lastMessage {
             Text(latestMessage.createdAt, style: .time)
-              .font(.caption)
-              .foregroundColor(.secondary)
+              .font(.system(size: 12))
+              .foregroundColor(.signalASITextSecondary)
           }
         }
         Text(summary.lastMessage?.content ?? contact.setupDetail)
           .lineLimit(1)
-          .font(.subheadline)
-          .foregroundColor(summary.hasUnreadMessages ? .primary : .secondary)
+          .font(.system(size: 14))
+          .foregroundColor(summary.hasUnreadMessages ? .signalASITextPrimary : .signalASITextSecondary)
       }
       if summary.hasUnreadMessages {
         Text(summary.unreadCount > 99 ? "99+" : "\(summary.unreadCount)")
@@ -140,11 +200,13 @@ struct ContactRow: View {
           .frame(minWidth: 22)
           .padding(.horizontal, 5)
           .padding(.vertical, 3)
-          .background(Capsule().fill(Color.accentColor))
+          .background(Capsule().fill(Color.signalASIUnreadRed))
           .accessibilityLabel(Text("\(summary.unreadCount) unread messages"))
       }
     }
-    .padding(.vertical, 4)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .background(Color.signalASISurface)
   }
 }
 
@@ -168,8 +230,25 @@ struct ConversationView: View {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
 
+  private var canSend: Bool {
+    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+  }
+
+  private var contactStatusText: String {
+    let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch contact.deliveryMode {
+    case .cloudAPI:
+      return contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank("Cloud model")
+    case .link:
+      return contact.isCommunicable ? "SignalASI Link" : setupDetail.ifBlank("Waiting for Desktop pairing")
+    case .local:
+      return setupDetail.ifBlank("Local")
+    }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
+      conversationHeader
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 10) {
@@ -195,8 +274,11 @@ struct ConversationView: View {
                 }
             }
           }
-          .padding()
+          .padding(.horizontal, 12)
+          .padding(.top, 14)
+          .padding(.bottom, 10)
         }
+        .background(Color.signalASIPageBackground)
         .onChange(of: store.messages(for: contact.id).count) { _ in
           if let last = store.messages(for: contact.id).last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
@@ -207,6 +289,7 @@ struct ConversationView: View {
         }
       }
       Divider()
+        .background(Color.signalASISeparator)
       VStack(spacing: 8) {
         if !attachments.isEmpty {
           AttachmentPreviewStrip(attachments: attachments) { attachment in
@@ -219,23 +302,32 @@ struct ConversationView: View {
             .foregroundColor(.red)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
           Button {
             fileImporterPresented = true
           } label: {
-            Image(systemName: "paperclip")
-              .font(.system(size: 22))
+            Image(systemName: "plus")
+              .font(.system(size: 20, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
           }
           .agentDeviceTouchTarget(deviceInputPolicy)
+          TextField("Message", text: $draft)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(Color.signalASISearchBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+              RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+            )
           Button {
             photoPickerPresented = true
           } label: {
             Image(systemName: "photo")
-              .font(.system(size: 22))
+              .font(.system(size: 20, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
           }
           .agentDeviceTouchTarget(deviceInputPolicy)
-          TextField("Message", text: $draft)
-            .textFieldStyle(.roundedBorder)
           Button {
             let text = draft
             let outgoingAttachments = attachments
@@ -244,29 +336,24 @@ struct ConversationView: View {
             attachmentError = ""
             Task { await coordinator.send(text, to: contact, attachments: outgoingAttachments) }
           } label: {
-            Image(systemName: "arrow.up.circle.fill")
-              .font(.system(size: 30))
+            Image(systemName: "arrow.up")
+              .font(.system(size: 17, weight: .bold))
+              .foregroundColor(canSend ? .white : .signalASITextSecondary)
+              .frame(width: 32, height: 32)
+              .background(Circle().fill(canSend ? Color.signalASIAccent : Color.signalASIButtonSoft))
           }
           .agentDeviceTouchTarget(deviceInputPolicy)
-          .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+          .disabled(!canSend)
         }
       }
-      .padding()
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background(Color.signalASIBarBackground)
     }
-    .navigationTitle(contact.displayName)
-    .navigationBarTitleDisplayMode(.inline)
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
     .onAppear {
       store.markContactRead(contact.id)
-    }
-    .toolbar {
-      ToolbarItem(placement: .navigationBarTrailing) {
-        Button(role: .destructive) {
-          showingDeleteChatConfirmation = true
-        } label: {
-          Image(systemName: "trash")
-        }
-        .disabled(store.messages(for: contact.id).isEmpty)
-      }
     }
     .alert("Delete Chat?", isPresented: $showingDeleteChatConfirmation) {
       Button("Delete", role: .destructive) {
@@ -296,6 +383,41 @@ struct ConversationView: View {
     .sheet(item: $selectedMessageForDetails) { message in
       MessageDetailView(message: message, contact: contact)
     }
+  }
+
+  private var conversationHeader: some View {
+    HStack(spacing: 8) {
+      SignalASIBackButton()
+      AvatarView(contact: contact, size: 30)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(contact.displayName)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+        HStack(spacing: 5) {
+          Circle()
+            .fill(contact.isCommunicable ? Color.signalASIAccent : Color.signalASITextSecondary)
+            .frame(width: 7, height: 7)
+          Text(contactStatusText)
+            .font(.system(size: 11))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+        }
+      }
+      Spacer(minLength: 8)
+      Button(role: .destructive) {
+        showingDeleteChatConfirmation = true
+      } label: {
+        Image(systemName: "trash")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(store.messages(for: contact.id).isEmpty ? .signalASITextSecondary : .signalASITextPrimary)
+          .frame(width: 40, height: 40)
+      }
+      .disabled(store.messages(for: contact.id).isEmpty)
+    }
+    .padding(.horizontal, 8)
+    .frame(height: 56)
+    .background(Color.signalASIBarBackground)
   }
 
   private func addAttachment(url: URL) {
@@ -422,7 +544,12 @@ struct MessageBubble: View {
         Text(message.content)
           .padding(.horizontal, 12)
           .padding(.vertical, 9)
-          .background(message.isSystem ? Color.secondary.opacity(0.12) : (message.isMine ? Color.blue.opacity(0.18) : Color(.secondarySystemBackground)))
+          .foregroundColor(.signalASITextPrimary)
+          .background(messageBubbleColor)
+          .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+              .stroke(message.isMine ? Color.clear : Color.signalASISeparator, lineWidth: 0.5)
+          )
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         HStack(spacing: 4) {
           Text(message.createdAt, style: .time)
@@ -431,10 +558,17 @@ struct MessageBubble: View {
           }
         }
         .font(.caption2)
-        .foregroundColor(.secondary)
+        .foregroundColor(.signalASITextSecondary)
       }
       if !message.isMine { Spacer(minLength: 48) }
     }
+  }
+
+  private var messageBubbleColor: Color {
+    if message.isSystem {
+      return Color.signalASIButtonSoft
+    }
+    return message.isMine ? Color.signalASISentBubble : Color.signalASIIncomingBubble
   }
 }
 
@@ -465,51 +599,98 @@ struct ContactsView: View {
 
   var body: some View {
     NavigationView {
-      List {
-        if !filteredFriendRequests.isEmpty {
-          Section("New Friends") {
-            ForEach(filteredFriendRequests) { request in
-              NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
-                FriendRequestRow(request: request)
+      VStack(spacing: 0) {
+        SignalASITopBar(
+          title: SignalASILocalization.string("signalasi.tab.contacts", fallback: "Contacts"),
+          leading: {
+            Button {
+              myQRCodePresented = true
+            } label: {
+              Image(systemName: "qrcode")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+          },
+          trailing: {
+            Button {
+              contactScannerPresented = true
+            } label: {
+              Image(systemName: "qrcode.viewfinder")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+          }
+        )
+        VStack(spacing: 10) {
+          HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+              .foregroundColor(.signalASITextSecondary)
+            TextField("Search contacts", text: $contactSearchText)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled(true)
+          }
+          .font(.system(size: 15))
+          .padding(.horizontal, 12)
+          .frame(height: 36)
+          .background(Color.signalASISearchBackground)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+              if !filteredFriendRequests.isEmpty {
+                sectionTitle("New Friends")
+                VStack(spacing: 0) {
+                  ForEach(filteredFriendRequests) { request in
+                    NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
+                      FriendRequestRow(request: request)
+                    }
+                    .buttonStyle(.plain)
+                  }
+                }
+                .background(Color.signalASISurface)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+              }
+              sectionTitle("Contacts")
+              VStack(spacing: 0) {
+                if filteredContacts.isEmpty {
+                  Text("No matching contacts")
+                    .font(.system(size: 15))
+                    .foregroundColor(.signalASITextSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 90)
+                } else {
+                  ForEach(filteredContacts) { contact in
+                    NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+                      ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+                    }
+                    .buttonStyle(.plain)
+                    if contact.id != filteredContacts.last?.id {
+                      Divider()
+                        .background(Color.signalASISeparator)
+                        .padding(.leading, 66)
+                    }
+                  }
+                }
+              }
+              .background(Color.signalASISurface)
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+              if !contactImportStatus.isEmpty {
+                Text(contactImportStatus)
+                  .font(.system(size: 13))
+                  .foregroundColor(contactImportIsError ? .red : .signalASITextSecondary)
+                  .padding(.horizontal, 4)
+                  .padding(.top, 4)
               }
             }
+            .padding(.bottom, 18)
           }
         }
-        Section("Contacts") {
-          if filteredContacts.isEmpty {
-            Text("No matching contacts")
-              .foregroundColor(.secondary)
-          } else {
-            ForEach(filteredContacts) { contact in
-              NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-                ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
-              }
-            }
-          }
-        }
-        if !contactImportStatus.isEmpty {
-          Section("Status") {
-            Text(contactImportStatus)
-              .foregroundColor(contactImportIsError ? .red : .secondary)
-          }
-        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       }
-      .navigationTitle("Contacts")
-      .searchable(text: $contactSearchText, prompt: "Search contacts")
-      .toolbar {
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-          Button {
-            myQRCodePresented = true
-          } label: {
-            Image(systemName: "qrcode")
-          }
-          Button {
-            contactScannerPresented = true
-          } label: {
-            Image(systemName: "qrcode.viewfinder")
-          }
-        }
-      }
+      .background(Color.signalASIPageBackground.ignoresSafeArea())
+      .navigationBarHidden(true)
       .sheet(isPresented: $myQRCodePresented) {
         MyContactQRCodeView()
       }
@@ -520,6 +701,15 @@ struct ContactsView: View {
         }
       }
     }
+    .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private func sectionTitle(_ title: String) -> some View {
+    Text(title)
+      .font(.system(size: 13, weight: .semibold))
+      .foregroundColor(.signalASITextSecondary)
+      .padding(.horizontal, 4)
+      .padding(.top, 2)
   }
 
   private func importContactQR(_ value: String) {
@@ -1059,6 +1249,17 @@ struct SettingsView: View {
     NavigationView {
       Form {
         Section("Profile") {
+          HStack(spacing: 12) {
+            SignalASILogoView(size: 42, cornerRadius: 9)
+            VStack(alignment: .leading, spacing: 3) {
+              Text("SignalASI")
+                .font(.headline)
+                .foregroundColor(.signalASITextPrimary)
+              Text("Agent Mode")
+                .font(.caption)
+                .foregroundColor(.signalASITextSecondary)
+            }
+          }
           TextField("Name", text: Binding(
             get: { store.profile.name },
             set: { store.updateProfileName($0) }
@@ -1243,7 +1444,7 @@ struct SettingsView: View {
           }
         }
       }
-      .navigationTitle("Settings")
+      .navigationTitle(SignalASILocalization.string("signalasi.tab.settings", fallback: "Settings"))
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
       }
@@ -2246,16 +2447,43 @@ struct AddCloudModelView: View {
 
 struct AvatarView: View {
   var contact: SignalASIContact
+  var size: CGFloat = 42
 
   var body: some View {
     ZStack {
-      Circle()
-        .fill(color)
-      Image(systemName: iconName)
-        .foregroundColor(.white)
-        .font(.system(size: 18, weight: .semibold))
+      if let assetName {
+        Image(assetName)
+          .resizable()
+          .scaledToFill()
+      } else {
+        Circle()
+          .fill(color)
+        Image(systemName: iconName)
+          .foregroundColor(.white)
+          .font(.system(size: max(14, size * 0.43), weight: .semibold))
+      }
     }
-    .frame(width: 42, height: 42)
+    .frame(width: size, height: size)
+    .clipShape(Circle())
+  }
+
+  private var assetName: String? {
+    let identity = [
+      contact.id,
+      contact.signalASIId,
+      contact.name,
+      contact.displayName,
+      contact.type
+    ]
+      .joined(separator: " ")
+      .lowercased()
+    if identity.contains("hermes") {
+      return "HermesLogo"
+    }
+    if contact.deliveryMode == .link || identity.contains("signalasi") {
+      return "SignalASILogo"
+    }
+    return nil
   }
 
   private var iconName: String {
@@ -2282,25 +2510,28 @@ struct FriendRequestRow: View {
     HStack(spacing: 12) {
       ZStack {
         Circle()
-          .fill(Color.green)
+          .fill(Color.signalASIAccent)
         Image(systemName: "person.badge.plus")
           .foregroundColor(.white)
       }
       .frame(width: 42, height: 42)
       VStack(alignment: .leading, spacing: 4) {
         Text(request.name)
-          .font(.headline)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
         Text(request.signalASIId)
           .lineLimit(1)
-          .font(.caption)
-          .foregroundColor(.secondary)
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
       }
       Spacer()
       Text(request.status.rawValue)
-        .font(.caption)
-        .foregroundColor(.secondary)
+        .font(.system(size: 12))
+        .foregroundColor(.signalASITextSecondary)
     }
-    .padding(.vertical, 4)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .background(Color.signalASISurface)
   }
 }
 
