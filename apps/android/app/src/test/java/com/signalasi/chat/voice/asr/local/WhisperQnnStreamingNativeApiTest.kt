@@ -54,6 +54,40 @@ class WhisperQnnStreamingNativeApiTest {
     }
 
     @Test
+    fun finalWindowPreemptsAnInFlightPartialInference() {
+        val runtime = PreemptibleRuntime()
+        val frontendFactory = FakeFrontendFactory()
+        val callback = RecordingCallback()
+        val api = AndroidWhisperQnnAsrApi(WhisperQnnTranscriberRuntimeFactory { runtime }, frontendFactory)
+        val handle = api.create(
+            temporaryFolder.newFolder("model-final-priority").path,
+            temporaryFolder.newFolder("runtime-final-priority").path,
+            callback
+        )
+
+        assertTrue(api.start(handle, 14L, AsrConfig()))
+        val frontend = frontendFactory.latest()
+        frontend.emit(window(NativeFeatureWindowKind.PARTIAL, 0L, 16_000L))
+        assertTrue(runtime.partialStarted.await(2, TimeUnit.SECONDS))
+        frontend.emit(window(NativeFeatureWindowKind.FINAL, 0L, 22_000L))
+        assertTrue(callback.finalLatch.await(3, TimeUnit.SECONDS))
+
+        assertEquals(listOf("final result"), callback.finals)
+        assertEquals(2, runtime.calls.get())
+        assertTrue(runtime.cancelCalls.get() >= 1)
+        assertTrue(callback.errors.isEmpty())
+        api.destroy(handle)
+    }
+
+    @Test
+    fun shortUtterancesUseABoundedDecoderTokenBudget() {
+        assertEquals(32, WhisperQnnTokenBudget.forAudioDuration(0L, 160))
+        assertEquals(37, WhisperQnnTokenBudget.forAudioDuration(1_300L, 160))
+        assertEquals(124, WhisperQnnTokenBudget.forAudioDuration(10_000L, 160))
+        assertEquals(160, WhisperQnnTokenBudget.forAudioDuration(28_000L, 160))
+    }
+
+    @Test
     fun explicitNoSpeechFinalDoesNotInvokeQnn() {
         val runtime = FakeRuntime("unused")
         val frontendFactory = FakeFrontendFactory()
@@ -232,6 +266,41 @@ class WhisperQnnStreamingNativeApiTest {
         override fun close() {
             closed.set(true)
         }
+    }
+
+    private class PreemptibleRuntime : WhisperQnnTranscriberRuntime {
+        val calls = AtomicInteger(0)
+        val cancelCalls = AtomicInteger(0)
+        val partialStarted = CountDownLatch(1)
+        private val partialCancelled = CountDownLatch(1)
+
+        override fun transcribe(
+            melFeatures: FloatBuffer,
+            language: String,
+            maxTokens: Int
+        ): WhisperQnnTranscription {
+            val call = calls.getAndIncrement()
+            if (call == 0) {
+                partialStarted.countDown()
+                check(partialCancelled.await(2, TimeUnit.SECONDS)) { "Partial inference was not preempted" }
+                throw QnnInferenceCancelledException()
+            }
+            return WhisperQnnTranscription(
+                text = "final result",
+                tokenIds = listOf(1, 2),
+                encoderNanos = 180_000_000L,
+                decoderNanos = 12_000_000L,
+                decoderSteps = 2,
+                detectedLanguage = language
+            )
+        }
+
+        override fun cancelActive() {
+            cancelCalls.incrementAndGet()
+            partialCancelled.countDown()
+        }
+
+        override fun close() = Unit
     }
 
     private class FakeFrontendFactory(

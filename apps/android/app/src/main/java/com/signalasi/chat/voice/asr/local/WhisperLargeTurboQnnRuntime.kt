@@ -5,19 +5,31 @@ import android.util.Log
 import java.io.File
 import java.nio.FloatBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal class WhisperLargeTurboQnnRuntime private constructor(
     private val network: WhisperQnnNetwork,
     private val transcriber: WhisperGreedyTranscriber
 ) : WhisperQnnTranscriberRuntime {
     private val closed = AtomicBoolean(false)
+    private val cancellationEpoch = AtomicLong(0L)
     private val inferenceLock = Any()
     @Volatile private var warmupCompleted = false
 
     fun transcribe(melFeatures: FloatArray, language: String = "zh", maxTokens: Int = 160): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
-            attachExecutionAttestation(transcriber.transcribe(melFeatures, language, maxTokens))
+            val epoch = cancellationEpoch.get()
+            try {
+                attachExecutionAttestation(
+                    transcriber.transcribe(melFeatures, language, maxTokens) {
+                        closed.get() || cancellationEpoch.get() != epoch
+                    }
+                )
+            } catch (error: Throwable) {
+                if (cancellationEpoch.get() != epoch) throw QnnInferenceCancelledException(error)
+                throw error
+            }
         }
 
     override fun transcribe(
@@ -27,11 +39,28 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
     ): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
-            attachExecutionAttestation(transcriber.transcribe(melFeatures, language, maxTokens))
+            val epoch = cancellationEpoch.get()
+            try {
+                attachExecutionAttestation(
+                    transcriber.transcribe(melFeatures, language, maxTokens) {
+                        closed.get() || cancellationEpoch.get() != epoch
+                    }
+                )
+            } catch (error: Throwable) {
+                if (cancellationEpoch.get() != epoch) throw QnnInferenceCancelledException(error)
+                throw error
+            }
         }
 
+    override fun cancelActive() {
+        cancellationEpoch.incrementAndGet()
+        network.cancelActiveRun()
+    }
+
     override fun close() {
-        if (closed.compareAndSet(false, true)) network.close()
+        if (!closed.compareAndSet(false, true)) return
+        cancelActive()
+        synchronized(inferenceLock) { network.close() }
     }
 
     companion object {
@@ -83,14 +112,23 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
             }
         }
 
-        private inline fun <T> stage(stage: QnnAsrPreparationStage, block: () -> T): T = try {
-            block()
-        } catch (error: Throwable) {
-            val staged = if (error is QnnAsrPreparationException) error else {
-                QnnAsrPreparationException(stage, error)
+        private inline fun <T> stage(stage: QnnAsrPreparationStage, block: () -> T): T {
+            val started = System.nanoTime()
+            return try {
+                block()
+            } catch (error: Throwable) {
+                val staged = if (error is QnnAsrPreparationException) error else {
+                    QnnAsrPreparationException(stage, error)
+                }
+                runCatching { Log.e(TAG, staged.message, staged) }
+                throw staged
+            } finally {
+                logInfo("stage=${stage.code} total_ms=${(System.nanoTime() - started) / 1_000_000L}")
             }
-            Log.e(TAG, staged.message, staged)
-            throw staged
+        }
+
+        private fun logInfo(message: String) {
+            runCatching { Log.i(TAG, message) }
         }
 
         private fun requireNativeLibrary(directory: File, name: String): File =
@@ -107,7 +145,13 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
         val silence = FloatArray(
             WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES
         ) { -1.5F }
-        transcriber.transcribe(silence, "zh", 1)
+        val started = System.nanoTime()
+        val warmup = transcriber.transcribe(silence, "zh", 1)
+        logInfo(
+            "stage=warm_up total_ms=${(System.nanoTime() - started) / 1_000_000L} " +
+                "encoder_ms=${warmup.encoderNanos / 1_000_000.0} " +
+                "decoder_ms=${warmup.decoderNanos / 1_000_000.0}"
+        )
         warmupCompleted = true
     }
 

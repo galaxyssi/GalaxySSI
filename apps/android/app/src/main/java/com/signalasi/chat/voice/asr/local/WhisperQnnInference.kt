@@ -1,6 +1,7 @@
 package com.signalasi.chat.voice.asr.local
 
 import java.nio.FloatBuffer
+import java.util.concurrent.CancellationException
 
 internal enum class WhisperDecoderSelection {
     UNRESTRICTED,
@@ -17,6 +18,14 @@ internal interface WhisperQnnNetwork : AutoCloseable {
     fun encode(melFeatures: FloatBuffer): Long
     fun resetDecoder()
     fun decode(inputToken: Int, position: Int, selection: WhisperDecoderSelection): WhisperQnnDecoderStep
+    fun cancelActiveRun() = Unit
+}
+
+internal class QnnInferenceCancelledException(cause: Throwable? = null) :
+    CancellationException("QNN Whisper inference was superseded") {
+    init {
+        if (cause != null) initCause(cause)
+    }
 }
 
 internal data class WhisperQnnTranscription(
@@ -39,25 +48,39 @@ internal class WhisperGreedyTranscriber(
     private val network: WhisperQnnNetwork,
     private val tokenizer: WhisperTiktokenTokenizer
 ) {
-    fun transcribe(melFeatures: FloatArray, language: String, maxTokens: Int): WhisperQnnTranscription {
-        return transcribe(FloatBuffer.wrap(melFeatures), language, maxTokens)
+    fun transcribe(
+        melFeatures: FloatArray,
+        language: String,
+        maxTokens: Int,
+        cancellationRequested: () -> Boolean = { false }
+    ): WhisperQnnTranscription {
+        return transcribe(FloatBuffer.wrap(melFeatures), language, maxTokens, cancellationRequested)
     }
 
-    fun transcribe(melFeatures: FloatBuffer, language: String, maxTokens: Int): WhisperQnnTranscription {
+    fun transcribe(
+        melFeatures: FloatBuffer,
+        language: String,
+        maxTokens: Int,
+        cancellationRequested: () -> Boolean = { false }
+    ): WhisperQnnTranscription {
         require(melFeatures.remaining() ==
             WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES)
         require(language == "auto" || language in tokenizer.generation.languageTokens)
         require(maxTokens in 1..160)
 
+        checkNotCancelled(cancellationRequested)
         val encoderNanos = network.encode(melFeatures)
+        checkNotCancelled(cancellationRequested)
         network.resetDecoder()
         var decoderNanos = 0L
         var decoderSteps = 0
         var position = 0
 
         fun step(token: Int, selection: WhisperDecoderSelection): Int {
+            checkNotCancelled(cancellationRequested)
             check(position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS)
             val result = network.decode(token, position, selection)
+            checkNotCancelled(cancellationRequested)
             position += 1
             decoderSteps += 1
             decoderNanos += result.elapsedNanos.coerceAtLeast(0L)
@@ -111,5 +134,9 @@ internal class WhisperGreedyTranscriber(
             decoderSteps = decoderSteps,
             detectedLanguage = detectedLanguage
         )
+    }
+
+    private fun checkNotCancelled(cancellationRequested: () -> Boolean) {
+        if (cancellationRequested()) throw QnnInferenceCancelledException()
     }
 }
