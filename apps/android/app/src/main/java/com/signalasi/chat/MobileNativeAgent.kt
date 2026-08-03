@@ -28,7 +28,10 @@ import com.signalasi.chat.voice.VoiceFeatureFlags
 import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
 import com.signalasi.chat.voice.agent.VoiceAgentRunRequest
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
+import com.signalasi.chat.voice.modelstream.ModelStreamEvent
+import com.signalasi.chat.voice.modelstream.ModelStreamUiMerger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -2189,7 +2192,9 @@ class MobileNativeAgent(
         }
         phase = AgentPhase.EXECUTING
         currentPlan = reviewedPlan.markAction(hardenedAction.id, AgentActionStatus.RUNNING)
-        currentScreen = captureScreen()
+        if (AgentScreenObservationPolicy.requiresObservation(currentGoal, hardenedAction)) {
+            currentScreen = captureScreen()
+        }
         val executionScreen = currentScreen
         val checkpoint = AgentExecutionContinuity.checkpointBefore(
             action = hardenedAction,
@@ -9934,6 +9939,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val requestPrompt = promptWithObservedContext(prompt, observed)
         Thread {
             val appContext = context.applicationContext
+            val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+            val modelPrompt = promptWithConversationContext(action, requestPrompt, cloud = true)
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()
             var successfulModel: JSONObject? = null
@@ -9942,23 +9949,131 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 if (successfulModel != null) return@forEach
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
                 val model = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate
-                val startedAt = System.currentTimeMillis()
-                runCatching { CloudModelClient.sendWithUsage(appContext, model, promptWithConversationContext(action, requestPrompt, cloud = true)) }
-                    .onSuccess { response ->
-                        if (replySatisfiesRoute(action, response.text)) {
-                            successfulReply = response.text
-                            successfulUsage = CloudModelUsage(response.inputTokens, response.outputTokens, response.costMicros)
-                            successfulModel = model
-                            resourceHealth.record("target:$candidateId", true, System.currentTimeMillis() - startedAt)
-                        } else {
-                            lastError = IllegalStateException("Model response did not satisfy the live-data route")
-                            resourceHealth.record("target:$candidateId", false, System.currentTimeMillis() - startedAt)
+                val startedAt = SystemClock.elapsedRealtime()
+                val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
+                val merger = ModelStreamUiMerger()
+                var usage = CloudModelUsage()
+                var streamCompleted = false
+                var streamError: Throwable? = null
+                Log.i(
+                    "SignalASILatency",
+                    "agent_cloud stage=request_start source=$messageId model=${model.optString("cloud_model")} " +
+                        "prompt_chars=${modelPrompt.length} prompt_tokens=${ConversationContextCompactor.estimateTokens(modelPrompt)}"
+                )
+                runCatching {
+                    runBlocking {
+                        CloudConversationStreamEngine.streamConversation(
+                            context = appContext,
+                            contact = model,
+                            turns = listOf(
+                                ChatMessage(
+                                    0L,
+                                    modelPrompt,
+                                    true,
+                                    Contact("me", appContext.getString(R.string.chat_me), "")
+                                )
+                            ),
+                            requestId = requestId,
+                            onToolEvent = { event ->
+                                Log.i(
+                                    "SignalASILatency",
+                                    "agent_cloud stage=tool_${event.stage} source=$messageId tool=${event.tool}"
+                                )
+                            }
+                        ).collect { event ->
+                            when (event) {
+                                is ModelStreamEvent.Connected -> Log.i(
+                                    "SignalASILatency",
+                                    "agent_cloud stage=connected source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
+                                )
+                                is ModelStreamEvent.TextDelta -> {
+                                    merger.offer(
+                                        event.sequence,
+                                        event.text,
+                                        SystemClock.elapsedRealtime()
+                                    )?.let { update ->
+                                        if (update.firstDelta) {
+                                            Log.i(
+                                                "SignalASILatency",
+                                                "agent_cloud stage=first_delta source=$messageId elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}"
+                                            )
+                                        }
+                                        AgentConnectorStreamBus.publish(
+                                            AgentConnectorStreamUpdate(
+                                                sourceMessageId = messageId,
+                                                contactId = candidateId,
+                                                content = update.text,
+                                                conversationId = conversationId,
+                                                turnId = turnId,
+                                                taskId = turnId,
+                                                firstDelta = update.firstDelta
+                                            )
+                                        )
+                                    }
+                                }
+                                is ModelStreamEvent.Usage -> usage = CloudModelUsage(
+                                    inputTokens = event.usage.inputTokens,
+                                    outputTokens = event.usage.outputTokens
+                                )
+                                is ModelStreamEvent.Completed -> {
+                                    streamCompleted = true
+                                    merger.flush(SystemClock.elapsedRealtime(), complete = true)?.let { update ->
+                                        AgentConnectorStreamBus.publish(
+                                            AgentConnectorStreamUpdate(
+                                                sourceMessageId = messageId,
+                                                contactId = candidateId,
+                                                content = update.text,
+                                                conversationId = conversationId,
+                                                turnId = turnId,
+                                                taskId = turnId,
+                                                firstDelta = update.firstDelta
+                                            )
+                                        )
+                                    }
+                                }
+                                is ModelStreamEvent.Failed -> streamError = IllegalStateException(
+                                    event.error.message.ifBlank { event.error.code }
+                                )
+                                is ModelStreamEvent.ToolCallDelta -> Unit
+                            }
                         }
                     }
-                    .onFailure { error ->
-                        lastError = error
-                        resourceHealth.record("target:$candidateId", false, System.currentTimeMillis() - startedAt)
-                    }
+                }.onFailure { streamError = it }
+                val response = merger.snapshot().trim()
+                val elapsedMillis = SystemClock.elapsedRealtime() - startedAt
+                if (streamCompleted && streamError == null && replySatisfiesRoute(action, response)) {
+                    successfulReply = response
+                    successfulUsage = usage
+                    successfulModel = model
+                    resourceHealth.record("target:$candidateId", true, elapsedMillis)
+                    Log.i(
+                        "SignalASILatency",
+                        "agent_cloud stage=completed source=$messageId elapsed_ms=$elapsedMillis chars=${response.length}"
+                    )
+                } else {
+                    lastError = streamError ?: IllegalStateException(
+                        if (!streamCompleted) {
+                            "Model stream ended before completion"
+                        } else {
+                            "Model response did not satisfy the live-data route"
+                        }
+                    )
+                    resourceHealth.record("target:$candidateId", false, elapsedMillis)
+                    AgentConnectorStreamBus.publish(
+                        AgentConnectorStreamUpdate(
+                            sourceMessageId = messageId,
+                            contactId = candidateId,
+                            content = "",
+                            conversationId = conversationId,
+                            turnId = turnId,
+                            taskId = turnId
+                        )
+                    )
+                    Log.w(
+                        "SignalASILatency",
+                        "agent_cloud stage=failed source=$messageId elapsed_ms=$elapsedMillis reason=${lastError?.message.orEmpty().take(120)}"
+                    )
+                }
             }
             val succeeded = successfulModel != null
             if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })

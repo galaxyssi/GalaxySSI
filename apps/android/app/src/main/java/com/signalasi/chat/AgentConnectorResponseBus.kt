@@ -21,8 +21,45 @@ data class AgentConnectorResponse(
     val receivedAtMillis: Long = System.currentTimeMillis()
 )
 
+data class AgentConnectorStreamUpdate(
+    val sourceMessageId: Long,
+    val contactId: String,
+    val content: String,
+    val conversationId: String = "",
+    val turnId: String = "",
+    val taskId: String = "",
+    val firstDelta: Boolean = false,
+    val receivedAtMillis: Long = System.currentTimeMillis()
+)
+
 fun interface AgentConnectorResponseListener {
     fun onConnectorResponse(response: AgentConnectorResponse)
+}
+
+fun interface AgentConnectorStreamListener {
+    fun onConnectorStreamUpdate(update: AgentConnectorStreamUpdate)
+}
+
+/**
+ * Ephemeral model output for the active UI. Final connector responses still use the durable,
+ * one-shot response bus below so an interrupted stream cannot become conversation history.
+ */
+object AgentConnectorStreamBus {
+    private val listeners = CopyOnWriteArraySet<AgentConnectorStreamListener>()
+
+    fun addListener(listener: AgentConnectorStreamListener) {
+        listeners += listener
+    }
+
+    fun removeListener(listener: AgentConnectorStreamListener) {
+        listeners -= listener
+    }
+
+    fun publish(update: AgentConnectorStreamUpdate): Boolean {
+        if (update.sourceMessageId <= 0L) return false
+        listeners.forEach { listener -> listener.onConnectorStreamUpdate(update) }
+        return listeners.isNotEmpty()
+    }
 }
 
 object AgentConnectorResponseBus {

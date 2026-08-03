@@ -586,6 +586,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentConnectorResponseListener = AgentConnectorResponseListener { response ->
         runOnUiThread { consumeAgentConnectorResponse(response) }
     }
+    private val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
+        runOnUiThread { consumeAgentConnectorStreamUpdate(update) }
+    }
+    private val liveAgentConnectorStreams = ConcurrentHashMap<Long, AgentTranscriptEntry>()
     private val agentTaskLivenessListener = AgentTaskLivenessListener { signal ->
         handler.post { handleAgentTaskLivenessSignal(signal) }
     }
@@ -1475,6 +1479,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         traceResume("display")
         AppForegroundTracker.onActivityForeground(this)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
+        AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
         if (isHighAccuracyQnnSelected() || highAccuracyAsrControllerDelegate.isInitialized()) {
@@ -1558,6 +1563,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         DesktopRemoteControl.pauseScreenshotStreams()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
+        AgentConnectorStreamBus.removeListener(agentConnectorStreamListener)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
         flushChatHistoryAsync()
@@ -1653,6 +1659,45 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val responseKey = "${response.sourceMessageId}:${response.contactId}"
         if (!agentConnectorResponsesInFlight.add(responseKey)) return
         resumeAgentConnectorResponse(response, runtime, responseKey)
+    }
+
+    private fun consumeAgentConnectorStreamUpdate(update: AgentConnectorStreamUpdate) {
+        if (update.sourceMessageId in supersededConnectorSourceIds) return
+        val runtime = runtimeForConnectorResponse(
+            update.sourceMessageId,
+            update.contactId,
+            update.conversationId,
+            update.turnId,
+            update.taskId,
+            allowTransportOnly = true
+        )
+        val turnId = update.turnId.ifBlank {
+            runtime?.let(agentRuntimeTurnIds::get).orEmpty()
+        }
+        val conversationId = connectorConversationId(update.conversationId, runtime, turnId) ?: return
+        if (update.content.isBlank()) {
+            liveAgentConnectorStreams.remove(update.sourceMessageId)
+        } else {
+            liveAgentConnectorStreams[update.sourceMessageId] = AgentTranscriptEntry(
+                id = "agent-stream-${update.sourceMessageId}",
+                role = AgentTranscriptRole.ASSISTANT,
+                text = update.content,
+                timestampMillis = update.receivedAtMillis,
+                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    turnId = turnId,
+                    sourceMessageId = update.sourceMessageId,
+                    taskId = update.taskId
+                ),
+                conversationId = conversationId,
+                turnId = turnId,
+                taskId = update.taskId.ifBlank { turnId }
+            )
+        }
+        if (conversationId == agentTranscriptStore.activeConversation().id &&
+            activeMainTab == PAGE_AGENT
+        ) {
+            renderAgentTranscript(agentTranscriptWindow.entries)
+        }
     }
 
     private fun resumeAgentConnectorResponse(
@@ -1829,6 +1874,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         turnId: String,
         responseKey: String
     ) {
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
         agentConnectorResponsesInFlight.remove(responseKey)
         cancelConnectorTimeouts(response.sourceMessageId)
         agentTranscriptStore.recordUsage(
@@ -16308,7 +16354,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
         val renderStartedAt = SystemClock.elapsedRealtime()
-        val hydratedEntries = entries.map(::expandedAgentTranscriptEntry)
+        val activeConversationId = agentTranscriptStore.activeConversation().id
+        val liveEntries = liveAgentConnectorStreams.values
+            .filter { it.conversationId == activeConversationId }
+        val hydratedEntries = (entries + liveEntries)
+            .distinctBy(AgentTranscriptEntry::id)
+            .sortedBy(AgentTranscriptEntry::timestampMillis)
+            .map(::expandedAgentTranscriptEntry)
         val filteredEntries = hydratedEntries.filterNot { entry ->
             val staleApproval = isLocalAgentApprovalEntry(entry) &&
                 (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
