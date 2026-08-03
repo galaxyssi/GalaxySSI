@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +33,8 @@ class HighAccuracyLocalAsrController internal constructor(
     private val scope: CoroutineScope,
     private val modelDirectoryResolver: () -> File?,
     private val engineFactory: () -> LocalAsrEngine,
-    private val runtimeMonitorFactory: ((LocalAsrEngine) -> LocalAsrRuntimeMonitor)? = null
+    private val runtimeMonitorFactory: ((LocalAsrEngine) -> LocalAsrRuntimeMonitor)? = null,
+    private val preparationCoordinator: QnnAsrPreparationCoordinator? = null
 ) : AutoCloseable {
     private val engine = lazy(LazyThreadSafetyMode.SYNCHRONIZED, engineFactory)
     private val prepareMutex = Mutex()
@@ -41,6 +45,9 @@ class HighAccuracyLocalAsrController internal constructor(
     @Volatile private var microphonePermissionGranted = false
     private var activeTurn: HighAccuracyLocalAsrTurn? = null
     private var runtimeMonitor: LocalAsrRuntimeMonitor? = null
+    private val mutablePreparationStatus = MutableStateFlow(QnnAsrPreparationStatus.IDLE)
+
+    val preparationStatus: StateFlow<QnnAsrPreparationStatus> = mutablePreparationStatus.asStateFlow()
 
     fun prepareAsync() {
         if (closed.get() || isReady()) return
@@ -52,13 +59,40 @@ class HighAccuracyLocalAsrController internal constructor(
 
     suspend fun prepareNow(): Boolean = prepareMutex.withLock {
         if (closed.get()) return@withLock false
+        preparationCoordinator?.let { coordinator ->
+            mutablePreparationStatus.value = mutablePreparationStatus.value.copy(
+                phase = QnnAsrPreparationPhase.PREPARING,
+                reasonCode = "qnn_preparing"
+            )
+            val status = coordinator.prepare {
+                engine.value.also(::ensureRuntimeMonitor)
+            }
+            mutablePreparationStatus.value = status
+            return@withLock status.phase == QnnAsrPreparationPhase.READY &&
+                engine.isInitialized() && engine.value.state.value is LocalAsrState.Ready
+        }
         val directory = modelDirectoryResolver()?.canonicalFile ?: return@withLock false
         if (!directory.isDirectory) return@withLock false
         val runtime = engine.value
         ensureRuntimeMonitor(runtime)
         val ready = runtime.state.value as? LocalAsrState.Ready
         if (ready?.modelDirectory == directory.path) return@withLock true
-        runCatching { runtime.prepare(directory.path) }.isSuccess && runtime.state.value is LocalAsrState.Ready
+        val prepared = runCatching { runtime.prepare(directory.path) }.isSuccess &&
+            runtime.state.value is LocalAsrState.Ready
+        mutablePreparationStatus.value = QnnAsrPreparationStatus(
+            phase = if (prepared) QnnAsrPreparationPhase.READY else QnnAsrPreparationPhase.FALLBACK,
+            reasonCode = if (prepared) "qnn_ready" else "qnn_prepare_failed",
+            modelDirectory = directory.path,
+            attempts = 1,
+            encoderContextLoaded = prepared,
+            decoderContextLoaded = prepared,
+            fallbackOrder = if (prepared) emptyList() else listOf(
+                QnnAsrFallbackTarget.SMALL_OR_BASE_QNN,
+                QnnAsrFallbackTarget.WHISPER_CPP,
+                QnnAsrFallbackTarget.SYSTEM_ASR
+            )
+        )
+        prepared
     }
 
     fun isReady(): Boolean = engine.isInitialized() && engine.value.state.value is LocalAsrState.Ready
@@ -137,6 +171,7 @@ class HighAccuracyLocalAsrController internal constructor(
             val manifest = LargeTurboQnnModelCatalog.s26Ultra
             val store = LargeTurboQnnModelStore(application.filesDir)
             val capability = AndroidLargeTurboQnnDeviceCapabilityDetector(application, store, manifest)
+            val source = LargeTurboQnnModelSource(store, capability, manifest)
             return HighAccuracyLocalAsrController(
                 scope = scope,
                 modelDirectoryResolver = {
@@ -148,7 +183,8 @@ class HighAccuracyLocalAsrController internal constructor(
                 engineFactory = { HighAccuracyLocalAsrEngineFactory.create(application) },
                 runtimeMonitorFactory = { runtime ->
                     AndroidLocalAsrRuntimeMonitor(application, runtime, scope)
-                }
+                },
+                preparationCoordinator = QnnAsrPreparationCoordinator(source)
             )
         }
     }

@@ -13,7 +13,9 @@ class AndroidLargeTurboQnnDeviceCapabilityDetector(
 ) {
     private val appContext = context.applicationContext
 
-    fun snapshot(): QnnAsrDeviceSnapshot {
+    fun snapshot(
+        activeModelState: QnnContextModelState = modelStore.inspectActive(manifest).state
+    ): QnnAsrDeviceSnapshot {
         val memory = ActivityManager.MemoryInfo()
         appContext.getSystemService(ActivityManager::class.java)?.getMemoryInfo(memory)
         val nativeLibraries = File(appContext.applicationInfo.nativeLibraryDir)
@@ -36,7 +38,7 @@ class AndroidLargeTurboQnnDeviceCapabilityDetector(
             qnnRuntimeVersion = BuildConfig.QNN_RUNTIME_VERSION,
             availableMemoryBytes = memory.availMem.coerceAtLeast(0L),
             availableStorageBytes = appContext.filesDir.usableSpace.coerceAtLeast(0L),
-            activeModelState = modelStore.inspectActive(manifest).state
+            activeModelState = activeModelState
         )
     }
 
