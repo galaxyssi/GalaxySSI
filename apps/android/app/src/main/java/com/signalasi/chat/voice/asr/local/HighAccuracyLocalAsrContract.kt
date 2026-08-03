@@ -202,7 +202,8 @@ sealed interface AsrEvent {
         val decoderNpuLayers: Int,
         val decoderTotalLayers: Int,
         val thermalStatus: Int,
-        val residentBytes: Long
+        val residentBytes: Long,
+        val qnnExecution: QnnExecutionAttestation? = null
     ) : AsrEvent
 }
 
