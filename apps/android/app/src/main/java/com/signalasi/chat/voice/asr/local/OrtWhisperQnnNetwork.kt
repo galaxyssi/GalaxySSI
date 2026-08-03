@@ -196,9 +196,8 @@ internal class OrtWhisperQnnNetwork private constructor(
                 check(devices.isNotEmpty()) { "QNN HTP execution provider is unavailable" }
                 options.addExecutionProvider(
                     devices,
-                    mapOf(
-                        "backend_type" to "htp",
-                        "offload_graph_io_quantization" to "0"
+                    QnnHtpSessionPolicy.providerOptions(
+                        sharedMemoryAvailable = QnnHtpSharedMemoryAvailability.android.isAvailable()
                     )
                 )
                 return environment.createSession(model.canonicalPath, options)
