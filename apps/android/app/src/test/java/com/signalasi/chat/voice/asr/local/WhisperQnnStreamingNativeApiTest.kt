@@ -44,6 +44,9 @@ class WhisperQnnStreamingNativeApiTest {
         assertEquals(2, runtime.calls.get())
         assertFalse(runtime.closed.get())
         assertTrue(callback.diagnostics.isNotEmpty())
+        assertEquals(0, callback.diagnostics.last().encoderNpuLayers)
+        assertEquals(0, callback.diagnostics.last().decoderNpuLayers)
+        assertEquals(null, callback.diagnostics.last().qnnExecution)
 
         api.destroy(handle)
         assertTrue(runtime.closed.get())
@@ -68,6 +71,45 @@ class WhisperQnnStreamingNativeApiTest {
 
         assertEquals(listOf(""), callback.finals)
         assertEquals(0, runtime.calls.get())
+        api.destroy(handle)
+    }
+
+    @Test
+    fun verifiedFailClosedQnnExecutionPublishesReferenceCoverageSeparately() {
+        val runtime = FakeRuntime("verified result").apply {
+            qnnExecution = QnnExecutionAttestation(
+                executionProvider = "QNNExecutionProvider",
+                backendType = "htp",
+                verification = QnnExecutionVerification.ENCODER_AND_DECODER_EXECUTED,
+                cpuFallbackDisabled = true,
+                htpSharedMemoryEnabled = true,
+                contextBinariesRestored = true,
+                warmupCompleted = true,
+                encoderExecutionCount = 2L,
+                decoderExecutionCount = 9L,
+                expectedEncoderNpuLayers = 5_026,
+                expectedDecoderNpuLayers = 1_213,
+                layerCountSource = QnnLayerCountSource.QUALCOMM_TARGET_DEVICE_PROFILE
+            )
+        }
+        val frontendFactory = FakeFrontendFactory()
+        val callback = RecordingCallback()
+        val api = AndroidWhisperQnnAsrApi(WhisperQnnTranscriberRuntimeFactory { runtime }, frontendFactory)
+        val handle = api.create(
+            temporaryFolder.newFolder("model-attestation").path,
+            temporaryFolder.newFolder("runtime-attestation").path,
+            callback
+        )
+
+        assertTrue(api.start(handle, 13L, AsrConfig()))
+        frontendFactory.latest().emit(window(NativeFeatureWindowKind.FINAL, 0L, 8_000L))
+        assertTrue(callback.finalLatch.await(2, TimeUnit.SECONDS))
+
+        val diagnostics = callback.diagnostics.single()
+        assertEquals(5_026, diagnostics.encoderNpuLayers)
+        assertEquals(1_213, diagnostics.decoderNpuLayers)
+        assertEquals(QnnLayerCountSource.QUALCOMM_TARGET_DEVICE_PROFILE, diagnostics.qnnExecution?.layerCountSource)
+        assertTrue(diagnostics.qnnExecution?.fullHtpExecutionVerified == true)
         api.destroy(handle)
     }
 
@@ -166,6 +208,7 @@ class WhisperQnnStreamingNativeApiTest {
     private class FakeRuntime(vararg private val responses: String) : WhisperQnnTranscriberRuntime {
         val calls = AtomicInteger(0)
         val closed = AtomicBoolean(false)
+        @Volatile var qnnExecution: QnnExecutionAttestation? = null
 
         override fun transcribe(
             melFeatures: FloatBuffer,
@@ -181,7 +224,8 @@ class WhisperQnnStreamingNativeApiTest {
                 encoderNanos = 200_000_000L,
                 decoderNanos = 10_000_000L,
                 decoderSteps = 2,
-                detectedLanguage = language
+                detectedLanguage = language,
+                qnnExecution = qnnExecution
             )
         }
 

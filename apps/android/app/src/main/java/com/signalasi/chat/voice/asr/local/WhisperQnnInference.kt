@@ -25,7 +25,8 @@ internal data class WhisperQnnTranscription(
     val encoderNanos: Long,
     val decoderNanos: Long,
     val decoderSteps: Int,
-    val detectedLanguage: String?
+    val detectedLanguage: String?,
+    val qnnExecution: QnnExecutionAttestation? = null
 ) {
     val inferenceMs: Long
         get() = (encoderNanos + decoderNanos) / 1_000_000L

@@ -416,18 +416,21 @@ private class QnnStreamingSession(
 
     private fun emitDiagnostics(transcription: WhisperQnnTranscription) {
         val policy = runtimePolicy.get()
+        val execution = transcription.qnnExecution
+        val verified = execution?.fullHtpExecutionVerified == true
         executeCallback {
             callback.onDiagnostics(
                 sessionToken,
                 AsrEvent.Diagnostics(
                     encoderMs = transcription.encoderNanos / 1_000_000.0,
                     decoderMsPerToken = transcription.decoderMsPerToken,
-                    encoderNpuLayers = WhisperLargeTurboQnnContract.ENCODER_NPU_LAYERS,
+                    encoderNpuLayers = if (verified) WhisperLargeTurboQnnContract.ENCODER_NPU_LAYERS else 0,
                     encoderTotalLayers = WhisperLargeTurboQnnContract.ENCODER_NPU_LAYERS,
-                    decoderNpuLayers = WhisperLargeTurboQnnContract.DECODER_NPU_LAYERS,
+                    decoderNpuLayers = if (verified) WhisperLargeTurboQnnContract.DECODER_NPU_LAYERS else 0,
                     decoderTotalLayers = WhisperLargeTurboQnnContract.DECODER_NPU_LAYERS,
                     thermalStatus = policy.thermalStatus,
-                    residentBytes = residentBytes().coerceAtLeast(0L)
+                    residentBytes = residentBytes().coerceAtLeast(0L),
+                    qnnExecution = execution
                 )
             )
         }

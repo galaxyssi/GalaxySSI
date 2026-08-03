@@ -19,8 +19,9 @@ internal class OrtWhisperQnnNetwork private constructor(
     private val encoderSession: OrtSession,
     private val decoderSession: OrtSession,
     private val generation: WhisperGenerationTokens,
+    private val executionTracker: QnnExecutionAttestationTracker,
     private val nanoTime: () -> Long
-) : WhisperQnnNetwork {
+) : WhisperQnnNetwork, QnnExecutionAttestationSource {
     private val closed = AtomicBoolean(false)
     private val arena = OrtTensorArena(environment)
     private val encoderInput = arena.create(WhisperLargeTurboQnnContract.encoder.inputs.single())
@@ -55,6 +56,7 @@ internal class OrtWhisperQnnNetwork private constructor(
     init {
         WhisperLargeTurboQnnContract.encoder.validate(encoderSession.inputMetadata(), encoderSession.outputMetadata())
         WhisperLargeTurboQnnContract.decoder.validate(decoderSession.inputMetadata(), decoderSession.outputMetadata())
+        executionTracker.markContextBinariesRestored()
         crossCache.forEach { (contract, tensor) -> encoderOutputs[contract.name] = tensor.tensor }
         bindDecoderTensors()
         resetDecoder()
@@ -70,6 +72,7 @@ internal class OrtWhisperQnnNetwork private constructor(
         }
         val started = nanoTime()
         encoderSession.run(encoderInputs, encoderOutputs).use { }
+        executionTracker.recordEncoderExecution()
         (nanoTime() - started).coerceAtLeast(0L)
     }
 
@@ -99,6 +102,7 @@ internal class OrtWhisperQnnNetwork private constructor(
         )
         val started = nanoTime()
         decoderSession.run(decoderInputs, decoderOutputs).use { }
+        executionTracker.recordDecoderExecution()
         val elapsed = (nanoTime() - started).coerceAtLeast(0L)
         val suppressed = when (selection) {
             WhisperDecoderSelection.UNRESTRICTED -> emptySet()
@@ -122,6 +126,9 @@ internal class OrtWhisperQnnNetwork private constructor(
         runCatching { encoderSession.close() }
         arena.close()
     }
+
+    override fun executionAttestation(warmupCompleted: Boolean): QnnExecutionAttestation =
+        executionTracker.executionAttestation(warmupCompleted)
 
     private fun bindDecoderTensors() {
         decoderInputs.clear()
@@ -172,17 +179,35 @@ internal class OrtWhisperQnnNetwork private constructor(
             val decoderModel = requireNotNull(wrapperFiles[WhisperLargeTurboQnnContract.decoder.wrapperModelName])
             require(encoderModel.parentFile?.canonicalFile == modelDirectory.canonicalFile)
             require(decoderModel.parentFile?.canonicalFile == modelDirectory.canonicalFile)
-            val encoder = createSession(environment, encoderModel)
+            val sharedMemoryEnabled = QnnHtpSharedMemoryAvailability.android.isAvailable()
+            val executionTracker = QnnExecutionAttestationTracker(sharedMemoryEnabled)
+            val encoder = createSession(environment, encoderModel, sharedMemoryEnabled)
             try {
-                val decoder = createSession(environment, decoderModel)
-                return OrtWhisperQnnNetwork(environment, encoder, decoder, generation, nanoTime)
+                val decoder = createSession(environment, decoderModel, sharedMemoryEnabled)
+                try {
+                    return OrtWhisperQnnNetwork(
+                        environment,
+                        encoder,
+                        decoder,
+                        generation,
+                        executionTracker,
+                        nanoTime
+                    )
+                } catch (error: Throwable) {
+                    decoder.close()
+                    throw error
+                }
             } catch (error: Throwable) {
                 encoder.close()
                 throw error
             }
         }
 
-        private fun createSession(environment: OrtEnvironment, model: File): OrtSession {
+        private fun createSession(
+            environment: OrtEnvironment,
+            model: File,
+            sharedMemoryEnabled: Boolean
+        ): OrtSession {
             val options = OrtSession.SessionOptions()
             try {
                 options.setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
@@ -196,9 +221,7 @@ internal class OrtWhisperQnnNetwork private constructor(
                 check(devices.isNotEmpty()) { "QNN HTP execution provider is unavailable" }
                 options.addExecutionProvider(
                     devices,
-                    QnnHtpSessionPolicy.providerOptions(
-                        sharedMemoryAvailable = QnnHtpSharedMemoryAvailability.android.isAvailable()
-                    )
+                    QnnHtpSessionPolicy.providerOptions(sharedMemoryAvailable = sharedMemoryEnabled)
                 )
                 return environment.createSession(model.canonicalPath, options)
             } finally {

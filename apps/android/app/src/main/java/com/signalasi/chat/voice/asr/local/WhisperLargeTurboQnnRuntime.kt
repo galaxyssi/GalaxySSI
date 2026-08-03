@@ -11,11 +11,12 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
 ) : WhisperQnnTranscriberRuntime {
     private val closed = AtomicBoolean(false)
     private val inferenceLock = Any()
+    @Volatile private var warmupCompleted = false
 
     fun transcribe(melFeatures: FloatArray, language: String = "zh", maxTokens: Int = 160): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
-            transcriber.transcribe(melFeatures, language, maxTokens)
+            attachExecutionAttestation(transcriber.transcribe(melFeatures, language, maxTokens))
         }
 
     override fun transcribe(
@@ -25,7 +26,7 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
     ): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
-            transcriber.transcribe(melFeatures, language, maxTokens)
+            attachExecutionAttestation(transcriber.transcribe(melFeatures, language, maxTokens))
         }
 
     override fun close() {
@@ -65,5 +66,11 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
             WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES
         ) { -1.5F }
         transcriber.transcribe(silence, "zh", 1)
+        warmupCompleted = true
+    }
+
+    private fun attachExecutionAttestation(transcription: WhisperQnnTranscription): WhisperQnnTranscription {
+        val source = network as? QnnExecutionAttestationSource ?: return transcription
+        return transcription.copy(qnnExecution = source.executionAttestation(warmupCompleted))
     }
 }
