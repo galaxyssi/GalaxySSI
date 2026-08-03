@@ -29,52 +29,16 @@ struct SignalASIApp: App {
 
 struct RootView: View {
   @EnvironmentObject private var store: SignalASIStore
-  @State private var selection: SignalASIRootTab = .agent
 
   private var interfaceLanguage: String {
     LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
   }
 
   var body: some View {
-    TabView(selection: $selection) {
-      AgentHomeView()
-        .tabItem { Label(t("signalasi.tab.agent", "Agent"), systemImage: "sparkles") }
-        .tag(SignalASIRootTab.agent)
-      ChatListView()
-        .tabItem { Label("SignalASI", systemImage: "bubble.left.and.bubble.right") }
-        .tag(SignalASIRootTab.messages)
-      ContactsView()
-        .tabItem {
-          Label(
-            t("signalasi.tab.contacts", "Contacts"),
-            systemImage: "person.2"
-          )
-        }
-        .tag(SignalASIRootTab.contacts)
-      DiscoverView()
-        .tabItem {
-          Label(
-            t("signalasi.tab.discover", "Discover"),
-            systemImage: "safari"
-          )
-        }
-        .tag(SignalASIRootTab.discover)
-      SettingsView()
-        .tabItem {
-          Label(
-            t("signalasi.tab.settings", "Settings"),
-            systemImage: "gearshape"
-          )
-        }
-        .tag(SignalASIRootTab.settings)
-    }
-    .accentColor(.signalASIAccent)
-    .signalASIInterfaceLanguage(store.languagePolicy.interfaceLanguage)
-    .id(interfaceLanguage)
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+    AgentHomeView()
+      .accentColor(.signalASIAccent)
+      .signalASIInterfaceLanguage(store.languagePolicy.interfaceLanguage)
+      .id(interfaceLanguage)
   }
 }
 
@@ -1323,6 +1287,17 @@ struct SettingsView: View {
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
+        }
+        Section(t("signalasi.settings.pages", "App Pages")) {
+          NavigationLink(destination: ChatListView()) {
+            Label(t("signalasi.tab.messages", "Messages"), systemImage: "bubble.left.and.bubble.right")
+          }
+          NavigationLink(destination: ContactsView()) {
+            Label(t("signalasi.tab.contacts", "Contacts"), systemImage: "person.2")
+          }
+          NavigationLink(destination: DiscoverView()) {
+            Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
+          }
         }
         Section(t("signalasi.settings.language", "Language")) {
           Picker(t("signalasi.settings.interface_language", "Interface"), selection: languageBinding(\.interfaceLanguage)) {
