@@ -7,6 +7,10 @@
 #include <limits>
 #include <stdexcept>
 
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
 namespace signalasi::asr {
 namespace {
 
@@ -22,6 +26,76 @@ void set_error(std::string * destination, const std::string & message) {
 bool is_little_endian() noexcept {
     const std::uint16_t value = 1;
     return *reinterpret_cast<const std::uint8_t *>(&value) == 1;
+}
+
+void apply_hann_window(const float * samples,
+                       const float * hann,
+                       float * destination,
+                       const std::size_t count) noexcept {
+    std::size_t index = 0;
+#if defined(__aarch64__)
+    for (; index + 8U <= count; index += 8U) {
+        const auto samples_low = vld1q_f32(samples + index);
+        const auto samples_high = vld1q_f32(samples + index + 4U);
+        const auto hann_low = vld1q_f32(hann + index);
+        const auto hann_high = vld1q_f32(hann + index + 4U);
+        vst1q_f32(destination + index, vmulq_f32(samples_low, hann_low));
+        vst1q_f32(destination + index + 4U, vmulq_f32(samples_high, hann_high));
+    }
+#endif
+    for (; index < count; ++index) {
+        destination[index] = samples[index] * hann[index];
+    }
+}
+
+void compute_power_spectrum(const float * interleaved_fft,
+                            float * destination,
+                            const std::size_t count) noexcept {
+    std::size_t index = 0;
+#if defined(__aarch64__)
+    for (; index + 4U <= count; index += 4U) {
+        const auto complex = vld2q_f32(interleaved_fft + 2U * index);
+        const auto power = vfmaq_f32(
+            vmulq_f32(complex.val[0], complex.val[0]),
+            complex.val[1],
+            complex.val[1]);
+        vst1q_f32(destination + index, power);
+    }
+#endif
+    for (; index < count; ++index) {
+        const auto real = interleaved_fft[2U * index];
+        const auto imaginary = interleaved_fft[2U * index + 1U];
+        destination[index] = real * real + imaginary * imaginary;
+    }
+}
+
+double mel_dot_product(const float * power,
+                       const float * filters,
+                       const std::size_t count) noexcept {
+    std::size_t index = 0;
+#if defined(__aarch64__)
+    auto accumulator_low = vdupq_n_f64(0.0);
+    auto accumulator_high = vdupq_n_f64(0.0);
+    for (; index + 4U <= count; index += 4U) {
+        const auto power_values = vld1q_f32(power + index);
+        const auto filter_values = vld1q_f32(filters + index);
+        accumulator_low = vfmaq_f64(
+            accumulator_low,
+            vcvt_f64_f32(vget_low_f32(power_values)),
+            vcvt_f64_f32(vget_low_f32(filter_values)));
+        accumulator_high = vfmaq_f64(
+            accumulator_high,
+            vcvt_high_f64_f32(power_values),
+            vcvt_high_f64_f32(filter_values));
+    }
+    double result = vaddvq_f64(vaddq_f64(accumulator_low, accumulator_high));
+#else
+    double result = 0.0;
+#endif
+    for (; index < count; ++index) {
+        result += static_cast<double>(power[index]) * static_cast<double>(filters[index]);
+    }
+    return result;
 }
 
 }  // namespace
@@ -119,23 +193,24 @@ bool LogMelExtractor::compute_pcm16(const std::int16_t * samples,
     for (std::size_t frame = 0; frame < kMelFrames; ++frame) {
         std::fill(fft_input_.begin(), fft_input_.end(), 0.0F);
         const auto frame_offset = frame * kHopSize;
-        for (std::size_t index = 0; index < kFftSize; ++index) {
-            fft_input_[index] = padded_samples_[frame_offset + index] * hann_[index];
-        }
+        apply_hann_window(
+            padded_samples_.data() + frame_offset,
+            hann_.data(),
+            fft_input_.data(),
+            kFftSize);
         fft(fft_input_.data(), static_cast<int>(kFftSize), fft_output_.data());
 
-        for (std::size_t bin = 0; bin < MelFilterBank128::kFftBins; ++bin) {
-            const auto real = fft_output_[2 * bin];
-            const auto imaginary = fft_output_[2 * bin + 1];
-            power_spectrum_[bin] = real * real + imaginary * imaginary;
-        }
+        compute_power_spectrum(
+            fft_output_.data(),
+            power_spectrum_.data(),
+            MelFilterBank128::kFftBins);
 
         for (std::size_t mel = 0; mel < MelFilterBank128::kMelBins; ++mel) {
             const auto * filters = filter_bank_.row(mel);
-            double energy = 0.0;
-            for (std::size_t bin = 0; bin < MelFilterBank128::kFftBins; ++bin) {
-                energy += static_cast<double>(power_spectrum_[bin]) * filters[bin];
-            }
+            const auto energy = mel_dot_product(
+                power_spectrum_.data(),
+                filters,
+                MelFilterBank128::kFftBins);
             const auto log_energy = static_cast<float>(
                 std::log10(std::max<double>(energy, kMinimumMelEnergy)));
             mel_output_[mel * kMelFrames + frame] = log_energy;
