@@ -145,8 +145,19 @@ class LargeTurboQnnModelStore(
         )
     }
 
+    fun requiredInstallFreeBytes(manifest: LargeTurboQnnModelManifest): Long {
+        val currentBytes = activeDirectory()?.walkTopDown()?.filter(File::isFile)?.sumOf(File::length) ?: 0L
+        return safeAdd(
+            manifest.totalInstalledSizeBytes,
+            safeAdd(currentBytes, MIN_FREE_AFTER_INSTALL_BYTES)
+        )
+    }
+
     fun hasEnoughSpace(manifest: LargeTurboQnnModelManifest): Boolean =
         usableSpace(root) >= requiredFreeBytes(manifest)
+
+    fun hasEnoughInstallSpace(manifest: LargeTurboQnnModelManifest): Boolean =
+        usableSpace(root) >= requiredInstallFreeBytes(manifest)
 
     @Synchronized
     fun inspectActive(manifest: LargeTurboQnnModelManifest): QnnContextModelSnapshot {
@@ -170,7 +181,7 @@ class LargeTurboQnnModelStore(
                 throw QnnContextModelInstallException("QNN model archive SHA-256 does not match its manifest")
             }
         }
-        if (!hasEnoughSpace(manifest)) {
+        if (!hasEnoughInstallSpace(manifest)) {
             throw QnnContextModelInstallException("Not enough storage to install the QNN ASR model")
         }
 
@@ -294,6 +305,8 @@ class LargeTurboQnnModelStore(
     @Synchronized
     fun deleteAll() {
         root.deleteRecursively()
+        check(releases.mkdirs() || releases.isDirectory) { "QNN ASR release storage is unavailable" }
+        check(staging.mkdirs() || staging.isDirectory) { "QNN ASR staging storage is unavailable" }
     }
 
     private fun extractArchive(

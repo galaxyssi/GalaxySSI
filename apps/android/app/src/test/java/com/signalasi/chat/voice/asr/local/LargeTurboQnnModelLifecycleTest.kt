@@ -55,6 +55,33 @@ class LargeTurboQnnModelLifecycleTest {
         assertEquals(452_882_432L, manifest.archive.entries[2].uncompressedSizeBytes)
         assertEquals(102_912L,
             manifest.supportAssets.single { it.installedName == "mel_filters.bin" }.installedSizeBytes)
+        val store = LargeTurboQnnModelStore(root)
+        val reserve = 512L * 1024L * 1024L
+        assertEquals(
+            manifest.archive.sizeBytes + manifest.totalInstalledSizeBytes + reserve,
+            store.requiredFreeBytes(manifest)
+        )
+        assertEquals(
+            manifest.totalInstalledSizeBytes + reserve,
+            store.requiredInstallFreeBytes(manifest)
+        )
+    }
+
+    @Test
+    fun `deleting every model release leaves the store ready for a new download`() {
+        val store = LargeTurboQnnModelStore(root)
+        val previousDownload = File(store.downloadDirectory(), "partial-model").apply {
+            writeText("partial", Charsets.UTF_8)
+        }
+
+        store.deleteAll()
+
+        assertFalse(previousDownload.exists())
+        assertTrue(store.downloadDirectory().isDirectory)
+        assertEquals(
+            QnnContextModelState.NOT_INSTALLED,
+            store.inspectActive(LargeTurboQnnModelCatalog.s26Ultra).state
+        )
     }
 
     @Test

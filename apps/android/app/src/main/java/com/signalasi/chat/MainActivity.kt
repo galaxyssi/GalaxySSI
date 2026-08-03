@@ -122,9 +122,15 @@ import com.signalasi.chat.voice.asr.local.HighAccuracyLocalAsrTurn
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
+import com.signalasi.chat.voice.asr.local.LargeTurboQnnModelAction
+import com.signalasi.chat.voice.asr.local.LargeTurboQnnModelManager
+import com.signalasi.chat.voice.asr.local.LargeTurboQnnModelStatus
+import com.signalasi.chat.voice.asr.local.QnnAsrEligibility
+import com.signalasi.chat.voice.asr.local.QnnModelDownloadNetworkPolicy
 import com.signalasi.chat.voice.asr.local.QnnWhisperPackageManager
 import com.signalasi.chat.voice.asr.local.QnnWhisperPackageStatus
 import com.signalasi.chat.voice.asr.local.WhisperDecodeScheduler
+import com.signalasi.chat.voice.asr.local.largeTurboQnnModelAction
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkDeferredException
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkProgress
@@ -29692,8 +29698,104 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         var hasActiveDownload = false
         val qnnPackages = QnnWhisperPackageManager.supportedPackages(this)
-        if (qnnPackages.isNotEmpty()) {
+        val largeTurboState = LargeTurboQnnModelManager.state(this) { showAsrProviderPage() }
+        val largeTurboDecision = LargeTurboQnnModelManager.deviceDecision(this)
+        val largeTurboSupported = largeTurboDecision.eligibility != QnnAsrEligibility.FALLBACK_REQUIRED
+        if (largeTurboSupported || qnnPackages.isNotEmpty()) {
             addSectionTitle(getString(R.string.voice_asr_qnn_section))
+        }
+        if (largeTurboSupported) {
+            hasActiveDownload = hasActiveDownload || LargeTurboQnnModelManager.hasActiveWork()
+            val isSelected = config.asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
+                config.asrModel == LargeTurboQnnModelManager.PROFILE_ID
+            val action = largeTurboQnnModelAction(largeTurboState, isSelected, supported = true)
+            val lifecycleDetail = when (largeTurboState.status) {
+                LargeTurboQnnModelStatus.CHECKING -> getString(R.string.voice_provider_checking)
+                LargeTurboQnnModelStatus.NOT_INSTALLED -> getString(R.string.voice_asr_model_download_size)
+                LargeTurboQnnModelStatus.DOWNLOADING ->
+                    getString(R.string.voice_asr_model_progress, largeTurboState.progress)
+                LargeTurboQnnModelStatus.PAUSED -> getString(R.string.local_model_download_paused)
+                LargeTurboQnnModelStatus.VERIFYING -> getString(R.string.voice_asr_model_verifying)
+                LargeTurboQnnModelStatus.INSTALLING -> getString(R.string.voice_asr_model_installing)
+                LargeTurboQnnModelStatus.READY -> getString(R.string.voice_asr_qnn_ready)
+                LargeTurboQnnModelStatus.FAILED -> getString(
+                    R.string.voice_asr_model_install_failed,
+                    largeTurboState.detail.ifBlank { "UNKNOWN" }
+                )
+            }
+            val actionLabel = when (action) {
+                LargeTurboQnnModelAction.DOWNLOAD -> getString(R.string.voice_asr_model_download)
+                LargeTurboQnnModelAction.RESUME -> getString(R.string.local_model_resume_action)
+                LargeTurboQnnModelAction.PAUSE -> getString(R.string.local_model_pause_action)
+                LargeTurboQnnModelAction.RETRY -> getString(R.string.common_retry)
+                LargeTurboQnnModelAction.USE -> getString(R.string.settings_language_use)
+                LargeTurboQnnModelAction.CURRENT -> getString(R.string.section_current)
+                LargeTurboQnnModelAction.WAIT -> getString(R.string.voice_provider_checking)
+                LargeTurboQnnModelAction.UNSUPPORTED -> ""
+            }
+            featureContent.addView(featureRow(
+                LargeTurboQnnModelManager.manifest.displayName,
+                getString(
+                    R.string.voice_asr_qnn_detail,
+                    LargeTurboQnnModelManager.sizeLabel(),
+                    lifecycleDetail
+                ),
+                R.drawable.ic_local_model,
+                actionLabel
+            ).apply {
+                isClickable = action !in setOf(
+                    LargeTurboQnnModelAction.CURRENT,
+                    LargeTurboQnnModelAction.WAIT,
+                    LargeTurboQnnModelAction.UNSUPPORTED
+                )
+                isFocusable = isClickable
+                if (isClickable) setOnClickListener {
+                    when (action) {
+                        LargeTurboQnnModelAction.PAUSE -> {
+                            LargeTurboQnnModelManager.pause { showAsrProviderPage() }
+                            showAsrProviderPage()
+                        }
+                        LargeTurboQnnModelAction.USE -> {
+                            LargeTurboQnnModelManager.select(this@MainActivity)
+                            prepareHighAccuracyAsrIfSelected()
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(
+                                    R.string.voice_asr_model_ready,
+                                    LargeTurboQnnModelManager.manifest.displayName
+                                ),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            showAsrProviderPage()
+                        }
+                        LargeTurboQnnModelAction.DOWNLOAD,
+                        LargeTurboQnnModelAction.RESUME,
+                        LargeTurboQnnModelAction.RETRY -> {
+                            startLargeTurboQnnModelDownload()
+                        }
+                        else -> Unit
+                    }
+                }
+                if (largeTurboState.status == LargeTurboQnnModelStatus.READY && !isSelected) {
+                    setOnLongClickListener {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(
+                                R.string.voice_asr_model_remove_title,
+                                LargeTurboQnnModelManager.manifest.displayName
+                            ))
+                            .setMessage(getString(R.string.voice_asr_qnn_remove_message))
+                            .setNegativeButton(getString(R.string.common_cancel), null)
+                            .setPositiveButton(getString(R.string.voice_asr_model_remove)) { _, _ ->
+                                LargeTurboQnnModelManager.delete(this@MainActivity) { showAsrProviderPage() }
+                                showAsrProviderPage()
+                            }
+                            .show()
+                        true
+                    }
+                }
+            })
+        }
+        if (qnnPackages.isNotEmpty()) {
             qnnPackages.forEach { modelPackage ->
                 val state = QnnWhisperPackageManager.state(this, modelPackage)
                 val isSelected = config.asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
@@ -30046,6 +30148,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 showAsrProviderPage()
             }
             .show()
+    }
+
+    private fun startLargeTurboQnnModelDownload() {
+        val begin: (QnnModelDownloadNetworkPolicy) -> Unit = { policy ->
+            LargeTurboQnnModelManager.enqueue(this, policy) { showAsrProviderPage() }
+            Toast.makeText(
+                this,
+                getString(
+                    R.string.voice_asr_model_download_started,
+                    LargeTurboQnnModelManager.manifest.displayName
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
+            handler.post(asrModelDownloadPoll)
+            showAsrProviderPage()
+        }
+        when (currentAsrNetworkType()) {
+            AsrNetworkType.WIFI -> begin(QnnModelDownloadNetworkPolicy.WIFI_ONLY)
+            AsrNetworkType.MOBILE -> android.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.voice_asr_model_mobile_title))
+                .setMessage(getString(
+                    R.string.voice_asr_model_mobile_message,
+                    LargeTurboQnnModelManager.manifest.displayName,
+                    LargeTurboQnnModelManager.sizeLabel()
+                ))
+                .setNegativeButton(getString(R.string.common_cancel), null)
+                .setPositiveButton(getString(R.string.voice_asr_model_mobile_continue)) { _, _ ->
+                    begin(QnnModelDownloadNetworkPolicy.ANY_VALIDATED_NETWORK)
+                }
+                .show()
+            AsrNetworkType.OTHER_VALIDATED -> begin(QnnModelDownloadNetworkPolicy.ANY_VALIDATED_NETWORK)
+            AsrNetworkType.OFFLINE -> Toast.makeText(
+                this,
+                getString(R.string.voice_asr_model_network_error),
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun showWhisperRuntimeModeDialog(current: WhisperUserVoiceMode) {
