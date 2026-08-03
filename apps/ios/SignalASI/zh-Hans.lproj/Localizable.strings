@@ -1,0 +1,9 @@
+"signalasi.tab.contacts" = "通讯录";
+"signalasi.tab.discover" = "发现";
+"signalasi.tab.settings" = "设置";
+"signalasi.agent.hermes.subtitle" = "继续桌面 Agent 对话与任务执行";
+"signalasi.discover.title" = "发现";
+"signalasi.discover.pairing.subtitle" = "扫描二维码并连接 SignalASI Desktop";
+"signalasi.discover.voice.subtitle" = "唤醒、转写、本地语音模型";
+"signalasi.discover.device.subtitle" = "自定义设备、Home Assistant 和连接器";
+"signalasi.discover.planner.subtitle" = "Agent 规划、预算和模型路由";

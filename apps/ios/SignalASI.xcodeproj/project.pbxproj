@@ -12,6 +12,9 @@
     A10000000000000000000003 /* SignalASIStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* SignalASIStore.swift */; };
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
+    A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
+    A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
+    A10000000000000000000890 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A41000000000000000000890 /* Localizable.strings */; };
     A10000000000000000000006 /* SignalASILinkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* SignalASILinkProtocolTests.swift */; };
     A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SignalASIStoreTests.swift */; };
     A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* SignalASILinkReliability.swift */; };
@@ -588,6 +591,9 @@
     A20000000000000000000003 /* SignalASIStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStore.swift; sourceTree = "<group>"; };
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
+    A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
+    A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+    A20000000000000000000890 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
     A20000000000000000000006 /* SignalASILinkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkProtocolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000007 /* SignalASIStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000008 /* SignalASI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SignalASI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1538,6 +1544,9 @@
         A20000000000000000000014 /* SignalASIBackup.swift */,
         A20000000000000000000003 /* SignalASIStore.swift */,
         A20000000000000000000004 /* SignalASIServices.swift */,
+        A20000000000000000000889 /* Assets.xcassets */,
+        A41000000000000000000890 /* Localizable.strings */,
+        A20000000000000000000888 /* SignalASIAndroidParityUI.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -1773,6 +1782,17 @@
     };
 /* End PBXGroup section */
 
+/* Begin PBXVariantGroup section */
+    A41000000000000000000890 /* Localizable.strings */ = {
+      isa = PBXVariantGroup;
+      children = (
+        A20000000000000000000890 /* zh-Hans */,
+      );
+      name = Localizable.strings;
+      sourceTree = "<group>";
+    };
+/* End PBXVariantGroup section */
+
 /* Begin PBXNativeTarget section */
     A50000000000000000000001 /* SignalASI */ = {
       isa = PBXNativeTarget;
@@ -1845,7 +1865,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -2213,6 +2233,7 @@
         A10000000000000000000012 /* SignalASIBackup.swift in Sources */,
         A10000000000000000000003 /* SignalASIStore.swift in Sources */,
         A10000000000000000000004 /* SignalASIServices.swift in Sources */,
+        A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
@@ -2566,6 +2587,7 @@
       isa = XCBuildConfiguration;
       buildSettings = {
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         CODE_SIGN_STYLE = Automatic;
         CURRENT_PROJECT_VERSION = 1;
         DEVELOPMENT_ASSET_PATHS = "";
@@ -2601,6 +2623,7 @@
       isa = XCBuildConfiguration;
       buildSettings = {
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         CODE_SIGN_STYLE = Automatic;
         CURRENT_PROJECT_VERSION = 1;
         DEVELOPMENT_ASSET_PATHS = "";

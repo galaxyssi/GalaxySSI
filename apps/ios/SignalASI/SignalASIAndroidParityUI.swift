@@ -1,0 +1,402 @@
+import SwiftUI
+import UIKit
+
+private func signalASIColor(light: UInt32, dark: UInt32) -> UIColor {
+  UIColor { traits in
+    signalASIColor(traits.userInterfaceStyle == .dark ? dark : light)
+  }
+}
+
+private func signalASIColor(_ rgb: UInt32) -> UIColor {
+  UIColor(
+    red: CGFloat(Double((rgb >> 16) & 0xFF) / 255.0),
+    green: CGFloat(Double((rgb >> 8) & 0xFF) / 255.0),
+    blue: CGFloat(Double(rgb & 0xFF) / 255.0),
+    alpha: 1.0
+  )
+}
+
+extension Color {
+  static var signalASIPageBackground: Color { Color(signalASIColor(light: 0xF6F7F8, dark: 0x15171B)) }
+  static var signalASIBarBackground: Color { Color(signalASIColor(light: 0xFFFFFF, dark: 0x202329)) }
+  static var signalASISurface: Color { Color(signalASIColor(light: 0xFFFFFF, dark: 0x252930)) }
+  static var signalASISearchBackground: Color { Color(signalASIColor(light: 0xE5E5EA, dark: 0x2B3038)) }
+  static var signalASITextPrimary: Color { Color(signalASIColor(light: 0x111111, dark: 0xF2F4F7)) }
+  static var signalASITextSecondary: Color { Color(signalASIColor(light: 0x8E8E93, dark: 0xA5ABB6)) }
+  static var signalASIAgentSessionTitle: Color { Color(signalASIColor(light: 0x505052, dark: 0xCCD0D7)) }
+  static var signalASIAccent: Color { Color(signalASIColor(light: 0x14C66A, dark: 0x19D36B)) }
+  static var signalASISentBubble: Color { Color(signalASIColor(light: 0x95EC69, dark: 0x2E8B57)) }
+  static var signalASIIncomingBubble: Color { Color(signalASIColor(light: 0xFFFFFF, dark: 0x252930)) }
+  static var signalASIButtonSoft: Color { Color(signalASIColor(light: 0xE9EAEC, dark: 0x363B44)) }
+  static var signalASIInputStroke: Color { Color(signalASIColor(light: 0xC7C7CC, dark: 0x363B44)) }
+  static var signalASIUnreadRed: Color { Color(signalASIColor(light: 0xFF3B30, dark: 0xFF5A5F)) }
+  static var signalASISeparator: Color { Color(signalASIColor(light: 0xE5E5EA, dark: 0x343841)) }
+  static var signalASIInsightBackground: Color { Color(signalASIColor(light: 0xF2F6FE, dark: 0x202A36)) }
+  static var signalASIInsightStroke: Color { Color(signalASIColor(light: 0xD8E6FB, dark: 0x34475C)) }
+  static var signalASIInsightText: Color { Color(signalASIColor(light: 0x315B86, dark: 0xB8D5F2)) }
+}
+
+enum SignalASILocalization {
+  static func string(_ key: String, fallback: String) -> String {
+    NSLocalizedString(key, tableName: nil, bundle: .main, value: fallback, comment: "")
+  }
+}
+
+enum SignalASIRootTab: Hashable {
+  case agent
+  case messages
+  case contacts
+  case discover
+  case settings
+}
+
+struct SignalASILogoView: View {
+  var size: CGFloat
+  var cornerRadius: CGFloat = 9
+
+  var body: some View {
+    Image("SignalASILogo")
+      .resizable()
+      .scaledToFill()
+      .frame(width: size, height: size)
+      .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+  }
+}
+
+struct SignalASITopBar<Leading: View, Trailing: View>: View {
+  var title: String
+  let leading: Leading
+  let trailing: Trailing
+
+  init(
+    title: String,
+    @ViewBuilder leading: () -> Leading,
+    @ViewBuilder trailing: () -> Trailing
+  ) {
+    self.title = title
+    self.leading = leading()
+    self.trailing = trailing()
+  }
+
+  var body: some View {
+    HStack(spacing: 0) {
+      leading
+        .frame(width: 40, height: 56)
+      Text(title)
+        .font(.system(size: 17, weight: .bold))
+        .foregroundColor(.signalASITextPrimary)
+        .frame(maxWidth: .infinity, minHeight: 56)
+      trailing
+        .frame(width: 40, height: 56)
+    }
+    .padding(.horizontal, 16)
+    .frame(height: 56)
+    .background(Color.signalASIBarBackground)
+  }
+}
+
+struct SignalASIBackButton: View {
+  @Environment(\.presentationMode) private var presentationMode
+
+  var body: some View {
+    Button {
+      presentationMode.wrappedValue.dismiss()
+    } label: {
+      Image(systemName: "chevron.left")
+        .font(.system(size: 22, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+    }
+  }
+}
+
+struct SignalASIAndroidIconButton: View {
+  var systemName: String
+  var action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: systemName)
+        .font(.system(size: 20, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+        .frame(width: 40, height: 40)
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+struct AgentHomeView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  private var unreadTotal: Int {
+    store.visibleContacts.reduce(0) { total, contact in
+      total + store.conversationSummary(for: contact.id).unreadCount
+    }
+  }
+
+  var body: some View {
+    NavigationView {
+      VStack(spacing: 0) {
+        header
+        ScrollView {
+          VStack(spacing: 10) {
+            AgentInsightBanner(unreadTotal: unreadTotal)
+            SignalASIAndroidMenuLink(
+              title: "Hermes Agent",
+              subtitle: SignalASILocalization.string(
+                "signalasi.agent.hermes.subtitle",
+                fallback: "Continue desktop Agent conversations and task execution"
+              ),
+              systemImage: "bubble.left.and.bubble.right.fill",
+              tint: .signalASIAccent
+            ) {
+              ConversationView(contactId: "hermes")
+            }
+            SignalASIAndroidMenuLink(
+              title: "Native Tools",
+              subtitle: "\(store.visibleContacts.count) contacts, device actions and local safety controls",
+              systemImage: "hammer.fill",
+              tint: .signalASIInsightText
+            ) {
+              AgentSafetySettingsView()
+            }
+            SignalASIAndroidMenuLink(
+              title: "Voice Wake",
+              subtitle: "Whisper ASR, microphone and reply playback settings",
+              systemImage: "mic.fill",
+              tint: .signalASIAccent
+            ) {
+              VoiceSettingsView()
+            }
+            SignalASIAndroidMenuLink(
+              title: "Data Sharing",
+              subtitle: "Review model disclosure events and destination blocks",
+              systemImage: "lock.shield.fill",
+              tint: .signalASIUnreadRed
+            ) {
+              AgentDataDisclosureDashboardView()
+            }
+          }
+          .padding(.horizontal, 12)
+          .padding(.top, 8)
+          .padding(.bottom, 18)
+        }
+      }
+      .background(Color.signalASIPageBackground.ignoresSafeArea())
+      .navigationBarHidden(true)
+    }
+    .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var header: some View {
+    HStack(spacing: 8) {
+      SignalASILogoView(size: 39, cornerRadius: 8)
+      VStack(alignment: .center, spacing: 2) {
+        Text("SignalASI")
+          .font(.system(size: 14.5, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+        Text("Agent Mode")
+          .font(.system(size: 10, weight: .regular))
+          .foregroundColor(.signalASITextSecondary)
+      }
+      Spacer(minLength: 8)
+      VStack(alignment: .trailing, spacing: 4) {
+        Text("New session")
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.signalASIAgentSessionTitle)
+          .lineLimit(1)
+        Text(unreadTotal > 0 ? "\(unreadTotal) unread" : "Native tools ready")
+          .font(.system(size: 10, weight: .regular))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(1)
+      }
+      .frame(width: 128, alignment: .trailing)
+      NavigationLink(destination: SettingsView()) {
+        Image(systemName: "ellipsis")
+          .font(.system(size: 22, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+          .frame(width: 44, height: 44)
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .frame(height: 76)
+    .background(Color.signalASIPageBackground)
+  }
+}
+
+struct DiscoverView: View {
+  var body: some View {
+    NavigationView {
+      VStack(spacing: 0) {
+        SignalASITopBar(
+          title: SignalASILocalization.string("signalasi.discover.title", fallback: "Discover"),
+          leading: { Color.clear },
+          trailing: { Color.clear }
+        )
+        ScrollView {
+          VStack(spacing: 10) {
+            SignalASIAndroidMenuLink(
+              title: "Pairing",
+              subtitle: SignalASILocalization.string(
+                "signalasi.discover.pairing.subtitle",
+                fallback: "Scan QR codes and connect SignalASI Desktop"
+              ),
+              systemImage: "qrcode.viewfinder",
+              tint: .signalASIAccent
+            ) {
+              PairingView()
+            }
+            SignalASIAndroidMenuLink(
+              title: "Voice",
+              subtitle: SignalASILocalization.string(
+                "signalasi.discover.voice.subtitle",
+                fallback: "Wake, transcription and local voice models"
+              ),
+              systemImage: "waveform",
+              tint: .signalASIInsightText
+            ) {
+              VoiceSettingsView()
+            }
+            SignalASIAndroidMenuLink(
+              title: "Device Center",
+              subtitle: SignalASILocalization.string(
+                "signalasi.discover.device.subtitle",
+                fallback: "Custom devices, Home Assistant and connectors"
+              ),
+              systemImage: "antenna.radiowaves.left.and.right",
+              tint: .signalASIAccent
+            ) {
+              CustomDeviceConnectorsView()
+            }
+            SignalASIAndroidMenuLink(
+              title: "Model Planner",
+              subtitle: SignalASILocalization.string(
+                "signalasi.discover.planner.subtitle",
+                fallback: "Agent planning, budget and model routing"
+              ),
+              systemImage: "slider.horizontal.3",
+              tint: .signalASIInsightText
+            ) {
+              AgentModelPlannerSettingsView()
+            }
+          }
+          .padding(.horizontal, 12)
+          .padding(.top, 12)
+          .padding(.bottom, 18)
+        }
+      }
+      .background(Color.signalASIPageBackground.ignoresSafeArea())
+      .navigationBarHidden(true)
+    }
+    .navigationViewStyle(StackNavigationViewStyle())
+  }
+}
+
+private struct AgentInsightBanner: View {
+  var unreadTotal: Int
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 10) {
+        SignalASILogoView(size: 34, cornerRadius: 7)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("SignalASI Agent")
+            .font(.system(size: 15, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+          Text(unreadTotal > 0 ? "You have \(unreadTotal) unread agent messages." : "Native tool pipeline is ready.")
+            .font(.system(size: 12))
+            .foregroundColor(.signalASIInsightText)
+            .lineLimit(2)
+        }
+        Spacer()
+      }
+      HStack(spacing: 8) {
+        AgentStatusChip(title: "iOS 15+", value: "Ready")
+        AgentStatusChip(title: "Safety", value: "On")
+      }
+    }
+    .padding(12)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct AgentStatusChip: View {
+  var title: String
+  var value: String
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Text(title)
+        .foregroundColor(.signalASITextSecondary)
+      Text(value)
+        .fontWeight(.bold)
+        .foregroundColor(.signalASITextPrimary)
+    }
+    .font(.system(size: 11))
+    .padding(.horizontal, 9)
+    .padding(.vertical, 6)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct SignalASIAndroidMenuLink<Destination: View>: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  let destination: Destination
+
+  init(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    tint: Color,
+    @ViewBuilder destination: () -> Destination
+  ) {
+    self.title = title
+    self.subtitle = subtitle
+    self.systemImage = systemImage
+    self.tint = tint
+    self.destination = destination()
+  }
+
+  var body: some View {
+    NavigationLink(destination: destination) {
+      HStack(spacing: 12) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(tint.opacity(0.16))
+          Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(tint)
+        }
+        .frame(width: 42, height: 42)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(title)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.signalASITextPrimary)
+          Text(subtitle)
+            .font(.system(size: 12))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(2)
+        }
+        Spacer()
+        Image(systemName: "chevron.right")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 11)
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+  }
+}
