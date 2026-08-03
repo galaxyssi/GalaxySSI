@@ -35,6 +35,11 @@ data class AgentKnowledgeStats(
     val lastUpdatedAtMillis: Long = 0L
 )
 
+data class AgentKnowledgeQuerySnapshot(
+    val items: List<AgentKnowledgeItem> = emptyList(),
+    val stats: AgentKnowledgeStats = AgentKnowledgeStats()
+)
+
 enum class AgentKnowledgeKind {
     NOTE,
     DOCUMENT,
@@ -70,6 +75,8 @@ interface AgentKnowledgeStore {
     ): Int
     fun delete(query: String): Int
     fun stats(): AgentKnowledgeStats
+    fun querySnapshot(query: String, limit: Int = 5): AgentKnowledgeQuerySnapshot =
+        AgentKnowledgeQuerySnapshot(search(query, limit), stats())
 }
 
 class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeStore {
@@ -130,8 +137,23 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
     }
 
     override fun searchRanked(query: String, limit: Int): List<AgentKnowledgeHit> {
-        val cleanQuery = query.trim()
+        return searchRanked(loadItems(), query, limit)
+    }
+
+    override fun querySnapshot(query: String, limit: Int): AgentKnowledgeQuerySnapshot {
         val items = loadItems()
+        return AgentKnowledgeQuerySnapshot(
+            items = searchRanked(items, query, limit).map { it.item },
+            stats = stats(items)
+        )
+    }
+
+    private fun searchRanked(
+        items: List<AgentKnowledgeItem>,
+        query: String,
+        limit: Int
+    ): List<AgentKnowledgeHit> {
+        val cleanQuery = query.trim()
         if (cleanQuery.isBlank()) {
             return items.sortedByDescending { it.updatedAtMillis }.take(limit.coerceAtLeast(0)).map {
                 AgentKnowledgeHit(it, 0.0, excerpt(it.content, emptyList()), emptyList())
@@ -204,7 +226,10 @@ class SharedPreferencesAgentKnowledgeStore(context: Context) : AgentKnowledgeSto
     }
 
     override fun stats(): AgentKnowledgeStats {
-        val items = loadItems()
+        return stats(loadItems())
+    }
+
+    private fun stats(items: List<AgentKnowledgeItem>): AgentKnowledgeStats {
         return AgentKnowledgeStats(
             itemCount = items.size,
             sourceCount = items.map { it.source }.filter { it.isNotBlank() }.distinct().size,

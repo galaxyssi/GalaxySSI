@@ -858,6 +858,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         setContentView(R.layout.activity_main)
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
+        agentRoutingExecutor.execute {
+            runCatching { AgentNativeToolPlanningCatalog.descriptors(applicationContext) }
+                .onFailure { Log.w("SignalASILatency", "native_tool_catalog_prewarm_failed", it) }
+        }
         voiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
         val voiceExecutionStore = AndroidVoiceExecutionRecordStore(this)
         voiceExecutionLedger = VoiceExecutionLedger(
@@ -5648,7 +5652,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                 } ?: GuardedModelAgentPlanner(this@MainActivity),
                 sessionStore = SharedPreferencesAgentSessionStore(this@MainActivity, "task:$turnId"),
-                nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
+                nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
+                screenObservationOverride = deterministicAction?.let { selectedAction ->
+                    AgentScreenObservationPolicy.requiresObservation(goal, selectedAction)
+                }
             )
             bindAgentExecutionLoop(runtime, turnId, this)
             provisionalAgentTasks.add(runtime)
@@ -5894,19 +5901,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun deterministicSystemActionFor(
         goal: String,
         conversationContext: AgentConversationContext
-    ): AgentAction? {
-        val state = mobileNativeAgent.snapshot()
-        return RuleBasedAgentPlanner(this).deterministicLocalAction(
-            AgentRequest(
-                goal = goal,
-                screen = state.currentScreen,
-                targets = state.callableTargets,
-                memories = emptyList(),
-                runtimeContext = state.runtimeContext,
-                conversationContext = conversationContext
-            )
-        )
-    }
+    ): AgentAction? = mobileNativeAgent.resolveDeterministicLocalAction(goal, conversationContext)
 
     private fun executeDirectSystemAction(
         action: AgentAction,

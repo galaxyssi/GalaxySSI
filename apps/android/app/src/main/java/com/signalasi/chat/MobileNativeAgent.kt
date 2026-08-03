@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
+import android.os.SystemClock
 import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.ContactsContract
@@ -47,6 +48,7 @@ private const val INTERNAL_AGENT_KNOWLEDGE_CONTEXT = "_signalasi_agent_knowledge
 private const val INTERNAL_SCREEN_CONTEXT = "_signalasi_screen_context"
 private const val INTERNAL_LONG_TERM_WRITE_ALLOWED = "_signalasi_long_term_write_allowed"
 private const val INTERNAL_TASK_EXECUTION_MODE = "_signalasi_task_execution_mode"
+private const val RUNTIME_CONTEXT_CACHE_TTL_MILLIS = 2_000L
 
 private val SENSITIVE_MEMORY_TERMS = listOf(
     "password",
@@ -246,6 +248,7 @@ class MobileNativeAgent(
     private val reputationLedger: AgentReputationLedger = AgentReputationLedger.encrypted(context),
     private val sessionStore: AgentSessionStore = SharedPreferencesAgentSessionStore(context),
     private val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE,
+    private val screenObservationOverride: Boolean? = null,
     executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE
 ) {
     private val appContext = context.applicationContext
@@ -258,13 +261,15 @@ class MobileNativeAgent(
         safetySettingsStore.load().taskExecutionMode
     @Volatile private var phase: AgentPhase = AgentPhase.OBSERVING
     private var currentGoal: String = ""
-    private var currentScreen: ScreenContext = captureScreen()
+    private var currentScreen: ScreenContext = ScreenContext(foregroundApp = "", pageTitle = "")
     private var currentPlan: AgentPlan? = null
     private var lastActionResult: AgentActionResult? = null
     private var activeWorkflowExecutionId: String? = null
     private var executionLoop = AgentExecutionLoop.create()
     private var executionLoopEventSink: AgentExecutionLoopEventSink = executionLoopEventSink
     private val auditTrail = mutableListOf<AgentAuditEntry>()
+    @Volatile private var cachedRuntimeContext: AgentRuntimeContext? = null
+    @Volatile private var cachedRuntimeContextAtElapsedMillis: Long = 0L
     private val nativeToolRegistry: AgentNativeToolRegistry by lazy {
         AgentPhoneNativeToolCatalog.defaultRegistry(
             context = appContext,
@@ -504,16 +509,20 @@ class MobileNativeAgent(
 
     fun snapshot(): AgentUiState {
         syncActiveWorkflowExecution()
-        val targets = connectorRegistry.availableTargets()
-        val memories = if (currentGoal.isNotBlank()) memoryStore.recall(currentGoal) else emptyList()
-        val context = buildRuntimeContext(
-            goal = currentGoal,
-            screen = currentScreen,
-            targets = targets,
-            memories = memories,
-            knowledgeItems = knowledgeStore.search(currentGoal),
-            knowledgeStats = knowledgeStore.stats()
-        )
+        val context = cachedRuntimeContext()
+            ?: run {
+                val targets = connectorRegistry.availableTargets()
+                val memories = if (currentGoal.isNotBlank()) memoryStore.recall(currentGoal) else emptyList()
+                val knowledge = knowledgeStore.querySnapshot(currentGoal)
+                buildRuntimeContext(
+                    goal = currentGoal,
+                    screen = currentScreen,
+                    targets = targets,
+                    memories = memories,
+                    knowledgeItems = knowledge.items,
+                    knowledgeStats = knowledge.stats
+                ).also(::cacheRuntimeContext)
+            }
         return AgentUiState(
             phase = phase,
             currentGoal = currentGoal,
@@ -521,7 +530,7 @@ class MobileNativeAgent(
             taskExecutionMode = activeTaskExecutionMode,
             permissionMode = context.permissionMode,
             highRiskGuard = context.highRiskGuard,
-            callableTargets = targets,
+            callableTargets = context.callableTargets,
             runtimeContext = context,
             runningTaskCount = if (phase == AgentPhase.PLANNING ||
                 phase == AgentPhase.WAITING_CONFIRMATION ||
@@ -591,6 +600,36 @@ class MobileNativeAgent(
     fun nativeToolCatalog(): List<AgentNativeToolDescriptor> = nativeToolRegistry.descriptors()
 
     fun nativeToolIds(): Set<String> = AgentPhoneNativeToolCatalog.defaultToolIds
+
+    fun resolveDeterministicLocalAction(
+        goal: String,
+        conversationContext: AgentConversationContext
+    ): AgentAction? {
+        val screen = if (AgentScreenObservationPolicy.requiresObservation(goal)) {
+            captureScreen().also { currentScreen = it }
+        } else {
+            ScreenContext(foregroundApp = "", pageTitle = "")
+        }
+        val targets = connectorRegistry.availableTargets()
+        val context = buildRuntimeContext(
+            goal = goal,
+            screen = screen,
+            targets = targets,
+            memories = emptyList(),
+            knowledgeItems = emptyList(),
+            knowledgeStats = AgentKnowledgeStats()
+        )
+        return RuleBasedAgentPlanner(appContext).deterministicLocalAction(
+            AgentRequest(
+                goal = goal,
+                screen = screen,
+                targets = targets,
+                memories = emptyList(),
+                runtimeContext = context,
+                conversationContext = conversationContext
+            )
+        )
+    }
 
     fun nativeToolAudit(
         limit: Int = 100,
@@ -1604,6 +1643,7 @@ class MobileNativeAgent(
             cancelTaskCommand(requestedGoal) -> return cancelCurrentTask()
         }
         currentGoal = requestedGoal
+        invalidateRuntimeContext()
         if (currentGoal.isBlank()) {
             return observeCurrentScreen()
         }
@@ -1633,7 +1673,17 @@ class MobileNativeAgent(
     }
 
     private fun executeSubmittedGoal(): AgentUiState {
-        currentScreen = captureScreen()
+        val planningStartedAt = SystemClock.elapsedRealtime()
+        var stageStartedAt = planningStartedAt
+        currentScreen = if (
+            screenObservationOverride ?: AgentScreenObservationPolicy.requiresObservation(currentGoal)
+        ) {
+            captureScreen()
+        } else {
+            ScreenContext(foregroundApp = "", pageTitle = "")
+        }
+        logPlanningLatency("screen", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         if (activeTaskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
         callableInventoryCommand(currentGoal)?.let { filter ->
             return showCallableInventoryCommand(filter)
@@ -1798,17 +1848,28 @@ class MobileNativeAgent(
             return searchKnowledgeCommand(query)
         }
         }
+        logPlanningLatency("commands", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         val targets = connectorRegistry.availableTargets()
+        logPlanningLatency("targets", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         val memories = if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
-        val knowledgeItems = knowledgeStore.search(currentGoal)
+        logPlanningLatency("memory", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
+        val knowledge = knowledgeStore.querySnapshot(currentGoal)
+        val knowledgeItems = knowledge.items
+        logPlanningLatency("knowledge", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         val context = buildRuntimeContext(
             goal = currentGoal,
             screen = currentScreen,
             targets = targets,
             memories = memories,
             knowledgeItems = knowledgeItems,
-            knowledgeStats = knowledgeStore.stats()
-        )
+            knowledgeStats = knowledge.stats
+        ).also(::cacheRuntimeContext)
+        logPlanningLatency("context", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         val planned = planner.plan(
             request = AgentRequest(
                 goal = currentGoal,
@@ -1819,6 +1880,8 @@ class MobileNativeAgent(
                 conversationContext = activeConversationContext
             )
         )
+        logPlanningLatency("planner", stageStartedAt, planningStartedAt)
+        stageStartedAt = SystemClock.elapsedRealtime()
         val conversationPrompt = activeConversationContext.asTransportBlock(maximumTokens = 10_000)
         val memoryPrompt = memories.take(5).joinToString("\n") { "- ${it.value.take(600)}" }
         val cloudKnowledgePrompt = knowledgeItems
@@ -1881,6 +1944,7 @@ class MobileNativeAgent(
             reputation = reputationLedger
         )
         val safetyReview = safetyPolicy.review(draftPlan, sessionId)
+        logPlanningLatency("team_and_safety", stageStartedAt, planningStartedAt)
         if (activeTaskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
             val proposedPlan = draftPlan.copy(
                 executionMode = AgentTaskExecutionMode.PLAN_ONLY,
@@ -6518,10 +6582,36 @@ class MobileNativeAgent(
         callableTargets = targets,
         memories = memories,
         systemTools = workflowSystemTools() + AgentSystemToolPlanner.availableTools(),
-        nativeTools = nativeToolRegistry.descriptors(),
+        nativeTools = AgentNativeToolPlanningCatalog.descriptors(appContext),
         knowledgeItems = knowledgeItems,
         knowledgeStats = knowledgeStats
     )
+
+    private fun cacheRuntimeContext(context: AgentRuntimeContext) {
+        cachedRuntimeContext = context
+        cachedRuntimeContextAtElapsedMillis = SystemClock.elapsedRealtime()
+    }
+
+    private fun cachedRuntimeContext(): AgentRuntimeContext? {
+        val context = cachedRuntimeContext ?: return null
+        val age = SystemClock.elapsedRealtime() - cachedRuntimeContextAtElapsedMillis
+        if (age !in 0..RUNTIME_CONTEXT_CACHE_TTL_MILLIS || context.goal != currentGoal) return null
+        return context.copy(screen = currentScreen)
+    }
+
+    private fun invalidateRuntimeContext() {
+        cachedRuntimeContext = null
+        cachedRuntimeContextAtElapsedMillis = 0L
+    }
+
+    private fun logPlanningLatency(stage: String, stageStartedAt: Long, planningStartedAt: Long) {
+        val now = SystemClock.elapsedRealtime()
+        Log.i(
+            "SignalASILatency",
+            "agent_prepare stage=$stage stage_ms=${now - stageStartedAt} total_ms=${now - planningStartedAt} " +
+                "turn=${activeConversationTurnId.take(12)}"
+        )
+    }
 
     private fun workflowSystemTools(): List<AgentSystemTool> {
         val workflows = workflowStore.list().take(3).map { workflow ->
