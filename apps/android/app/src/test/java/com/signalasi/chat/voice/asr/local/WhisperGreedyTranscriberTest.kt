@@ -37,13 +37,24 @@ class WhisperGreedyTranscriberTest {
     }
 
     @Test
-    fun tokenBudgetStopsWithoutAnExtraDecoderInvocation() {
+    fun exactBudgetUsesLookAheadToRecognizeEndOfText() {
+        val network = FakeNetwork(99, 99, 99, 0, 14)
+        val result = WhisperGreedyTranscriber(network, tokenizer()).transcribe(mel(), "zh", 1)
+
+        assertEquals(listOf(0), result.tokenIds)
+        assertEquals(listOf(10, 11, 12, 13, 0), network.inputTokens)
+        assertEquals(5, result.decoderSteps)
+        assertEquals(AsrTranscriptTermination.END_OF_TEXT, result.termination)
+    }
+
+    @Test
+    fun tokenBudgetReportsLimitWhenLookAheadIsMoreText() {
         val network = FakeNetwork(99, 99, 99, 0, 1)
         val result = WhisperGreedyTranscriber(network, tokenizer()).transcribe(mel(), "zh", 1)
 
         assertEquals(listOf(0), result.tokenIds)
-        assertEquals(listOf(10, 11, 12, 13), network.inputTokens)
-        assertEquals(4, result.decoderSteps)
+        assertEquals(listOf(10, 11, 12, 13, 0), network.inputTokens)
+        assertEquals(5, result.decoderSteps)
         assertEquals(AsrTranscriptTermination.TOKEN_LIMIT, result.termination)
     }
 

@@ -16,7 +16,11 @@ internal class WhisperLargeTurboQnnRuntime private constructor(
     private val inferenceLock = Any()
     @Volatile private var warmupCompleted = false
 
-    fun transcribe(melFeatures: FloatArray, language: String = "zh", maxTokens: Int = 160): WhisperQnnTranscription =
+    fun transcribe(
+        melFeatures: FloatArray,
+        language: String = "zh",
+        maxTokens: Int = AsrConfig.MAX_FINAL_TOKENS
+    ): WhisperQnnTranscription =
         synchronized(inferenceLock) {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
             val epoch = cancellationEpoch.get()

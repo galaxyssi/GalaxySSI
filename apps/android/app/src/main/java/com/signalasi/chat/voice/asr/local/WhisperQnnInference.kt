@@ -67,7 +67,7 @@ internal class WhisperGreedyTranscriber(
         require(melFeatures.remaining() ==
             WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES)
         require(language == "auto" || language in tokenizer.generation.languageTokens)
-        require(maxTokens in 1..160)
+        require(maxTokens in 1..AsrConfig.MAX_FINAL_TOKENS)
 
         checkNotCancelled(cancellationRequested)
         val encoderNanos = network.encode(melFeatures)
@@ -122,7 +122,10 @@ internal class WhisperGreedyTranscriber(
             position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS
         ) {
             output += next
-            if (output.size < maxTokens && position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS) {
+            // Decode one look-ahead token even when the visible budget has just been reached.
+            // Without this step an utterance ending exactly at the budget is incorrectly marked
+            // as truncated even when the next token is EOT.
+            if (position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS) {
                 next = step(next, WhisperDecoderSelection.TEXT_TOKEN)
             }
         }

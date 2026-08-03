@@ -16,6 +16,8 @@ import com.signalasi.chat.voice.asr.local.LocalWhisperSessionConfig
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
 import com.signalasi.chat.voice.asr.local.NativeWhisperResult
 import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
+import com.signalasi.chat.voice.asr.local.WhisperFinalAudioChunker
+import com.signalasi.chat.voice.asr.local.WhisperFinalResultAssembler
 import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
 import com.signalasi.chat.voice.asr.local.WhisperRuntimeState
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
@@ -376,7 +378,30 @@ object LocalWhisperAsr {
                 mode = mode
             )
         ).use { session ->
-            session.decode(WhisperDecodeRequest(pcm16 = pcm16, mode = mode))
+            val chunks = WhisperFinalAudioChunker.plan(
+                sampleCount = pcm16.size,
+                sampleRateHz = TARGET_SAMPLE_RATE,
+                mode = mode
+            )
+            if (chunks.size == 1) {
+                session.decode(WhisperDecodeRequest(pcm16 = pcm16, mode = mode))
+            } else {
+                val results = chunks.map { chunk ->
+                    chunk to session.decode(
+                        WhisperDecodeRequest(
+                            pcm16 = pcm16,
+                            offset = chunk.offset,
+                            length = chunk.length,
+                            mode = mode
+                        )
+                    )
+                }
+                WhisperFinalResultAssembler.assemble(
+                    chunks = results,
+                    totalSamples = pcm16.size,
+                    sampleRateHz = TARGET_SAMPLE_RATE
+                )
+            }
         }
     }
 

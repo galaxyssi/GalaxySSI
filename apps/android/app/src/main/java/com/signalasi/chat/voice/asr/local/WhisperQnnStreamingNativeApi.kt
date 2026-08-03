@@ -250,9 +250,11 @@ private class QnnStreamingSession(
     }
 
     fun pushPcm(pcm: ByteBuffer, sampleCount: Int): Boolean {
-        if (terminal.get()) return false
+        if (terminal.get() || finalPending.get()) return false
         val accepted = runCatching { frontend.pushPcm(pcm, sampleCount) }.getOrDefault(false)
-        if (!accepted) fail("audio_backpressure", "Local ASR audio queue could not accept PCM", true)
+        if (!accepted && !finalPending.get()) {
+            fail("audio_backpressure", "Local ASR audio queue could not accept PCM", true)
+        }
         return accepted
     }
 
@@ -568,7 +570,7 @@ internal object WhisperQnnPartialTokenBudget {
     private const val OUTPUT_TOKEN_HEADROOM = 24L
 
     fun forAudioDuration(audioDurationMs: Long, configuredMaximum: Int): Int {
-        require(configuredMaximum in 1..160)
+        require(configuredMaximum in 1..AsrConfig.MAX_FINAL_TOKENS)
         val duration = audioDurationMs.coerceAtLeast(0L)
         val estimated = ((duration * OUTPUT_TOKENS_PER_SECOND + 999L) / 1_000L) +
             OUTPUT_TOKEN_HEADROOM
