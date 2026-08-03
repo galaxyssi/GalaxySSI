@@ -13,10 +13,12 @@
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
+    A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
     A10000000000000000000890 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A41000000000000000000890 /* Localizable.strings */; };
     A10000000000000000000006 /* SignalASILinkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* SignalASILinkProtocolTests.swift */; };
     A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SignalASIStoreTests.swift */; };
+    A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000892 /* LanguagePolicySettingsTests.swift */; };
     A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* SignalASILinkReliability.swift */; };
     A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */; };
     A10000000000000000000010 /* SignalASIAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* SignalASIAttachments.swift */; };
@@ -592,10 +594,12 @@
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
+    A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
     A20000000000000000000890 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
     A20000000000000000000006 /* SignalASILinkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkProtocolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000007 /* SignalASIStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000892 /* LanguagePolicySettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettingsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000008 /* SignalASI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SignalASI.app; sourceTree = BUILT_PRODUCTS_DIR; };
     A20000000000000000000009 /* SignalASITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SignalASITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
     A20000000000000000000010 /* SignalASILinkReliability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliability.swift; sourceTree = "<group>"; };
@@ -1199,6 +1203,7 @@
         A20000000000000000000707 /* AgentExecutionPolicy.swift */,
         A20000000000000000000708 /* AgentModelPlannerSettings.swift */,
         A20000000000000000000709 /* LanguagePolicySettings.swift */,
+        A20000000000000000000891 /* SignalASILocalization.swift */,
         A20000000000000000000710 /* CodexStyleResponsePolicy.swift */,
         A20000000000000000000711 /* AppDisplaySettings.swift */,
         A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */,
@@ -1561,6 +1566,7 @@
         A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */,
         A20000000000000000000015 /* SignalASIBackupTests.swift */,
         A20000000000000000000007 /* SignalASIStoreTests.swift */,
+        A20000000000000000000892 /* LanguagePolicySettingsTests.swift */,
         A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */,
         A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */,
         A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */,
@@ -1852,6 +1858,7 @@
       knownRegions = (
         en,
         Base,
+        "zh-Hans",
       );
       mainGroup = A40000000000000000000001;
       productRefGroup = A40000000000000000000004 /* Products */;
@@ -1880,6 +1887,7 @@
         A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */,
         A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */,
         A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */,
+        A10000000000000000000891 /* SignalASILocalization.swift in Sources */,
         A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */,
         A10000000000000000000711 /* AppDisplaySettings.swift in Sources */,
         A10000000000000000000712 /* AgentTranscriptScrollPolicy.swift in Sources */,
@@ -2248,6 +2256,7 @@
         A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */,
         A10000000000000000000013 /* SignalASIBackupTests.swift in Sources */,
         A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */,
+        A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */,
         A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */,
         A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */,
         A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */,

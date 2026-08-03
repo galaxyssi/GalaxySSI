@@ -36,12 +36,6 @@ extension Color {
   static var signalASIInsightText: Color { Color(signalASIColor(light: 0x315B86, dark: 0xB8D5F2)) }
 }
 
-enum SignalASILocalization {
-  static func string(_ key: String, fallback: String) -> String {
-    NSLocalizedString(key, tableName: nil, bundle: .main, value: fallback, comment: "")
-  }
-}
-
 enum SignalASIRootTab: Hashable {
   case agent
   case messages
@@ -125,6 +119,7 @@ struct SignalASIAndroidIconButton: View {
 }
 
 struct AgentHomeView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   private var unreadTotal: Int {
@@ -142,34 +137,34 @@ struct AgentHomeView: View {
             AgentInsightBanner(unreadTotal: unreadTotal)
             SignalASIAndroidMenuLink(
               title: "Hermes Agent",
-              subtitle: SignalASILocalization.string(
-                "signalasi.agent.hermes.subtitle",
-                fallback: "Continue desktop Agent conversations and task execution"
-              ),
+              subtitle: t("signalasi.agent.hermes.subtitle", "Continue desktop Agent conversations and task execution"),
               systemImage: "bubble.left.and.bubble.right.fill",
               tint: .signalASIAccent
             ) {
               ConversationView(contactId: "hermes")
             }
             SignalASIAndroidMenuLink(
-              title: "Native Tools",
-              subtitle: "\(store.visibleContacts.count) contacts, device actions and local safety controls",
+              title: t("signalasi.agent.native_tools", "Native Tools"),
+              subtitle: String(
+                format: t("signalasi.agent.native_tools.subtitle", "%d contacts, device actions and local safety controls"),
+                store.visibleContacts.count
+              ),
               systemImage: "hammer.fill",
               tint: .signalASIInsightText
             ) {
               AgentSafetySettingsView()
             }
             SignalASIAndroidMenuLink(
-              title: "Voice Wake",
-              subtitle: "Whisper ASR, microphone and reply playback settings",
+              title: t("signalasi.agent.voice_wake", "Voice Wake"),
+              subtitle: t("signalasi.agent.voice_wake.subtitle", "Whisper ASR, microphone and reply playback settings"),
               systemImage: "mic.fill",
               tint: .signalASIAccent
             ) {
               VoiceSettingsView()
             }
             SignalASIAndroidMenuLink(
-              title: "Data Sharing",
-              subtitle: "Review model disclosure events and destination blocks",
+              title: t("signalasi.agent.data_sharing", "Data Sharing"),
+              subtitle: t("signalasi.agent.data_sharing.subtitle", "Review model disclosure events and destination blocks"),
               systemImage: "lock.shield.fill",
               tint: .signalASIUnreadRed
             ) {
@@ -194,17 +189,17 @@ struct AgentHomeView: View {
         Text("SignalASI")
           .font(.system(size: 14.5, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-        Text("Agent Mode")
+        Text(t("signalasi.agent.mode", "Agent Mode"))
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
       }
       Spacer(minLength: 8)
       VStack(alignment: .trailing, spacing: 4) {
-        Text("New session")
+        Text(t("signalasi.agent.session.new", "New session"))
           .font(.system(size: 14, weight: .bold))
           .foregroundColor(.signalASIAgentSessionTitle)
           .lineLimit(1)
-        Text(unreadTotal > 0 ? "\(unreadTotal) unread" : "Native tools ready")
+        Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.native_tools.ready", "Native tools ready"))
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
@@ -223,58 +218,52 @@ struct AgentHomeView: View {
     .frame(height: 76)
     .background(Color.signalASIPageBackground)
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct DiscoverView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         SignalASITopBar(
-          title: SignalASILocalization.string("signalasi.discover.title", fallback: "Discover"),
+          title: t("signalasi.discover.title", "Discover"),
           leading: { Color.clear },
           trailing: { Color.clear }
         )
         ScrollView {
           VStack(spacing: 10) {
             SignalASIAndroidMenuLink(
-              title: "Pairing",
-              subtitle: SignalASILocalization.string(
-                "signalasi.discover.pairing.subtitle",
-                fallback: "Scan QR codes and connect SignalASI Desktop"
-              ),
+              title: t("signalasi.discover.pairing", "Pairing"),
+              subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",
               tint: .signalASIAccent
             ) {
               PairingView()
             }
             SignalASIAndroidMenuLink(
-              title: "Voice",
-              subtitle: SignalASILocalization.string(
-                "signalasi.discover.voice.subtitle",
-                fallback: "Wake, transcription and local voice models"
-              ),
+              title: t("signalasi.discover.voice", "Voice"),
+              subtitle: t("signalasi.discover.voice.subtitle", "Wake, transcription and local voice models"),
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
               VoiceSettingsView()
             }
             SignalASIAndroidMenuLink(
-              title: "Device Center",
-              subtitle: SignalASILocalization.string(
-                "signalasi.discover.device.subtitle",
-                fallback: "Custom devices, Home Assistant and connectors"
-              ),
+              title: t("signalasi.discover.device_center", "Device Center"),
+              subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
               systemImage: "antenna.radiowaves.left.and.right",
               tint: .signalASIAccent
             ) {
               CustomDeviceConnectorsView()
             }
             SignalASIAndroidMenuLink(
-              title: "Model Planner",
-              subtitle: SignalASILocalization.string(
-                "signalasi.discover.planner.subtitle",
-                fallback: "Agent planning, budget and model routing"
-              ),
+              title: t("signalasi.discover.model_planner", "Model Planner"),
+              subtitle: t("signalasi.discover.planner.subtitle", "Agent planning, budget and model routing"),
               systemImage: "slider.horizontal.3",
               tint: .signalASIInsightText
             ) {
@@ -291,9 +280,14 @@ struct DiscoverView: View {
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 private struct AgentInsightBanner: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var unreadTotal: Int
 
   var body: some View {
@@ -304,7 +298,11 @@ private struct AgentInsightBanner: View {
           Text("SignalASI Agent")
             .font(.system(size: 15, weight: .bold))
             .foregroundColor(.signalASITextPrimary)
-          Text(unreadTotal > 0 ? "You have \(unreadTotal) unread agent messages." : "Native tool pipeline is ready.")
+          Text(
+            unreadTotal > 0
+              ? String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
+              : t("signalasi.agent.insight.ready", "Native tool pipeline is ready.")
+          )
             .font(.system(size: 12))
             .foregroundColor(.signalASIInsightText)
             .lineLimit(2)
@@ -312,8 +310,8 @@ private struct AgentInsightBanner: View {
         Spacer()
       }
       HStack(spacing: 8) {
-        AgentStatusChip(title: "iOS 15+", value: "Ready")
-        AgentStatusChip(title: "Safety", value: "On")
+        AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
+        AgentStatusChip(title: t("signalasi.agent.safety", "Safety"), value: t("signalasi.status.on", "On"))
       }
     }
     .padding(12)
@@ -323,6 +321,10 @@ private struct AgentInsightBanner: View {
         .stroke(Color.signalASIInsightStroke, lineWidth: 1)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 

@@ -28,12 +28,17 @@ struct SignalASIApp: App {
 }
 
 struct RootView: View {
+  @EnvironmentObject private var store: SignalASIStore
   @State private var selection: SignalASIRootTab = .agent
+
+  private var interfaceLanguage: String {
+    LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+  }
 
   var body: some View {
     TabView(selection: $selection) {
       AgentHomeView()
-        .tabItem { Label("Agent", systemImage: "sparkles") }
+        .tabItem { Label(t("signalasi.tab.agent", "Agent"), systemImage: "sparkles") }
         .tag(SignalASIRootTab.agent)
       ChatListView()
         .tabItem { Label("SignalASI", systemImage: "bubble.left.and.bubble.right") }
@@ -41,7 +46,7 @@ struct RootView: View {
       ContactsView()
         .tabItem {
           Label(
-            SignalASILocalization.string("signalasi.tab.contacts", fallback: "Contacts"),
+            t("signalasi.tab.contacts", "Contacts"),
             systemImage: "person.2"
           )
         }
@@ -49,7 +54,7 @@ struct RootView: View {
       DiscoverView()
         .tabItem {
           Label(
-            SignalASILocalization.string("signalasi.tab.discover", fallback: "Discover"),
+            t("signalasi.tab.discover", "Discover"),
             systemImage: "safari"
           )
         }
@@ -57,13 +62,19 @@ struct RootView: View {
       SettingsView()
         .tabItem {
           Label(
-            SignalASILocalization.string("signalasi.tab.settings", fallback: "Settings"),
+            t("signalasi.tab.settings", "Settings"),
             systemImage: "gearshape"
           )
         }
         .tag(SignalASIRootTab.settings)
     }
     .accentColor(.signalASIAccent)
+    .signalASIInterfaceLanguage(store.languagePolicy.interfaceLanguage)
+    .id(interfaceLanguage)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
@@ -104,6 +115,7 @@ private extension AppTextScaleMode {
 }
 
 struct ChatListView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var searchText = ""
 
@@ -123,7 +135,7 @@ struct ChatListView: View {
           HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
               .foregroundColor(.signalASITextSecondary)
-            TextField("Search chats", text: $searchText)
+            TextField(t("signalasi.search.chats", "Search chats"), text: $searchText)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled(true)
           }
@@ -135,7 +147,7 @@ struct ChatListView: View {
           ScrollView {
             LazyVStack(spacing: 0) {
               if filteredContacts.isEmpty {
-                Text("No matching chats")
+                Text(t("signalasi.empty.chats", "No matching chats"))
                   .font(.system(size: 15))
                   .foregroundColor(.signalASITextSecondary)
                   .frame(maxWidth: .infinity, minHeight: 90)
@@ -165,6 +177,10 @@ struct ChatListView: View {
       .navigationBarHidden(true)
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
@@ -211,6 +227,7 @@ struct ContactRow: View {
 }
 
 struct ConversationView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
@@ -238,11 +255,11 @@ struct ConversationView: View {
     let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
     switch contact.deliveryMode {
     case .cloudAPI:
-      return contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank("Cloud model")
+      return contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud model"))
     case .link:
-      return contact.isCommunicable ? "SignalASI Link" : setupDetail.ifBlank("Waiting for Desktop pairing")
+      return contact.isCommunicable ? "SignalASI Link" : setupDetail.ifBlank(t("signalasi.status.waiting_pairing", "Waiting for Desktop pairing"))
     case .local:
-      return setupDetail.ifBlank("Local")
+      return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
     }
   }
 
@@ -259,17 +276,17 @@ struct ConversationView: View {
                   Button {
                     selectedMessageForDetails = message
                   } label: {
-                    Label("Details", systemImage: "info.circle")
+                    Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
                   }
                   Button {
                     UIPasteboard.general.string = message.content
                   } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
                   }
                   Button(role: .destructive) {
                     store.deleteMessage(message.id, contactId: contact.id)
                   } label: {
-                    Label("Delete Message", systemImage: "trash")
+                    Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
             }
@@ -311,7 +328,7 @@ struct ConversationView: View {
               .foregroundColor(.signalASITextPrimary)
           }
           .agentDeviceTouchTarget(deviceInputPolicy)
-          TextField("Message", text: $draft)
+          TextField(t("signalasi.message.input", "Message"), text: $draft)
             .padding(.horizontal, 12)
             .frame(minHeight: 36)
             .background(Color.signalASISearchBackground)
@@ -355,13 +372,13 @@ struct ConversationView: View {
     .onAppear {
       store.markContactRead(contact.id)
     }
-    .alert("Delete Chat?", isPresented: $showingDeleteChatConfirmation) {
-      Button("Delete", role: .destructive) {
+    .alert(t("signalasi.chat.delete.title", "Delete Chat?"), isPresented: $showingDeleteChatConfirmation) {
+      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
         store.deleteMessages(for: contact.id)
       }
-      Button("Cancel", role: .cancel) {}
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
     } message: {
-      Text("Only local chat history is deleted. Contacts are not affected.")
+      Text(t("signalasi.chat.delete.message", "Only local chat history is deleted. Contacts are not affected."))
     }
     .fileImporter(
       isPresented: $fileImporterPresented,
@@ -431,15 +448,20 @@ struct ConversationView: View {
 
   private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
     guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
-      attachmentError = "Attachment limit reached or file is too large."
+      attachmentError = t("signalasi.attachment.limit", "Attachment limit reached or file is too large.")
       return
     }
     attachments.append(attachment)
     attachmentError = ""
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct MessageDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   var message: ChatMessage
   var contact: SignalASIContact
@@ -447,20 +469,20 @@ struct MessageDetailView: View {
   var body: some View {
     NavigationView {
       Form {
-        Section("Message") {
-          Text(message.isMine ? "Sent by me" : contact.displayName)
+        Section(t("signalasi.message.section", "Message")) {
+          Text(message.isMine ? t("signalasi.message.sent_by_me", "Sent by me") : contact.displayName)
           Text(message.content)
             .textSelection(.enabled)
-          detailRow("Sent Time", message.createdAt.formatted(date: .abbreviated, time: .standard))
-          detailRow("Status", message.deliveryStatus.rawValue)
+          detailRow(t("signalasi.message.sent_time", "Sent Time"), message.createdAt.formatted(date: .abbreviated, time: .standard))
+          detailRow(t("signalasi.common.status", "Status"), message.deliveryStatus.rawValue)
         }
-        Section("Security Status") {
+        Section(t("signalasi.security.status", "Security Status")) {
           Text(securityStatusText)
             .foregroundColor(.secondary)
         }
-        Section("Delivery Trace") {
+        Section(t("signalasi.delivery.trace", "Delivery Trace")) {
           if message.deliveryTrace.isEmpty {
-            Text("No trace yet")
+            Text(t("signalasi.delivery.no_trace", "No trace yet"))
               .foregroundColor(.secondary)
           } else {
             ForEach(message.deliveryTrace) { event in
@@ -483,23 +505,23 @@ struct MessageDetailView: View {
           }
         }
         if hasIdentifiers {
-          Section("Identifiers") {
+          Section(t("signalasi.identifiers", "Identifiers")) {
             if !message.conversationId.isEmpty {
-              detailRow("Conversation", message.conversationId)
+              detailRow(t("signalasi.identifier.conversation", "Conversation"), message.conversationId)
             }
             if !message.turnId.isEmpty {
-              detailRow("Turn", message.turnId)
+              detailRow(t("signalasi.identifier.turn", "Turn"), message.turnId)
             }
             if !message.remoteMessageId.isEmpty {
-              detailRow("Remote Message", message.remoteMessageId)
+              detailRow(t("signalasi.identifier.remote_message", "Remote Message"), message.remoteMessageId)
             }
           }
         }
       }
-      .navigationTitle("Message Actions")
+      .navigationTitle(t("signalasi.message.actions", "Message Actions"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Done") {
+          Button(t("signalasi.common.done", "Done")) {
             dismiss()
           }
         }
@@ -510,11 +532,11 @@ struct MessageDetailView: View {
   private var securityStatusText: String {
     switch contact.deliveryMode {
     case .link:
-      return "Protected by the SignalASI Link end-to-end session"
+      return t("signalasi.security.link", "Protected by the SignalASI Link end-to-end session")
     case .cloudAPI:
-      return "Protected locally; cloud model requests use the configured provider endpoint"
+      return t("signalasi.security.cloud", "Protected locally; cloud model requests use the configured provider endpoint")
     case .local:
-      return "Stored locally on this device"
+      return t("signalasi.security.local", "Stored locally on this device")
     }
   }
 
@@ -531,6 +553,10 @@ struct MessageDetailView: View {
         .font(.system(.caption, design: .monospaced))
         .textSelection(.enabled)
     }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
@@ -573,6 +599,7 @@ struct MessageBubble: View {
 }
 
 struct ContactsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var myQRCodePresented = false
   @State private var contactScannerPresented = false
@@ -601,7 +628,7 @@ struct ContactsView: View {
     NavigationView {
       VStack(spacing: 0) {
         SignalASITopBar(
-          title: SignalASILocalization.string("signalasi.tab.contacts", fallback: "Contacts"),
+          title: t("signalasi.tab.contacts", "Contacts"),
           leading: {
             Button {
               myQRCodePresented = true
@@ -627,7 +654,7 @@ struct ContactsView: View {
           HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
               .foregroundColor(.signalASITextSecondary)
-            TextField("Search contacts", text: $contactSearchText)
+            TextField(t("signalasi.search.contacts", "Search contacts"), text: $contactSearchText)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled(true)
           }
@@ -639,7 +666,7 @@ struct ContactsView: View {
           ScrollView {
             VStack(alignment: .leading, spacing: 8) {
               if !filteredFriendRequests.isEmpty {
-                sectionTitle("New Friends")
+                sectionTitle(t("signalasi.new_friends", "New Friends"))
                 VStack(spacing: 0) {
                   ForEach(filteredFriendRequests) { request in
                     NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
@@ -651,10 +678,10 @@ struct ContactsView: View {
                 .background(Color.signalASISurface)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
               }
-              sectionTitle("Contacts")
+              sectionTitle(t("signalasi.tab.contacts", "Contacts"))
               VStack(spacing: 0) {
                 if filteredContacts.isEmpty {
-                  Text("No matching contacts")
+                  Text(t("signalasi.empty.contacts", "No matching contacts"))
                     .font(.system(size: 15))
                     .foregroundColor(.signalASITextSecondary)
                     .frame(maxWidth: .infinity, minHeight: 90)
@@ -715,7 +742,10 @@ struct ContactsView: View {
   private func importContactQR(_ value: String) {
     do {
       let request = try store.importContactQRCodeAsFriendRequest(value)
-      contactImportStatus = "Friend request added for \(request.name)."
+      contactImportStatus = String(
+        format: t("signalasi.friend_request.added", "Friend request added for %@."),
+        request.name
+      )
       contactImportIsError = false
     } catch {
       contactImportStatus = error.localizedDescription
@@ -728,9 +758,14 @@ struct ContactsView: View {
       $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct ContactDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.dismiss) private var dismiss
   @State private var remarkName = ""
@@ -776,7 +811,7 @@ struct ContactDetailView: View {
         }
         Section("Identity") {
           detailRow("SignalASI ID", contact.signalASIId)
-          detailRow("Fingerprint", contact.identityFingerprint.ifBlank("Unavailable"))
+          detailRow("Fingerprint", contact.identityFingerprint.ifBlank(t("Unavailable", "Unavailable")))
         }
         if hasRouteDetails(contact) {
           Section("Route") {
@@ -813,7 +848,7 @@ struct ContactDetailView: View {
         Section("Manage") {
           Button(role: .destructive) {
             store.deleteMessages(for: contact.id)
-            statusText = "Chat history deleted."
+            statusText = t("Chat history deleted.", "Chat history deleted.")
           } label: {
             Label("Delete Chat History", systemImage: "trash")
           }
@@ -831,24 +866,28 @@ struct ContactDetailView: View {
         }
       }
     }
-    .navigationTitle(contact?.displayName ?? "Contact")
+    .navigationTitle(contact?.displayName ?? t("Contact", "Contact"))
     .onAppear(perform: syncRemarkName)
     .onChange(of: contact?.displayName ?? "") { _ in
       syncRemarkName()
     }
-    .alert("Delete Contact?", isPresented: $showingDeleteConfirmation) {
-      Button("Delete", role: .destructive) {
+    .alert(t("Delete Contact?", "Delete Contact?"), isPresented: $showingDeleteConfirmation) {
+      Button(t("Delete", "Delete"), role: .destructive) {
         deleteContact()
       }
-      Button("Cancel", role: .cancel) {}
+      Button(t("Cancel", "Cancel"), role: .cancel) {}
     } message: {
-      Text(deleteMessagesWhenDeleting ? "The contact and chat history will be removed from this device." : "The contact will be removed from this device.")
+      Text(
+        deleteMessagesWhenDeleting
+          ? t("The contact and chat history will be removed from this device.", "The contact and chat history will be removed from this device.")
+          : t("The contact will be removed from this device.", "The contact will be removed from this device.")
+      )
     }
   }
 
   private func detailRow(_ title: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(title)
+      Text(t(title, title))
         .font(.caption)
         .foregroundColor(.secondary)
       Text(value)
@@ -869,7 +908,7 @@ struct ContactDetailView: View {
 
   private func saveRemark() {
     if store.renameContact(id: contactId, displayName: remarkName) {
-      statusText = "Contact updated."
+      statusText = t("Contact updated.", "Contact updated.")
     }
   }
 
@@ -879,9 +918,14 @@ struct ContactDetailView: View {
       dismiss()
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct PairingView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var qrText = ""
@@ -897,7 +941,7 @@ struct PairingView: View {
               HStack {
                 Text(link.desktopName)
                 Spacer()
-                Text(link.paired ? "Paired" : "Pending")
+                Text(link.paired ? t("Paired", "Paired") : t("Pending", "Pending"))
                   .font(.caption)
                   .foregroundColor(link.paired ? .green : .orange)
               }
@@ -936,7 +980,7 @@ struct PairingView: View {
           }
         }
       }
-      .navigationTitle("Pairing")
+      .navigationTitle(t("Pairing", "Pairing"))
       .sheet(isPresented: $scannerPresented) {
         QRCodeScannerView { value in
           qrText = value
@@ -955,9 +999,14 @@ struct PairingView: View {
       errorText = error.localizedDescription
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct VoiceSettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @StateObject private var speech = SpeechCaptureService()
@@ -986,7 +1035,7 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.wakeProvider = value } }
           )) {
             ForEach(VoiceWakeProvider.allCases) { provider in
-              Text(provider.displayTitle).tag(provider)
+              Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
           Picker("ASR Provider", selection: Binding(
@@ -994,7 +1043,7 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.asrProvider = value } }
           )) {
             ForEach(VoiceASRProvider.allCases) { provider in
-              Text(provider.displayTitle).tag(provider)
+              Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
           NavigationLink(destination: VoiceWhisperModelSettingsView()) {
@@ -1010,7 +1059,7 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.asrRuntimeMode = value } }
           )) {
             ForEach(VoiceWhisperUserVoiceMode.allCases) { mode in
-              Text(mode.displayTitle).tag(mode)
+              Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
             }
           }
           Picker("TTS Provider", selection: Binding(
@@ -1018,7 +1067,7 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.ttsProvider = value } }
           )) {
             ForEach(VoiceTTSProvider.allCases) { provider in
-              Text(provider.displayTitle).tag(provider)
+              Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
           TextField("Microsoft Voice", text: Binding(
@@ -1057,7 +1106,7 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.routingMode = value } }
           )) {
             ForEach(VoiceRoutingMode.allCases) { mode in
-              Text(mode.displayTitle).tag(mode)
+              Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
             }
           }
           Picker("Default Target", selection: Binding(
@@ -1071,7 +1120,7 @@ struct VoiceSettingsView: View {
         }
         Section("Recorder") {
           if speech.isRecording {
-            Text(speech.transcript.ifBlank("Listening..."))
+            Text(speech.transcript.ifBlank(t("Listening...", "Listening...")))
             Button(role: .destructive) {
               speech.stop()
             } label: {
@@ -1091,7 +1140,7 @@ struct VoiceSettingsView: View {
           }
         }
       }
-      .navigationTitle("Voice")
+      .navigationTitle(t("Voice", "Voice"))
       .onAppear {
         coordinator.onIncomingMessage = handleIncomingVoiceReply
       }
@@ -1117,7 +1166,7 @@ struct VoiceSettingsView: View {
 
   private func startRecording() async {
     let granted = await speech.requestAuthorization(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
-    permissionStatus = granted ? "" : "Microphone or speech permission is missing."
+    permissionStatus = granted ? "" : t("Microphone or speech permission is missing.", "Microphone or speech permission is missing.")
     guard granted else { return }
     do {
       speech.onVoiceCommand = handleVoiceCommand
@@ -1137,7 +1186,7 @@ struct VoiceSettingsView: View {
     }
     guard plan.shouldSend else {
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
-      permissionStatus = "Transcript ready: \(plan.text)"
+      permissionStatus = String(format: t("Transcript ready: %@", "Transcript ready: %@"), plan.text)
       return
     }
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -1146,7 +1195,7 @@ struct VoiceSettingsView: View {
     activeVoiceReplySessionId = plan.sessionId
     activeVoiceReplyContactId = plan.contact.id
     activeVoiceReplyRouteKind = plan.routeDecision.kind
-    permissionStatus = "Sending voice transcript to \(plan.contact.displayName)"
+    permissionStatus = String(format: t("Sending voice transcript to %@", "Sending voice transcript to %@"), plan.contact.displayName)
     Task {
       await coordinator.send(plan.text, to: plan.contact)
       await MainActor.run {
@@ -1185,7 +1234,7 @@ struct VoiceSettingsView: View {
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
         .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
       )
-      permissionStatus = "Speaking reply"
+      permissionStatus = t("Speaking reply", "Speaking reply")
     } onDone: { done, _, _ in
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
       if activeVoiceReplyPlaybackSessionId == done.sessionId {
@@ -1228,9 +1277,14 @@ struct VoiceSettingsView: View {
       activeVoiceReplyPlaybackSessionId = ""
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct SettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var showingAddModel = false
   @State private var notificationsStatus = ""
@@ -1248,19 +1302,19 @@ struct SettingsView: View {
   var body: some View {
     NavigationView {
       Form {
-        Section("Profile") {
+        Section(t("signalasi.settings.profile", "Profile")) {
           HStack(spacing: 12) {
             SignalASILogoView(size: 42, cornerRadius: 9)
             VStack(alignment: .leading, spacing: 3) {
               Text("SignalASI")
                 .font(.headline)
                 .foregroundColor(.signalASITextPrimary)
-              Text("Agent Mode")
+              Text(t("signalasi.agent.mode", "Agent Mode"))
                 .font(.caption)
                 .foregroundColor(.signalASITextSecondary)
             }
           }
-          TextField("Name", text: Binding(
+          TextField(t("signalasi.settings.name", "Name"), text: Binding(
             get: { store.profile.name },
             set: { store.updateProfileName($0) }
           ))
@@ -1270,79 +1324,79 @@ struct SettingsView: View {
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
         }
-        Section("Language") {
-          Picker("Interface", selection: languageBinding(\.interfaceLanguage)) {
+        Section(t("signalasi.settings.language", "Language")) {
+          Picker(t("signalasi.settings.interface_language", "Interface"), selection: languageBinding(\.interfaceLanguage)) {
             ForEach(LanguagePolicySettings.interfaceChoices, id: \.self) { value in
-              Text(LanguagePolicySettings.interfaceDisplayName(value)).tag(value)
+              Text(interfaceLanguageDisplayName(value)).tag(value)
             }
           }
-          Picker("Model Response", selection: languageBinding(\.responseLanguage)) {
+          Picker(t("signalasi.settings.model_response_language", "Model Response"), selection: languageBinding(\.responseLanguage)) {
             ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(LanguagePolicySettings.displayName(value)).tag(value)
+              Text(voiceLanguageDisplayName(value)).tag(value)
             }
           }
           Picker("ASR", selection: languageBinding(\.asrLanguage)) {
             ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(LanguagePolicySettings.displayName(value)).tag(value)
+              Text(voiceLanguageDisplayName(value)).tag(value)
             }
           }
           Picker("TTS", selection: languageBinding(\.ttsLanguage)) {
             ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(LanguagePolicySettings.displayName(value)).tag(value)
+              Text(voiceLanguageDisplayName(value)).tag(value)
             }
           }
-          Text("ASR locale: \(store.voiceSettings.preferredLocaleIdentifier)")
+          Text(String(format: t("signalasi.settings.asr_locale", "ASR locale: %@"), store.voiceSettings.preferredLocaleIdentifier))
             .font(.caption)
             .foregroundColor(.secondary)
         }
-        Section("Display") {
-          Picker("Text Size", selection: displayTextScaleBinding) {
+        Section(t("signalasi.settings.display", "Display")) {
+          Picker(t("signalasi.settings.text_size", "Text Size"), selection: displayTextScaleBinding) {
             ForEach(AppTextScaleMode.allCases) { mode in
-              Text(mode.displayName).tag(mode)
+              Text(t(mode.displayName, mode.displayName)).tag(mode)
             }
           }
-          Text(store.displaySettings.textScale.detail)
+          Text(t(store.displaySettings.textScale.detail, store.displaySettings.textScale.detail))
             .font(.caption)
             .foregroundColor(.secondary)
         }
-        Section("Agent Safety") {
+        Section(t("signalasi.settings.agent_safety", "Agent Safety")) {
           NavigationLink(destination: AgentSafetySettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Execution Policy")
-              Text("\(store.agentSafetySettings.taskExecutionMode.displayTitle) / \(store.agentSafetySettings.permissionMode.displayTitle)")
+              Text(t("signalasi.settings.execution_policy", "Execution Policy"))
+              Text("\(t(store.agentSafetySettings.taskExecutionMode.displayTitle, store.agentSafetySettings.taskExecutionMode.displayTitle)) / \(t(store.agentSafetySettings.permissionMode.displayTitle, store.agentSafetySettings.permissionMode.displayTitle))")
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
           }
           if store.agentSafetySettings.executionPaused {
-            Label("Execution Paused", systemImage: "pause.circle")
+            Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
           }
         }
-        Section("Agent Task Budget") {
+        Section(t("signalasi.settings.agent_task_budget", "Agent Task Budget")) {
           NavigationLink(destination: AgentTaskBudgetSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Task Budget")
-              Text("\(store.agentTaskBudget.profile.displayName) / \(store.agentTaskBudget.costLimitLabel) / \(store.agentTaskBudget.networkPolicy.displayName)")
+              Text(t("signalasi.settings.task_budget", "Task Budget"))
+              Text("\(t(store.agentTaskBudget.profile.displayName, store.agentTaskBudget.profile.displayName)) / \(store.agentTaskBudget.localizedCostLimitLabel(language: interfaceLanguage)) / \(t(store.agentTaskBudget.networkPolicy.displayName, store.agentTaskBudget.networkPolicy.displayName))")
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
           }
         }
-        Section("Planning & Coordination") {
+        Section(t("signalasi.settings.planning", "Planning & Coordination")) {
           NavigationLink(destination: AgentModelPlannerSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Model Planner")
+              Text(t("signalasi.discover.model_planner", "Model Planner"))
               Text(modelPlannerSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
           }
         }
-        Section("Custom Devices") {
+        Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
           NavigationLink(destination: CustomDeviceConnectorsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Device Connectors")
+              Text(t("signalasi.settings.device_connectors", "Device Connectors"))
               Text(customDeviceSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -1352,19 +1406,19 @@ struct SettingsView: View {
         Section("Home Assistant") {
           NavigationLink(destination: HomeAssistantSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Smart Home")
+              Text(t("signalasi.settings.smart_home", "Smart Home"))
               Text(homeAssistantSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
           }
         }
-        Section("Cloud Models") {
+        Section(t("signalasi.settings.cloud_models", "Cloud Models")) {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
               VStack(alignment: .leading) {
                 Text(contact.displayName)
-                Text(contact.selectedCloudModel?.modelId ?? "No model")
+                Text(contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model"))
                   .font(.caption)
                   .foregroundColor(.secondary)
               }
@@ -1373,36 +1427,36 @@ struct SettingsView: View {
           Button {
             showingAddModel = true
           } label: {
-            Label("Add Model", systemImage: "plus.circle")
+            Label(t("signalasi.settings.add_model", "Add Model"), systemImage: "plus.circle")
           }
         }
         Section("SignalASI Link") {
           NavigationLink(destination: SignalASILinkDiagnosticsView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Link Diagnostics")
+              Text(t("signalasi.settings.link_diagnostics", "Link Diagnostics"))
               Text(linkDiagnosticsSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
           }
         }
-        Section("Backup") {
-          SecureField("Password", text: $backupPassword)
+        Section(t("signalasi.settings.backup", "Backup")) {
+          SecureField(t("signalasi.settings.password", "Password"), text: $backupPassword)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled(true)
-          Toggle("Include Messages", isOn: $backupIncludeMessages)
+          Toggle(t("signalasi.settings.include_messages", "Include Messages"), isOn: $backupIncludeMessages)
           HStack {
             Button {
               exportBackup()
             } label: {
-              Label("Export", systemImage: "square.and.arrow.up")
+              Label(t("signalasi.common.export", "Export"), systemImage: "square.and.arrow.up")
             }
             .disabled(backupPassword.count < SignalASIBackupManager.minimumPasswordLength)
             Spacer()
             Button {
               backupImportPresented = true
             } label: {
-              Label("Import", systemImage: "square.and.arrow.down")
+              Label(t("signalasi.common.import", "Import"), systemImage: "square.and.arrow.down")
             }
             .disabled(backupPassword.count < SignalASIBackupManager.minimumPasswordLength)
           }
@@ -1411,11 +1465,11 @@ struct SettingsView: View {
               .foregroundColor(backupStatusIsError ? .red : .secondary)
           }
         }
-        Section("Privacy") {
+        Section(t("signalasi.settings.privacy", "Privacy")) {
           NavigationLink(destination: AgentDataDisclosureDashboardView()) {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Model Data Sharing")
-              Text("Review metadata-only disclosure events and destination blocks")
+              Text(t("signalasi.settings.model_data_sharing", "Model Data Sharing"))
+              Text(t("signalasi.settings.model_data_sharing.subtitle", "Review metadata-only disclosure events and destination blocks"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1423,20 +1477,22 @@ struct SettingsView: View {
           Button(role: .destructive) {
             showingResetPrivateData = true
           } label: {
-            Label("Reset Private Data", systemImage: "trash")
+            Label(t("signalasi.settings.reset_private_data", "Reset Private Data"), systemImage: "trash")
           }
           if !privacyStatus.isEmpty {
             Text(privacyStatus)
               .foregroundColor(.secondary)
           }
         }
-        Section("Notifications") {
+        Section(t("signalasi.settings.notifications", "Notifications")) {
           Button {
             Task {
-              notificationsStatus = await NotificationService.requestAuthorization() ? "Allowed" : "Not allowed"
+              notificationsStatus = await NotificationService.requestAuthorization()
+                ? t("signalasi.status.allowed", "Allowed")
+                : t("signalasi.status.not_allowed", "Not allowed")
             }
           } label: {
-            Label("Enable Notifications", systemImage: "bell.badge")
+            Label(t("signalasi.settings.enable_notifications", "Enable Notifications"), systemImage: "bell.badge")
           }
           if !notificationsStatus.isEmpty {
             Text(notificationsStatus)
@@ -1444,14 +1500,14 @@ struct SettingsView: View {
           }
         }
       }
-      .navigationTitle(SignalASILocalization.string("signalasi.tab.settings", fallback: "Settings"))
+      .navigationTitle(t("signalasi.tab.settings", "Settings"))
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
       }
       .sheet(isPresented: $showingResetPrivateData) {
         ResetPrivateDataView {
           store.destroyAllPrivateData()
-          privacyStatus = "Private data reset."
+          privacyStatus = t("signalasi.settings.private_data_reset", "Private data reset.")
         }
       }
       .fileExporter(
@@ -1462,7 +1518,7 @@ struct SettingsView: View {
       ) { result in
         switch result {
         case .success:
-          setBackupStatus("Backup exported.", isError: false)
+          setBackupStatus(t("signalasi.backup.exported", "Backup exported."), isError: false)
         case .failure(let error):
           setBackupStatus(error.localizedDescription, isError: true)
         }
@@ -1487,7 +1543,7 @@ struct SettingsView: View {
     do {
       let password = backupPassword
       let payload = store.exportBackupPayload(includeContacts: true, includeMessages: backupIncludeMessages)
-      setBackupStatus("Preparing backup...", isError: false)
+      setBackupStatus(t("signalasi.backup.preparing", "Preparing backup..."), isError: false)
       Task {
         do {
           let data = try await Task.detached {
@@ -1496,7 +1552,7 @@ struct SettingsView: View {
           await MainActor.run {
             backupDocument = SignalASIBackupDocument(data: data)
             backupExportPresented = true
-            setBackupStatus("Backup ready.", isError: false)
+            setBackupStatus(t("signalasi.backup.ready", "Backup ready."), isError: false)
           }
         } catch {
           await MainActor.run {
@@ -1510,7 +1566,7 @@ struct SettingsView: View {
   private func importBackup(from url: URL) {
     let password = backupPassword
     let includeMessages = backupIncludeMessages
-    setBackupStatus("Restoring backup...", isError: false)
+    setBackupStatus(t("signalasi.backup.restoring", "Restoring backup..."), isError: false)
     Task {
       let didAccess = url.startAccessingSecurityScopedResource()
       defer {
@@ -1525,7 +1581,7 @@ struct SettingsView: View {
         }.value
         try await MainActor.run {
           try store.restoreBackupPayload(payload, includeMessages: includeMessages)
-          setBackupStatus("Backup restored.", isError: false)
+          setBackupStatus(t("signalasi.backup.restored", "Backup restored."), isError: false)
         }
       } catch {
         await MainActor.run {
@@ -1556,38 +1612,82 @@ struct SettingsView: View {
 
   private var modelPlannerSummary: String {
     let settings = store.modelPlannerSettings
-    guard settings.enabled else { return "Local deterministic planner" }
-    return "Model planning / \(settings.maxActions) actions / \(settings.maxReplans) replans"
+    guard settings.enabled else { return t("signalasi.settings.local_planner", "Local deterministic planner") }
+    return String(
+      format: t("signalasi.settings.model_planner.summary", "Model planning / %d actions / %d replans"),
+      settings.maxActions,
+      settings.maxReplans
+    )
   }
 
   private var customDeviceSummary: String {
     let total = store.customDeviceConnectors.count
-    guard total > 0 else { return "No custom devices" }
+    guard total > 0 else { return t("signalasi.settings.no_custom_devices", "No custom devices") }
     let enabled = store.customDeviceConnectors.filter(\.enabled).count
-    return "\(total) configured / \(enabled) enabled"
+    return String(format: t("signalasi.settings.custom_device.summary", "%d configured / %d enabled"), total, enabled)
   }
 
   private var homeAssistantSummary: String {
     let settings = store.homeAssistantSettings
-    if settings.configured { return "Configured and enabled" }
-    if settings.credentialsConfigured { return "Configured, disabled" }
-    return "Not configured"
+    if settings.configured { return t("signalasi.settings.configured_enabled", "Configured and enabled") }
+    if settings.credentialsConfigured { return t("signalasi.settings.configured_disabled", "Configured, disabled") }
+    return t("signalasi.settings.not_configured", "Not configured")
   }
 
   private var linkDiagnosticsSummary: String {
     let snapshot = linkDiagnosticsSnapshot
     if snapshot.totalEvents == 0 {
-      return "Stable / 0 events"
+      return t("signalasi.settings.link_stable", "Stable / 0 events")
     }
-    return "\(snapshot.totalEvents) events / \(snapshot.replayCount) replay / \(snapshot.failureCount) failures"
+    return String(
+      format: t("signalasi.settings.link.summary", "%d events / %d replay / %d failures"),
+      snapshot.totalEvents,
+      snapshot.replayCount,
+      snapshot.failureCount
+    )
   }
 
   private func refreshLinkDiagnostics() {
     linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
   }
+
+  private func interfaceLanguageDisplayName(_ value: String) -> String {
+    switch LanguagePolicySettings.normalizeInterface(value) {
+    case LanguagePolicySettings.zhCN:
+      return t("signalasi.language.zh_cn", "Simplified Chinese")
+    case LanguagePolicySettings.en:
+      return t("signalasi.language.en", "English")
+    default:
+      let resolved = LanguagePolicySettings.resolveInterface(LanguagePolicySettings.auto)
+      let resolvedName = resolved == LanguagePolicySettings.zhCN
+        ? t("signalasi.language.zh_cn", "Simplified Chinese")
+        : t("signalasi.language.en", "English")
+      return String(format: t("signalasi.language.auto_format", "Automatic (%@)"), resolvedName)
+    }
+  }
+
+  private func voiceLanguageDisplayName(_ value: String) -> String {
+    switch LanguagePolicySettings.normalizeVoice(value) {
+    case LanguagePolicySettings.zhCN:
+      return t("signalasi.language.zh_cn", "Simplified Chinese")
+    case LanguagePolicySettings.enUS:
+      return t("signalasi.language.en_us", "English (United States)")
+    case LanguagePolicySettings.zhHK:
+      return t("signalasi.language.zh_hk", "Traditional Chinese (Hong Kong)")
+    case LanguagePolicySettings.zhTW:
+      return t("signalasi.language.zh_tw", "Traditional Chinese (Taiwan)")
+    default:
+      return t("signalasi.language.auto", "Automatic")
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct AgentSafetySettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
@@ -1595,20 +1695,20 @@ struct AgentSafetySettingsView: View {
       Section("Task Execution") {
         Picker("Task execution", selection: taskExecutionModeBinding) {
           ForEach(AgentTaskExecutionMode.allCases) { mode in
-            Text(mode.displayTitle).tag(mode)
+            Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
           }
         }
-        Text(store.agentSafetySettings.taskExecutionMode.detail)
+        Text(t(store.agentSafetySettings.taskExecutionMode.detail, store.agentSafetySettings.taskExecutionMode.detail))
           .font(.caption)
           .foregroundColor(.secondary)
       }
       Section("Action Permissions") {
         Picker("Execution Mode", selection: permissionModeBinding) {
           ForEach(AgentPermissionMode.allCases) { mode in
-            Text(mode.displayTitle).tag(mode)
+            Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
           }
         }
-        Text(store.agentSafetySettings.permissionMode.detail)
+        Text(t(store.agentSafetySettings.permissionMode.detail, store.agentSafetySettings.permissionMode.detail))
           .font(.caption)
           .foregroundColor(.secondary)
       }
@@ -1624,7 +1724,7 @@ struct AgentSafetySettingsView: View {
         Toggle("Device Control", isOn: boolBinding(\.deviceControlAllowed))
       }
     }
-    .navigationTitle("Agent Safety")
+    .navigationTitle(t("Agent Safety", "Agent Safety"))
   }
 
   private var taskExecutionModeBinding: Binding<AgentTaskExecutionMode> {
@@ -1647,9 +1747,14 @@ struct AgentSafetySettingsView: View {
       set: { value in store.updateAgentSafetySettings { $0[keyPath: keyPath] = value } }
     )
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct AgentTaskBudgetSettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
@@ -1657,10 +1762,10 @@ struct AgentTaskBudgetSettingsView: View {
       Section("Budget Profile") {
         Picker("Profile", selection: profileBinding) {
           ForEach(AgentTaskBudgetProfile.allCases) { profile in
-            Text(profile.displayName).tag(profile)
+            Text(t(profile.displayName, profile.displayName)).tag(profile)
           }
         }
-        Text(store.agentTaskBudget.profile.detail)
+        Text(t(store.agentTaskBudget.profile.detail, store.agentTaskBudget.profile.detail))
           .font(.caption)
           .foregroundColor(.secondary)
       }
@@ -1706,14 +1811,14 @@ struct AgentTaskBudgetSettingsView: View {
       Section("Resource Access") {
         Picker("Network Policy", selection: networkPolicyBinding) {
           ForEach(AgentTaskNetworkPolicy.allCases) { policy in
-            Text(policy.displayName).tag(policy)
+            Text(t(policy.displayName, policy.displayName)).tag(policy)
           }
         }
         Toggle("Cloud Resources", isOn: boolBinding(\.allowCloud))
         Toggle("Paid Providers", isOn: boolBinding(\.allowPaidProviders))
       }
     }
-    .navigationTitle("Task Budget")
+    .navigationTitle(t("Task Budget", "Task Budget"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -1824,12 +1929,16 @@ struct AgentTaskBudgetSettingsView: View {
     keyboard: UIKeyboardType = .numberPad
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      TextField(title, text: text)
+      TextField(t(title, title), text: text)
         .keyboardType(keyboard)
-      Text(detail)
+      Text(t(detail, detail))
         .font(.caption)
         .foregroundColor(.secondary)
     }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 
   private static func parseDouble(_ raw: String) -> Double? {
@@ -1864,9 +1973,16 @@ private extension AgentTaskBudget {
   var costLimitLabel: String {
     maxCostMicros <= 0 ? "Unlimited" : String(format: "$%.2f", Double(maxCostMicros) / 1_000_000.0)
   }
+
+  func localizedCostLimitLabel(language: String) -> String {
+    maxCostMicros <= 0
+      ? SignalASILocalization.string("Unlimited", fallback: "Unlimited", language: language)
+      : String(format: "$%.2f", Double(maxCostMicros) / 1_000_000.0)
+  }
 }
 
 struct CustomDeviceConnectorsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
@@ -1887,7 +2003,7 @@ struct CustomDeviceConnectorsView: View {
                     .foregroundColor(.green)
                 }
               }
-              Text("\(connector.transport.displayName) / \(connector.risk.displayName)")
+              Text("\(t(connector.transport.displayName, connector.transport.displayName)) / \(t(connector.risk.displayName, connector.risk.displayName))")
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1906,11 +2022,16 @@ struct CustomDeviceConnectorsView: View {
         }
       }
     }
-    .navigationTitle("Custom Devices")
+    .navigationTitle(t("Custom Devices", "Custom Devices"))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
 struct CustomDeviceConnectorEditorView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.dismiss) private var dismiss
   @State private var draft: CustomDeviceConnector
@@ -1927,7 +2048,7 @@ struct CustomDeviceConnectorEditorView: View {
         TextField("Name", text: stringBinding(\.name))
         Picker("Transport", selection: transportBinding) {
           ForEach(CustomDeviceTransport.allCases) { transport in
-            Text(transport.displayName).tag(transport)
+            Text(t(transport.displayName, transport.displayName)).tag(transport)
           }
         }
         TextField("Endpoint", text: stringBinding(\.endpoint))
@@ -1945,7 +2066,7 @@ struct CustomDeviceConnectorEditorView: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
         if !draft.maskedAuthToken.isEmpty {
-          Text("Stored token: \(draft.maskedAuthToken)")
+          Text(String(format: t("Stored token: %@", "Stored token: %@"), draft.maskedAuthToken))
             .font(.caption)
             .foregroundColor(.secondary)
         }
@@ -1953,7 +2074,7 @@ struct CustomDeviceConnectorEditorView: View {
       Section("Safety") {
         Picker("Risk", selection: riskBinding) {
           ForEach(CustomDeviceRisk.allCases) { risk in
-            Text(risk.displayName).tag(risk)
+            Text(t(risk.displayName, risk.displayName)).tag(risk)
           }
         }
         Toggle("Enabled", isOn: boolBinding(\.enabled))
@@ -1987,7 +2108,7 @@ struct CustomDeviceConnectorEditorView: View {
         }
       }
     }
-    .navigationTitle("Custom Device")
+    .navigationTitle(t("Custom Device", "Custom Device"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -2018,9 +2139,14 @@ struct CustomDeviceConnectorEditorView: View {
       set: { draft[keyPath: keyPath] = $0 }
     )
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct HomeAssistantSettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
@@ -2035,7 +2161,7 @@ struct HomeAssistantSettingsView: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
         if !store.homeAssistantSettings.maskedAccessToken.isEmpty {
-          Text("Stored token: \(store.homeAssistantSettings.maskedAccessToken)")
+          Text(String(format: t("Stored token: %@", "Stored token: %@"), store.homeAssistantSettings.maskedAccessToken))
             .font(.caption)
             .foregroundColor(.secondary)
         }
@@ -2061,7 +2187,7 @@ struct HomeAssistantSettingsView: View {
         }
       }
     }
-    .navigationTitle("Home Assistant")
+    .navigationTitle(t("Home Assistant", "Home Assistant"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -2078,9 +2204,14 @@ struct HomeAssistantSettingsView: View {
       set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
     )
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct AgentModelPlannerSettingsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
@@ -2093,7 +2224,7 @@ struct AgentModelPlannerSettingsView: View {
             Text(contact.displayName).tag(contact.id)
           }
           if selectedCloudContactMissing {
-            Text("Missing: \(store.modelPlannerSettings.cloudContactId)").tag(store.modelPlannerSettings.cloudContactId)
+            Text(String(format: t("Missing: %@", "Missing: %@"), store.modelPlannerSettings.cloudContactId)).tag(store.modelPlannerSettings.cloudContactId)
           }
         }
         Text(plannerStatusDetail)
@@ -2153,7 +2284,7 @@ struct AgentModelPlannerSettingsView: View {
         Toggle("Share Agent Outputs with Planner", isOn: boolBinding(\.shareAgentOutputsWithPlanner))
       }
     }
-    .navigationTitle("Planning")
+    .navigationTitle(t("Planning", "Planning"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -2169,12 +2300,12 @@ struct AgentModelPlannerSettingsView: View {
 
   private var plannerStatusDetail: String {
     if !store.modelPlannerSettings.enabled {
-      return "Fast local rules remain active; model planning is disabled."
+      return t("Fast local rules remain active; model planning is disabled.", "Fast local rules remain active; model planning is disabled.")
     }
     if store.cloudModelContacts.isEmpty {
-      return "Model planning is enabled, but no ready cloud model is configured. Local fallback remains active."
+      return t("Model planning is enabled, but no ready cloud model is configured. Local fallback remains active.", "Model planning is enabled, but no ready cloud model is configured. Local fallback remains active.")
     }
-    return "A configured model can propose plans; iOS validates every action locally."
+    return t("A configured model can propose plans; iOS validates every action locally.", "A configured model can propose plans; iOS validates every action locally.")
   }
 
   private var cloudContactBinding: Binding<String> {
@@ -2208,15 +2339,20 @@ struct AgentModelPlannerSettingsView: View {
     detail: String
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Stepper("\(title): \(store.modelPlannerSettings[keyPath: keyPath])", value: intBinding(keyPath, range: range), in: range)
-      Text(detail)
+      Stepper("\(t(title, title)): \(store.modelPlannerSettings[keyPath: keyPath])", value: intBinding(keyPath, range: range), in: range)
+      Text(t(detail, detail))
         .font(.caption)
         .foregroundColor(.secondary)
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct ResetPrivateDataView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @State private var confirmation = ""
   var onReset: () -> Void
@@ -2239,7 +2375,7 @@ struct ResetPrivateDataView: View {
           .disabled(confirmation != "RESET")
         }
       }
-      .navigationTitle("Reset")
+      .navigationTitle(t("Reset", "Reset"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") {
@@ -2249,9 +2385,14 @@ struct ResetPrivateDataView: View {
       }
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct CloudModelProviderDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var showingAddModel = false
   var contactId: String
@@ -2269,7 +2410,7 @@ struct CloudModelProviderDetailView: View {
             .font(.caption)
             .foregroundColor(.secondary)
           if let selected = contact.selectedCloudModel {
-            Label("Selected: \(selected.modelId)", systemImage: "checkmark.circle")
+            Label(String(format: t("Selected: %@", "Selected: %@"), selected.modelId), systemImage: "checkmark.circle")
           }
         }
         Section("Selected Model") {
@@ -2319,7 +2460,7 @@ struct CloudModelProviderDetailView: View {
         }
       }
     }
-    .navigationTitle(contact?.displayName ?? "Cloud Model")
+    .navigationTitle(contact?.displayName ?? t("Cloud Model", "Cloud Model"))
     .sheet(isPresented: $showingAddModel) {
       AddCloudModelView(initialProvider: contact?.cloudProvider)
     }
@@ -2341,13 +2482,18 @@ struct CloudModelProviderDetailView: View {
       provider: contact.cloudProvider,
       setupStatus: contact.setupStatus
     )
-    return Label(ready ? "Ready" : "Needs Setup", systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
+    return Label(ready ? t("Ready", "Ready") : t("Needs Setup", "Needs Setup"), systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
       .font(.caption)
       .foregroundColor(ready ? .green : .orange)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
 struct AddCloudModelView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
   @State private var selectedPreset: CloudModelPreset
@@ -2408,7 +2554,7 @@ struct AddCloudModelView: View {
             .foregroundColor(.red)
         }
       }
-      .navigationTitle("Add Model")
+      .navigationTitle(t("Add Model", "Add Model"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
@@ -2442,6 +2588,10 @@ struct AddCloudModelView: View {
     } catch {
       errorText = error.localizedDescription
     }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
