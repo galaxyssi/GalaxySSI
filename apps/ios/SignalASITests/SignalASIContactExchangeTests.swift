@@ -50,6 +50,29 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(store.pendingFriendRequests.first?.identityFingerprint, String(repeating: "c", count: 64))
   }
 
+  func testClassifyQRCodeDetectsDesktopPairing() throws {
+    let now = Date()
+    let result = try SignalASIContactExchange.classifyQRCode(pairingQR(createdAt: now), now: now)
+
+    guard case .desktopPairing(let pairing) = result else {
+      XCTFail("Expected desktop pairing QR")
+      return
+    }
+    XCTAssertEqual(pairing.desktopId, "desktop-test")
+    XCTAssertEqual(pairing.desktopName, "Test Mac")
+  }
+
+  func testClassifyQRCodeDetectsContactIdentity() throws {
+    let result = try SignalASIContactExchange.classifyQRCode(contactQRWithoutType(name: "Device Agent"))
+
+    guard case .contact(let request) = result else {
+      XCTFail("Expected contact QR")
+      return
+    }
+    XCTAssertEqual(request.name, "Device Agent")
+    XCTAssertEqual(request.signalASIId, "signalasi:device-agent")
+  }
+
   func testImportContactQRReplacesExistingPendingRequest() throws {
     let store = makeStore()
 
@@ -119,6 +142,49 @@ final class SignalASIContactExchangeTests: XCTestCase {
       "mqtt_inbox_topic": "signalasichat/v1/friend/inbox",
       "signal_bundle_ref": "mqtt:signalasichat/v1/friend/inbox:signalasi:bob",
       "created_at": Int64(Date().timeIntervalSince1970 * 1000)
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+  }
+
+  private func contactQRWithoutType(name: String) -> String {
+    let object: [String: Any] = [
+      "name": name,
+      "signalasi_id": "signalasi:device-agent",
+      "identity_public_key": "public-key",
+      "identity_fingerprint": String(repeating: "d", count: 64),
+      "mqtt_topic": "signalasichat/v1/device/inbox",
+      "mqtt_inbox_topic": "signalasichat/v1/device/inbox"
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+  }
+
+  private func pairingQR(createdAt: Date) -> String {
+    let routeId = "abcdefghijklmnopqrstuv"
+    let object: [String: Any] = [
+      "type": "signalasi_verify",
+      "protocol": SignalASILinkProtocol.name,
+      "version": SignalASILinkProtocol.version,
+      "role": "server",
+      "desktop_id": "desktop-test",
+      "desktop_name": "Test Mac",
+      "identity_key_sha256": String(repeating: "a", count: 64),
+      "server_route_id": routeId,
+      "pairing_topic": "signalasichat/v1/\(routeId)/pair",
+      "pairing_token": String(repeating: "t", count: 32),
+      "pairing_secret": Data(repeating: 7, count: 32).base64URLEncodedString(),
+      "pairing_access": [
+        "contract_version": SignalASILinkProtocol.accessContract,
+        "version": 1,
+        "profile": SignalASILinkProtocol.accessRestricted,
+        "scopes": [
+          SignalASILinkProtocol.scopeAgentChat,
+          SignalASILinkProtocol.scopeExplicitAttachments,
+          SignalASILinkProtocol.scopeTaskWorkspace
+        ]
+      ],
+      "created_at": Int64(createdAt.timeIntervalSince1970 * 1000)
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!
