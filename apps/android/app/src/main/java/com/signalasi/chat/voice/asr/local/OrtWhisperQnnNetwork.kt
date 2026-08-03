@@ -166,24 +166,25 @@ internal class OrtWhisperQnnNetwork private constructor(
     companion object {
         private const val ATTENTION_MASK_NEGATIVE = -100.0F
         private const val EP_NAME = "QNNExecutionProvider"
-        private const val EP_LIBRARY = "libonnxruntime_providers_qnn.so"
 
         fun open(
             modelDirectory: File,
             wrapperFiles: Map<String, File>,
             generation: WhisperGenerationTokens,
+            providerLibrary: File,
+            htpBackendLibrary: File,
             nanoTime: () -> Long = System::nanoTime
         ): OrtWhisperQnnNetwork {
-            val environment = QnnOrtEnvironment.environment()
+            val environment = QnnOrtEnvironment.environment(providerLibrary)
             val encoderModel = requireNotNull(wrapperFiles[WhisperLargeTurboQnnContract.encoder.wrapperModelName])
             val decoderModel = requireNotNull(wrapperFiles[WhisperLargeTurboQnnContract.decoder.wrapperModelName])
             require(encoderModel.parentFile?.canonicalFile == modelDirectory.canonicalFile)
             require(decoderModel.parentFile?.canonicalFile == modelDirectory.canonicalFile)
             val sharedMemoryEnabled = QnnHtpSharedMemoryAvailability.android.isAvailable()
             val executionTracker = QnnExecutionAttestationTracker(sharedMemoryEnabled)
-            val encoder = createSession(environment, encoderModel, sharedMemoryEnabled)
+            val encoder = createSession(environment, encoderModel, htpBackendLibrary, sharedMemoryEnabled)
             try {
-                val decoder = createSession(environment, decoderModel, sharedMemoryEnabled)
+                val decoder = createSession(environment, decoderModel, htpBackendLibrary, sharedMemoryEnabled)
                 try {
                     return OrtWhisperQnnNetwork(
                         environment,
@@ -206,6 +207,7 @@ internal class OrtWhisperQnnNetwork private constructor(
         private fun createSession(
             environment: OrtEnvironment,
             model: File,
+            htpBackendLibrary: File,
             sharedMemoryEnabled: Boolean
         ): OrtSession {
             val options = OrtSession.SessionOptions()
@@ -221,7 +223,10 @@ internal class OrtWhisperQnnNetwork private constructor(
                 check(devices.isNotEmpty()) { "QNN HTP execution provider is unavailable" }
                 options.addExecutionProvider(
                     devices,
-                    QnnHtpSessionPolicy.providerOptions(sharedMemoryAvailable = sharedMemoryEnabled)
+                    QnnHtpSessionPolicy.providerOptions(
+                        backendPath = htpBackendLibrary.canonicalPath,
+                        sharedMemoryAvailable = sharedMemoryEnabled
+                    )
                 )
                 return environment.createSession(model.canonicalPath, options)
             } finally {
@@ -231,17 +236,25 @@ internal class OrtWhisperQnnNetwork private constructor(
 
         private object QnnOrtEnvironment {
             @Volatile
-            private var registered = false
+            private var registeredPath = ""
 
             @Synchronized
-            fun environment(): OrtEnvironment {
+            fun environment(providerLibrary: File): OrtEnvironment {
+                val canonicalLibrary = providerLibrary.canonicalFile
+                require(canonicalLibrary.isFile && canonicalLibrary.canRead()) {
+                    "QNN execution provider library is unavailable"
+                }
                 val environment = OrtEnvironment.getEnvironment(
                     OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING,
                     "SignalASI-QNN-ASR"
                 )
-                if (!registered) {
-                    environment.registerExecutionProviderLibrary(EP_NAME, EP_LIBRARY)
-                    registered = true
+                if (registeredPath.isBlank()) {
+                    environment.registerExecutionProviderLibrary(EP_NAME, canonicalLibrary.path)
+                    registeredPath = canonicalLibrary.path
+                } else {
+                    check(registeredPath == canonicalLibrary.path) {
+                        "QNN execution provider was registered from a different library"
+                    }
                 }
                 return environment
             }

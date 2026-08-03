@@ -262,6 +262,24 @@ class LargeTurboQnnModelLifecycleTest {
     }
 
     @Test
+    fun `store rejects a tampered archive digest receipt`() {
+        val fixture = createInstallFixture("0.59.0")
+        val store = LargeTurboQnnModelStore(File(root, "digest-files"), usableSpace = { Long.MAX_VALUE })
+        val installed = store.install(
+            fixture.manifest,
+            fixture.archive,
+            sha256(fixture.archive),
+            fixture.supportFiles
+        )
+
+        File(installed.directory, "model.sha256").writeText("f".repeat(64), Charsets.US_ASCII)
+
+        val snapshot = store.inspectActive(fixture.manifest)
+        assertEquals(QnnContextModelState.INVALID, snapshot.state)
+        assertTrue(snapshot.detail.contains("digest receipt"))
+    }
+
+    @Test
     fun `quarantined release without rollback remains invalid until replaced`() {
         val fixture = createInstallFixture("0.59.0")
         val store = LargeTurboQnnModelStore(File(root, "quarantine-files"), usableSpace = { Long.MAX_VALUE })

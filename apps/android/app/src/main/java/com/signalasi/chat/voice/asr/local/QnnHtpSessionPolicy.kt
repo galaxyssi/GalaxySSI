@@ -3,8 +3,11 @@ package com.signalasi.chat.voice.asr.local
 internal object QnnHtpSessionPolicy {
     const val SHARED_MEMORY_OPTION = "enable_htp_shared_memory_allocator"
 
-    fun providerOptions(sharedMemoryAvailable: Boolean): Map<String, String> = linkedMapOf(
-        "backend_type" to "htp",
+    fun providerOptions(
+        backendPath: String,
+        sharedMemoryAvailable: Boolean
+    ): Map<String, String> = linkedMapOf(
+        "backend_path" to backendPath,
         "offload_graph_io_quantization" to "0",
         SHARED_MEMORY_OPTION to if (sharedMemoryAvailable) "1" else "0"
     )

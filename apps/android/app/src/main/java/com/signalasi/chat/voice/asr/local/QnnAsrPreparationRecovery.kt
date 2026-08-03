@@ -67,7 +67,9 @@ class QnnAsrLoadFailureClassifier {
             )
             else -> failure(
                 QnnAsrLoadFailureKind.UNKNOWN,
-                "qnn_prepare_unknown",
+                causes.filterIsInstance<QnnAsrPreparationException>().firstOrNull()
+                    ?.let { "qnn_prepare_${it.stage.code}" }
+                    ?: "qnn_prepare_unknown",
                 error,
                 retrySameModel = true
             )

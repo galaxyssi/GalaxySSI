@@ -47,4 +47,32 @@ class WhisperModelFallbackPolicyTest {
 
         assertNull(selected)
     }
+
+    @Test
+    fun `realtime rescue rejects heavyweight final only models`() {
+        val selected = WhisperModelFallbackPolicy.selectRealtimeRescue(
+            installedProfiles = listOf(
+                WhisperModelCatalog.require("large_v3_turbo_q5_0"),
+                WhisperModelCatalog.require("small_q5_1"),
+                WhisperModelCatalog.require("tiny")
+            ),
+            canRun = { true }
+        )
+
+        assertEquals("tiny", selected?.id)
+    }
+
+    @Test
+    fun `realtime rescue prefers the smallest runnable installed model`() {
+        val selected = WhisperModelFallbackPolicy.selectRealtimeRescue(
+            installedProfiles = listOf(
+                WhisperModelCatalog.require("base"),
+                WhisperModelCatalog.require("tiny"),
+                WhisperModelCatalog.require("tiny_q5_1")
+            ),
+            canRun = { it.id != "tiny_q5_1" }
+        )
+
+        assertEquals("tiny", selected?.id)
+    }
 }

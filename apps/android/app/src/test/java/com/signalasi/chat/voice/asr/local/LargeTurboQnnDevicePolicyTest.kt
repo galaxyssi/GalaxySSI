@@ -40,6 +40,20 @@ class LargeTurboQnnDevicePolicyTest {
     }
 
     @Test
+    fun `newer runtime in the same major series accepts the model context`() {
+        val decision = policy.evaluate(snapshot(qnnVersion = "2.47.0"))
+        assertEquals(QnnAsrEligibility.READY, decision.eligibility)
+        assertEquals("large_turbo_qnn_ready", decision.reasonCode)
+    }
+
+    @Test
+    fun `different runtime major series is rejected`() {
+        val decision = policy.evaluate(snapshot(qnnVersion = "3.45.0"))
+        assertEquals(QnnAsrEligibility.FALLBACK_REQUIRED, decision.eligibility)
+        assertEquals("qnn_runtime_incompatible", decision.reasonCode)
+    }
+
+    @Test
     fun `missing V81 runtime never attempts the S26U context`() {
         val decision = policy.evaluate(snapshot(libraries = setOf("libQnnSystem.so", "libQnnHtp.so")))
         assertEquals(QnnAsrEligibility.FALLBACK_REQUIRED, decision.eligibility)

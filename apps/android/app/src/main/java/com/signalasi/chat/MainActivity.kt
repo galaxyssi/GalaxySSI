@@ -24334,6 +24334,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     )
 
+    private fun selectWhisperQnnRescue(): WhisperModel? = WhisperModelFallbackPolicy.selectRealtimeRescue(
+        installedProfiles = WhisperModelManager.models.filter { candidate ->
+            WhisperModelManager.isAvailable(this, candidate)
+        },
+        canRun = { candidate ->
+            !VoiceFeatureFlags.isReliabilityGovernorEnabled(this) || localWhisperAdmission(candidate).allowed
+        }
+    )
+
     private fun isWhisperMemoryAdmissionFailure(reasonCode: String): Boolean =
         reasonCode in setOf("low_memory_signal", "insufficient_memory_headroom")
 
@@ -24414,7 +24423,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val requestedLocalProfile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
         val qnnPreparationStatus = highAccuracyAsrController.preparationStatus.value
         val qnnFallback = if (isHighAccuracyQnnSelected()) {
-            selectWhisperMemoryFallback(requestedLocalProfile)
+            selectWhisperQnnRescue()
         } else null
         var selectedLocalProfile = qnnFallback ?: requestedLocalProfile
         var fallbackFromProfileId: String? = qnnFallback?.let { requestedLocalProfile.id }

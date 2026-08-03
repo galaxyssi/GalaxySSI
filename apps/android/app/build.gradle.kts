@@ -96,6 +96,23 @@ tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(stageCurrentNdkSharedRuntime)
 }
 
+tasks.matching { task ->
+    task.name.startsWith("merge") && task.name.endsWith("NativeLibs")
+}.configureEach {
+    doLast {
+        val nativeOutputs = outputs.files.files.filter { it.exists() }
+        check(nativeOutputs.isNotEmpty()) { "Android native merge produced no auditable output" }
+        providers.exec {
+            commandLine(
+                listOf(
+                    "node",
+                    rootProject.file("../../tools/dev/normalize-android-native-page-size.mjs").absolutePath
+                ) + nativeOutputs.map { it.absolutePath }
+            )
+        }.result.get().assertNormalExitValue()
+    }
+}
+
 android {
     namespace = "com.signalasi.chat"
     compileSdk = 36
@@ -104,12 +121,12 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 342
-        versionName = "0.3.42"
+        versionCode = 343
+        versionName = "0.3.43"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
-        buildConfigField("String", "QNN_RUNTIME_VERSION", "\"2.45.0\"")
+        buildConfigField("String", "QNN_RUNTIME_VERSION", "\"2.47.0\"")
         buildConfigField(
             "String",
             "REALTIME_ASR_CREDENTIAL_BROKER_URL",
@@ -213,9 +230,9 @@ dependencies {
     implementation(files("libs/onnxruntime-android-1.24.3.aar"))
     implementation(files("libs/commons-math3-3.6.1.jar"))
     implementation("com.argmaxinc:whisperkit:0.3.3")
-    implementation("com.qualcomm.qti:qnn-runtime:2.45.0")
+    implementation("com.qualcomm.qti:qnn-runtime:2.47.0")
     implementation("com.qualcomm.qti:onnxruntime-android-qnn:2.3.0")
-    implementation("com.qualcomm.qti:qnn-litert-delegate:2.45.0")
+    implementation("com.qualcomm.qti:qnn-litert-delegate:2.47.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")

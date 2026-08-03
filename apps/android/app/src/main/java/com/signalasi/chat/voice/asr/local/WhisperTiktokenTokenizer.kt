@@ -63,7 +63,13 @@ internal class WhisperTiktokenTokenizer private constructor(
                         "Invalid tiktoken entry at line ${lineIndex + 1}"
                     }
                     val rank = line.substring(separator + 1).toInt()
-                    require(rank >= 0 && decodedTokens.put(rank, Base64.getDecoder().decode(line.substring(0, separator))) == null) {
+                    val encodedToken = line.substring(0, separator)
+                    val tokenBytes = if (encodedToken == EMPTY_TOKEN_SENTINEL) {
+                        ByteArray(0)
+                    } else {
+                        Base64.getDecoder().decode(encodedToken)
+                    }
+                    require(rank >= 0 && decodedTokens.put(rank, tokenBytes) == null) {
                         "Duplicate or invalid tiktoken rank at line ${lineIndex + 1}"
                     }
                 }
@@ -75,6 +81,8 @@ internal class WhisperTiktokenTokenizer private constructor(
             decodedTokens.forEach { (rank, bytes) -> tokenBytes[rank] = bytes }
             return WhisperTiktokenTokenizer(tokenBytes, parseGenerationConfig(generationConfigFile))
         }
+
+        private const val EMPTY_TOKEN_SENTINEL = "="
 
         private fun parseGenerationConfig(file: File): WhisperGenerationTokens {
             val root = JSONObject(file.readText(Charsets.UTF_8))

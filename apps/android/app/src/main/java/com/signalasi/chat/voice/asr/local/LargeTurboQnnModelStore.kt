@@ -458,6 +458,14 @@ class LargeTurboQnnModelStore(
         ) {
             return QnnContextModelSnapshot(QnnContextModelState.INVALID, directory, record, "Install record is incompatible")
         }
+        if (!archiveDigestReceiptMatches(directory, record)) {
+            return QnnContextModelSnapshot(
+                QnnContextModelState.INVALID,
+                directory,
+                record,
+                "Archive digest receipt is invalid"
+            )
+        }
         val expectedNames = manifest.archive.entries.map(QnnContextArchiveEntry::installedName) +
             manifest.supportAssets.map(QnnContextSupportAsset::installedName)
         if (record.files.map(QnnContextInstalledFile::name).toSet() != expectedNames.toSet()) {
@@ -503,6 +511,14 @@ class LargeTurboQnnModelStore(
                 "Rollback release is incompatible"
             )
         }
+        if (!archiveDigestReceiptMatches(directory, record)) {
+            return QnnContextModelSnapshot(
+                QnnContextModelState.INVALID,
+                directory,
+                record,
+                "Rollback archive digest receipt is invalid"
+            )
+        }
         val requiredNames = manifest.archive.entries.map(QnnContextArchiveEntry::installedName).toSet() +
             manifest.supportAssets.map(QnnContextSupportAsset::installedName).toSet()
         if (!record.files.map(QnnContextInstalledFile::name).toSet().containsAll(requiredNames)) {
@@ -527,6 +543,18 @@ class LargeTurboQnnModelStore(
             }
         }
         return QnnContextModelSnapshot(QnnContextModelState.INSTALLED, directory, record)
+    }
+
+    private fun archiveDigestReceiptMatches(
+        directory: File,
+        record: QnnContextModelInstallRecord
+    ): Boolean {
+        val receipt = runCatching { secureChild(directory, ARCHIVE_DIGEST_FILE) }.getOrNull()
+            ?: return false
+        if (!receipt.isFile || receipt.length() !in 64L..66L) return false
+        val digest = runCatching { receipt.readText(Charsets.US_ASCII).trim() }.getOrNull()
+            ?: return false
+        return digest.matches(SHA256_PATTERN) && digest.equals(record.archiveSha256, ignoreCase = true)
     }
 
     private fun writeQuarantineRecord(directory: File, reasonCode: String, detail: String) {
