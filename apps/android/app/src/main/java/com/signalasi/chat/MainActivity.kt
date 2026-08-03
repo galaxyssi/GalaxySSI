@@ -29752,7 +29752,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 if (isClickable) setOnClickListener {
                     when (action) {
                         LargeTurboQnnModelAction.PAUSE -> {
-                            LargeTurboQnnModelManager.pause { showAsrProviderPage() }
+                            LargeTurboQnnModelManager.pause(this@MainActivity) { showAsrProviderPage() }
                             showAsrProviderPage()
                         }
                         LargeTurboQnnModelAction.USE -> {
