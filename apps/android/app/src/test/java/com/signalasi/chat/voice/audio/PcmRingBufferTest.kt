@@ -7,6 +7,21 @@ import org.junit.Test
 
 class PcmRingBufferTest {
     @Test
+    fun snapshotReportsSpeechDurationIndependentlyFromPreAndPostRoll() {
+        val store = InMemorySpeechSegmentStore(sampleRateHz = 1_000, maxDurationMs = 5_000L)
+        repeat(5) { sequence ->
+            frame(sequence.toLong(), ShortArray(1_000)).use(store::append)
+        }
+        store.markSpeechStart(1L)
+        store.markSpeechEnd(4L)
+
+        val snapshot = store.snapshot(SegmentRange(preRollMs = 300, postRollMs = 400))
+
+        assertEquals(3_000L, snapshot.speechDurationMs)
+        assertEquals(3_700L, snapshot.durationMs)
+    }
+
+    @Test
     fun ringRetainsNewestSamplesAcrossWrap() {
         val ring = PcmRingBuffer(6)
         ring.append(shortArrayOf(1, 2, 3, 4), 4)

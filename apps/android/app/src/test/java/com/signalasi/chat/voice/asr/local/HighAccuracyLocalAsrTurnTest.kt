@@ -99,6 +99,27 @@ class HighAccuracyLocalAsrTurnTest {
         controller.close()
     }
 
+    @Test
+    fun decoderLimitMarksTheTurnIncompleteForFullPcmFallback() = runBlocking {
+        val engine = FakeEngine().apply {
+            stopText = "unfinished sentence"
+            stopTermination = AsrTranscriptTermination.TOKEN_LIMIT
+        }
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine }
+        )
+        assertTrue(controller.prepareNow())
+        val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+
+        val result = turn.finish()
+
+        assertFalse(result.complete)
+        assertEquals(AsrTranscriptTermination.TOKEN_LIMIT, result.termination)
+        controller.close()
+    }
+
     private fun frame(sequence: Long, samples: ShortArray): DirectPcmFramePacket {
         val bytes = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         samples.forEach(bytes::putShort)
@@ -116,6 +137,7 @@ class HighAccuracyLocalAsrTurnTest {
         var prepareCalls = 0
         var startCalls = 0
         var stopText = "hello world"
+        var stopTermination = AsrTranscriptTermination.END_OF_TEXT
         val pushed = mutableListOf<ShortArray>()
         private var config = AsrConfig()
         private var token = 0L
@@ -152,7 +174,7 @@ class HighAccuracyLocalAsrTurnTest {
 
         override fun stop() {
             transition(LocalAsrState.Stopping(token, config))
-            mutableEvents.tryEmit(AsrEvent.Final(stopText, 1_000L, 12L))
+            mutableEvents.tryEmit(AsrEvent.Final(stopText, 1_000L, 12L, stopTermination))
             transition(LocalAsrState.Ready("model", 1L))
         }
 

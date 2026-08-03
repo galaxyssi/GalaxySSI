@@ -156,6 +156,15 @@ data class PcmSnapshot(
 ) {
     val durationMs: Long
         get() = samples.size.toLong() * 1_000L / sampleRateHz
+
+    val speechDurationMs: Long?
+        get() = speechStartSample?.let { start ->
+            speechEndSampleExclusive
+                ?.minus(start)
+                ?.coerceAtLeast(0L)
+                ?.times(1_000L)
+                ?.div(sampleRateHz)
+        }
 }
 
 data class VoiceAudioCaptureResult(

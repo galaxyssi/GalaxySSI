@@ -35,6 +35,7 @@ internal data class WhisperQnnTranscription(
     val decoderNanos: Long,
     val decoderSteps: Int,
     val detectedLanguage: String?,
+    val termination: AsrTranscriptTermination = AsrTranscriptTermination.END_OF_TEXT,
     val qnnExecution: QnnExecutionAttestation? = null
 ) {
     val inferenceMs: Long
@@ -126,13 +127,21 @@ internal class WhisperGreedyTranscriber(
             }
         }
 
+        val termination = when {
+            next == generation.endOfText -> AsrTranscriptTermination.END_OF_TEXT
+            output.size >= maxTokens -> AsrTranscriptTermination.TOKEN_LIMIT
+            position >= WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS ->
+                AsrTranscriptTermination.CONTEXT_LIMIT
+            else -> AsrTranscriptTermination.UNKNOWN
+        }
         return WhisperQnnTranscription(
             text = tokenizer.decode(output).trim(),
             tokenIds = output,
             encoderNanos = encoderNanos,
             decoderNanos = decoderNanos,
             decoderSteps = decoderSteps,
-            detectedLanguage = detectedLanguage
+            detectedLanguage = detectedLanguage,
+            termination = termination
         )
     }
 

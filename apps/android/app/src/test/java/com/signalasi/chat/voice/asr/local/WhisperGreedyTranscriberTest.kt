@@ -23,6 +23,7 @@ class WhisperGreedyTranscriberTest {
         assertEquals(listOf(0, 1, 2, 3, 4, 5), network.positions)
         assertEquals(6, result.decoderSteps)
         assertEquals("zh", result.detectedLanguage)
+        assertEquals(AsrTranscriptTermination.END_OF_TEXT, result.termination)
     }
 
     @Test
@@ -43,6 +44,7 @@ class WhisperGreedyTranscriberTest {
         assertEquals(listOf(0), result.tokenIds)
         assertEquals(listOf(10, 11, 12, 13), network.inputTokens)
         assertEquals(4, result.decoderSteps)
+        assertEquals(AsrTranscriptTermination.TOKEN_LIMIT, result.termination)
     }
 
     private fun tokenizer(): WhisperTiktokenTokenizer {

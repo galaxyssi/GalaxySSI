@@ -10,7 +10,7 @@ data class AdaptiveEndpointConfig(
     val maxTrailingSilenceMs: Long = 1_200L,
     val maxDurationMs: Long = 60_000L,
     val preRollMs: Int = 300,
-    val postRollMs: Int = 200
+    val postRollMs: Int = 400
 ) {
     init {
         require(noSpeechTimeoutMs in 1_500L..3_000L)
