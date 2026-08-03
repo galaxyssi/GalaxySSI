@@ -23,6 +23,15 @@ data class PcmCaptureConfig(
     val samplesPerFrame: Int
         get() = (sampleRateHz * frameDurationMs / 1_000).coerceAtLeast(1)
 
+    fun captureSampleRateCandidates(): List<Int> = if (sampleRateHz == WHISPER_SAMPLE_RATE_HZ) {
+        listOf(WHISPER_SAMPLE_RATE_HZ, ANDROID_HIGH_RATE_HZ)
+    } else {
+        listOf(sampleRateHz)
+    }
+
+    fun captureSamplesPerFrame(captureSampleRateHz: Int): Int =
+        (captureSampleRateHz * frameDurationMs / 1_000).coerceAtLeast(1)
+
     init {
         require(sampleRateHz > 0)
         require(frameDurationMs in 10..100)
@@ -31,6 +40,11 @@ data class PcmCaptureConfig(
         require(audioRecordBufferMs in 500..2_000)
         require(framePoolSize >= 4)
         require(outputQueueCapacity >= 1)
+    }
+
+    private companion object {
+        const val WHISPER_SAMPLE_RATE_HZ = 16_000
+        const val ANDROID_HIGH_RATE_HZ = 48_000
     }
 }
 
@@ -67,6 +81,8 @@ data class PcmRecorderState(
     val audioSource: Int? = null,
     val audioSessionId: Int? = null,
     val inputRoute: String = "",
+    val captureSampleRateHz: Int? = null,
+    val outputSampleRateHz: Int? = null,
     val currentAmplitude: Int = 0,
     val capturedSamples: Long = 0L,
     val stopReason: PcmStopReason? = null,
