@@ -7402,9 +7402,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 } else {
                     connectorAction(request, "cloud-models", "Send task to cloud model")
                 }
-            lower.contains("codex") -> connectorAction(request, "codex", "Send task to Codex")
-            lower.contains("claude") -> connectorAction(request, "claude-code", "Send task to Claude Code")
-            lower.contains("hermes") -> connectorAction(request, "hermes", "Send task to Hermes")
+            lower.contains("codex") -> connectorActionForAlias(request, "codex", "Send task to Codex")
+            lower.contains("claude") -> connectorActionForAlias(request, "claude-code", "Send task to Claude Code")
+            lower.contains("hermes") -> connectorActionForAlias(request, "hermes", "Send task to Hermes")
             lower.contains("home assistant") ||
                 lower.contains("smart home") ||
                 lower.contains("device") ||
@@ -7677,7 +7677,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val normalizedGoal = request.goal.lowercase(Locale.US)
         val target = request.targets
             .asSequence()
-            .filter { it.status == AgentConnectorStatus.AVAILABLE }
+            .filter(AgentConnectorRouteSelector::isDeliverable)
             .filter { it.kind != AgentConnectorKind.DEVICE }
             .sortedByDescending { it.title.length }
             .firstOrNull { candidate ->
@@ -7932,6 +7932,22 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 }
             }
         )
+    }
+
+    private fun connectorActionForAlias(
+        request: AgentRequest,
+        alias: String,
+        description: String
+    ): AgentAction {
+        val normalizedAlias = alias.filter(Char::isLetterOrDigit).lowercase(Locale.US)
+        val target = request.targets.firstOrNull { candidate ->
+            AgentConnectorRouteSelector.isDeliverable(candidate) &&
+                candidate.kind != AgentConnectorKind.DEVICE &&
+                listOf(candidate.id, candidate.id.substringAfterLast(':'), candidate.title).any { value ->
+                    value.filter(Char::isLetterOrDigit).lowercase(Locale.US).contains(normalizedAlias)
+                }
+        }
+        return connectorAction(request, target?.id ?: alias, description)
     }
 
     private fun deviceAction(request: AgentRequest): AgentAction {
