@@ -1,5 +1,10 @@
 import Foundation
 
+enum SignalASIQRCodeImport {
+  case desktopPairing(PairingQRCode)
+  case contact(SignalASIFriendRequest)
+}
+
 enum SignalASIContactExchange {
   static let contactType = "signalasi_contact"
   static let hermesContactType = "hermes_contact"
@@ -37,16 +42,32 @@ enum SignalASIContactExchange {
     ]
   }
 
-  static func importContactQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIFriendRequest {
-    guard let data = contents.data(using: .utf8) else {
-      throw SignalASIError.invalidPayload("Contact QR text is not UTF-8.")
-    }
-    let raw = try JSONSerialization.jsonObject(with: data, options: [])
-    guard let object = raw as? [String: Any] else {
-      throw SignalASIError.invalidPayload("Contact QR root must be a JSON object.")
-    }
+  static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
+    let object = try decodeQRCodeObject(contents, label: "QR")
     let type = object.string("type")
-    guard [contactType, hermesContactType, verifyType].contains(type) else {
+    let isPairingQRCode = type == verifyType &&
+      (
+        object.string("protocol") == SignalASILinkProtocol.name ||
+        !object.string("pairing_token").isEmpty ||
+        !object.string("server_route_id").isEmpty
+      )
+    if isPairingQRCode {
+      return .desktopPairing(try SignalASILinkProtocol.validatePairingQRCode(object, now: now))
+    }
+    if isContactQRCodeObject(object) {
+      return .contact(try importContactQRCodeObject(object, now: now))
+    }
+    throw SignalASIError.invalidPayload("Unsupported SignalASI QR code.")
+  }
+
+  static func importContactQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIFriendRequest {
+    let object = try decodeQRCodeObject(contents, label: "Contact QR")
+    return try importContactQRCodeObject(object, now: now)
+  }
+
+  private static func importContactQRCodeObject(_ object: [String: Any], now: Date) throws -> SignalASIFriendRequest {
+    let type = object.string("type")
+    guard isContactQRCodeObject(object) else {
       throw SignalASIError.invalidPayload("Contact QR type is not supported.")
     }
     let fingerprint = object.string("identity_fingerprint").ifBlank(object.string("identity_key_sha256"))
@@ -61,7 +82,14 @@ enum SignalASIContactExchange {
       .ifBlank(object.string("mqtt_inbox_topic"))
       .ifBlank(object.string("mqtt_recv_topic"))
     let name = object.string("name").ifBlank(type == verifyType ? "Hermes" : "Friend")
-    let requestType = type == verifyType ? "hermes" : object.string("contact_type").ifBlank("person")
+    let requestType: String
+    if type == verifyType {
+      requestType = "hermes"
+    } else if type == "agent" || !object.string("agent_kind").isEmpty {
+      requestType = "agent"
+    } else {
+      requestType = object.string("contact_type").ifBlank("person")
+    }
     return SignalASIFriendRequest(
       id: "req_\(Int64(now.timeIntervalSince1970 * 1000))",
       signalASIId: signalASIId,
@@ -75,6 +103,24 @@ enum SignalASIContactExchange {
       source: "qr",
       createdAt: now
     )
+  }
+
+  private static func isContactQRCodeObject(_ object: [String: Any]) -> Bool {
+    let type = object.string("type")
+    return [contactType, hermesContactType, verifyType].contains(type) ||
+      !object.string("signalasi_id").isEmpty ||
+      !object.string("hermes_id").isEmpty
+  }
+
+  private static func decodeQRCodeObject(_ contents: String, label: String) throws -> [String: Any] {
+    guard let data = contents.data(using: .utf8) else {
+      throw SignalASIError.invalidPayload("\(label) text is not UTF-8.")
+    }
+    let raw = try JSONSerialization.jsonObject(with: data, options: [])
+    guard let object = raw as? [String: Any] else {
+      throw SignalASIError.invalidPayload("\(label) root must be a JSON object.")
+    }
+    return object
   }
 
   static func localInboxTopic(serverLinks: [ServerLink]) -> String {

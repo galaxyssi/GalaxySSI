@@ -565,6 +565,7 @@ struct MessageBubble: View {
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var myQRCodePresented = false
   @State private var contactScannerPresented = false
   @State private var contactImportStatus = ""
@@ -686,10 +687,17 @@ struct ContactsView: View {
         MyContactQRCodeView()
       }
       .sheet(isPresented: $contactScannerPresented) {
-        QRCodeScannerView { value in
-          contactScannerPresented = false
-          importContactQR(value)
-        }
+        QRCodeScannerView(
+          onCode: { value in
+            contactScannerPresented = false
+            importScannedQR(value)
+          },
+          onError: { message in
+            contactScannerPresented = false
+            contactImportStatus = message
+            contactImportIsError = true
+          }
+        )
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
@@ -703,12 +711,36 @@ struct ContactsView: View {
       .padding(.top, 2)
   }
 
-  private func importContactQR(_ value: String) {
+  private func importScannedQR(_ value: String) {
     do {
-      let request = try store.importContactQRCodeAsFriendRequest(value)
+      switch try SignalASIContactExchange.classifyQRCode(value) {
+      case .desktopPairing(let pairing):
+        contactImportStatus = String(
+          format: t("signalasi.pairing.desktop_claim_sending", "Adding %@..."),
+          pairing.desktopName
+        )
+        contactImportIsError = false
+        Task { await pairDesktopQRCode(value, desktopName: pairing.desktopName) }
+      case .contact(let request):
+        let stored = store.addFriendRequest(request)
+        contactImportStatus = String(
+          format: t("signalasi.friend_request.added", "Friend request added for %@."),
+          stored.name
+        )
+        contactImportIsError = false
+      }
+    } catch {
+      contactImportStatus = error.localizedDescription
+      contactImportIsError = true
+    }
+  }
+
+  private func pairDesktopQRCode(_ value: String, desktopName: String) async {
+    do {
+      try await coordinator.pair(using: value)
       contactImportStatus = String(
-        format: t("signalasi.friend_request.added", "Friend request added for %@."),
-        request.name
+        format: t("signalasi.pairing.desktop_claim_sent", "%@ added. Waiting for desktop confirmation."),
+        desktopName
       )
       contactImportIsError = false
     } catch {
@@ -894,18 +926,24 @@ struct PairingView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var qrText = ""
   @State private var errorText = ""
+  @State private var pairingNoticeIsError = false
   @State private var scannerPresented = false
+  @State private var pendingPairing: PairingQRCode?
 
   var body: some View {
     NavigationView {
       Form {
-        Section("Desktop") {
+        Section(t("signalasi.pairing.section_desktop", "Desktop")) {
           ForEach(store.serverLinks) { link in
             VStack(alignment: .leading, spacing: 6) {
               HStack {
                 Text(link.desktopName)
                 Spacer()
-                Text(link.paired ? t("Paired", "Paired") : t("Pending", "Pending"))
+                Text(
+                  link.paired
+                    ? t("signalasi.pairing.status_paired", "Paired")
+                    : t("signalasi.pairing.status_pending", "Pending")
+                )
                   .font(.caption)
                   .foregroundColor(link.paired ? .green : .orange)
               }
@@ -918,7 +956,7 @@ struct PairingView: View {
             offsets.map { store.serverLinks[$0].desktopId }.forEach(store.removeServer)
           }
         }
-        Section("QR") {
+        Section(t("signalasi.pairing.section_qr", "QR")) {
           TextEditor(text: $qrText)
             .frame(minHeight: 120)
             .font(.system(.caption, design: .monospaced))
@@ -926,41 +964,104 @@ struct PairingView: View {
             Button {
               scannerPresented = true
             } label: {
-              Label("Scan", systemImage: "qrcode.viewfinder")
+              Label(t("signalasi.pairing.action_scan", "Scan"), systemImage: "qrcode.viewfinder")
             }
             Spacer()
             Button {
               Task { await submitPairing() }
             } label: {
-              Label("Pair", systemImage: "checkmark.shield")
+              Label(t("signalasi.pairing.action_pair", "Pair"), systemImage: "checkmark.shield")
             }
             .disabled(qrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           }
         }
+        if let pendingPairing {
+          Section(t("signalasi.pairing.confirm_title", "Confirm Pairing")) {
+            VStack(alignment: .leading, spacing: 8) {
+              Text(pendingPairing.desktopName)
+                .font(.headline)
+              Text(pendingPairing.desktopId)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+              Text(pendingPairing.desktopFingerprint.chunkedFingerprint)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+              Text(
+                pendingPairing.access.fullDesktopExecutor
+                  ? t("signalasi.pairing.access_full", "Desktop executor")
+                  : t("signalasi.pairing.access_restricted", "Restricted desktop access")
+              )
+              .font(.caption)
+              .foregroundColor(.secondary)
+            }
+            Button {
+              Task { await submitPairing(qrText) }
+            } label: {
+              Label(t("signalasi.pairing.save_trust", "Save Trust"), systemImage: "checkmark.shield")
+            }
+          }
+        }
         if !coordinator.pairingStatus.isEmpty || !errorText.isEmpty {
-          Section("Status") {
+          Section(t("signalasi.pairing.section_status", "Status")) {
             Text(errorText.ifBlank(coordinator.pairingStatus))
-              .foregroundColor(errorText.isEmpty ? .secondary : .red)
+              .foregroundColor(pairingNoticeIsError ? .red : .secondary)
           }
         }
       }
-      .navigationTitle(t("Pairing", "Pairing"))
+      .navigationTitle(t("signalasi.pairing.title", "Pairing"))
       .sheet(isPresented: $scannerPresented) {
-        QRCodeScannerView { value in
-          qrText = value
-          scannerPresented = false
-          Task { await submitPairing() }
-        }
+        QRCodeScannerView(
+          onCode: { value in
+            qrText = value
+            scannerPresented = false
+            handleScannedQR(value)
+          },
+          onError: { message in
+            scannerPresented = false
+            errorText = message
+            pairingNoticeIsError = true
+          }
+        )
       }
     }
   }
 
-  private func submitPairing() async {
+  private func handleScannedQR(_ value: String) {
     do {
       errorText = ""
-      try await coordinator.pair(using: qrText)
+      pairingNoticeIsError = false
+      switch try SignalASIContactExchange.classifyQRCode(value) {
+      case .desktopPairing(let pairing):
+        pendingPairing = pairing
+        errorText = t("signalasi.pairing.ready_to_confirm", "Review fingerprints, then save trust.")
+        pairingNoticeIsError = false
+      case .contact(let request):
+        let stored = store.addFriendRequest(request)
+        pendingPairing = nil
+        errorText = String(
+          format: t("signalasi.friend_request.added", "Friend request added for %@."),
+          stored.name
+        )
+        pairingNoticeIsError = false
+      }
+    } catch {
+      pendingPairing = nil
+      errorText = error.localizedDescription
+      pairingNoticeIsError = true
+    }
+  }
+
+  private func submitPairing(_ contents: String? = nil) async {
+    do {
+      let value = (contents ?? qrText).trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !value.isEmpty else { return }
+      errorText = ""
+      pairingNoticeIsError = false
+      try await coordinator.pair(using: value)
+      pendingPairing = nil
     } catch {
       errorText = error.localizedDescription
+      pairingNoticeIsError = true
     }
   }
 
@@ -2887,21 +2988,72 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
 }
 
 struct QRCodeScannerView: UIViewControllerRepresentable {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var onCode: (String) -> Void
+  var onError: (String) -> Void = { _ in }
+
+  init(
+    onCode: @escaping (String) -> Void,
+    onError: @escaping (String) -> Void = { _ in }
+  ) {
+    self.onCode = onCode
+    self.onError = onError
+  }
 
   func makeUIViewController(context: Context) -> QRScannerViewController {
-    QRScannerViewController(onCode: onCode)
+    QRScannerViewController(
+      onCode: onCode,
+      onError: onError,
+      messages: QRScannerMessages(
+        cameraAccessRequired: t(
+          "signalasi.scanner.camera_access_required",
+          "Camera access is required to scan SignalASI QR codes."
+        ),
+        cameraUnavailable: t(
+          "signalasi.scanner.camera_unavailable",
+          "Camera is unavailable on this device."
+        ),
+        outputUnavailable: t(
+          "signalasi.scanner.output_unavailable",
+          "QR scanner output is unavailable."
+        ),
+        accessUnavailable: t(
+          "signalasi.scanner.access_unavailable",
+          "Camera access is unavailable on this device."
+        )
+      )
+    )
   }
 
   func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+fileprivate struct QRScannerMessages {
+  var cameraAccessRequired: String
+  var cameraUnavailable: String
+  var outputUnavailable: String
+  var accessUnavailable: String
 }
 
 final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
   private let onCode: (String) -> Void
+  private let onError: (String) -> Void
+  private let messages: QRScannerMessages
   private let session = AVCaptureSession()
+  private var configured = false
 
-  init(onCode: @escaping (String) -> Void) {
+  fileprivate init(
+    onCode: @escaping (String) -> Void,
+    onError: @escaping (String) -> Void,
+    messages: QRScannerMessages
+  ) {
     self.onCode = onCode
+    self.onError = onError
+    self.messages = messages
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -2912,14 +3064,45 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
+    prepareCamera()
+  }
+
+  private func prepareCamera() {
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      configureSession()
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
+        DispatchQueue.main.async {
+          guard let self else { return }
+          if allowed {
+            self.configureSession()
+          } else {
+            self.reportScannerError(self.messages.cameraAccessRequired)
+          }
+        }
+      }
+    case .denied, .restricted:
+      reportScannerError(messages.cameraAccessRequired)
+    @unknown default:
+      reportScannerError(messages.accessUnavailable)
+    }
+  }
+
+  private func configureSession() {
+    guard !configured else { return }
     guard let device = AVCaptureDevice.default(for: .video),
           let input = try? AVCaptureDeviceInput(device: device),
           session.canAddInput(input) else {
+      reportScannerError(messages.cameraUnavailable)
       return
     }
     session.addInput(input)
     let output = AVCaptureMetadataOutput()
-    guard session.canAddOutput(output) else { return }
+    guard session.canAddOutput(output) else {
+      reportScannerError(messages.outputUnavailable)
+      return
+    }
     session.addOutput(output)
     output.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
     output.metadataObjectTypes = [.qr]
@@ -2927,7 +3110,24 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     preview.videoGravity = .resizeAspectFill
     preview.frame = view.bounds
     view.layer.addSublayer(preview)
+    configured = true
     session.startRunning()
+  }
+
+  private func reportScannerError(_ message: String) {
+    onError(message)
+    let label = UILabel()
+    label.text = message
+    label.textColor = .white
+    label.textAlignment = .center
+    label.numberOfLines = 0
+    label.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+      label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+      label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+    ])
   }
 
   override func viewDidLayoutSubviews() {
