@@ -11,6 +11,7 @@ extern "C" SIGNALASI_ASR_EXPORT int signalasi_asr_frontend_abi_version() noexcep
 #if defined(__ANDROID__)
 
 #include "streaming_frontend_session.h"
+#include "audio_resampler.h"
 
 #include <jni.h>
 
@@ -29,6 +30,7 @@ using signalasi::asr::FeatureWaitResult;
 using signalasi::asr::FeatureWindowMetadata;
 using signalasi::asr::LogMelExtractor;
 using signalasi::asr::MelFilterBank128;
+using signalasi::asr::Pcm16Resampler;
 using signalasi::asr::StreamingFrontendSession;
 
 constexpr jsize kConfigValueCount = 14;
@@ -46,6 +48,14 @@ StreamingFrontendSession * from_handle(JNIEnv * environment, const jlong handle)
         return nullptr;
     }
     return reinterpret_cast<StreamingFrontendSession *>(static_cast<std::uintptr_t>(handle));
+}
+
+Pcm16Resampler * resampler_from_handle(JNIEnv * environment, const jlong handle) {
+    if (handle == 0) {
+        throw_java(environment, "java/lang/IllegalStateException", "Native ASR resampler is closed");
+        return nullptr;
+    }
+    return reinterpret_cast<Pcm16Resampler *>(static_cast<std::uintptr_t>(handle));
 }
 
 std::string to_string(JNIEnv * environment, jstring value) {
@@ -90,6 +100,79 @@ AudioFrontendConfig parse_config(JNIEnv * environment, jintArray values) {
 }
 
 }  // namespace
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_signalasi_chat_voice_audio_NativePcm16ResamplerBridge_nativeCreate(
+    JNIEnv * environment,
+    jobject,
+    const jint input_sample_rate_hz) {
+    try {
+        auto resampler = std::make_unique<Pcm16Resampler>(input_sample_rate_hz);
+        return static_cast<jlong>(reinterpret_cast<std::uintptr_t>(resampler.release()));
+    } catch (const std::exception & error) {
+        throw_java(environment, "java/lang/IllegalArgumentException", error.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_signalasi_chat_voice_audio_NativePcm16ResamplerBridge_nativeProcess(
+    JNIEnv * environment,
+    jobject,
+    const jlong handle,
+    jobject input,
+    const jint input_sample_count,
+    jobject output,
+    const jint output_capacity_samples) {
+    const auto resampler = resampler_from_handle(environment, handle);
+    if (resampler == nullptr || input == nullptr || output == nullptr ||
+        input_sample_count <= 0 || output_capacity_samples <= 0) {
+        return -1;
+    }
+    const auto input_capacity = environment->GetDirectBufferCapacity(input);
+    const auto output_capacity = environment->GetDirectBufferCapacity(output);
+    const auto * input_samples = static_cast<const std::int16_t *>(
+        environment->GetDirectBufferAddress(input));
+    auto * output_samples = static_cast<std::int16_t *>(
+        environment->GetDirectBufferAddress(output));
+    const auto input_bytes = static_cast<jlong>(input_sample_count) *
+                             static_cast<jlong>(sizeof(std::int16_t));
+    const auto output_bytes = static_cast<jlong>(output_capacity_samples) *
+                              static_cast<jlong>(sizeof(std::int16_t));
+    if (input_samples == nullptr || output_samples == nullptr ||
+        input_capacity < input_bytes || output_capacity < output_bytes) {
+        throw_java(environment,
+                   "java/lang/IllegalArgumentException",
+                   "ASR resampler buffers must be direct PCM16 buffers");
+        return -1;
+    }
+    std::size_t produced = 0;
+    if (!resampler->process(
+            input_samples,
+            static_cast<std::size_t>(input_sample_count),
+            output_samples,
+            static_cast<std::size_t>(output_capacity_samples),
+            &produced)) {
+        throw_java(environment, "java/lang/IllegalStateException", "Native ASR resampling failed");
+        return -1;
+    }
+    if (produced > static_cast<std::size_t>(output_capacity_samples)) {
+        throw_java(environment,
+                   "java/lang/IllegalStateException",
+                   "Native ASR resampler exceeded the output buffer capacity");
+        return -1;
+    }
+    return static_cast<jint>(produced);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_signalasi_chat_voice_audio_NativePcm16ResamplerBridge_nativeDestroy(
+    JNIEnv *,
+    jobject,
+    const jlong handle) {
+    if (handle == 0) return;
+    delete reinterpret_cast<Pcm16Resampler *>(static_cast<std::uintptr_t>(handle));
+}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeCreate(

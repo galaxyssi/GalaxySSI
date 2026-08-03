@@ -60,7 +60,7 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
             capacity = config.outputQueueCapacity,
             onUndeliveredElement = AudioFrame::close
         )
-        val (record, source) = try {
+        val opened = try {
             openAudioRecord(config)
         } catch (error: Throwable) {
             state = state.copy(
@@ -71,6 +71,7 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
             channel.close(error)
             throw error
         }
+        val record = opened.record
         val route = routeLabel(record.routedDevice)
         try {
             activeRecord = record
@@ -93,12 +94,14 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         running.set(true)
         state = PcmRecorderState(
             phase = PcmRecorderPhase.RECORDING,
-            audioSource = source,
+            audioSource = opened.audioSource,
             audioSessionId = record.audioSessionId,
-            inputRoute = route
+            inputRoute = route,
+            captureSampleRateHz = opened.captureSampleRateHz,
+            outputSampleRateHz = config.sampleRateHz
         )
         captureThread = thread(start = true, name = "signalasi-pcm-capture") {
-            captureLoop(record, config, framePool, channel)
+            captureLoop(record, opened.captureSampleRateHz, config, framePool, channel)
         }
         channel.receiveAsFlow()
     }
@@ -125,50 +128,68 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
     override fun currentState(): PcmRecorderState = state
 
     @SuppressLint("MissingPermission")
-    private fun openAudioRecord(config: PcmCaptureConfig): Pair<AudioRecord, Int> {
-        val minBuffer = AudioRecord.getMinBufferSize(
-            config.sampleRateHz,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuffer <= 0) {
-            throw PcmCaptureException("unsupported_audio_format", "16 kHz mono PCM capture is unavailable")
-        }
+    private fun openAudioRecord(config: PcmCaptureConfig): OpenedAudioRecord {
         var lastFailure: Throwable? = null
-        config.preferredAudioSources.distinct().forEach { source ->
-            val candidate = runCatching {
-                AudioRecord.Builder()
-                    .setAudioSource(source)
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setSampleRate(config.sampleRateHz)
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                            .build()
+        for (source in config.preferredAudioSources.distinct()) {
+            for (requestedRate in config.captureSampleRateCandidates()) {
+                val minBuffer = AudioRecord.getMinBufferSize(
+                    requestedRate,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+                if (minBuffer <= 0) {
+                    lastFailure = PcmCaptureException(
+                        "unsupported_audio_format",
+                        "$requestedRate Hz mono PCM capture is unavailable"
                     )
-                    .setBufferSizeInBytes(maxOf(
-                        minBuffer,
-                        config.sampleRateHz * PCM16_BYTES_PER_SAMPLE * config.audioRecordBufferMs / 1_000
-                    ))
-                    .build()
-            }.getOrElse {
-                lastFailure = it
-                return@forEach
-            }
-            if (candidate.state != AudioRecord.STATE_INITIALIZED) {
+                    continue
+                }
+                val candidate = try {
+                    AudioRecord.Builder()
+                        .setAudioSource(source)
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setSampleRate(requestedRate)
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                                .build()
+                        )
+                        .setBufferSizeInBytes(maxOf(
+                            minBuffer,
+                            requestedRate * PCM16_BYTES_PER_SAMPLE * config.audioRecordBufferMs / 1_000
+                        ))
+                        .build()
+                } catch (error: Throwable) {
+                    lastFailure = error
+                    continue
+                }
+                if (candidate.state != AudioRecord.STATE_INITIALIZED) {
+                    candidate.release()
+                    lastFailure = PcmCaptureException(
+                        "audio_record_uninitialized",
+                        "AudioRecord initialization failed"
+                    )
+                    continue
+                }
+                val actualRate = candidate.sampleRate
+                if (actualRate !in config.captureSampleRateCandidates()) {
+                    candidate.release()
+                    lastFailure = PcmCaptureException(
+                        "unsupported_capture_rate",
+                        "AudioRecord selected unsupported sample rate $actualRate Hz"
+                    )
+                    continue
+                }
+                val started = runCatching {
+                    candidate.startRecording()
+                    candidate.recordingState == AudioRecord.RECORDSTATE_RECORDING
+                }.getOrElse {
+                    lastFailure = it
+                    false
+                }
+                if (started) return OpenedAudioRecord(candidate, source, actualRate)
                 candidate.release()
-                lastFailure = PcmCaptureException("audio_record_uninitialized", "AudioRecord initialization failed")
-                return@forEach
             }
-            val started = runCatching {
-                candidate.startRecording()
-                candidate.recordingState == AudioRecord.RECORDSTATE_RECORDING
-            }.getOrElse {
-                lastFailure = it
-                false
-            }
-            if (started) return candidate to source
-            candidate.release()
         }
         throw PcmCaptureException(
             "audio_record_start_failed",
@@ -179,11 +200,18 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
 
     private fun captureLoop(
         record: AudioRecord,
+        captureSampleRateHz: Int,
         config: PcmCaptureConfig,
         pool: PcmFramePool,
         channel: Channel<AudioFrame>
     ) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+        val captureSamplesPerFrame = config.captureSamplesPerFrame(captureSampleRateHz)
+        val captureBuffer = if (captureSampleRateHz == config.sampleRateHz) null else {
+            ByteBuffer.allocateDirect(captureSamplesPerFrame * PCM16_BYTES_PER_SAMPLE)
+                .order(ByteOrder.LITTLE_ENDIAN)
+        }
+        var resampler: NativePcm16Resampler? = null
         val discardBuffer = PcmFrameStorage(
             samples = ShortArray(config.samplesPerFrame),
             pcm16 = ByteBuffer.allocateDirect(config.samplesPerFrame * PCM16_BYTES_PER_SAMPLE)
@@ -200,13 +228,17 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         var lastFrameAtNs = 0L
         var failure: Throwable? = null
         try {
+            if (captureSampleRateHz != config.sampleRateHz) {
+                resampler = NativePcm16Resampler.open(captureSampleRateHz)
+            }
             while (running.get()) {
                 val pooled = pool.acquire()
                 val target = pooled ?: discardBuffer
-                target.pcm16.clear()
+                val input = captureBuffer ?: target.pcm16
+                input.clear()
                 val bytesRead = record.read(
-                    target.pcm16,
-                    config.samplesPerFrame * PCM16_BYTES_PER_SAMPLE,
+                    input,
+                    captureSamplesPerFrame * PCM16_BYTES_PER_SAMPLE,
                     AudioRecord.READ_BLOCKING
                 )
                 val capturedAtNs = SystemClock.elapsedRealtimeNanos()
@@ -216,14 +248,35 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
                             pooled?.let(pool::release)
                             throw PcmCaptureException("unaligned_pcm_read", "AudioRecord returned incomplete PCM16 data")
                         }
-                        val read = bytesRead / PCM16_BYTES_PER_SAMPLE
+                        val capturedInputSamples = bytesRead / PCM16_BYTES_PER_SAMPLE
+                        input.position(0)
+                        input.limit(bytesRead)
+                        val activeResampler = resampler
+                        val read = if (activeResampler == null) {
+                            capturedInputSamples
+                        } else {
+                            target.pcm16.clear()
+                            activeResampler.process(
+                                input,
+                                capturedInputSamples,
+                                target.pcm16,
+                                config.samplesPerFrame
+                            )
+                        }
+                        if (read == 0) {
+                            pooled?.let(pool::release)
+                            zeroReads += 1
+                            continue
+                        }
                         target.pcm16.position(0)
-                        target.pcm16.limit(bytesRead)
+                        target.pcm16.limit(read * PCM16_BYTES_PER_SAMPLE)
                         target.pcm16.duplicate()
                             .order(ByteOrder.LITTLE_ENDIAN)
                             .asShortBuffer()
                             .get(target.samples, 0, read)
-                        if (read < config.samplesPerFrame) shortReads += 1
+                        if (capturedInputSamples < captureSamplesPerFrame || read < config.samplesPerFrame) {
+                            shortReads += 1
+                        }
                         if (lastFrameAtNs > 0L && capturedAtNs - lastFrameAtNs > config.frameDurationMs * 3_000_000L) {
                             suspectedOverruns += 1
                         }
@@ -304,6 +357,7 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         } finally {
             failure = failure ?: terminalFailure
             running.set(false)
+            runCatching { resampler?.close() }
             unregisterSilenceMonitor()
             releaseEffects()
             runCatching {
@@ -402,4 +456,10 @@ class AndroidPcmRecorder(context: Context) : PcmRecorder {
         const val STOP_FORCE_JOIN_TIMEOUT_MS = 250L
         const val PCM16_BYTES_PER_SAMPLE = 2
     }
+
+    private data class OpenedAudioRecord(
+        val record: AudioRecord,
+        val audioSource: Int,
+        val captureSampleRateHz: Int
+    )
 }
