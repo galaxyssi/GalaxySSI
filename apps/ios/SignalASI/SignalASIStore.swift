@@ -795,7 +795,7 @@ final class SignalASIStore: ObservableObject {
       name: request.name,
       displayName: request.name,
       type: request.type.ifBlank("person"),
-      agentKind: request.type == "hermes" ? "desktop-agent" : "person",
+      agentKind: agentKind(forFriendRequestType: request.type),
       deliveryMode: .link,
       trustState: .verified,
       desktopId: "",
@@ -814,7 +814,7 @@ final class SignalASIStore: ObservableObject {
     next.name = request.name
     next.displayName = request.name
     next.type = request.type.ifBlank("person")
-    next.agentKind = request.type == "hermes" ? "desktop-agent" : "person"
+    next.agentKind = agentKind(forFriendRequestType: request.type)
     next.deliveryMode = .link
     next.trustState = .verified
     next.identityFingerprint = request.identityFingerprint
@@ -996,6 +996,7 @@ final class SignalASIStore: ObservableObject {
     hermes.setupDetail = link.paired ? "SignalASI Link is paired" : "Waiting for desktop confirmation"
     hermes.updatedAt = Date()
     upsert(hermes)
+    upsertDesktopAgentContacts(from: pairing, link: link)
     save()
     return link
   }
@@ -1015,6 +1016,16 @@ final class SignalASIStore: ObservableObject {
       hermes.updatedAt = Date()
       upsert(hermes)
     }
+    for contactIndex in contacts.indices {
+      guard contacts[contactIndex].desktopId == desktopId,
+            contacts[contactIndex].type == "agent" else {
+        continue
+      }
+      contacts[contactIndex].trustState = .verified
+      contacts[contactIndex].setupStatus = "ready"
+      contacts[contactIndex].setupDetail = "SignalASI Link is paired"
+      contacts[contactIndex].updatedAt = Date()
+    }
     save()
   }
 
@@ -1027,6 +1038,120 @@ final class SignalASIStore: ObservableObject {
       upsert(hermes)
     }
     save()
+  }
+
+  private func upsertDesktopAgentContacts(from pairing: PairingQRCode, link: ServerLink) {
+    desktopAgentPayloads(from: pairing, link: link).forEach { payload in
+      let agentId = desktopAgentId(from: payload)
+      guard !agentId.isEmpty, agentId != "hermes", agentId != "cloud-model",
+            payload.string("kind") != "cloud-model" else {
+        return
+      }
+      let rawId = payload.string("id")
+      let contactId: String
+      if rawId.contains(":"), rawId.hasPrefix(link.desktopId) || rawId.hasPrefix("desktop_") {
+        contactId = rawId
+      } else {
+        contactId = "\(link.desktopId):\(agentId)"
+      }
+      let agentName = payload.string("name").ifBlank(agentId)
+      let displayName = payload.string("display_name").ifBlank("\(agentName) - \(link.desktopName)")
+      let kind = payload.string("kind").ifBlank("custom-cli")
+      let now = Date()
+      var contact = contact(id: contactId) ?? SignalASIContact(
+        id: contactId,
+        signalASIId: contactId,
+        name: displayName,
+        displayName: displayName,
+        type: "agent",
+        agentKind: kind,
+        deliveryMode: .link,
+        trustState: link.paired ? .verified : .unverified,
+        desktopId: link.desktopId,
+        desktopName: link.desktopName,
+        identityFingerprint: link.desktopFingerprint,
+        setupStatus: link.paired ? "ready" : "pairing",
+        setupDetail: link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
+        cloudProvider: "",
+        cloudModels: [],
+        selectedCloudModelId: "",
+        deleted: false,
+        createdAt: now,
+        updatedAt: now
+      )
+      contact.signalASIId = contactId
+      contact.name = displayName
+      contact.displayName = displayName
+      contact.type = "agent"
+      contact.agentKind = kind
+      contact.deliveryMode = .link
+      contact.trustState = link.paired ? .verified : .unverified
+      contact.desktopId = link.desktopId
+      contact.desktopName = link.desktopName
+      contact.identityFingerprint = link.desktopFingerprint
+      contact.setupStatus = payload.string("status").ifBlank(link.paired ? "ready" : "pairing")
+      contact.setupDetail = payload.string("detail").ifBlank(
+        link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
+      )
+      contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link.routes.upTopic)
+      contact.mqttInboxTopic = link.routes.downTopic
+      contact.deleted = false
+      contact.deletedAt = nil
+      contact.updatedAt = now
+      upsert(contact)
+    }
+  }
+
+  private func desktopAgentPayloads(from pairing: PairingQRCode, link: ServerLink) -> [[String: Any]] {
+    if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
+      return agents
+    }
+    let fallbackAgents = [
+      ("hermes", "Hermes Agent", "local-cli"),
+      ("codex", "Codex Agent", "local-cli"),
+      ("claude", "Claude Code", "local-cli"),
+      ("openclaw", "OpenClaw", "local-cli"),
+      ("local-llm", "Local LLM", "local-model"),
+      ("custom-agent", "Custom Agent", "custom-cli")
+    ]
+    return fallbackAgents.map { agent in
+      let (agentId, name, kind) = agent
+      let payload: [String: Any] = [
+        "id": "\(link.desktopId):\(agentId)",
+        "agent_id": agentId,
+        "name": name,
+        "display_name": "\(name) - \(link.desktopName)",
+        "kind": kind,
+        "desktop_id": link.desktopId,
+        "desktop_name": link.desktopName,
+        "desktop_fingerprint": link.desktopFingerprint,
+        "desktop_access_profile": link.accessProfile,
+        "desktop_access_scopes": Array(link.accessScopes).sorted(),
+        "status": link.paired ? "ready" : "pairing",
+        "detail": link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
+        "setup": "",
+        "mqtt_topic": link.routes.upTopic,
+        "updated_at": Int64(Date().timeIntervalSince1970 * 1000)
+      ]
+      return payload
+    }
+  }
+
+  private func desktopAgentId(from payload: [String: Any]) -> String {
+    payload.string("agent_id")
+      .ifBlank(payload.string("mobile_contact_id"))
+      .ifBlank(payload.string("id").split(separator: ":").last.map(String.init) ?? "")
+  }
+
+  private func agentKind(forFriendRequestType type: String) -> String {
+    switch type {
+    case "hermes":
+      return "desktop-agent"
+    case "agent":
+      return "contact-agent"
+    default:
+      return "person"
+    }
   }
 
   private func resetToFreshState() {

@@ -113,6 +113,22 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.profile.identityFingerprint.count == 64)
   }
 
+  func testAddServerLinkCreatesAndroidParityDesktopAgents() throws {
+    let store = makeStore()
+
+    let link = try store.addServerLink(from: makePairingQRCode())
+
+    XCTAssertNotNil(store.contact(id: "\(link.desktopId):codex"))
+    XCTAssertNotNil(store.contact(id: "\(link.desktopId):claude"))
+    XCTAssertEqual(store.contact(id: "\(link.desktopId):local-llm")?.agentKind, "local-model")
+    XCTAssertEqual(store.contact(id: "\(link.desktopId):codex")?.trustState, .unverified)
+
+    store.markServerPaired(desktopId: link.desktopId)
+
+    XCTAssertEqual(store.contact(id: "\(link.desktopId):codex")?.trustState, .verified)
+    XCTAssertEqual(store.contact(id: "\(link.desktopId):codex")?.setupStatus, "ready")
+  }
+
   func testContactSearchMatchesAndroidNameAndIdFiltering() throws {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(signalASIId: "friend-alice", name: "Alice"))
