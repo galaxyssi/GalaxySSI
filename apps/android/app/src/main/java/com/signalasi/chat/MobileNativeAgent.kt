@@ -40,6 +40,8 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 
 private const val INTERNAL_CONVERSATION_ID = "_signalasi_conversation_id"
 private const val INTERNAL_CONVERSATION_CONTEXT = "_signalasi_conversation_context"
@@ -1632,6 +1634,7 @@ class MobileNativeAgent(
         turnId: String = "",
         executionMode: AgentTaskExecutionMode? = null
     ): AgentUiState {
+        val submitStartedAt = SystemClock.elapsedRealtime()
         PhoneExecutionAuthority.clearCancellation(sessionId)
         val requestedGoal = goal.trim()
         activeConversationContext = conversationContext
@@ -1657,6 +1660,11 @@ class MobileNativeAgent(
 
         return try {
             if (!startExecutionLoop(turnId)) return snapshot()
+            Log.i(
+                "SignalASILatency",
+                "agent_execute stage=loop_started turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - submitStartedAt}"
+            )
             reconcileExecutionLoop(executeSubmittedGoal())
         } catch (failure: CancellationException) {
             runCatching {
@@ -2151,6 +2159,7 @@ class MobileNativeAgent(
         userConfirmed: Boolean,
         retrying: Boolean = false
     ): AgentUiState {
+        val executionStartedAt = SystemClock.elapsedRealtime()
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
         val hardenedAction = hardenedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
         val reviewedPlan = hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan, sessionId))
@@ -2190,6 +2199,11 @@ class MobileNativeAgent(
         ) {
             return snapshot()
         }
+        Log.i(
+            "SignalASILatency",
+            "agent_execute stage=act_recorded action=${hardenedAction.id.take(24)} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
+        )
         phase = AgentPhase.EXECUTING
         currentPlan = reviewedPlan.markAction(hardenedAction.id, AgentActionStatus.RUNNING)
         if (AgentScreenObservationPolicy.requiresObservation(currentGoal, hardenedAction)) {
@@ -2205,6 +2219,11 @@ class MobileNativeAgent(
         recordAudit(
             AgentAuditEvent.CHECKPOINT_SAVED,
             "checkpoint=${checkpoint.id}; action=${hardenedAction.id}; rollback=${checkpoint.rollbackAction != null}"
+        )
+        Log.i(
+            "SignalASILatency",
+            "agent_execute stage=checkpoint_recorded action=${hardenedAction.id.take(24)} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
         )
         val materializedAction = currentPlan?.materializeToolInput(
             action = hardenedAction,
@@ -2228,6 +2247,11 @@ class MobileNativeAgent(
             AgentAuditEvent.TOOL_STARTED,
             "action=${hardenedAction.id}; kind=${hardenedAction.kind}; target=${hardenedAction.target.take(160)}" +
                 displayCommand.takeIf(String::isNotBlank)?.let { "; command=${it.take(200)}" }.orEmpty()
+        )
+        Log.i(
+            "SignalASILatency",
+            "agent_execute stage=dispatch_start action=${hardenedAction.id.take(24)} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
         )
         lastActionResult = executeAction(executionAction, currentScreen, userConfirmed)
         val dispatchAwaitingResponse = lastActionResult?.metadata?.get("awaiting_response") == "true"
@@ -7880,6 +7904,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             parameters = buildMap {
                 put("connector_id", connectorId)
                 put("prompt", request.goal)
+                target?.let { callable ->
+                    put("connector_kind", callable.kind.name.lowercase(Locale.ROOT))
+                    put("connector_adapter_type", callable.adapterType)
+                    put("connector_failure_domain", callable.failureDomain)
+                }
                 put(
                     "_signalasi_desktop_executor_full",
                     (target?.desktopAccessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
@@ -9394,11 +9423,16 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     "routing_fallback_ids" to connectorIds.drop(index + 1).joinToString(",")
                 )
             )
+            val selectedAdapterType = action.parameters["connector_adapter_type"].orEmpty()
+                .takeIf { connectorId == action.parameters["connector_id"] }
+                .orEmpty()
             val result = when {
                 connectorId == "local-llm" ->
                     dispatchLocalModelTask(routedAction, prompt)
                 connectorAliases("cloud-models").any { it == connectorId } ->
                     dispatchCloudModelTask(routedAction, prompt)
+                selectedAdapterType == "cloud-model-api" ->
+                    dispatchCloudModelTask(routedAction, prompt, connectorId)
                 AppStore.isCloudApiContact(context, connectorId) ->
                     dispatchCloudModelTask(routedAction, prompt, connectorId)
                 else -> {
@@ -9874,6 +9908,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         prompt: String,
         preferredContactId: String = ""
     ): AgentActionResult {
+        val dispatchStartedAt = SystemClock.elapsedRealtime()
         val deliveryMode = deliveryMode(action)
         val observationTargetId = action.parameters["connector_id"].orEmpty()
             .ifBlank { preferredContactId }
@@ -9928,13 +9963,24 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 .put("stage", "route_selected")
                 .put("at", System.currentTimeMillis())
                 .put("detail", selectedModel.optString("cloud_model")))
-        val messageId = ChatHistoryStore.appendOutgoing(
-            context = context,
-            contactId = contactId,
-            content = historyPrompt,
-            deliveryStatus = context.getString(R.string.delivery_status_requesting),
-            deliveryTrace = trace
+        val historyStartedAt = SystemClock.elapsedRealtime()
+        val messageId = ChatHistoryStore.reserveMessageId(context)
+        Log.i(
+            "SignalASILatency",
+            "agent_cloud stage=history_reserved source=$messageId " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - historyStartedAt}"
         )
+        val outgoingHistoryWrite = FutureTask<Long> {
+            ChatHistoryStore.appendOutgoingReserved(
+                context = context,
+                messageId = messageId,
+                contactId = contactId,
+                content = historyPrompt,
+                deliveryStatus = context.getString(R.string.delivery_status_requesting),
+                deliveryTrace = trace
+            )
+        }
+        Thread(outgoingHistoryWrite, "signalasi-cloud-history-$messageId").start()
         val observed = observationContextStore.peek(observationTargetId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         Thread {
@@ -9958,6 +10004,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 Log.i(
                     "SignalASILatency",
                     "agent_cloud stage=request_start source=$messageId model=${model.optString("cloud_model")} " +
+                        "dispatch_elapsed_ms=${SystemClock.elapsedRealtime() - dispatchStartedAt} " +
                         "prompt_chars=${modelPrompt.length} prompt_tokens=${ConversationContextCompactor.estimateTokens(modelPrompt)}"
                 )
                 runCatching {
@@ -10083,6 +10130,41 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     lastError?.message?.take(220) ?: appContext.getString(R.string.cloud_unknown_error)
                 )
             }
+            AgentConnectorResponseBus.publish(
+                appContext,
+                AgentConnectorResponse(
+                    sourceMessageId = messageId,
+                    contactId = contactId,
+                    content = reply,
+                    success = succeeded,
+                    inputTokens = successfulUsage.inputTokens,
+                    outputTokens = successfulUsage.outputTokens,
+                    costMicros = successfulUsage.costMicros
+                )
+            )
+            val outgoingPersisted = runCatching {
+                outgoingHistoryWrite.get(10L, TimeUnit.SECONDS) == messageId
+            }.getOrElse { error ->
+                Log.w(
+                    "SignalASILatency",
+                    "agent_cloud stage=history_retry source=$messageId reason=${error.message.orEmpty().take(120)}"
+                )
+                runCatching {
+                    ChatHistoryStore.appendOutgoingReserved(
+                        context = appContext,
+                        messageId = messageId,
+                        contactId = contactId,
+                        content = historyPrompt,
+                        deliveryStatus = appContext.getString(R.string.delivery_status_requesting),
+                        deliveryTrace = trace
+                    ) == messageId
+                }.getOrDefault(false)
+            }
+            Log.i(
+                "SignalASILatency",
+                "agent_cloud stage=history_persisted source=$messageId success=$outgoingPersisted " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - historyStartedAt}"
+            )
             ChatHistoryStore.markOutgoingDelivery(
                 context = appContext,
                 contactId = contactId,
@@ -10101,18 +10183,6 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     .put("content", reply)
                     .put("delivery_trace", trace)
                     .toString()
-            )
-            AgentConnectorResponseBus.publish(
-                appContext,
-                AgentConnectorResponse(
-                    sourceMessageId = messageId,
-                    contactId = contactId,
-                    content = reply,
-                    success = succeeded,
-                    inputTokens = successfulUsage.inputTokens,
-                    outputTokens = successfulUsage.outputTokens,
-                    costMicros = successfulUsage.costMicros
-                )
             )
         }.start()
         return AgentActionResult(

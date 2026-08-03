@@ -98,11 +98,34 @@ object ChatHistoryStore {
         val appContext = context.applicationContext
         AppStore.ensureInitialized(appContext)
         val nextId = database(appContext).reserveMessageId()
+        return appendOutgoingReserved(
+            context = appContext,
+            messageId = nextId,
+            contactId = contactId,
+            content = cleanContent,
+            deliveryStatus = deliveryStatus,
+            deliveryTrace = deliveryTrace
+        )
+    }
+
+    @Synchronized
+    internal fun appendOutgoingReserved(
+        context: Context,
+        messageId: Long,
+        contactId: String,
+        content: String,
+        deliveryStatus: String = "",
+        deliveryTrace: JSONArray = JSONArray()
+    ): Long {
+        val cleanContent = content.trim()
+        if (messageId <= 0L || contactId.isBlank() || cleanContent.isBlank()) return 0L
+        val appContext = context.applicationContext
+        AppStore.ensureInitialized(appContext)
         val trace = copyArray(deliveryTrace)
         appendTrace(trace, "created", "agent_runtime")
         val timestamp = System.currentTimeMillis()
         val message = JSONObject()
-            .put("id", nextId)
+            .put("id", messageId)
             .put("content", cleanContent)
             .put("isMine", true)
             .put("contactId", contactId)
@@ -123,13 +146,13 @@ object ChatHistoryStore {
             appContext,
             contactId,
             contactName,
-            nextId,
+            messageId,
             cleanContent,
             GlobalConversationActor.USER,
             timestamp,
             mapOf("direction" to "outgoing")
         )
-        return nextId
+        return messageId
     }
 
     @Synchronized
