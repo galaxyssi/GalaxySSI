@@ -259,6 +259,9 @@ object AppStore {
                 contact.optString("id").ifBlank { signalasiIdOf(contact) }
                     .takeIf(String::isNotBlank)
                     ?.let(deletedContactIds::add)
+                if (isTarget && contact.optString("delivery_mode") == "cloud_api") {
+                    clearCloudProviderCredentials(contact)
+                }
                 contact.put("deleted", true)
                 contact.put("trust_state", "deleted")
                 contact.put("deleted_at", System.currentTimeMillis())
@@ -371,17 +374,26 @@ object AppStore {
             .put("created_at", contact.optLong("created_at", now))
             .put("deleted", false)
         val models = contact.optJSONArray("cloud_models") ?: JSONArray().also { contact.put("cloud_models", it) }
-        putUniqueCloudModel(models, cloudModelEntry(displayName.ifBlank { modelId }, modelId, endpoint, apiKey, apiStyle, now))
-        if (contact.optString("selected_cloud_model").isBlank()) {
-            contact.put("selected_cloud_model", modelId)
-        }
-        applySelectedCloudModelFields(contact)
+        configureCloudProviderModel(
+            contact = contact,
+            model = cloudModelEntry(
+                displayName.ifBlank { modelId },
+                modelId,
+                endpoint,
+                apiKey.trim(),
+                apiStyle,
+                now
+            ),
+            selectedModelId = modelId,
+            updatedAt = now
+        )
         if (existingIndex == null) {
             upsertContact(contacts, contact)
         } else {
             contacts.put(existingIndex, contact)
         }
         writeArray(context, KEY_CONTACTS, contacts)
+        AgentResourceHealthStore(context).markAvailable("target:$contactId")
         return JSONObject(contact.toString())
     }
     fun isCloudApiContact(context: Context, hermesId: String): Boolean {
@@ -1411,6 +1423,45 @@ object AppStore {
             if (model.optString("model_id") == modelId) return model
         }
         return null
+    }
+
+    internal fun configureCloudProviderModel(
+        contact: JSONObject,
+        model: JSONObject,
+        selectedModelId: String,
+        updatedAt: Long
+    ): JSONObject {
+        val models = contact.optJSONArray("cloud_models")
+            ?: JSONArray().also { contact.put("cloud_models", it) }
+        putUniqueCloudModel(models, JSONObject(model.toString()))
+        val providerCredential = model.optString("api_key").trim()
+        for (index in 0 until models.length()) {
+            models.optJSONObject(index)?.apply {
+                put("api_key", providerCredential)
+                put("updated_at", updatedAt)
+            }
+        }
+        contact.put("selected_cloud_model", selectedModelId)
+        contact.put("deleted", false)
+        contact.remove("deleted_at")
+        applySelectedCloudModelFields(contact)
+        contact.put(
+            "setup_status",
+            if (CloudModelCredentialPolicy.isStoredCredential(providerCredential)) "ready" else "needs_setup"
+        )
+        return contact
+    }
+
+    internal fun clearCloudProviderCredentials(contact: JSONObject): JSONObject {
+        contact.remove("cloud_api_key")
+        val models = contact.optJSONArray("cloud_models")
+        if (models != null) {
+            for (index in 0 until models.length()) {
+                models.optJSONObject(index)?.remove("api_key")
+            }
+        }
+        contact.put("setup_status", "needs_setup")
+        return contact
     }
 
     private fun applySelectedCloudModelFields(contact: JSONObject) {
