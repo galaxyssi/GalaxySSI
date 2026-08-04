@@ -551,6 +551,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_system_status_title", "System Status"),
+              subtitle: t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+              systemImage: "info.circle",
+              tint: .signalASIAccent
+            ) {
+              SignalASISystemStatusView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",
