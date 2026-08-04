@@ -18,6 +18,20 @@ class QnnHtpSessionPolicyTest {
         assertEquals("0", enabled["offload_graph_io_quantization"])
         assertEquals("1", enabled[QnnHtpSessionPolicy.SHARED_MEMORY_OPTION])
         assertEquals("0", disabled[QnnHtpSessionPolicy.SHARED_MEMORY_OPTION])
+        assertEquals("burst", enabled[QnnHtpSessionPolicy.PERFORMANCE_MODE_OPTION])
+        assertEquals("high", enabled[QnnHtpSessionPolicy.CONTEXT_PRIORITY_OPTION])
+        assertEquals("100", enabled[QnnHtpSessionPolicy.RPC_CONTROL_LATENCY_OPTION])
+    }
+
+    @Test
+    fun keepsEachInferenceInBurstModeWithLowRpcLatency() {
+        assertEquals(
+            mapOf(
+                QnnHtpSessionPolicy.RUN_PERFORMANCE_MODE_OPTION to "burst",
+                QnnHtpSessionPolicy.RUN_RPC_CONTROL_LATENCY_OPTION to "100"
+            ),
+            QnnHtpSessionPolicy.runConfigEntries
+        )
     }
 
     @Test

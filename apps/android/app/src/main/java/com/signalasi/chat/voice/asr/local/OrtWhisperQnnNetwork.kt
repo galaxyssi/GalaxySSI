@@ -164,6 +164,9 @@ internal class OrtWhisperQnnNetwork private constructor(
         outputs: Map<String, OnnxTensor>
     ) {
         OrtSession.RunOptions().use { options ->
+            QnnHtpSessionPolicy.runConfigEntries.forEach { (key, value) ->
+                options.addRunConfigEntry(key, value)
+            }
             check(activeRunOptions.compareAndSet(null, options)) { "A QNN run is already active" }
             try {
                 // Every model output is pre-bound to a persistent tensor. Requested outputs must
