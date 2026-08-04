@@ -10,6 +10,47 @@ import org.junit.Test
 
 class AgentSystemToolPlannerTest {
     @Test
+    fun preselectsReadOnlyCloudConversationWithoutFullModelPlanning() {
+        val cloud = AgentCallableTarget(
+            id = "cloud-models",
+            title = "Cloud Models",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING)
+        )
+        val request = request(
+            "Explain why the sky is blue",
+            ScreenContext(foregroundApp = "", pageTitle = ""),
+            emptyList(),
+            listOf(cloud)
+        )
+
+        val action = RuleBasedAgentPlanner().directInformationConnectorAction(request)
+
+        assertEquals(AgentActionKind.CALL_CONNECTOR, action?.kind)
+        assertEquals("cloud-models", action?.parameters?.get("connector_id"))
+    }
+
+    @Test
+    fun doesNotPreselectConnectorForPhoneDevelopmentTask() {
+        val cloud = AgentCallableTarget(
+            id = "cloud-models",
+            title = "Cloud Models",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING, AgentCapability.CODE)
+        )
+        val request = request(
+            "Write a Python program and verify it on this phone",
+            ScreenContext(foregroundApp = "", pageTitle = ""),
+            emptyList(),
+            listOf(cloud)
+        )
+
+        assertEquals(null, RuleBasedAgentPlanner().directInformationConnectorAction(request))
+    }
+
+    @Test
     fun routesSmallChinesePythonWorkToThePhoneRuntime() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val runtime = nativeDescriptor(
