@@ -1824,10 +1824,32 @@ final class SignalASIStore: ObservableObject {
   func removeServer(desktopId: String) {
     serverLinks.removeAll { $0.desktopId == desktopId }
     if var hermes = contact(id: "hermes") {
-      hermes.trustState = .unverified
-      hermes.setupStatus = "needs_pairing"
-      hermes.setupDetail = "Waiting for SignalASI Desktop pairing"
+      if let activeLink = serverLinks.first(where: \.paired) ?? serverLinks.first {
+        hermes.trustState = activeLink.paired ? .verified : .unverified
+        hermes.identityFingerprint = activeLink.desktopFingerprint
+        hermes.desktopId = activeLink.desktopId
+        hermes.desktopName = activeLink.desktopName
+        hermes.setupStatus = activeLink.paired ? "ready" : "pairing"
+        hermes.setupDetail = activeLink.paired ? "SignalASI Link is paired" : "Waiting for desktop confirmation"
+      } else {
+        hermes.trustState = .unverified
+        hermes.desktopId = ""
+        hermes.desktopName = ""
+        hermes.setupStatus = "needs_pairing"
+        hermes.setupDetail = "Waiting for SignalASI Desktop pairing"
+      }
+      hermes.updatedAt = Date()
       upsert(hermes)
+    }
+    for contactIndex in contacts.indices {
+      guard contacts[contactIndex].desktopId == desktopId,
+            contacts[contactIndex].type == "agent" else {
+        continue
+      }
+      contacts[contactIndex].trustState = .unverified
+      contacts[contactIndex].setupStatus = "needs_pairing"
+      contacts[contactIndex].setupDetail = "Desktop pairing revoked"
+      contacts[contactIndex].updatedAt = Date()
     }
     save()
   }

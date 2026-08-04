@@ -527,6 +527,14 @@ struct DiscoverView: View {
               myQRCodePresented = true
             }
             SignalASIAndroidMenuLink(
+              title: t("signalasi.discover.security_center_title", "Security Center"),
+              subtitle: t("signalasi.discover.security_center_subtitle", "View security status and permissions"),
+              systemImage: "checkmark.shield",
+              tint: .signalASIAccent
+            ) {
+              SignalASISecurityCenterView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",

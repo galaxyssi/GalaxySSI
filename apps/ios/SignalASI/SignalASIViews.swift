@@ -1358,6 +1358,14 @@ struct SettingsView: View {
             .foregroundColor(.secondary)
         }
         Section(t("signalasi.settings.agent_safety", "Agent Safety")) {
+          NavigationLink(destination: SignalASISecurityCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.security_center.title", "Security Center"))
+              Text(t("signalasi.security_center.privacy_subtitle", "End-to-end encryption; only devices and contacts with confirmed fingerprints can communicate"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentSafetySettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.execution_policy", "Execution Policy"))

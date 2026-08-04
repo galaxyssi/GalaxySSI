@@ -25,6 +25,8 @@
     A10000000000000000001000 /* SignalASIAutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001000 /* SignalASIAutomationView.swift */; };
     A10000000000000000001001 /* SignalASIAutomationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001001 /* SignalASIAutomationSupport.swift */; };
     A10000000000000000001020 /* SignalASIAgentDirectoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001020 /* SignalASIAgentDirectoryView.swift */; };
+    A10000000000000000001030 /* SignalASISecurityCenterComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001030 /* SignalASISecurityCenterComponents.swift */; };
+    A10000000000000000001031 /* SignalASISecurityCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001031 /* SignalASISecurityCenterView.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
@@ -619,6 +621,8 @@
     A20000000000000000001000 /* SignalASIAutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAutomationView.swift; sourceTree = "<group>"; };
     A20000000000000000001001 /* SignalASIAutomationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAutomationSupport.swift; sourceTree = "<group>"; };
     A20000000000000000001020 /* SignalASIAgentDirectoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentDirectoryView.swift; sourceTree = "<group>"; };
+    A20000000000000000001030 /* SignalASISecurityCenterComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISecurityCenterComponents.swift; sourceTree = "<group>"; };
+    A20000000000000000001031 /* SignalASISecurityCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISecurityCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1591,6 +1595,8 @@
         A20000000000000000001000 /* SignalASIAutomationView.swift */,
         A20000000000000000001001 /* SignalASIAutomationSupport.swift */,
         A20000000000000000001020 /* SignalASIAgentDirectoryView.swift */,
+        A20000000000000000001030 /* SignalASISecurityCenterComponents.swift */,
+        A20000000000000000001031 /* SignalASISecurityCenterView.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -2294,6 +2300,8 @@
         A10000000000000000001000 /* SignalASIAutomationView.swift in Sources */,
         A10000000000000000001001 /* SignalASIAutomationSupport.swift in Sources */,
         A10000000000000000001020 /* SignalASIAgentDirectoryView.swift in Sources */,
+        A10000000000000000001030 /* SignalASISecurityCenterComponents.swift in Sources */,
+        A10000000000000000001031 /* SignalASISecurityCenterView.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
