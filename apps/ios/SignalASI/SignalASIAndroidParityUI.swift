@@ -516,7 +516,7 @@ struct DiscoverView: View {
               systemImage: "antenna.radiowaves.left.and.right",
               tint: .signalASIAccent
             ) {
-              CustomDeviceConnectorsView()
+              DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.discover.model_planner", "Model Planner"),
