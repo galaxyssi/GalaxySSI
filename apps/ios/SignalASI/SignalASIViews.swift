@@ -1323,6 +1323,14 @@ struct SettingsView: View {
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
+          NavigationLink(destination: SignalASIControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_my_signalasi", "My SignalASI"))
+              Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.pages", "App Pages")) {
           NavigationLink(destination: ChatListView()) {
