@@ -518,6 +518,14 @@ struct DiscoverView: View {
               VoiceSettingsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("signalasi.automation.title", "Automation"),
+              subtitle: t("signalasi.automation.hero_subtitle", "Let AI actively handle fixed tasks"),
+              systemImage: "clock",
+              tint: .orange
+            ) {
+              SignalASIAutomationView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.device_center", "Device Center"),
               subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
               systemImage: "antenna.radiowaves.left.and.right",
