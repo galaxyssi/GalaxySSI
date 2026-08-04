@@ -91,7 +91,8 @@ internal class OrtWhisperQnnNetwork private constructor(
     override fun decode(
         inputToken: Int,
         position: Int,
-        selection: WhisperDecoderSelection
+        selection: WhisperDecoderSelection,
+        additionalSuppressedTokens: Set<Int>
     ): WhisperQnnDecoderStep = synchronized(this) {
         checkOpen()
         require(inputToken in 0 until WhisperLargeTurboQnnContract.VOCABULARY_SIZE)
@@ -111,10 +112,15 @@ internal class OrtWhisperQnnNetwork private constructor(
             WhisperDecoderSelection.FIRST_TEXT_TOKEN -> generation.suppressTokens + generation.beginSuppressTokens
             WhisperDecoderSelection.TEXT_TOKEN -> generation.suppressTokens
         }
+        val effectiveSuppression = if (additionalSuppressedTokens.isEmpty()) {
+            suppressed
+        } else {
+            suppressed + additionalSuppressedTokens
+        }
         val nextToken = Float16Codec.argmax(
             logits.buffer.asShortBuffer(),
             WhisperLargeTurboQnnContract.VOCABULARY_SIZE,
-            suppressed,
+            effectiveSuppression,
             if (selection == WhisperDecoderSelection.UNRESTRICTED) null else generation.timestampStart
         )
         selfCacheSlots.forEach(SelfCacheSlot::swap)

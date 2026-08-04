@@ -13,7 +13,8 @@ internal class WhisperTwoPassStabilizer {
 
     @Synchronized
     fun update(hypothesis: String, final: Boolean = false): StableWhisperHypothesis {
-        val normalized = normalizeTranscriptText(hypothesis)
+        val rawNormalized = normalizeTranscriptText(hypothesis)
+        val normalized = if (final) collapseRepeatedFinalPrefix(rawNormalized) else rawNormalized
         val candidate = when {
             stableText.isBlank() -> normalized
             normalized.isBlank() -> stableText
@@ -64,9 +65,51 @@ internal class WhisperTwoPassStabilizer {
         return if (boundary >= 0) value.take(boundary + 1).trimEnd() else stableText
     }
 
+    private fun collapseRepeatedFinalPrefix(value: String): String {
+        val evidence = stableText.ifBlank { previousCandidate }
+        val evidenceKey = canonicalEvidence(evidence)
+        if (evidenceKey.length < MIN_DUPLICATE_EVIDENCE_CHARS) return value
+
+        for (unitEnd in value.length / 2 downTo MIN_DUPLICATE_EVIDENCE_CHARS) {
+            val first = value.take(unitEnd).trimEnd()
+            val canonicalFirst = canonicalEvidence(first)
+            if (canonicalFirst.length < MIN_DUPLICATE_EVIDENCE_CHARS) continue
+
+            var secondStart = unitEnd
+            while (secondStart < value.length && value[secondStart].isWhitespace()) secondStart += 1
+            if (secondStart + first.length > value.length ||
+                !value.regionMatches(secondStart, first, 0, first.length, ignoreCase = false)
+            ) continue
+
+            val comparableLength = minOf(canonicalFirst.length, evidenceKey.length)
+            var commonLength = 0
+            while (commonLength < comparableLength &&
+                canonicalFirst[commonLength] == evidenceKey[commonLength]
+            ) {
+                commonLength += 1
+            }
+            if (commonLength < MIN_DUPLICATE_EVIDENCE_CHARS ||
+                commonLength * 100 < comparableLength * MIN_EVIDENCE_MATCH_PERCENT
+            ) continue
+
+            return value.substring(secondStart).trimStart()
+        }
+        return value
+    }
+
+    private fun canonicalEvidence(value: String): String = buildString(value.length) {
+        value.forEach { character ->
+            if (character.isLetterOrDigit() || isCjk(character.code)) {
+                append(character.lowercaseChar())
+            }
+        }
+    }
+
     private fun isCjk(codePoint: Int): Boolean = codePoint in 0x3400..0x9FFF || codePoint in 0x20000..0x2FA1F
 
     private companion object {
+        const val MIN_DUPLICATE_EVIDENCE_CHARS = 6
+        const val MIN_EVIDENCE_MATCH_PERCENT = 70
         val PUNCTUATION = setOf(
             '.'.code, ','.code, '!'.code, '?'.code, ';'.code, ':'.code,
             '\u3002'.code, '\uff0c'.code, '\uff01'.code, '\uff1f'.code, '\uff1b'.code, '\uff1a'.code

@@ -1,6 +1,7 @@
 package com.signalasi.chat.voice.asr.local
 
 import java.nio.FloatBuffer
+import java.util.zip.Deflater
 import java.util.concurrent.CancellationException
 
 internal enum class WhisperDecoderSelection {
@@ -17,7 +18,12 @@ internal data class WhisperQnnDecoderStep(
 internal interface WhisperQnnNetwork : AutoCloseable {
     fun encode(melFeatures: FloatBuffer): Long
     fun resetDecoder()
-    fun decode(inputToken: Int, position: Int, selection: WhisperDecoderSelection): WhisperQnnDecoderStep
+    fun decode(
+        inputToken: Int,
+        position: Int,
+        selection: WhisperDecoderSelection,
+        additionalSuppressedTokens: Set<Int> = emptySet()
+    ): WhisperQnnDecoderStep
     fun cancelActiveRun() = Unit
 }
 
@@ -36,6 +42,9 @@ internal data class WhisperQnnTranscription(
     val decoderSteps: Int,
     val detectedLanguage: String?,
     val termination: AsrTranscriptTermination = AsrTranscriptTermination.END_OF_TEXT,
+    val decodePasses: Int = 1,
+    val compressionRatio: Double = 0.0,
+    val repeatedNgramRatio: Double = 0.0,
     val qnnExecution: QnnExecutionAttestation? = null
 ) {
     val inferenceMs: Long
@@ -72,15 +81,64 @@ internal class WhisperGreedyTranscriber(
         checkNotCancelled(cancellationRequested)
         val encoderNanos = network.encode(melFeatures)
         checkNotCancelled(cancellationRequested)
+        val primary = decodePass(language, maxTokens, 0, cancellationRequested)
+        val primaryQuality = WhisperRepetitionQualityPolicy.evaluate(primary.text, primary.tokenIds)
+        var selected = primary
+        var selectedQuality = primaryQuality
+        var decoderNanos = primary.decoderNanos
+        var decoderSteps = primary.decoderSteps
+        var decodePasses = 1
+        if (primaryQuality.suspicious) {
+            checkNotCancelled(cancellationRequested)
+            val recovery = decodePass(language, maxTokens, RECOVERY_NO_REPEAT_NGRAM, cancellationRequested)
+            val recoveryQuality = WhisperRepetitionQualityPolicy.evaluate(recovery.text, recovery.tokenIds)
+            decoderNanos += recovery.decoderNanos
+            decoderSteps += recovery.decoderSteps
+            decodePasses += 1
+            if (recovery.text.isNotBlank() && recoveryQuality.score < primaryQuality.score) {
+                selected = recovery
+                selectedQuality = recoveryQuality
+            }
+        }
+        val termination = if (selectedQuality.suspicious) {
+            AsrTranscriptTermination.REPETITION_LIMIT
+        } else {
+            selected.termination
+        }
+        return WhisperQnnTranscription(
+            text = selected.text,
+            tokenIds = selected.tokenIds,
+            encoderNanos = encoderNanos,
+            decoderNanos = decoderNanos,
+            decoderSteps = decoderSteps,
+            detectedLanguage = selected.detectedLanguage,
+            termination = termination,
+            decodePasses = decodePasses,
+            compressionRatio = selectedQuality.compressionRatio,
+            repeatedNgramRatio = selectedQuality.repeatedNgramRatio
+        )
+    }
+
+    private fun decodePass(
+        language: String,
+        maxTokens: Int,
+        noRepeatNgramSize: Int,
+        cancellationRequested: () -> Boolean
+    ): WhisperDecodePass {
+        checkNotCancelled(cancellationRequested)
         network.resetDecoder()
         var decoderNanos = 0L
         var decoderSteps = 0
         var position = 0
 
-        fun step(token: Int, selection: WhisperDecoderSelection): Int {
+        fun step(
+            token: Int,
+            selection: WhisperDecoderSelection,
+            additionalSuppressedTokens: Set<Int> = emptySet()
+        ): Int {
             checkNotCancelled(cancellationRequested)
             check(position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS)
-            val result = network.decode(token, position, selection)
+            val result = network.decode(token, position, selection, additionalSuppressedTokens)
             checkNotCancelled(cancellationRequested)
             position += 1
             decoderSteps += 1
@@ -122,11 +180,12 @@ internal class WhisperGreedyTranscriber(
             position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS
         ) {
             output += next
-            // Decode one look-ahead token even when the visible budget has just been reached.
-            // Without this step an utterance ending exactly at the budget is incorrectly marked
-            // as truncated even when the next token is EOT.
             if (position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS) {
-                next = step(next, WhisperDecoderSelection.TEXT_TOKEN)
+                next = step(
+                    next,
+                    WhisperDecoderSelection.TEXT_TOKEN,
+                    noRepeatSuppressedTokens(output, noRepeatNgramSize)
+                )
             }
         }
 
@@ -137,10 +196,9 @@ internal class WhisperGreedyTranscriber(
                 AsrTranscriptTermination.CONTEXT_LIMIT
             else -> AsrTranscriptTermination.UNKNOWN
         }
-        return WhisperQnnTranscription(
+        return WhisperDecodePass(
             text = tokenizer.decode(output).trim(),
             tokenIds = output,
-            encoderNanos = encoderNanos,
             decoderNanos = decoderNanos,
             decoderSteps = decoderSteps,
             detectedLanguage = detectedLanguage,
@@ -148,7 +206,91 @@ internal class WhisperGreedyTranscriber(
         )
     }
 
+    private fun noRepeatSuppressedTokens(output: List<Int>, ngramSize: Int): Set<Int> {
+        if (ngramSize < 2 || output.size < ngramSize) return emptySet()
+        val prefixLength = ngramSize - 1
+        val suffixStart = output.size - prefixLength
+        val blocked = LinkedHashSet<Int>()
+        for (start in 0 until suffixStart) {
+            var matches = true
+            for (offset in 0 until prefixLength) {
+                if (output[start + offset] != output[suffixStart + offset]) {
+                    matches = false
+                    break
+                }
+            }
+            if (matches) blocked += output[start + prefixLength]
+        }
+        return blocked
+    }
+
     private fun checkNotCancelled(cancellationRequested: () -> Boolean) {
         if (cancellationRequested()) throw QnnInferenceCancelledException()
+    }
+
+    private companion object {
+        const val RECOVERY_NO_REPEAT_NGRAM = 3
+    }
+}
+
+internal data class WhisperDecodePass(
+    val text: String,
+    val tokenIds: List<Int>,
+    val decoderNanos: Long,
+    val decoderSteps: Int,
+    val detectedLanguage: String?,
+    val termination: AsrTranscriptTermination
+)
+
+internal data class WhisperRepetitionQuality(
+    val compressionRatio: Double,
+    val repeatedNgramRatio: Double,
+    val suspicious: Boolean,
+    val score: Double
+)
+
+internal object WhisperRepetitionQualityPolicy {
+    private const val COMPRESSION_RATIO_THRESHOLD = 2.4
+    private const val REPEATED_NGRAM_RATIO_THRESHOLD = 0.35
+    private const val NGRAM_SIZE = 3
+    private const val MIN_TOKENS_FOR_NGRAM_CHECK = 8
+
+    fun evaluate(text: String, tokenIds: List<Int>): WhisperRepetitionQuality {
+        val compressionRatio = compressionRatio(text)
+        val repeatedNgramRatio = repeatedNgramRatio(tokenIds)
+        val compressionScore = compressionRatio / COMPRESSION_RATIO_THRESHOLD
+        val ngramScore = repeatedNgramRatio / REPEATED_NGRAM_RATIO_THRESHOLD
+        val score = maxOf(compressionScore, ngramScore)
+        return WhisperRepetitionQuality(
+            compressionRatio = compressionRatio,
+            repeatedNgramRatio = repeatedNgramRatio,
+            suspicious = score > 1.0,
+            score = score
+        )
+    }
+
+    private fun compressionRatio(text: String): Double {
+        val input = text.toByteArray(Charsets.UTF_8)
+        if (input.isEmpty()) return 0.0
+        val deflater = Deflater()
+        return try {
+            deflater.setInput(input)
+            deflater.finish()
+            val buffer = ByteArray(256)
+            var compressedBytes = 0
+            while (!deflater.finished()) compressedBytes += deflater.deflate(buffer)
+            if (compressedBytes == 0) 0.0 else input.size.toDouble() / compressedBytes
+        } finally {
+            deflater.end()
+        }
+    }
+
+    private fun repeatedNgramRatio(tokenIds: List<Int>): Double {
+        if (tokenIds.size < MIN_TOKENS_FOR_NGRAM_CHECK) return 0.0
+        val total = tokenIds.size - NGRAM_SIZE + 1
+        if (total <= 0) return 0.0
+        val unique = HashSet<List<Int>>(total)
+        for (index in 0 until total) unique += tokenIds.subList(index, index + NGRAM_SIZE).toList()
+        return (total - unique.size).toDouble() / total
     }
 }

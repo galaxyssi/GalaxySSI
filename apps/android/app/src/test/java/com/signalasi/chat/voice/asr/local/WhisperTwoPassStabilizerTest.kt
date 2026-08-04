@@ -47,4 +47,40 @@ class WhisperTwoPassStabilizerTest {
         assertEquals("", next.stableText)
         assertEquals("new session", next.unstableText)
     }
+
+    @Test
+    fun finalCollapsesLongRepeatedPrefixBackedByPartialEvidence() {
+        val stabilizer = WhisperTwoPassStabilizer()
+        val prefix = "\u8bf7\u67e5\u4e00\u4e0b GitHub \u7684"
+        stabilizer.update(prefix)
+        stabilizer.update("$prefix SignalASI")
+
+        val final = stabilizer.update(
+            "$prefix $prefix SignalASI \u9879\u76ee\u662f\u4ec0\u4e48",
+            final = true
+        )
+
+        assertEquals("$prefix SignalASI \u9879\u76ee\u662f\u4ec0\u4e48", final.fullText)
+    }
+
+    @Test
+    fun finalPreservesShortIntentionalRepetition() {
+        val stabilizer = WhisperTwoPassStabilizer()
+        stabilizer.update("very")
+        stabilizer.update("very important")
+
+        val final = stabilizer.update("very very important", final = true)
+
+        assertEquals("very very important", final.fullText)
+    }
+
+    @Test
+    fun finalPreservesLongRepetitionWithoutPartialEvidence() {
+        val stabilizer = WhisperTwoPassStabilizer()
+        val phrase = "please verify this"
+
+        val final = stabilizer.update("$phrase $phrase", final = true)
+
+        assertEquals("$phrase $phrase", final.fullText)
+    }
 }

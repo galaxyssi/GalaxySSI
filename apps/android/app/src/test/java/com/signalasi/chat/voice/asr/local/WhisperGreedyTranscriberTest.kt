@@ -1,6 +1,7 @@
 package com.signalasi.chat.voice.asr.local
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -58,6 +59,31 @@ class WhisperGreedyTranscriberTest {
         assertEquals(AsrTranscriptTermination.TOKEN_LIMIT, result.termination)
     }
 
+    @Test
+    fun repetitiveDecoderOutputUsesConstrainedRecoveryWithoutReencoding() {
+        val network = RecoveryNetwork(
+            listOf(99, 99, 99, 0, 1, 0, 1, 0, 1, 0, 1, 14),
+            listOf(99, 99, 99, 0, 1, 2, 14)
+        )
+
+        val result = WhisperGreedyTranscriber(network, tokenizer()).transcribe(mel(), "zh", 20)
+
+        assertEquals("hello worldunused", result.text)
+        assertEquals(1, network.encodeCalls)
+        assertEquals(2, result.decodePasses)
+        assertEquals(AsrTranscriptTermination.END_OF_TEXT, result.termination)
+    }
+
+    @Test
+    fun recoveryPassAppliesDynamicNoRepeatSuppression() {
+        val repeated = listOf(99, 99, 99, 0, 1, 0, 1, 0, 1, 0, 1, 14)
+        val network = RecoveryNetwork(repeated, repeated)
+
+        WhisperGreedyTranscriber(network, tokenizer()).transcribe(mel(), "zh", 20)
+
+        assertTrue(network.additionalSuppression.any(Set<Int>::isNotEmpty))
+    }
+
     private fun tokenizer(): WhisperTiktokenTokenizer {
         val tokenizerFile = temporaryFolder.newFile("tokenizer-${System.nanoTime()}.tiktoken").apply {
             writeText(
@@ -103,11 +129,42 @@ class WhisperGreedyTranscriberTest {
         override fun decode(
             inputToken: Int,
             position: Int,
-            selection: WhisperDecoderSelection
+            selection: WhisperDecoderSelection,
+            additionalSuppressedTokens: Set<Int>
         ): WhisperQnnDecoderStep {
             inputTokens += inputToken
             positions += position
             return WhisperQnnDecoderStep(outputTokens.removeFirst(), 1_000_000L)
+        }
+
+        override fun close() = Unit
+    }
+
+    private class RecoveryNetwork(vararg passes: List<Int>) : WhisperQnnNetwork {
+        private val scripts = ArrayDeque(passes.toList())
+        private var outputTokens = ArrayDeque<Int>()
+        var encodeCalls = 0
+        val additionalSuppression = mutableListOf<Set<Int>>()
+
+        override fun encode(melFeatures: FloatBuffer): Long {
+            encodeCalls += 1
+            return 2_000_000L
+        }
+
+        override fun resetDecoder() {
+            outputTokens = ArrayDeque(scripts.removeFirst())
+        }
+
+        override fun decode(
+            inputToken: Int,
+            position: Int,
+            selection: WhisperDecoderSelection,
+            additionalSuppressedTokens: Set<Int>
+        ): WhisperQnnDecoderStep {
+            additionalSuppression += additionalSuppressedTokens
+            val scripted = outputTokens.removeFirst()
+            val next = if (scripted in additionalSuppressedTokens) 14 else scripted
+            return WhisperQnnDecoderStep(next, 1_000_000L)
         }
 
         override fun close() = Unit
