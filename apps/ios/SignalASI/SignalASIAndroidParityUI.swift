@@ -302,7 +302,7 @@ struct AgentHomeView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       HStack(spacing: 4) {
-        NavigationLink(destination: VoiceSettingsView()) {
+        NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
           Text(t("signalasi.agent.voice_button", "Hold to Talk"))
             .font(.system(size: 15, weight: .bold))
             .foregroundColor(Color(signalASIColor(0x087CFF)))
@@ -511,6 +511,14 @@ struct DiscoverView: View {
               SignalASIProfileIdentityView()
             }
             SignalASIAndroidMenuLink(
+              title: t("settings_my_signalasi", "My SignalASI"),
+              subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
+              systemImage: "slider.horizontal.3",
+              tint: .signalASIAccent
+            ) {
+              SignalASIControlCenterView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.ai_agent_title", "AI Agent"),
               subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
               systemImage: "cpu",
@@ -556,7 +564,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              VoiceSettingsView()
+              SignalASIVoiceAssistantSettingsView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),

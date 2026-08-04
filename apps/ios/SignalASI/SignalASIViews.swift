@@ -1331,6 +1331,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_my_signalasi", "My SignalASI"))
+              Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.pages", "App Pages")) {
           NavigationLink(destination: ChatListView()) {
@@ -1469,6 +1477,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.local_model", "Local Model Settings"))
               Text(t("signalasi.settings.local_model.status", "Configure on-device inference"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
+              Text(voiceSettingsSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1711,6 +1727,12 @@ struct SettingsView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var voiceSettingsSummary: String {
+    let enabled = store.voiceSettings.wakeListeningEnabled ? t("common_on", "On") : t("common_off", "Off")
+    let model = VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName
+    return "\(enabled) / \(model) / \(store.voiceSettings.preferredLocaleIdentifier)"
   }
 
   private var customDeviceSummary: String {
