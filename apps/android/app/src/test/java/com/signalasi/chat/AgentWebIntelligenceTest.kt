@@ -442,6 +442,45 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
+    fun balancedSearchCanFinishAfterCollectingSufficientDiverseEvidence() {
+        val groups = (0 until 4).map { source ->
+            (0 until 3).map { index ->
+                raw(
+                    engine = "engine-$source",
+                    rank = index + 1,
+                    title = "Evidence $source-$index",
+                    url = "https://source-$source-$index.example/evidence"
+                )
+            }
+        }
+
+        assertTrue(
+            AgentWebSearchCompletionPolicy.hasSufficientEvidence(
+                profile = AgentWebIntelligenceSearchProfile.BALANCED.wireValue,
+                explicitSources = false,
+                groups = groups,
+                limit = 6
+            )
+        )
+        assertFalse(
+            AgentWebSearchCompletionPolicy.hasSufficientEvidence(
+                profile = AgentWebIntelligenceSearchProfile.BALANCED.wireValue,
+                explicitSources = true,
+                groups = groups,
+                limit = 6
+            )
+        )
+        assertFalse(
+            AgentWebSearchCompletionPolicy.hasSufficientEvidence(
+                profile = AgentWebIntelligenceSearchProfile.DEEP.wireValue,
+                explicitSources = false,
+                groups = groups,
+                limit = 6
+            )
+        )
+    }
+
+    @Test
     fun repeatedIndependentEvidencePromotesARestrictedLearnedSource() {
         val store = AgentInMemoryWebIntelligenceStore { 500_000L }
         val result = AgentWebIntelligenceResult(
