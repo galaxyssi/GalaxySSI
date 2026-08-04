@@ -1459,6 +1459,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASINativeToolCatalogView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.native_tool_catalog.title", "Native Tools"))
+              Text(nativeToolsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
@@ -1775,6 +1783,18 @@ struct SettingsView: View {
       format: t("signalasi.agent_sessions.value", "Sessions: %d / archived: %d"),
       sessions.count,
       archived
+    )
+  }
+
+  private var nativeToolsSummary: String {
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let available = tools.filter {
+      $0.risk != .blocked && $0.availability.status == .available
+    }.count
+    return String(
+      format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
+      tools.count,
+      available
     )
   }
 

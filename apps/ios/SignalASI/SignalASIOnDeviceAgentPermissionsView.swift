@@ -210,6 +210,21 @@ struct OnDeviceAgentPermissionsView: View {
           }
           sectionTitle(t("signalasi.on_device_agent.section_capabilities", "Capability Access"))
           VStack(spacing: 8) {
+            OnDeviceAgentNavigationRow(
+              title: t("signalasi.native_tool_catalog.title", "Native Tools"),
+              subtitle: t(
+                "signalasi.native_tool_catalog.hero_subtitle",
+                "Review iOS tool availability, risk, runtime scope, permissions, and consent boundaries"
+              ),
+              systemImage: "wrench.and.screwdriver",
+              tint: .blue,
+              badge: String(
+                format: t("signalasi.native_tool_catalog.badge", "%d tools"),
+                AgentPhoneNativeToolCatalog.descriptors().count
+              )
+            ) {
+              SignalASINativeToolCatalogView()
+            }
             OnDeviceAgentStatusRow(
               title: t("signalasi.on_device_agent.visual_model", "On-device Visual Model"),
               subtitle: t(
