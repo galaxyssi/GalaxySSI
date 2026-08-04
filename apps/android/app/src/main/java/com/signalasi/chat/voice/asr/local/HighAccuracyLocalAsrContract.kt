@@ -215,11 +215,12 @@ enum class AsrTranscriptTermination {
     END_OF_TEXT,
     TOKEN_LIMIT,
     CONTEXT_LIMIT,
+    REPETITION_LIMIT,
     NO_SPEECH,
     UNKNOWN;
 
     val isComplete: Boolean
-        get() = this != TOKEN_LIMIT && this != CONTEXT_LIMIT
+        get() = this != TOKEN_LIMIT && this != CONTEXT_LIMIT && this != REPETITION_LIMIT
 }
 
 interface LocalAsrEngine : AutoCloseable {

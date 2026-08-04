@@ -409,7 +409,10 @@ private class QnnStreamingSession(
                     "encoder_ms=${transcription.encoderNanos / 1_000_000.0} " +
                     "decoder_ms=${transcription.decoderNanos / 1_000_000.0} " +
                     "decoder_steps=${transcription.decoderSteps} output_tokens=${transcription.tokenIds.size} " +
-                    "token_budget=$tokenBudget termination=${transcription.termination.name.lowercase()}"
+                    "token_budget=$tokenBudget decode_passes=${transcription.decodePasses} " +
+                    "compression_ratio=${transcription.compressionRatio} " +
+                    "repeated_ngram_ratio=${transcription.repeatedNgramRatio} " +
+                    "termination=${transcription.termination.name.lowercase()}"
             )
             release(packet)
             if (terminal.get()) return
