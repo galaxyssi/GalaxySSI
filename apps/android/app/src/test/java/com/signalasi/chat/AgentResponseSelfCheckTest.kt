@@ -92,6 +92,39 @@ class AgentResponseSelfCheckTest {
     }
 
     @Test
+    fun explicitEnglishShortReplyRequestAcceptsAcknowledgement() {
+        val result = AgentResponseSelfCheck.evaluate(
+            "DeepSeek reply only OK for this latency test",
+            "OK"
+        )
+
+        assertTrue(result.accepted)
+        assertEquals(AgentResponseSelfCheckStatus.PASSED, result.status)
+    }
+
+    @Test
+    fun explicitChineseShortReplyRequestAcceptsAcknowledgement() {
+        val result = AgentResponseSelfCheck.evaluate(
+            "\u53ea\u56de\u590d\u6536\u5230\uff0c\u4e0d\u8981\u5176\u4ed6\u5185\u5bb9",
+            "\u6536\u5230"
+        )
+
+        assertTrue(result.accepted)
+        assertEquals(AgentResponseSelfCheckStatus.PASSED, result.status)
+    }
+
+    @Test
+    fun unrelatedShortAcknowledgementStillRequestsRepair() {
+        val result = AgentResponseSelfCheck.evaluate(
+            "Explain why the request failed",
+            "OK"
+        )
+
+        assertFalse(result.accepted)
+        assertEquals(listOf("acknowledgement_only"), result.reasons)
+    }
+
+    @Test
     fun responseIdentityMustMatchBoundTurn() {
         val result = AgentResponseSelfCheck.evaluate(
             "Explain the error",
