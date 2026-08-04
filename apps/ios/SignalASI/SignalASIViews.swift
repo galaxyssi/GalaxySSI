@@ -1555,7 +1555,7 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.privacy", "Privacy")) {
-          NavigationLink(destination: AgentDataDisclosureDashboardView()) {
+          NavigationLink(destination: SignalASIPrivacyDashboardView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.model_data_sharing", "Model Data Sharing"))
               Text(t("signalasi.settings.model_data_sharing.subtitle", "Review metadata-only disclosure events and destination blocks"))
