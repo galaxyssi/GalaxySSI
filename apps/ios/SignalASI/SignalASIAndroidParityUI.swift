@@ -535,6 +535,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_app_services_page_title", "Apps & Services"),
+              subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
+              systemImage: "square.grid.2x2",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIAppServicesView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",

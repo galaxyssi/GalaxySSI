@@ -1334,6 +1334,9 @@ struct SettingsView: View {
           NavigationLink(destination: DiscoverView()) {
             Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
           }
+          NavigationLink(destination: SignalASIAppServicesView()) {
+            Label(t("cc_app_services_page_title", "Apps & Services"), systemImage: "square.grid.2x2")
+          }
         }
         Section(t("signalasi.settings.language", "Language")) {
           NavigationLink(destination: SignalASILanguageSettingsView()) {
