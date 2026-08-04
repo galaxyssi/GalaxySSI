@@ -1435,6 +1435,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentKnowledgeView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_knowledge.title", "Knowledge"))
+              Text(knowledgeSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
@@ -1719,6 +1727,16 @@ struct SettingsView: View {
       format: t("signalasi.agent_memory.value", "Memory: %d / conflicts: %d"),
       snapshot.activeCount,
       snapshot.conflicts.count
+    )
+  }
+
+  private var knowledgeSummary: String {
+    let stats = store.agentKnowledgeStats
+    return String(
+      format: t("signalasi.agent_knowledge.value", "Knowledge: %d items / %d sources / %d hits"),
+      stats.itemCount,
+      stats.sourceCount,
+      store.agentKnowledgeAccessAudit.count
     )
   }
 
