@@ -535,6 +535,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_data_title", "Data & Backup"),
+              subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
+              systemImage: "externaldrive",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIDataBackupView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",
