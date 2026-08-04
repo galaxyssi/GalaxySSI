@@ -70,6 +70,42 @@ enum AgentOfficeDocumentExtractor {
     return sections.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
+  static func extractDocx(_ bytes: Data) throws -> String {
+    let entries = try readEntries(bytes) { name in
+      name == "word/document.xml" ||
+        (name.hasPrefix("word/header") && name.hasSuffix(".xml")) ||
+        (name.hasPrefix("word/footer") && name.hasSuffix(".xml")) ||
+        name == "word/footnotes.xml" ||
+        name == "word/endnotes.xml"
+    }
+    let ordered = entries.sorted { first, second in
+      if first.key == "word/document.xml" { return true }
+      if second.key == "word/document.xml" { return false }
+      return first.key < second.key
+    }
+    guard !ordered.isEmpty else {
+      throw AgentOfficeDocumentExtractionError.invalid("DOCX contains no readable document text")
+    }
+
+    var sections: [String] = []
+    for entry in ordered {
+      let parser = WordDocumentXMLParser()
+      try parseXML(entry.value, delegate: parser)
+      let body = parser.paragraphs.isEmpty
+        ? normalizeOfficeText(parser.allText)
+        : parser.paragraphs.joined(separator: "\n")
+      if !body.isEmpty {
+        sections.append(body)
+        try requireOutputLimit(sections.joined(separator: "\n\n"), message: "DOCX text exceeds the extraction limit")
+      }
+    }
+    let output = sections.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !output.isEmpty else {
+      throw AgentOfficeDocumentExtractionError.invalid("DOCX contains no readable document text")
+    }
+    return output
+  }
+
   private struct ZipEntry {
     var path: String
     var directory: Bool
@@ -470,6 +506,67 @@ private final class SlideXMLParser: NSObject, XMLParserDelegate {
       paragraphDepth += 1
     case "t":
       capturingText = true
+    default:
+      break
+    }
+  }
+
+  func parser(_ parser: XMLParser, foundCharacters string: String) {
+    if capturingText {
+      allText += string
+      if paragraphDepth > 0 {
+        currentParagraph += string
+      }
+    }
+  }
+
+  func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+    switch localName(elementName, qName) {
+    case "t":
+      capturingText = false
+    case "p" where paragraphDepth > 0:
+      paragraphDepth -= 1
+      if paragraphDepth == 0 {
+        let paragraph = normalizeOfficeText(currentParagraph)
+        if !paragraph.isEmpty {
+          paragraphs.append(paragraph)
+        }
+        currentParagraph = ""
+      }
+    default:
+      break
+    }
+  }
+}
+
+private final class WordDocumentXMLParser: NSObject, XMLParserDelegate {
+  private(set) var paragraphs: [String] = []
+  private(set) var allText = ""
+  private var paragraphDepth = 0
+  private var currentParagraph = ""
+  private var capturingText = false
+
+  func parser(
+    _ parser: XMLParser,
+    didStartElement elementName: String,
+    namespaceURI: String?,
+    qualifiedName qName: String?,
+    attributes attributeDict: [String: String] = [:]
+  ) {
+    switch localName(elementName, qName) {
+    case "p":
+      if paragraphDepth == 0 {
+        currentParagraph = ""
+      }
+      paragraphDepth += 1
+    case "t":
+      capturingText = true
+    case "tab" where paragraphDepth > 0:
+      currentParagraph += "\t"
+      allText += "\t"
+    case "br" where paragraphDepth > 0:
+      currentParagraph += "\n"
+      allText += "\n"
     default:
       break
     }

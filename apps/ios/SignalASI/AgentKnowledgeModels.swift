@@ -80,6 +80,13 @@ enum AgentKnowledgeAgentAccess: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentKnowledgeEvidenceMode: String, Codable, CaseIterable, Identifiable {
+  case full = "FULL"
+  case summary = "SUMMARY"
+
+  var id: String { rawValue }
+}
+
 struct AgentKnowledgeItem: Codable, Equatable, Identifiable {
   var id: String
   var kind: AgentKnowledgeKind
@@ -226,6 +233,79 @@ struct AgentKnowledgeStats: Codable, Equatable {
     case itemCount = "item_count"
     case sourceCount = "source_count"
     case lastUpdatedAtMillis = "last_updated_at_millis"
+  }
+}
+
+struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
+  var source: String
+  var title: String
+  var itemIds: [String]
+  var chunkCount: Int
+  var cloudAccess: AgentKnowledgeCloudAccess
+  var agentAccess: AgentKnowledgeAgentAccess
+  var allowedAgentIds: [String]
+  var updatedAtMillis: Int64
+
+  var id: String { source }
+
+  init(
+    source: String,
+    title: String,
+    itemIds: [String],
+    chunkCount: Int,
+    cloudAccess: AgentKnowledgeCloudAccess,
+    agentAccess: AgentKnowledgeAgentAccess,
+    allowedAgentIds: [String] = [],
+    updatedAtMillis: Int64
+  ) {
+    self.source = source
+    self.title = title.ifBlank("Private knowledge")
+    self.itemIds = itemIds.stableDistinct()
+    self.chunkCount = max(chunkCount, 0)
+    self.cloudAccess = cloudAccess
+    self.agentAccess = agentAccess
+    self.allowedAgentIds = allowedAgentIds.stableDistinct()
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+}
+
+struct AgentKnowledgeAccessAuditEntry: Codable, Equatable, Identifiable {
+  var queryHash: Int
+  var targetId: String
+  var itemIdHashes: [Int]
+  var sourceCount: Int
+  var evidenceModes: [AgentKnowledgeEvidenceMode]
+  var blockedMatchCount: Int
+  var timestampMillis: Int64
+
+  var id: String { "\(queryHash):\(targetId):\(timestampMillis)" }
+
+  init(
+    queryHash: Int,
+    targetId: String,
+    itemIdHashes: [Int],
+    sourceCount: Int,
+    evidenceModes: [AgentKnowledgeEvidenceMode],
+    blockedMatchCount: Int,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) {
+    self.queryHash = queryHash
+    self.targetId = String(targetId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160)).ifBlank("agent-knowledge-local")
+    self.itemIdHashes = itemIdHashes
+    self.sourceCount = max(sourceCount, 0)
+    self.evidenceModes = evidenceModes.stableDistinct()
+    self.blockedMatchCount = max(blockedMatchCount, 0)
+    self.timestampMillis = max(timestampMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case queryHash = "query_hash"
+    case targetId = "target_id"
+    case itemIdHashes = "item_id_hashes"
+    case sourceCount = "source_count"
+    case evidenceModes = "evidence_modes"
+    case blockedMatchCount = "blocked_match_count"
+    case timestampMillis = "timestamp_millis"
   }
 }
 
