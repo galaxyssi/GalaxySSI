@@ -12,6 +12,45 @@ import kotlinx.coroutines.runBlocking
 
 class AgentControlPlaneActionExecutorTest {
     @Test
+    fun phoneCloudModelApiBypassesRemoteAgentControlPlane() {
+        val executions = AtomicInteger()
+        val executor = AgentControlPlaneActionExecutor(
+            ActionExecutorAgentProvider(
+                registrationSource = { emptyList() },
+                delegate = object : AgentActionExecutor {
+                    override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
+                        executions.incrementAndGet()
+                        return AgentActionResult(
+                            action.id,
+                            true,
+                            "Waiting for DeepSeek",
+                            mapOf("awaiting_response" to "true")
+                        )
+                    }
+                }
+            )
+        )
+        val action = connectorAction().copy(
+            id = "route-deepseek",
+            target = "DeepSeek",
+            parameters = connectorAction().parameters + mapOf(
+                "connector_id" to "deepseek",
+                "connector_kind" to "model",
+                "connector_adapter_type" to "cloud-model-api"
+            )
+        )
+
+        val result = executor.execute(
+            action,
+            ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent")
+        )
+
+        assertTrue(result.success)
+        assertEquals(1, executions.get())
+        assertFalse(result.metadata.containsKey("control_plane_run_id"))
+    }
+
+    @Test
     fun productionConnectorActionRunsThroughAdapterOnlyOnce() {
         val executions = AtomicInteger()
         val delegate = object : AgentActionExecutor {

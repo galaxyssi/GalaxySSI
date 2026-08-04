@@ -891,6 +891,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentTaskRuntime.supervisor(this)
         traceStartup("mobile_agent")
         globalSuperAgentRuntime = GlobalSuperAgentRuntime.get(this)
+        agentRoutingExecutor.execute {
+            runCatching { globalSuperAgentRuntime.prewarmContextSnapshot() }
+                .onFailure { Log.w("SignalASILatency", "global_context_prewarm_failed", it) }
+        }
         traceStartup("global_runtime")
         openLatestGlobalInsightWhenDelivered = intent?.getBooleanExtra("signalasi_open_agent", false) == true
         requestedGlobalInsightConversationId = intent
@@ -5506,60 +5510,60 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 "run_recorded turn=${turnId.take(8)} elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
             )
             agentRunIdsByTurn[turnId] = run.runId
-            runOnUiThread {
-                when {
-                    resolvedForcedAction != null -> {
-                        Log.d(
-                            "SignalASIAgent",
-                            "route_forced_connector turn=${turnId.take(8)} action=${resolvedForcedAction.id}"
-                        )
-                        executeConcurrentAgentGoal(
-                            executionGoal,
-                            conversationContext,
-                            conversationId,
-                            turnId,
-                            resolvedForcedAction,
-                            taskExecutionMode
-                        )
-                    }
-                    deterministicAction != null &&
-                        AgentConfirmationPolicy.tier(deterministicAction) == AgentConfirmationTier.DIRECT -> {
-                        Log.d(
-                            "SignalASIAgent",
-                            "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}"
-                        )
-                        executeDirectSystemAction(deterministicAction, conversationId, turnId)
-                    }
-                    deterministicAction != null -> {
-                        Log.d(
-                            "SignalASIAgent",
-                            "route_protected turn=${turnId.take(8)} action=${deterministicAction.id}"
-                        )
-                        executeConcurrentAgentGoal(
-                            executionGoal,
-                            conversationContext,
-                            conversationId,
-                            turnId,
-                            deterministicAction,
-                            taskExecutionMode
-                        )
-                    }
-                    skillMatch != null &&
-                        executeMatchedSkill(
-                            skillMatch,
-                            conversationId,
-                            turnId,
-                            executionGoal,
-                            conversationContext
-                        ) -> Unit
-                    else -> executeConcurrentAgentGoal(
+            when {
+                resolvedForcedAction != null -> {
+                    Log.d(
+                        "SignalASIAgent",
+                        "route_forced_connector turn=${turnId.take(8)} action=${resolvedForcedAction.id}"
+                    )
+                    executeConcurrentAgentGoal(
                         executionGoal,
                         conversationContext,
                         conversationId,
                         turnId,
-                        executionMode = taskExecutionMode
+                        resolvedForcedAction,
+                        taskExecutionMode
                     )
                 }
+                deterministicAction != null &&
+                    AgentConfirmationPolicy.tier(deterministicAction) == AgentConfirmationTier.DIRECT -> {
+                    Log.d(
+                        "SignalASIAgent",
+                        "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}"
+                    )
+                    runOnUiThread {
+                        executeDirectSystemAction(deterministicAction, conversationId, turnId)
+                    }
+                }
+                deterministicAction != null -> {
+                    Log.d(
+                        "SignalASIAgent",
+                        "route_protected turn=${turnId.take(8)} action=${deterministicAction.id}"
+                    )
+                    executeConcurrentAgentGoal(
+                        executionGoal,
+                        conversationContext,
+                        conversationId,
+                        turnId,
+                        deterministicAction,
+                        taskExecutionMode
+                    )
+                }
+                skillMatch != null &&
+                    executeMatchedSkill(
+                        skillMatch,
+                        conversationId,
+                        turnId,
+                        executionGoal,
+                        conversationContext
+                    ) -> Unit
+                else -> executeConcurrentAgentGoal(
+                    executionGoal,
+                    conversationContext,
+                    conversationId,
+                    turnId,
+                    executionMode = taskExecutionMode
+                )
             }
         }
     }
