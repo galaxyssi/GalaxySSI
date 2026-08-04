@@ -61,7 +61,8 @@ object AgentResponseSelfCheck {
                 if (
                     !hasOutputArtifacts &&
                     acknowledgementOnly(reply) &&
-                    normalized(request) !in ACKNOWLEDGEMENT_REQUESTS
+                    normalized(request) !in ACKNOWLEDGEMENT_REQUESTS &&
+                    !explicitlyRequestsShortReply(request, reply)
                 ) {
                     reasons += "acknowledgement_only"
                 }
@@ -101,6 +102,33 @@ object AgentResponseSelfCheck {
         if (clean in ACK_EXACT) return true
         if (clean.length > 400 || clean.split(' ').size > 60) return false
         return ACK_START.containsMatchIn(clean) && FUTURE_ONLY.containsMatchIn(clean)
+    }
+
+    private fun explicitlyRequestsShortReply(request: String, response: String): Boolean {
+        val requested = normalized(request)
+        val reply = normalized(response)
+        if (reply.isBlank() || reply !in NORMALIZED_ACK_EXACT) return false
+        val englishPatterns = listOf(
+            "reply only $reply",
+            "reply with only $reply",
+            "respond only $reply",
+            "respond with only $reply",
+            "answer only $reply",
+            "answer with only $reply",
+            "only reply $reply",
+            "only respond $reply",
+            "only answer $reply"
+        )
+        if (englishPatterns.any(requested::contains)) return true
+
+        val compactRequest = requested.replace(" ", "")
+        val compactReply = reply.replace(" ", "")
+        return listOf(
+            "\u53ea\u56de\u590d$compactReply",
+            "\u53ea\u56de\u7b54$compactReply",
+            "\u56de\u590d$compactReply\u5373\u53ef",
+            "\u56de\u7b54$compactReply\u5373\u53ef"
+        ).any(compactRequest::contains)
     }
 
     private fun identityMatches(
@@ -160,6 +188,7 @@ object AgentResponseSelfCheck {
         "\u5df2\u5b8c\u6210",
         "\u5904\u7406\u597d\u4e86"
     )
+    private val NORMALIZED_ACK_EXACT = ACK_EXACT.mapTo(linkedSetOf(), ::normalized)
     private val ACKNOWLEDGEMENT_REQUESTS = setOf(
         "ok",
         "okay",
