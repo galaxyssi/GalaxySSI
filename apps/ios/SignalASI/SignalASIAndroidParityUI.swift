@@ -567,6 +567,14 @@ struct DiscoverView: View {
               SignalASILocalModelLabView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_runtime_title", "On-device Linux Runtime"),
+              subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
+              systemImage: "terminal",
+              tint: .teal
+            ) {
+              SignalASIOnDeviceRuntimeView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.device_center", "Device Center"),
               subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
               systemImage: "antenna.radiowaves.left.and.right",
