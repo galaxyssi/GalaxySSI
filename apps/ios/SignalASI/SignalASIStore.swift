@@ -112,6 +112,12 @@ final class SignalASIStore: ObservableObject {
   @Published private(set) var agentTaskRecords: [AgentTaskRecord] {
     didSet { save() }
   }
+  @Published private(set) var proactiveTasks: [AgentProactiveTask] {
+    didSet { save() }
+  }
+  @Published private(set) var proactiveRuns: [AgentProactiveRun] {
+    didSet { save() }
+  }
   @Published private(set) var agentConversations: [AgentConversation] {
     didSet { save() }
   }
@@ -147,6 +153,8 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var proactiveTasks: [AgentProactiveTask]
+    var proactiveRuns: [AgentProactiveRun]
     var agentConversations: [AgentConversation]
     var activeAgentConversationId: String
     var agentKnowledgeItems: [AgentKnowledgeItem]
@@ -168,6 +176,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
       agentTaskBudget: AgentTaskBudget = .default,
+      proactiveTasks: [AgentProactiveTask] = [],
+      proactiveRuns: [AgentProactiveRun] = [],
       agentConversations: [AgentConversation] = [],
       activeAgentConversationId: String = "",
       agentKnowledgeItems: [AgentKnowledgeItem] = [],
@@ -188,6 +198,8 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.proactiveTasks = Array(proactiveTasks.suffix(200))
+      self.proactiveRuns = Array(proactiveRuns.suffix(500))
       self.agentConversations = Array(agentConversations.suffix(200))
       self.activeAgentConversationId = activeAgentConversationId
       self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
@@ -211,6 +223,14 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      proactiveTasks = Array(
+        (try container.decodeIfPresent([AgentProactiveTask].self, forKey: .proactiveTasks) ?? [])
+          .suffix(200)
+      )
+      proactiveRuns = Array(
+        (try container.decodeIfPresent([AgentProactiveRun].self, forKey: .proactiveRuns) ?? [])
+          .suffix(500)
+      )
       agentConversations = Array(
         (try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations) ?? [])
           .suffix(200)
@@ -264,6 +284,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      proactiveTasks = state.proactiveTasks
+      proactiveRuns = state.proactiveRuns
       agentTaskRecords = state.agentTaskRecords
       agentConversations = state.agentConversations
       activeAgentConversationId = state.activeAgentConversationId
@@ -304,6 +326,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      proactiveTasks = []
+      proactiveRuns = []
       agentTaskRecords = []
       agentConversations = []
       activeAgentConversationId = ""
@@ -512,6 +536,195 @@ final class SignalASIStore: ObservableObject {
 
   func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
     memoryDeletionIndex.snapshot()
+  }
+
+  func automationTasks() -> [AgentProactiveTask] {
+    Self.sortedAutomationTasks(proactiveTasks)
+  }
+
+  func automationTask(id taskId: String) -> AgentProactiveTask? {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return proactiveTasks.first { $0.taskId == clean }
+  }
+
+  func automationRuns(taskId: String, limit: Int = 50) -> [AgentProactiveRun] {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return [] }
+    return proactiveRuns
+      .filter { $0.taskId == clean }
+      .sorted { $0.scheduledForMillis > $1.scheduledForMillis }
+      .prefix(max(0, limit))
+      .map { $0 }
+  }
+
+  func recentAutomationRuns(limit: Int = 30) -> [AgentProactiveRun] {
+    proactiveRuns
+      .sorted { $0.scheduledForMillis > $1.scheduledForMillis }
+      .prefix(max(0, limit))
+      .map { $0 }
+  }
+
+  func makeAutomationTaskDraft(name: String = "", prompt: String = "") -> AgentProactiveTask {
+    let now = Self.nowMillis()
+    let taskId = "ios-proactive-\(UUID().uuidString.lowercased())"
+    return try! AgentProactiveTask(
+      taskId: taskId,
+      name: name.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("New proactive task"),
+      trigger: AgentProactiveTrigger(
+        kind: .manual,
+        timeZone: TimeZone.autoupdatingCurrent.identifier
+      ),
+      action: AgentProactiveAction(
+        kind: .agent,
+        targetId: defaultAutomationAgentTargetId(),
+        prompt: prompt
+      ),
+      createdAtMillis: now,
+      updatedAtMillis: now
+    )
+  }
+
+  @discardableResult
+  func saveAutomationTask(_ task: AgentProactiveTask) throws -> AgentProactiveTask {
+    let now = Self.nowMillis()
+    let existing = automationTask(id: task.taskId)
+    var stored = try AgentProactiveTask(
+      taskId: task.taskId,
+      name: task.name,
+      trigger: task.trigger,
+      action: task.action,
+      policy: task.policy,
+      enabled: task.enabled,
+      nextRunAtMillis: task.nextRunAtMillis,
+      lastRunAtMillis: task.lastRunAtMillis,
+      lastStatus: task.lastStatus,
+      runCount: task.runCount,
+      consecutiveFailures: task.consecutiveFailures,
+      revision: existing == nil ? max(task.revision, 1) : max(existing?.revision ?? task.revision, task.revision) + 1,
+      createdAtMillis: existing?.createdAtMillis ?? (task.createdAtMillis > 0 ? task.createdAtMillis : now),
+      updatedAtMillis: now
+    )
+    let nextRun = stored.enabled ? (try AgentProactiveTaskScheduler.initialNextRun(task: stored, nowMillis: now)) : 0
+    stored = try AgentProactiveTask(
+      taskId: stored.taskId,
+      name: stored.name,
+      trigger: stored.trigger,
+      action: stored.action,
+      policy: stored.policy,
+      enabled: stored.enabled,
+      nextRunAtMillis: nextRun,
+      lastRunAtMillis: stored.lastRunAtMillis,
+      lastStatus: stored.lastStatus,
+      runCount: stored.runCount,
+      consecutiveFailures: stored.consecutiveFailures,
+      revision: stored.revision,
+      createdAtMillis: stored.createdAtMillis,
+      updatedAtMillis: stored.updatedAtMillis
+    )
+    proactiveTasks.removeAll { $0.taskId == stored.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [stored]).prefix(200))
+    return stored
+  }
+
+  @discardableResult
+  func setAutomationTaskEnabled(id taskId: String, enabled: Bool) throws -> Bool {
+    guard var task = automationTask(id: taskId) else { return false }
+    task = try AgentProactiveTask(
+      taskId: task.taskId,
+      name: task.name,
+      trigger: task.trigger,
+      action: task.action,
+      policy: task.policy,
+      enabled: enabled,
+      nextRunAtMillis: enabled ? try AgentProactiveTaskScheduler.initialNextRun(task: task, nowMillis: Self.nowMillis()) : 0,
+      lastRunAtMillis: task.lastRunAtMillis,
+      lastStatus: task.lastStatus,
+      runCount: task.runCount,
+      consecutiveFailures: task.consecutiveFailures,
+      revision: task.revision + 1,
+      createdAtMillis: task.createdAtMillis,
+      updatedAtMillis: Self.nowMillis()
+    )
+    proactiveTasks.removeAll { $0.taskId == task.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [task]).prefix(200))
+    return true
+  }
+
+  @discardableResult
+  func deleteAutomationTask(id taskId: String) -> Bool {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return false }
+    let before = proactiveTasks.count
+    proactiveTasks.removeAll { $0.taskId == clean }
+    proactiveRuns.removeAll { $0.taskId == clean }
+    return before != proactiveTasks.count
+  }
+
+  @discardableResult
+  func triggerAutomationTaskNow(id taskId: String) throws -> AgentProactiveRun {
+    guard let task = automationTask(id: taskId) else {
+      throw AgentProactiveTaskError.invalid("Proactive task not found")
+    }
+    let now = Self.nowMillis()
+    let run = try AgentProactiveRun(
+      runId: "ios-proactive-run-\(UUID().uuidString.lowercased())",
+      taskId: task.taskId,
+      scheduledForMillis: now,
+      status: .queued,
+      causeJson: "{\"source\":\"manual\"}",
+      startedAtMillis: now,
+      resultSummary: "Run queued on iOS."
+    )
+    let updatedTask = try AgentProactiveTask(
+      taskId: task.taskId,
+      name: task.name,
+      trigger: task.trigger,
+      action: task.action,
+      policy: task.policy,
+      enabled: task.enabled,
+      nextRunAtMillis: task.nextRunAtMillis,
+      lastRunAtMillis: now,
+      lastStatus: .queued,
+      runCount: task.runCount + 1,
+      consecutiveFailures: task.consecutiveFailures,
+      revision: task.revision,
+      createdAtMillis: task.createdAtMillis,
+      updatedAtMillis: now
+    )
+    proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+    proactiveTasks.removeAll { $0.taskId == updatedTask.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updatedTask]).prefix(200))
+    return run
+  }
+
+  @discardableResult
+  func cancelAutomationRun(id runId: String) -> Bool {
+    let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let index = proactiveRuns.firstIndex(where: { $0.runId == clean }),
+          !proactiveRuns[index].status.terminal else {
+      return false
+    }
+    let run = proactiveRuns[index]
+    let cancelled = try? AgentProactiveRun(
+      runId: run.runId,
+      taskId: run.taskId,
+      scheduledForMillis: run.scheduledForMillis,
+      status: .cancelled,
+      attempt: run.attempt,
+      causeJson: run.causeJson,
+      startedAtMillis: run.startedAtMillis,
+      completedAtMillis: Self.nowMillis(),
+      resultSummary: run.resultSummary,
+      errorCode: run.errorCode,
+      linkedExecutionId: run.linkedExecutionId,
+      teamRunId: run.teamRunId
+    )
+    guard let cancelled else { return false }
+    var runs = proactiveRuns
+    runs[index] = cancelled
+    proactiveRuns = runs
+    return true
   }
 
   func agentSessions(includeArchived: Bool = false) -> [AgentConversation] {
@@ -1425,6 +1638,7 @@ final class SignalASIStore: ObservableObject {
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
+        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
@@ -1438,6 +1652,8 @@ final class SignalASIStore: ObservableObject {
         knowledge: agentKnowledgeItems,
         knowledgeAccessAudit: agentKnowledgeAccessAudit,
         taskHistory: recentAgentTasks(limit: 200),
+        proactiveTasks: automationTasks(),
+        proactiveRuns: Array(proactiveRuns.suffix(500)),
         agentConversations: agentSessions(includeArchived: true),
         activeAgentConversationId: activeAgentConversationId,
         voiceSettings: voiceSettings,
@@ -1490,6 +1706,8 @@ final class SignalASIStore: ObservableObject {
       agentKnowledgeItems = Array((payload.agentData.knowledge ?? []).suffix(500))
       agentKnowledgeAccessAudit = Array((payload.agentData.knowledgeAccessAudit ?? []).suffix(100))
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
+      proactiveTasks = Array((payload.agentData.proactiveTasks ?? []).suffix(200))
+      proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
       activeAgentConversationId = payload.agentData.activeAgentConversationId
       if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {
@@ -1740,6 +1958,8 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    proactiveTasks = []
+    proactiveRuns = []
     agentTaskRecords = []
     agentConversations = []
     activeAgentConversationId = ""
@@ -1749,6 +1969,30 @@ final class SignalASIStore: ObservableObject {
     customDeviceConnectors = []
     homeAssistantSettings = .default
     modelPlannerSettings = .default
+  }
+
+  private func defaultAutomationAgentTargetId() -> String {
+    if contacts.contains(where: { !$0.deleted && ($0.id == "codex" || $0.signalASIId == "codex") }) {
+      return "codex"
+    }
+    if contacts.contains(where: { !$0.deleted && ($0.id == "hermes" || $0.signalASIId == "hermes") }) {
+      return "hermes"
+    }
+    return contacts.first(where: { !$0.deleted })?.id ?? "codex"
+  }
+
+  private static func sortedAutomationTasks(_ tasks: [AgentProactiveTask]) -> [AgentProactiveTask] {
+    tasks.sorted { left, right in
+      if left.enabled != right.enabled {
+        return left.enabled && !right.enabled
+      }
+      let leftTime = left.nextRunAtMillis > 0 ? left.nextRunAtMillis : left.updatedAtMillis
+      let rightTime = right.nextRunAtMillis > 0 ? right.nextRunAtMillis : right.updatedAtMillis
+      if leftTime != rightTime {
+        return leftTime > rightTime
+      }
+      return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+    }
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -2245,6 +2489,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
       agentTaskBudget: agentTaskBudget,
+      proactiveTasks: proactiveTasks,
+      proactiveRuns: proactiveRuns,
       agentConversations: agentConversations,
       activeAgentConversationId: activeAgentConversationId,
       agentKnowledgeItems: agentKnowledgeItems,

@@ -1451,6 +1451,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAutomationView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.automation.title", "Automation"))
+              Text(automationSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentSessionsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_sessions.title", "Sessions"))
@@ -1773,6 +1781,16 @@ struct SettingsView: View {
       format: t("signalasi.agent_tasks.value", "Tasks: %d / running: %d"),
       tasks.count,
       running
+    )
+  }
+
+  private var automationSummary: String {
+    let tasks = store.automationTasks()
+    let enabled = tasks.filter(\.enabled).count
+    return String(
+      format: t("signalasi.automation.value", "Tasks: %d / enabled: %d"),
+      tasks.count,
+      enabled
     )
   }
 
