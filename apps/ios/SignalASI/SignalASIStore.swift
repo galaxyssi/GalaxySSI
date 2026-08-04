@@ -446,8 +446,50 @@ final class SignalASIStore: ObservableObject {
     agentMemoryStore.exportItems()
   }
 
+  func agentMemorySnapshot() -> AgentMemorySnapshot {
+    agentMemoryStore.snapshot()
+  }
+
   func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
     memoryDeletionIndex.snapshot()
+  }
+
+  @discardableResult
+  func rememberAgentMemory(_ item: AgentMemoryItem) -> AgentMemoryWriteResult {
+    let result = agentMemoryStore.remember(item)
+    agentMemoryItems = agentMemoryStore.exportItems()
+    return result
+  }
+
+  @discardableResult
+  func updateAgentMemory(id itemId: String, value: String, key: String) -> AgentMemoryWriteResult? {
+    let result = agentMemoryStore.update(itemId: itemId, value: value, key: key)
+    if result != nil {
+      agentMemoryItems = agentMemoryStore.exportItems()
+    }
+    return result
+  }
+
+  @discardableResult
+  func setAgentMemoryImportant(id itemId: String, important: Bool) -> Bool {
+    let changed = agentMemoryStore.setImportant(itemId: itemId, important: important)
+    if changed {
+      agentMemoryItems = agentMemoryStore.exportItems()
+    }
+    return changed
+  }
+
+  @discardableResult
+  func resolveAgentMemoryConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem? {
+    let resolved = agentMemoryStore.resolveConflict(
+      groupId: groupId,
+      selectedItemId: selectedItemId,
+      mergedValue: mergedValue
+    )
+    if resolved != nil {
+      agentMemoryItems = agentMemoryStore.exportItems()
+    }
+    return resolved
   }
 
   @discardableResult

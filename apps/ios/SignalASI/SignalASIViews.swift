@@ -1427,6 +1427,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentMemoryView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_memory.title", "Personal Memory"))
+              Text(memorySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
@@ -1702,6 +1710,15 @@ struct SettingsView: View {
       interface,
       response,
       asrLocale
+    )
+  }
+
+  private var memorySummary: String {
+    let snapshot = store.agentMemorySnapshot()
+    return String(
+      format: t("signalasi.agent_memory.value", "Memory: %d / conflicts: %d"),
+      snapshot.activeCount,
+      snapshot.conflicts.count
     )
   }
 
