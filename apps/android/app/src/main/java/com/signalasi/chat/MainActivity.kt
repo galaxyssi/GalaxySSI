@@ -16368,7 +16368,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 layoutParams = RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
-                )
+                ).apply {
+                    bottomMargin = dp(5)
+                }
                 isSaveEnabled = false
             }
         )
