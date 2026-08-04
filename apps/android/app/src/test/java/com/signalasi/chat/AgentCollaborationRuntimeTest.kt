@@ -312,6 +312,80 @@ class AgentCollaborationRuntimeTest {
     }
 
     @Test
+    fun managedResponseLedgerDoesNotCaptureReusedMessageIdFromAnotherTurn() {
+        val ledger = InMemoryAgentManagedResponseLedger()
+        ledger.register(AgentManagedResponseRecord(
+            ownerRunId = "managed-child",
+            supervisorRunId = "managed-parent",
+            agentId = "deepseek",
+            deliveryMode = AgentDeliveryMode.RESPOND,
+            sourceMessageId = 44L,
+            contactId = "cloud:deepseek",
+            conversationId = "managed-conversation",
+            turnId = "managed-turn",
+            taskId = "managed-task"
+        ))
+
+        assertNull(ledger.complete(AgentConnectorResponse(
+            sourceMessageId = 44L,
+            contactId = "cloud:deepseek",
+            content = "foreground failure",
+            conversationId = "foreground-conversation",
+            turnId = "foreground-turn",
+            taskId = "foreground-turn",
+            success = false
+        )))
+        assertNotNull(ledger.complete(AgentConnectorResponse(
+            sourceMessageId = 44L,
+            contactId = "cloud:deepseek",
+            content = "managed result",
+            conversationId = "managed-conversation",
+            turnId = "managed-turn",
+            taskId = "managed-task"
+        )))
+    }
+
+    @Test
+    fun managedResponseRegistryKeepsInterceptorWhenTurnIdentityDoesNotMatch() {
+        AgentManagedConnectorResponseRegistry.clear()
+        val consumed = AtomicInteger()
+        try {
+            AgentManagedConnectorResponseRegistry.register(
+                sourceMessageId = 44L,
+                contactId = "cloud:deepseek",
+                ownerId = "managed-child",
+                conversationId = "managed-conversation",
+                turnId = "managed-turn",
+                taskId = "managed-task"
+            ) {
+                consumed.incrementAndGet()
+                true
+            }
+
+            assertFalse(AgentManagedConnectorResponseRegistry.consume(AgentConnectorResponse(
+                sourceMessageId = 44L,
+                contactId = "cloud:deepseek",
+                content = "foreground failure",
+                conversationId = "foreground-conversation",
+                turnId = "foreground-turn",
+                taskId = "foreground-turn",
+                success = false
+            )))
+            assertTrue(AgentManagedConnectorResponseRegistry.consume(AgentConnectorResponse(
+                sourceMessageId = 44L,
+                contactId = "cloud:deepseek",
+                content = "managed result",
+                conversationId = "managed-conversation",
+                turnId = "managed-turn",
+                taskId = "managed-task"
+            )))
+            assertEquals(1, consumed.get())
+        } finally {
+            AgentManagedConnectorResponseRegistry.clear()
+        }
+    }
+
+    @Test
     fun adapterWorkerUsesStableChildRunsAndStructuredDependencyContext() = runBlocking {
         val primary = EventAgentAdapter("primary", setOf(AgentCapability.CODE))
         val observer = EventAgentAdapter("observer", setOf(AgentCapability.RESEARCH))
@@ -366,7 +440,10 @@ class AgentCollaborationRuntimeTest {
                         val response = AgentConnectorResponse(
                             sourceMessageId = sourceMessageId,
                             contactId = connectorId,
-                            content = if (connectorId == "observer") "verified evidence" else "reviewed final answer"
+                            content = if (connectorId == "observer") "verified evidence" else "reviewed final answer",
+                            conversationId = action.parameters["_signalasi_conversation_id"].orEmpty(),
+                            turnId = action.parameters["_signalasi_turn_id"].orEmpty(),
+                            taskId = action.parameters["_signalasi_task_id"].orEmpty()
                         )
                         repeat(100) {
                             if (AgentManagedConnectorResponseRegistry.consume(response)) return@thread
@@ -412,10 +489,16 @@ class AgentCollaborationRuntimeTest {
         val primaryAction = actions.first { it.parameters["connector_id"] == "primary" }
         assertEquals("respond", observerAction.parameters["delivery_mode"])
         assertTrue(primaryAction.parameters["prompt"].orEmpty().contains("verified evidence"))
-        assertFalse(AgentManagedConnectorResponseRegistry.consume(
-            AgentConnectorResponse(82L, "primary", "duplicate")
-        ))
-        val duplicate = managedResponses.complete(AgentConnectorResponse(82L, "primary", "duplicate"))
+        val duplicateResponse = AgentConnectorResponse(
+            sourceMessageId = 82L,
+            contactId = "primary",
+            content = "duplicate",
+            conversationId = primaryAction.parameters["_signalasi_conversation_id"].orEmpty(),
+            turnId = primaryAction.parameters["_signalasi_turn_id"].orEmpty(),
+            taskId = primaryAction.parameters["_signalasi_task_id"].orEmpty()
+        )
+        assertFalse(AgentManagedConnectorResponseRegistry.consume(duplicateResponse))
+        val duplicate = managedResponses.complete(duplicateResponse)
         assertNotNull(duplicate)
         assertEquals(AgentManagedResponseState.APPLIED, duplicate?.state)
         AgentManagedConnectorResponseRegistry.clear()
