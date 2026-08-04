@@ -925,8 +925,8 @@ struct PairingView: View {
                 .foregroundColor(.secondary)
               Text(
                 pendingPairing.access.fullDesktopExecutor
-                  ? t("signalasi.pairing.access_full", "Desktop executor")
-                  : t("signalasi.pairing.access_restricted", "Restricted desktop access")
+                  ? t("signalasi.pairing.access_full", "Desktop Executor")
+                  : t("signalasi.pairing.access_restricted", "Restricted Desktop Access")
               )
               .font(.caption)
               .foregroundColor(.secondary)
