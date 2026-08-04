@@ -1504,6 +1504,14 @@ struct SettingsView: View {
           }
         }
         Section("SignalASI Link") {
+          NavigationLink(destination: SignalASISystemStatusView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_system_status_title", "System Status"))
+              Text(t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIProtocolQualityView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("protocol_quality_title", "Protocol & Quality"))
