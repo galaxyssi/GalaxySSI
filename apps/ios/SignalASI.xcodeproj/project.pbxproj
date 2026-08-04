@@ -29,6 +29,8 @@
     A10000000000000000001031 /* SignalASISecurityCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001031 /* SignalASISecurityCenterView.swift */; };
     A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */; };
     A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001041 /* SignalASILocalModelLabView.swift */; };
+    A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */; };
+    A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001051 /* SignalASIAppAdaptersView.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
@@ -627,6 +629,8 @@
     A20000000000000000001031 /* SignalASISecurityCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISecurityCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelLabComponents.swift; sourceTree = "<group>"; };
     A20000000000000000001041 /* SignalASILocalModelLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelLabView.swift; sourceTree = "<group>"; };
+    A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAppAdaptersModels.swift; sourceTree = "<group>"; };
+    A20000000000000000001051 /* SignalASIAppAdaptersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAppAdaptersView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1603,6 +1607,8 @@
         A20000000000000000001031 /* SignalASISecurityCenterView.swift */,
         A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */,
         A20000000000000000001041 /* SignalASILocalModelLabView.swift */,
+        A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */,
+        A20000000000000000001051 /* SignalASIAppAdaptersView.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -2310,6 +2316,8 @@
         A10000000000000000001031 /* SignalASISecurityCenterView.swift in Sources */,
         A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */,
         A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */,
+        A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */,
+        A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;

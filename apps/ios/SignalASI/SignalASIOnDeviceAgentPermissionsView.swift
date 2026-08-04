@@ -225,6 +225,21 @@ struct OnDeviceAgentPermissionsView: View {
             ) {
               SignalASINativeToolCatalogView()
             }
+            OnDeviceAgentNavigationRow(
+              title: t("agent_app_adapters_title", "Specialized App Adapters"),
+              subtitle: t(
+                "agent_app_adapters_subtitle",
+                "Grounded workflows for communication, browser, and document apps"
+              ),
+              systemImage: "rectangle.3.group",
+              tint: .signalASIAccent,
+              badge: String(
+                format: t("agent_app_adapters_count", "%d adapters"),
+                SignalASIAppAdapterCatalog.adapterCount
+              )
+            ) {
+              SignalASIAppAdaptersView()
+            }
             OnDeviceAgentStatusRow(
               title: t("signalasi.on_device_agent.visual_model", "On-device Visual Model"),
               subtitle: t(
