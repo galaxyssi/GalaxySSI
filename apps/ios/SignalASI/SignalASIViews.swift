@@ -1422,6 +1422,19 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAppAdaptersView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("agent_app_adapters_title", "Specialized App Adapters"))
+              Text(
+                String(
+                  format: t("signalasi.settings.app_adapters.status", "%d adapters / iOS handoff boundaries"),
+                  SignalASIAppAdapterCatalog.adapterCount
+                )
+              )
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
