@@ -548,7 +548,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              VoiceSettingsView()
+              SignalASIVoiceControlCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
