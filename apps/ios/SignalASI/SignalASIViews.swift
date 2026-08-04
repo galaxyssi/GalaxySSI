@@ -1323,6 +1323,14 @@ struct SettingsView: View {
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
+          NavigationLink(destination: SignalASIProfileIdentityView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_profile_title", "My SignalASI"))
+              Text(t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.pages", "App Pages")) {
           NavigationLink(destination: ChatListView()) {

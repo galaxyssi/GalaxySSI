@@ -503,6 +503,14 @@ struct DiscoverView: View {
         ScrollView {
           VStack(spacing: 10) {
             SignalASIAndroidMenuLink(
+              title: t("cc_profile_title", "My SignalASI"),
+              subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
+              systemImage: "person.crop.circle",
+              tint: .signalASITextPrimary
+            ) {
+              SignalASIProfileIdentityView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.ai_agent_title", "AI Agent"),
               subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
               systemImage: "cpu",
