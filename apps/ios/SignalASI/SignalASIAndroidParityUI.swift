@@ -266,12 +266,19 @@ struct AgentHomeView: View {
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
       }
-      .frame(width: 128, alignment: .trailing)
+      .frame(width: 96, alignment: .trailing)
+      NavigationLink(destination: OnDeviceAgentPermissionsView()) {
+        Image(systemName: "cpu")
+          .font(.system(size: 20, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .frame(width: 36, height: 44)
+      }
+      .buttonStyle(.plain)
       NavigationLink(destination: SettingsView()) {
         Image(systemName: "ellipsis")
           .font(.system(size: 22, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-          .frame(width: 44, height: 44)
+          .frame(width: 36, height: 44)
       }
       .buttonStyle(.plain)
     }
