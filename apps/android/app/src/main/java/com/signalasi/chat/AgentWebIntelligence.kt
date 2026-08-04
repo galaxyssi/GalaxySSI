@@ -1754,7 +1754,9 @@ data class AgentWebIntelligenceSearchResponse(
     val circuitsSkipped: List<AgentWebIntelligenceSourceHealth> = emptyList(),
     val timeoutMillis: Long = AgentWebIntelligenceSearchProfile.BALANCED.defaultTimeoutMillis,
     val engineCatalogSize: Int = AgentWebIntelligenceEngineCatalog.entries.size,
-    val completedAtMillis: Long = System.currentTimeMillis()
+    val completedAtMillis: Long = System.currentTimeMillis(),
+    val earlyCompleted: Boolean = false,
+    val completionReason: String = ""
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "protocol" to AGENT_WEB_INTELLIGENCE_PROTOCOL,
@@ -1767,7 +1769,10 @@ data class AgentWebIntelligenceSearchResponse(
             "engine_catalog_size" to engineCatalogSize,
             "engines_requested" to engineIds,
             "engines_completed" to receipts.count { it.status == "completed" },
-            "engine_failures" to receipts.count { it.status !in setOf("completed", "empty") },
+            "engines_cancelled" to receipts.count { it.status == "cancelled" },
+            "engine_failures" to receipts.count {
+                it.status !in setOf("completed", "empty", "cancelled")
+            },
             "profile" to profile,
             "engine_fanout" to engineIds.size,
             "timeout_millis" to timeoutMillis,
@@ -1776,9 +1781,37 @@ data class AgentWebIntelligenceSearchResponse(
             "circuits_skipped" to circuitsSkipped.map { it.publicValue(completedAtMillis) },
             "fusion" to "weighted_rrf_plus_local_ranker",
             "ranker_model" to AgentWebIntelligenceRanker.MODEL_ID,
+            "early_completed" to earlyCompleted,
+            "completion_reason" to completionReason,
             "elapsed_millis" to elapsedMillis
         )
     )
+}
+
+internal object AgentWebSearchCompletionPolicy {
+    fun hasSufficientEvidence(
+        profile: String,
+        explicitSources: Boolean,
+        groups: List<List<AgentWebIntelligenceRawResult>>,
+        limit: Int
+    ): Boolean {
+        if (explicitSources || profile == AgentWebIntelligenceSearchProfile.DEEP.wireValue) return false
+        val successfulGroups = groups.filter { it.isNotEmpty() }
+        val uniqueUrls = successfulGroups.flatten()
+            .map { AgentWebIntelligenceText.canonicalUrl(it.url) }
+            .filter(String::isNotBlank)
+            .toSet()
+        val uniqueDomains = uniqueUrls.mapNotNull { url ->
+            runCatching { URI(url).host?.removePrefix("www.")?.lowercase() }.getOrNull()
+        }.filter(String::isNotBlank).toSet()
+        val fast = profile == AgentWebIntelligenceSearchProfile.FAST.wireValue
+        val requiredSources = if (fast) 2 else 4
+        val requiredResults = if (fast) max(limit, 6) else max(limit * 2, 12)
+        val requiredDomains = if (fast) 3 else 5
+        return successfulGroups.size >= requiredSources &&
+            uniqueUrls.size >= requiredResults &&
+            uniqueDomains.size >= requiredDomains
+    }
 }
 
 class AgentWebIntelligenceSearchCoordinator(
@@ -1904,6 +1937,7 @@ class AgentWebIntelligenceSearchCoordinator(
             }
             val groups = mutableListOf<List<AgentWebIntelligenceRawResult>>()
             val receipts = mutableListOf<AgentWebIntelligenceReceipt>()
+            var earlyCompleted = false
             while (pending.isNotEmpty()) {
                 checkpoint()
                 val remaining = deadline - clock()
@@ -1913,17 +1947,37 @@ class AgentWebIntelligenceSearchCoordinator(
                 pending.remove(engine)
                 groups += results
                 receipts += receipt
+                if (AgentWebSearchCompletionPolicy.hasSufficientEvidence(
+                        profile = profile,
+                        explicitSources = selection.explicit,
+                        groups = groups,
+                        limit = limit
+                    )
+                ) {
+                    earlyCompleted = true
+                    break
+                }
             }
             pending.forEach { engine ->
                 receipts += AgentWebIntelligenceReceipt(
-                    engine, "timeout", timeoutMillis, 0, "engine_timeout",
-                    "Search source exceeded the shared request deadline", true
+                    sourceId = engine,
+                    status = if (earlyCompleted) "cancelled" else "timeout",
+                    durationMillis = if (earlyCompleted) clock() - started else timeoutMillis,
+                    resultCount = 0,
+                    errorCode = if (earlyCompleted) "sufficient_evidence" else "engine_timeout",
+                    errorMessage = if (earlyCompleted) {
+                        "Search stopped after collecting sufficient diverse evidence"
+                    } else {
+                        "Search source exceeded the shared request deadline"
+                    },
+                    retryable = !earlyCompleted
                 )
             }
             receipts.forEach(receiptObserver)
             val results = fusion.fuse(query, groups, limit)
             val status = when {
                 results.isEmpty() -> "failed"
+                earlyCompleted -> "completed"
                 receipts.all { it.status in setOf("completed", "empty") } -> "completed"
                 else -> "partial"
             }
@@ -1946,7 +2000,9 @@ class AgentWebIntelligenceSearchCoordinator(
                 circuitsSkipped = selection.skipped,
                 timeoutMillis = timeoutMillis,
                 engineCatalogSize = specs.size,
-                completedAtMillis = completedAt
+                completedAtMillis = completedAt,
+                earlyCompleted = earlyCompleted,
+                completionReason = if (earlyCompleted) "sufficient_diverse_evidence" else ""
             )
         } finally {
             executor.shutdownNow()

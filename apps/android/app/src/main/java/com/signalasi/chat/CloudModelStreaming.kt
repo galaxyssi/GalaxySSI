@@ -37,6 +37,7 @@ data class PreparedCloudConversationStream(
 object CloudConversationStreamEngine : CloudModelStreamClient {
     private const val MAX_TOOL_ROUNDS = 4
     private const val MAX_TOOL_CALLS = 8
+    private const val MAX_PARALLEL_TOOL_CALLS = 4
     private val transport = OkHttpCloudModelStreamClient()
     private val activeRoundIds = ConcurrentHashMap<String, String>()
 
@@ -180,7 +181,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     prepareFinalRound(prepared)
                     continue
                 }
-                val results = mutableListOf<Pair<AssembledToolCall, String>>()
+                val preparedCalls = mutableListOf<PreparedCloudToolCall>()
                 for (call in calls.take(remaining)) {
                     val key = call.identityKey()
                     if (!executedToolKeys.add(key)) continue
@@ -199,12 +200,25 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                         return@flow
                     }
                     onToolEvent?.invoke(CloudToolEvent(call.name, "running", arguments.toString().take(240)))
-                    val result = CloudWebGrounding.executeTool(context, call.name, arguments)
-                    onToolEvent?.invoke(CloudToolEvent(call.name, "completed", result.take(240)))
-                    results += call to result
-                    toolCallCount += 1
+                    preparedCalls += PreparedCloudToolCall(call, arguments)
                 }
-                appendToolResults(prepared, results)
+                val completedCalls = CloudToolBatchExecutor.executeOrdered(
+                    calls = preparedCalls,
+                    maxParallel = MAX_PARALLEL_TOOL_CALLS
+                ) { preparedCall ->
+                    CloudWebGrounding.executeTool(
+                        context,
+                        preparedCall.call.name,
+                        preparedCall.arguments
+                    )
+                }
+                completedCalls.forEach { completed ->
+                    onToolEvent?.invoke(
+                        CloudToolEvent(completed.call.name, "completed", completed.output.take(240))
+                    )
+                }
+                toolCallCount += completedCalls.size
+                appendToolResults(prepared, completedCalls.map { it.call to it.output })
             }
             val error = ModelStreamError(
                 "TOOL_ROUND_LIMIT",
