@@ -490,6 +490,7 @@ private struct AgentInfoCard: View {
 
 struct DiscoverView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var myQRCodePresented = false
 
   var body: some View {
     NavigationView {
@@ -501,6 +502,22 @@ struct DiscoverView: View {
         )
         ScrollView {
           VStack(spacing: 10) {
+            SignalASIAndroidMenuLink(
+              title: t("signalasi.discover.scan_title", "Scan"),
+              subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
+              systemImage: "qrcode.viewfinder",
+              tint: .signalASIAccent
+            ) {
+              AddContactView(autoOpenScanner: true)
+            }
+            SignalASIAndroidMenuButton(
+              title: t("signalasi.discover.my_qr_title", "My QR Code"),
+              subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
+              systemImage: "qrcode",
+              tint: .signalASITextPrimary
+            ) {
+              myQRCodePresented = true
+            }
             SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
@@ -549,6 +566,9 @@ struct DiscoverView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
+      .sheet(isPresented: $myQRCodePresented) {
+        MyContactQRCodeView()
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -643,6 +663,47 @@ private struct SignalASIAndroidMenuLink<Destination: View>: View {
 
   var body: some View {
     NavigationLink(destination: destination) {
+      HStack(spacing: 12) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(tint.opacity(0.16))
+          Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(tint)
+        }
+        .frame(width: 42, height: 42)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(title)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.signalASITextPrimary)
+          Text(subtitle)
+            .font(.system(size: 12))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(2)
+        }
+        Spacer()
+        Image(systemName: "chevron.right")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 11)
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct SignalASIAndroidMenuButton: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  var action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
       HStack(spacing: 12) {
         ZStack {
           RoundedRectangle(cornerRadius: 8, style: .continuous)
