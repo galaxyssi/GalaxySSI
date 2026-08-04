@@ -1380,6 +1380,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentCoreView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_agent_core_title", "Agent Core"))
+              Text(t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentSafetySettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.execution_policy", "Execution Policy"))

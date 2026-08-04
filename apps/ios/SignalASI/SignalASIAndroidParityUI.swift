@@ -527,6 +527,14 @@ struct DiscoverView: View {
               SignalASIMyAgentsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_agent_core_title", "Agent Core"),
+              subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
+              systemImage: "cpu",
+              tint: .signalASIAccent
+            ) {
+              SignalASIAgentCoreView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.scan_title", "Scan"),
               subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
               systemImage: "qrcode.viewfinder",
