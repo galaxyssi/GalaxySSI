@@ -609,7 +609,24 @@ class MobileNativeAgent(
     fun resolveDeterministicLocalAction(
         goal: String,
         conversationContext: AgentConversationContext
+    ): AgentAction? = RuleBasedAgentPlanner(appContext).deterministicLocalAction(
+        deterministicRoutingRequest(goal, conversationContext)
+    )
+
+    fun resolveDeterministicAction(
+        goal: String,
+        conversationContext: AgentConversationContext
     ): AgentAction? {
+        val request = deterministicRoutingRequest(goal, conversationContext)
+        val planner = RuleBasedAgentPlanner(appContext)
+        return planner.deterministicLocalAction(request)
+            ?: planner.directInformationConnectorAction(request)
+    }
+
+    private fun deterministicRoutingRequest(
+        goal: String,
+        conversationContext: AgentConversationContext
+    ): AgentRequest {
         val screen = if (AgentScreenObservationPolicy.requiresObservation(goal)) {
             captureScreen().also { currentScreen = it }
         } else {
@@ -624,15 +641,13 @@ class MobileNativeAgent(
             knowledgeItems = emptyList(),
             knowledgeStats = AgentKnowledgeStats()
         )
-        return RuleBasedAgentPlanner(appContext).deterministicLocalAction(
-            AgentRequest(
-                goal = goal,
-                screen = screen,
-                targets = targets,
-                memories = emptyList(),
-                runtimeContext = context,
-                conversationContext = conversationContext
-            )
+        return AgentRequest(
+            goal = goal,
+            screen = screen,
+            targets = targets,
+            memories = emptyList(),
+            runtimeContext = context,
+            conversationContext = conversationContext
         )
     }
 
@@ -7092,6 +7107,18 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             ?: AgentSystemToolPlanner.actionFor(request)
             ?: installedAppOpenAction(request)
             ?: directDeviceStatusAction(request)
+
+    fun directInformationConnectorAction(request: AgentRequest): AgentAction? {
+        val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
+        if (AgentCapability.CODE in requirements.capabilities ||
+            AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+            requirements.executionHorizon != AgentExecutionHorizon.INTERACTIVE ||
+            AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal)
+        ) {
+            return null
+        }
+        return informationQueryAction(request)?.takeIf { it.kind == AgentActionKind.CALL_CONNECTOR }
+    }
 
     private fun configuredResponseLanguageCode(goal: String): String {
         val languageTag = context?.let { appContext ->

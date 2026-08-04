@@ -520,6 +520,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
     private val agentSubmissionExecutor = Executors.newSingleThreadExecutor()
     private val agentRoutingExecutor = Executors.newSingleThreadExecutor()
+    private val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     private val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
     private val cloudExecutor = Executors.newCachedThreadPool()
     private data class ActiveCloudStream(
@@ -1459,6 +1460,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentRegistryHeartbeatExecutor.shutdown()
         agentSubmissionExecutor.shutdown()
         agentRoutingExecutor.shutdown()
+        agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
@@ -5061,6 +5063,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun submitAgentGoal(voiceTraceId: String = "") {
+        val submissionStartedAt = SystemClock.elapsedRealtime()
         val goal = agentGoalInput.text?.toString()?.trim().orEmpty()
         val attachments = agentInputAttachments.toList()
         if (goal.isBlank() && attachments.isEmpty()) {
@@ -5107,11 +5110,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val submittedText = goal.ifBlank { attachmentLabel }
         val richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
         agentSubmissionExecutor.execute {
-            AgentLearningAnalyzer.correctionFeedback(goal)?.let { feedback ->
-                agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
-                    agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
-                }
-            }
             agentTranscriptStore.append(
                 AgentTranscriptRole.USER,
                 submittedText,
@@ -5120,11 +5118,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = turnId,
                 richOutputJson = richOutputJson
             )
+            Log.i(
+                "SignalASILatency",
+                "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
+            )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                refreshGlobalAgentCognition()
-                refreshAgentConversationHeader()
-                refreshAgentTranscriptWindow(conversation.id)
                 if (attachments.isEmpty()) {
                     continueAgentGoalSubmission(
                         goal = baseGoal,
@@ -5140,6 +5140,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         turnId = turnId,
                         attachments = attachments
                     )
+                }
+                Log.i(
+                    "SignalASILatency",
+                    "agent_submit stage=route_scheduled turn=${turnId.take(8)} " +
+                        "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
+                )
+                refreshGlobalAgentCognition()
+                refreshAgentConversationHeader()
+                refreshAgentTranscriptWindow(conversation.id)
+            }
+            AgentLearningAnalyzer.correctionFeedback(goal)?.let { feedback ->
+                agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
+                    agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
                 }
             }
         }
@@ -5393,6 +5406,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     Log.w("SignalASIAgent", "fast_local_response_self_check_failed turn=${turnId.take(8)}")
                 }
             }
+            val routeSelectionGoal = executionGoal
+            val routeSelectionFuture = if (
+                taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
+                forcedAction == null &&
+                !AgentScreenObservationPolicy.requiresObservation(routeSelectionGoal)
+            ) {
+                agentRouteSelectionExecutor.submit<AgentAction?> {
+                    deterministicSystemActionFor(routeSelectionGoal, localConversationContext)
+                }
+            } else {
+                null
+            }
             val conversationContext = globalSuperAgentRuntime.augmentContext(
                 localConversationContext,
                 executionGoal
@@ -5425,6 +5450,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
             val deterministicAction = resolvedForcedAction
+                ?: routeSelectionFuture?.let { future ->
+                    runCatching { future.get() }
+                        .onFailure { error ->
+                            Log.w("SignalASILatency", "agent_route preselection_failed", error)
+                        }
+                        .getOrNull()
+                }
                 ?: deterministicSystemActionFor(executionGoal, conversationContext)
             Log.i(
                 "SignalASILatency",
@@ -5473,6 +5505,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ),
                 once = true
             )
+            agentRunIdsByTurn[turnId] = run.runId
+            val backgroundDirectAction = selectedRouteAction?.takeIf { action ->
+                AgentConfirmationPolicy.tier(action) == AgentConfirmationTier.DIRECT &&
+                    !AgentDirectExecutionPolicy.requiresUiThread(action)
+            }
+            backgroundDirectAction?.let { action ->
+                Log.d(
+                    "SignalASIAgent",
+                    "route_direct turn=${turnId.take(8)} action=${action.id}"
+                )
+                executeDirectSystemAction(action, conversationId, turnId)
+            }
             appendRunControlEvent(
                 run = run,
                 messageId = turnId,
@@ -5509,8 +5553,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 "SignalASIAgent",
                 "run_recorded turn=${turnId.take(8)} elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
             )
-            agentRunIdsByTurn[turnId] = run.runId
             when {
+                backgroundDirectAction != null -> Unit
                 resolvedForcedAction != null -> {
                     Log.d(
                         "SignalASIAgent",
@@ -5531,7 +5575,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         "SignalASIAgent",
                         "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}"
                     )
-                    runOnUiThread {
+                    if (AgentDirectExecutionPolicy.requiresUiThread(deterministicAction)) {
+                        runOnUiThread {
+                            executeDirectSystemAction(deterministicAction, conversationId, turnId)
+                        }
+                    } else {
                         executeDirectSystemAction(deterministicAction, conversationId, turnId)
                     }
                 }
@@ -6007,7 +6055,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun deterministicSystemActionFor(
         goal: String,
         conversationContext: AgentConversationContext
-    ): AgentAction? = mobileNativeAgent.resolveDeterministicLocalAction(goal, conversationContext)
+    ): AgentAction? = mobileNativeAgent.resolveDeterministicAction(goal, conversationContext)
 
     private fun executeDirectSystemAction(
         action: AgentAction,
