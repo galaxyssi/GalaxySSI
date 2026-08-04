@@ -1443,6 +1443,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentRecentTasksView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_tasks.title", "Tasks"))
+              Text(recentTaskSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
@@ -1737,6 +1745,18 @@ struct SettingsView: View {
       stats.itemCount,
       stats.sourceCount,
       store.agentKnowledgeAccessAudit.count
+    )
+  }
+
+  private var recentTaskSummary: String {
+    let tasks = store.recentAgentTasks(limit: 200)
+    let running = tasks.filter {
+      [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
+    }.count
+    return String(
+      format: t("signalasi.agent_tasks.value", "Tasks: %d / running: %d"),
+      tasks.count,
+      running
     )
   }
 

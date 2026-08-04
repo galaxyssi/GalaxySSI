@@ -109,6 +109,9 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published private(set) var agentTaskRecords: [AgentTaskRecord] {
+    didSet { save() }
+  }
   @Published private(set) var agentMemoryItems: [AgentMemoryItem]
   @Published private(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
     didSet { save() }
@@ -140,6 +143,7 @@ final class SignalASIStore: ObservableObject {
     var agentTaskBudget: AgentTaskBudget
     var agentKnowledgeItems: [AgentKnowledgeItem]
     var agentKnowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]
+    var agentTaskRecords: [AgentTaskRecord]
     var customDeviceConnectors: [CustomDeviceConnector]
     var homeAssistantSettings: HomeAssistantSettings
     var modelPlannerSettings: AgentModelPlannerSettings
@@ -158,6 +162,7 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget: AgentTaskBudget = .default,
       agentKnowledgeItems: [AgentKnowledgeItem] = [],
       agentKnowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry] = [],
+      agentTaskRecords: [AgentTaskRecord] = [],
       customDeviceConnectors: [CustomDeviceConnector] = [],
       homeAssistantSettings: HomeAssistantSettings = .default,
       modelPlannerSettings: AgentModelPlannerSettings = .default
@@ -175,6 +180,7 @@ final class SignalASIStore: ObservableObject {
       self.agentTaskBudget = agentTaskBudget
       self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
       self.agentKnowledgeAccessAudit = Array(agentKnowledgeAccessAudit.suffix(100))
+      self.agentTaskRecords = Array(agentTaskRecords.suffix(200))
       self.customDeviceConnectors = customDeviceConnectors
       self.homeAssistantSettings = homeAssistantSettings
       self.modelPlannerSettings = modelPlannerSettings
@@ -201,6 +207,10 @@ final class SignalASIStore: ObservableObject {
         (try container.decodeIfPresent([AgentKnowledgeAccessAuditEntry].self, forKey: .agentKnowledgeAccessAudit) ?? [])
           .suffix(100)
       )
+      agentTaskRecords = Array(
+        (try container.decodeIfPresent([AgentTaskRecord].self, forKey: .agentTaskRecords) ?? [])
+          .suffix(200)
+      )
       customDeviceConnectors = try container.decodeIfPresent([CustomDeviceConnector].self, forKey: .customDeviceConnectors) ?? []
       homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
       modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
@@ -211,6 +221,7 @@ final class SignalASIStore: ObservableObject {
   private let secrets: SignalASISecretStore
   private let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   private let agentMemoryStore: UserDefaultsAgentMemoryStore
+  private let agentWorkspaceStore: AgentWorkspaceStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
@@ -222,6 +233,7 @@ final class SignalASIStore: ObservableObject {
     let memoryStore = UserDefaultsAgentMemoryStore(defaults: defaults, deletionIndex: deletionIndex)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
+    self.agentWorkspaceStore = FileAgentWorkspaceStore()
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -235,6 +247,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      agentTaskRecords = state.agentTaskRecords
       agentMemoryItems = memoryStore.exportItems()
       agentKnowledgeItems = state.agentKnowledgeItems
       agentKnowledgeAccessAudit = state.agentKnowledgeAccessAudit
@@ -272,6 +285,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      agentTaskRecords = []
       agentMemoryItems = memoryStore.exportItems()
       agentKnowledgeItems = []
       agentKnowledgeAccessAudit = []
@@ -461,6 +475,7 @@ final class SignalASIStore: ObservableObject {
     defaults.removeObject(forKey: storageKey)
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
+    agentWorkspaceStore.clear()
     FileAgentDataDisclosureStore.destroyPersistentStore()
     resetToFreshState()
     save()
@@ -623,6 +638,118 @@ final class SignalASIStore: ObservableObject {
       blockedMatchCount: 0
     )
     agentKnowledgeAccessAudit = Array((agentKnowledgeAccessAudit + [entry]).suffix(100))
+  }
+
+  func recentAgentTasks(limit: Int = 20) -> [AgentTaskRecord] {
+    mergedAgentTaskRecords()
+      .prefix(max(limit, 0))
+      .map { $0 }
+  }
+
+  func searchAgentTasks(_ query: String, limit: Int = 50) -> [AgentTaskRecord] {
+    let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return recentAgentTasks(limit: limit)
+    }
+    return mergedAgentTaskRecords()
+      .filter { task in
+        [
+          task.goal,
+          task.taskId,
+          task.sessionId,
+          task.targetTitle,
+          task.routeKind.rawValue,
+          task.phase.rawValue,
+          task.result,
+          task.verification,
+          task.outputFiles.joined(separator: " "),
+          task.executionLog.joined(separator: " ")
+        ].contains {
+          $0.range(of: clean, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+      }
+      .prefix(max(limit, 0))
+      .map { $0 }
+  }
+
+  func agentTasks(forSession sessionId: String, limit: Int = 50) -> [AgentTaskRecord] {
+    let clean = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return [] }
+    return mergedAgentTaskRecords()
+      .filter { $0.sessionId == clean }
+      .prefix(max(limit, 0))
+      .map { $0 }
+  }
+
+  func agentTask(id taskId: String) -> AgentTaskRecord? {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return mergedAgentTaskRecords().first { $0.taskId == clean }
+  }
+
+  @discardableResult
+  func upsertAgentTask(_ record: AgentTaskRecord) -> AgentTaskRecord {
+    let clean = record.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return record }
+    var updated = record
+    updated.taskId = clean
+    var items = agentTaskRecords.filter { $0.taskId != clean }
+    items.append(updated)
+    agentTaskRecords = Array(Self.sortedAgentTasks(items).prefix(200))
+    return updated
+  }
+
+  @discardableResult
+  func deleteAgentTask(id taskId: String) -> Bool {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return false }
+    let before = agentTaskRecords.count
+    agentTaskRecords.removeAll { $0.taskId == clean }
+    var deletedWorkspace = false
+    for workspace in agentWorkspaceStore.list() where workspace.taskId == clean {
+      if (try? agentWorkspaceStore.delete(workspace.workspaceId, expectedRevision: nil)) == true {
+        deletedWorkspace = true
+      }
+    }
+    if before == agentTaskRecords.count && !deletedWorkspace {
+      return false
+    }
+    save()
+    return true
+  }
+
+  @discardableResult
+  func deleteAgentTasks(ids taskIds: Set<String>) -> Int {
+    let cleanIds = Set(taskIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    guard !cleanIds.isEmpty else { return 0 }
+    let before = agentTaskRecords.count
+    agentTaskRecords.removeAll { cleanIds.contains($0.taskId) }
+    var deleted = before - agentTaskRecords.count
+    for workspace in agentWorkspaceStore.list() where cleanIds.contains(workspace.taskId) {
+      if (try? agentWorkspaceStore.delete(workspace.workspaceId, expectedRevision: nil)) == true {
+        deleted += 1
+      }
+    }
+    if deleted > 0 {
+      save()
+    }
+    return deleted
+  }
+
+  @discardableResult
+  func rebindAgentTasks(sourceSessionId: String, targetSessionId: String) -> Int {
+    let source = sourceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let target = targetSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !source.isEmpty, !target.isEmpty, source != target else { return 0 }
+    var changed = 0
+    agentTaskRecords = agentTaskRecords.map { record in
+      guard record.sessionId == source else { return record }
+      changed += 1
+      var updated = record
+      updated.sessionId = target
+      return updated
+    }
+    return changed
   }
 
   @discardableResult
@@ -1088,6 +1215,7 @@ final class SignalASIStore: ObservableObject {
         includesAgentSafetySettings: true,
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
+        includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
         includesModelPlannerSettings: true,
@@ -1099,6 +1227,7 @@ final class SignalASIStore: ObservableObject {
         memoryDeletionIndex: memoryDeletionIndex.exportTombstones(),
         knowledge: agentKnowledgeItems,
         knowledgeAccessAudit: agentKnowledgeAccessAudit,
+        taskHistory: recentAgentTasks(limit: 200),
         voiceSettings: voiceSettings,
         languagePolicy: languagePolicy,
         displaySettings: displaySettings,
@@ -1148,6 +1277,7 @@ final class SignalASIStore: ObservableObject {
       )
       agentKnowledgeItems = Array((payload.agentData.knowledge ?? []).suffix(500))
       agentKnowledgeAccessAudit = Array((payload.agentData.knowledgeAccessAudit ?? []).suffix(100))
+      agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
     }
     save()
   }
@@ -1393,6 +1523,7 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    agentTaskRecords = []
     agentMemoryItems = []
     agentKnowledgeItems = []
     agentKnowledgeAccessAudit = []
@@ -1619,6 +1750,135 @@ final class SignalASIStore: ObservableObject {
     return Int(hash & 0x7fff_ffff)
   }
 
+  private func mergedAgentTaskRecords() -> [AgentTaskRecord] {
+    var byId: [String: AgentTaskRecord] = [:]
+    for record in agentTaskRecords + workspaceAgentTaskRecords() where !record.taskId.isBlank {
+      if let existing = byId[record.taskId],
+         existing.updatedAtMillis >= record.updatedAtMillis {
+        continue
+      }
+      byId[record.taskId] = record
+    }
+    return Self.sortedAgentTasks(Array(byId.values))
+  }
+
+  private func workspaceAgentTaskRecords() -> [AgentTaskRecord] {
+    agentWorkspaceStore.list().compactMap { workspace in
+      let taskId = workspace.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !taskId.isEmpty else { return nil }
+      let routeKind = workspaceRouteKind(workspace)
+      let locationKind = workspaceLocationKind(workspace, routeKind: routeKind)
+      let runtimeKind = workspaceRuntimeKind(workspace, routeKind: routeKind, locationKind: locationKind)
+      return AgentTaskRecord(
+        taskId: taskId,
+        sessionId: workspace.sessionId,
+        goal: workspace.goal.ifBlank(workspace.workspaceId),
+        phase: workspacePhase(workspace.status),
+        routeKind: routeKind,
+        targetTitle: workspaceTargetTitle(workspace, routeKind: routeKind),
+        risk: workspace.status == .blocked ? .blocked : .medium,
+        blocked: workspace.status == .blocked,
+        executionLocationKind: locationKind,
+        executionRuntimeKind: runtimeKind,
+        executionLocationId: workspace.deviceId.ifBlank(workspace.agentId),
+        executionLocationName: workspace.deviceId.ifBlank(workspace.agentId),
+        executionRuntimeId: workspace.remoteRunId,
+        executionLocationTrusted: true,
+        result: workspaceResultText(workspace),
+        verification: workspace.currentPlanSnapshot,
+        outputFiles: workspace.artifacts.map(\.uri),
+        executionLog: workspace.eventJournal.map { event in
+          [Self.formatMillis(event.timestampMillis), event.kind, event.message]
+            .filter { !$0.isBlank }
+            .joined(separator: " / ")
+        },
+        createdAtMillis: workspace.createdAtMillis,
+        updatedAtMillis: workspace.updatedAtMillis
+      )
+    }
+  }
+
+  private func workspacePhase(_ status: AgentWorkspaceStatus) -> AgentPhase {
+    switch status {
+    case .created, .queued:
+      return .planning
+    case .running:
+      return .executing
+    case .waitingConfirmation:
+      return .waitingConfirmation
+    case .waitingResponse:
+      return .waitingResponse
+    case .paused:
+      return .paused
+    case .blocked:
+      return .blocked
+    case .completed:
+      return .completed
+    case .failed:
+      return .failed
+    case .cancelled:
+      return .cancelled
+    }
+  }
+
+  private func workspaceRouteKind(_ workspace: AgentWorkspace) -> AgentRouteKind {
+    if !workspace.remoteRunId.isBlank || !workspace.agentId.isBlank {
+      return .desktopAgent
+    }
+    return .localSystem
+  }
+
+  private func workspaceLocationKind(_ workspace: AgentWorkspace, routeKind: AgentRouteKind) -> AgentExecutionLocationKind {
+    if !workspace.deviceId.isBlank || routeKind == .desktopAgent {
+      return .desktop
+    }
+    return .phone
+  }
+
+  private func workspaceRuntimeKind(
+    _ workspace: AgentWorkspace,
+    routeKind: AgentRouteKind,
+    locationKind: AgentExecutionLocationKind
+  ) -> AgentExecutionRuntimeKind {
+    if routeKind == .desktopAgent || locationKind == .desktop {
+      return .desktopAgent
+    }
+    return .phoneNative
+  }
+
+  private func workspaceTargetTitle(_ workspace: AgentWorkspace, routeKind: AgentRouteKind) -> String {
+    if routeKind == .desktopAgent {
+      return workspace.agentId.ifBlank(workspace.deviceId).ifBlank("Desktop Agent")
+    }
+    return workspace.agentId.ifBlank("SignalASI")
+  }
+
+  private func workspaceResultText(_ workspace: AgentWorkspace) -> String {
+    if !workspace.errorMessage.isBlank {
+      return workspace.errorMessage
+    }
+    let clean = workspace.resultJson.trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean == "{}" ? "" : clean
+  }
+
+  private static func sortedAgentTasks(_ records: [AgentTaskRecord]) -> [AgentTaskRecord] {
+    records.sorted { left, right in
+      let leftTime = max(left.updatedAtMillis, left.createdAtMillis)
+      let rightTime = max(right.updatedAtMillis, right.createdAtMillis)
+      if leftTime != rightTime {
+        return leftTime > rightTime
+      }
+      return left.taskId > right.taskId
+    }
+  }
+
+  private static func formatMillis(_ value: Int64) -> String {
+    guard value > 0 else { return "" }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MM-dd HH:mm:ss"
+    return formatter.string(from: Date(timeIntervalSince1970: Double(value) / 1_000))
+  }
+
   private func save() {
     let state = PersistedState(
       profile: profile,
@@ -1634,6 +1894,7 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget: agentTaskBudget,
       agentKnowledgeItems: agentKnowledgeItems,
       agentKnowledgeAccessAudit: agentKnowledgeAccessAudit,
+      agentTaskRecords: agentTaskRecords,
       customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken),
       homeAssistantSettings: homeAssistantSettings.withoutAccessToken,
       modelPlannerSettings: modelPlannerSettings
