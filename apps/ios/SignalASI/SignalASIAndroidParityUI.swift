@@ -535,6 +535,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_execution_policy_title", "Execution Policy"),
+              subtitle: t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."),
+              systemImage: "checkmark.shield",
+              tint: .orange
+            ) {
+              SignalASIExecutionPolicyView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",
