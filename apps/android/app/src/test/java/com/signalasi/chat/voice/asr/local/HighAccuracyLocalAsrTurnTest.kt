@@ -3,7 +3,9 @@ package com.signalasi.chat.voice.asr.local
 import com.signalasi.chat.voice.audio.DirectPcmFramePacket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -166,6 +168,34 @@ class HighAccuracyLocalAsrTurnTest {
         controller.close()
     }
 
+    @Test
+    fun finishWaitsForBufferedTailWhenSegmentFinalIsAlreadyInFlight() = runBlocking {
+        val engine = FakeEngine()
+        engine.stopText = "second part"
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine }
+        )
+        assertTrue(controller.prepareNow())
+        val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+
+        assertTrue(turn.offer(frame(1, shortArrayOf(1, 1))))
+        engine.beginSegmentFinal()
+        assertTrue(turn.offer(frame(2, shortArrayOf(2, 2))))
+
+        val result = async(start = CoroutineStart.UNDISPATCHED) { turn.finish() }
+        engine.completeSegmentFinal("first part", 1_000L, 10L)
+
+        assertEquals("first part second part", result.await().text)
+        assertEquals(2, engine.startCalls)
+        assertEquals(listOf<Short>(2, 2), engine.pushed.last().toList())
+        val nextTurn = controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {}
+        assertNotNull(nextTurn)
+        nextTurn?.cancel()
+        controller.close()
+    }
+
     private fun frame(sequence: Long, samples: ShortArray): DirectPcmFramePacket {
         val bytes = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         samples.forEach(bytes::putShort)
@@ -227,6 +257,15 @@ class HighAccuracyLocalAsrTurnTest {
         }
 
         fun segmentFinal(text: String, durationMs: Long, inferenceMs: Long) {
+            mutableEvents.tryEmit(AsrEvent.Final(text, durationMs, inferenceMs))
+            transition(LocalAsrState.Ready("model", 1L))
+        }
+
+        fun beginSegmentFinal() {
+            transition(LocalAsrState.Stopping(token, config))
+        }
+
+        fun completeSegmentFinal(text: String, durationMs: Long, inferenceMs: Long) {
             mutableEvents.tryEmit(AsrEvent.Final(text, durationMs, inferenceMs))
             transition(LocalAsrState.Ready("model", 1L))
         }

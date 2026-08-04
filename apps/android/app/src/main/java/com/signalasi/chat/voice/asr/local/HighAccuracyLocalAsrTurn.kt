@@ -330,7 +330,11 @@ class HighAccuracyLocalAsrTurn internal constructor(
                         transcriptTermination = event.termination
                     }
                     if (finishRequested.get()) {
-                        completeFinalLocked()
+                        if (pending.isEmpty()) {
+                            completeFinalLocked()
+                        } else {
+                            stopAfterListening = true
+                        }
                         null
                     } else {
                         restartPending = true
