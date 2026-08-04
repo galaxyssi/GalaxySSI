@@ -1522,6 +1522,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAdvancedOptionsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_advanced_options", "Advanced Options"))
+              Text(t("settings_advanced_options_subtitle", "Logs, network, and protocol diagnostics"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.backup", "Backup")) {
           SecureField(t("signalasi.settings.password", "Password"), text: $backupPassword)
