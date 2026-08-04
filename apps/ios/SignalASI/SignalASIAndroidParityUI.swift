@@ -551,6 +551,14 @@ struct DiscoverView: View {
               VoiceSettingsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_app_tools_title", "Apps & Tools"),
+              subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
+              systemImage: "rectangle.3.group",
+              tint: .blue
+            ) {
+              SignalASIAppToolsView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
               subtitle: t("signalasi.automation.hero_subtitle", "Let AI actively handle fixed tasks"),
               systemImage: "clock",

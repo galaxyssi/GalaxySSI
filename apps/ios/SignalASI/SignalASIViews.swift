@@ -1420,6 +1420,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAppToolsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_app_tools_title", "Apps & Tools"))
+              Text(t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAppAdaptersView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("agent_app_adapters_title", "Specialized App Adapters"))
