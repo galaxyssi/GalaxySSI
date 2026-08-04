@@ -4163,7 +4163,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (granted) {
                 Toast.makeText(this, getString(R.string.voice_record_permission_granted), Toast.LENGTH_SHORT).show()
                 if (activeMainTab == PAGE_VOICE) startVoiceAssistant()
-                if (activeMainTab == PAGE_AGENT) startAgentVoiceInput()
             }
         }
         if (requestCode == REQUEST_AGENT_CAMERA_PERMISSION &&
@@ -7573,9 +7572,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             Toast.makeText(this, getString(R.string.voice_error_no_valid_speech), Toast.LENGTH_SHORT).show()
             return
         }
-        agentGoalInput.setText(text)
-        agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
-        submitAgentGoal()
+        submitAgentGoal(goalOverride = text)
     }
 
     private fun configureWakePage() {
@@ -7810,10 +7807,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 override fun onPartialResults(partialResults: Bundle?) {
                     val text = bestSpeechResult(partialResults)
                     if (agentVoiceListening) {
-                        if (text.isNotBlank()) {
-                            agentGoalInput.setText(text)
-                            agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
-                        }
                         return
                     }
                     if (text.isNotBlank()) {
@@ -23025,9 +23018,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val stableText = if (action.stable) action.hypothesis.text else ""
                 val unstableText = if (action.stable) "" else action.hypothesis.text
                 when (purpose) {
-                    "agent_input" -> if (::agentHoldToTalkController.isInitialized) {
-                        agentHoldToTalkController.updateTranscript(stableText, unstableText)
-                    }
+                    "agent_input" -> Unit
                     "voice_wakeup" -> updateWakeVoiceUi(
                         getString(R.string.voice_status_recording),
                         action.hypothesis.text
@@ -23170,9 +23161,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
             when (purpose) {
-                "agent_input" -> if (::agentHoldToTalkController.isInitialized) {
-                    agentHoldToTalkController.updateTranscript(stableText, unstableText)
-                }
+                "agent_input" -> Unit
                 "voice_wakeup" -> updateWakeVoiceUi(
                     getString(R.string.voice_status_recording),
                     stableText + unstableText
