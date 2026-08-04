@@ -511,6 +511,14 @@ struct DiscoverView: View {
               SignalASIMyAgentsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_learning_title", "Learning & Skill Evolution"),
+              subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
+              systemImage: "sparkles.rectangle.stack",
+              tint: .purple
+            ) {
+              SignalASILearningSkillEvolutionView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.scan_title", "Scan"),
               subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
               systemImage: "qrcode.viewfinder",

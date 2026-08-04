@@ -1380,6 +1380,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASILearningSkillEvolutionView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_learning_title", "Learning & Skill Evolution"))
+              Text(t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentKnowledgeView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_knowledge.title", "Knowledge"))
