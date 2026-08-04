@@ -575,6 +575,14 @@ struct DiscoverView: View {
               DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_nodes_title", "Agents, Models & Nodes"),
+              subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
+              systemImage: "link.circle",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIAgentsModelsNodesView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.model_planner", "Model Planner"),
               subtitle: t("signalasi.discover.planner.subtitle", "Agent planning, budget and model routing"),
               systemImage: "slider.horizontal.3",
