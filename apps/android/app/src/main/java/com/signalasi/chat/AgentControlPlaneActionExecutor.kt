@@ -54,6 +54,9 @@ class AgentControlPlaneActionExecutor private constructor(
         if (action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()) {
             return provider.executeDelegate(action, screen)
         }
+        if (AgentConnectorExecutionPolicy.isDirectPhoneCloudModelRead(action)) {
+            return provider.executeDelegate(action, screen)
+        }
         val requestedAgentId = action.parameters["connector_id"].orEmpty().ifBlank { action.target }
         val agentId = provider.resolveAgentId(requestedAgentId)
             ?: return provider.executeDelegate(action, screen)
@@ -147,6 +150,15 @@ class AgentControlPlaneActionExecutor private constructor(
     companion object {
         private const val CONVERSATION_ID_KEY = "_signalasi_conversation_id"
         private const val TURN_ID_KEY = "_signalasi_turn_id"
+    }
+}
+
+internal object AgentConnectorExecutionPolicy {
+    fun isDirectPhoneCloudModelRead(action: AgentAction): Boolean {
+        if (action.kind != AgentActionKind.CALL_CONNECTOR) return false
+        if (action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()) return false
+        return action.parameters["connector_adapter_type"] == "cloud-model-api" ||
+            action.parameters["connector_id"] == "cloud-models"
     }
 }
 

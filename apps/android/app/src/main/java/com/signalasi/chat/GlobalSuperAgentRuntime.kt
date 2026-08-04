@@ -308,16 +308,22 @@ class GlobalAgentRepository(context: Context) {
     }
 
     fun loadWorld(): PersonalWorldModel = synchronized(STORE_LOCK) {
-        decodeWorld(database.readString(KEY_WORLD, ""))
+        cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, "")).also { cachedWorld = it }
     }
 
     fun saveWorld(world: PersonalWorldModel) = synchronized(STORE_LOCK) {
         database.writeString(KEY_WORLD, encodeWorld(world).toString())
+        cachedWorld = world
     }
 
-    fun topicGraph(): GlobalTopicProjectGraph = topicGraphStore.load()
+    fun topicGraph(): GlobalTopicProjectGraph = synchronized(STORE_LOCK) {
+        cachedTopicGraph ?: topicGraphStore.load().also { cachedTopicGraph = it }
+    }
 
-    fun saveTopicGraph(graph: GlobalTopicProjectGraph) = topicGraphStore.save(graph)
+    fun saveTopicGraph(graph: GlobalTopicProjectGraph) = synchronized(STORE_LOCK) {
+        topicGraphStore.save(graph)
+        cachedTopicGraph = graph
+    }
 
     fun memoryInbox(): GlobalMemoryInbox = memoryEvolutionStore.inbox()
 
@@ -332,9 +338,14 @@ class GlobalAgentRepository(context: Context) {
     fun appendMemoryEvolutionRecords(records: List<GlobalMemoryEvolutionRecord>) =
         memoryEvolutionStore.appendEvolutionRecords(records)
 
-    fun entityMemoryGraph(): GlobalEntityMemoryGraph = entityMemoryGraphStore.load()
+    fun entityMemoryGraph(): GlobalEntityMemoryGraph = synchronized(STORE_LOCK) {
+        cachedEntityMemoryGraph ?: entityMemoryGraphStore.load().also { cachedEntityMemoryGraph = it }
+    }
 
-    fun saveEntityMemoryGraph(graph: GlobalEntityMemoryGraph) = entityMemoryGraphStore.save(graph)
+    fun saveEntityMemoryGraph(graph: GlobalEntityMemoryGraph) = synchronized(STORE_LOCK) {
+        entityMemoryGraphStore.save(graph)
+        cachedEntityMemoryGraph = graph
+    }
 
     fun researchTasks(): List<GlobalResearchTask> = synchronized(STORE_LOCK) { loadResearchTasks() }
 
@@ -772,7 +783,12 @@ class GlobalAgentRepository(context: Context) {
         payload.optJSONObject("proactive_discovery")?.let(proactiveDiscoveryStore::restore)
     }
 
-    fun clear() = synchronized(STORE_LOCK) { database.clear() }
+    fun clear() = synchronized(STORE_LOCK) {
+        database.clear()
+        cachedWorld = null
+        cachedTopicGraph = null
+        cachedEntityMemoryGraph = null
+    }
 
     private fun loadEvents(): List<GlobalConversationEvent> = runCatching {
         val array = JSONArray(database.readString(KEY_EVENTS, "[]"))
@@ -1603,6 +1619,9 @@ class GlobalAgentRepository(context: Context) {
         private const val MAX_CONVERSATION_TOMBSTONES = 500
         private const val MAX_EVENT_CONTENT_CHARACTERS = 12_000
         private val STORE_LOCK = Any()
+        @Volatile private var cachedWorld: PersonalWorldModel? = null
+        @Volatile private var cachedTopicGraph: GlobalTopicProjectGraph? = null
+        @Volatile private var cachedEntityMemoryGraph: GlobalEntityMemoryGraph? = null
     }
 }
 
@@ -2039,6 +2058,12 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             .joinToString("\n\n")
             .take(8_000)
             .trim())
+    }
+
+    fun prewarmContextSnapshot() {
+        repository.loadWorld()
+        repository.topicGraph()
+        repository.entityMemoryGraph()
     }
 
     fun worldSnapshot(): PersonalWorldModel = repository.loadWorld()
