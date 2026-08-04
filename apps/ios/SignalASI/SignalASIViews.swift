@@ -1449,6 +1449,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.planning", "Planning & Coordination")) {
+          NavigationLink(destination: SignalASIResourceRoutingView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_resource_routing_title", "Models & Resource Routing"))
+              Text(t("cc_resource_routing_subtitle", "Choose by quality, latency, privacy, cost, and availability"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentModelPlannerSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.discover.model_planner", "Model Planner"))
