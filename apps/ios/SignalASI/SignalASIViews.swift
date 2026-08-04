@@ -1399,29 +1399,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.language", "Language")) {
-          Picker(t("signalasi.settings.interface_language", "Interface"), selection: languageBinding(\.interfaceLanguage)) {
-            ForEach(LanguagePolicySettings.interfaceChoices, id: \.self) { value in
-              Text(interfaceLanguageDisplayName(value)).tag(value)
+          NavigationLink(destination: SignalASILanguageSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.language_policy.title", "Voice & Language"))
+              Text(languagePolicySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
           }
-          Picker(t("signalasi.settings.model_response_language", "Model Response"), selection: languageBinding(\.responseLanguage)) {
-            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(voiceLanguageDisplayName(value)).tag(value)
-            }
-          }
-          Picker("ASR", selection: languageBinding(\.asrLanguage)) {
-            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(voiceLanguageDisplayName(value)).tag(value)
-            }
-          }
-          Picker("TTS", selection: languageBinding(\.ttsLanguage)) {
-            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
-              Text(voiceLanguageDisplayName(value)).tag(value)
-            }
-          }
-          Text(String(format: t("signalasi.settings.asr_locale", "ASR locale: %@"), store.voiceSettings.preferredLocaleIdentifier))
-            .font(.caption)
-            .foregroundColor(.secondary)
         }
         Section(t("signalasi.settings.display", "Display")) {
           Picker(t("signalasi.settings.text_size", "Text Size"), selection: displayTextScaleBinding) {
@@ -1706,6 +1691,18 @@ struct SettingsView: View {
     if settings.configured { return t("signalasi.settings.configured_enabled", "Configured and enabled") }
     if settings.credentialsConfigured { return t("signalasi.settings.configured_disabled", "Configured, disabled") }
     return t("signalasi.settings.not_configured", "Not configured")
+  }
+
+  private var languagePolicySummary: String {
+    let interface = interfaceLanguageDisplayName(store.languagePolicy.interfaceLanguage)
+    let response = voiceLanguageDisplayName(store.languagePolicy.responseLanguage)
+    let asrLocale = store.voiceSettings.preferredLocaleIdentifier
+    return String(
+      format: t("signalasi.language_policy.settings_summary", "%@ / Reply %@ / ASR %@"),
+      interface,
+      response,
+      asrLocale
+    )
   }
 
   private var linkDiagnosticsSummary: String {
