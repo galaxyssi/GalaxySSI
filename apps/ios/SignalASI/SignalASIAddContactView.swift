@@ -6,7 +6,6 @@ struct AddContactView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var myQRCodePresented = false
   @State private var contactScannerPresented = false
-  @State private var addCloudModelPresented = false
   @State private var contactImportStatus = ""
   @State private var contactImportIsError = false
 
@@ -41,7 +40,7 @@ struct AddContactView: View {
             ) {
               contactScannerPresented = true
             }
-            AddContactActionRow(
+            AddContactNavigationRow(
               title: t("signalasi.add_contact.cloud_title", "Add Cloud Model"),
               subtitle: t(
                 "signalasi.add_contact.cloud_subtitle",
@@ -51,7 +50,7 @@ struct AddContactView: View {
               tint: .signalASIInsightText,
               badge: t("signalasi.add_contact.title", "Add")
             ) {
-              addCloudModelPresented = true
+              CloudModelProviderSelectionView()
             }
             AddContactActionRow(
               title: t("signalasi.add_contact.my_qr_title", "My QR Code"),
@@ -93,9 +92,6 @@ struct AddContactView: View {
           contactImportIsError = true
         }
       )
-    }
-    .sheet(isPresented: $addCloudModelPresented) {
-      AddCloudModelView()
     }
   }
 
@@ -183,43 +179,107 @@ private struct AddContactActionRow: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 12) {
-        ZStack {
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(tint.opacity(0.16))
-          Image(systemName: systemImage)
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundColor(tint)
-        }
-        .frame(width: 42, height: 42)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(title)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.signalASITextPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.82)
-          Text(subtitle)
-            .font(.system(size: 12))
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(2)
-        }
-        Spacer(minLength: 8)
-        Text(badge)
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundColor(tint)
-          .lineLimit(1)
-          .minimumScaleFactor(0.75)
-          .padding(.horizontal, 8)
-          .frame(minHeight: 28)
-          .background(tint.opacity(0.12))
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 11)
-      .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-      .background(Color.signalASISurface)
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      AddContactRowContent(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge,
+        showsDisclosure: false
+      )
     }
     .buttonStyle(.plain)
+  }
+}
+
+private struct AddContactNavigationRow<Destination: View>: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  var badge: String
+  let destination: Destination
+
+  init(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    tint: Color,
+    badge: String,
+    @ViewBuilder destination: () -> Destination
+  ) {
+    self.title = title
+    self.subtitle = subtitle
+    self.systemImage = systemImage
+    self.tint = tint
+    self.badge = badge
+    self.destination = destination()
+  }
+
+  var body: some View {
+    NavigationLink(destination: destination) {
+      AddContactRowContent(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge,
+        showsDisclosure: true
+      )
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct AddContactRowContent: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  var badge: String
+  var showsDisclosure: Bool
+
+  var body: some View {
+    HStack(spacing: 12) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(tint.opacity(0.16))
+        Image(systemName: systemImage)
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(tint)
+      }
+      .frame(width: 42, height: 42)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.82)
+        Text(subtitle)
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(2)
+      }
+      Spacer(minLength: 8)
+      Text(badge)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundColor(tint)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 28)
+        .background(tint.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if showsDisclosure {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+      }
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 11)
+    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
