@@ -575,6 +575,14 @@ struct DiscoverView: View {
               DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_smart_spaces_title", "Smart Spaces"),
+              subtitle: t("cc_spaces_subtitle", "Home Assistant and custom devices"),
+              systemImage: "house",
+              tint: .purple
+            ) {
+              SignalASISmartSpacesView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.model_planner", "Model Planner"),
               subtitle: t("signalasi.discover.planner.subtitle", "Agent planning, budget and model routing"),
               systemImage: "slider.horizontal.3",
