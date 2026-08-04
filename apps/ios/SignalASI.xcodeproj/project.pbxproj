@@ -36,6 +36,9 @@
     A10000000000000000001080 /* SignalASITextSizeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */; };
     A10000000000000000001100 /* SignalASIResetDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001100 /* SignalASIResetDataView.swift */; };
     A10000000000000000001090 /* SignalASIAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001090 /* SignalASIAboutView.swift */; };
+    A10000000000000000001310 /* SignalASIMemoryControlCenterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001310 /* SignalASIMemoryControlCenterModels.swift */; };
+    A10000000000000000001311 /* SignalASIMemoryControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */; };
+    A10000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
@@ -641,6 +644,9 @@
     A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASITextSizeSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001100 /* SignalASIResetDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIResetDataView.swift; sourceTree = "<group>"; };
     A20000000000000000001090 /* SignalASIAboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAboutView.swift; sourceTree = "<group>"; };
+    A20000000000000000001310 /* SignalASIMemoryControlCenterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterModels.swift; sourceTree = "<group>"; };
+    A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterView.swift; sourceTree = "<group>"; };
+    A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterSubpages.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1624,6 +1630,9 @@
         A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */,
         A20000000000000000001100 /* SignalASIResetDataView.swift */,
         A20000000000000000001090 /* SignalASIAboutView.swift */,
+        A20000000000000000001310 /* SignalASIMemoryControlCenterModels.swift */,
+        A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */,
+        A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -2338,6 +2347,9 @@
         A10000000000000000001080 /* SignalASITextSizeSettingsView.swift in Sources */,
         A10000000000000000001100 /* SignalASIResetDataView.swift in Sources */,
         A10000000000000000001090 /* SignalASIAboutView.swift in Sources */,
+        A10000000000000000001310 /* SignalASIMemoryControlCenterModels.swift in Sources */,
+        A10000000000000000001311 /* SignalASIMemoryControlCenterView.swift in Sources */,
+        A10000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;

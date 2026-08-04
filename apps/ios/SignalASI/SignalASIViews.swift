@@ -1372,6 +1372,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIMemoryControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_memory_title", "Memory & Personalization"))
+              Text(memoryControlSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentMemoryView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_memory.title", "Personal Memory"))
@@ -1772,6 +1780,14 @@ struct SettingsView: View {
       format: t("signalasi.agent_memory.value", "Memory: %d / conflicts: %d"),
       snapshot.activeCount,
       snapshot.conflicts.count
+    )
+  }
+
+  private var memoryControlSummary: String {
+    let snapshot = store.agentMemorySnapshot()
+    return String(
+      format: t("cc_memory_subtitle", "%d long-term memories / user controlled"),
+      snapshot.activeCount
     )
   }
 
