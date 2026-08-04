@@ -116,7 +116,7 @@ data class AsrConfig(
     val overlapMs: Long = 2_000L,
     val preRollMs: Long = 200L,
     val postRollMs: Long = 400L,
-    val maxTokens: Int = 160,
+    val maxTokens: Int = MAX_FINAL_TOKENS,
     val enableTimestamps: Boolean = false,
     val performanceMode: AsrPerformanceMode = AsrPerformanceMode.BALANCED,
     val finalizationTimeoutMs: Long = 3_000L
@@ -133,7 +133,7 @@ data class AsrConfig(
         require(overlapMs in 1_000L..3_000L && overlapMs < activeWindowMs)
         require(preRollMs in 0L..500L)
         require(postRollMs in 0L..500L)
-        require(maxTokens in 100..160)
+        require(maxTokens in 100..MAX_FINAL_TOKENS)
         require(!enableTimestamps) { "Timestamp decoding is disabled for the first Large-v3-Turbo release" }
         require(finalizationTimeoutMs in 1_000L..10_000L)
     }
@@ -142,6 +142,9 @@ data class AsrConfig(
         get() = performanceMode != AsrPerformanceMode.POWER_SAVER
 
     companion object {
+        // The exported decoder has 200 positions. Four prompt positions and one EOT look-ahead
+        // position leave 195 positions for visible text without silently clipping dense speech.
+        const val MAX_FINAL_TOKENS = 195
         private val SUPPORTED_LANGUAGES = setOf("zh", "auto")
     }
 }

@@ -233,8 +233,15 @@ class HighAccuracyLocalAsrTurn internal constructor(
         synchronized(pushLock) {
             return when (engine.state.value) {
                 is LocalAsrState.Listening -> {
-                    flushPendingLocked()
-                    engine.pushPcm(frame.pcm16, frame.sampleCount)
+                    if (!flushPendingLocked()) {
+                        retainStartupFrameLocked(frame)
+                        true
+                    } else if (engine.pushPcm(frame.pcm16, frame.sampleCount)) {
+                        true
+                    } else {
+                        retainStartupFrameLocked(frame)
+                        true
+                    }
                 }
                 is LocalAsrState.Starting,
                 is LocalAsrState.Stopping,
@@ -384,23 +391,27 @@ class HighAccuracyLocalAsrTurn internal constructor(
         copy.put(source).flip()
         pending += PendingFrame(copy, frame.sampleCount)
         pendingSamples += frame.sampleCount
-        val maxPendingSamples = config.inputSampleRateHz * STARTUP_AUDIO_BUFFER_MS / 1_000
+        val bufferDurationMs = maxOf(
+            config.activeWindowMs + config.overlapMs,
+            config.finalizationTimeoutMs + FINALIZATION_BUFFER_GRACE_MS
+        ).coerceAtMost(config.maxSegmentMs)
+        val maxPendingSamples = config.inputSampleRateHz * bufferDurationMs.toInt() / 1_000
         while (pendingSamples > maxPendingSamples && pending.isNotEmpty()) {
             pendingSamples -= pending.removeFirst().sampleCount
         }
     }
 
-    private fun flushPendingLocked() {
+    private fun flushPendingLocked(): Boolean {
         while (pending.isNotEmpty()) {
-            val frame = pending.removeFirst()
-            pendingSamples -= frame.sampleCount
+            val frame = pending.first()
             if (!engine.pushPcm(frame.pcm16, frame.sampleCount)) {
-                pending.clear()
-                pendingSamples = 0
-                return
+                return false
             }
+            pending.removeFirst()
+            pendingSamples -= frame.sampleCount
         }
         pendingSamples = 0
+        return true
     }
 
     private fun completeFinalLocked() {
@@ -430,7 +441,7 @@ class HighAccuracyLocalAsrTurn internal constructor(
 
     private companion object {
         const val PCM16_BYTES_PER_SAMPLE = 2
-        const val STARTUP_AUDIO_BUFFER_MS = 500
+        const val FINALIZATION_BUFFER_GRACE_MS = 2_000L
         const val FINAL_TIMEOUT_GRACE_MS = 750L
     }
 

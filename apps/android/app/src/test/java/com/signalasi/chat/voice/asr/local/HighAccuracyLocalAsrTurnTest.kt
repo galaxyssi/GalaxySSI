@@ -120,6 +120,52 @@ class HighAccuracyLocalAsrTurnTest {
         controller.close()
     }
 
+    @Test
+    fun startupBufferPreservesMoreThanHalfASecondOfSpeech() = runBlocking {
+        val engine = FakeEngine(autoListen = false)
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine }
+        )
+        assertTrue(controller.prepareNow())
+        val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+
+        repeat(100) { index ->
+            assertTrue(turn.offer(frame(index.toLong(), ShortArray(160) { index.toShort() })))
+        }
+        engine.listen()
+
+        assertEquals(100, engine.pushed.size)
+        assertEquals(0.toShort(), engine.pushed.first().first())
+        assertEquals(99.toShort(), engine.pushed.last().first())
+        turn.cancel()
+        controller.close()
+    }
+
+    @Test
+    fun transientPcmRejectionIsBufferedAndReplayedInOrder() = runBlocking {
+        val engine = FakeEngine()
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine }
+        )
+        assertTrue(controller.prepareNow())
+        val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+
+        engine.acceptPcm = false
+        assertTrue(turn.offer(frame(1, shortArrayOf(1, 1))))
+        assertTrue(engine.pushed.isEmpty())
+        engine.acceptPcm = true
+        assertTrue(turn.offer(frame(2, shortArrayOf(2, 2))))
+
+        assertEquals(listOf<Short>(1, 1), engine.pushed[0].toList())
+        assertEquals(listOf<Short>(2, 2), engine.pushed[1].toList())
+        turn.cancel()
+        controller.close()
+    }
+
     private fun frame(sequence: Long, samples: ShortArray): DirectPcmFramePacket {
         val bytes = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         samples.forEach(bytes::putShort)
@@ -138,6 +184,7 @@ class HighAccuracyLocalAsrTurnTest {
         var startCalls = 0
         var stopText = "hello world"
         var stopTermination = AsrTranscriptTermination.END_OF_TEXT
+        var acceptPcm = true
         val pushed = mutableListOf<ShortArray>()
         private var config = AsrConfig()
         private var token = 0L
@@ -167,6 +214,7 @@ class HighAccuracyLocalAsrTurnTest {
         }
 
         override fun pushPcm(pcm: ByteBuffer, sampleCount: Int): Boolean {
+            if (!acceptPcm) return false
             val input = pcm.duplicate().order(ByteOrder.LITTLE_ENDIAN)
             pushed += ShortArray(sampleCount) { input.getShort() }
             return true
