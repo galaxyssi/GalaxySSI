@@ -112,6 +112,12 @@ final class SignalASIStore: ObservableObject {
   @Published private(set) var agentTaskRecords: [AgentTaskRecord] {
     didSet { save() }
   }
+  @Published private(set) var agentConversations: [AgentConversation] {
+    didSet { save() }
+  }
+  @Published private(set) var activeAgentConversationId: String {
+    didSet { save() }
+  }
   @Published private(set) var agentMemoryItems: [AgentMemoryItem]
   @Published private(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
     didSet { save() }
@@ -141,6 +147,8 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var agentConversations: [AgentConversation]
+    var activeAgentConversationId: String
     var agentKnowledgeItems: [AgentKnowledgeItem]
     var agentKnowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]
     var agentTaskRecords: [AgentTaskRecord]
@@ -160,6 +168,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
       agentTaskBudget: AgentTaskBudget = .default,
+      agentConversations: [AgentConversation] = [],
+      activeAgentConversationId: String = "",
       agentKnowledgeItems: [AgentKnowledgeItem] = [],
       agentKnowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry] = [],
       agentTaskRecords: [AgentTaskRecord] = [],
@@ -178,6 +188,8 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.agentConversations = Array(agentConversations.suffix(200))
+      self.activeAgentConversationId = activeAgentConversationId
       self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
       self.agentKnowledgeAccessAudit = Array(agentKnowledgeAccessAudit.suffix(100))
       self.agentTaskRecords = Array(agentTaskRecords.suffix(200))
@@ -199,6 +211,11 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      agentConversations = Array(
+        (try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations) ?? [])
+          .suffix(200)
+      )
+      activeAgentConversationId = try container.decodeIfPresent(String.self, forKey: .activeAgentConversationId) ?? ""
       agentKnowledgeItems = Array(
         (try container.decodeIfPresent([AgentKnowledgeItem].self, forKey: .agentKnowledgeItems) ?? [])
           .suffix(500)
@@ -248,6 +265,8 @@ final class SignalASIStore: ObservableObject {
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
       agentTaskRecords = state.agentTaskRecords
+      agentConversations = state.agentConversations
+      activeAgentConversationId = state.activeAgentConversationId
       agentMemoryItems = memoryStore.exportItems()
       agentKnowledgeItems = state.agentKnowledgeItems
       agentKnowledgeAccessAudit = state.agentKnowledgeAccessAudit
@@ -286,6 +305,8 @@ final class SignalASIStore: ObservableObject {
       agentSafetySettings = .default
       agentTaskBudget = .default
       agentTaskRecords = []
+      agentConversations = []
+      activeAgentConversationId = ""
       agentMemoryItems = memoryStore.exportItems()
       agentKnowledgeItems = []
       agentKnowledgeAccessAudit = []
@@ -491,6 +512,175 @@ final class SignalASIStore: ObservableObject {
 
   func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
     memoryDeletionIndex.snapshot()
+  }
+
+  func agentSessions(includeArchived: Bool = false) -> [AgentConversation] {
+    mergedAgentConversations()
+      .filter { includeArchived || $0.status == .active }
+  }
+
+  func searchAgentSessions(_ query: String, includeArchived: Bool = false) -> [AgentConversation] {
+    let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return agentSessions(includeArchived: includeArchived)
+    }
+    return agentSessions(includeArchived: includeArchived)
+      .filter { conversation in
+        [
+          conversation.title,
+          conversation.summary,
+          conversation.selectedModelOrAgent,
+          conversation.contextPolicy,
+          conversation.id
+        ].contains {
+          $0.range(of: clean, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+      }
+  }
+
+  func agentSession(id conversationId: String) -> AgentConversation? {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    return mergedAgentConversations().first { $0.id == clean }
+  }
+
+  @discardableResult
+  func createAgentSession(title: String = "") -> AgentConversation {
+    let now = Self.nowMillis()
+    let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("New session")
+    let session = AgentConversation(
+      id: "ios-agent-\(UUID().uuidString.lowercased())",
+      title: cleanTitle,
+      createdAt: now,
+      updatedAt: now,
+      selectedModelOrAgent: contact(id: "hermes")?.displayName ?? "Automatic"
+    )
+    persistAgentConversation(session)
+    activeAgentConversationId = session.id
+    return session
+  }
+
+  @discardableResult
+  func switchAgentSession(_ conversationId: String) -> Bool {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var session = agentSession(id: clean) else { return false }
+    if session.status == .archived {
+      session.status = .active
+      session.updatedAt = Self.nowMillis()
+      persistAgentConversation(session)
+    }
+    activeAgentConversationId = session.id
+    return true
+  }
+
+  @discardableResult
+  func renameAgentSession(id conversationId: String, title: String) -> Bool {
+    mutateAgentConversation(id: conversationId) { conversation in
+      conversation.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank(conversation.title)
+    }
+  }
+
+  @discardableResult
+  func setAgentSessionPinned(id conversationId: String, pinned: Bool) -> Bool {
+    mutateAgentConversation(id: conversationId) { $0.pinned = pinned }
+  }
+
+  @discardableResult
+  func setAgentSessionPrivateMode(id conversationId: String, privateMode: Bool) -> Bool {
+    mutateAgentConversation(id: conversationId) { $0.privateMode = privateMode }
+  }
+
+  @discardableResult
+  func setAgentSessionTrackingPaused(id conversationId: String, paused: Bool) -> Bool {
+    mutateAgentConversation(id: conversationId) { $0.trackingPaused = paused }
+  }
+
+  @discardableResult
+  func setAgentSessionContextPolicy(id conversationId: String, policy: String) -> Bool {
+    mutateAgentConversation(id: conversationId) { conversation in
+      conversation.contextPolicy = ["minimal", "balanced", "extended"].contains(policy) ? policy : "balanced"
+    }
+  }
+
+  @discardableResult
+  func updateAgentSessionSummary(id conversationId: String, summary: String) -> Bool {
+    mutateAgentConversation(id: conversationId) { $0.summary = summary.trimmingCharacters(in: .whitespacesAndNewlines) }
+  }
+
+  @discardableResult
+  func archiveAgentSession(id conversationId: String) -> Bool {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let shouldClearActive = activeAgentConversationId == clean
+    let changed = mutateAgentConversation(id: clean) { conversation in
+      conversation.status = .archived
+    }
+    if changed && shouldClearActive {
+      activeAgentConversationId = ""
+    }
+    return changed
+  }
+
+  @discardableResult
+  func restoreAgentSession(id conversationId: String) -> Bool {
+    mutateAgentConversation(id: conversationId) { $0.status = .active }
+  }
+
+  @discardableResult
+  func deleteAgentSession(id conversationId: String) -> Bool {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return false }
+    let beforeConversations = agentConversations.count
+    agentConversations.removeAll { $0.id == clean }
+    var removedMessages = 0
+    for contactId in Array(messagesByContact.keys) {
+      guard var messages = messagesByContact[contactId] else { continue }
+      let before = messages.count
+      messages.removeAll { $0.conversationId == clean }
+      removedMessages += before - messages.count
+      if messages.isEmpty {
+        messagesByContact.removeValue(forKey: contactId)
+      } else {
+        messagesByContact[contactId] = messages
+      }
+    }
+    if activeAgentConversationId == clean {
+      activeAgentConversationId = agentSessions().first?.id ?? ""
+    }
+    guard beforeConversations != agentConversations.count || removedMessages > 0 else { return false }
+    save()
+    return true
+  }
+
+  func agentSessionMessages(_ conversationId: String) -> [ChatMessage] {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return [] }
+    return messagesByContact.values
+      .flatMap { $0 }
+      .filter { $0.conversationId == clean }
+      .sorted { $0.createdAt < $1.createdAt }
+  }
+
+  func agentSessionMetrics(_ conversationId: String) -> AgentSessionMetrics {
+    let messages = agentSessionMessages(conversationId)
+    let turnIds = Set(messages.map(\.turnId).filter { !$0.isBlank })
+    let userTurns = messages.filter { $0.isMine && !$0.isSystem }.count
+    let estimatedTokens = messages.reduce(0) { partial, message in
+      partial + max(1, message.content.count / 4)
+    }
+    return AgentSessionMetrics(
+      turnCount: max(turnIds.count, userTurns),
+      messageCount: messages.count,
+      taskCount: messages.filter { message in
+        message.deliveryTrace.contains { $0.stage == "agent_started" || $0.stage == "agent_replied" }
+      }.count,
+      estimatedContextTokens: estimatedTokens,
+      inputTokens: agentSession(id: conversationId)?.inputTokens ?? 0,
+      outputTokens: agentSession(id: conversationId)?.outputTokens ?? 0,
+      costMicros: agentSession(id: conversationId)?.costMicros ?? 0,
+      lastResponseLatencyMillis: lastAgentResponseLatencyMillis(messages)
+    )
   }
 
   var agentKnowledgeStats: AgentKnowledgeStats {
@@ -887,15 +1077,22 @@ final class SignalASIStore: ObservableObject {
 
   @discardableResult
   func appendOutgoing(_ content: String, to contactId: String, status: ChatDeliveryStatus = .queued) -> ChatMessage {
-    var message = ChatMessage(
+    let messageId = UUID()
+    let conversationId = activeConversationId(for: contactId)
+    let createdAt = Date()
+    let message = ChatMessage(
+      id: messageId,
       contactId: contactId,
       content: content,
       isMine: true,
+      createdAt: createdAt,
       deliveryStatus: status,
-      deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)]
+      deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)],
+      conversationId: conversationId,
+      turnId: messageId.uuidString
     )
-    message.conversationId = "ios-\(contactId)"
     messagesByContact[contactId, default: []].append(message)
+    recordAgentConversationActivity(conversationId: conversationId, contactId: contactId, content: content, at: createdAt)
     save()
     return message
   }
@@ -906,32 +1103,44 @@ final class SignalASIStore: ObservableObject {
     from contactId: String,
     remoteMessageId: String = "",
     status: ChatDeliveryStatus = .delivered,
-    traceStage: String = "received"
+    traceStage: String = "received",
+    conversationId: String = "",
+    turnId: String = ""
   ) -> ChatMessage {
+    let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
+    let createdAt = Date()
     let message = ChatMessage(
       contactId: contactId,
       content: content,
       isMine: false,
+      createdAt: createdAt,
       deliveryStatus: status,
       deliveryTrace: [DeliveryTraceEvent(stage: traceStage)],
-      conversationId: "ios-\(contactId)",
+      conversationId: resolvedConversationId,
+      turnId: turnId,
       remoteMessageId: remoteMessageId
     )
     messagesByContact[contactId, default: []].append(message)
+    recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
     return message
   }
 
   @discardableResult
-  func appendSystem(_ content: String, to contactId: String) -> ChatMessage {
+  func appendSystem(_ content: String, to contactId: String, conversationId: String = "") -> ChatMessage {
+    let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
+    let createdAt = Date()
     let message = ChatMessage(
       contactId: contactId,
       content: content,
       isMine: false,
       isSystem: true,
-      deliveryStatus: .local
+      createdAt: createdAt,
+      deliveryStatus: .local,
+      conversationId: resolvedConversationId
     )
     messagesByContact[contactId, default: []].append(message)
+    recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
     return message
   }
@@ -1216,6 +1425,7 @@ final class SignalASIStore: ObservableObject {
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
+        includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
         includesModelPlannerSettings: true,
@@ -1228,6 +1438,8 @@ final class SignalASIStore: ObservableObject {
         knowledge: agentKnowledgeItems,
         knowledgeAccessAudit: agentKnowledgeAccessAudit,
         taskHistory: recentAgentTasks(limit: 200),
+        agentConversations: agentSessions(includeArchived: true),
+        activeAgentConversationId: activeAgentConversationId,
         voiceSettings: voiceSettings,
         languagePolicy: languagePolicy,
         displaySettings: displaySettings,
@@ -1278,6 +1490,11 @@ final class SignalASIStore: ObservableObject {
       agentKnowledgeItems = Array((payload.agentData.knowledge ?? []).suffix(500))
       agentKnowledgeAccessAudit = Array((payload.agentData.knowledgeAccessAudit ?? []).suffix(100))
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
+      agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
+      activeAgentConversationId = payload.agentData.activeAgentConversationId
+      if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {
+        activeAgentConversationId = agentConversations.first(where: { $0.status == .active })?.id ?? ""
+      }
     }
     save()
   }
@@ -1524,6 +1741,8 @@ final class SignalASIStore: ObservableObject {
     agentSafetySettings = .default
     agentTaskBudget = .default
     agentTaskRecords = []
+    agentConversations = []
+    activeAgentConversationId = ""
     agentMemoryItems = []
     agentKnowledgeItems = []
     agentKnowledgeAccessAudit = []
@@ -1617,6 +1836,140 @@ final class SignalASIStore: ObservableObject {
       try secrets.setString(next.accessToken, account: homeAssistantAccessTokenAccount)
     }
     homeAssistantSettings = next
+  }
+
+  @discardableResult
+  private func mutateAgentConversation(
+    id conversationId: String,
+    mutate: (inout AgentConversation) -> Void
+  ) -> Bool {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var conversation = agentSession(id: clean) else { return false }
+    mutate(&conversation)
+    conversation.updatedAt = Self.nowMillis()
+    persistAgentConversation(conversation)
+    return true
+  }
+
+  private func persistAgentConversation(_ conversation: AgentConversation) {
+    let clean = conversation.id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return }
+    var updated = conversation
+    updated.id = clean
+    let items = agentConversations.filter { $0.id != clean } + [updated]
+    agentConversations = Array(Self.sortedAgentConversations(items).prefix(200))
+  }
+
+  private func mergedAgentConversations() -> [AgentConversation] {
+    var byId: [String: AgentConversation] = [:]
+    for conversation in agentConversations where !conversation.id.isBlank {
+      byId[conversation.id] = conversation
+    }
+    for contact in contacts where isAgentSessionContact(contact) {
+      let conversationId = defaultAgentConversationId(for: contact.id)
+      let messages = agentSessionMessages(conversationId)
+      guard !messages.isEmpty || contact.id == "hermes" else { continue }
+      let createdAt = messages.map { Self.millis($0.createdAt) }.min() ?? Self.nowMillis()
+      let updatedAt = messages.map { Self.millis($0.createdAt) }.max() ?? createdAt
+      var conversation = byId[conversationId] ?? AgentConversation(
+        id: conversationId,
+        title: contact.displayName,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        selectedModelOrAgent: contact.displayName
+      )
+      conversation.title = conversation.title.ifBlank(contact.displayName)
+      conversation.selectedModelOrAgent = conversation.selectedModelOrAgent.ifBlank(contact.displayName)
+      conversation.updatedAt = max(conversation.updatedAt, updatedAt)
+      byId[conversationId] = conversation
+    }
+    return Self.sortedAgentConversations(Array(byId.values))
+  }
+
+  private func isAgentSessionContact(_ contact: SignalASIContact) -> Bool {
+    contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
+  }
+
+  private func defaultAgentConversationId(for contactId: String) -> String {
+    "ios-\(contactId)"
+  }
+
+  private func activeConversationId(for contactId: String) -> String {
+    if let contact = contact(id: contactId),
+       isAgentSessionContact(contact),
+       let active = agentSession(id: activeAgentConversationId),
+       active.status == .active,
+       active.mergedIntoConversationId.isBlank {
+      return active.id
+    }
+    return defaultAgentConversationId(for: contactId)
+  }
+
+  private func recordAgentConversationActivity(
+    conversationId: String,
+    contactId: String,
+    content: String,
+    at date: Date
+  ) {
+    guard let contact = contact(id: contactId), isAgentSessionContact(contact) else { return }
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return }
+    let timestamp = Self.millis(date)
+    var conversation = agentSession(id: clean) ?? AgentConversation(
+      id: clean,
+      title: inferredAgentSessionTitle(content: content, fallback: contact.displayName),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      selectedModelOrAgent: contact.displayName
+    )
+    if conversation.title.isBlank || conversation.title == "New session" {
+      conversation.title = inferredAgentSessionTitle(content: content, fallback: contact.displayName)
+    }
+    conversation.selectedModelOrAgent = contact.displayName.ifBlank(conversation.selectedModelOrAgent)
+    conversation.updatedAt = max(conversation.updatedAt, timestamp)
+    persistAgentConversation(conversation)
+  }
+
+  private func inferredAgentSessionTitle(content: String, fallback: String) -> String {
+    let clean = content
+      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return fallback.ifBlank("New session") }
+    return String(clean.prefix(48))
+  }
+
+  private static func sortedAgentConversations(_ conversations: [AgentConversation]) -> [AgentConversation] {
+    conversations.sorted { left, right in
+      if left.pinned != right.pinned {
+        return left.pinned && !right.pinned
+      }
+      if left.updatedAt != right.updatedAt {
+        return left.updatedAt > right.updatedAt
+      }
+      return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+    }
+  }
+
+  private func lastAgentResponseLatencyMillis(_ messages: [ChatMessage]) -> Int64 {
+    let ordered = messages.sorted { $0.createdAt < $1.createdAt }
+    var lastUserAt: Date?
+    var latestLatency: Int64 = 0
+    for message in ordered {
+      if message.isMine && !message.isSystem {
+        lastUserAt = message.createdAt
+      } else if !message.isMine && !message.isSystem, let start = lastUserAt {
+        latestLatency = max(0, Self.millis(message.createdAt) - Self.millis(start))
+      }
+    }
+    return latestLatency
+  }
+
+  private static func nowMillis() -> Int64 {
+    millis(Date())
+  }
+
+  private static func millis(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1_000).rounded())
   }
 
   private func agentKnowledgeSourceKey(_ item: AgentKnowledgeItem) -> String {
@@ -1892,6 +2245,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
       agentTaskBudget: agentTaskBudget,
+      agentConversations: agentConversations,
+      activeAgentConversationId: activeAgentConversationId,
       agentKnowledgeItems: agentKnowledgeItems,
       agentKnowledgeAccessAudit: agentKnowledgeAccessAudit,
       agentTaskRecords: agentTaskRecords,
