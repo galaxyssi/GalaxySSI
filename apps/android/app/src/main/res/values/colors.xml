@@ -26,6 +26,6 @@
     <color name="agent_insight_bg">#F2F6FE</color>
     <color name="agent_insight_stroke">#D8E6FB</color>
     <color name="agent_insight_text">#315B86</color>
-    <color name="agent_voice_transcript_bg">#EAF8F4</color>
+    <color name="agent_user_bubble_bg">#CFEDE5</color>
     <color name="agent_voice_transcript_dot">#18AFA0</color>
 </resources>

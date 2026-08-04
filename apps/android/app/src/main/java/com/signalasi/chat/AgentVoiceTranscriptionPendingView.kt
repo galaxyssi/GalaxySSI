@@ -20,7 +20,7 @@ internal class AgentVoiceTranscriptionPendingView(context: Context) : LinearLayo
         minimumWidth = dp(96)
         minimumHeight = dp(44)
         setPadding(dp(15), dp(10), dp(15), dp(10))
-        setBackgroundResource(R.drawable.bubble_voice_transcript_background)
+        setBackgroundResource(R.drawable.bubble_agent_user_background)
         contentDescription = context.getString(R.string.voice_status_recognizing)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         dots.forEachIndexed { index, dot ->
