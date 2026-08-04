@@ -1,4 +1,15 @@
 "signalasi.tab.agent" = "Agent";
+"signalasi.add_contact.title" = "添加";
+"signalasi.add_contact.hero_title" = "添加联系人";
+"signalasi.add_contact.hero_subtitle" = "扫描可信联系人，或在手机端直接添加多个云端大模型。";
+"signalasi.add_contact.section_methods" = "添加方式";
+"signalasi.add_contact.scan_title" = "扫一扫添加联系人";
+"signalasi.add_contact.scan_subtitle" = "添加 Hermes、电脑、朋友或设备";
+"signalasi.add_contact.cloud_title" = "添加云端模型";
+"signalasi.add_contact.cloud_subtitle" = "Provider、模型、API Key，在手机端直接调用";
+"signalasi.add_contact.my_qr_title" = "我的二维码";
+"signalasi.add_contact.my_qr_subtitle" = "展示本机身份";
+"signalasi.common.show" = "显示";
 "signalasi.tab.messages" = "消息";
 "signalasi.tab.contacts" = "通讯录";
 "signalasi.tab.discover" = "发现";
