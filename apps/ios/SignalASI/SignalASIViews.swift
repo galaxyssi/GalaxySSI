@@ -565,11 +565,7 @@ struct MessageBubble: View {
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var myQRCodePresented = false
-  @State private var contactScannerPresented = false
-  @State private var contactImportStatus = ""
-  @State private var contactImportIsError = false
   @State private var contactSearchText = ""
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
@@ -664,13 +660,6 @@ struct ContactsView: View {
               }
               .background(Color.signalASISurface)
               .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-              if !contactImportStatus.isEmpty {
-                Text(contactImportStatus)
-                  .font(.system(size: 13))
-                  .foregroundColor(contactImportIsError ? .red : .signalASITextSecondary)
-                  .padding(.horizontal, 4)
-                  .padding(.top, 4)
-              }
             }
             .padding(.bottom, 18)
           }
@@ -684,19 +673,6 @@ struct ContactsView: View {
       .sheet(isPresented: $myQRCodePresented) {
         MyContactQRCodeView()
       }
-      .sheet(isPresented: $contactScannerPresented) {
-        QRCodeScannerView(
-          onCode: { value in
-            contactScannerPresented = false
-            importScannedQR(value)
-          },
-          onError: { message in
-            contactScannerPresented = false
-            contactImportStatus = message
-            contactImportIsError = true
-          }
-        )
-      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -707,44 +683,6 @@ struct ContactsView: View {
       .foregroundColor(.signalASITextSecondary)
       .padding(.horizontal, 4)
       .padding(.top, 2)
-  }
-
-  private func importScannedQR(_ value: String) {
-    do {
-      switch try SignalASIContactExchange.classifyQRCode(value) {
-      case .desktopPairing(let pairing):
-        contactImportStatus = String(
-          format: t("signalasi.pairing.desktop_claim_sending", "Adding %@..."),
-          pairing.desktopName
-        )
-        contactImportIsError = false
-        Task { await pairDesktopQRCode(value, desktopName: pairing.desktopName) }
-      case .contact(let request):
-        let stored = store.addFriendRequest(request)
-        contactImportStatus = String(
-          format: t("signalasi.friend_request.added", "Friend request added for %@."),
-          stored.name
-        )
-        contactImportIsError = false
-      }
-    } catch {
-      contactImportStatus = error.localizedDescription
-      contactImportIsError = true
-    }
-  }
-
-  private func pairDesktopQRCode(_ value: String, desktopName: String) async {
-    do {
-      try await coordinator.pair(using: value)
-      contactImportStatus = String(
-        format: t("signalasi.pairing.desktop_claim_sent", "%@ added. Waiting for desktop confirmation."),
-        desktopName
-      )
-      contactImportIsError = false
-    } catch {
-      contactImportStatus = error.localizedDescription
-      contactImportIsError = true
-    }
   }
 
   private func searchMatches(_ fields: [String], query: String) -> Bool {
@@ -2868,6 +2806,7 @@ struct FriendRequestRow: View {
 }
 
 struct FriendRequestDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
   var requestId: String
@@ -2879,7 +2818,7 @@ struct FriendRequestDetailView: View {
   var body: some View {
     Form {
       if let request {
-        Section("Identity") {
+        Section(t("signalasi.contact.section_identity", "Identity")) {
           Text(request.signalASIId)
             .font(.system(.caption, design: .monospaced))
           Text(request.identityFingerprint.chunkedFingerprint)
@@ -2887,7 +2826,7 @@ struct FriendRequestDetailView: View {
             .foregroundColor(.secondary)
         }
         if !request.mqttInboxTopic.isEmpty {
-          Section("Messaging") {
+          Section(t("signalasi.contact.messaging", "Messaging")) {
             Text(request.mqttInboxTopic)
               .font(.system(.caption, design: .monospaced))
           }
@@ -2897,26 +2836,31 @@ struct FriendRequestDetailView: View {
             _ = store.approveFriendRequest(id: request.id)
             dismiss()
           } label: {
-            Label("Approve", systemImage: "checkmark.circle")
+            Label(t("signalasi.friend_request.approve", "Approve"), systemImage: "checkmark.circle")
           }
           Button(role: .destructive) {
             _ = store.rejectFriendRequest(id: request.id)
             dismiss()
           } label: {
-            Label("Reject", systemImage: "xmark.circle")
+            Label(t("signalasi.friend_request.reject", "Reject"), systemImage: "xmark.circle")
           }
         }
         .disabled(request.status != .pending)
       } else {
-        Text("Request not found.")
+        Text(t("signalasi.friend_request.not_found", "Friend request not found."))
           .foregroundColor(.secondary)
       }
     }
-    .navigationTitle(request?.name ?? "Friend Request")
+    .navigationTitle(request?.name ?? t("signalasi.friend_request.title", "Friend Request"))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
 struct MyContactQRCodeView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
   @State private var copied = false
@@ -2939,14 +2883,14 @@ struct MyContactQRCodeView: View {
             Spacer()
           }
         }
-        Section("Identity") {
+        Section(t("signalasi.contact.section_identity", "Identity")) {
           Text(store.profile.signalASIId)
             .font(.system(.caption, design: .monospaced))
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
         }
-        Section("Payload") {
+        Section(t("signalasi.contact.payload", "Payload")) {
           Text(qrText)
             .font(.system(.caption, design: .monospaced))
             .lineLimit(6)
@@ -2954,14 +2898,19 @@ struct MyContactQRCodeView: View {
             UIPasteboard.general.string = qrText
             copied = true
           } label: {
-            Label(copied ? "Copied" : "Copy Payload", systemImage: "doc.on.doc")
+            Label(
+              copied
+                ? t("signalasi.common.copied", "Copied")
+                : t("signalasi.contact.copy_payload", "Copy Payload"),
+              systemImage: "doc.on.doc"
+            )
           }
         }
       }
-      .navigationTitle("My QR")
+      .navigationTitle(t("signalasi.contact.my_qr_title", "My QR"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Done") { dismiss() }
+          Button(t("signalasi.common.done", "Done")) { dismiss() }
         }
       }
       .onAppear {
@@ -2970,6 +2919,10 @@ struct MyContactQRCodeView: View {
         }
       }
     }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
