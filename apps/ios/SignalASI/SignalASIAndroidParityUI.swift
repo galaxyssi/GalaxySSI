@@ -559,6 +559,14 @@ struct DiscoverView: View {
               SignalASIAutomationView()
             }
             SignalASIAndroidMenuLink(
+              title: t("signalasi.discover.lab_title", "Lab"),
+              subtitle: t("signalasi.discover.lab_subtitle", "Explore frontier features"),
+              systemImage: "sparkles",
+              tint: .purple
+            ) {
+              SignalASILocalModelLabView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.device_center", "Device Center"),
               subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
               systemImage: "antenna.radiowaves.left.and.right",

@@ -1446,6 +1446,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASILocalModelLabView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.settings.local_model", "Local Model Settings"))
+              Text(t("signalasi.settings.local_model.status", "Configure on-device inference"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
           NavigationLink(destination: CustomDeviceConnectorsView()) {
