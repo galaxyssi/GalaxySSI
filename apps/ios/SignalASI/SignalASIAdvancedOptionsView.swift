@@ -7,7 +7,7 @@ struct SignalASIAdvancedOptionsView: View {
   @State private var maintenanceStatus = ""
 
   private var webSourceCount: Int {
-    AgentIOSWebIntelligenceOperation.allCases.count
+    AgentIOSWebIntelligenceSourceCatalog.sourceCount
   }
 
   private var permissionSummary: SignalASIAdvancedPermissionSummary {
@@ -67,7 +67,7 @@ struct SignalASIAdvancedOptionsView: View {
         title: t("web_sources_title", "Web intelligence sources"),
         subtitle: t(
           "web_sources_subtitle",
-          "Sources across daily life, technology, research, media, and local evidence"
+          "287 sources across daily life, technology, research, media, and local evidence"
         ),
         systemImage: "network",
         tint: .signalASIAccent,
@@ -396,95 +396,6 @@ struct SignalASIVoicePerformanceDashboardView: View {
 
   private func percent(_ value: Double) -> String {
     String(format: "%.0f%%", value * 100)
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-struct SignalASIWebIntelligenceSourcesView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-
-  private var definitions: [AgentPhoneNativeToolDefinition] {
-    AgentIOSWebIntelligenceNativeToolCatalog.definitions()
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      SignalASITopBar(
-        title: t("web_sources_title", "Web intelligence sources"),
-        leading: {
-          SignalASIBackButton()
-        },
-        trailing: {
-          Color.clear
-        }
-      )
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-          SignalASISecurityHeroView(
-            title: t("web_sources_title", "Web intelligence sources"),
-            subtitle: t(
-              "web_sources_subtitle",
-              "Sources across daily life, technology, research, media, and local evidence"
-            ),
-            systemImage: "network",
-            tint: .signalASIAccent,
-            badge: String(format: t("web_sources_count", "%d sources"), definitions.count)
-          )
-          SignalASISecuritySectionTitle(title: t("signalasi.advanced.web_operations", "Native Web Operations"))
-          VStack(spacing: 8) {
-            ForEach(definitions) { definition in
-              let descriptor = definition.descriptor
-              SignalASISecurityStatusRow(
-                title: descriptor.title,
-                subtitle: descriptor.description,
-                systemImage: systemImage(for: descriptor.id),
-                tint: tint(for: descriptor.availability.status),
-                badge: statusLabel(descriptor.availability.status)
-              )
-            }
-          }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 18)
-      }
-    }
-    .background(Color.signalASIPageBackground.ignoresSafeArea())
-    .navigationBarHidden(true)
-  }
-
-  private func systemImage(for id: String) -> String {
-    if id.contains("search") { return "magnifyingglass" }
-    if id.contains("fetch") || id.contains("extract") { return "doc.text.magnifyingglass" }
-    if id.contains("crawl") || id.contains("research") || id.contains("agent") { return "globe" }
-    if id.contains("cache") { return "externaldrive" }
-    if id.contains("diff") || id.contains("watch") { return "eye" }
-    return "network"
-  }
-
-  private func tint(for status: AgentNativeToolAvailabilityStatus) -> Color {
-    switch status {
-    case .available:
-      return .signalASIAccent
-    case .requiresSetup:
-      return .orange
-    case .unavailable:
-      return .red
-    }
-  }
-
-  private func statusLabel(_ status: AgentNativeToolAvailabilityStatus) -> String {
-    switch status {
-    case .available:
-      return t("signalasi.status.available", "Available")
-    case .requiresSetup:
-      return t("signalasi.status.needs_setup", "Needs Setup")
-    case .unavailable:
-      return t("signalasi.status.unavailable", "Unavailable")
-    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
