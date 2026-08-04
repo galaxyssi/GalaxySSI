@@ -1348,14 +1348,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.display", "Display")) {
-          Picker(t("signalasi.settings.text_size", "Text Size"), selection: displayTextScaleBinding) {
-            ForEach(AppTextScaleMode.allCases) { mode in
-              Text(t(mode.displayName, mode.displayName)).tag(mode)
+          NavigationLink(destination: SignalASITextSizeSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_text_size_title", "Text Size"))
+              Text(textScaleSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
           }
-          Text(t(store.displaySettings.textScale.detail, store.displaySettings.textScale.detail))
-            .font(.caption)
-            .foregroundColor(.secondary)
         }
         Section(t("signalasi.settings.agent_safety", "Agent Safety")) {
           NavigationLink(destination: SignalASISecurityCenterView()) {
@@ -1694,13 +1694,6 @@ struct SettingsView: View {
     )
   }
 
-  private var displayTextScaleBinding: Binding<AppTextScaleMode> {
-    Binding(
-      get: { store.displaySettings.textScale },
-      set: { value in store.updateDisplaySettings { $0.textScale = value } }
-    )
-  }
-
   private var modelPlannerSummary: String {
     let settings = store.modelPlannerSettings
     guard settings.enabled else { return t("signalasi.settings.local_planner", "Local deterministic planner") }
@@ -1723,6 +1716,41 @@ struct SettingsView: View {
     if settings.configured { return t("signalasi.settings.configured_enabled", "Configured and enabled") }
     if settings.credentialsConfigured { return t("signalasi.settings.configured_disabled", "Configured, disabled") }
     return t("signalasi.settings.not_configured", "Not configured")
+  }
+
+  private var textScaleSummary: String {
+    let mode = store.displaySettings.textScale
+    return "\(textScaleLabel(mode)) / \(textScaleDescription(mode))"
+  }
+
+  private func textScaleLabel(_ mode: AppTextScaleMode) -> String {
+    switch mode {
+    case .system:
+      return t("cc_text_size_system", "Follow system")
+    case .standard:
+      return t("cc_text_size_standard", "Standard")
+    case .comfortable:
+      return t("cc_text_size_comfortable", "Comfortable")
+    case .large:
+      return t("cc_text_size_large", "Large")
+    case .extraLarge:
+      return t("cc_text_size_extra_large", "Extra large")
+    }
+  }
+
+  private func textScaleDescription(_ mode: AppTextScaleMode) -> String {
+    switch mode {
+    case .system:
+      return t("cc_text_size_system_subtitle", "Use the iOS text-size preference")
+    case .standard:
+      return t("cc_text_size_standard_subtitle", "100% - More content on screen")
+    case .comfortable:
+      return t("cc_text_size_comfortable_subtitle", "110% - Recommended")
+    case .large:
+      return t("cc_text_size_large_subtitle", "120% - Easier to read")
+    case .extraLarge:
+      return t("cc_text_size_extra_large_subtitle", "132% - Maximum readability")
+    }
   }
 
   private var languagePolicySummary: String {
