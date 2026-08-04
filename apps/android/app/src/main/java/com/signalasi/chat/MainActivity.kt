@@ -5081,7 +5081,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun submitAgentGoal(voiceTraceId: String = "") {
+    private fun submitAgentGoal(
+        voiceTraceId: String = "",
+        pendingVoiceDedupeKey: String = "",
+        pendingVoiceConversationId: String = ""
+    ) {
         val submissionStartedAt = SystemClock.elapsedRealtime()
         val goal = agentGoalInput.text?.toString()?.trim().orEmpty()
         val attachments = agentInputAttachments.toList()
@@ -5089,7 +5093,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             Toast.makeText(this, getString(R.string.agent_empty_goal), Toast.LENGTH_SHORT).show()
             return
         }
-        val conversation = agentTranscriptStore.activeConversation()
+        val conversation = pendingVoiceConversationId
+            .takeIf(String::isNotBlank)
+            ?.let(agentTranscriptStore::conversation)
+            ?: agentTranscriptStore.activeConversation()
         val turnId = UUID.randomUUID().toString()
         agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
             agentContextBeforeTurn[turnId] = prepared
@@ -5129,14 +5136,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val submittedText = goal.ifBlank { attachmentLabel }
         val richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
         agentSubmissionExecutor.execute {
-            agentTranscriptStore.append(
-                AgentTranscriptRole.USER,
-                submittedText,
-                conversationId = conversation.id,
-                turnId = turnId,
-                taskId = turnId,
-                richOutputJson = richOutputJson
-            )
+            if (pendingVoiceDedupeKey.isNotBlank()) {
+                agentTranscriptStore.upsert(
+                    AgentTranscriptRole.USER,
+                    submittedText,
+                    dedupeKey = pendingVoiceDedupeKey,
+                    conversationId = conversation.id,
+                    turnId = turnId,
+                    taskId = turnId,
+                    richOutputJson = richOutputJson
+                )
+            } else {
+                agentTranscriptStore.append(
+                    AgentTranscriptRole.USER,
+                    submittedText,
+                    conversationId = conversation.id,
+                    turnId = turnId,
+                    taskId = turnId,
+                    richOutputJson = richOutputJson
+                )
+            }
             Log.i(
                 "SignalASILatency",
                 "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
@@ -5144,6 +5163,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                if (pendingVoiceDedupeKey.isNotBlank() &&
+                    agentTranscriptWindow.conversationId == conversation.id
+                ) {
+                    agentTranscriptWindow.entries
+                        .filter { it.dedupeKey == pendingVoiceDedupeKey }
+                        .map(AgentTranscriptEntry::id)
+                        .forEach(agentTranscriptWindow::remove)
+                }
                 if (attachments.isEmpty()) {
                     continueAgentGoalSubmission(
                         goal = baseGoal,
@@ -17323,7 +17350,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             entry.text == "[${blocks.firstOrNull()?.title.orEmpty()}]" ||
                 entry.text == getString(R.string.agent_attachment_count, blocks.size)
             )
-        if (!attachmentOnlyLabel) {
+        if (AgentVoiceTranscriptPolicy.isPending(entry)) {
+            addView(
+                AgentVoiceTranscriptionPendingView(this@MainActivity),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        } else if (!attachmentOnlyLabel) {
             addView(TextView(this@MainActivity).apply {
                 text = entry.text
                 setTextColor(getColorCompat(R.color.text_primary))
@@ -17332,7 +17367,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 setTextIsSelectable(true)
                 maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
                 setPadding(dp(15), dp(10), dp(15), dp(10))
-                setBackgroundResource(R.drawable.bubble_self_background)
+                setBackgroundResource(
+                    if (AgentVoiceTranscriptPolicy.isVoiceTranscript(entry)) {
+                        R.drawable.bubble_voice_transcript_background
+                    } else {
+                        R.drawable.bubble_self_background
+                    }
+                )
                 attachAgentTranscriptActions(this, entry)
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -23647,7 +23688,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                     purpose == "agent_input" -> finalizePcmAgentInput(
                         waveFile,
-                        result.snapshot.durationMs,
                         traceId,
                         coordinatorSessionId,
                         result.snapshot.samples,
@@ -23710,7 +23750,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun finalizePcmAgentInput(
         file: File,
-        durationMs: Long,
         traceId: String,
         coordinatorSessionId: String,
         pcmSamples: ShortArray,
@@ -23719,14 +23758,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (coordinatorSessionId.isNotBlank()) {
             dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
         }
-        val seconds = ((durationMs + 999L) / 1_000L).coerceAtLeast(1L)
+        val conversationId = agentTranscriptStore.activeConversation().id
+        val pendingDedupeKey = AgentVoiceTranscriptPolicy.dedupeKey(file.name)
         agentTranscriptStore.append(
             AgentTranscriptRole.USER,
-            getString(R.string.agent_voice_message_label, seconds),
-            dedupeKey = "agent-voice-pending:${file.name}"
+            getString(R.string.voice_status_recognizing),
+            dedupeKey = pendingDedupeKey,
+            conversationId = conversationId
         )
         refreshAgentTranscriptWindow()
-        requestAgentInputTranscription(file, traceId, pcmSamples, sampleRateHz)
+        requestAgentInputTranscription(
+            file,
+            traceId,
+            pcmSamples,
+            sampleRateHz,
+            pendingDedupeKey,
+            conversationId
+        )
     }
 
     private fun finalizePcmVoiceCommand(
@@ -23983,28 +24031,50 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (coordinatorSessionId.isNotBlank()) {
             dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
         }
-        val durationMs = (System.currentTimeMillis() - recordingStartedAt).coerceAtLeast(1L)
-        val seconds = ((durationMs + 999L) / 1000L).coerceAtLeast(1L)
+        val conversationId = agentTranscriptStore.activeConversation().id
+        val pendingDedupeKey = AgentVoiceTranscriptPolicy.dedupeKey(file.name)
         agentTranscriptStore.append(
             AgentTranscriptRole.USER,
-            getString(R.string.agent_voice_message_label, seconds),
-            dedupeKey = "agent-voice-pending:${file.name}"
+            getString(R.string.voice_status_recognizing),
+            dedupeKey = pendingDedupeKey,
+            conversationId = conversationId
         )
         refreshAgentTranscriptWindow()
-        requestAgentInputTranscription(file, traceId)
+        requestAgentInputTranscription(
+            file,
+            traceId,
+            pendingVoiceDedupeKey = pendingDedupeKey,
+            pendingVoiceConversationId = conversationId
+        )
     }
 
     private fun requestAgentInputTranscription(
         sourceFile: File,
         traceId: String,
         pcmSamples: ShortArray? = null,
-        sampleRateHz: Int = 16_000
+        sampleRateHz: Int = 16_000,
+        pendingVoiceDedupeKey: String,
+        pendingVoiceConversationId: String
     ): Boolean {
-        transcribeLocally(sourceFile, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, purpose = "agent_input", onSuccess = { transcript ->
-            agentGoalInput.setText(transcript)
-            agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
-            submitAgentGoal(traceId)
-        })
+        transcribeLocally(
+            sourceFile,
+            traceId = traceId,
+            pcmSamples = pcmSamples,
+            sampleRateHz = sampleRateHz,
+            purpose = "agent_input",
+            onSuccess = { transcript ->
+                agentGoalInput.setText(transcript)
+                agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
+                submitAgentGoal(traceId, pendingVoiceDedupeKey, pendingVoiceConversationId)
+            },
+            onFailure = {
+                deleteAgentTranscriptByDedupeKey(
+                    pendingVoiceConversationId,
+                    pendingVoiceDedupeKey
+                )
+                refreshAgentTranscriptWindow(pendingVoiceConversationId)
+            }
+        )
         return true
     }
 

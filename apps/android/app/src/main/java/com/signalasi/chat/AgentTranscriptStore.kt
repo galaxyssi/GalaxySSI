@@ -1262,7 +1262,7 @@ class AgentTranscriptStore(context: Context) {
         ) {
             entryDatabase.listConversation(id).firstOrNull { entry ->
                 entry.role == AgentTranscriptRole.USER &&
-                    !entry.dedupeKey.startsWith("agent-voice-pending:")
+                    !AgentVoiceTranscriptPolicy.isPending(entry)
             }
         } else {
             null
@@ -1325,7 +1325,10 @@ class AgentTranscriptStore(context: Context) {
                 conversation = conversation,
                 dialogue = AgentFinalResponseIdentity.coalesce(
                     entryDatabase.listConversation(conversation.id)
-                ).filter { it.role != AgentTranscriptRole.PROCESS }
+                ).filter {
+                    it.role != AgentTranscriptRole.PROCESS &&
+                        !AgentVoiceTranscriptPolicy.isPending(it)
+                }
             )
         }
         val recent = entryDatabase.listConversationAfterEntry(
@@ -1336,7 +1339,10 @@ class AgentTranscriptStore(context: Context) {
             return AgentContextWindow(
                 conversation = conversation,
                 dialogue = AgentFinalResponseIdentity.coalesce(recent)
-                    .filter { it.role != AgentTranscriptRole.PROCESS }
+                    .filter {
+                        it.role != AgentTranscriptRole.PROCESS &&
+                            !AgentVoiceTranscriptPolicy.isPending(it)
+                    }
             )
         }
         val reset = conversation.copy(
@@ -1355,7 +1361,10 @@ class AgentTranscriptStore(context: Context) {
             conversation = reset,
             dialogue = AgentFinalResponseIdentity.coalesce(
                 entryDatabase.listConversation(conversation.id)
-            ).filter { it.role != AgentTranscriptRole.PROCESS }
+            ).filter {
+                it.role != AgentTranscriptRole.PROCESS &&
+                    !AgentVoiceTranscriptPolicy.isPending(it)
+            }
         )
     }
 
