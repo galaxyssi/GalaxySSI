@@ -1530,6 +1530,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.backup", "Backup")) {
+          NavigationLink(destination: SignalASIDataBackupView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_data_title", "Data & Backup"))
+              Text(t("cc_data_private_subtitle", "Backups use a separate password and can be stored entirely offline"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           SecureField(t("signalasi.settings.password", "Password"), text: $backupPassword)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled(true)
