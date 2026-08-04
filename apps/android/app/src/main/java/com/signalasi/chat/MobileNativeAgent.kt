@@ -55,6 +55,24 @@ private const val INTERNAL_LONG_TERM_WRITE_ALLOWED = "_signalasi_long_term_write
 private const val INTERNAL_TASK_EXECUTION_MODE = "_signalasi_task_execution_mode"
 private const val RUNTIME_CONTEXT_CACHE_TTL_MILLIS = 2_000L
 
+internal fun AgentAction.withDirectConversationContext(
+    conversationContext: AgentConversationContext,
+    turnId: String,
+    goal: String,
+    executionMode: AgentTaskExecutionMode
+): AgentAction = copy(
+    parameters = parameters + mapOf(
+        INTERNAL_CONVERSATION_ID to conversationContext.conversationId,
+        INTERNAL_CONVERSATION_CONTEXT to conversationContext.asTransportBlock(maximumTokens = 10_000),
+        INTERNAL_CONVERSATION_HAS_ATTACHMENTS to conversationContext.hasAttachments.toString(),
+        INTERNAL_TURN_ID to turnId,
+        INTERNAL_LONG_TERM_WRITE_ALLOWED to (!conversationContext.privateMode).toString(),
+        INTERNAL_TASK_EXECUTION_MODE to executionMode.wireValue,
+        "_signalasi_task_id" to turnId,
+        "original_goal" to goal
+    )
+)
+
 private val SENSITIVE_MEMORY_TERMS = listOf(
     "password",
     "passcode",
