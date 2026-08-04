@@ -717,7 +717,7 @@ final class MessageCoordinator: ObservableObject {
         detail: error.localizedDescription,
         status: .failed
       )
-      store.appendSystem(error.localizedDescription, to: contact.id)
+      store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
     }
   }
 
@@ -758,7 +758,9 @@ final class MessageCoordinator: ObservableObject {
             from: contact.id,
             remoteMessageId: event.requestId,
             status: .sent,
-            traceStage: "cloud_reply"
+            traceStage: "cloud_reply",
+            conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId
           )
         }
 
@@ -1148,7 +1150,13 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
-    let incoming = store.appendIncoming(content, from: contactId, remoteMessageId: appPayload.string("message_id"))
+    let incoming = store.appendIncoming(
+      content,
+      from: contactId,
+      remoteMessageId: appPayload.string("message_id"),
+      conversationId: appPayload.string("conversation_id"),
+      turnId: appPayload.string("turn_id")
+    )
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)

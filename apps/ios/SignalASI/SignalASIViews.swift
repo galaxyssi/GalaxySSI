@@ -1451,6 +1451,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentSessionsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_sessions.title", "Sessions"))
+              Text(agentSessionsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
@@ -1757,6 +1765,16 @@ struct SettingsView: View {
       format: t("signalasi.agent_tasks.value", "Tasks: %d / running: %d"),
       tasks.count,
       running
+    )
+  }
+
+  private var agentSessionsSummary: String {
+    let sessions = store.agentSessions(includeArchived: true)
+    let archived = sessions.filter { $0.status == .archived }.count
+    return String(
+      format: t("signalasi.agent_sessions.value", "Sessions: %d / archived: %d"),
+      sessions.count,
+      archived
     )
   }
 
