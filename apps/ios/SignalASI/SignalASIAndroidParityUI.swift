@@ -503,6 +503,14 @@ struct DiscoverView: View {
         ScrollView {
           VStack(spacing: 10) {
             SignalASIAndroidMenuLink(
+              title: t("signalasi.discover.ai_agent_title", "AI Agent"),
+              subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
+              systemImage: "cpu",
+              tint: .signalASIAccent
+            ) {
+              SignalASIMyAgentsView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.scan_title", "Scan"),
               subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
               systemImage: "qrcode.viewfinder",

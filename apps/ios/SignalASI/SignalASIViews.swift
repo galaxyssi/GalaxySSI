@@ -622,6 +622,7 @@ struct ContactsView: View {
           .frame(height: 36)
           .background(Color.signalASISearchBackground)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          SignalASIContactDirectoryActionsView()
           ScrollView {
             VStack(alignment: .leading, spacing: 8) {
               if !filteredFriendRequests.isEmpty {
