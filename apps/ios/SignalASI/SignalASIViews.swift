@@ -1590,6 +1590,16 @@ struct SettingsView: View {
               .foregroundColor(.secondary)
           }
         }
+        Section(t("settings_about_section", "About")) {
+          NavigationLink(destination: SignalASIAboutView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_about_signalasi", "About SignalASI"))
+              Text(String(format: t("settings_about_version_summary", "Version %@ - Signal Link v1.0.3"), appVersionName))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
       }
       .navigationTitle(t("signalasi.tab.settings", "Settings"))
       .sheet(isPresented: $showingAddModel) {
@@ -1826,6 +1836,14 @@ struct SettingsView: View {
       tools.count,
       available
     )
+  }
+
+  private var appVersionName: String {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+      return "0.1.0"
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "0.1.0" : trimmed
   }
 
   private var linkDiagnosticsSummary: String {
