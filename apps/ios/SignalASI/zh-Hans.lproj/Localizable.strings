@@ -1562,10 +1562,6 @@
 "cc_status_degraded" = "降级";
 "cc_status_not_configured" = "未配置";
 "cc_section_intelligent_core" = "智能核心";
-"cc_agent_core_title" = "Agent 内核";
-"cc_agent_core_subtitle" = "规划、工具调用、动态重规划与失败恢复";
-"cc_resource_routing_title" = "模型与资源路由";
-"cc_resource_routing_subtitle" = "按质量、延迟、隐私、成本与可用性选择";
 "cc_memory_title" = "记忆与个性化";
 "cc_memory_subtitle" = "%d 条长期记忆 · 由用户控制";
 "cc_knowledge_title" = "知识库";
