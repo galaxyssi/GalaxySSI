@@ -1297,8 +1297,6 @@ struct SettingsView: View {
   @State private var backupImportPresented = false
   @State private var backupStatus = ""
   @State private var backupStatusIsError = false
-  @State private var showingResetPrivateData = false
-  @State private var privacyStatus = ""
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
 
   var body: some View {
@@ -1565,14 +1563,13 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
-          Button(role: .destructive) {
-            showingResetPrivateData = true
-          } label: {
-            Label(t("signalasi.settings.reset_private_data", "Reset Private Data"), systemImage: "trash")
-          }
-          if !privacyStatus.isEmpty {
-            Text(privacyStatus)
-              .foregroundColor(.secondary)
+          NavigationLink(destination: SignalASIResetDataView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_destroy_data", "Reset Data"))
+              Text(t("destroy_data_hero_subtitle", "This deletes identity, contacts, chat history, keys, cache, and backup data."))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
           }
         }
         Section(t("signalasi.settings.notifications", "Notifications")) {
@@ -1604,12 +1601,6 @@ struct SettingsView: View {
       .navigationTitle(t("signalasi.tab.settings", "Settings"))
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
-      }
-      .sheet(isPresented: $showingResetPrivateData) {
-        ResetPrivateDataView {
-          store.destroyAllPrivateData()
-          privacyStatus = t("signalasi.settings.private_data_reset", "Private data reset.")
-        }
       }
       .fileExporter(
         isPresented: $backupExportPresented,
