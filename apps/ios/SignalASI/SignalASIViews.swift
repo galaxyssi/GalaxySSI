@@ -605,10 +605,8 @@ struct ContactsView: View {
             .buttonStyle(.plain)
           },
           trailing: {
-            Button {
-              contactScannerPresented = true
-            } label: {
-              Image(systemName: "qrcode.viewfinder")
+            NavigationLink(destination: AddContactView()) {
+              Image(systemName: "plus")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundColor(.signalASITextPrimary)
             }
