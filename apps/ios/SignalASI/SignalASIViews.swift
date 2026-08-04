@@ -1473,6 +1473,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
+              Text(voiceSettingsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
           NavigationLink(destination: CustomDeviceConnectorsView()) {
@@ -1711,6 +1719,12 @@ struct SettingsView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var voiceSettingsSummary: String {
+    let enabled = store.voiceSettings.wakeListeningEnabled ? t("common_on", "On") : t("common_off", "Off")
+    let model = VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName
+    return "\(enabled) / \(model) / \(store.voiceSettings.preferredLocaleIdentifier)"
   }
 
   private var customDeviceSummary: String {

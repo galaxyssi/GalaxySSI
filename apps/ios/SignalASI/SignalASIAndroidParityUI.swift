@@ -302,7 +302,7 @@ struct AgentHomeView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       HStack(spacing: 4) {
-        NavigationLink(destination: VoiceSettingsView()) {
+        NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
           Text(t("signalasi.agent.voice_button", "Hold to Talk"))
             .font(.system(size: 15, weight: .bold))
             .foregroundColor(Color(signalASIColor(0x087CFF)))
@@ -556,7 +556,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              VoiceSettingsView()
+              SignalASIVoiceAssistantSettingsView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
