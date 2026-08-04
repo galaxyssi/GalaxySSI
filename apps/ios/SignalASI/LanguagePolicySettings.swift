@@ -61,10 +61,14 @@ struct LanguagePolicySettings: Codable, Equatable {
     return voiceChoices.first { $0.caseInsensitiveCompare(candidate) == .orderedSame } ?? auto
   }
 
-  static func resolve(_ value: String) -> String {
+  static func resolve(
+    _ value: String,
+    locale: Locale = .autoupdatingCurrent,
+    timeZone: TimeZone = .autoupdatingCurrent
+  ) -> String {
     let normalized = normalizeVoice(value)
     guard normalized == auto else { return normalized }
-    return Locale.current.identifier.replacingOccurrences(of: "_", with: "-").ifBlank(enUS)
+    return automaticVoiceLanguage(locale: locale, timeZone: timeZone)
   }
 
   static func resolveInterface(
@@ -88,6 +92,41 @@ struct LanguagePolicySettings: Codable, Equatable {
       return zhCN
     }
     return en
+  }
+
+  static func automaticVoiceLanguage(locale: Locale, timeZone: TimeZone) -> String {
+    let localeTag = locale.identifier.replacingOccurrences(of: "_", with: "-")
+    if locale.languageCode?.caseInsensitiveCompare("zh") == .orderedSame {
+      if localeTag.range(of: "HK", options: .caseInsensitive) != nil {
+        return zhHK
+      }
+      if localeTag.range(of: "TW", options: .caseInsensitive) != nil {
+        return zhTW
+      }
+      return zhCN
+    }
+    if let regionCode = locale.regionCode?.uppercased() {
+      if regionCode == "HK" || regionCode == "MO" {
+        return zhHK
+      }
+      if regionCode == "TW" {
+        return zhTW
+      }
+      if regionCode == "CN" {
+        return zhCN
+      }
+    }
+    switch timeZone.identifier {
+    case "Asia/Hong_Kong", "Asia/Macau":
+      return zhHK
+    case "Asia/Taipei":
+      return zhTW
+    default:
+      if chineseInterfaceTimeZones.contains(timeZone.identifier) {
+        return zhCN
+      }
+      return enUS
+    }
   }
 
   static func localeIdentifier(for languageTag: String) -> String {

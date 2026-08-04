@@ -487,6 +487,15 @@ final class SignalASIStore: ObservableObject {
         $0.preferredLocaleIdentifier = next.asrLocaleIdentifier
       }
     }
+    let matchingVoice = LanguagePolicySettings.microsoftVoice(
+      languageTag: next.ttsLanguage,
+      configuredVoice: voiceSettings.microsoftVoice
+    )
+    if voiceSettings.microsoftVoice != matchingVoice {
+      updateVoiceSettings {
+        $0.microsoftVoice = matchingVoice
+      }
+    }
   }
 
   func updateDisplaySettings(_ mutate: (inout AppDisplaySettings) -> Void) {
