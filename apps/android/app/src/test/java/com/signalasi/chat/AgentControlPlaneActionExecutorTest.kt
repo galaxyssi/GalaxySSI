@@ -212,6 +212,9 @@ class AgentControlPlaneActionExecutorTest {
             sourceMessageId = 73L,
             contactId = "codex",
             content = "Reviewed result",
+            conversationId = request.conversationId,
+            turnId = request.messageId,
+            taskId = request.taskId,
             inputTokens = 10L,
             outputTokens = 4L
         )

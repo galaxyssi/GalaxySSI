@@ -14,6 +14,9 @@ data class AgentManagedResponseRecord(
     val deliveryMode: AgentDeliveryMode,
     val sourceMessageId: Long,
     val contactId: String,
+    val conversationId: String = "",
+    val turnId: String = "",
+    val taskId: String = "",
     val state: AgentManagedResponseState = AgentManagedResponseState.PENDING,
     val response: AgentConnectorResponse? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -169,7 +172,7 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
     }
 
     private companion object {
-        const val DATABASE = "signalasi_managed_connector_responses_v1"
+        const val DATABASE = "signalasi_managed_connector_responses_v2"
         const val KEY_RECORDS = "records"
         const val MAX_RECORDS = 512
         val PROCESS_LOCK = Any()
@@ -198,7 +201,31 @@ object AgentLateManagedResponseBus {
 
 private fun AgentManagedResponseRecord.correlates(response: AgentConnectorResponse): Boolean =
     sourceMessageId == response.sourceMessageId &&
-        (contactId.isBlank() || response.contactId.isBlank() || contactId == response.contactId)
+        (contactId.isBlank() || response.contactId.isBlank() || contactId == response.contactId) &&
+        responseIdentityMatches(
+            expectedConversationId = conversationId,
+            expectedTurnId = turnId,
+            expectedTaskId = taskId,
+            actualConversationId = response.conversationId,
+            actualTurnId = response.turnId,
+            actualTaskId = response.taskId
+        )
+
+private fun responseIdentityMatches(
+    expectedConversationId: String,
+    expectedTurnId: String,
+    expectedTaskId: String,
+    actualConversationId: String,
+    actualTurnId: String,
+    actualTaskId: String
+): Boolean {
+    val expectedHasTurnIdentity = expectedConversationId.isNotBlank() || expectedTurnId.isNotBlank()
+    val actualHasTurnIdentity = actualConversationId.isNotBlank() || actualTurnId.isNotBlank()
+    if (!expectedHasTurnIdentity && !actualHasTurnIdentity) return true
+    if (!expectedHasTurnIdentity || !actualHasTurnIdentity) return false
+    if (expectedConversationId != actualConversationId || expectedTurnId != actualTurnId) return false
+    return expectedTaskId.isBlank() || actualTaskId.isBlank() || expectedTaskId == actualTaskId
+}
 
 private fun AgentManagedResponseRecord.isStale(nowMillis: Long = System.currentTimeMillis()): Boolean =
     maxOf(createdAtMillis, completedAtMillis) < nowMillis - MAX_MANAGED_RESPONSE_AGE_MILLIS
@@ -213,6 +240,9 @@ private object AgentManagedResponseCodec {
                 .put("delivery_mode", record.deliveryMode.name)
                 .put("source_message_id", record.sourceMessageId)
                 .put("contact_id", record.contactId)
+                .put("conversation_id", record.conversationId)
+                .put("turn_id", record.turnId)
+                .put("task_id", record.taskId)
                 .put("state", record.state.name)
                 .put("response", record.response?.let(::encodeResponse))
                 .put("created_at_millis", record.createdAtMillis)
@@ -235,6 +265,9 @@ private object AgentManagedResponseCodec {
                     deliveryMode = enumValue(json.optString("delivery_mode"), AgentDeliveryMode.OBSERVE),
                     sourceMessageId = sourceMessageId,
                     contactId = json.optString("contact_id"),
+                    conversationId = json.optString("conversation_id"),
+                    turnId = json.optString("turn_id"),
+                    taskId = json.optString("task_id"),
                     state = enumValue(json.optString("state"), AgentManagedResponseState.PENDING),
                     response = decodeResponse(json.optJSONObject("response")),
                     createdAtMillis = json.optLong("created_at_millis"),

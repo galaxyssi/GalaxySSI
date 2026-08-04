@@ -9589,7 +9589,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     content = reply,
                     conversationId = conversationId,
                     turnId = action.parameters[INTERNAL_TURN_ID].orEmpty(),
-                    taskId = action.id,
+                    taskId = action.parameters["_signalasi_task_id"].orEmpty()
+                        .ifBlank { action.parameters[INTERNAL_TURN_ID].orEmpty() },
                     success = succeeded
                 )
             )
@@ -9957,6 +9958,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             .ifBlank { preferredContactId }
             .ifBlank { "cloud-models" }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val connectorTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+        val connectorTaskId = action.parameters["_signalasi_task_id"].orEmpty()
+            .ifBlank { connectorTurnId }
         if (deliveryMode == AgentDeliveryMode.IGNORE) {
             return AgentActionResult(
                 action.id,
@@ -10028,7 +10032,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val requestPrompt = promptWithObservedContext(prompt, observed)
         Thread {
             val appContext = context.applicationContext
-            val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+            val turnId = connectorTurnId
             val modelPrompt = promptWithConversationContext(action, requestPrompt, cloud = true)
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()
@@ -10179,6 +10183,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     sourceMessageId = messageId,
                     contactId = contactId,
                     content = reply,
+                    conversationId = conversationId,
+                    turnId = connectorTurnId,
+                    taskId = connectorTaskId,
                     success = succeeded,
                     inputTokens = successfulUsage.inputTokens,
                     outputTokens = successfulUsage.outputTokens,
@@ -10237,6 +10244,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "awaiting_response" to "true",
                 "source_message_id" to messageId.toString(),
                 "contact_id" to contactId,
+                "conversation_id" to conversationId,
+                "turn_id" to connectorTurnId,
+                "task_id" to connectorTaskId,
                 "target" to contact.optString("name", contactId),
                 "resource_id" to preferredContactId.ifBlank { contactId },
                 "failure_domain" to "cloud:${selectedModel.optString("cloud_provider").ifBlank { contactId }}",

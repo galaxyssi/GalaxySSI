@@ -634,6 +634,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(),
                 "_signalasi_conversation_id" to context.request.conversationId,
                 "_signalasi_turn_id" to context.request.messageId,
+                "_signalasi_task_id" to context.request.taskId,
                 "idempotency_key" to context.request.idempotencyKey,
                 MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
             ),

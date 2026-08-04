@@ -97,6 +97,9 @@ object AgentConnectorResponseBus {
 internal object AgentManagedConnectorResponseRegistry {
     private data class Interceptor(
         val ownerId: String,
+        val conversationId: String,
+        val turnId: String,
+        val taskId: String,
         val consume: (AgentConnectorResponse) -> Boolean
     )
 
@@ -106,19 +109,31 @@ internal object AgentManagedConnectorResponseRegistry {
         sourceMessageId: Long,
         contactId: String,
         ownerId: String,
+        conversationId: String = "",
+        turnId: String = "",
+        taskId: String = "",
         consume: (AgentConnectorResponse) -> Boolean
     ) {
         require(sourceMessageId > 0L) { "Managed response source id must be positive" }
         require(ownerId.isNotBlank()) { "Managed response owner id must not be blank" }
-        interceptors[key(sourceMessageId, contactId)] = Interceptor(ownerId, consume)
+        interceptors[key(sourceMessageId, contactId)] = Interceptor(
+            ownerId = ownerId,
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = taskId,
+            consume = consume
+        )
     }
 
     fun consume(response: AgentConnectorResponse): Boolean {
         val exactKey = key(response.sourceMessageId, response.contactId)
         val wildcardKey = key(response.sourceMessageId, "")
-        val interceptor = interceptors.remove(exactKey)
-            ?: interceptors.remove(wildcardKey)
+        val entry = interceptors[exactKey]?.let { exactKey to it }
+            ?: interceptors[wildcardKey]?.let { wildcardKey to it }
             ?: return false
+        val interceptor = entry.second
+        if (!managedIdentityMatches(interceptor, response)) return false
+        if (!interceptors.remove(entry.first, interceptor)) return false
         return runCatching { interceptor.consume(response) }.getOrDefault(false)
     }
 
@@ -131,6 +146,22 @@ internal object AgentManagedConnectorResponseRegistry {
 
     private fun key(sourceMessageId: Long, contactId: String): String =
         "$sourceMessageId:${contactId.trim()}"
+
+    private fun managedIdentityMatches(
+        interceptor: Interceptor,
+        response: AgentConnectorResponse
+    ): Boolean {
+        val expectedHasTurnIdentity =
+            interceptor.conversationId.isNotBlank() || interceptor.turnId.isNotBlank()
+        val actualHasTurnIdentity = response.conversationId.isNotBlank() || response.turnId.isNotBlank()
+        if (!expectedHasTurnIdentity && !actualHasTurnIdentity) return true
+        if (!expectedHasTurnIdentity || !actualHasTurnIdentity) return false
+        if (interceptor.conversationId != response.conversationId ||
+            interceptor.turnId != response.turnId
+        ) return false
+        return interceptor.taskId.isBlank() || response.taskId.isBlank() ||
+            interceptor.taskId == response.taskId
+    }
 }
 
 object AgentConnectorResponseStore {

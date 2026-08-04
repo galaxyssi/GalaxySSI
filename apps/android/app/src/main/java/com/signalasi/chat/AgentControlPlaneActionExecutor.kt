@@ -334,6 +334,13 @@ private class ActionExecutorAgentTransport(
         val awaitingResponse = result.metadata["awaiting_response"] == "true"
         val sourceMessageId = result.metadata["source_message_id"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
         val contactId = result.metadata["contact_id"].orEmpty()
+        val responseConversationId = result.metadata["conversation_id"].orEmpty()
+            .ifBlank { request.conversationId }
+        val responseTurnId = result.metadata["turn_id"].orEmpty()
+            .ifBlank { request.messageId }
+        val responseTaskId = result.metadata["remote_task_id"].orEmpty()
+            .ifBlank { result.metadata["task_id"].orEmpty() }
+            .ifBlank { request.taskId }
         if (awaitingResponse && sourceMessageId > 0L) {
             activeRuns[request.runId] = ActiveRun(
                 request = request,
@@ -347,7 +354,10 @@ private class ActionExecutorAgentTransport(
                 AgentManagedConnectorResponseRegistry.register(
                     sourceMessageId = sourceMessageId,
                     contactId = contactId,
-                    ownerId = request.runId
+                    ownerId = request.runId,
+                    conversationId = responseConversationId,
+                    turnId = responseTurnId,
+                    taskId = responseTaskId
                 ) { response -> consumeResponse(request.runId, response) }
                 managedResponses.register(AgentManagedResponseRecord(
                     ownerRunId = request.runId,
@@ -355,7 +365,10 @@ private class ActionExecutorAgentTransport(
                     agentId = agentId,
                     deliveryMode = request.deliveryMode,
                     sourceMessageId = sourceMessageId,
-                    contactId = contactId
+                    contactId = contactId,
+                    conversationId = responseConversationId,
+                    turnId = responseTurnId,
+                    taskId = responseTaskId
                 ))
                 if (!activeRuns.containsKey(request.runId)) {
                     managedResponses.markApplied(request.runId)
