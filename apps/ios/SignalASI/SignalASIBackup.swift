@@ -40,6 +40,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
   var includesAgentSafetySettings: Bool
   var includesAgentTaskBudget: Bool
   var includesAgentKnowledge: Bool
+  var includesAgentTaskHistory: Bool
   var includesCustomDeviceConnectors: Bool
   var includesHomeAssistantSettings: Bool
   var includesModelPlannerSettings: Bool
@@ -55,6 +56,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings: Bool = false,
     includesAgentTaskBudget: Bool = false,
     includesAgentKnowledge: Bool = false,
+    includesAgentTaskHistory: Bool = false,
     includesCustomDeviceConnectors: Bool = false,
     includesHomeAssistantSettings: Bool = false,
     includesModelPlannerSettings: Bool = false,
@@ -69,6 +71,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     self.includesAgentSafetySettings = includesAgentSafetySettings
     self.includesAgentTaskBudget = includesAgentTaskBudget
     self.includesAgentKnowledge = includesAgentKnowledge
+    self.includesAgentTaskHistory = includesAgentTaskHistory
     self.includesCustomDeviceConnectors = includesCustomDeviceConnectors
     self.includesHomeAssistantSettings = includesHomeAssistantSettings
     self.includesModelPlannerSettings = includesModelPlannerSettings
@@ -85,6 +88,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings: false,
     includesAgentTaskBudget: false,
     includesAgentKnowledge: false,
+    includesAgentTaskHistory: false,
     includesCustomDeviceConnectors: false,
     includesHomeAssistantSettings: false,
     includesModelPlannerSettings: false,
@@ -101,6 +105,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     case includesAgentSafetySettings = "includes_agent_safety_settings"
     case includesAgentTaskBudget = "includes_agent_task_budget"
     case includesAgentKnowledge = "includes_agent_knowledge"
+    case includesAgentTaskHistory = "includes_agent_task_history"
     case includesCustomDeviceConnectors = "includes_custom_device_connectors"
     case includesHomeAssistantSettings = "includes_home_assistant_settings"
     case includesModelPlannerSettings = "includes_model_planner_settings"
@@ -118,6 +123,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings = try container.decodeIfPresent(Bool.self, forKey: .includesAgentSafetySettings) ?? false
     includesAgentTaskBudget = try container.decodeIfPresent(Bool.self, forKey: .includesAgentTaskBudget) ?? false
     includesAgentKnowledge = try container.decodeIfPresent(Bool.self, forKey: .includesAgentKnowledge) ?? false
+    includesAgentTaskHistory = try container.decodeIfPresent(Bool.self, forKey: .includesAgentTaskHistory) ?? false
     includesCustomDeviceConnectors = try container.decodeIfPresent(Bool.self, forKey: .includesCustomDeviceConnectors) ?? false
     includesHomeAssistantSettings = try container.decodeIfPresent(Bool.self, forKey: .includesHomeAssistantSettings) ?? false
     includesModelPlannerSettings = try container.decodeIfPresent(Bool.self, forKey: .includesModelPlannerSettings) ?? false
@@ -131,6 +137,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var memoryDeletionIndex: [AgentMemoryDeletionTombstone]?
   var knowledge: [AgentKnowledgeItem]?
   var knowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]?
+  var taskHistory: [AgentTaskRecord]?
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var displaySettings: AppDisplaySettings
@@ -147,6 +154,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     memoryDeletionIndex: nil,
     knowledge: nil,
     knowledgeAccessAudit: nil,
+    taskHistory: nil,
     voiceSettings: .default,
     languagePolicy: .default,
     displaySettings: .default,
@@ -164,6 +172,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     memoryDeletionIndex: [AgentMemoryDeletionTombstone]? = nil,
     knowledge: [AgentKnowledgeItem]? = nil,
     knowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]? = nil,
+    taskHistory: [AgentTaskRecord]? = nil,
     voiceSettings: VoiceSettings,
     languagePolicy: LanguagePolicySettings = .default,
     displaySettings: AppDisplaySettings = .default,
@@ -181,6 +190,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     }
     self.knowledge = knowledge.map { Array($0.suffix(500)) }
     self.knowledgeAccessAudit = knowledgeAccessAudit.map { Array($0.suffix(100)) }
+    self.taskHistory = taskHistory.map { Array($0.suffix(200)) }
     self.voiceSettings = voiceSettings
     self.languagePolicy = languagePolicy
     self.displaySettings = displaySettings
@@ -198,6 +208,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case memoryDeletionIndex = "memory_deletion_index"
     case knowledge
     case knowledgeAccessAudit = "knowledge_access_audit"
+    case taskHistory = "task_history"
     case voiceSettings = "voice_settings"
     case languagePolicy = "language_policy"
     case displaySettings = "display_settings"
@@ -229,6 +240,9 @@ struct SignalASIBackupAgentData: Codable, Equatable {
       forKey: .knowledgeAccessAudit
     ).map {
       Array($0.suffix(100))
+    }
+    taskHistory = try container.decodeIfPresent([AgentTaskRecord].self, forKey: .taskHistory).map {
+      Array($0.suffix(200))
     }
     voiceSettings = try container.decodeIfPresent(VoiceSettings.self, forKey: .voiceSettings) ?? .default
     languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
