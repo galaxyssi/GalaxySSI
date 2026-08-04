@@ -1506,6 +1506,14 @@ struct SettingsView: View {
           }
         }
         Section("SignalASI Link") {
+          NavigationLink(destination: SignalASIProtocolQualityView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("protocol_quality_title", "Protocol & Quality"))
+              Text(t("protocol_quality_hero_subtitle", "Secure communication and Agent collaboration protocol"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASILinkDiagnosticsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.link_diagnostics", "Link Diagnostics"))
