@@ -260,6 +260,18 @@ struct SignalASIMessageActionsView: View {
     case "agent_started": return t("delivery_trace_agent_started", "Agent started")
     case "agent_first_output": return t("delivery_trace_agent_first_output", "First Agent output")
     case "agent_replied": return t("delivery_trace_agent_replied", "Agent replied")
+    case "agent_accepted": return t("agent_task_status_accepted", "Accepted")
+    case "agent_queued": return t("agent_task_status_queued", "Queued")
+    case "agent_starting": return t("agent_task_status_starting", "Starting")
+    case "agent_recovering": return t("agent_task_status_recovering", "Recovering")
+    case "agent_running": return t("agent_task_status_running", "Running")
+    case "agent_waiting_input": return t("agent_task_status_waiting_input", "Waiting for input")
+    case "agent_waiting_approval": return t("agent_task_status_waiting_approval", "Waiting for approval")
+    case "agent_completed": return t("agent_task_status_completed", "Completed")
+    case "agent_failed": return t("agent_task_status_failed", "Failed")
+    case "agent_cancelled": return t("agent_task_status_cancelled", "Cancelled")
+    case "agent_timed_out": return t("agent_task_status_timed_out", "Timed out")
+    case "agent_cancelling": return t("agent_task_status_cancelling", "Cancelling")
     case "desktop_reply_publish_queued": return t("delivery_trace_desktop_reply_queued", "Desktop reply queued")
     case "desktop_reply_broker_ack": return t("delivery_trace_desktop_reply_ack", "Desktop reply Broker ACK")
     case "desktop_broker_ack": return t("delivery_trace_desktop_broker_ack", "Broker confirmed")
@@ -274,6 +286,7 @@ struct SignalASIMessageActionsView: View {
     case "cloud_reply": return t("delivery_trace_cloud_reply", "Model replied")
     case "cloud_reply_received": return t("delivery_trace_cloud_reply_received", "Model reply received")
     case "cloud_error": return t("delivery_trace_cloud_error", "Model error")
+    case "local_saved": return t("delivery_status_local_saved", "Saved locally")
     default: return stage
     }
   }

@@ -9,6 +9,7 @@ struct SignalASIControlCenterView: View {
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
+  private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -124,7 +125,7 @@ struct SignalASIControlCenterView: View {
         tint: agentCoreTint,
         badge: agentCoreBadge
       ) {
-        AgentSafetySettingsView()
+        SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -133,7 +134,7 @@ struct SignalASIControlCenterView: View {
         tint: .blue,
         badge: resourcesBadge
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_memory_title", "Memory & Personalization"),
@@ -145,7 +146,7 @@ struct SignalASIControlCenterView: View {
         tint: store.agentSafetySettings.memoryCapture ? .signalASIAccent : .orange,
         badge: store.agentSafetySettings.memoryCapture ? t("status_enabled", "Enabled") : t("common_off", "Off")
       ) {
-        SignalASIMemoryControlView()
+        SignalASIMemoryControlCenterView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_knowledge_title", "Knowledge Base"),
@@ -176,16 +177,16 @@ struct SignalASIControlCenterView: View {
         tint: nativeToolSummary.available > 0 ? .signalASIAccent : .orange,
         badge: "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
       ) {
-        SignalASINativeToolCatalogView()
+        SignalASIPhoneCapabilitiesView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_runtime_title", "On-device Linux Runtime"),
-        subtitle: t("cc_runtime_subtitle_ios", "iOS local model, Whisper, and native runtime readiness"),
+        subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
         systemImage: "terminal",
-        tint: .purple,
-        badge: t("cc_status_ready", "Ready")
+        tint: runtimeReady ? .signalASIAccent : .orange,
+        badge: runtimeReady ? t("cc_status_ready", "Ready") : t("status_needs_setup", "Needs Setup")
       ) {
-        SignalASILocalModelLabView()
+        SignalASIOnDeviceRuntimeView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_apps_title", "Apps & Tools"),
@@ -194,7 +195,7 @@ struct SignalASIControlCenterView: View {
         tint: .blue,
         badge: "\(SignalASIAppAdapterCatalog.adapterCount)"
       ) {
-        SignalASIAppAdaptersView()
+        SignalASIAppToolsView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_spaces_title", "Smart Spaces"),
@@ -248,13 +249,25 @@ struct SignalASIControlCenterView: View {
         SignalASISecurityCenterView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
+        subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
+        systemImage: "lock.doc",
+        tint: disclosureSummary.cloud > 0 ? .orange : .signalASIAccent,
+        badge: String(
+          format: t("cc_privacy_destination_count", "%d destinations"),
+          disclosureSummary.destinations
+        )
+      ) {
+        SignalASIPrivacyControlCenterView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_audit_title", "Permissions & Audit"),
         subtitle: t("cc_audit_subtitle_ios", "Confirmation policy, iOS permissions, and operation history"),
         systemImage: "fingerprint",
         tint: .purple,
         badge: t("common_view", "View")
       ) {
-        OnDeviceAgentPermissionsView()
+        SignalASIPermissionsAuditView()
       }
     }
   }
@@ -269,7 +282,7 @@ struct SignalASIControlCenterView: View {
         tint: store.voiceSettings.wakeListeningEnabled ? .signalASIAccent : .blue,
         badge: store.voiceSettings.wakeListeningEnabled ? t("status_enabled", "Enabled") : t("common_off", "Off")
       ) {
-        VoiceSettingsView()
+        SignalASIVoiceControlCenterView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_app_services_title", "Messages - Contacts - Discover"),
@@ -284,13 +297,10 @@ struct SignalASIControlCenterView: View {
         title: t("cc_data_title", "Data & Backup"),
         subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
         systemImage: "externaldrive",
-        tint: disclosureSummary.blocked > 0 ? .orange : .purple,
-        badge: String(
-          format: t("cc_privacy_destination_count", "%d destinations"),
-          disclosureSummary.destinations
-        )
+        tint: .purple,
+        badge: t("signalasi.data_backup.available", "Available")
       ) {
-        AgentDataDisclosureDashboardView()
+        SignalASIDataBackupView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_general_title", "General & About"),
@@ -322,6 +332,10 @@ struct SignalASIControlCenterView: View {
 
   private var recentTaskCount: Int {
     recentTasks.count
+  }
+
+  private var runtimeReady: Bool {
+    runtimeProvider.availability(operation: .execute).status == .available
   }
 
   private var runningTaskCount: Int {

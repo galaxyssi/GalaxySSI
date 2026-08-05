@@ -1926,12 +1926,12 @@ final class SignalASIStore: ObservableObject {
 
   @discardableResult
   func updateDesktopAgentContacts(from payload: [String: Any], link incomingLink: ServerLink? = nil) -> Int {
-    guard let agents = payload["connector_agents"] as? [[String: Any]], !agents.isEmpty else {
+    guard let source = SignalASIContactExchange.connectorAgentSource(from: payload) else {
       return 0
     }
-    let link = incomingLink ?? serverLink(forConnectorPayload: payload)
+    let link = incomingLink ?? serverLink(forConnectorPayload: source.parentPayload)
     let updated = upsertDesktopAgentContacts(
-      payloads: desktopAgentPayloads(from: agents, parentPayload: payload, link: link),
+      payloads: desktopAgentPayloads(from: source.agents, parentPayload: source.parentPayload, link: link),
       link: link
     )
     if updated > 0 {
@@ -2025,8 +2025,8 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func desktopAgentPayloads(from pairing: PairingQRCode, link: ServerLink) -> [[String: Any]] {
-    if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
-      return desktopAgentPayloads(from: agents, parentPayload: pairing.raw, link: link)
+    if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) {
+      return desktopAgentPayloads(from: source.agents, parentPayload: source.parentPayload, link: link)
     }
     let fallbackAgents = [
       ("hermes", "Hermes Agent", "local-cli"),
@@ -2065,17 +2065,26 @@ final class SignalASIStore: ObservableObject {
     link: ServerLink?
   ) -> [[String: Any]] {
     let access = SignalASILinkProtocol.pairingAccess(from: parentPayload.dictionary("pairing_access"))
+    let server = parentPayload.dictionary("server") ??
+      parentPayload.dictionary("desktop") ??
+      parentPayload.dictionary("desktop_identity")
     return agents.map { agent in
       var payload = agent
       inheritConnectorValue(
         "desktop_id",
         into: &payload,
-        value: parentPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+        value: parentPayload.string("desktop_id")
+          .ifBlank(server?.string("desktop_id") ?? "")
+          .ifBlank(server?.string("id") ?? "")
+          .ifBlank(link?.desktopId ?? "")
       )
       inheritConnectorValue(
         "desktop_name",
         into: &payload,
-        value: parentPayload.string("desktop_name").ifBlank(link?.desktopName ?? "SignalASI Desktop")
+        value: parentPayload.string("desktop_name")
+          .ifBlank(server?.string("desktop_name") ?? "")
+          .ifBlank(server?.string("name") ?? "")
+          .ifBlank(link?.desktopName ?? "SignalASI Desktop")
       )
       inheritConnectorValue(
         "desktop_fingerprint",
@@ -2083,6 +2092,10 @@ final class SignalASIStore: ObservableObject {
         value: parentPayload.string("desktop_fingerprint")
           .ifBlank(parentPayload.string("identity_key_sha256"))
           .ifBlank(parentPayload.string("identity_fingerprint"))
+          .ifBlank(server?.string("desktop_fingerprint") ?? "")
+          .ifBlank(server?.string("identity_key_sha256") ?? "")
+          .ifBlank(server?.string("identity_fingerprint") ?? "")
+          .ifBlank(server?.string("fingerprint") ?? "")
           .ifBlank(link?.desktopFingerprint ?? "")
       )
       inheritConnectorValue(
