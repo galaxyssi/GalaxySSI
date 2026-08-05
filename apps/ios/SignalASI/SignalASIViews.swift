@@ -1539,6 +1539,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
+          NavigationLink(destination: SignalASISmartSpacesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_smart_spaces_title", "Smart Spaces"))
+              Text(t("cc_spaces_subtitle", "Home Assistant and custom devices"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: CustomDeviceConnectorsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.device_connectors", "Device Connectors"))
