@@ -21,6 +21,7 @@ struct SettingsView: View {
           VStack(alignment: .leading, spacing: 12) {
             profileSection
             statusSection
+            pagesSection
             agentSection
             agentToolsSection
             knowledgeExecutionSection
@@ -29,7 +30,6 @@ struct SettingsView: View {
             protocolSection
             localIntelligenceSection
             generalSection
-            pagesSection
           }
           .padding(.horizontal, 12)
           .padding(.top, 12)
