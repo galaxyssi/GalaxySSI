@@ -48,13 +48,13 @@ struct VoiceWhisperModelSettingsView: View {
               VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
                   .foregroundColor(.primary)
-                Text(t(row.detail, row.detail))
+                Text(row.localizedDetail(t))
                   .font(.caption)
                   .foregroundColor(.secondary)
               }
               Spacer(minLength: 12)
               Label {
-                Text(t(row.action.title, row.action.title))
+                Text(row.action.localizedTitle(t))
               } icon: {
                 Image(systemName: row.action.systemImageName)
               }
@@ -78,7 +78,7 @@ struct VoiceWhisperModelSettingsView: View {
         }
       }
       Section {
-        Text(t(VoiceWhisperModelSettingsPresenter.mirrorNote, VoiceWhisperModelSettingsPresenter.mirrorNote))
+        Text(t(VoiceWhisperModelSettingsPresenter.mirrorNoteKey, VoiceWhisperModelSettingsPresenter.mirrorNote))
           .font(.caption)
           .foregroundColor(.secondary)
         if !statusMessage.isEmpty {
@@ -122,7 +122,7 @@ struct VoiceWhisperModelSettingsView: View {
       Task { await download(row.model) }
     case .current:
       if let record = row.benchmarkRecord {
-        benchmarkDetails = VoiceWhisperBenchmarkDetailsPresenter.presentation(model: row.model, record: record)
+        benchmarkDetails = VoiceWhisperBenchmarkDetailsPresenter.presentation(model: row.model, record: record, localized: t)
       }
     case .waiting:
       break
@@ -133,9 +133,9 @@ struct VoiceWhisperModelSettingsView: View {
     do {
       _ = try modelManager.delete(model, active: modelManager.isLoaded(model.id))
       try? benchmarkManager.remove(profile: model)
-      statusMessage = String(format: t("%@ removed", "%@ removed"), model.displayName)
+      statusMessage = String(format: t("voice_asr_model_removed_status", "%@ removed"), model.displayName)
     } catch {
-      statusMessage = t("Model remove failed.", "Model remove failed.")
+      statusMessage = t("voice_asr_model_remove_failed", "Model remove failed.")
     }
     refreshModelState()
   }
@@ -145,7 +145,7 @@ struct VoiceWhisperModelSettingsView: View {
       $0.asrModelId = model.id
       $0.asrRuntimeMode = .manual
     }
-    statusMessage = String(format: t("%@ selected", "%@ selected"), model.displayName)
+    statusMessage = String(format: t("voice_asr_model_selected_status", "%@ selected"), model.displayName)
     refreshModelState()
   }
 
@@ -153,7 +153,7 @@ struct VoiceWhisperModelSettingsView: View {
   private func download(_ model: VoiceWhisperModelProfile) async {
     guard !activeDownloadIds.contains(model.id) else { return }
     activeDownloadIds.insert(model.id)
-    statusMessage = String(format: t("Downloading %@", "Downloading %@"), model.displayName)
+    statusMessage = String(format: t("voice_asr_model_download_started", "Downloading %@"), model.displayName)
     refreshModelState()
     defer {
       activeDownloadIds.remove(model.id)
@@ -165,9 +165,9 @@ struct VoiceWhisperModelSettingsView: View {
         $0.asrModelId = model.id
         $0.asrRuntimeMode = .manual
       }
-      statusMessage = String(format: t("%@ downloaded and selected", "%@ downloaded and selected"), model.displayName)
+      statusMessage = String(format: t("voice_asr_model_ready", "%@ downloaded and selected"), model.displayName)
     } catch {
-      statusMessage = t("Model download failed. Tap to retry.", "Model download failed. Tap to retry.")
+      statusMessage = t("voice_asr_model_download_failed", "Model download failed. Tap to retry.")
     }
   }
 
@@ -180,7 +180,7 @@ struct VoiceWhisperModelSettingsView: View {
       completedSteps: 0,
       totalSteps: 1
     )
-    statusMessage = String(format: t("Benchmarking %@", "Benchmarking %@"), model.displayName)
+    statusMessage = String(format: t("voice_asr_model_benchmarking_named", "Benchmarking %@"), model.displayName)
     refreshModelState()
     defer {
       activeBenchmarkIds.remove(model.id)
@@ -195,9 +195,9 @@ struct VoiceWhisperModelSettingsView: View {
       }
       benchmarkRecords[model.id] = record
       latestBenchmarkRecords.removeValue(forKey: model.id)
-      statusMessage = String(format: t("%@ certification completed", "%@ certification completed"), model.displayName)
+      statusMessage = String(format: t("voice_asr_model_benchmark_complete", "%@ certification completed"), model.displayName)
     } catch {
-      statusMessage = String(format: t("Benchmark could not finish: %@", "Benchmark could not finish: %@"), error.localizedDescription)
+      statusMessage = String(format: t("voice_asr_model_benchmark_failed", "Benchmark could not finish: %@"), error.localizedDescription)
     }
   }
 

@@ -1,5 +1,7 @@
 import Foundation
 
+typealias VoiceWhisperStringLocalizer = (String, String) -> String
+
 enum VoiceWhisperModelRowAction: Equatable {
   case current
   case use
@@ -22,6 +24,26 @@ enum VoiceWhisperModelRowAction: Equatable {
       return "Retry"
     case .waiting(let progress):
       return progress > 0 ? "\(progress)%" : "Waiting"
+    }
+  }
+
+  func localizedTitle(_ localized: VoiceWhisperStringLocalizer) -> String {
+    switch self {
+    case .current:
+      return localized("section_current", "Current")
+    case .use:
+      return localized("settings_language_use", "Use")
+    case .useAndTest:
+      return localized("voice_asr_model_use_and_test", "Use and test")
+    case .download:
+      return localized("voice_asr_model_download", "Download")
+    case .retry:
+      return localized("signalasi.common.retry", "Retry")
+    case .waiting(let progress):
+      if progress > 0 {
+        return String(format: localized("voice_asr_model_progress_short", "%d%%"), progress)
+      }
+      return localized("voice_asr_model_waiting", "Waiting")
     }
   }
 
@@ -67,6 +89,15 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
 
   var detail: String {
     "\(model.sizeLabel) - \(model.quantization.rawValue)\n\(lifecycleDetail)"
+  }
+
+  func localizedDetail(_ localized: VoiceWhisperStringLocalizer) -> String {
+    String(
+      format: localized("voice_asr_model_profile_detail", "%@ - %@\n%@"),
+      model.sizeLabel,
+      model.quantization.rawValue,
+      localizedLifecycleDetail(localized)
+    )
   }
 
   var action: VoiceWhisperModelRowAction {
@@ -120,6 +151,41 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
     return "Download required"
   }
 
+  private func localizedLifecycleDetail(_ localized: VoiceWhisperStringLocalizer) -> String {
+    if let benchmarkProgress {
+      return String(
+        format: localized("voice_asr_model_benchmark_progress", "%@ - %d%%"),
+        localizedBenchmarkStageLabel(benchmarkProgress, localized: localized),
+        benchmarkProgressPercent(benchmarkProgress)
+      )
+    }
+    if let benchmarkRecord {
+      return localizedCertificationLabel(benchmarkRecord.certification.level, localized: localized)
+    }
+    if available, latestBenchmarkRecord != nil {
+      return localized(
+        "voice_asr_model_benchmark_stale",
+        "Previous result is stale and cannot control the current model build."
+      )
+    }
+    if model.bundled {
+      return localized("voice_asr_model_bundled", "Included with the app")
+    }
+    if available {
+      return localized("voice_asr_model_installed_uncertified", "Installed - Ready to use")
+    }
+    if activeDownload || [.pending, .running, .paused].contains(downloadState.status) {
+      if downloadState.progress > 0 {
+        return String(format: localized("voice_asr_model_progress", "%d%% downloaded"), downloadState.progress)
+      }
+      return localized("voice_asr_model_waiting", "Waiting")
+    }
+    if downloadState.status == .failed {
+      return localized("voice_asr_model_install_failed_short", "Install failed")
+    }
+    return localized("voice_asr_model_download_size", "Download required")
+  }
+
   private func benchmarkProgressPercent(_ progress: VoiceWhisperBenchmarkProgress) -> Int {
     guard progress.totalSteps > 0 else { return 0 }
     return min(max(progress.completedSteps * 100 / progress.totalSteps, 0), 100)
@@ -160,9 +226,52 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
       return "Complete"
     }
   }
+
+  private func localizedCertificationLabel(
+    _ level: VoiceWhisperCertificationLevel,
+    localized: VoiceWhisperStringLocalizer
+  ) -> String {
+    switch level {
+    case .untested:
+      return localized("voice_asr_model_installed_uncertified", "Installed - Ready to use")
+    case .realtime:
+      return localized("voice_asr_model_certified_realtime", "Real-time certified")
+    case .final:
+      return localized("voice_asr_model_certified_final", "Final transcription")
+    case .secondPass:
+      return localized("voice_asr_model_certified_second_pass", "Background accuracy pass")
+    case .remoteRecommended:
+      return localized("voice_asr_model_remote_recommended", "Remote recommended")
+    case .unsupported:
+      return localized("voice_asr_model_unsupported", "Unsupported on this device")
+    }
+  }
+
+  private func localizedBenchmarkStageLabel(
+    _ progress: VoiceWhisperBenchmarkProgress,
+    localized: VoiceWhisperStringLocalizer
+  ) -> String {
+    switch progress.stage {
+    case .verifying:
+      return localized("voice_asr_benchmark_stage_verifying", "Verifying model")
+    case .checkingDevice:
+      return localized("voice_asr_benchmark_stage_device", "Checking device")
+    case .searchingThreads:
+      return localized("voice_asr_benchmark_stage_threads", "Searching threads")
+    case .stability:
+      return localized("voice_asr_benchmark_stage_stability", "Testing stability")
+    case .cancellation:
+      return localized("voice_asr_benchmark_stage_cancellation", "Testing cancellation")
+    case .certifying:
+      return localized("voice_asr_benchmark_stage_certifying", "Creating certification")
+    case .complete:
+      return localized("voice_asr_benchmark_stage_complete", "Complete")
+    }
+  }
 }
 
 enum VoiceWhisperModelSettingsPresenter {
+  static let mirrorNoteKey = "voice_asr_model_mirror_note"
   static let mirrorNote = "Downloads use hf-mirror.com. Models are stored in SignalASI app data and removed when the app is uninstalled."
 
   static func rows(
