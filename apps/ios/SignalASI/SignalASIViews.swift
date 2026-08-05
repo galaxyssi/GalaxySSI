@@ -2755,60 +2755,6 @@ struct FriendRequestRow: View {
   }
 }
 
-struct FriendRequestDetailView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @Environment(\.dismiss) private var dismiss
-  @EnvironmentObject private var store: SignalASIStore
-  var requestId: String
-
-  private var request: SignalASIFriendRequest? {
-    store.friendRequest(id: requestId)
-  }
-
-  var body: some View {
-    Form {
-      if let request {
-        Section(t("signalasi.contact.section_identity", "Identity")) {
-          Text(request.signalASIId)
-            .font(.system(.caption, design: .monospaced))
-          Text(request.identityFingerprint.chunkedFingerprint)
-            .font(.system(.caption, design: .monospaced))
-            .foregroundColor(.secondary)
-        }
-        if !request.mqttInboxTopic.isEmpty {
-          Section(t("signalasi.contact.messaging", "Messaging")) {
-            Text(request.mqttInboxTopic)
-              .font(.system(.caption, design: .monospaced))
-          }
-        }
-        Section {
-          Button {
-            _ = store.approveFriendRequest(id: request.id)
-            dismiss()
-          } label: {
-            Label(t("signalasi.friend_request.approve", "Approve"), systemImage: "checkmark.circle")
-          }
-          Button(role: .destructive) {
-            _ = store.rejectFriendRequest(id: request.id)
-            dismiss()
-          } label: {
-            Label(t("signalasi.friend_request.reject", "Reject"), systemImage: "xmark.circle")
-          }
-        }
-        .disabled(request.status != .pending)
-      } else {
-        Text(t("signalasi.friend_request.not_found", "Friend request not found."))
-          .foregroundColor(.secondary)
-      }
-    }
-    .navigationTitle(request?.name ?? t("signalasi.friend_request.title", "Friend Request"))
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
 struct MyContactQRCodeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
