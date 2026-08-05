@@ -13,15 +13,120 @@ struct SignalASIConnectorAgentSource {
 
 enum SignalASIQRCodePayload {
   static func decodeObject(from contents: String, label: String) throws -> [String: Any] {
-    for candidate in candidateTexts(from: contents) {
-      guard let data = candidate.data(using: .utf8),
-            let raw = try? JSONSerialization.jsonObject(with: data, options: []),
-            let object = raw as? [String: Any] else {
-        continue
+    var texts = candidateTexts(from: contents)
+    var objects: [[String: Any]] = []
+    var fallback: [String: Any]?
+    var textIndex = 0
+    var objectIndex = 0
+
+    func addText(_ value: String) {
+      candidateTexts(from: value).forEach { candidate in
+        if texts.count < 48, !texts.contains(candidate) {
+          texts.append(candidate)
+        }
       }
-      return object
+    }
+
+    func addObject(_ object: [String: Any]) {
+      if objects.count < 48 {
+        objects.append(object)
+      }
+    }
+
+    while textIndex < texts.count || objectIndex < objects.count {
+      while textIndex < texts.count {
+        let candidate = texts[textIndex]
+        textIndex += 1
+        guard let data = candidate.data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: data, options: []) else {
+          continue
+        }
+        if let object = raw as? [String: Any] {
+          addObject(object)
+        } else if let array = raw as? [Any], !array.isEmpty {
+          addObject(["connector_agents": array])
+        }
+      }
+
+      while objectIndex < objects.count {
+        let object = objects[objectIndex]
+        objectIndex += 1
+        if looksLikeSignalASIObject(object) {
+          return object
+        }
+        if fallback == nil {
+          fallback = object
+        }
+        for key in wrappedPayloadKeys {
+          if let nested = object.dictionary(key) {
+            addObject(nested)
+          }
+          if let nestedText = object[key] as? String {
+            addText(nestedText)
+          }
+        }
+      }
+    }
+    if let fallback {
+      return fallback
     }
     throw SignalASIError.invalidPayload("\(label) root must be a JSON object.")
+  }
+
+  private static let wrappedPayloadKeys = [
+    "payload",
+    "payload_b64",
+    "data",
+    "data_b64",
+    "json",
+    "qr",
+    "qr_b64",
+    "contact",
+    "pairing",
+    "signalasi",
+    "signalasi_payload",
+    "signalasi_qr",
+    "capability_manifest",
+    "connector_status",
+    "manifest",
+    "mobile_manifest"
+  ]
+
+  private static func looksLikeSignalASIObject(_ object: [String: Any]) -> Bool {
+    let type = object.string("type").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let hasIdentity = !object.string("signalasi_id").isEmpty ||
+      !object.string("hermes_id").isEmpty ||
+      !object.string("identity_public_key").isEmpty ||
+      !object.string("identity_key").isEmpty ||
+      !object.string("identity_fingerprint").isEmpty ||
+      !object.string("identity_key_sha256").isEmpty ||
+      !object.string("desktop_fingerprint").isEmpty
+    let hasPairing = !object.string("pairing_token").isEmpty ||
+      !object.string("server_route_id").isEmpty ||
+      object.string("protocol") == SignalASILinkProtocol.name
+    let hasAgentList = object["connector_agents"] != nil ||
+      object["desktop_agents"] != nil ||
+      object["mobile_agents"] != nil ||
+      object["agent_contacts"] != nil ||
+      object["agents"] != nil
+    let hasAgentIdentity = !object.string("agent_id").isEmpty ||
+      !object.string("mobile_contact_id").isEmpty ||
+      !object.string("device_id").isEmpty
+
+    switch type {
+    case "signalasi_verify":
+      return hasPairing || hasIdentity
+    case "signalasi_contact", "hermes_contact":
+      return hasIdentity
+    case "agent", "agent_contact", "signalasi_agent", "signalasi_agent_contact",
+         "device", "device_contact", "signalasi_device", "signalasi_device_contact":
+      return hasIdentity || hasAgentIdentity
+    case "connector_status", "capability_manifest", "pairing_confirmed":
+      return hasAgentList || hasPairing || hasIdentity
+    default:
+      break
+    }
+    return hasIdentity || hasPairing || hasAgentList || hasAgentIdentity
   }
 
   private static func candidateTexts(from contents: String) -> [String] {
