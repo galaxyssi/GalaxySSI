@@ -144,10 +144,10 @@ struct SettingsView: View {
       }
       SettingsNavigationRow(
         title: t("cc_phone_title", "Phone Capabilities"),
-        subtitle: t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"),
+        subtitle: phoneCapabilitiesSummary,
         systemImage: "iphone",
         tint: .signalASIInsightText,
-        badge: t("signalasi.common.view", "View")
+        badge: "\(nativeToolSummaryCounts.available)/\(nativeToolSummaryCounts.total)"
       ) {
         SignalASIPhoneCapabilitiesView()
       }
@@ -778,15 +778,29 @@ struct SettingsView: View {
   }
 
   private var nativeToolsSummary: String {
+    let counts = nativeToolSummaryCounts
+    return String(
+      format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
+      counts.total,
+      counts.available
+    )
+  }
+
+  private var phoneCapabilitiesSummary: String {
+    let counts = nativeToolSummaryCounts
+    return String(
+      format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
+      counts.available,
+      counts.needingAttention
+    )
+  }
+
+  private var nativeToolSummaryCounts: (total: Int, available: Int, needingAttention: Int) {
     let tools = AgentPhoneNativeToolCatalog.descriptors()
     let available = tools.filter {
       $0.risk != .blocked && $0.availability.status == .available
     }.count
-    return String(
-      format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
-      tools.count,
-      available
-    )
+    return (tools.count, available, max(tools.count - available, 0))
   }
 
   private var mcpSummary: String {
