@@ -252,7 +252,7 @@ struct AddContactView: View {
       pendingPairing = nil
       setImportStatus(
         String(
-          format: t("signalasi.pairing.desktop_claim_sent", "%@ added. Waiting for desktop confirmation."),
+          format: t("signalasi.pairing.desktop_claim_sent", "%@ added. Agents are ready in Contacts."),
           pairing.desktopName
         ),
         isError: false
@@ -544,11 +544,11 @@ private struct AddContactPairingConfirmCard: View {
       )
       AddContactValueRow(
         title: pairing.access.fullDesktopExecutor
-          ? t("signalasi.pairing.access_full", "Desktop executor")
-          : t("signalasi.pairing.access_restricted", "Restricted desktop access"),
+          ? t("signalasi.pairing.access_full", "Desktop Executor")
+          : t("signalasi.pairing.access_restricted", "Restricted Desktop Access"),
         value: pairing.access.fullDesktopExecutor
-          ? t("signalasi.pairing.access_full_subtitle", "Full desktop tool execution is authorized for this trusted desktop.")
-          : t("signalasi.pairing.access_restricted_subtitle", "Only chat, explicit attachments, and task workspace access are authorized."),
+          ? t("signalasi.pairing.access_full_subtitle", "Desktop tools, control, and external files; sensitive actions require approval")
+          : t("signalasi.pairing.access_restricted_subtitle", "Agent chat and files explicitly attached to the current task only"),
         systemImage: "lock.shield",
         tint: pairing.access.fullDesktopExecutor ? .signalASIAccent : .orange
       )
