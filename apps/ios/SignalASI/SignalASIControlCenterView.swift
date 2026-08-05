@@ -471,6 +471,7 @@ struct SignalASIControlCenterAppServicesView: View {
 
 struct SignalASIControlCenterGeneralView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
 
   var body: some View {
     VStack(spacing: 0) {
@@ -495,10 +496,10 @@ struct SignalASIControlCenterGeneralView: View {
           SignalASISecuritySectionTitle(title: t("cc_section_general", "General"))
           SignalASIControlCenterNavigationRow(
             title: t("signalasi.language_policy.title", "Voice & Language"),
-            subtitle: t("signalasi.language_policy.subtitle", "Manage interface, model reply, ASR, and TTS languages in one place."),
+            subtitle: languagePolicySummary,
             systemImage: "globe",
             tint: .signalASIAccent,
-            badge: t("common_view", "View")
+            badge: languagePolicyBadge
           ) {
             SignalASILanguageSettingsView()
           }
@@ -550,6 +551,23 @@ struct SignalASIControlCenterGeneralView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private var languageFormatter: SignalASILanguagePolicyFormatter {
+    SignalASILanguagePolicyFormatter { key, fallback in
+      t(key, fallback)
+    }
+  }
+
+  private var languagePolicySummary: String {
+    languageFormatter.summary(
+      policy: store.languagePolicy,
+      asrLocaleIdentifier: store.voiceSettings.preferredLocaleIdentifier
+    )
+  }
+
+  private var languagePolicyBadge: String {
+    languageFormatter.statusBadge(for: store.languagePolicy)
   }
 }
 

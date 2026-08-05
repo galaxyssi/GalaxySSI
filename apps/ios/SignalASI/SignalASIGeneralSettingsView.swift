@@ -123,14 +123,11 @@ struct SignalASIGeneralSettingsView: View {
   }
 
   private var languagePolicySummary: String {
-    let interface = interfaceLanguageDisplayName(store.languagePolicy.interfaceLanguage)
-    let response = voiceLanguageDisplayName(store.languagePolicy.responseLanguage)
-    let asrLocale = store.voiceSettings.preferredLocaleIdentifier
-    return String(
-      format: t("signalasi.language_policy.settings_summary", "%@ / Reply %@ / ASR %@"),
-      interface,
-      response,
-      asrLocale
+    SignalASILanguagePolicyFormatter { key, fallback in
+      t(key, fallback)
+    }.summary(
+      policy: store.languagePolicy,
+      asrLocaleIdentifier: store.voiceSettings.preferredLocaleIdentifier
     )
   }
 
@@ -191,66 +188,6 @@ struct SignalASIGeneralSettingsView: View {
   private func openAppSettings() {
     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
     UIApplication.shared.open(url)
-  }
-
-  private func interfaceLanguageDisplayName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeInterface(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.en:
-      return t("signalasi.language.en", "English")
-    default:
-      let resolved = LanguagePolicySettings.resolveInterface(value)
-      return String(
-        format: t("signalasi.language_policy.effective", "Automatic - %@"),
-        interfaceResolvedName(resolved)
-      )
-    }
-  }
-
-  private func interfaceResolvedName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeInterface(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.en:
-      return t("signalasi.language.en", "English")
-    default:
-      return t("signalasi.language_policy.auto", "Automatic")
-    }
-  }
-
-  private func voiceLanguageDisplayName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeVoice(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.enUS:
-      return t("signalasi.language.en_us", "English (United States)")
-    case LanguagePolicySettings.zhHK:
-      return t("signalasi.language.zh_hk", "Traditional Chinese (Hong Kong)")
-    case LanguagePolicySettings.zhTW:
-      return t("signalasi.language.zh_tw", "Traditional Chinese (Taiwan)")
-    default:
-      let resolved = LanguagePolicySettings.resolve(value)
-      return String(
-        format: t("signalasi.language_policy.effective", "Automatic - %@"),
-        voiceResolvedName(resolved)
-      )
-    }
-  }
-
-  private func voiceResolvedName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeVoice(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.enUS:
-      return t("signalasi.language.en_us", "English (United States)")
-    case LanguagePolicySettings.zhHK:
-      return t("signalasi.language.zh_hk", "Traditional Chinese (Hong Kong)")
-    case LanguagePolicySettings.zhTW:
-      return t("signalasi.language.zh_tw", "Traditional Chinese (Taiwan)")
-    default:
-      return t("signalasi.language_policy.auto", "Automatic")
-    }
   }
 
   private func textScaleLabel(_ mode: AppTextScaleMode) -> String {

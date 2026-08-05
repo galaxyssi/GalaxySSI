@@ -1184,7 +1184,8 @@
 "signalasi.language_policy.auto" = "自动（跟随系统）";
 "signalasi.language_policy.auto_short" = "自动";
 "signalasi.language_policy.configured_short" = "已配置";
-"signalasi.language_policy.effective" = "自动 - %@";
+"signalasi.language_policy.effective" = "自动 · %@";
+"signalasi.language_policy.auto_resolution_subtitle" = "跟随系统区域、地区和时区自动选择";
 "signalasi.language_policy.zh_cn_short" = "简中";
 "signalasi.language_policy.en_us_short" = "English";
 "signalasi.language_policy.zh_hk_short" = "繁中·港";
