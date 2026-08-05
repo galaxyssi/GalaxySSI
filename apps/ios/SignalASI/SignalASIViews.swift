@@ -1404,6 +1404,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIGlobalAgentControlView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_global_agent_title", "Global Super Agent"))
+              Text(globalAgentSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIPermissionsAuditView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_permissions_title", "Permissions & Audit"))
@@ -1965,6 +1973,17 @@ struct SettingsView: View {
       stats.sourceCount,
       store.agentKnowledgeAccessAudit.count
     )
+  }
+
+  private var globalAgentSummary: String {
+    let settings = store.globalAgentSettings
+    let status = settings.enabled
+      ? t("cc_global_understanding_active", "Global understanding active")
+      : t("signalasi.status.paused", "Paused")
+    let cognition = settings.allowCloudCognition
+      ? t("cc_global_cloud_allowed", "Cloud cognition")
+      : t("cc_global_local_first", "Local first")
+    return "\(status) / \(cognition) / \(settings.dailyBackgroundModelCallBudget) calls"
   }
 
   private var recentTaskSummary: String {

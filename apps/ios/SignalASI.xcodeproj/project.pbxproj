@@ -53,6 +53,8 @@
     A10000000000000000001182 /* SignalASIAppToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001182 /* SignalASIAppToolsView.swift */; };
     A10000000000000000001181 /* SignalASIResourceRoutingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001181 /* SignalASIResourceRoutingView.swift */; };
     A10000000000000000001090 /* SignalASIAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001090 /* SignalASIAboutView.swift */; };
+    A10000000000000000001320 /* SignalASIGlobalAgentControlModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001320 /* SignalASIGlobalAgentControlModels.swift */; };
+    A10000000000000000001321 /* SignalASIGlobalAgentControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001321 /* SignalASIGlobalAgentControlView.swift */; };
     A10000000000000000001310 /* SignalASIMemoryControlCenterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001310 /* SignalASIMemoryControlCenterModels.swift */; };
     A10000000000000000001311 /* SignalASIMemoryControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */; };
     A10000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */; };
@@ -683,6 +685,8 @@
     A20000000000000000001182 /* SignalASIAppToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAppToolsView.swift; sourceTree = "<group>"; };
     A20000000000000000001181 /* SignalASIResourceRoutingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIResourceRoutingView.swift; sourceTree = "<group>"; };
     A20000000000000000001090 /* SignalASIAboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAboutView.swift; sourceTree = "<group>"; };
+    A20000000000000000001320 /* SignalASIGlobalAgentControlModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGlobalAgentControlModels.swift; sourceTree = "<group>"; };
+    A20000000000000000001321 /* SignalASIGlobalAgentControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGlobalAgentControlView.swift; sourceTree = "<group>"; };
     A20000000000000000001310 /* SignalASIMemoryControlCenterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterModels.swift; sourceTree = "<group>"; };
     A20000000000000000001311 /* SignalASIMemoryControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001312 /* SignalASIMemoryControlCenterSubpages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlCenterSubpages.swift; sourceTree = "<group>"; };
@@ -1666,6 +1670,8 @@
         A20000000000000000001020 /* SignalASIAgentDirectoryView.swift */,
         A20000000000000000001030 /* SignalASISecurityCenterComponents.swift */,
         A20000000000000000001031 /* SignalASISecurityCenterView.swift */,
+        A20000000000000000001320 /* SignalASIGlobalAgentControlModels.swift */,
+        A20000000000000000001321 /* SignalASIGlobalAgentControlView.swift */,
         A20000000000000000001170 /* SignalASIExecutionPolicyView.swift */,
         A20000000000000000001150 /* SignalASIAgentCoreView.swift */,
         A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */,
@@ -2405,6 +2411,8 @@
         A10000000000000000001020 /* SignalASIAgentDirectoryView.swift in Sources */,
         A10000000000000000001030 /* SignalASISecurityCenterComponents.swift in Sources */,
         A10000000000000000001031 /* SignalASISecurityCenterView.swift in Sources */,
+        A10000000000000000001320 /* SignalASIGlobalAgentControlModels.swift in Sources */,
+        A10000000000000000001321 /* SignalASIGlobalAgentControlView.swift in Sources */,
         A10000000000000000001170 /* SignalASIExecutionPolicyView.swift in Sources */,
         A10000000000000000001150 /* SignalASIAgentCoreView.swift in Sources */,
         A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */,
