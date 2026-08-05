@@ -791,14 +791,14 @@
 "signalasi.pairing.save_trust_subtitle" = "Hermes、Codex、Claude、本地模型和自定义 Agent 将作为联系人出现";
 "signalasi.pairing.ready_to_confirm" = "请核对指纹，然后保存信任关系。";
 "signalasi.pairing.access_full" = "桌面执行器";
-"signalasi.pairing.access_full_subtitle" = "已为这台可信电脑授权完整桌面工具执行。";
+"signalasi.pairing.access_full_subtitle" = "可使用电脑工具、控制和外部文件；敏感操作仍需审批";
 "signalasi.pairing.access_restricted" = "受限桌面访问";
-"signalasi.pairing.access_restricted_subtitle" = "仅授权聊天、显式附件和任务工作区访问。";
+"signalasi.pairing.access_restricted_subtitle" = "仅允许 Agent 对话和当前任务明确添加的文件";
 "signalasi.pairing.invalid_qr" = "无效的二维码";
 "signalasi.pairing.contact_request_received" = "已收到联系人请求：%@";
 "signalasi.pairing.scan_failed" = "扫描失败：%@";
 "signalasi.pairing.desktop_claim_sending" = "正在添加 %@...";
-"signalasi.pairing.desktop_claim_sent" = "%@ 已添加，等待桌面确认。";
+"signalasi.pairing.desktop_claim_sent" = "%@ 已添加，可在联系人中使用。";
 "signalasi.security.phone_fingerprint" = "手机指纹";
 "signalasi.security.desktop_fingerprint" = "电脑指纹";
 "signalasi.contact.section_identity" = "身份";
