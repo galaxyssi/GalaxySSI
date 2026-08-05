@@ -2065,6 +2065,7 @@
 "protocol_transport_layer_subtitle" = "MQTT / Relay / Local 自动选择";
 "protocol_section_current_endpoint" = "当前端点";
 "protocol_pc_endpoint" = "PC 端点";
+"protocol_transport_summary" = "摘要";
 "protocol_transport_diagnostics" = "传输诊断";
 "protocol_replay_events" = "重放事件";
 "protocol_replay_events_subtitle" = "已安全处理的加密重放与待处理消息";
@@ -2078,6 +2079,7 @@
 "protocol_no_transport_anomalies" = "没有传输异常";
 "protocol_no_transport_anomalies_subtitle" = "尚未记录重放、重复或旧计数器事件";
 "protocol_transport_event_subtitle" = "%@ · 匿名引用 %@";
+"protocol_unknown_reference" = "未知引用";
 "protocol_diagnostic_recorded" = "已记录";
 "protocol_event_encrypted_replay" = "已处理加密重放";
 "protocol_event_pending_replay" = "已重放待处理消息";
