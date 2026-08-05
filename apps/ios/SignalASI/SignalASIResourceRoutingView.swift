@@ -91,7 +91,7 @@ struct SignalASIResourceRoutingView: View {
         tint: .blue,
         badge: t("cc_status_automatic", "Automatic")
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIRoutingPolicyView()
       }
     }
   }
@@ -127,7 +127,7 @@ struct SignalASIResourceRoutingView: View {
         tint: .signalASITextSecondary,
         badge: t("signalasi.common.view", "View")
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIRoutingPolicyView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
