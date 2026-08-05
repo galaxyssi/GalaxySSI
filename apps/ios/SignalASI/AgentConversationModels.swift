@@ -1047,6 +1047,51 @@ private extension AgentTranscriptEntry {
   }
 }
 
+enum AgentGlobalContextMode: String, Codable, Equatable {
+  case minimal = "MINIMAL"
+  case full = "FULL"
+}
+
+enum AgentGlobalContextDispatchPolicy {
+  static func mode(query: String, hasAttachments: Bool) -> AgentGlobalContextMode {
+    if hasAttachments {
+      return .full
+    }
+    var normalized = String.UnicodeScalarView()
+    for scalar in query
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased(with: Locale(identifier: "en_US_POSIX"))
+      .unicodeScalars where !nonSemanticCharacters.contains(scalar) {
+      normalized.append(scalar)
+    }
+    return minimalQueries.contains(String(normalized)) ? .minimal : .full
+  }
+
+  private static let minimalQueries: Set<String> = [
+    "hello",
+    "hi",
+    "hey",
+    "hithere",
+    "goodmorning",
+    "goodafternoon",
+    "goodevening",
+    "goodnight",
+    "\u{4f60}\u{597d}",
+    "\u{60a8}\u{597d}",
+    "\u{55e8}",
+    "\u{54c8}\u{55bd}",
+    "\u{65e9}\u{4e0a}\u{597d}",
+    "\u{4e0b}\u{5348}\u{597d}",
+    "\u{665a}\u{4e0a}\u{597d}",
+    "\u{65e9}\u{5b89}",
+    "\u{665a}\u{5b89}"
+  ]
+
+  private static let nonSemanticCharacters = CharacterSet.punctuationCharacters
+    .union(.symbols)
+    .union(.whitespacesAndNewlines)
+}
+
 struct AgentConversationContext: Codable, Equatable {
   static let transportHeader = "[SIGNALASI_CONVERSATION_CONTEXT_V1]"
   static let transportFooter = "[/SIGNALASI_CONVERSATION_CONTEXT_V1]"
@@ -1089,6 +1134,19 @@ struct AgentConversationContext: Codable, Equatable {
 
   var hasAttachments: Bool {
     !attachmentIndex().isEmpty
+  }
+
+  func applyingGlobalContextDispatchPolicy(query: String, hasAttachments: Bool? = nil) -> AgentConversationContext {
+    guard allowsGlobalContext else {
+      return withoutGlobalContext()
+    }
+    let resolvedHasAttachments = hasAttachments ?? self.hasAttachments
+    switch AgentGlobalContextDispatchPolicy.mode(query: query, hasAttachments: resolvedHasAttachments) {
+    case .minimal:
+      return withoutGlobalContext()
+    case .full:
+      return self
+    }
   }
 
   func asPromptBlock() -> String {
@@ -1165,6 +1223,17 @@ struct AgentConversationContext: Codable, Equatable {
       return value
     }
     return String(value.prefix(cleanLimit))
+  }
+
+  private func withoutGlobalContext() -> AgentConversationContext {
+    AgentConversationContext(
+      conversationId: conversationId,
+      summary: summary,
+      turns: turns,
+      privateMode: privateMode,
+      globalContext: "",
+      trackingPaused: trackingPaused
+    )
   }
 
   private static let maximumContextArtifacts = 10

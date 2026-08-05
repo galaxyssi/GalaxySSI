@@ -195,6 +195,39 @@ extension SignalASIStoreTests {
     XCTAssertTrue(encoded.contains(#""tracking_paused":true"#))
   }
 
+  func testAgentGlobalContextDispatchPolicyMatchesAndroidGreetingRules() {
+    [
+      "hello",
+      "Hello!",
+      "hi there",
+      "\u{4f60}\u{597d}",
+      "\u{4f60}\u{597d}\u{ff01}",
+      "\u{65e9}\u{4e0a}\u{597d}"
+    ].forEach { query in
+      XCTAssertEqual(
+        AgentGlobalContextDispatchPolicy.mode(query: query, hasAttachments: false),
+        .minimal,
+        query
+      )
+    }
+
+    XCTAssertEqual(AgentGlobalContextDispatchPolicy.mode(query: "hello", hasAttachments: true), .full)
+
+    [
+      "\u{4f60}\u{597d}\u{ff0c}\u{8bf7}\u{7ee7}\u{7eed}\u{5904}\u{7406}\u{521a}\u{624d}\u{7684}\u{56fe}\u{7247}",
+      "hello, summarize the attachment",
+      "\u{7ee7}\u{7eed}",
+      "\u{5f53}\u{524d}\u{8bf7}\u{6c42}",
+      "\u{65e9}\u{4e0a}\u{597d}\u{ff0c}\u{67e5}\u{770b}\u{4eca}\u{5929}\u{7684}\u{65b0}\u{95fb}"
+    ].forEach { query in
+      XCTAssertEqual(
+        AgentGlobalContextDispatchPolicy.mode(query: query, hasAttachments: false),
+        .full,
+        query
+      )
+    }
+  }
+
   func testAgentConversationContextTransportKeepsAttachmentReferenceWithoutPrivateBytes() throws {
     let richOutput = """
     {"version":1,"blocks":[{"id":"image-1","type":"image","title":"homework.jpg","uri":"content://signalasi/private/homework.jpg","data_b64":"private-image-bytes","mime_type":"image/jpeg","metadata":{"size_bytes":"245760"}}]}

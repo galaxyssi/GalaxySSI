@@ -110,7 +110,11 @@ enum AgentModelPlanningPrompt {
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest
   ) {
-    let block = request.conversationContext.asPromptBlock()
+    let context = request.conversationContext.applyingGlobalContextDispatchPolicy(
+      query: request.planRequest.goal,
+      hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments
+    )
+    let block = context.asPromptBlock()
     guard !block.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return
     }
