@@ -524,6 +524,24 @@ struct SettingsView: View {
         SignalASIDataBackupView()
       }
       SettingsNavigationRow(
+        title: t("settings_backup_chat", "Backup"),
+        subtitle: t("settings_backup_scope", "Encrypted export of identity, contacts, Agent data, and chats"),
+        systemImage: "square.and.arrow.up",
+        tint: .blue,
+        badge: t("signalasi.common.export", "Export")
+      ) {
+        SignalASIDataBackupView(initialMode: .export)
+      }
+      SettingsNavigationRow(
+        title: t("settings_import_backup", "Import"),
+        subtitle: t("settings_import_scope", "Restore data from an encrypted .hcback backup"),
+        systemImage: "square.and.arrow.down",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.import", "Import")
+      ) {
+        SignalASIDataBackupView(initialMode: .importBackup)
+      }
+      SettingsNavigationRow(
         title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
         subtitle: t("cc_privacy_dashboard_hero_subtitle", "A metadata-only audit of data sent to cloud models and trusted Desktop Agents"),
         systemImage: "lock.doc",
