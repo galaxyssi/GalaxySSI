@@ -25,8 +25,9 @@ struct SettingsView: View {
             agentToolsSection
             knowledgeExecutionSection
             trustSection
-            localIntelligenceSection
             dataSection
+            protocolSection
+            localIntelligenceSection
             generalSection
             pagesSection
           }
@@ -416,10 +417,16 @@ struct SettingsView: View {
       ) {
         SignalASISystemStatusView()
       }
+    }
+  }
+
+  private var protocolSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SettingsSectionTitle(title: t("settings_protocol_quality", "Protocol & Quality"))
       SettingsNavigationRow(
-        title: t("protocol_quality_title", "Protocol & Quality"),
-        subtitle: t("protocol_quality_hero_subtitle", "Secure communication and Agent collaboration protocol"),
-        systemImage: "waveform.path.ecg",
+        title: t("settings_protocol_quality", "Protocol & Quality"),
+        subtitle: t("settings_protocol_quality_subtitle", "Secure communication and Agent coordination status"),
+        systemImage: "checkmark.shield",
         tint: .blue,
         badge: t("signalasi.common.view", "View")
       ) {
@@ -428,11 +435,20 @@ struct SettingsView: View {
       SettingsNavigationRow(
         title: t("signalasi.settings.link_diagnostics", "Link Diagnostics"),
         subtitle: linkDiagnosticsSummary,
-        systemImage: "antenna.radiowaves.left.and.right",
+        systemImage: "waveform.path.ecg",
         tint: .signalASIInsightText,
         badge: t("signalasi.common.view", "View")
       ) {
         SignalASILinkDiagnosticsView()
+      }
+      SettingsNavigationRow(
+        title: t("settings_advanced_options", "Advanced Options"),
+        subtitle: t("settings_advanced_options_subtitle", "Logs, network, and protocol diagnostics"),
+        systemImage: "exclamationmark.triangle",
+        tint: .orange,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        SignalASIAdvancedOptionsView()
       }
     }
   }
@@ -609,15 +625,6 @@ struct SettingsView: View {
         badge: t("signalasi.common.open", "Open")
       ) {
         requestNotifications()
-      }
-      SettingsNavigationRow(
-        title: t("settings_advanced_options", "Advanced Options"),
-        subtitle: t("settings_advanced_options_subtitle", "Logs, network, and protocol diagnostics"),
-        systemImage: "exclamationmark.triangle",
-        tint: .orange,
-        badge: t("signalasi.common.manage", "Manage")
-      ) {
-        SignalASIAdvancedOptionsView()
       }
       SettingsNavigationRow(
         title: t("settings_about_signalasi", "About SignalASI"),
