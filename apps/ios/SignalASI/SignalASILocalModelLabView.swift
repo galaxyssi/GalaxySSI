@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreLocation
+import Foundation
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -626,8 +627,11 @@ struct SignalASILocalModelSearchView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
+  @State private var hubResults: [LocalModelHubSearchResult] = []
+  @State private var hubSearchInFlight = false
+  @State private var hubSearchStatus = ""
 
-  private var results: [LocalModelRuntimeProfile] {
+  private var profileResults: [LocalModelRuntimeProfile] {
     let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return LocalModelRuntimeProfiles.all }
     let normalized = clean.lowercased()
@@ -656,6 +660,9 @@ struct SignalASILocalModelSearchView: View {
           TextField(t("signalasi.local_model.search_hint", "Model name or repository"), text: $query)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled(true)
+            .onSubmit {
+              performHubSearch()
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 42)
@@ -675,12 +682,39 @@ struct SignalASILocalModelSearchView: View {
               subtitle: t("signalasi.local_model.search_subtitle", "Find downloadable GGUF models across trusted model hubs"),
               systemImage: "globe",
               tint: .blue,
-              badge: t("signalasi.local_model.search_action", "Search")
+              badge: hubSearchInFlight
+                ? t("signalasi.local_model.searching", "Searching...")
+                : t("signalasi.local_model.search_action", "Search")
             ) {
-              openHubSearch()
+              performHubSearch()
+            }
+            if !hubSearchStatus.isEmpty {
+              SignalASILocalModelLabStatusRow(
+                title: t("signalasi.local_model.search_status", "Search Status"),
+                subtitle: hubSearchStatus,
+                systemImage: hubSearchInFlight ? "hourglass" : "info.circle",
+                tint: hubSearchInFlight ? .blue : .signalASITextSecondary,
+                badge: hubSearchInFlight
+                  ? t("signalasi.local_model.searching", "Searching...")
+                  : t("signalasi.status.ready", "Ready")
+              )
+            }
+            if !hubResults.isEmpty {
+              SignalASILocalModelLabSectionTitle(title: t("signalasi.local_model.hub_results_section", "Model Hub Results"))
+              ForEach(hubResults) { result in
+                SignalASILocalModelLabActionRow(
+                  title: result.displayName,
+                  subtitle: hubResultSubtitle(result),
+                  systemImage: "globe",
+                  tint: .blue,
+                  badge: t("signalasi.local_model.open_repository", "Open")
+                ) {
+                  openHubResult(result)
+                }
+              }
             }
             SignalASILocalModelLabSectionTitle(title: t("signalasi.local_model.section_profiles", "Workload Profiles"))
-            if results.isEmpty {
+            if profileResults.isEmpty {
               SignalASILocalModelLabStatusRow(
                 title: t("signalasi.local_model.search_empty", "No downloadable GGUF model found"),
                 subtitle: query,
@@ -689,7 +723,7 @@ struct SignalASILocalModelSearchView: View {
                 badge: t("signalasi.status.unknown", "Unknown")
               )
             } else {
-              ForEach(results) { profile in
+              ForEach(profileResults) { profile in
                 SignalASILocalModelLabActionRow(
                   title: profile.displayName,
                   subtitle: profileSubtitle(profile),
@@ -718,11 +752,51 @@ struct SignalASILocalModelSearchView: View {
     dismiss()
   }
 
-  private func openHubSearch() {
-    let term = query.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("GGUF")
-    let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "GGUF"
-    guard let url = URL(string: "https://huggingface.co/models?search=\(encoded)") else { return }
+  private func performHubSearch() {
+    let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard term.count >= 2 else {
+      hubSearchStatus = t("signalasi.local_model.search_minimum_query", "Enter at least 2 characters to search model hubs.")
+      hubResults = []
+      return
+    }
+    guard !hubSearchInFlight else { return }
+    hubSearchInFlight = true
+    hubSearchStatus = t("signalasi.local_model.searching", "Searching model hubs...")
+    Task {
+      do {
+        let results = try await LocalModelHubSearchClient.search(query: term)
+        await MainActor.run {
+          hubResults = results
+          hubSearchStatus = results.isEmpty
+            ? t("signalasi.local_model.search_empty", "No downloadable GGUF model found")
+            : String(format: t("signalasi.local_model.hub_result_count", "%d model hub results"), results.count)
+          hubSearchInFlight = false
+        }
+      } catch {
+        await MainActor.run {
+          hubResults = []
+          hubSearchStatus = String(
+            format: t("signalasi.local_model.search_error", "Model search failed: %@"),
+            error.localizedDescription
+          )
+          hubSearchInFlight = false
+        }
+      }
+    }
+  }
+
+  private func openHubResult(_ result: LocalModelHubSearchResult) {
+    guard let url = result.repositoryURL else { return }
     UIApplication.shared.open(url)
+  }
+
+  private func hubResultSubtitle(_ result: LocalModelHubSearchResult) -> String {
+    let owner = result.author.ifBlank(result.namespace).ifBlank(t("signalasi.local_model.hub_source", "Hugging Face model"))
+    return String(
+      format: t("signalasi.local_model.repository_downloads", "%@ - %@ downloads"),
+      owner,
+      compactCount(result.downloads)
+    )
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
@@ -744,7 +818,91 @@ struct SignalASILocalModelSearchView: View {
     return String(format: "%.0f MiB", mib)
   }
 
+  private func compactCount(_ value: Int) -> String {
+    if value >= 1_000_000 {
+      return String(format: "%.1fM", Double(value) / 1_000_000.0)
+    }
+    if value >= 1_000 {
+      return String(format: "%.1fK", Double(value) / 1_000.0)
+    }
+    return "\(value)"
+  }
+
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct LocalModelHubSearchResult: Identifiable, Decodable {
+  var id: String
+  var author: String
+  var downloads: Int
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case modelId
+    case author
+    case downloads
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = (try container.decodeIfPresent(String.self, forKey: .modelId)) ??
+      (try container.decodeIfPresent(String.self, forKey: .id)) ??
+      ""
+    author = (try container.decodeIfPresent(String.self, forKey: .author)) ?? ""
+    downloads = Self.decodeLossyInt(container, forKey: .downloads)
+  }
+
+  var displayName: String {
+    id.split(separator: "/").last.map(String.init) ?? id
+  }
+
+  var namespace: String {
+    id.split(separator: "/").first.map(String.init) ?? ""
+  }
+
+  var repositoryURL: URL? {
+    guard !id.isEmpty,
+          let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+      return nil
+    }
+    return URL(string: "https://huggingface.co/\(escaped)")
+  }
+
+  private static func decodeLossyInt(
+    _ container: KeyedDecodingContainer<CodingKeys>,
+    forKey key: CodingKeys
+  ) -> Int {
+    if let value = try? container.decode(Int.self, forKey: key) {
+      return max(0, value)
+    }
+    if let value = try? container.decode(Double.self, forKey: key) {
+      return max(0, Int(value))
+    }
+    return 0
+  }
+}
+
+private enum LocalModelHubSearchClient {
+  static func search(query: String) async throws -> [LocalModelHubSearchResult] {
+    guard var components = URLComponents(string: "https://huggingface.co/api/models") else {
+      return []
+    }
+    components.queryItems = [
+      URLQueryItem(name: "search", value: query),
+      URLQueryItem(name: "filter", value: "gguf"),
+      URLQueryItem(name: "sort", value: "downloads"),
+      URLQueryItem(name: "direction", value: "-1"),
+      URLQueryItem(name: "limit", value: "20")
+    ]
+    guard let url = components.url else { return [] }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      throw URLError(.badServerResponse)
+    }
+    return try JSONDecoder()
+      .decode([LocalModelHubSearchResult].self, from: data)
+      .filter { !$0.id.isEmpty }
   }
 }

@@ -1995,7 +1995,15 @@
 "signalasi.local_model.search_subtitle" = "从可信模型平台查找可下载的 GGUF 模型";
 "signalasi.local_model.search_hint" = "模型名称或仓库";
 "signalasi.local_model.search_action" = "搜索";
+"signalasi.local_model.searching" = "正在搜索模型平台...";
+"signalasi.local_model.search_status" = "搜索状态";
 "signalasi.local_model.search_empty" = "没有找到可下载的 GGUF 模型";
+"signalasi.local_model.search_error" = "模型搜索失败：%@";
+"signalasi.local_model.search_minimum_query" = "请输入至少 2 个字符来搜索模型平台。";
+"signalasi.local_model.hub_results_section" = "模型平台结果";
+"signalasi.local_model.hub_result_count" = "%d 个模型平台结果";
+"signalasi.local_model.repository_downloads" = "%@ · %@ 次下载";
+"signalasi.local_model.open_repository" = "打开";
 "signalasi.local_model.artifact_title" = "选择 GGUF 文件";
 "signalasi.local_model.artifact_subtitle" = "只显示具有文件大小和 SHA-256 的单文件模型";
 "signalasi.local_model.hub_source" = "Hugging Face 模型";
