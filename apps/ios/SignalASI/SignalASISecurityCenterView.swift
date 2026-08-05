@@ -191,7 +191,11 @@ struct SignalASISecurityCenterView: View {
           subtitle: String(
             format: t("signalasi.security_center.permission_status", "Permission: PC connector / Status: %@ / %@"),
             SignalASISecurityFormatter.securityStatusLabel(contact.setupStatus, language: interfaceLanguage),
-            SignalASISecurityFormatter.time(contact.updatedAt, unknown: t("signalasi.status.unknown", "Unknown"))
+            SignalASISecurityFormatter.time(
+              contact.updatedAt,
+              unknown: t("signalasi.status.unknown", "Unknown"),
+              language: interfaceLanguage
+            )
           ),
           systemImage: SignalASISecurityFormatter.agentSystemImage(id: contact.id, kind: contact.agentKind),
           tint: .purple,
@@ -282,7 +286,11 @@ struct SignalASISecurityCenterView: View {
     )
     let lastActive = String(
       format: t("signalasi.security_center.last_active", "Last active %@"),
-      SignalASISecurityFormatter.time(summary.link.updatedAt, unknown: t("signalasi.status.unknown", "Unknown"))
+      SignalASISecurityFormatter.time(
+        summary.link.updatedAt,
+        unknown: t("signalasi.status.unknown", "Unknown"),
+        language: interfaceLanguage
+      )
     )
     return "\(fingerprint)\n\(lastActive)"
   }
@@ -388,7 +396,11 @@ struct SignalASIDeviceSecurityDetailView: View {
     }
     SignalASISecurityStatusRow(
       title: t("signalasi.security_center.last_active_title", "Last active"),
-      subtitle: SignalASISecurityFormatter.time(link.updatedAt, unknown: t("signalasi.status.unknown", "Unknown")),
+      subtitle: SignalASISecurityFormatter.time(
+        link.updatedAt,
+        unknown: t("signalasi.status.unknown", "Unknown"),
+        language: interfaceLanguage
+      ),
       systemImage: "clock",
       tint: .blue,
       badge: SignalASISecurityFormatter.securityStatusLabel(link.paired ? "ready" : "pending", language: interfaceLanguage)
