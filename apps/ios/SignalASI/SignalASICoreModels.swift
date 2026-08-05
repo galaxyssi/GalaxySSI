@@ -556,6 +556,22 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var conversationId: String
   var turnId: String
   var remoteMessageId: String
+  var richOutputJson: String
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case contactId
+    case content
+    case isMine
+    case isSystem
+    case createdAt
+    case deliveryStatus
+    case deliveryTrace
+    case conversationId
+    case turnId
+    case remoteMessageId
+    case richOutputJson
+  }
 
   init(
     id: UUID = UUID(),
@@ -568,7 +584,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     deliveryTrace: [DeliveryTraceEvent] = [],
     conversationId: String = "",
     turnId: String = "",
-    remoteMessageId: String = ""
+    remoteMessageId: String = "",
+    richOutputJson: String = ""
   ) {
     self.id = id
     self.contactId = contactId
@@ -581,6 +598,39 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     self.conversationId = conversationId
     self.turnId = turnId
     self.remoteMessageId = remoteMessageId
+    self.richOutputJson = richOutputJson
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    contactId = try container.decodeIfPresent(String.self, forKey: .contactId) ?? ""
+    content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
+    isMine = try container.decodeIfPresent(Bool.self, forKey: .isMine) ?? false
+    isSystem = try container.decodeIfPresent(Bool.self, forKey: .isSystem) ?? false
+    createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    deliveryStatus = try container.decodeIfPresent(ChatDeliveryStatus.self, forKey: .deliveryStatus) ?? .local
+    deliveryTrace = try container.decodeIfPresent([DeliveryTraceEvent].self, forKey: .deliveryTrace) ?? []
+    conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId) ?? ""
+    turnId = try container.decodeIfPresent(String.self, forKey: .turnId) ?? ""
+    remoteMessageId = try container.decodeIfPresent(String.self, forKey: .remoteMessageId) ?? ""
+    richOutputJson = try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? ""
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(contactId, forKey: .contactId)
+    try container.encode(content, forKey: .content)
+    try container.encode(isMine, forKey: .isMine)
+    try container.encode(isSystem, forKey: .isSystem)
+    try container.encode(createdAt, forKey: .createdAt)
+    try container.encode(deliveryStatus, forKey: .deliveryStatus)
+    try container.encode(deliveryTrace, forKey: .deliveryTrace)
+    try container.encode(conversationId, forKey: .conversationId)
+    try container.encode(turnId, forKey: .turnId)
+    try container.encode(remoteMessageId, forKey: .remoteMessageId)
+    try container.encode(richOutputJson, forKey: .richOutputJson)
   }
 }
 
