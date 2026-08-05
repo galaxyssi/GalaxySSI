@@ -3337,6 +3337,7 @@
 "voice_listening" = "正在聆听...";
 "voice_stop" = "停止";
 "rich_output_copy" = "复制";
+"rich_output_copied" = "已复制";
 "rich_output_open" = "打开";
 "rich_output_show_more" = "展开";
 "rich_output_show_less" = "收起";

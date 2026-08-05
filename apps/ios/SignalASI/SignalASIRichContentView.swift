@@ -172,6 +172,7 @@ private struct SignalASIRichBlockView: View {
 
   @State private var expandedCode = false
   @State private var expandedTable = false
+  @State private var copiedCode = false
   @State private var formValues: [String: String] = [:]
 
   var body: some View {
@@ -268,16 +269,22 @@ private struct SignalASIRichBlockView: View {
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
         Spacer(minLength: 8)
+        if copiedCode {
+          Text(t("rich_output_copied", "Copied"))
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(.signalASIAccent)
+            .transition(.opacity)
+        }
         Button {
-          UIPasteboard.general.string = value
+          copyCode(value)
         } label: {
           Image(systemName: "doc.on.doc")
             .font(.caption.weight(.semibold))
             .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
-        .foregroundColor(.signalASITextSecondary)
-        .accessibilityLabel(t("rich_output_copy", "Copy"))
+        .foregroundColor(copiedCode ? .signalASIAccent : .signalASITextSecondary)
+        .accessibilityLabel(copiedCode ? t("rich_output_copied", "Copied") : t("rich_output_copy", "Copy"))
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
@@ -740,6 +747,18 @@ private struct SignalASIRichBlockView: View {
   private func selectableText(_ text: String) -> Text {
     Text(text)
       .font(.body)
+  }
+
+  private func copyCode(_ value: String) {
+    UIPasteboard.general.string = value
+    withAnimation(.easeInOut(duration: 0.12)) {
+      copiedCode = true
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+      withAnimation(.easeInOut(duration: 0.12)) {
+        copiedCode = false
+      }
+    }
   }
 
   private func binding(for field: AgentRichField) -> Binding<String> {
