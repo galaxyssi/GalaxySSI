@@ -898,7 +898,7 @@ private struct SignalASIPrivacyToggleRow: View {
   }
 }
 
-private enum SignalASIPrivacyLabels {
+enum SignalASIPrivacyLabels {
   static func destinationIcon(_ location: AgentResourceLocation) -> String {
     switch location {
     case .trustedDesktop:
