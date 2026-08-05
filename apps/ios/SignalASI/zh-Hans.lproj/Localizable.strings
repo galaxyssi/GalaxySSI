@@ -1947,3 +1947,8 @@
 "signalasi.voice.session_section" = "语音会话";
 "signalasi.voice.recorder" = "按住说话";
 "signalasi.voice.recorder_subtitle" = "打开实时录音并发送转写文本";
+"cc_section_message_settings" = "消息设置";
+"cc_background_connection_title" = "后台消息连接";
+"cc_background_connection_subtitle" = "加密 MQTT 会话与离线消息恢复";
+"cc_chat_history_title" = "聊天记录";
+"cc_chat_history_subtitle" = "按会话管理的本机加密存储";
