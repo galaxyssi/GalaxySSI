@@ -83,6 +83,38 @@ class AgentEncryptedDatabase(
         ) != -1L) { "Agent encrypted database write failed" }
     }
 
+    fun mutateStrings(
+        upserts: Map<String, String>,
+        removeKeys: Collection<String> = emptyList()
+    ): Unit = synchronized(database) {
+        if (upserts.isEmpty() && removeKeys.isEmpty()) return@synchronized
+        val encryptedValues = upserts.mapValues { (key, value) ->
+            AgentStorageCipher.encrypt(value, associatedData(key))
+        }
+        val writable = database.writableDatabase
+        writable.beginTransaction()
+        try {
+            removeKeys.toSet().forEach { key ->
+                writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
+            }
+            encryptedValues.forEach { (key, encrypted) ->
+                val values = ContentValues().apply {
+                    put("storage_key", key)
+                    put("encrypted_value", encrypted)
+                }
+                check(writable.insertWithOnConflict(
+                    TABLE_VALUES,
+                    null,
+                    values,
+                    SQLiteDatabase.CONFLICT_REPLACE
+                ) != -1L) { "Agent encrypted database transaction failed" }
+            }
+            writable.setTransactionSuccessful()
+        } finally {
+            writable.endTransaction()
+        }
+    }
+
     fun remove(key: String): Unit = synchronized(database) {
         database.writableDatabase.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
         Unit

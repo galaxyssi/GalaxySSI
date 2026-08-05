@@ -47,6 +47,12 @@ data class GlobalAgentNotificationCandidate(
     val messageIds: Set<String>
 )
 
+data class GlobalPromptContextSnapshot(
+    val world: PersonalWorldModel,
+    val topicGraph: GlobalTopicProjectGraph,
+    val entityGraph: GlobalEntityMemoryGraph
+)
+
 class GlobalAgentRepository(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, DATABASE_NAME)
@@ -340,6 +346,25 @@ class GlobalAgentRepository(context: Context) {
 
     fun entityMemoryGraph(): GlobalEntityMemoryGraph = synchronized(STORE_LOCK) {
         cachedEntityMemoryGraph ?: entityMemoryGraphStore.load().also { cachedEntityMemoryGraph = it }
+    }
+
+    fun promptContextSnapshot(): GlobalPromptContextSnapshot {
+        val world = cachedWorld
+        val topicGraph = cachedTopicGraph
+        val entityGraph = cachedEntityMemoryGraph
+        if (world != null && topicGraph != null && entityGraph != null) {
+            return GlobalPromptContextSnapshot(world, topicGraph, entityGraph)
+        }
+        return synchronized(STORE_LOCK) {
+            GlobalPromptContextSnapshot(
+                world = cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, ""))
+                    .also { cachedWorld = it },
+                topicGraph = cachedTopicGraph ?: topicGraphStore.load()
+                    .also { cachedTopicGraph = it },
+                entityGraph = cachedEntityMemoryGraph ?: entityMemoryGraphStore.load()
+                    .also { cachedEntityMemoryGraph = it }
+            )
+        }
     }
 
     fun saveEntityMemoryGraph(graph: GlobalEntityMemoryGraph) = synchronized(STORE_LOCK) {
@@ -2039,10 +2064,14 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun augmentContext(context: AgentConversationContext, query: String): AgentConversationContext {
         if (!context.allowsGlobalContext) return context.copy(globalContext = "")
+        if (AgentGlobalContextDispatchPolicy.mode(query, context.hasAttachments) == AgentGlobalContextMode.MINIMAL) {
+            return context.copy(globalContext = "")
+        }
+        val snapshot = repository.promptContextSnapshot()
         val durableContext = GlobalMemoryPromptCompiler.compile(
-            world = repository.loadWorld(),
-            topicGraph = repository.topicGraph(),
-            entityGraph = repository.entityMemoryGraph(),
+            world = snapshot.world,
+            topicGraph = snapshot.topicGraph,
+            entityGraph = snapshot.entityGraph,
             query = query,
             currentConversationId = context.conversationId,
             maximumCharacters = 5_500
@@ -2061,9 +2090,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun prewarmContextSnapshot() {
-        repository.loadWorld()
-        repository.topicGraph()
-        repository.entityMemoryGraph()
+        repository.promptContextSnapshot()
     }
 
     fun worldSnapshot(): PersonalWorldModel = repository.loadWorld()
