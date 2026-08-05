@@ -11,6 +11,7 @@ struct SignalASIAgentComposerView: View {
   var canSend: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
+  var focusRequest: Int = 0
   var onRemoveAttachment: (SignalASIDraftAttachment) -> Void
   var onNewSession: () -> Void
   var onTakePhoto: () -> Void
@@ -64,6 +65,9 @@ struct SignalASIAgentComposerView: View {
       if hasInput {
         actionTrayPresented = false
       }
+    }
+    .onChange(of: focusRequest) { _ in
+      inputFocused = true
     }
     .onDisappear {
       holdToTalk.cancelFromView()
