@@ -2061,3 +2061,4 @@
 "voice_capability_needs_network" = "网络";
 "signalasi.status.not_available" = "不可用";
 "cc_appearance_subtitle_ios" = "使用 iOS 浅色与深色外观";
+"cc_privacy_permissions_subtitle_ios" = "检查 iOS 访问权限和已记住的工具决定";

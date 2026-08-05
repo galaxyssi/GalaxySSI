@@ -1707,6 +1707,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.privacy", "Privacy")) {
+          NavigationLink(destination: SignalASIPrivacyControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_privacy_dashboard_title", "Privacy Dashboard"))
+              Text(t("cc_privacy_dashboard_hero_subtitle", "A metadata-only audit of data sent to cloud models and trusted Desktop Agents"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIPrivacyDashboardView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.model_data_sharing", "Model Data Sharing"))
