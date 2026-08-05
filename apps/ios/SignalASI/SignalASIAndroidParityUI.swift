@@ -154,6 +154,14 @@ struct AgentHomeView: View {
     }
   }
 
+  private var nativeToolSummary: (total: Int, available: Int) {
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let available = tools.filter {
+      $0.risk != .blocked && $0.availability.status == .available
+    }.count
+    return (tools.count, available)
+  }
+
   private var canSend: Bool {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
   }
@@ -247,7 +255,13 @@ struct AgentHomeView: View {
             knowledgeStats: store.agentKnowledgeStats
           )
           if messages.isEmpty {
-            AgentInsightBanner(unreadTotal: unreadTotal)
+            AgentInsightBanner(
+              unreadTotal: unreadTotal,
+              runningTasks: activeAgentTasks.count,
+              callableTargets: store.visibleContacts.count,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              nativeToolSummary: nativeToolSummary
+            )
           } else {
             ForEach(messages) { message in
               MessageBubble(message: message)
@@ -1044,6 +1058,10 @@ struct DiscoverView: View {
 private struct AgentInsightBanner: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var unreadTotal: Int
+  var runningTasks: Int
+  var callableTargets: Int
+  var executionPaused: Bool
+  var nativeToolSummary: (total: Int, available: Int)
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -1053,20 +1071,19 @@ private struct AgentInsightBanner: View {
           Text("SignalASI Agent")
             .font(.system(size: 15, weight: .bold))
             .foregroundColor(.signalASITextPrimary)
-          Text(
-            unreadTotal > 0
-              ? String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
-              : t("signalasi.agent.insight.ready", "Native tool pipeline is ready.")
-          )
+          Text(summaryText)
             .font(.system(size: 12))
             .foregroundColor(.signalASIInsightText)
             .lineLimit(2)
         }
         Spacer()
       }
-      HStack(spacing: 8) {
-        AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
-        AgentStatusChip(title: t("signalasi.agent.safety", "Safety"), value: t("signalasi.status.on", "On"))
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
+          AgentStatusChip(title: t("signalasi.agent.status", "Agent"), value: agentStatusText)
+          AgentStatusChip(title: t("cc_metric_native_tools", "Native tools"), value: nativeToolsText)
+        }
       }
     }
     .padding(12)
@@ -1076,6 +1093,30 @@ private struct AgentInsightBanner: View {
         .stroke(Color.signalASIInsightStroke, lineWidth: 1)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var summaryText: String {
+    if unreadTotal > 0 {
+      return String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
+    }
+    if executionPaused {
+      return t("agent_status_paused_subtitle", "Execution is paused. Resume when you are ready.")
+    }
+    return String(
+      format: t("agent_running_tasks_targets_value", "Running tasks: %d / targets: %d"),
+      runningTasks,
+      callableTargets
+    )
+  }
+
+  private var agentStatusText: String {
+    executionPaused
+      ? t("on_device_agent_status_paused", "Paused")
+      : t("on_device_agent_status_running", "Running")
+  }
+
+  private var nativeToolsText: String {
+    "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -1096,6 +1137,8 @@ private struct AgentStatusChip: View {
         .foregroundColor(.signalASITextPrimary)
     }
     .font(.system(size: 11))
+    .lineLimit(1)
+    .minimumScaleFactor(0.85)
     .padding(.horizontal, 9)
     .padding(.vertical, 6)
     .background(Color.signalASISurface)
