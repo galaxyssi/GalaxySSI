@@ -1998,6 +1998,8 @@
 "signalasi.discover.lab_subtitle" = "探索前沿功能";
 "signalasi.settings.local_model" = "本地模型设置";
 "signalasi.settings.local_model.status" = "配置端侧推理模型";
+"settings_on_device_agent" = "手机端 Agent 与权限";
+"settings_on_device_agent_subtitle" = "管理感知、语音、自动化权限和本机动作边界";
 "signalasi.local_model.title" = "本地模型";
 "signalasi.local_model.status_title" = "本地模型状态";
 "signalasi.local_model.status" = "状态";
