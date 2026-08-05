@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignalASIPrivacyControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
   private let disclosureStore: AgentDataDisclosureStore
   @State private var records: [AgentDataDisclosureRecord] = []
   @State private var blockedDestinationIds: Set<String> = []
@@ -21,7 +22,9 @@ struct SignalASIPrivacyControlCenterView: View {
   private var destinations: [SignalASIPrivacyDestinationSummary] {
     SignalASIPrivacyDestinationSummary.build(
       records: records,
-      blockedDestinationIds: blockedDestinationIds
+      blockedDestinationIds: blockedDestinationIds,
+      cloudContacts: store.cloudModelContacts,
+      serverLinks: store.serverLinks
     )
   }
 
@@ -131,10 +134,11 @@ struct SignalASIPrivacyControlCenterView: View {
             tint: destination.blocked ? .orange : .signalASIAccent,
             badge: destination.blocked ? t("cc_privacy_blocked", "Blocked") : t("cc_privacy_allowed", "Allowed")
           ) {
-            AgentDataDisclosureDestinationDetailView(
+            SignalASIPrivacyDestinationDetailView(
               destinationId: destination.id,
               disclosureStore: disclosureStore
             )
+            .environmentObject(store)
           }
         }
       }
@@ -165,7 +169,7 @@ struct SignalASIPrivacyControlCenterView: View {
             tint: statusTint(record.status),
             badge: statusLabel(record.status)
           ) {
-            AgentDataDisclosureEventDetailView(
+            SignalASIPrivacyEventDetailView(
               eventId: record.eventId,
               disclosureStore: disclosureStore
             )
@@ -342,27 +346,76 @@ private struct SignalASIPrivacyDestinationSummary: Identifiable {
 
   static func build(
     records: [AgentDataDisclosureRecord],
-    blockedDestinationIds: Set<String>
+    blockedDestinationIds: Set<String>,
+    cloudContacts: [SignalASIContact] = [],
+    serverLinks: [ServerLink] = []
   ) -> [SignalASIPrivacyDestinationSummary] {
-    Dictionary(grouping: records, by: \.destinationId)
-      .map { destinationId, records in
-        let ordered = records.sorted { $0.updatedAtMillis > $1.updatedAtMillis }
-        let recent = ordered[0]
-        return SignalASIPrivacyDestinationSummary(
-          id: destinationId,
-          title: recent.destinationTitle,
-          providerId: recent.providerId,
-          modelId: recent.modelId,
-          location: recent.location,
-          blocked: blockedDestinationIds.contains(destinationId),
-          lastUpdatedAtMillis: recent.updatedAtMillis
-        )
+    var summaries: [String: SignalASIPrivacyDestinationSummary] = [:]
+
+    for contact in cloudContacts {
+      let model = contact.selectedCloudModel
+      let id = contact.id.ifBlank(contact.signalASIId).ifBlank(contact.displayName)
+      guard !id.isEmpty else { continue }
+      summaries[id] = SignalASIPrivacyDestinationSummary(
+        id: id,
+        title: contact.displayName.ifBlank(contact.name).ifBlank(id),
+        providerId: contact.cloudProvider.ifBlank(model?.provider ?? ""),
+        modelId: model?.modelId ?? "",
+        location: .cloud,
+        blocked: blockedDestinationIds.contains(id),
+        lastUpdatedAtMillis: 0
+      )
+    }
+
+    for link in serverLinks where link.paired {
+      let id = link.desktopId.ifBlank(link.desktopName)
+      guard !id.isEmpty else { continue }
+      summaries[id] = SignalASIPrivacyDestinationSummary(
+        id: id,
+        title: link.desktopName.ifBlank(link.signalName).ifBlank(id),
+        providerId: "SignalASI Link",
+        modelId: link.accessProfile,
+        location: .trustedDesktop,
+        blocked: blockedDestinationIds.contains(id),
+        lastUpdatedAtMillis: Int64(link.updatedAt.timeIntervalSince1970 * 1_000)
+      )
+    }
+
+    let groupedRecords = Dictionary(grouping: records, by: \.destinationId)
+    for (destinationId, destinationRecords) in groupedRecords {
+      let ordered = destinationRecords.sorted { $0.updatedAtMillis > $1.updatedAtMillis }
+      guard let recent = ordered.first else { continue }
+      summaries[destinationId] = SignalASIPrivacyDestinationSummary(
+        id: destinationId,
+        title: recent.destinationTitle,
+        providerId: recent.providerId,
+        modelId: recent.modelId,
+        location: recent.location,
+        blocked: blockedDestinationIds.contains(destinationId),
+        lastUpdatedAtMillis: recent.updatedAtMillis
+      )
+    }
+
+    for destinationId in blockedDestinationIds where summaries[destinationId] == nil {
+      summaries[destinationId] = SignalASIPrivacyDestinationSummary(
+        id: destinationId,
+        title: destinationId,
+        providerId: "",
+        modelId: "",
+        location: .cloud,
+        blocked: true,
+        lastUpdatedAtMillis: 0
+      )
+    }
+
+    return summaries.values.sorted {
+      if $0.blocked != $1.blocked {
+        return $0.blocked && !$1.blocked
       }
-      .sorted {
-        if $0.blocked != $1.blocked {
-          return $0.blocked && !$1.blocked
-        }
+      if $0.lastUpdatedAtMillis != $1.lastUpdatedAtMillis {
         return $0.lastUpdatedAtMillis > $1.lastUpdatedAtMillis
       }
+      return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+    }
   }
 }
