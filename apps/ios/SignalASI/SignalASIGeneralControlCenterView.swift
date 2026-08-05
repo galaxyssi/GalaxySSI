@@ -1,11 +1,11 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 struct SignalASIGeneralControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @State private var notificationsEnabled = false
-  @State private var notificationStatusMessage = ""
+  @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
 
   var body: some View {
     VStack(spacing: 0) {
@@ -71,12 +71,12 @@ struct SignalASIGeneralControlCenterView: View {
       SignalASISecuritySectionTitle(title: t("cc_notifications_title", "Notifications"))
       SignalASISecurityActionRow(
         title: t("cc_notifications_title", "Notifications"),
-        subtitle: notificationStatusMessage.ifBlank(t("cc_notifications_subtitle", "Agent tasks, security events, messages, and connection status")),
+        subtitle: t("cc_notifications_subtitle", "Agent tasks, security events, messages, and connection status"),
         systemImage: "bell.badge",
-        tint: notificationsEnabled ? .signalASIAccent : .orange,
-        badge: notificationsEnabled ? t("signalasi.status.allowed", "Allowed") : t("signalasi.status.needs_setup", "Needs setup")
+        tint: notificationsAuthorized ? .signalASIAccent : .orange,
+        badge: notificationStatusLabel
       ) {
-        requestNotifications()
+        handleNotifications()
       }
     }
   }
@@ -175,22 +175,47 @@ struct SignalASIGeneralControlCenterView: View {
   private func refreshNotifications() {
     UNUserNotificationCenter.current().getNotificationSettings { settings in
       DispatchQueue.main.async {
-        notificationsEnabled = [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus)
-        notificationStatusMessage = ""
+        notificationAuthorizationStatus = settings.authorizationStatus
       }
     }
   }
 
-  private func requestNotifications() {
-    Task {
-      let allowed = await NotificationService.requestAuthorization()
-      await MainActor.run {
-        notificationsEnabled = allowed
-        notificationStatusMessage = allowed
-          ? t("signalasi.status.allowed", "Allowed")
-          : t("signalasi.status.not_allowed", "Not allowed")
-      }
+  private var notificationsAuthorized: Bool {
+    switch notificationAuthorizationStatus {
+    case .authorized, .provisional, .ephemeral:
+      return true
+    default:
+      return false
     }
+  }
+
+  private var notificationStatusLabel: String {
+    switch notificationAuthorizationStatus {
+    case .authorized, .provisional, .ephemeral:
+      return t("status_enabled", "Enabled")
+    case .denied:
+      return t("signalasi.status.protected", "Protected")
+    case .notDetermined:
+      return t("signalasi.status.needs_setup", "Needs Setup")
+    @unknown default:
+      return t("signalasi.status.unknown", "Unknown")
+    }
+  }
+
+  private func handleNotifications() {
+    if notificationAuthorizationStatus == .notDetermined {
+      Task {
+        _ = await NotificationService.requestAuthorization()
+        refreshNotifications()
+      }
+    } else {
+      openAppSettings()
+    }
+  }
+
+  private func openAppSettings() {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    UIApplication.shared.open(url)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
