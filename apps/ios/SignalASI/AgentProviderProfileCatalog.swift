@@ -288,6 +288,43 @@ enum ProviderProfileCatalog {
     )
   }
 
+  static func fromConnectorContact(
+    _ contact: SignalASIContact,
+    status: AgentConnectorStatus,
+    capabilities: [AgentCapability],
+    adapterType: String
+  ) -> ProviderProfile {
+    if let providerProfile = contact.connectorProviderProfile {
+      return providerProfile
+    }
+    let agentId = contact.connectorAgentId.ifBlank(contact.id)
+    let providerId = normalizeProviderId(agentId.ifBlank(contact.agentKind).ifBlank(contact.id))
+    let protocolRange = contact.connectorProtocolRange
+    var metadata = [
+      "native_product_identity": providerId,
+      "protocol_version": protocolRange.preferred,
+      "protocol_min_version": protocolRange.minimum,
+      "protocol_max_version": protocolRange.maximum
+    ]
+    if let capabilitiesHash = contact.connectorCapabilitiesHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !capabilitiesHash.isEmpty {
+      metadata["capabilities_hash"] = capabilitiesHash
+    }
+    return agentProfile(
+      resourceId: contact.id,
+      displayName: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+      providerId: providerId,
+      adapterType: adapterType,
+      location: .trustedDesktop,
+      status: status,
+      capabilities: Set(capabilities),
+      trust: contact.trustState == .verified ? .verifiedPaired : .unknown,
+      failureDomain: contact.desktopId.isEmpty ? "agent:\(contact.id)" : "desktop:\(contact.desktopId)",
+      maxParallelRuns: 1,
+      metadata: metadata
+    )
+  }
+
   static func normalizeProviderId(_ value: String) -> String {
     let normalized = value
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -358,9 +395,11 @@ enum ProviderProfileCatalog {
     latency: AgentResourceLatency = .normal,
     trust: AgentResourceTrust = .verifiedPaired,
     failureDomain: String,
-    maxParallelRuns: Int
+    maxParallelRuns: Int,
+    metadata: [String: String] = [:]
   ) -> ProviderProfile {
     let productId = normalizeProductId(resourceId)
+    let mergedMetadata = ["native_product_identity": productId].merging(metadata) { _, new in new }
     return ProviderProfile(
       profileId: "agent:\(resourceId)",
       resourceId: resourceId,
@@ -387,7 +426,7 @@ enum ProviderProfileCatalog {
       endpointConfigured: true,
       credentialConfigured: true,
       pricing: ProviderPricingProfile(tier: cost),
-      metadata: ["native_product_identity": productId]
+      metadata: mergedMetadata
     )
   }
 

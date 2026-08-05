@@ -55,6 +55,12 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var setupNextStep: String? = nil
   var desktopAccessProfile: String? = nil
   var desktopAccessScopes: [String]? = nil
+  var connectorCapabilities: [String]? = nil
+  var connectorCapabilitiesHash: String? = nil
+  var connectorProtocols: [String]? = nil
+  var connectorProtocolFeatures: [String]? = nil
+  var connectorAdapterType: String? = nil
+  var connectorProviderProfileJSON: Data? = nil
   var deletedAt: Date? = nil
 
   var selectedCloudModel: CloudModelConfig? {
@@ -80,6 +86,31 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
       }
     }
     return ""
+  }
+
+  var connectorCapabilitySet: Set<AgentCapability> {
+    Set((connectorCapabilities ?? []).compactMap(AgentCapability.fromWireValue))
+  }
+
+  var connectorProtocolRange: AgentProtocolRange {
+    let versions = (connectorProtocols ?? [])
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    return AgentProtocolRange(
+      preferred: versions.first ?? "1.1",
+      minimum: versions.last ?? "1.0",
+      maximum: versions.first ?? "1.1",
+      features: Set((connectorProtocolFeatures ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    )
+  }
+
+  var connectorAdapterName: String {
+    (connectorAdapterType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var connectorProviderProfile: ProviderProfile? {
+    guard let connectorProviderProfileJSON else { return nil }
+    return try? JSONDecoder().decode(ProviderProfile.self, from: connectorProviderProfileJSON)
   }
 
   static func hermes() -> SignalASIContact {
@@ -172,6 +203,12 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var setupNextStep: String
   var desktopAccessProfile: String
   var desktopAccessScopes: [String]
+  var connectorCapabilities: [String]
+  var connectorCapabilitiesHash: String
+  var connectorProtocols: [String]
+  var connectorProtocolFeatures: [String]
+  var connectorAdapterType: String
+  var connectorProviderProfileJSON: Data?
   var source: String
   var status: SignalASIFriendRequestStatus
   var createdAt: Date
@@ -199,6 +236,12 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     setupNextStep: String = "",
     desktopAccessProfile: String = "",
     desktopAccessScopes: [String] = [],
+    connectorCapabilities: [String] = [],
+    connectorCapabilitiesHash: String = "",
+    connectorProtocols: [String] = [],
+    connectorProtocolFeatures: [String] = [],
+    connectorAdapterType: String = "",
+    connectorProviderProfileJSON: Data? = nil,
     source: String = "qr",
     status: SignalASIFriendRequestStatus = .pending,
     createdAt: Date = Date(),
@@ -225,6 +268,12 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.setupNextStep = setupNextStep
     self.desktopAccessProfile = desktopAccessProfile
     self.desktopAccessScopes = desktopAccessScopes
+    self.connectorCapabilities = connectorCapabilities
+    self.connectorCapabilitiesHash = connectorCapabilitiesHash
+    self.connectorProtocols = connectorProtocols
+    self.connectorProtocolFeatures = connectorProtocolFeatures
+    self.connectorAdapterType = connectorAdapterType
+    self.connectorProviderProfileJSON = connectorProviderProfileJSON
     self.source = source
     self.status = status
     self.createdAt = createdAt
@@ -253,6 +302,12 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case setupNextStep = "setup_next_step"
     case desktopAccessProfile = "desktop_access_profile"
     case desktopAccessScopes = "desktop_access_scopes"
+    case connectorCapabilities = "capabilities"
+    case connectorCapabilitiesHash = "capabilities_hash"
+    case connectorProtocols = "protocols"
+    case connectorProtocolFeatures = "protocol_features"
+    case connectorAdapterType = "adapter_type"
+    case connectorProviderProfileJSON = "provider_profile_json"
     case source
     case status
     case createdAt = "created_at"
@@ -282,6 +337,12 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     setupNextStep = try container.decodeIfPresent(String.self, forKey: .setupNextStep) ?? ""
     desktopAccessProfile = try container.decodeIfPresent(String.self, forKey: .desktopAccessProfile) ?? ""
     desktopAccessScopes = try container.decodeIfPresent([String].self, forKey: .desktopAccessScopes) ?? []
+    connectorCapabilities = try container.decodeIfPresent([String].self, forKey: .connectorCapabilities) ?? []
+    connectorCapabilitiesHash = try container.decodeIfPresent(String.self, forKey: .connectorCapabilitiesHash) ?? ""
+    connectorProtocols = try container.decodeIfPresent([String].self, forKey: .connectorProtocols) ?? []
+    connectorProtocolFeatures = try container.decodeIfPresent([String].self, forKey: .connectorProtocolFeatures) ?? []
+    connectorAdapterType = try container.decodeIfPresent(String.self, forKey: .connectorAdapterType) ?? ""
+    connectorProviderProfileJSON = try container.decodeIfPresent(Data.self, forKey: .connectorProviderProfileJSON)
     source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
     status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
     createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()

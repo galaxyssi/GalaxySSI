@@ -263,6 +263,10 @@ enum SignalASIContactExchange {
     let agentKind = object.string("agent_kind")
       .ifBlank(object.string("kind"))
       .ifBlank(defaultAgentKind(for: requestType, object: object))
+    let connectorCapabilities = connectorStringArray(object, key: "capabilities")
+    let connectorProtocols = connectorStringArray(object, key: "protocols")
+    let connectorProtocolFeatures = connectorStringArray(object, key: "protocol_features")
+      .ifEmpty(connectorStringArray(object.dictionary("adapter") ?? [:], key: "features"))
     return SignalASIFriendRequest(
       id: "req_\(Int64(now.timeIntervalSince1970 * 1000))",
       signalASIId: signalASIId,
@@ -284,6 +288,13 @@ enum SignalASIContactExchange {
       desktopAccessScopes: object.stringArray("desktop_access_scopes")
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty },
+      connectorCapabilities: connectorCapabilities,
+      connectorCapabilitiesHash: object.string("capabilities_hash")
+        .ifBlank(capabilitiesHash(for: connectorCapabilities)),
+      connectorProtocols: connectorProtocols,
+      connectorProtocolFeatures: connectorProtocolFeatures,
+      connectorAdapterType: connectorAdapterType(from: object),
+      connectorProviderProfileJSON: providerProfileJSON(from: object),
       source: "qr",
       createdAt: now
     )
@@ -384,8 +395,18 @@ enum SignalASIContactExchange {
         inherited[key] = value
       }
     }
-    if let scopes = object["desktop_access_scopes"] {
-      inherited["desktop_access_scopes"] = scopes
+    [
+      "desktop_access_scopes",
+      "capabilities",
+      "protocols",
+      "protocol_features",
+      "provider_profile",
+      "adapter",
+      "reputation"
+    ].forEach { key in
+      if let value = object[key] {
+        inherited[key] = value
+      }
     }
     return inherited
   }
@@ -567,5 +588,57 @@ enum SignalASIContactExchange {
 
   static func localInboxTopic(serverLinks: [ServerLink]) -> String {
     serverLinks.first { $0.paired }?.routes.downTopic ?? ""
+  }
+
+  private static func connectorStringArray(_ object: [String: Any], key: String) -> [String] {
+    let direct = object.stringArray(key)
+    if !direct.isEmpty {
+      return direct
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    }
+    return (object.dictionary("adapter")?.stringArray(key) ?? [])
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+  }
+
+  private static func connectorAdapterType(from object: [String: Any]) -> String {
+    let adapter = object.dictionary("adapter")
+    return object.string("adapter_type")
+      .ifBlank(adapter?.string("adapter_type") ?? "")
+      .ifBlank(adapter?.string("type") ?? "")
+      .ifBlank(object.string("kind"))
+      .ifBlank(object.string("agent_kind"))
+  }
+
+  private static func providerProfileJSON(from object: [String: Any]) -> Data? {
+    guard let profile = object.dictionary("provider_profile"),
+          JSONSerialization.isValidJSONObject(profile) else {
+      return nil
+    }
+    return try? JSONSerialization.data(withJSONObject: profile, options: [.sortedKeys])
+  }
+
+  private static func capabilitiesHash(for capabilities: [String]) -> String {
+    guard !capabilities.isEmpty,
+          let data = try? JSONSerialization.data(withJSONObject: capabilities, options: []),
+          let encoded = String(data: data, encoding: .utf8) else {
+      return ""
+    }
+    return javaHashHex(encoded)
+  }
+
+  private static func javaHashHex(_ value: String) -> String {
+    var hash: Int32 = 0
+    for scalar in value.unicodeScalars {
+      hash = hash &* 31 &+ Int32(bitPattern: UInt32(scalar.value))
+    }
+    return String(UInt32(bitPattern: hash), radix: 16)
+  }
+}
+
+private extension Array where Element == String {
+  func ifEmpty(_ fallback: [String]) -> [String] {
+    isEmpty ? fallback : self
   }
 }

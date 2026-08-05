@@ -1648,6 +1648,12 @@ final class SignalASIStore: ObservableObject {
     next.setupNextStep = request.setupNextStep.nonEmpty
     next.desktopAccessProfile = request.desktopAccessProfile.nonEmpty
     next.desktopAccessScopes = request.desktopAccessScopes.isEmpty ? nil : request.desktopAccessScopes
+    next.connectorCapabilities = request.connectorCapabilities.isEmpty ? nil : request.connectorCapabilities
+    next.connectorCapabilitiesHash = request.connectorCapabilitiesHash.nonEmpty
+    next.connectorProtocols = request.connectorProtocols.isEmpty ? nil : request.connectorProtocols
+    next.connectorProtocolFeatures = request.connectorProtocolFeatures.isEmpty ? nil : request.connectorProtocolFeatures
+    next.connectorAdapterType = request.connectorAdapterType.nonEmpty
+    next.connectorProviderProfileJSON = request.connectorProviderProfileJSON
     next.deleted = false
     next.deletedAt = nil
     next.updatedAt = now
@@ -1997,6 +2003,10 @@ final class SignalASIStore: ObservableObject {
       )
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
+      let connectorCapabilities = connectorCapabilities(from: payload)
+      let connectorProtocols = connectorProtocols(from: payload)
+      let connectorProtocolFeatures = connectorProtocolFeatures(from: payload)
+      let connectorAdapterType = connectorAdapterType(from: payload)
       let now = Date()
       var contact = contact(id: contactId) ?? SignalASIContact(
         id: contactId,
@@ -2037,6 +2047,14 @@ final class SignalASIStore: ObservableObject {
       contact.desktopAccessScopes = desktopAccessScopes.isEmpty ? nil : desktopAccessScopes
       contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
       contact.mqttInboxTopic = payload.string("mqtt_inbox_topic").ifBlank(link?.routes.downTopic ?? "")
+      contact.connectorCapabilities = connectorCapabilities.isEmpty ? nil : connectorCapabilities
+      contact.connectorCapabilitiesHash = payload.string("capabilities_hash")
+        .ifBlank(capabilitiesHash(for: connectorCapabilities))
+        .nonEmpty
+      contact.connectorProtocols = connectorProtocols.isEmpty ? nil : connectorProtocols
+      contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
+      contact.connectorAdapterType = connectorAdapterType.nonEmpty
+      contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
       contact.deleted = false
       contact.deletedAt = nil
       contact.updatedAt = now
@@ -2140,6 +2158,19 @@ final class SignalASIStore: ObservableObject {
           payload["desktop_access_scopes"] = scopes
         }
       }
+      [
+        "capabilities",
+        "capabilities_hash",
+        "protocols",
+        "protocol_features",
+        "provider_profile",
+        "adapter",
+        "reputation"
+      ].forEach { key in
+        if payload[key] == nil, let value = parentPayload[key] {
+          payload[key] = value
+        }
+      }
       if payload.string("status").isEmpty {
         inheritConnectorValue("status", into: &payload, value: parentPayload.string("status"))
       }
@@ -2219,6 +2250,67 @@ final class SignalASIStore: ObservableObject {
     payload.string("agent_id")
       .ifBlank(payload.string("mobile_contact_id"))
       .ifBlank(payload.string("id").split(separator: ":").last.map(String.init) ?? "")
+  }
+
+  private func connectorCapabilities(from payload: [String: Any]) -> [String] {
+    let adapter = payload.dictionary("adapter")
+    return normalizedStrings(
+      payload.stringArray("capabilities").ifEmpty(adapter?.stringArray("capabilities") ?? [])
+    )
+  }
+
+  private func connectorProtocols(from payload: [String: Any]) -> [String] {
+    let adapter = payload.dictionary("adapter")
+    return normalizedStrings(
+      payload.stringArray("protocols").ifEmpty(adapter?.stringArray("protocols") ?? [])
+    )
+  }
+
+  private func connectorProtocolFeatures(from payload: [String: Any]) -> [String] {
+    let adapter = payload.dictionary("adapter")
+    return normalizedStrings(
+      payload.stringArray("protocol_features").ifEmpty(adapter?.stringArray("features") ?? [])
+    )
+  }
+
+  private func connectorAdapterType(from payload: [String: Any]) -> String {
+    let adapter = payload.dictionary("adapter")
+    return payload.string("adapter_type")
+      .ifBlank(adapter?.string("adapter_type") ?? "")
+      .ifBlank(adapter?.string("type") ?? "")
+      .ifBlank(payload.string("kind"))
+      .ifBlank(payload.string("agent_kind"))
+  }
+
+  private func providerProfileJSON(from payload: [String: Any]) -> Data? {
+    guard let profile = payload.dictionary("provider_profile"),
+          JSONSerialization.isValidJSONObject(profile) else {
+      return nil
+    }
+    return try? JSONSerialization.data(withJSONObject: profile, options: [.sortedKeys])
+  }
+
+  private func capabilitiesHash(for capabilities: [String]) -> String {
+    guard !capabilities.isEmpty,
+          let data = try? JSONSerialization.data(withJSONObject: capabilities, options: []),
+          let encoded = String(data: data, encoding: .utf8) else {
+      return ""
+    }
+    return javaHashHex(encoded)
+  }
+
+  private func javaHashHex(_ value: String) -> String {
+    var hash: Int32 = 0
+    for scalar in value.unicodeScalars {
+      hash = hash &* 31 &+ Int32(bitPattern: UInt32(scalar.value))
+    }
+    return String(UInt32(bitPattern: hash), radix: 16)
+  }
+
+  private func normalizedStrings(_ values: [String]) -> [String] {
+    values
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
   }
 
   private func agentKind(forFriendRequestType type: String) -> String {
@@ -2863,6 +2955,12 @@ private extension JSONEncoder {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     return encoder
+  }
+}
+
+private extension Array where Element == String {
+  func ifEmpty(_ fallback: [String]) -> [String] {
+    isEmpty ? fallback : self
   }
 }
 
