@@ -1516,6 +1516,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIMcpControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("agent_mcp_title", "MCP"))
+              Text(mcpSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAppToolsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_app_tools_title", "Apps & Tools"))
@@ -2027,6 +2035,20 @@ struct SettingsView: View {
       format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
       tools.count,
       available
+    )
+  }
+
+  private var mcpSummary: String {
+    let connections = AgentMcpRegistry(FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())).list()
+    let ready = connections.filter {
+      $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+    }.count
+    let recommended = AgentDefaultCapabilityCatalog.mcpEntries.count
+    return String(
+      format: t("signalasi.mcp.summary", "%d installed / %d ready / %d recommended"),
+      connections.count,
+      ready,
+      recommended
     )
   }
 
