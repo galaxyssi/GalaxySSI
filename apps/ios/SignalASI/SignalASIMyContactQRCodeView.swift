@@ -1,0 +1,201 @@
+import SwiftUI
+import UIKit
+
+struct MyContactQRCodeView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var copiedMessage = ""
+  @State private var qrText = ""
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("signalasi.contact.my_qr_title", "My QR Code"),
+        leading: {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .frame(width: 40, height: 40)
+          }
+          .buttonStyle(.plain)
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          MyContactQRHeroView(
+            name: store.profile.name,
+            signalASIId: store.profile.signalASIId,
+            badge: t("signalasi.contact.my_qr_title", "My QR Code")
+          )
+          qrCard
+          identitySection
+          payloadSection
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .onAppear(perform: refreshQRText)
+  }
+
+  private var qrCard: some View {
+    VStack(alignment: .center, spacing: 12) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(Color.white)
+        if let image = SignalASIQRCodeImageRenderer.image(from: qrText) {
+          Image(uiImage: image)
+            .interpolation(.none)
+            .resizable()
+            .scaledToFit()
+            .padding(10)
+        } else {
+          Image(systemName: "qrcode")
+            .font(.system(size: 72, weight: .regular))
+            .foregroundColor(.black.opacity(0.35))
+        }
+      }
+      .frame(width: 260, height: 260)
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .stroke(Color.black.opacity(0.08), lineWidth: 1)
+      )
+      Text(t("contact_scan_confirm_identity", "Both sides must confirm identity after scanning"))
+        .font(.system(size: 13))
+        .foregroundColor(.signalASITextSecondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(16)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var identitySection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("signalasi.contact.section_identity", "Identity"))
+      SignalASISecurityActionRow(
+        title: t("settings_signalasi_id", "SignalASI ID"),
+        subtitle: store.profile.signalASIId,
+        systemImage: "link",
+        tint: .blue,
+        badge: t("common_copy", "Copy"),
+        monospacedSubtitle: true
+      ) {
+        copy(store.profile.signalASIId, message: t("signalasi.contact.my_qr_id_copied", "SignalASI ID copied"))
+      }
+      SignalASISecurityActionRow(
+        title: t("contact_my_fingerprint", "My Fingerprint"),
+        subtitle: SignalASISecurityFormatter.fingerprint(
+          store.profile.identityFingerprint,
+          unknown: t("Unavailable", "Unavailable")
+        ),
+        systemImage: "checkmark.shield",
+        tint: .signalASIAccent,
+        badge: t("common_copy", "Copy"),
+        monospacedSubtitle: true
+      ) {
+        copy(
+          store.profile.identityFingerprint,
+          message: t("signalasi.contact.my_qr_fingerprint_copied", "Fingerprint copied")
+        )
+      }
+      copiedStatusRow
+    }
+  }
+
+  private var payloadSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("signalasi.contact.payload", "Payload"))
+      SignalASISecurityActionRow(
+        title: t("signalasi.contact.copy_payload", "Copy Payload"),
+        subtitle: qrText.ifBlank("{}"),
+        systemImage: "doc.on.doc",
+        tint: .purple,
+        badge: t("common_copy", "Copy"),
+        monospacedSubtitle: true
+      ) {
+        copy(qrText, message: t("signalasi.contact.my_qr_payload_copied", "QR payload copied"))
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var copiedStatusRow: some View {
+    if !copiedMessage.isEmpty {
+      SignalASISecurityStatusRow(
+        title: t("common_status", "Status"),
+        subtitle: copiedMessage,
+        systemImage: "checkmark.circle",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.copied", "Copied")
+      )
+    }
+  }
+
+  private func refreshQRText() {
+    if qrText.isEmpty {
+      qrText = (try? store.myContactQRText()) ?? "{}"
+    }
+  }
+
+  private func copy(_ value: String, message: String) {
+    guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    UIPasteboard.general.string = value
+    copiedMessage = message
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct MyContactQRHeroView: View {
+  var name: String
+  var signalASIId: String
+  var badge: String
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 14) {
+      SignalASILogoView(size: 72, cornerRadius: 12)
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(name.ifBlank("SignalASI"))
+            .font(.system(size: 22, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+          Text(badge)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .padding(.horizontal, 7)
+            .frame(minHeight: 22)
+            .background(Color.signalASIAccent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        Text(signalASIId)
+          .font(.system(size: 12, design: .monospaced))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(14)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
