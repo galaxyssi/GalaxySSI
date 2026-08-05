@@ -178,10 +178,26 @@ enum SignalASIContactExchange {
 
   static func connectorAgentSource(from object: [String: Any]) -> SignalASIConnectorAgentSource? {
     var candidates: [[String: Any]] = [object]
-    ["capability_manifest", "manifest", "payload", "data"].forEach { key in
-      if let nested = object.dictionary(key) {
-        candidates.append(nested)
+    let nestedKeys = [
+      "capability_manifest",
+      "connector_status",
+      "diagnostics",
+      "manifest",
+      "payload",
+      "data",
+      "runtime",
+      "status",
+      "mobile_manifest"
+    ]
+    var index = 0
+    while index < candidates.count, candidates.count < 24 {
+      let candidate = candidates[index]
+      nestedKeys.forEach { key in
+        if let nested = candidate.dictionary(key) {
+          candidates.append(nested)
+        }
       }
+      index += 1
     }
 
     for candidate in candidates {
@@ -304,7 +320,7 @@ enum SignalASIContactExchange {
         let agentName = agent.string("name").ifBlank(agent.string("agent_id")).ifBlank(agent.string("id"))
         let desktopName = agent.string("desktop_name")
         if !agentName.isEmpty, !desktopName.isEmpty {
-          agent["display_name"] = "\(agentName) - \(desktopName)"
+          agent["display_name"] = "\(agentName) · \(desktopName)"
         }
       }
       if agent.string("setup_detail").isEmpty, !agent.string("detail").isEmpty {
@@ -472,14 +488,31 @@ enum SignalASIContactExchange {
   }
 
   private static func connectorAgents(in object: [String: Any]) -> [[String: Any]]? {
-    if let agents = object["connector_agents"] as? [[String: Any]] {
-      return agents
-    }
-    if let agents = object["desktop_agents"] as? [[String: Any]] {
-      return agents
-    }
-    if let agents = object["agents"] as? [[String: Any]] {
-      return agents
+    for key in ["connector_agents", "desktop_agents", "mobile_agents", "agent_contacts", "agents"] {
+      if let agents = object[key] as? [[String: Any]], !agents.isEmpty {
+        return agents
+      }
+      if let rawAgents = object[key] as? [Any] {
+        let agents = rawAgents.compactMap { $0 as? [String: Any] }
+        if !agents.isEmpty {
+          return agents
+        }
+      }
+      if let agentMap = object[key] as? [String: Any] {
+        let agents = agentMap.compactMap { id, raw -> [String: Any]? in
+          guard var agent = raw as? [String: Any] else { return nil }
+          if agent.string("id").isEmpty {
+            agent["id"] = id
+          }
+          if agent.string("agent_id").isEmpty, agent.string("mobile_contact_id").isEmpty {
+            agent["agent_id"] = id
+          }
+          return agent
+        }
+        if !agents.isEmpty {
+          return agents
+        }
+      }
     }
     return nil
   }
