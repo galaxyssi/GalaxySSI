@@ -14,6 +14,25 @@ struct SignalASIAutomationView: View {
     store.recentAutomationRuns(limit: 6)
   }
 
+  private var savedWorkflowTasks: [AgentProactiveTask] {
+    tasks.filter { $0.action.kind == .workflow }
+  }
+
+  private var scheduledWorkflowTasks: [AgentProactiveTask] {
+    savedWorkflowTasks.filter { task in
+      switch task.trigger.kind {
+      case .cron, .interval, .goalCheckpoint:
+        return true
+      case .manual, .webhook:
+        return false
+      }
+    }
+  }
+
+  private var eventTriggerTasks: [AgentProactiveTask] {
+    tasks.filter { $0.trigger.kind == .webhook }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -103,31 +122,73 @@ struct SignalASIAutomationView: View {
           }
 
           sectionTitle(t("signalasi.automation.saved_workflows", "Saved Workflows"))
-          AutomationInfoRow(
-            title: t("signalasi.automation.no_workflows", "No saved workflows"),
-            subtitle: t("signalasi.automation.create_workflow_hint", "Use: save workflow Name :: goal"),
-            icon: "paperplane",
-            tint: .signalASIAccent,
-            badge: ""
-          )
+          if savedWorkflowTasks.isEmpty {
+            AutomationInfoRow(
+              title: t("signalasi.automation.no_workflows", "No saved workflows"),
+              subtitle: t("signalasi.automation.create_workflow_hint", "Use: save workflow Name :: goal"),
+              icon: "paperplane",
+              tint: .signalASIAccent,
+              badge: ""
+            )
+          } else {
+            VStack(spacing: 8) {
+              ForEach(savedWorkflowTasks) { task in
+                automationTaskNavigationRow(
+                  task,
+                  icon: "paperplane",
+                  tint: task.enabled ? .signalASIAccent : .signalASITextSecondary,
+                  badge: proactiveRunStatusLabel(task.lastStatus),
+                  badgeTint: statusTint(task.lastStatus)
+                )
+              }
+            }
+          }
 
           sectionTitle(t("signalasi.automation.schedules", "Schedules"))
-          AutomationInfoRow(
-            title: t("signalasi.automation.no_schedules", "No workflow schedules"),
-            subtitle: t("signalasi.automation.schedule_hint", "Use: schedule workflow Name at 09:00"),
-            icon: "calendar",
-            tint: .blue,
-            badge: ""
-          )
+          if scheduledWorkflowTasks.isEmpty {
+            AutomationInfoRow(
+              title: t("signalasi.automation.no_schedules", "No workflow schedules"),
+              subtitle: t("signalasi.automation.schedule_hint", "Use: schedule workflow Name at 09:00"),
+              icon: "calendar",
+              tint: .blue,
+              badge: ""
+            )
+          } else {
+            VStack(spacing: 8) {
+              ForEach(scheduledWorkflowTasks) { task in
+                automationTaskNavigationRow(
+                  task,
+                  icon: "calendar",
+                  tint: task.enabled ? .blue : .signalASITextSecondary,
+                  badge: triggerBadge(task.trigger),
+                  badgeTint: .blue
+                )
+              }
+            }
+          }
 
           sectionTitle(t("signalasi.automation.event_triggers", "Event Triggers"))
-          AutomationInfoRow(
-            title: t("signalasi.automation.no_event_triggers", "No event triggers"),
-            subtitle: t("signalasi.automation.event_trigger_hint", "Run a saved workflow when an event matches"),
-            icon: "bolt",
-            tint: .orange,
-            badge: ""
-          )
+          if eventTriggerTasks.isEmpty {
+            AutomationInfoRow(
+              title: t("signalasi.automation.no_event_triggers", "No event triggers"),
+              subtitle: t("signalasi.automation.event_trigger_hint", "Run a saved workflow when an event matches"),
+              icon: "bolt",
+              tint: .orange,
+              badge: ""
+            )
+          } else {
+            VStack(spacing: 8) {
+              ForEach(eventTriggerTasks) { task in
+                automationTaskNavigationRow(
+                  task,
+                  icon: "bolt",
+                  tint: task.enabled ? .orange : .signalASITextSecondary,
+                  badge: triggerBadge(task.trigger),
+                  badgeTint: .orange
+                )
+              }
+            }
+          }
 
           sectionTitle(t("signalasi.automation.recent_executions", "Recent Executions"))
           if recentRuns.isEmpty {
@@ -203,6 +264,26 @@ struct SignalASIAutomationView: View {
       .padding(.top, 2)
   }
 
+  private func automationTaskNavigationRow(
+    _ task: AgentProactiveTask,
+    icon: String,
+    tint: Color,
+    badge: String,
+    badgeTint: Color
+  ) -> some View {
+    NavigationLink(destination: SignalASIAutomationDetailView(taskId: task.taskId)) {
+      AutomationTaskRow(
+        title: task.name,
+        subtitle: proactiveTaskSubtitle(task),
+        icon: icon,
+        tint: tint,
+        badge: badge,
+        badgeTint: badgeTint
+      )
+    }
+    .buttonStyle(.plain)
+  }
+
   private func proactiveTaskSubtitle(_ task: AgentProactiveTask) -> String {
     [
       proactiveTriggerDescription(task.trigger),
@@ -239,6 +320,10 @@ struct SignalASIAutomationView: View {
 
   private func proactiveTriggerLabel(_ kind: AgentProactiveTriggerKind) -> String {
     SignalASIAutomationLabels.trigger(kind, language: interfaceLanguage)
+  }
+
+  private func triggerBadge(_ trigger: AgentProactiveTrigger) -> String {
+    proactiveTriggerLabel(trigger.kind)
   }
 
   private func proactiveRunStatusLabel(_ status: AgentProactiveRunStatus) -> String {
