@@ -105,7 +105,7 @@ struct SignalASIAgentConnectionDetailView: View {
               }
             }
 
-            NavigationLink(destination: AddContactView()) {
+            NavigationLink(destination: AddContactView(autoOpenScanner: true)) {
               SignalASIAgentConnectionActionRow(
                 title: t("signalasi.agent_connection.scan_qr", "Scan or Paste Agent QR"),
                 subtitle: t("signalasi.agent_connection.scan_qr_subtitle", "Pair Codex, Claude Code, local models, or desktop Agents with the Android-compatible QR flow"),
