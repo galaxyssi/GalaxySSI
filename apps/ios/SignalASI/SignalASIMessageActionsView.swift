@@ -243,6 +243,10 @@ struct SignalASIMessageActionsView: View {
     }
   }
 
+  private var displayLocale: Locale {
+    Locale(identifier: interfaceLanguage == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
+  }
+
   private func traceLabel(_ stage: String) -> String {
     switch stage {
     case "created": return t("delivery_trace_created", "Created")
@@ -293,21 +297,21 @@ struct SignalASIMessageActionsView: View {
 
   private var timeFormatter: DateFormatter {
     let formatter = DateFormatter()
-    formatter.locale = Locale.autoupdatingCurrent
+    formatter.locale = displayLocale
     formatter.dateFormat = "HH:mm"
     return formatter
   }
 
   private var traceTimeFormatter: DateFormatter {
     let formatter = DateFormatter()
-    formatter.locale = Locale.autoupdatingCurrent
+    formatter.locale = displayLocale
     formatter.dateFormat = "HH:mm:ss.SSS"
     return formatter
   }
 
   private var fullDateFormatter: DateFormatter {
     let formatter = DateFormatter()
-    formatter.locale = Locale.autoupdatingCurrent
+    formatter.locale = displayLocale
     formatter.dateStyle = .medium
     formatter.timeStyle = .medium
     return formatter
