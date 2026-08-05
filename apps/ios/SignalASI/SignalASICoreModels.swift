@@ -277,13 +277,21 @@ struct CloudModelPreset: Identifiable, Equatable, Hashable {
   static let androidParity: [CloudModelPreset] = [
     CloudModelPreset(provider: "OpenAI", name: "GPT-5.5", modelId: "gpt-5.5", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "OpenAI", name: "GPT-5.4 mini", modelId: "gpt-5.4-mini", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "OpenAI", name: "GPT-5.4 nano", modelId: "gpt-5.4-nano", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "OpenAI", name: "GPT-5", modelId: "gpt-5", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Anthropic", name: "Claude Opus 4.7", modelId: "claude-opus-4-7-latest", endpoint: "https://api.anthropic.com/v1/messages", apiStyle: .anthropic),
     CloudModelPreset(provider: "Anthropic", name: "Claude Sonnet 5", modelId: "claude-sonnet-5-latest", endpoint: "https://api.anthropic.com/v1/messages", apiStyle: .anthropic),
+    CloudModelPreset(provider: "Anthropic", name: "Claude Haiku 4.5", modelId: "claude-haiku-4-5-latest", endpoint: "https://api.anthropic.com/v1/messages", apiStyle: .anthropic),
     CloudModelPreset(provider: "Google Gemini", name: "Gemini 3.5 Flash", modelId: "gemini-3.5-flash", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent", apiStyle: .gemini),
+    CloudModelPreset(provider: "Google Gemini", name: "Gemini 3.1 Pro", modelId: "gemini-3.1-pro", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent", apiStyle: .gemini),
+    CloudModelPreset(provider: "Google Gemini", name: "Gemini 3.1 Flash Lite", modelId: "gemini-3.1-flash-lite", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", apiStyle: .gemini),
     CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Pro", modelId: "deepseek-v4-pro", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Flash", modelId: "deepseek-v4-flash", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Qwen", name: "Qwen 3.7 Max", modelId: "qwen3.7-max", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Qwen", name: "Qwen 3.7 Plus", modelId: "qwen3.7-plus", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Qwen", name: "Qwen 3.6 Flash", modelId: "qwen3.6-flash", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "OpenRouter", name: "OpenRouter Auto", modelId: "openrouter/auto", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "OpenRouter", name: "OpenAI GPT-5.5 via OpenRouter", modelId: "openai/gpt-5.5", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "Custom", name: "OpenAI Compatible", modelId: "model-id", endpoint: "https://api.example.com/v1/chat/completions", apiStyle: .openAICompatible)
   ]
 }
