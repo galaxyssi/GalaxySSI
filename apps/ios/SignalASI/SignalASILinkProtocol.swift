@@ -52,13 +52,7 @@ enum SignalASILinkProtocol {
   }
 
   static func decodePairingQRCode(from text: String, now: Date = Date()) throws -> PairingQRCode {
-    guard let data = text.data(using: .utf8) else {
-      throw SignalASIError.invalidPairingQRCode("QR text is not UTF-8.")
-    }
-    let rawObject = try JSONSerialization.jsonObject(with: data, options: [])
-    guard let object = rawObject as? [String: Any] else {
-      throw SignalASIError.invalidPairingQRCode("QR root must be a JSON object.")
-    }
+    let object = try SignalASIQRCodePayload.decodeObject(from: text, label: "Pairing QR")
     return try validatePairingQRCode(object, now: now)
   }
 
