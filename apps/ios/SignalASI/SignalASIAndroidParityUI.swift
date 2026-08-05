@@ -559,6 +559,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_execution_policy_title", "Execution Policy"),
+              subtitle: t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."),
+              systemImage: "checkmark.shield",
+              tint: .orange
+            ) {
+              SignalASIExecutionPolicyView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_system_status_title", "System Status"),
               subtitle: t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
               systemImage: "info.circle",

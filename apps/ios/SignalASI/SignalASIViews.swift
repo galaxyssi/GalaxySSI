@@ -1380,6 +1380,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIExecutionPolicyView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_execution_policy_title", "Execution Policy"))
+              Text(t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentCoreView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_agent_core_title", "Agent Core"))
