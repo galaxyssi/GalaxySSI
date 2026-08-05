@@ -766,6 +766,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.ai_agent_title", "AI Agent"),
                 subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
                 systemImage: "cpu",
+                assetImageName: "DiscoverAiAgent",
                 tint: .signalASIAccent
               ) {
                 SignalASIMyAgentsView()
@@ -775,6 +776,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.device_center", "Device Center"),
                 subtitle: t("signalasi.discover.device.subtitle", "Manage and control your devices"),
                 systemImage: "antenna.radiowaves.left.and.right",
+                assetImageName: "DiscoverDevice",
                 tint: .signalASIAccent
               ) {
                 DeviceManagementView()
@@ -785,6 +787,7 @@ struct DiscoverView: View {
                 title: t("signalasi.automation.title", "Automation"),
                 subtitle: t("signalasi.automation.hero_subtitle", "Create and manage automated tasks"),
                 systemImage: "clock",
+                assetImageName: "DiscoverAutomation",
                 tint: .orange
               ) {
                 SignalASIAutomationView()
@@ -794,6 +797,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.security_center_title", "Security Center"),
                 subtitle: t("signalasi.discover.security_center_subtitle", "View security status and permissions"),
                 systemImage: "checkmark.shield",
+                assetImageName: "DiscoverSecurity",
                 tint: .signalASIAccent
               ) {
                 SignalASISecurityCenterView()
@@ -803,6 +807,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.lab_title", "Lab"),
                 subtitle: t("signalasi.discover.lab_subtitle", "Explore frontier features"),
                 systemImage: "sparkles",
+                assetImageName: "DiscoverLab",
                 tint: .purple
               ) {
                 SignalASILocalModelLabView()
@@ -813,6 +818,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.scan_title", "Scan"),
                 subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
                 systemImage: "qrcode.viewfinder",
+                assetImageName: "DiscoverScan",
                 tint: .signalASIAccent
               ) {
                 AddContactView(autoOpenScanner: true)
@@ -822,6 +828,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.my_qr_title", "My QR Code"),
                 subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
                 systemImage: "qrcode",
+                assetImageName: "DiscoverScan",
                 tint: .signalASITextPrimary
               ) {
                 myQRCodePresented = true
@@ -831,6 +838,7 @@ struct DiscoverView: View {
                 title: t("signalasi.discover.create_group_title", "Create Group"),
                 subtitle: t("signalasi.discover.create_group_subtitle", "Secure multi-person communication"),
                 systemImage: "person.3",
+                assetImageName: "DiscoverGroup",
                 tint: .signalASIAccent
               ) {
                 SignalASICreateGroupView()
@@ -841,6 +849,7 @@ struct DiscoverView: View {
                 title: t("cc_profile_title", "My SignalASI"),
                 subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
                 systemImage: "person.crop.circle",
+                assetImageName: "DiscoverProfile",
                 tint: .signalASITextPrimary
               ) {
                 SignalASIProfileIdentityView()
@@ -850,6 +859,7 @@ struct DiscoverView: View {
                 title: t("settings_my_signalasi", "My SignalASI"),
                 subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
                 systemImage: "slider.horizontal.3",
+                assetImageName: "DiscoverSignalASI",
                 tint: .signalASIAccent
               ) {
                 SignalASIControlCenterView()
@@ -1185,6 +1195,7 @@ private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String?
   var tint: Color
   let destination: Destination
 
@@ -1192,12 +1203,14 @@ private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
     title: String,
     subtitle: String,
     systemImage: String,
+    assetImageName: String? = nil,
     tint: Color,
     @ViewBuilder destination: () -> Destination
   ) {
     self.title = title
     self.subtitle = subtitle
     self.systemImage = systemImage
+    self.assetImageName = assetImageName
     self.tint = tint
     self.destination = destination()
   }
@@ -1208,6 +1221,7 @@ private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImageName: assetImageName,
         tint: tint
       )
     }
@@ -1219,6 +1233,7 @@ private struct SignalASIAndroidGroupedMenuButton: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String? = nil
   var tint: Color
   var action: () -> Void
 
@@ -1228,6 +1243,7 @@ private struct SignalASIAndroidGroupedMenuButton: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImageName: assetImageName,
         tint: tint
       )
     }
@@ -1239,18 +1255,12 @@ private struct SignalASIAndroidGroupedMenuRowContent: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String?
   var tint: Color
 
   var body: some View {
     HStack(spacing: 12) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(tint.opacity(0.16))
-        Image(systemName: systemImage)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(tint)
-      }
-      .frame(width: 42, height: 42)
+      SignalASIAndroidMenuIcon(systemImage: systemImage, assetImageName: assetImageName, tint: tint)
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
           .font(.system(size: 16, weight: .semibold))
@@ -1270,6 +1280,30 @@ private struct SignalASIAndroidGroupedMenuRowContent: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 11)
     .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+  }
+}
+
+private struct SignalASIAndroidMenuIcon: View {
+  var systemImage: String
+  var assetImageName: String?
+  var tint: Color
+
+  var body: some View {
+    ZStack {
+      if let assetImageName {
+        Image(assetImageName)
+          .resizable()
+          .renderingMode(.original)
+          .scaledToFit()
+      } else {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(tint.opacity(0.16))
+        Image(systemName: systemImage)
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(tint)
+      }
+    }
+    .frame(width: 42, height: 42)
   }
 }
 
