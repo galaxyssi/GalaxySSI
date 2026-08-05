@@ -1853,16 +1853,20 @@ struct AvatarView: View {
   }
 
   private var assetName: String? {
-    let identity = [
+    let identityFields = [
       contact.id,
       contact.signalASIId,
       contact.name,
       contact.displayName,
       contact.type
     ]
-      .joined(separator: " ")
-      .lowercased()
-    if contact.deliveryMode == .link || identity.contains("signalasi") || identity.contains("hermes") {
+
+    if let agentAssetName = SignalASIAgentAvatarAssetCatalog.assetName(for: identityFields) {
+      return agentAssetName
+    }
+
+    let identity = identityFields.joined(separator: " ").lowercased()
+    if contact.deliveryMode == .link || identity.contains("signalasi") {
       return "SignalASILogo"
     }
     return nil

@@ -433,6 +433,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.private_assistant_subtitle",
         subtitleFallback: "Private AI assistant connected through the PC endpoint",
         systemImage: "sparkles",
+        assetName: AgentAvatarStyle.hermes.androidParityAssetName,
         tint: .signalASIAccent,
         category: .official,
         fallbackStatus: connected("hermes") ? t("signalasi.status.running", "Running") : t("signalasi.status.pending_pairing", "Pending Pairing"),
@@ -444,6 +445,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.codex_subtitle",
         subtitleFallback: "Local coding and engineering collaboration assistant",
         systemImage: "chevron.left.forwardslash.chevron.right",
+        assetName: AgentAvatarStyle.codex.androidParityAssetName,
         tint: .signalASIInsightText,
         category: .official
       ),
@@ -453,6 +455,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.claude_subtitle",
         subtitleFallback: "Terminal collaboration and code editing assistant",
         systemImage: "terminal",
+        assetName: AgentAvatarStyle.claude.androidParityAssetName,
         tint: .orange,
         category: .official
       ),
@@ -506,6 +509,7 @@ private struct SignalASIAgentDirectorySnapshot {
         title: "News Agent",
         subtitle: t("signalasi.agent.news_subtitle", "News collection and morning briefs"),
         systemImage: "newspaper",
+        assetName: nil,
         tint: .orange,
         badge: t("signalasi.badge.automation", "Automation"),
         statusKey: "automation",
@@ -518,6 +522,7 @@ private struct SignalASIAgentDirectorySnapshot {
         title: "Home Agent",
         subtitle: t("signalasi.agent.home_subtitle", "Home device and smart home control"),
         systemImage: "house.fill",
+        assetName: nil,
         tint: .gray,
         badge: t("signalasi.badge.device", "Device"),
         statusKey: "device",
@@ -533,6 +538,7 @@ private struct SignalASIAgentDirectorySnapshot {
     subtitleKey: String,
     subtitleFallback: String,
     systemImage: String,
+    assetName: String? = nil,
     tint: Color,
     category: SignalASIAgentDirectoryCategory,
     fallbackStatus: String? = nil,
@@ -548,6 +554,7 @@ private struct SignalASIAgentDirectorySnapshot {
       title: contact?.displayName.ifBlank(fallbackTitle) ?? fallbackTitle,
       subtitle: contact?.setupDetail.ifBlank(t(subtitleKey, subtitleFallback)) ?? t(subtitleKey, subtitleFallback),
       systemImage: systemImage,
+      assetName: assetName,
       tint: statusTint(setupStatus: setupStatus, fallback: tint),
       badge: badge.text,
       statusKey: fallbackStatusKey ?? badge.key,
@@ -569,6 +576,7 @@ private struct SignalASIAgentDirectorySnapshot {
       title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
       subtitle: contact.setupDetail.ifBlank(agentKindSubtitle(contact.agentKind)),
       systemImage: systemImage(for: contact),
+      assetName: assetName(for: contact),
       tint: statusTint(setupStatus: setupStatus, fallback: tint(for: contact)),
       badge: badge.text,
       statusKey: badge.key,
@@ -649,6 +657,17 @@ private struct SignalASIAgentDirectorySnapshot {
     return "cpu"
   }
 
+  private func assetName(for contact: SignalASIContact) -> String? {
+    SignalASIAgentAvatarAssetCatalog.assetName(for: [
+      contact.id,
+      contact.signalASIId,
+      contact.name,
+      contact.displayName,
+      contact.type,
+      contact.agentKind
+    ])
+  }
+
   private func tint(for contact: SignalASIContact) -> Color {
     if contact.deliveryMode == .cloudAPI || contact.agentKind == "cloud-api" || contact.agentKind == "cloud-model" {
       return .signalASIInsightText
@@ -675,6 +694,7 @@ struct SignalASIAgentDirectoryItem: Identifiable {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetName: String? = nil
   var tint: Color
   var badge: String
   var statusKey: String
@@ -717,7 +737,7 @@ private struct SignalASIAgentDirectoryRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      SignalASIDirectoryIcon(systemImage: item.systemImage, tint: item.tint, size: 44)
+      SignalASIDirectoryIcon(systemImage: item.systemImage, assetName: item.assetName, tint: item.tint, size: 44)
       VStack(alignment: .leading, spacing: 4) {
         Text(item.title)
           .font(.system(size: 16, weight: .bold))
@@ -951,6 +971,7 @@ private struct SignalASIDirectoryHeroCard: View {
 
 private struct SignalASIDirectoryIcon: View {
   var systemImage: String
+  var assetName: String? = nil
   var tint: Color
   var size: CGFloat = 38
 
@@ -958,11 +979,19 @@ private struct SignalASIDirectoryIcon: View {
     ZStack {
       RoundedRectangle(cornerRadius: 8, style: .continuous)
         .fill(tint.opacity(0.16))
-      Image(systemName: systemImage)
-        .font(.system(size: size >= 44 ? 18 : 16, weight: .semibold))
-        .foregroundColor(tint)
+      if let assetName {
+        Image(assetName)
+          .resizable()
+          .scaledToFill()
+          .accessibilityHidden(true)
+      } else {
+        Image(systemName: systemImage)
+          .font(.system(size: size >= 44 ? 18 : 16, weight: .semibold))
+          .foregroundColor(tint)
+      }
     }
     .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
 
