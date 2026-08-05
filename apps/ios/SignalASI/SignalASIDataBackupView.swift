@@ -11,6 +11,7 @@ struct SignalASIDataBackupView: View {
   @State private var backupImportPresented = false
   @State private var backupStatus = ""
   @State private var backupStatusIsError = false
+  @State private var pendingImportPreview: SignalASIBackupImportPreview?
   @State private var cacheBytes: Int64 = 0
   @State private var freeStorageBytes: Int64 = 0
 
@@ -67,12 +68,18 @@ struct SignalASIDataBackupView: View {
     ) { result in
       do {
         guard let url = try result.get().first else { return }
-        importBackup(from: url)
+        previewBackupImport(from: url)
       } catch {
         setBackupStatus(error.localizedDescription, isError: true)
       }
     }
     .onAppear(perform: refreshStorageMetrics)
+    .onChange(of: backupPassword) { _ in
+      pendingImportPreview = nil
+    }
+    .onChange(of: backupIncludeMessages) { _ in
+      pendingImportPreview = nil
+    }
   }
 
   private var backupSection: some View {
@@ -121,6 +128,9 @@ struct SignalASIDataBackupView: View {
         backupImportPresented = true
       }
       .disabled(!canUseBackupPassword)
+      if let preview = pendingImportPreview {
+        importPreviewSection(preview)
+      }
       if !backupStatus.isEmpty {
         SignalASISecurityStatusRow(
           title: t("signalasi.data_backup.backup_status", "Backup Status"),
@@ -167,6 +177,108 @@ struct SignalASIDataBackupView: View {
     backupPassword.count >= SignalASIBackupManager.minimumPasswordLength
   }
 
+  private func importPreviewSection(_ preview: SignalASIBackupImportPreview) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("signalasi.data_backup.import_preview_section", "Restore Preview"))
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_file", "Backup file"),
+        subtitle: String(
+          format: t("signalasi.data_backup.import_file_subtitle", "%@ · exported %@ · %@"),
+          preview.fileName,
+          preview.exportedAtText,
+          preview.platformLabel
+        ),
+        systemImage: "doc.text",
+        tint: .blue,
+        badge: t("signalasi.status.ready", "Ready")
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_identity", "Identity"),
+        subtitle: preview.identitySubtitle(
+          included: t("signalasi.data_backup.identity_included", "Signing identity is included"),
+          profileOnly: t("signalasi.data_backup.identity_profile_only", "Profile restores without private signing key")
+        ),
+        systemImage: "person.crop.circle",
+        tint: preview.includesIdentity ? .signalASIAccent : .gray,
+        badge: preview.includesIdentity ? t("backup_included", "Included") : t("signalasi.common.preview", "Preview")
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_people", "Contacts & requests"),
+        subtitle: String(
+          format: t("signalasi.data_backup.import_people_subtitle", "%d contacts · %d friend requests"),
+          preview.contactCount,
+          preview.friendRequestCount
+        ),
+        systemImage: "person.2",
+        tint: .purple,
+        badge: preview.contactsBadge(localized: t)
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_messages", "Chat history"),
+        subtitle: String(
+          format: t("signalasi.data_backup.import_messages_subtitle", "%d chats · %d messages"),
+          preview.messageThreadCount,
+          preview.messageCount
+        ),
+        systemImage: "bubble.left.and.bubble.right",
+        tint: preview.willRestoreMessages ? .signalASIAccent : .gray,
+        badge: preview.messagesBadge(localized: t)
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_agent_data", "Agent data"),
+        subtitle: String(
+          format: t(
+            "signalasi.data_backup.import_agent_data_subtitle",
+            "%d memories · %d knowledge items · %d tasks · %d sessions"
+          ),
+          preview.memoryCount,
+          preview.knowledgeCount,
+          preview.taskCount,
+          preview.agentSessionCount
+        ),
+        systemImage: "person.crop.circle.badge.gearshape",
+        tint: preview.includesAgentData ? .orange : .gray,
+        badge: preview.agentDataBadge(localized: t)
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_configuration", "Configuration"),
+        subtitle: String(
+          format: t(
+            "signalasi.data_backup.import_configuration_subtitle",
+            "%d server links · %d devices · %d cloud secrets"
+          ),
+          preview.serverLinkCount,
+          preview.customDeviceCount,
+          preview.cloudSecretCount
+        ),
+        systemImage: "slider.horizontal.3",
+        tint: .teal,
+        badge: t("signalasi.common.preview", "Preview")
+      )
+      SignalASISecurityActionRow(
+        title: t("signalasi.data_backup.restore_preview_action", "Restore This Backup"),
+        subtitle: t(
+          "signalasi.data_backup.restore_preview_subtitle",
+          "Apply the previewed identity, contacts, Agent data, settings, and selected chat history"
+        ),
+        systemImage: "arrow.clockwise",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.restore", "Restore")
+      ) {
+        restorePendingBackup()
+      }
+      SignalASISecurityActionRow(
+        title: t("signalasi.common.cancel", "Cancel"),
+        subtitle: t("signalasi.data_backup.cancel_preview_subtitle", "Discard this verified preview without changing local data"),
+        systemImage: "xmark.circle",
+        tint: .gray,
+        badge: ""
+      ) {
+        cancelPendingBackupPreview()
+      }
+    }
+  }
+
   private func exportBackup() {
     do {
       let password = backupPassword
@@ -191,10 +303,12 @@ struct SignalASIDataBackupView: View {
     }
   }
 
-  private func importBackup(from url: URL) {
+  private func previewBackupImport(from url: URL) {
     let password = backupPassword
     let includeMessages = backupIncludeMessages
-    setBackupStatus(t("signalasi.backup.restoring", "Restoring backup..."), isError: false)
+    let fileName = url.lastPathComponent
+    pendingImportPreview = nil
+    setBackupStatus(t("signalasi.backup.verifying", "Verifying backup..."), isError: false)
     Task {
       let didAccess = url.startAccessingSecurityScopedResource()
       defer {
@@ -207,9 +321,13 @@ struct SignalASIDataBackupView: View {
         let payload = try await Task.detached {
           try SignalASIBackupManager.importBackup(data: data, password: password)
         }.value
-        try await MainActor.run {
-          try store.restoreBackupPayload(payload, includeMessages: includeMessages)
-          setBackupStatus(t("signalasi.backup.restored", "Backup restored."), isError: false)
+        await MainActor.run {
+          pendingImportPreview = SignalASIBackupImportPreview(
+            payload: payload,
+            includeMessages: includeMessages,
+            fileName: fileName
+          )
+          setBackupStatus(t("signalasi.backup.verified", "Backup verified. Review the restore preview."), isError: false)
           refreshStorageMetrics()
         }
       } catch {
@@ -218,6 +336,24 @@ struct SignalASIDataBackupView: View {
         }
       }
     }
+  }
+
+  private func restorePendingBackup() {
+    guard let preview = pendingImportPreview else { return }
+    do {
+      setBackupStatus(t("signalasi.backup.restoring", "Restoring backup..."), isError: false)
+      try store.restoreBackupPayload(preview.payload, includeMessages: preview.includeMessages)
+      pendingImportPreview = nil
+      setBackupStatus(t("signalasi.backup.restored", "Backup restored."), isError: false)
+      refreshStorageMetrics()
+    } catch {
+      setBackupStatus(error.localizedDescription, isError: true)
+    }
+  }
+
+  private func cancelPendingBackupPreview() {
+    pendingImportPreview = nil
+    setBackupStatus(t("signalasi.backup.preview_cancelled", "Backup preview cancelled."), isError: false)
   }
 
   private func clearRebuildableCache() {
@@ -314,5 +450,113 @@ private struct SignalASIDataBackupCredentialCard: View {
     .padding(12)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct SignalASIBackupImportPreview {
+  var payload: SignalASIBackupPayload
+  var includeMessages: Bool
+  var fileName: String
+
+  var includesIdentity: Bool {
+    payload.privacyManifest.includesIdentity && payload.identity != nil
+  }
+
+  var includesAgentData: Bool {
+    payload.includesAgentData
+  }
+
+  var contactCount: Int {
+    payload.includesContacts ? payload.contacts.count : 0
+  }
+
+  var friendRequestCount: Int {
+    payload.includesContacts ? payload.friendRequests.count : 0
+  }
+
+  var messageThreadCount: Int {
+    guard payload.includesMessages else { return 0 }
+    return payload.messagesByContact.count
+  }
+
+  var messageCount: Int {
+    guard payload.includesMessages else { return 0 }
+    return payload.messagesByContact.values.reduce(0) { $0 + $1.count }
+  }
+
+  var willRestoreMessages: Bool {
+    includeMessages && payload.includesMessages
+  }
+
+  var serverLinkCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.serverLinks.count
+  }
+
+  var memoryCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.memory?.count ?? 0
+  }
+
+  var knowledgeCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.knowledge?.count ?? 0
+  }
+
+  var taskCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    let history = payload.agentData.taskHistory?.count ?? 0
+    let proactive = payload.agentData.proactiveTasks?.count ?? 0
+    let runs = payload.agentData.proactiveRuns?.count ?? 0
+    return history + proactive + runs
+  }
+
+  var agentSessionCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.agentConversations?.count ?? 0
+  }
+
+  var customDeviceCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.customDeviceConnectors.count
+  }
+
+  var cloudSecretCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.cloudAPISecrets.count
+  }
+
+  var platformLabel: String {
+    payload.platform.isEmpty ? "SignalASI" : payload.platform.uppercased()
+  }
+
+  var exportedAtText: String {
+    let exportedAt = Date(timeIntervalSince1970: TimeInterval(payload.exportedAt) / 1_000)
+    return DateFormatter.localizedString(from: exportedAt, dateStyle: .medium, timeStyle: .short)
+  }
+
+  func identitySubtitle(included: String, profileOnly: String) -> String {
+    includesIdentity ? included : profileOnly
+  }
+
+  func contactsBadge(localized t: (String, String) -> String) -> String {
+    payload.includesContacts
+      ? t("backup_included", "Included")
+      : t("signalasi.data_backup.not_included", "Not included")
+  }
+
+  func messagesBadge(localized t: (String, String) -> String) -> String {
+    guard payload.includesMessages else {
+      return t("signalasi.data_backup.not_included", "Not included")
+    }
+    return willRestoreMessages
+      ? t("backup_included", "Included")
+      : t("signalasi.data_backup.skipped_by_choice", "Skipped")
+  }
+
+  func agentDataBadge(localized t: (String, String) -> String) -> String {
+    payload.includesAgentData
+      ? t("backup_included", "Included")
+      : t("signalasi.data_backup.not_included", "Not included")
   }
 }
