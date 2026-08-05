@@ -527,6 +527,14 @@ struct DiscoverView: View {
               SignalASIMyAgentsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_learning_title", "Learning & Skill Evolution"),
+              subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
+              systemImage: "sparkles.rectangle.stack",
+              tint: .purple
+            ) {
+              SignalASILearningSkillEvolutionView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_agent_core_title", "Agent Core"),
               subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
               systemImage: "cpu",
@@ -557,6 +565,22 @@ struct DiscoverView: View {
               tint: .signalASIAccent
             ) {
               SignalASISecurityCenterView()
+            }
+            SignalASIAndroidMenuLink(
+              title: t("cc_permissions_title", "Permissions & Audit"),
+              subtitle: t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"),
+              systemImage: "hand.raised",
+              tint: .orange
+            ) {
+              SignalASIPermissionsAuditView()
+            }
+            SignalASIAndroidMenuLink(
+              title: t("cc_app_services_page_title", "Apps & Services"),
+              subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
+              systemImage: "square.grid.2x2",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIAppServicesView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
@@ -612,7 +636,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              SignalASIVoiceAssistantSettingsView()
+              SignalASIVoiceControlCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_app_tools_title", "Apps & Tools"),
@@ -647,12 +671,28 @@ struct DiscoverView: View {
               SignalASILocalModelLabView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_runtime_title", "On-device Linux Runtime"),
+              subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
+              systemImage: "terminal",
+              tint: .teal
+            ) {
+              SignalASIOnDeviceRuntimeView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.device_center", "Device Center"),
               subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
               systemImage: "antenna.radiowaves.left.and.right",
               tint: .signalASIAccent
             ) {
               DeviceManagementView()
+            }
+            SignalASIAndroidMenuLink(
+              title: t("cc_nodes_title", "Agents, Models & Nodes"),
+              subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
+              systemImage: "link.circle",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIAgentsModelsNodesView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_smart_spaces_title", "Smart Spaces"),
