@@ -176,6 +176,38 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(SignalASILinkProtocol.needsCapabilityManifest(decoded))
   }
 
+  func testConnectorStatusRequestPayloadMatchesAndroidCapabilityManifestWireKeys() throws {
+    let store = makeStore()
+    let link = try store.addServerLink(from: makePairingQRCode())
+    let stalePayload = SignalASILinkProtocol.connectorStatusRequestPayload(
+      link: link,
+      now: Date(timeIntervalSince1970: 10)
+    )
+    let current = try XCTUnwrap(store.markCapabilityManifestReceived(
+      desktopId: link.desktopId,
+      version: SignalASILinkProtocol.capabilityManifestVersion
+    ))
+    let currentPayload = SignalASILinkProtocol.connectorStatusRequestPayload(
+      link: current,
+      now: Date(timeIntervalSince1970: 11)
+    )
+    let forcedPayload = SignalASILinkProtocol.connectorStatusRequestPayload(
+      link: current,
+      forceCapabilityManifest: true,
+      now: Date(timeIntervalSince1970: 12)
+    )
+
+    XCTAssertEqual(stalePayload["type"] as? String, "connector_status_request")
+    XCTAssertEqual(stalePayload["contact_id"] as? String, "system")
+    XCTAssertEqual(stalePayload["desktop_id"] as? String, link.desktopId)
+    XCTAssertEqual(stalePayload["capability_manifest_version"] as? Int, 0)
+    XCTAssertEqual(stalePayload["request_capability_manifest"] as? Bool, true)
+    XCTAssertEqual(stalePayload["time"] as? Int64, 10_000)
+    XCTAssertEqual(currentPayload["capability_manifest_version"] as? Int, 2)
+    XCTAssertEqual(currentPayload["request_capability_manifest"] as? Bool, false)
+    XCTAssertEqual(forcedPayload["request_capability_manifest"] as? Bool, true)
+  }
+
   func testContactSearchMatchesAndroidNameAndIdFiltering() throws {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(signalASIId: "friend-alice", name: "Alice"))
