@@ -367,8 +367,9 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
   }
 
   private static func deviceStatusDetail(t: (String, String) -> String) -> String {
-    UIDevice.current.isBatteryMonitoringEnabled = true
-    let batteryLevel = UIDevice.current.batteryLevel
+    let device = UIDevice.current
+    device.isBatteryMonitoringEnabled = true
+    let batteryLevel = device.batteryLevel
     let battery: String
     if batteryLevel >= 0 {
       battery = "\(Int((batteryLevel * 100).rounded()))%"
@@ -378,16 +379,45 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     let power: String
     if ProcessInfo.processInfo.isLowPowerModeEnabled {
       power = t("agent_screen_power_low", "power save")
+    } else if device.batteryState == .charging || device.batteryState == .full {
+      power = t("agent_screen_power_charging", "charging")
     } else {
       power = t("agent_screen_power_battery", "battery")
     }
     let thermal = thermalStateLabel(ProcessInfo.processInfo.thermalState, t: t)
+    let storage = freeStorageLabel(t: t)
     return String(
-      format: t("agent_screen_device_status_summary_ios", "Battery %@ / %@ / %@"),
+      format: t("agent_screen_device_status_summary_ios", "Battery %@ / %@ / %@ / %@ free"),
       battery,
       power,
-      thermal
+      thermal,
+      storage
     )
+  }
+
+  private static func freeStorageLabel(t: (String, String) -> String) -> String {
+    let fileManager = FileManager.default
+    guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+      return t("common_unknown", "Unknown")
+    }
+    let keys: Set<URLResourceKey> = [
+      .volumeAvailableCapacityForImportantUsageKey,
+      .volumeAvailableCapacityKey
+    ]
+    guard let values = try? documentsURL.resourceValues(forKeys: keys) else {
+      return t("common_unknown", "Unknown")
+    }
+    if let important = values.volumeAvailableCapacityForImportantUsage, important > 0 {
+      return formatBytes(important)
+    }
+    if let capacity = values.volumeAvailableCapacity, capacity > 0 {
+      return formatBytes(Int64(capacity))
+    }
+    return t("common_unknown", "Unknown")
+  }
+
+  private static func formatBytes(_ bytes: Int64) -> String {
+    ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
   }
 
   private static func thermalStateLabel(
