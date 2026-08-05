@@ -615,6 +615,14 @@ struct DiscoverView: View {
               SignalASIAppToolsView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_general_page_title", "General"),
+              subtitle: t("signalasi.general_settings.subtitle", "Language, appearance, text size, notifications, and app information"),
+              systemImage: "gearshape",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIGeneralSettingsView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
               subtitle: t("signalasi.automation.hero_subtitle", "Let AI actively handle fixed tasks"),
               systemImage: "clock",

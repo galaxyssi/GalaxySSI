@@ -1351,6 +1351,16 @@ struct SettingsView: View {
             Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
           }
         }
+        Section(t("settings_control_general", "General")) {
+          NavigationLink(destination: SignalASIGeneralSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_general_page_title", "General"))
+              Text(t("signalasi.general_settings.subtitle", "Language, appearance, text size, notifications, and app information"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section(t("signalasi.settings.language", "Language")) {
           NavigationLink(destination: SignalASILanguageSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {

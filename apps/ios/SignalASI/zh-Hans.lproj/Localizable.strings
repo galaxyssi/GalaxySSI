@@ -1644,6 +1644,16 @@
 "cc_text_size_large_subtitle" = "120% · 更容易阅读";
 "cc_text_size_extra_large" = "特大";
 "cc_text_size_extra_large_subtitle" = "132% · 最大可读性";
+"cc_general_page_title" = "通用";
+"settings_control_general" = "通用";
+"language_policy_title" = "语音与语言";
+"cc_appearance_title" = "外观";
+"cc_appearance_subtitle" = "使用 iOS 的浅色与深色外观";
+"cc_managed_by_ios" = "iOS";
+"cc_notifications_title" = "通知";
+"cc_notifications_subtitle" = "Agent 任务、安全事件、消息与连接状态";
+"settings_reset_short" = "重置";
+"signalasi.general_settings.subtitle" = "语言、外观、文字大小、通知与应用信息";
 "common_cancel" = "取消";
 "settings_destroy_data" = "重置数据";
 "destroy_data_title" = "重置数据";
