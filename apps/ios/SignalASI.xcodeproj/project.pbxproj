@@ -14,9 +14,10 @@
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001370 /* SignalASIMessageActionsView.swift */; };
     A10000000000000000001433 /* SignalASIPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001433 /* SignalASIPairingView.swift */; };
-		A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */; };
-		A10000000000000000001430 /* SignalASIContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001430 /* SignalASIContactDetailView.swift */; };
+    A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */; };
+    A10000000000000000001430 /* SignalASIContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001430 /* SignalASIContactDetailView.swift */; };
     A10000000000000000001432 /* SignalASIMyContactQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */; };
+    A10000000000000000001441 /* SignalASIQRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001441 /* SignalASIQRCodeScannerView.swift */; };
     A10000000000000000001434 /* SignalASISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001434 /* SignalASISettingsView.swift */; };
     A10000000000000000001436 /* SignalASIContactKindPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001436 /* SignalASIContactKindPresentation.swift */; };
     A10000000000000000000990 /* SignalASIAddContactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000990 /* SignalASIAddContactView.swift */; };
@@ -674,8 +675,9 @@
     A20000000000000000001370 /* SignalASIMessageActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMessageActionsView.swift; sourceTree = "<group>"; };
     A20000000000000000001433 /* SignalASIPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPairingView.swift; sourceTree = "<group>"; };
 		A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIFriendRequestDetailView.swift; sourceTree = "<group>"; };
-		A20000000000000000001430 /* SignalASIContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactDetailView.swift; sourceTree = "<group>"; };
+    A20000000000000000001430 /* SignalASIContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactDetailView.swift; sourceTree = "<group>"; };
     A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMyContactQRCodeView.swift; sourceTree = "<group>"; };
+    A20000000000000000001441 /* SignalASIQRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIQRCodeScannerView.swift; sourceTree = "<group>"; };
     A20000000000000000001434 /* SignalASISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001436 /* SignalASIContactKindPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactKindPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000990 /* SignalASIAddContactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAddContactView.swift; sourceTree = "<group>"; };
@@ -1716,9 +1718,10 @@
         A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */,
         A20000000000000000001370 /* SignalASIMessageActionsView.swift */,
         A20000000000000000001433 /* SignalASIPairingView.swift */,
-				A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */,
+        A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */,
         A20000000000000000001430 /* SignalASIContactDetailView.swift */,
         A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */,
+        A20000000000000000001441 /* SignalASIQRCodeScannerView.swift */,
         A20000000000000000001434 /* SignalASISettingsView.swift */,
         A20000000000000000001436 /* SignalASIContactKindPresentation.swift */,
         A20000000000000000000990 /* SignalASIAddContactView.swift */,
@@ -2484,9 +2487,10 @@
         A10000000000000000001437 /* SignalASIAgentHoldToTalkController.swift in Sources */,
         A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */,
         A10000000000000000001433 /* SignalASIPairingView.swift in Sources */,
-				A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */,
+        A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */,
         A10000000000000000001430 /* SignalASIContactDetailView.swift in Sources */,
         A10000000000000000001432 /* SignalASIMyContactQRCodeView.swift in Sources */,
+        A10000000000000000001441 /* SignalASIQRCodeScannerView.swift in Sources */,
         A10000000000000000001434 /* SignalASISettingsView.swift in Sources */,
         A10000000000000000001436 /* SignalASIContactKindPresentation.swift in Sources */,
         A10000000000000000000990 /* SignalASIAddContactView.swift in Sources */,
