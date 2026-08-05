@@ -150,6 +150,8 @@ extension SignalASIStoreTests {
     var iterator = adapter.observeEvents(runId: request.runId).makeAsyncIterator()
     _ = await iterator.next()
     _ = await iterator.next()
+    _ = await iterator.next()
+    _ = await iterator.next()
     let settled = provider.acceptConnectorTerminalStatus(
       sourceMessageId: 73,
       contactId: "codex",

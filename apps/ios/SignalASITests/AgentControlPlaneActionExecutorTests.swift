@@ -147,13 +147,18 @@ extension SignalASIStoreTests {
 
     let handle = try await adapter.startRun(request)
     var iterator = adapter.observeEvents(runId: request.runId).makeAsyncIterator()
+    let created = await iterator.next()
+    let started = await iterator.next()
     let connected = await iterator.next()
     let waiting = await iterator.next()
 
     XCTAssertEqual(handle.remoteRunId, "73")
     XCTAssertEqual(provider.result(agentId: "codex", runId: request.runId)?.message, "Ready for user response")
+    XCTAssertEqual(created?.type, .runCreated)
+    XCTAssertEqual(started?.type, .runStarted)
     XCTAssertEqual(connected?.type, .agentConnected)
     XCTAssertEqual(waiting?.type, .waitingForDevice)
+    XCTAssertEqual(waiting?.sequence, 4)
     XCTAssertEqual(waiting?.payload["source_message_id"]?.stringValue, "73")
   }
 
@@ -202,10 +207,14 @@ extension SignalASIStoreTests {
 
     _ = try await adapter.startRun(request)
     var iterator = adapter.observeEvents(runId: request.runId).makeAsyncIterator()
+    let created = await iterator.next()
+    let started = await iterator.next()
     let connected = await iterator.next()
     let native = try XCTUnwrap(await iterator.next())
     let completed = await iterator.next()
 
+    XCTAssertEqual(created?.type, .runCreated)
+    XCTAssertEqual(started?.type, .runStarted)
     XCTAssertEqual(connected?.type, .agentConnected)
     XCTAssertEqual(native.type, .toolProgress)
     XCTAssertEqual(native.runId, "run-native-tool")
