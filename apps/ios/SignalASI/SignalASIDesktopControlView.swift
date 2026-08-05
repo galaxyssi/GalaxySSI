@@ -13,7 +13,7 @@ struct SignalASIDesktopControlView: View {
   }
 
   private var desktopLinks: [ServerLink] {
-    store.serverLinks.sorted {
+    store.serverLinks.filter(\.paired).sorted {
       $0.desktopName.localizedCaseInsensitiveCompare($1.desktopName) == .orderedAscending
     }
   }
