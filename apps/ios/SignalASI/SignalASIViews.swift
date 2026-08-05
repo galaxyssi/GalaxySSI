@@ -1393,6 +1393,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIPermissionsAuditView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_permissions_title", "Permissions & Audit"))
+              Text(t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIExecutionPolicyView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_execution_policy_title", "Execution Policy"))

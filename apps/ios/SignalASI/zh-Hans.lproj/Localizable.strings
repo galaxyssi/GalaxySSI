@@ -2042,3 +2042,16 @@
 "cc_runtime_import_subtitle" = "导入由 SignalASI 签名的 .sarpack 安装包";
 "signalasi.data_backup.available" = "可用";
 "signalasi.backup.password_requirement" = "备份密码至少需要 %d 个字符。";
+"signalasi.permissions.secure_status" = "安全";
+"signalasi.permissions_summary_ios" = "需要的 iOS 权限已就绪 %d / %d";
+"signalasi.permissions_ios_section" = "iOS 权限";
+"feature_audit_log" = "审计日志";
+"cc_accessibility_subtitle" = "界面理解与受控执行";
+"cc_notification_access_title" = "通知访问";
+"cc_notification_access_subtitle" = "读取任务相关通知并在确认后回复";
+"cc_microphone_permission_title" = "麦克风";
+"cc_microphone_permission_subtitle" = "语音输入、唤醒与本地 ASR";
+"cc_camera_permission_title" = "相机";
+"cc_camera_permission_subtitle" = "拍摄、二维码配对与视觉任务";
+"cc_recent_operations_title" = "最近操作";
+"cc_recent_operations_subtitle" = "查看本机工具、Agent 操作与确认决定";

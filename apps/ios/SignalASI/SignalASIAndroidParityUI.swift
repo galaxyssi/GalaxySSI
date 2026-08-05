@@ -567,6 +567,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_permissions_title", "Permissions & Audit"),
+              subtitle: t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"),
+              systemImage: "hand.raised",
+              tint: .orange
+            ) {
+              SignalASIPermissionsAuditView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_app_services_page_title", "Apps & Services"),
               subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
               systemImage: "square.grid.2x2",
