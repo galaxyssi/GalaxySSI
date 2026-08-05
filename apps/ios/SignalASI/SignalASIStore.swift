@@ -1950,7 +1950,7 @@ final class SignalASIStore: ObservableObject {
     payloads.forEach { payload in
       let link = incomingLink ?? serverLink(forConnectorPayload: payload)
       let agentId = desktopAgentId(from: payload)
-      guard !agentId.isEmpty, agentId != "hermes", agentId != "cloud-model",
+      guard !agentId.isEmpty, agentId != "cloud-model",
             payload.string("kind") != "cloud-model",
             payload.string("agent_kind") != "cloud-model" else {
         return
