@@ -362,7 +362,7 @@ struct ConversationView: View {
       }
     }
     .sheet(item: $selectedMessageForDetails) { message in
-      MessageDetailView(message: message, contact: contact)
+      SignalASIMessageActionsView(message: message, contact: contact)
     }
   }
 
