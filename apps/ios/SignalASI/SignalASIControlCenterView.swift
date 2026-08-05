@@ -213,6 +213,15 @@ struct SignalASIControlCenterView: View {
       ) {
         SignalASIAgentRecentTasksView()
       }
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_evolution_title", "Self evolution"),
+        subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
+        systemImage: "arrow.triangle.2.circlepath",
+        tint: selfEvolutionTint,
+        badge: selfEvolutionBadge
+      ) {
+        SignalASISelfEvolutionControlView()
+      }
     }
   }
 
@@ -318,6 +327,25 @@ struct SignalASIControlCenterView: View {
     recentTasks.filter {
       [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
     }.count
+  }
+
+  private var selfEvolutionSummary: (review: Int, active: Int, attention: Int) {
+    let tasks = (try? AgentIOSFileSelfEvolutionTaskStore().list(limit: 500)) ?? []
+    let health = AgentIOSSelfEvolutionHealthAnalyzer.summarize(
+      tasks: tasks,
+      nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    )
+    return (health.waitingReview, health.activeTasks, health.attentionTasks)
+  }
+
+  private var selfEvolutionTint: Color {
+    if selfEvolutionSummary.attention > 0 { return .orange }
+    if selfEvolutionSummary.active > 0 { return .blue }
+    return .purple
+  }
+
+  private var selfEvolutionBadge: String {
+    String(format: t("cc_evolution_candidate_count", "%d to review"), selfEvolutionSummary.review)
   }
 
   private var intelligenceResourceCount: Int {
