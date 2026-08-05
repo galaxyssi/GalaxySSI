@@ -737,6 +737,7 @@ private struct AgentInfoCard: View {
 
 struct DiscoverView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
   @State private var myQRCodePresented = false
 
   var body: some View {
@@ -855,9 +856,9 @@ struct DiscoverView: View {
             }
             SignalASIAndroidMenuLink(
               title: t("cc_system_status_title", "System Status"),
-              subtitle: t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
-              systemImage: "info.circle",
-              tint: .signalASIAccent
+              subtitle: systemStatusSubtitle,
+              systemImage: systemStatusIcon,
+              tint: systemStatusTint
             ) {
               SignalASISystemStatusView()
             }
@@ -959,9 +960,9 @@ struct DiscoverView: View {
             }
             SignalASIAndroidMenuLink(
               title: t("cc_phone_title", "Phone Capabilities"),
-              subtitle: t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"),
+              subtitle: phoneCapabilitiesSummary,
               systemImage: "iphone",
-              tint: .signalASIAccent
+              tint: nativeToolSummary.available > 0 ? .signalASIAccent : .orange
             ) {
               SignalASIPhoneCapabilitiesView()
             }
@@ -986,6 +987,53 @@ struct DiscoverView: View {
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var nativeToolSummary: (total: Int, available: Int, needingAttention: Int) {
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let available = tools.filter {
+      $0.risk != .blocked && $0.availability.status == .available
+    }.count
+    return (tools.count, available, max(tools.count - available, 0))
+  }
+
+  private var phoneCapabilitiesSummary: String {
+    String(
+      format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
+      nativeToolSummary.available,
+      nativeToolSummary.needingAttention
+    )
+  }
+
+  private var systemStatusIcon: String {
+    systemStatusNeedsAttention ? "exclamationmark.triangle" : "checkmark.shield"
+  }
+
+  private var systemStatusTint: Color {
+    systemStatusNeedsAttention ? .orange : .signalASIAccent
+  }
+
+  private var systemStatusSubtitle: String {
+    systemStatusNeedsAttention
+      ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+      : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available")
+  }
+
+  private var systemStatusNeedsAttention: Bool {
+    store.agentSafetySettings.executionPaused ||
+      !systemStatusLinkReady ||
+      systemStatusAvailableResourceCount == 0
+  }
+
+  private var systemStatusLinkReady: Bool {
+    store.serverLinks.contains(where: \.paired) &&
+      SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
+  }
+
+  private var systemStatusAvailableResourceCount: Int {
+    store.cloudModelContacts.count +
+      store.serverLinks.filter(\.paired).count +
+      store.customDeviceConnectors.filter(\.enabled).count
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
