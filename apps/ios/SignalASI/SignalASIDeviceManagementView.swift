@@ -119,6 +119,15 @@ struct DeviceManagementView: View {
               HomeAssistantSettingsView()
             }
             DeviceManagementNavigationRow(
+              title: t("signalasi.device.home_assistant_token", "Access Token"),
+              subtitle: homeAssistantTokenSubtitle,
+              systemImage: "key",
+              tint: .teal,
+              badge: t("signalasi.common.edit", "Edit")
+            ) {
+              HomeAssistantSettingsView()
+            }
+            DeviceManagementNavigationRow(
               title: t("signalasi.device.home_assistant_default_entity", "Default Entity"),
               subtitle: store.homeAssistantSettings.defaultEntityId.ifBlank(
                 t("signalasi.device.home_assistant_default_entity_subtitle", "Example: light.living_room")
@@ -177,6 +186,12 @@ struct DeviceManagementView: View {
     store.homeAssistantSettings.configured
       ? t("signalasi.device.home_assistant_configured", "Configured")
       : t("signalasi.device.home_assistant_not_configured", "Not configured")
+  }
+
+  private var homeAssistantTokenSubtitle: String {
+    store.homeAssistantSettings.maskedAccessToken.ifBlank(
+      t("signalasi.device.home_assistant_token_subtitle", "Long-lived access token stored on this device")
+    )
   }
 
   private var remoteControlStatusLabel: String {
