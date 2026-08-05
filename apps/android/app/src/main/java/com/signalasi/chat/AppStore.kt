@@ -741,21 +741,30 @@ object AppStore {
                 ?: JSONArray(link?.accessScopes?.sorted().orEmpty())
         )
         contact.put("agent_kind", agent.optString("kind", contact.optString("agent_kind", "custom-cli")))
-        val adapter = agent.optJSONObject("adapter") ?: JSONObject()
-        val capabilities = agent.optJSONArray("capabilities") ?: adapter.optJSONArray("capabilities") ?: JSONArray()
-        val protocols = agent.optJSONArray("protocols") ?: adapter.optJSONArray("protocols") ?: JSONArray()
-        val protocolFeatures = adapter.optJSONArray("features") ?: JSONArray()
-        contact.put("adapter", adapter)
-        contact.put("capabilities", capabilities)
+        val adapter = agent.optJSONObject("adapter")
+        if (adapter != null) {
+            contact.put("adapter", JSONObject(adapter.toString()))
+        }
+        val capabilities = agent.optJSONArray("capabilities")
+            ?: adapter?.optJSONArray("capabilities")
+        if (capabilities != null) {
+            contact.put("capabilities", JSONArray(capabilities.toString()))
+            contact.put("capabilities_hash", capabilities.toString().hashCode().toUInt().toString(16))
+        }
         agent.optJSONObject("provider_profile")?.let { profile ->
             contact.put("provider_profile", JSONObject(profile.toString()))
         }
-        contact.put("protocols", protocols)
-        contact.put("protocol_version", protocols.optString(0, "1.0"))
-        contact.put("protocol_min_version", protocols.optString(protocols.length() - 1, "1.0"))
-        contact.put("protocol_max_version", protocols.optString(0, "1.0"))
-        contact.put("protocol_features", protocolFeatures)
-        contact.put("capabilities_hash", capabilities.toString().hashCode().toUInt().toString(16))
+        val protocols = agent.optJSONArray("protocols")
+            ?: adapter?.optJSONArray("protocols")
+        if (protocols != null) {
+            contact.put("protocols", JSONArray(protocols.toString()))
+            contact.put("protocol_version", protocols.optString(0, "1.0"))
+            contact.put("protocol_min_version", protocols.optString(protocols.length() - 1, "1.0"))
+            contact.put("protocol_max_version", protocols.optString(0, "1.0"))
+        }
+        adapter?.optJSONArray("features")?.let { protocolFeatures ->
+            contact.put("protocol_features", JSONArray(protocolFeatures.toString()))
+        }
         contact.put("setup_status", agent.optString("status", "needs_setup"))
         contact.put("setup_detail", agent.optString("detail"))
         contact.put("setup_next_step", agent.optString("setup"))

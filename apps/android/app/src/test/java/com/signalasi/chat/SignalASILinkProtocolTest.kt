@@ -31,6 +31,28 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun capabilityManifestIsRequestedOnlyUntilCurrentVersionIsCached() {
+        val link = SignalASILinkProtocol.ServerLink(
+            desktopId = "desktop-test",
+            desktopName = "Test PC",
+            desktopFingerprint = "a".repeat(64),
+            signalName = "desktop-test",
+            routes = SignalASILinkProtocol.Routes(
+                SignalASILinkProtocol.newRouteId(),
+                SignalASILinkProtocol.newRouteId()
+            ),
+            paired = true
+        )
+
+        assertTrue(SignalASILinkProtocol.needsCapabilityManifest(link))
+        assertTrue(
+            !SignalASILinkProtocol.needsCapabilityManifest(
+                link.copy(capabilityManifestVersion = SignalASILinkProtocol.CAPABILITY_MANIFEST_VERSION)
+            )
+        )
+    }
+
+    @Test
     fun rotatingRelationshipDropsOnlyMessagesForItsOldTopics() {
         val oldRoutes = SignalASILinkProtocol.Routes(
             SignalASILinkProtocol.newRouteId(),

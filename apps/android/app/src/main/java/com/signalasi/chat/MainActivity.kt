@@ -18433,6 +18433,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     })
 
     private fun showCapabilityLibraryPage(selectedKind: AgentCapabilityCatalogKind) {
+        SignalASIMqttClient.requestCapabilityManifestRefresh()
         showFeaturePage(getString(R.string.agent_capability_library_title))
         setFeatureBackAction()
         val items = marketplaceItems()
