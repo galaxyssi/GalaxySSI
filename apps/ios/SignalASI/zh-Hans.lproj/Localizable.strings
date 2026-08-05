@@ -240,6 +240,14 @@
 "signalasi.capability.home_assistant" = "Home Assistant";
 "signalasi.capability.media_playback" = "媒体播放";
 "signalasi.capability.media_transcode" = "媒体转码";
+"cc_app_tools_title" = "应用与工具";
+"cc_adapters_available" = "%d 个应用适配器可用";
+"cc_adapters_available_subtitle" = "专项适配器会选择最安全的原生或屏幕执行路径";
+"cc_accessibility_executor_title" = "通用应用执行器";
+"cc_accessibility_executor_subtitle" = "理解界面并执行经过验证的点击、输入与滚动动作";
+"cc_manage_adapters_title" = "管理应用适配器";
+"cc_manage_adapters_subtitle" = "权限、数据边界与每个应用的确认规则";
+"cc_section_app_services" = "应用与服务";
 "cc_routing_metric_cloud" = "云端";
 "cc_routing_metric_local" = "本地";
 "cc_routing_enabled" = "自动路由已启用";
