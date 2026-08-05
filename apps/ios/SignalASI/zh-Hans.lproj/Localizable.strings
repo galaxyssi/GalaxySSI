@@ -2897,6 +2897,7 @@
 "voice_asr_local_title" = "本机 whisper.cpp";
 "voice_asr_local_subtitle" = "语音始终留在本机，可选择已安装模型或从可信来源下载。";
 "voice_asr_model_section" = "Whisper 模型";
+"voice_asr_model_remove" = "删除模型";
 "voice_asr_runtime_mode_section" = "运行策略";
 "voice_asr_runtime_mode_title" = "模型选择";
 "voice_asr_runtime_mode_manual" = "已选模型";
