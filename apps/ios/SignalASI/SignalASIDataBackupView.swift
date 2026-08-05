@@ -170,7 +170,7 @@ struct SignalASIDataBackupView: View {
   private var storageSubtitle: String {
     let subtitle = t("cc_storage_subtitle", "Knowledge, models, media, temporary files, and databases")
     guard freeStorageBytes > 0 else { return subtitle }
-    return "\(subtitle) · \(formatBytes(freeStorageBytes))"
+    return "\(subtitle) / \(formatBytes(freeStorageBytes))"
   }
 
   private var canUseBackupPassword: Bool {
@@ -183,9 +183,9 @@ struct SignalASIDataBackupView: View {
       SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_file", "Backup file"),
         subtitle: String(
-          format: t("signalasi.data_backup.import_file_subtitle", "%@ · exported %@ · %@"),
+          format: t("signalasi.data_backup.import_file_subtitle", "%@ / exported %@ / %@"),
           preview.fileName,
-          preview.exportedAtText,
+          preview.exportedAtText(language: interfaceLanguage),
           preview.platformLabel
         ),
         systemImage: "doc.text",
@@ -205,7 +205,7 @@ struct SignalASIDataBackupView: View {
       SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_people", "Contacts & requests"),
         subtitle: String(
-          format: t("signalasi.data_backup.import_people_subtitle", "%d contacts · %d friend requests"),
+          format: t("signalasi.data_backup.import_people_subtitle", "%d contacts / %d friend requests"),
           preview.contactCount,
           preview.friendRequestCount
         ),
@@ -216,7 +216,7 @@ struct SignalASIDataBackupView: View {
       SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_messages", "Chat history"),
         subtitle: String(
-          format: t("signalasi.data_backup.import_messages_subtitle", "%d chats · %d messages"),
+          format: t("signalasi.data_backup.import_messages_subtitle", "%d chats / %d messages"),
           preview.messageThreadCount,
           preview.messageCount
         ),
@@ -229,7 +229,7 @@ struct SignalASIDataBackupView: View {
         subtitle: String(
           format: t(
             "signalasi.data_backup.import_agent_data_subtitle",
-            "%d memories · %d knowledge items · %d tasks · %d sessions"
+            "%d memories / %d knowledge items / %d tasks / %d sessions"
           ),
           preview.memoryCount,
           preview.knowledgeCount,
@@ -245,7 +245,7 @@ struct SignalASIDataBackupView: View {
         subtitle: String(
           format: t(
             "signalasi.data_backup.import_configuration_subtitle",
-            "%d server links · %d devices · %d cloud secrets"
+            "%d server links / %d devices / %d cloud secrets"
           ),
           preview.serverLinkCount,
           preview.customDeviceCount,
@@ -530,9 +530,14 @@ private struct SignalASIBackupImportPreview {
     payload.platform.isEmpty ? "SignalASI" : payload.platform.uppercased()
   }
 
-  var exportedAtText: String {
+  func exportedAtText(language: String) -> String {
     let exportedAt = Date(timeIntervalSince1970: TimeInterval(payload.exportedAt) / 1_000)
-    return DateFormatter.localizedString(from: exportedAt, dateStyle: .medium, timeStyle: .short)
+    let resolved = LanguagePolicySettings.resolveInterface(language)
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: resolved == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: exportedAt)
   }
 
   func identitySubtitle(included: String, profileOnly: String) -> String {
