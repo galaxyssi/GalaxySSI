@@ -33,7 +33,7 @@ struct RootView: View {
   }
 
   var body: some View {
-    AgentHomeView()
+    SignalASIMainTabView()
       .accentColor(.signalASIAccent)
       .signalASIInterfaceLanguage(store.languagePolicy.interfaceLanguage)
       .id(interfaceLanguage)
