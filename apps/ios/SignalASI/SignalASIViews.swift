@@ -887,17 +887,17 @@ struct VoiceSettingsView: View {
   var body: some View {
     NavigationView {
       Form {
-        Section("Voice") {
-          Toggle("Wake phrase", isOn: binding(\.wakeListeningEnabled))
-          Toggle("Speech recognition", isOn: binding(\.speechRecognitionEnabled))
-          Toggle("Text to speech", isOn: binding(\.textToSpeechEnabled))
-          Toggle("Auto-send transcripts", isOn: binding(\.autoSendTranscripts))
-          Toggle("Speak Replies", isOn: binding(\.speakReplies))
-          TextField("Locale", text: Binding(
+        Section(t("voice_settings_section_voice", "Voice")) {
+          Toggle(t("voice_wake_phrase", "Wake phrase"), isOn: binding(\.wakeListeningEnabled))
+          Toggle(t("signalasi.voice.speech_recognition", "Speech recognition"), isOn: binding(\.speechRecognitionEnabled))
+          Toggle(t("signalasi.voice.text_to_speech", "Text to speech"), isOn: binding(\.textToSpeechEnabled))
+          Toggle(t("signalasi.voice.auto_send_transcripts", "Auto-send transcripts"), isOn: binding(\.autoSendTranscripts))
+          Toggle(t("voice_speak_replies", "Speak Replies"), isOn: binding(\.speakReplies))
+          TextField(t("voice_locale", "Locale"), text: Binding(
             get: { store.voiceSettings.preferredLocaleIdentifier },
             set: { value in store.updateVoiceSettings { $0.preferredLocaleIdentifier = value } }
           ))
-          Picker("Wake Engine", selection: Binding(
+          Picker(t("voice_wake_engine", "Wake Engine"), selection: Binding(
             get: { store.voiceSettings.wakeProvider },
             set: { value in store.updateVoiceSettings { $0.wakeProvider = value } }
           )) {
@@ -905,7 +905,7 @@ struct VoiceSettingsView: View {
               Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
-          Picker("ASR Provider", selection: Binding(
+          Picker(t("voice_asr_provider", "ASR Provider"), selection: Binding(
             get: { store.voiceSettings.asrProvider },
             set: { value in store.updateVoiceSettings { $0.asrProvider = value } }
           )) {
@@ -915,13 +915,13 @@ struct VoiceSettingsView: View {
           }
           NavigationLink(destination: VoiceWhisperModelSettingsView()) {
             HStack {
-              Text("ASR Model")
+              Text(t("voice_asr_model", "ASR Model"))
               Spacer()
               Text(VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName)
                 .foregroundColor(.secondary)
             }
           }
-          Picker("Model selection", selection: Binding(
+          Picker(t("voice_model_selection", "Model selection"), selection: Binding(
             get: { store.voiceSettings.asrRuntimeMode },
             set: { value in store.updateVoiceSettings { $0.asrRuntimeMode = value } }
           )) {
@@ -929,7 +929,7 @@ struct VoiceSettingsView: View {
               Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
             }
           }
-          Picker("TTS Provider", selection: Binding(
+          Picker(t("voice_tts_provider", "TTS Provider"), selection: Binding(
             get: { store.voiceSettings.ttsProvider },
             set: { value in store.updateVoiceSettings { $0.ttsProvider = value } }
           )) {
@@ -937,19 +937,19 @@ struct VoiceSettingsView: View {
               Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
             }
           }
-          TextField("Microsoft Voice", text: Binding(
+          TextField(t("voice_microsoft_voice", "Microsoft Voice"), text: Binding(
             get: { store.voiceSettings.microsoftVoice },
             set: { value in store.updateVoiceSettings { $0.microsoftVoice = value } }
           ))
         }
-        Section("Wake") {
-          TextField("Wake Words", text: Binding(
+        Section(t("voice_settings_section_wake", "Wake")) {
+          TextField(t("voice_wake_words", "Wake Words"), text: Binding(
             get: { store.voiceSettings.wakeWordsText },
             set: { value in store.updateVoiceSettings { $0.wakeWords = VoiceSettings.wakeWords(from: value) } }
           ))
           VStack(alignment: .leading, spacing: 6) {
             HStack {
-              Text("Wake Threshold")
+              Text(t("voice_wake_threshold", "Wake Threshold"))
               Spacer()
               Text(store.voiceSettings.wakeThreshold.formatted(.number.precision(.fractionLength(2))))
                 .foregroundColor(.secondary)
@@ -962,13 +962,13 @@ struct VoiceSettingsView: View {
               in: 0.01...0.99
             )
           }
-          TextField("Welcome Text", text: Binding(
+          TextField(t("voice_welcome_text", "Welcome Text"), text: Binding(
             get: { store.voiceSettings.welcomeText },
             set: { value in store.updateVoiceSettings { $0.welcomeText = value } }
           ))
         }
-        Section("Routing") {
-          Picker("Voice Routing", selection: Binding(
+        Section(t("voice_settings_section_routing", "Routing")) {
+          Picker(t("voice_routing_mode", "Voice Routing"), selection: Binding(
             get: { store.voiceSettings.routingMode },
             set: { value in store.updateVoiceSettings { $0.routingMode = value } }
           )) {
@@ -976,7 +976,7 @@ struct VoiceSettingsView: View {
               Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
             }
           }
-          Picker("Default Target", selection: Binding(
+          Picker(t("voice_default_target", "Default Target"), selection: Binding(
             get: { store.voiceSettings.targetContactId },
             set: { value in store.updateVoiceSettings { $0.targetContactId = value } }
           )) {
@@ -985,19 +985,19 @@ struct VoiceSettingsView: View {
             }
           }
         }
-        Section("Recorder") {
+        Section(t("voice_settings_section_recorder", "Recorder")) {
           if speech.isRecording {
-            Text(speech.transcript.ifBlank(t("Listening...", "Listening...")))
+            Text(speech.transcript.ifBlank(t("voice_listening", "Listening...")))
             Button(role: .destructive) {
               speech.stop()
             } label: {
-              Label("Stop", systemImage: "stop.circle")
+              Label(t("voice_stop", "Stop"), systemImage: "stop.circle")
             }
           } else {
             Button {
               Task { await startRecording() }
             } label: {
-              Label("Hold to Talk", systemImage: "mic.circle")
+              Label(t("signalasi.voice.recorder", "Hold to Talk"), systemImage: "mic.circle")
             }
           }
           if !permissionStatus.isEmpty {
@@ -1007,7 +1007,7 @@ struct VoiceSettingsView: View {
           }
         }
       }
-      .navigationTitle(t("Voice", "Voice"))
+      .navigationTitle(t("voice_settings_section_voice", "Voice"))
       .onAppear {
         coordinator.onIncomingMessage = handleIncomingVoiceReply
       }

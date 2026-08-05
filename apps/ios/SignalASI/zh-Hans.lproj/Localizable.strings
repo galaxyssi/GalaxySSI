@@ -3132,3 +3132,16 @@
 "signalasi.voice.permission_missing" = "缺少麦克风或语音识别权限。";
 "signalasi.voice.speech_disabled" = "语音识别已关闭。";
 "signalasi.voice.speech_unavailable" = "语音识别无法启动。";
+"signalasi.common.send" = "发送";
+"signalasi.settings.fingerprint" = "指纹";
+"signalasi.status.deleted" = "已删除";
+"voice_settings_section_voice" = "语音";
+"voice_settings_section_wake" = "唤醒";
+"voice_settings_section_routing" = "路由";
+"voice_settings_section_recorder" = "录音";
+"voice_wake_phrase" = "唤醒短语";
+"voice_locale" = "语言区域";
+"voice_asr_model" = "ASR 模型";
+"voice_model_selection" = "模型选择";
+"voice_listening" = "正在聆听...";
+"voice_stop" = "停止";
