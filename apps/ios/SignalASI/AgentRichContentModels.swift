@@ -54,7 +54,7 @@ struct AgentRichAction: Codable, Equatable, Identifiable {
     self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)).ifBlank("action")
     self.label = String(label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
     self.verb = String(verb.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(80))
-    self.value = String(value.prefix(8_000))
+    self.value = String(value.prefix(24_000))
     self.style = String(style.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)).ifBlank("default")
   }
 
