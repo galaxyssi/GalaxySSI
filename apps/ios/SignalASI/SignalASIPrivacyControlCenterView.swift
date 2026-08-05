@@ -105,7 +105,7 @@ struct SignalASIPrivacyControlCenterView: View {
         tint: .purple,
         badge: t("common_view", "View")
       ) {
-        OnDeviceAgentPermissionsView()
+        SignalASIPermissionsAuditView()
       }
     }
   }
