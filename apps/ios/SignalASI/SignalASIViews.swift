@@ -200,6 +200,7 @@ struct ConversationView: View {
   @State private var photoPickerPresented = false
   @State private var attachmentError = ""
   @State private var showingDeleteChatConfirmation = false
+  @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
   var contactId: String
 
@@ -225,6 +226,13 @@ struct ConversationView: View {
     case .local:
       return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
     }
+  }
+
+  private var cloudModelHeaderText: String {
+    if let selected = contact.selectedCloudModel {
+      return selected.displayName.ifBlank(selected.modelId)
+    }
+    return contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud model"))
   }
 
   var body: some View {
@@ -362,7 +370,14 @@ struct ConversationView: View {
       }
     }
     .sheet(item: $selectedMessageForDetails) { message in
-      MessageDetailView(message: message, contact: contact)
+      SignalASIMessageActionsView(message: message, contact: contact)
+    }
+    .sheet(isPresented: $cloudModelSwitchPresented) {
+      NavigationView {
+        SignalASICloudModelSwitchView(contactId: contact.id, dismissAfterSelection: true)
+          .environmentObject(store)
+      }
+      .navigationViewStyle(StackNavigationViewStyle())
     }
   }
 
@@ -386,6 +401,26 @@ struct ConversationView: View {
         }
       }
       Spacer(minLength: 8)
+      if contact.deliveryMode == .cloudAPI {
+        Button {
+          cloudModelSwitchPresented = true
+        } label: {
+          HStack(spacing: 5) {
+            Image(systemName: "cloud.fill")
+              .font(.system(size: 13, weight: .semibold))
+            Text(cloudModelHeaderText)
+              .font(.system(size: 12, weight: .semibold))
+              .lineLimit(1)
+              .minimumScaleFactor(0.72)
+          }
+          .foregroundColor(.signalASIInsightText)
+          .padding(.horizontal, 8)
+          .frame(maxWidth: 126, minHeight: 32)
+          .background(Color.signalASIInsightBackground)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+      }
       Button(role: .destructive) {
         showingDeleteChatConfirmation = true
       } label: {
@@ -925,8 +960,8 @@ struct PairingView: View {
                 .foregroundColor(.secondary)
               Text(
                 pendingPairing.access.fullDesktopExecutor
-                  ? t("signalasi.pairing.access_full", "Desktop executor")
-                  : t("signalasi.pairing.access_restricted", "Restricted desktop access")
+                  ? t("signalasi.pairing.access_full", "Desktop Executor")
+                  : t("signalasi.pairing.access_restricted", "Restricted Desktop Access")
               )
               .font(.caption)
               .foregroundColor(.secondary)
@@ -1350,6 +1385,9 @@ struct SettingsView: View {
           NavigationLink(destination: DiscoverView()) {
             Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
           }
+          NavigationLink(destination: SignalASIGeneralControlCenterView()) {
+            Label(t("cc_general_page_title", "General"), systemImage: "gearshape")
+          }
           NavigationLink(destination: SignalASIAppServicesView()) {
             Label(t("cc_app_services_page_title", "Apps & Services"), systemImage: "square.grid.2x2")
           }
@@ -1369,6 +1407,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.language_policy.title", "Voice & Language"))
               Text(languagePolicySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIVoiceControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_voice_title", "Voice & Interaction"))
+              Text(t("signalasi.discover.voice.subtitle", "Wake, transcription and local voice models"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1393,6 +1439,22 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIGlobalAgentControlView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_global_agent_title", "Global Super Agent"))
+              Text(globalAgentSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIPermissionsAuditView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_permissions_title", "Permissions & Audit"))
+              Text(t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIExecutionPolicyView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_execution_policy_title", "Execution Policy"))
@@ -1413,6 +1475,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.execution_policy", "Execution Policy"))
               Text("\(t(store.agentSafetySettings.taskExecutionMode.displayTitle, store.agentSafetySettings.taskExecutionMode.displayTitle)) / \(t(store.agentSafetySettings.permissionMode.displayTitle, store.agentSafetySettings.permissionMode.displayTitle))")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIMemoryControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_memory_title", "Memory & Personalization"))
+              Text(memoryControlSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1477,6 +1547,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.native_tool_catalog.title", "Native Tools"))
               Text(nativeToolsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIMcpControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("agent_mcp_title", "MCP"))
+              Text(mcpSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1558,6 +1636,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIOnDeviceRuntimeView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_runtime_title", "On-device Linux Runtime"))
+              Text(t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
@@ -1597,7 +1683,7 @@ struct SettingsView: View {
         }
         Section(t("signalasi.settings.cloud_models", "Cloud Models")) {
           ForEach(store.cloudModelContacts) { contact in
-            NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
+            NavigationLink(destination: SignalASICloudModelSwitchView(contactId: contact.id)) {
               VStack(alignment: .leading) {
                 Text(contact.displayName)
                 Text(contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model"))
@@ -1680,6 +1766,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.privacy", "Privacy")) {
+          NavigationLink(destination: SignalASIPrivacyControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_privacy_dashboard_title", "Privacy Dashboard"))
+              Text(t("cc_privacy_dashboard_hero_subtitle", "A metadata-only audit of data sent to cloud models and trusted Desktop Agents"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIPrivacyDashboardView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.model_data_sharing", "Model Data Sharing"))
@@ -1906,6 +2000,14 @@ struct SettingsView: View {
     )
   }
 
+  private var memoryControlSummary: String {
+    let snapshot = store.agentMemorySnapshot()
+    return String(
+      format: t("cc_memory_subtitle", "%d long-term memories / user controlled"),
+      snapshot.activeCount
+    )
+  }
+
   private var knowledgeSummary: String {
     let stats = store.agentKnowledgeStats
     return String(
@@ -1914,6 +2016,17 @@ struct SettingsView: View {
       stats.sourceCount,
       store.agentKnowledgeAccessAudit.count
     )
+  }
+
+  private var globalAgentSummary: String {
+    let settings = store.globalAgentSettings
+    let status = settings.enabled
+      ? t("cc_global_understanding_active", "Global understanding active")
+      : t("signalasi.status.paused", "Paused")
+    let cognition = settings.allowCloudCognition
+      ? t("cc_global_cloud_allowed", "Cloud cognition")
+      : t("cc_global_local_first", "Local first")
+    return "\(status) / \(cognition) / \(settings.dailyBackgroundModelCallBudget) calls"
   }
 
   private var recentTaskSummary: String {
@@ -1957,6 +2070,20 @@ struct SettingsView: View {
       format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
       tools.count,
       available
+    )
+  }
+
+  private var mcpSummary: String {
+    let connections = AgentMcpRegistry(FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())).list()
+    let ready = connections.filter {
+      $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+    }.count
+    let recommended = AgentDefaultCapabilityCatalog.mcpEntries.count
+    return String(
+      format: t("signalasi.mcp.summary", "%d installed / %d ready / %d recommended"),
+      connections.count,
+      ready,
+      recommended
     )
   }
 
@@ -2084,222 +2211,6 @@ struct AgentSafetySettingsView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-struct AgentTaskBudgetSettingsView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @EnvironmentObject private var store: SignalASIStore
-
-  var body: some View {
-    Form {
-      Section("Budget Profile") {
-        Picker("Profile", selection: profileBinding) {
-          ForEach(AgentTaskBudgetProfile.allCases) { profile in
-            Text(t(profile.displayName, profile.displayName)).tag(profile)
-          }
-        }
-        Text(t(store.agentTaskBudget.profile.detail, store.agentTaskBudget.profile.detail))
-          .font(.caption)
-          .foregroundColor(.secondary)
-      }
-      Section("Per-Task Limits") {
-        budgetTextField(
-          "Active Minutes",
-          text: activeMinutesBinding,
-          detail: "0 for unlimited. Waiting for approval does not count.",
-          keyboard: .decimalPad
-        )
-        budgetTextField(
-          "Reported Cost USD",
-          text: costDollarsBinding,
-          detail: "0 for unlimited paid model usage.",
-          keyboard: .decimalPad
-        )
-        budgetTextField(
-          "Input Tokens",
-          text: inputTokensBinding,
-          detail: "Maximum context and prompt tokens."
-        )
-        budgetTextField(
-          "Output Tokens",
-          text: outputTokensBinding,
-          detail: "Maximum generated tokens across attempts."
-        )
-        budgetTextField(
-          "Network MiB",
-          text: networkMibBinding,
-          detail: "Maximum encrypted payload, attachment, and provider traffic."
-        )
-        budgetTextField(
-          "Minimum Battery",
-          text: batteryPercentBinding,
-          detail: "Pause new work below this percentage unless charging."
-        )
-        budgetTextField(
-          "Working Memory MiB",
-          text: memoryMibBinding,
-          detail: "0 lets iOS manage the working set."
-        )
-      }
-      Section("Resource Access") {
-        Picker("Network Policy", selection: networkPolicyBinding) {
-          ForEach(AgentTaskNetworkPolicy.allCases) { policy in
-            Text(t(policy.displayName, policy.displayName)).tag(policy)
-          }
-        }
-        Toggle("Cloud Resources", isOn: boolBinding(\.allowCloud))
-        Toggle("Paid Providers", isOn: boolBinding(\.allowPaidProviders))
-      }
-    }
-    .navigationTitle(t("Task Budget", "Task Budget"))
-    .navigationBarTitleDisplayMode(.inline)
-  }
-
-  private var profileBinding: Binding<AgentTaskBudgetProfile> {
-    Binding(
-      get: { store.agentTaskBudget.profile },
-      set: { store.selectAgentTaskBudgetProfile($0) }
-    )
-  }
-
-  private var networkPolicyBinding: Binding<AgentTaskNetworkPolicy> {
-    Binding(
-      get: { store.agentTaskBudget.networkPolicy },
-      set: { value in store.updateAgentTaskBudget { $0.networkPolicy = value } }
-    )
-  }
-
-  private func boolBinding(_ keyPath: WritableKeyPath<AgentTaskBudget, Bool>) -> Binding<Bool> {
-    Binding(
-      get: { store.agentTaskBudget[keyPath: keyPath] },
-      set: { value in store.updateAgentTaskBudget { $0[keyPath: keyPath] = value } }
-    )
-  }
-
-  private var activeMinutesBinding: Binding<String> {
-    Binding(
-      get: {
-        let seconds = store.agentTaskBudget.maxElapsedSeconds
-        guard seconds > 0 else { return "0" }
-        return Self.decimalString(Double(seconds) / 60.0, maximumFractionDigits: seconds % 60 == 0 ? 0 : 2)
-      },
-      set: { raw in
-        guard let value = Self.parseDouble(raw), value >= 0 else { return }
-        store.updateAgentTaskBudget { $0.maxElapsedSeconds = Int64(value * 60.0) }
-      }
-    )
-  }
-
-  private var costDollarsBinding: Binding<String> {
-    Binding(
-      get: {
-        let micros = store.agentTaskBudget.maxCostMicros
-        guard micros > 0 else { return "0" }
-        return Self.decimalString(Double(micros) / 1_000_000.0, maximumFractionDigits: 6)
-      },
-      set: { raw in
-        guard let value = Self.parseDouble(raw), value >= 0 else { return }
-        store.updateAgentTaskBudget { $0.maxCostMicros = Int64(value * 1_000_000.0) }
-      }
-    )
-  }
-
-  private var inputTokensBinding: Binding<String> {
-    int64Binding(\.maxInputTokens)
-  }
-
-  private var outputTokensBinding: Binding<String> {
-    int64Binding(\.maxOutputTokens)
-  }
-
-  private var networkMibBinding: Binding<String> {
-    mibBinding(\.maxNetworkBytes)
-  }
-
-  private var memoryMibBinding: Binding<String> {
-    mibBinding(\.maxMemoryBytes)
-  }
-
-  private var batteryPercentBinding: Binding<String> {
-    Binding(
-      get: { String(store.agentTaskBudget.minimumBatteryPercent) },
-      set: { raw in
-        guard let value = Self.parseInt(raw) else { return }
-        store.updateAgentTaskBudget { $0.minimumBatteryPercent = value }
-      }
-    )
-  }
-
-  private func int64Binding(_ keyPath: WritableKeyPath<AgentTaskBudget, Int64>) -> Binding<String> {
-    Binding(
-      get: { String(store.agentTaskBudget[keyPath: keyPath]) },
-      set: { raw in
-        guard let value = Self.parseInt64(raw) else { return }
-        store.updateAgentTaskBudget { $0[keyPath: keyPath] = value }
-      }
-    )
-  }
-
-  private func mibBinding(_ keyPath: WritableKeyPath<AgentTaskBudget, Int64>) -> Binding<String> {
-    Binding(
-      get: {
-        let bytes = store.agentTaskBudget[keyPath: keyPath]
-        return bytes <= 0 ? "0" : String(bytes / AgentTaskBudget.mib)
-      },
-      set: { raw in
-        guard let value = Self.parseInt64(raw) else { return }
-        store.updateAgentTaskBudget {
-          $0[keyPath: keyPath] = value > Int64.max / AgentTaskBudget.mib ? Int64.max : value * AgentTaskBudget.mib
-        }
-      }
-    )
-  }
-
-  private func budgetTextField(
-    _ title: String,
-    text: Binding<String>,
-    detail: String,
-    keyboard: UIKeyboardType = .numberPad
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      TextField(t(title, title), text: text)
-        .keyboardType(keyboard)
-      Text(t(detail, detail))
-        .font(.caption)
-        .foregroundColor(.secondary)
-    }
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-
-  private static func parseDouble(_ raw: String) -> Double? {
-    let value = raw
-      .replacingOccurrences(of: ",", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : Double(value)
-  }
-
-  private static func parseInt64(_ raw: String) -> Int64? {
-    let value = raw
-      .replacingOccurrences(of: ",", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : Int64(value)
-  }
-
-  private static func parseInt(_ raw: String) -> Int? {
-    parseInt64(raw).map(Int.init)
-  }
-
-  private static func decimalString(_ value: Double, maximumFractionDigits: Int) -> String {
-    let formatter = NumberFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.minimumFractionDigits = 0
-    formatter.maximumFractionDigits = maximumFractionDigits
-    formatter.numberStyle = .decimal
-    return formatter.string(from: NSNumber(value: value)) ?? String(value)
   }
 }
 
@@ -2537,147 +2448,6 @@ struct HomeAssistantSettingsView: View {
       get: { store.homeAssistantSettings[keyPath: keyPath] },
       set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
     )
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-struct AgentModelPlannerSettingsView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @EnvironmentObject private var store: SignalASIStore
-
-  var body: some View {
-    Form {
-      Section("Planning Model") {
-        Toggle("Model-driven Planning", isOn: boolBinding(\.enabled))
-        Picker("Planning Model", selection: cloudContactBinding) {
-          Text("Automatic").tag("")
-          ForEach(store.cloudModelContacts) { contact in
-            Text(contact.displayName).tag(contact.id)
-          }
-          if selectedCloudContactMissing {
-            Text(String(format: t("Missing: %@", "Missing: %@"), store.modelPlannerSettings.cloudContactId)).tag(store.modelPlannerSettings.cloudContactId)
-          }
-        }
-        Text(plannerStatusDetail)
-          .font(.caption)
-          .foregroundColor(plannerNeedsModel ? .orange : .secondary)
-      }
-      Section("Replanning & Coordination") {
-        Toggle("Dynamic Replanning", isOn: boolBinding(\.dynamicReplanning))
-        stepper(
-          "Maximum Replans",
-          keyPath: \.maxReplans,
-          range: 1...AgentModelPlannerSettings.maximumReplans,
-          detail: "Bound autonomous recovery to plan revisions per task."
-        )
-        Toggle("Multi-Agent Coordination", isOn: boolBinding(\.multiAgentCoordination))
-      }
-      Section("Task Control") {
-        stepper(
-          "Maximum Actions",
-          keyPath: \.maxActions,
-          range: 1...AgentModelPlannerSettings.maximumActions,
-          detail: "Maximum validated actions per plan."
-        )
-        stepper(
-          "Maximum Tool Calls",
-          keyPath: \.maxToolCalls,
-          range: AgentModelPlannerSettings.minimumToolCalls...AgentModelPlannerSettings.maximumToolCalls,
-          detail: "Stop repeated or runaway tool execution."
-        )
-        stepper(
-          "Maximum Agent Hops",
-          keyPath: \.maxAgentHops,
-          range: 1...AgentModelPlannerSettings.maximumAgentHops,
-          detail: "Limit dependency levels in coordinated task graphs."
-        )
-        stepper(
-          "Maximum Loop Iterations",
-          keyPath: \.maxLoopIterations,
-          range: AgentModelPlannerSettings.minimumLoopIterations...AgentModelPlannerSettings.maximumLoopIterations,
-          detail: "Bound Plan, Act, Observe, and Replan cycles."
-        )
-        stepper(
-          "Maximum Phase Retries",
-          keyPath: \.maxPhaseRetries,
-          range: AgentModelPlannerSettings.minimumPhaseRetries...AgentModelPlannerSettings.maximumPhaseRetries,
-          detail: "Limit retries after failed actions or verification."
-        )
-        stepper(
-          "No-progress Recovery",
-          keyPath: \.noProgressTimeoutSeconds,
-          range: AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds...AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds,
-          detail: "Seconds without meaningful progress before recovery."
-        )
-      }
-      Section("Privacy Boundary") {
-        Toggle("Share Screen Text", isOn: boolBinding(\.shareScreenText))
-        Toggle("Share Agent Outputs with Planner", isOn: boolBinding(\.shareAgentOutputsWithPlanner))
-      }
-    }
-    .navigationTitle(t("Planning", "Planning"))
-    .navigationBarTitleDisplayMode(.inline)
-  }
-
-  private var plannerNeedsModel: Bool {
-    store.modelPlannerSettings.enabled && store.cloudModelContacts.isEmpty
-  }
-
-  private var selectedCloudContactMissing: Bool {
-    let selected = store.modelPlannerSettings.cloudContactId
-    guard !selected.isEmpty else { return false }
-    return !store.cloudModelContacts.contains { $0.id == selected }
-  }
-
-  private var plannerStatusDetail: String {
-    if !store.modelPlannerSettings.enabled {
-      return t("Fast local rules remain active; model planning is disabled.", "Fast local rules remain active; model planning is disabled.")
-    }
-    if store.cloudModelContacts.isEmpty {
-      return t("Model planning is enabled, but no ready cloud model is configured. Local fallback remains active.", "Model planning is enabled, but no ready cloud model is configured. Local fallback remains active.")
-    }
-    return t("A configured model can propose plans; iOS validates every action locally.", "A configured model can propose plans; iOS validates every action locally.")
-  }
-
-  private var cloudContactBinding: Binding<String> {
-    Binding(
-      get: { store.modelPlannerSettings.cloudContactId },
-      set: { value in store.updateModelPlannerSettings { $0.cloudContactId = value } }
-    )
-  }
-
-  private func boolBinding(_ keyPath: WritableKeyPath<AgentModelPlannerSettings, Bool>) -> Binding<Bool> {
-    Binding(
-      get: { store.modelPlannerSettings[keyPath: keyPath] },
-      set: { value in store.updateModelPlannerSettings { $0[keyPath: keyPath] = value } }
-    )
-  }
-
-  private func intBinding(
-    _ keyPath: WritableKeyPath<AgentModelPlannerSettings, Int>,
-    range: ClosedRange<Int>
-  ) -> Binding<Int> {
-    Binding(
-      get: { store.modelPlannerSettings[keyPath: keyPath] },
-      set: { value in store.updateModelPlannerSettings { $0[keyPath: keyPath] = max(range.lowerBound, min(value, range.upperBound)) } }
-    )
-  }
-
-  private func stepper(
-    _ title: String,
-    keyPath: WritableKeyPath<AgentModelPlannerSettings, Int>,
-    range: ClosedRange<Int>,
-    detail: String
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Stepper("\(t(title, title)): \(store.modelPlannerSettings[keyPath: keyPath])", value: intBinding(keyPath, range: range), in: range)
-      Text(t(detail, detail))
-        .font(.caption)
-        .foregroundColor(.secondary)
-    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
