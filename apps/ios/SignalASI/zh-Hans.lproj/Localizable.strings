@@ -960,6 +960,7 @@
 "signalasi.agent.unread" = "%d 条未读";
 "signalasi.agent.insight.ready" = "原生工具调用链路已就绪。";
 "signalasi.agent.insight.unread" = "你有 %d 条未读 Agent 消息。";
+"signalasi.agent.status" = "Agent";
 "signalasi.agent.safety" = "安全";
 "signalasi.discover.title" = "发现";
 "signalasi.discover.scan_title" = "扫一扫";
@@ -2709,6 +2710,7 @@
 "status_needs_setup" = "待配置";
 "common_off" = "关闭";
 "on_device_agent_status_paused" = "已暂停";
+"on_device_agent_status_running" = "运行中";
 "common_edit" = "编辑";
 "voice_settings_title" = "语音唤醒与 ASR/TTS";
 "voice_low_power_title" = "低功耗语音监听";
