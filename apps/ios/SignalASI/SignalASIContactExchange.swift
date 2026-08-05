@@ -10,6 +10,12 @@ enum SignalASIContactExchange {
   static let hermesContactType = "hermes_contact"
   static let verifyType = "signalasi_verify"
   static let version = 1
+  private static let agentContactTypes: Set<String> = [
+    "agent",
+    "agent_contact",
+    "signalasi_agent",
+    "signalasi_agent_contact"
+  ]
 
   static func makeContactQRText(
     profile: SignalASIProfile,
@@ -77,6 +83,9 @@ enum SignalASIContactExchange {
     }
     let signalASIId = object.string("signalasi_id")
       .ifBlank(object.string("hermes_id"))
+      .ifBlank(object.string("mobile_contact_id"))
+      .ifBlank(object.string("agent_id"))
+      .ifBlank(object.string("id"))
       .ifBlank("signalasi:\(fingerprint.prefix(16))")
     let mqttTopic = object.string("mqtt_topic")
       .ifBlank(object.string("mqtt_inbox_topic"))
@@ -85,7 +94,7 @@ enum SignalASIContactExchange {
     let requestType: String
     if type == verifyType {
       requestType = "hermes"
-    } else if type == "agent" || !object.string("agent_kind").isEmpty {
+    } else if isAgentQRCodeObject(object) {
       requestType = "agent"
     } else {
       requestType = object.string("contact_type").ifBlank("person")
@@ -99,17 +108,45 @@ enum SignalASIContactExchange {
       identityFingerprint: fingerprint,
       mqttTopic: mqttTopic,
       mqttInboxTopic: mqttTopic,
-      signalBundleRef: object.string("signal_bundle_ref"),
+      signalBundleRef: signalBundleReference(object),
       source: "qr",
       createdAt: now
     )
   }
 
   private static func isContactQRCodeObject(_ object: [String: Any]) -> Bool {
-    let type = object.string("type")
+    let type = normalized(object.string("type"))
     return [contactType, hermesContactType, verifyType].contains(type) ||
+      agentContactTypes.contains(type) ||
       !object.string("signalasi_id").isEmpty ||
-      !object.string("hermes_id").isEmpty
+      !object.string("hermes_id").isEmpty ||
+      isAgentQRCodeObject(object)
+  }
+
+  private static func isAgentQRCodeObject(_ object: [String: Any]) -> Bool {
+    let type = normalized(object.string("type"))
+    let contactType = normalized(object.string("contact_type"))
+    return agentContactTypes.contains(type) ||
+      contactType == "agent" ||
+      !object.string("agent_kind").isEmpty ||
+      !object.string("agent_id").isEmpty ||
+      !object.string("mobile_contact_id").isEmpty
+  }
+
+  private static func signalBundleReference(_ object: [String: Any]) -> String {
+    if !object.string("signal_bundle_ref").isEmpty {
+      return object.string("signal_bundle_ref")
+    }
+    guard let bundle = object["signal_bundle"] as? [String: Any] else {
+      return ""
+    }
+    return bundle.string("signal_bundle_ref")
+      .ifBlank(bundle.string("bundle_ref"))
+      .ifBlank(bundle.string("ref"))
+  }
+
+  private static func normalized(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
   private static func decodeQRCodeObject(_ contents: String, label: String) throws -> [String: Any] {
