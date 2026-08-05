@@ -559,6 +559,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_data_title", "Data & Backup"),
+              subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
+              systemImage: "externaldrive",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIDataBackupView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_execution_policy_title", "Execution Policy"),
               subtitle: t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."),
               systemImage: "checkmark.shield",
