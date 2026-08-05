@@ -606,7 +606,15 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     )
     trimIfNeeded(&eventContextsByRunId)
     lock.unlock()
-    emit(request: request, registration: item.registration, type: .agentConnected, sequence: 1)
+    emitAll(
+      request: request,
+      registration: item.registration,
+      events: [
+        (type: .runCreated, sequence: 1, payload: ["action_id": .string(item.action.id)]),
+        (type: .runStarted, sequence: 2, payload: [:]),
+        (type: .agentConnected, sequence: 3, payload: [:])
+      ]
+    )
     let result = delegate.execute(action: item.action, screen: item.screen)
     lock.lock()
     resultsByRunId[request.runId] = result
@@ -629,7 +637,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       request: request,
       registration: item.registration,
       type: awaitingResponse && sourceMessageId > 0 ? .waitingForDevice : (result.success ? .runCompleted : .runFailed),
-      sequence: 2,
+      sequence: 4,
       payload: [
         "action_id": .string(item.action.id),
         "success": .bool(result.success),
@@ -982,14 +990,47 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     append(event)
   }
 
+  private func emitAll(
+    request: AgentRunRequest,
+    registration: AgentRegistration,
+    events: [(type: AgentRunControlEventType, sequence: Int64, payload: AgentRunControlPayload)]
+  ) {
+    appendAll(events.map { item in
+      AgentRunControlEvent(
+        conversationId: request.conversationId,
+        messageId: request.messageId,
+        taskId: request.taskId,
+        runId: request.runId,
+        agentId: registration.agentId,
+        deviceId: registration.deviceId,
+        type: item.type,
+        sequence: item.sequence,
+        payload: item.payload
+      )
+    })
+  }
+
   private func append(_ event: AgentRunControlEvent) {
+    appendAll([event])
+  }
+
+  private func appendAll(_ events: [AgentRunControlEvent]) {
+    guard !events.isEmpty else {
+      return
+    }
+    var deliveries: [(AgentRunControlEvent, [AsyncStream<AgentRunControlEvent>.Continuation])] = []
     lock.lock()
-    var buffer = eventBuffersByRunId[event.runId] ?? []
-    buffer.append(event)
-    eventBuffersByRunId[event.runId] = Array(buffer.suffix(Self.eventReplay))
-    let continuations = continuationsByRunId[event.runId].map { Array($0.values) } ?? []
+    for event in events {
+      var buffer = eventBuffersByRunId[event.runId] ?? []
+      buffer.append(event)
+      eventBuffersByRunId[event.runId] = Array(buffer.suffix(Self.eventReplay))
+      let continuations = continuationsByRunId[event.runId].map { Array($0.values) } ?? []
+      deliveries.append((event, continuations))
+    }
     lock.unlock()
-    continuations.forEach { $0.yield(event) }
+    for (event, continuations) in deliveries {
+      continuations.forEach { $0.yield(event) }
+    }
   }
 
   private func matchedEventContextLocked(_ event: AgentNativeToolLifecycleEvent) -> RunEventContext? {

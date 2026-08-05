@@ -114,6 +114,8 @@ extension SignalASIStoreTests {
     var iterator = adapter.observeEvents(runId: request.runId).makeAsyncIterator()
     _ = await iterator.next()
     _ = await iterator.next()
+    _ = await iterator.next()
+    _ = await iterator.next()
     let steered = provider.acceptConnectorSteered(
       sourceMessageId: 61,
       contactId: "codex",
