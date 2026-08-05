@@ -1404,6 +1404,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentMemoryTelemetryView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_memory.telemetry_title", "Agent Memory"))
+              Text(t("signalasi.agent_memory.telemetry_subtitle", "iOS resident memory sampled across active Agent tasks"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentKnowledgeView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_knowledge.title", "Knowledge"))
