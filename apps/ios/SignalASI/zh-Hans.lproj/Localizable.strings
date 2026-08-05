@@ -2960,3 +2960,13 @@
 "cc_evolution_status_blocked" = "已阻塞";
 "cc_evolution_status_cancelled" = "已取消";
 "cc_evolution_status_rolled_back" = "已回滚";
+"agent_voice_button" = "按住说话";
+"agent_voice_recording_hint" = "松手发送 · 上滑取消";
+"agent_voice_listening" = "松开发送";
+"voice_release_to_cancel" = "松手取消";
+"voice_too_short" = "按住时间太短";
+"voice_cancelled" = "已取消语音";
+"voice_no_speech" = "没有识别到语音";
+"signalasi.voice.permission_missing" = "缺少麦克风或语音识别权限。";
+"signalasi.voice.speech_disabled" = "语音识别已关闭。";
+"signalasi.voice.speech_unavailable" = "语音识别无法启动。";
