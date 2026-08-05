@@ -36,6 +36,10 @@ extension Color {
   static var signalASIInsightBackground: Color { Color(signalASIColor(light: 0xF2F6FE, dark: 0x202A36)) }
   static var signalASIInsightStroke: Color { Color(signalASIColor(light: 0xD8E6FB, dark: 0x34475C)) }
   static var signalASIInsightText: Color { Color(signalASIColor(light: 0x315B86, dark: 0xB8D5F2)) }
+  static var signalASIAgentRecordingLight: Color { Color(signalASIColor(light: 0xDFF8D8, dark: 0x1F4637)) }
+  static var signalASIAgentRecordingMid: Color { Color(signalASIColor(light: 0xA6ED82, dark: 0x246F43)) }
+  static var signalASIAgentRecordingDeep: Color { Color(signalASIColor(light: 0x65D45C, dark: 0x198D43)) }
+  static var signalASIAgentVoiceCancel: Color { Color(signalASIColor(light: 0xFF3B30, dark: 0xFF5A5F)) }
 }
 
 struct SignalASILogoView: View {
@@ -154,6 +158,14 @@ struct AgentHomeView: View {
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
+  }
+
+  private var agentVoiceSettings: VoiceSettings {
+    var settings = store.voiceSettings
+    settings.preferredLocaleIdentifier = store.languagePolicy.asrLocaleIdentifier
+    settings.routingMode = .nativeAgent
+    settings.targetContactId = contact.id
+    return settings
   }
 
   var body: some View {
@@ -298,6 +310,7 @@ struct AgentHomeView: View {
       attachmentError: attachmentError,
       canSend: canSend,
       deviceInputPolicy: deviceInputPolicy,
+      voiceSettings: agentVoiceSettings,
       onRemoveAttachment: { attachment in
         attachments.removeAll { $0.id == attachment.id }
       },
@@ -307,6 +320,7 @@ struct AgentHomeView: View {
         fileImporterPresented = true
       },
       onSend: sendAgentMessage,
+      onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
   }
@@ -330,6 +344,16 @@ struct AgentHomeView: View {
         agentGoalOverride: agentGoal
       )
     }
+  }
+
+  private func sendAgentVoiceTranscript(_ transcript: String) {
+    let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTranscript.isEmpty else {
+      attachmentError = t("voice_no_speech", "No speech captured.")
+      return
+    }
+    draft = cleanTranscript
+    sendAgentMessage()
   }
 
   private func createAgentConversation() {

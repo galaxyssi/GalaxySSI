@@ -3,20 +3,24 @@ import SwiftUI
 struct SignalASIAgentComposerView: View {
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
+  @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
+  @FocusState private var inputFocused: Bool
 
   var attachments: [SignalASIDraftAttachment]
   var attachmentError: String
   var canSend: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
+  var voiceSettings: VoiceSettings
   var onRemoveAttachment: (SignalASIDraftAttachment) -> Void
   var onNewSession: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
   var onSend: () -> Void
+  var onVoiceTranscript: (String) -> Void
   var t: (String, String) -> String
 
   private var trayVisible: Bool {
-    actionTrayPresented && !canSend
+    actionTrayPresented && !canSend && !holdToTalk.isRecording
   }
 
   private var minimumTouchSize: CGFloat {
@@ -34,7 +38,18 @@ struct SignalASIAgentComposerView: View {
           .foregroundColor(.red)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      inputRow
+      if !holdToTalk.statusMessage.isEmpty {
+        Text(holdToTalk.statusMessage)
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if holdToTalk.isRecording {
+        recordingSurface
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      } else {
+        inputRow
+      }
       if trayVisible {
         actionTray
           .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -44,10 +59,14 @@ struct SignalASIAgentComposerView: View {
     .padding(.vertical, 8)
     .background(Color.signalASIBarBackground)
     .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: trayVisible)
+    .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: holdToTalk.isRecording)
     .onChange(of: canSend) { hasInput in
       if hasInput {
         actionTrayPresented = false
       }
+    }
+    .onDisappear {
+      holdToTalk.cancelFromView()
     }
   }
 
@@ -60,28 +79,18 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var inputShell: some View {
-    HStack(spacing: 6) {
-      NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
-        Image(systemName: "waveform")
-          .font(.system(size: 19, weight: .semibold))
-          .foregroundColor(.blue)
-          .frame(width: 42, height: 42)
-          .background(Color.signalASIButtonSoft)
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(Text(t("signalasi.agent.voice_button", "Hold to talk")))
-
+    HStack(spacing: 0) {
       TextField(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."), text: $draft)
         .font(.system(size: 15))
         .textInputAutocapitalization(.sentences)
         .lineLimit(2)
+        .focused($inputFocused)
         .onTapGesture {
           actionTrayPresented = false
         }
     }
-    .padding(.leading, 6)
-    .padding(.trailing, 10)
+    .padding(.leading, 12)
+    .padding(.trailing, 6)
     .frame(maxWidth: .infinity, minHeight: 54)
     .background(Color.signalASISurface)
     .overlay(
@@ -89,6 +98,92 @@ struct SignalASIAgentComposerView: View {
         .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .contentShape(Rectangle())
+    .simultaneousGesture(holdToTalkGesture)
+    .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
+  }
+
+  private var recordingSurface: some View {
+    VStack(spacing: 12) {
+      Spacer(minLength: 0)
+      Text(holdToTalk.cancelPending
+        ? t("voice_release_to_cancel", "Release to cancel")
+        : t("agent_voice_recording_hint", "Release to send / Swipe up to cancel"))
+        .font(.system(size: 14))
+        .foregroundColor(.white)
+        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
+      ZStack {
+        if holdToTalk.transcript.isEmpty {
+          SignalASIAgentRecordingWaveform(
+            phase: holdToTalk.waveformPhase,
+            cancelPending: holdToTalk.cancelPending
+          )
+        } else {
+          Text(holdToTalk.transcript)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.white)
+            .lineLimit(1)
+            .truncationMode(.head)
+            .frame(maxWidth: .infinity)
+        }
+      }
+      .frame(height: 38)
+      Text(holdToTalk.elapsedLabel)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundColor(holdToTalk.cancelPending ? .signalASIAgentVoiceCancel : .white)
+    }
+    .padding(.horizontal, 24)
+    .padding(.bottom, 24)
+    .frame(maxWidth: .infinity, minHeight: 236, alignment: .bottom)
+    .background(
+      LinearGradient(
+        colors: [
+          Color.clear,
+          Color.signalASIAgentRecordingLight.opacity(0.52),
+          Color.signalASIAgentRecordingMid.opacity(0.88),
+          Color.signalASIAgentRecordingDeep,
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+    )
+  }
+
+  private var holdToTalkGesture: some Gesture {
+    DragGesture(minimumDistance: 0)
+      .onChanged { value in
+        holdToTalk.dragChanged(
+          translation: value.translation,
+          settings: voiceSettings,
+          messages: holdToTalkMessages,
+          onStart: {
+            actionTrayPresented = false
+            inputFocused = false
+          },
+          onFinish: onVoiceTranscript
+        )
+      }
+      .onEnded { value in
+        let didRecord = holdToTalk.isRecording
+        holdToTalk.dragEnded(translation: value.translation)
+        if !didRecord {
+          actionTrayPresented = false
+          inputFocused = true
+        }
+      }
+  }
+
+  private var holdToTalkMessages: SignalASIAgentHoldToTalkMessages {
+    SignalASIAgentHoldToTalkMessages(
+      permissionDenied: t("signalasi.voice.permission_missing", "Microphone or speech permission is missing."),
+      speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
+      speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
+      noSpeech: t("voice_no_speech", "No speech captured."),
+      tooShort: t("voice_too_short", "Hold a little longer."),
+      cancelled: t("voice_cancelled", "Voice cancelled.")
+    )
   }
 
   @ViewBuilder
@@ -179,6 +274,44 @@ struct SignalASIAgentComposerView: View {
 
   private func closeTray() {
     actionTrayPresented = false
+  }
+}
+
+private struct SignalASIAgentRecordingWaveform: View {
+  var phase: Double
+  var cancelPending: Bool
+
+  private let sampleCount = 56
+
+  var body: some View {
+    GeometryReader { proxy in
+      let step = max(1, proxy.size.width / CGFloat(sampleCount))
+      let maxHeight = max(2, proxy.size.height - 8)
+      HStack(alignment: .center, spacing: max(1, step * 0.68)) {
+        ForEach(0..<sampleCount, id: \.self) { index in
+          Capsule(style: .continuous)
+            .fill(cancelPending ? Color.signalASIAgentVoiceCancel : .white)
+            .frame(width: min(2, step * 0.32), height: barHeight(index: index, maxHeight: maxHeight))
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .overlay(
+        Rectangle()
+          .fill((cancelPending ? Color.signalASIAgentVoiceCancel : .white).opacity(0.28))
+          .frame(height: 1),
+        alignment: .center
+      )
+    }
+  }
+
+  private func barHeight(index: Int, maxHeight: CGFloat) -> CGFloat {
+    let normalizedPosition = Double(index) / Double(max(1, sampleCount - 1))
+    let centerEnvelope = 0.72 + 0.28 * (1 - abs(normalizedPosition - 0.5) * 2)
+    let primary = (sin(Double(index) * 0.82 + phase) + 1) * 0.5
+    let secondary = (sin(Double(index) * 0.37 - phase * 1.45) + 1) * 0.5
+    let variation = 0.26 + primary * 0.48 + secondary * 0.26
+    let amplitude = 0.10 + 0.90 * centerEnvelope * variation
+    return max(2, maxHeight * CGFloat(min(1, amplitude)))
   }
 }
 
