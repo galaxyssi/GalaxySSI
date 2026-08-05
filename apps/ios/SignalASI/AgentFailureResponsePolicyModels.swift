@@ -171,3 +171,209 @@ enum AgentFailureRecoveryPolicy {
     return result
   }
 }
+
+struct AgentFailureRecoveryAdvertisedAction: Codable, Equatable, Identifiable {
+  var id: String { action.rawValue }
+  var action: AgentFailureRecoveryAction
+  var enabled: Bool
+  var recommended: Bool
+  var label: String
+
+  init(
+    action: AgentFailureRecoveryAction,
+    enabled: Bool = true,
+    recommended: Bool = false,
+    label: String = ""
+  ) {
+    self.action = action
+    self.enabled = enabled
+    self.recommended = recommended
+    self.label = label
+  }
+}
+
+enum AgentFailureRecoveryRichContent {
+  static let actionVerb = "recover_agent_task"
+
+  static func recoveryBlock(
+    signal: AgentNoReplySignal,
+    taskId: String,
+    conversationId: String,
+    turnId: String,
+    agentId: String,
+    originalGoal: String,
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+  ) -> AgentRichBlock? {
+    let display = AgentNoReplyReasonPolicy.display(for: signal)
+    return recoveryBlock(
+      taskId: taskId,
+      conversationId: conversationId,
+      turnId: turnId,
+      agentId: agentId,
+      originalGoal: originalGoal,
+      failure: signal.error.ifBlank(display.message),
+      status: signal.taskStatus,
+      title: display.title,
+      message: display.message,
+      noReplyReason: display.reason.rawValue,
+      advertisedActions: advertisedActions
+    )
+  }
+
+  static func recoveryBlock(
+    taskId: String,
+    conversationId: String,
+    turnId: String,
+    agentId: String,
+    originalGoal: String,
+    failure: String,
+    status: String,
+    title: String,
+    message: String,
+    noReplyReason: String = "",
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+  ) -> AgentRichBlock? {
+    let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTaskId.isEmpty, !cleanConversationId.isEmpty else { return nil }
+
+    let actions = recoveryActions(
+      taskId: cleanTaskId,
+      conversationId: cleanConversationId,
+      turnId: turnId,
+      agentId: agentId,
+      originalGoal: originalGoal,
+      failure: failure,
+      status: status,
+      advertisedActions: advertisedActions
+    )
+    guard !actions.isEmpty else { return nil }
+    let recommended = recommendedAction(status: status, failure: failure, advertisedActions: advertisedActions)
+    let body = message.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(failure)
+    return AgentRichBlock(
+      id: "recovery-\(String(cleanTaskId.prefix(96)))",
+      type: .actions,
+      title: title.ifBlank("Agent task needs recovery"),
+      text: body,
+      fallbackText: body,
+      actions: actions,
+      metadata: [
+        "task_id": cleanTaskId,
+        "no_reply_reason": normalizedToken(noReplyReason),
+        "recommended_action": recommended.rawValue
+      ]
+    )
+  }
+
+  static func recoveryActions(
+    taskId: String,
+    conversationId: String,
+    turnId: String,
+    agentId: String,
+    originalGoal: String,
+    failure: String,
+    status: String,
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+  ) -> [AgentRichAction] {
+    let advertisedByAction = advertisedActions.reduce(into: [AgentFailureRecoveryAction: AgentFailureRecoveryAdvertisedAction]()) {
+      values, item in
+      values[item.action] = item
+    }
+    let recommended = recommendedAction(status: status, failure: failure, advertisedActions: advertisedActions)
+    return AgentFailureRecoveryAction.allCases.compactMap { action in
+      if advertisedByAction[action]?.enabled == false {
+        return nil
+      }
+      let payload = AgentFailureRecoveryPayload(
+        action: action,
+        taskId: taskId,
+        conversationId: conversationId,
+        turnId: turnId,
+        agentId: agentId,
+        originalGoal: originalGoal,
+        failure: failure
+      )
+      return AgentRichAction(
+        id: "recovery-\(action.rawValue)",
+        label: advertisedByAction[action]?.label.ifBlank(label(for: action)) ?? label(for: action),
+        verb: actionVerb,
+        value: payload.encode(),
+        style: action == recommended ? "primary" : "default"
+      )
+    }
+  }
+
+  static func connectorAction(
+    payload: AgentFailureRecoveryPayload,
+    turnId: String,
+    targets: [AgentCallableTarget],
+    prompt: String? = nil,
+    chinese: Bool = false
+  ) -> AgentAction? {
+    let availableTargets = targets.filter { $0.status == .available }
+    let current = canonical(payload.agentId)
+    let target: AgentCallableTarget?
+    switch payload.action {
+    case .switchAgent:
+      target = availableTargets.first { canonical($0.id) != current }
+    case .retry, .degrade, .diagnostics:
+      target = availableTargets.first { canonical($0.id) == current }
+    }
+    guard let target else { return nil }
+    let resolvedPrompt = prompt ?? AgentFailureRecoveryPolicy.instruction(payload: payload, chinese: chinese)
+    return AgentAction(
+      id: "recovery-\(payload.action.rawValue)-\(String(turnId.prefix(96)))",
+      kind: .callConnector,
+      target: target.title,
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Continue a failed task with \(target.title)",
+      parameters: [
+        "connector_id": target.id,
+        "prompt": resolvedPrompt,
+        "recovery_of_task_id": payload.taskId,
+        "recovery_action": payload.action.rawValue
+      ],
+      requiresConfirmation: false
+    )
+  }
+
+  static func label(for action: AgentFailureRecoveryAction) -> String {
+    switch action {
+    case .retry:
+      return "Retry"
+    case .switchAgent:
+      return "Switch Agent"
+    case .degrade:
+      return "Safe fallback"
+    case .diagnostics:
+      return "Diagnostics"
+    }
+  }
+
+  private static func recommendedAction(
+    status: String,
+    failure: String,
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction]
+  ) -> AgentFailureRecoveryAction {
+    advertisedActions.first { $0.enabled && $0.recommended }?.action ??
+      AgentFailureRecoveryPolicy.recommended(status: status, failure: failure)
+  }
+
+  private static func canonical(_ value: String) -> String {
+    value
+      .split(separator: ":")
+      .last
+      .map(String.init)?
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "") ?? ""
+  }
+
+  private static func normalizedToken(_ value: String) -> String {
+    value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: #"[^a-z0-9_]+"#, with: "_", options: .regularExpression)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+  }
+}
