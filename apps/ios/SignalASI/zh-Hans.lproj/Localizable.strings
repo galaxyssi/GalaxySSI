@@ -924,6 +924,11 @@
 "signalasi.contact.payload" = "载荷";
 "signalasi.contact.copy_payload" = "复制载荷";
 "signalasi.contact.my_qr_title" = "我的二维码";
+"contact_my_fingerprint" = "我的指纹";
+"contact_scan_confirm_identity" = "扫描后需要双方确认身份";
+"signalasi.contact.my_qr_id_copied" = "已复制 SignalASI ID";
+"signalasi.contact.my_qr_fingerprint_copied" = "已复制指纹";
+"signalasi.contact.my_qr_payload_copied" = "已复制二维码载荷";
 "signalasi.scanner.camera_access_required" = "需要相机权限才能扫描 SignalASI 二维码。";
 "signalasi.scanner.camera_unavailable" = "此设备上的相机不可用。";
 "signalasi.scanner.output_unavailable" = "二维码扫描输出不可用。";
