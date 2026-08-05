@@ -65,6 +65,7 @@ struct SignalASISecurityCenterView: View {
           identitySection
           pairedDevicesSection
           agentPermissionsSection
+          identityProtectionSection
           messageProtectionSection
         }
         .padding(.horizontal, 12)
@@ -195,6 +196,21 @@ struct SignalASISecurityCenterView: View {
           tint: .purple,
           badge: t("signalasi.common.view", "View")
         )
+      }
+    }
+  }
+
+  private var identityProtectionSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("feature_identity_protection", "Identity Protection"))
+      SignalASISecurityActionRow(
+        title: t("on_device_agent_high_risk_guard", "High-risk Guard"),
+        subtitle: t("cc_always_confirm_subtitle", "Messages, calls, deletion, installation, payment, lock, and security"),
+        systemImage: "checkmark.shield",
+        tint: store.agentSafetySettings.highRiskGuard ? .signalASIAccent : .orange,
+        badge: store.agentSafetySettings.highRiskGuard ? t("status_enabled", "Enabled") : t("common_off", "Off")
+      ) {
+        store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
       }
     }
   }
