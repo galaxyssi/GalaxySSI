@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIVoiceControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  var showsBackButton = true
 
   private var settings: VoiceSettings {
     store.voiceSettings
@@ -33,7 +34,11 @@ struct SignalASIVoiceControlCenterView: View {
       SignalASITopBar(
         title: t("cc_voice_title", "Voice & Interaction"),
         leading: {
-          SignalASIBackButton()
+          if showsBackButton {
+            SignalASIBackButton()
+          } else {
+            Color.clear
+          }
         },
         trailing: {
           Color.clear

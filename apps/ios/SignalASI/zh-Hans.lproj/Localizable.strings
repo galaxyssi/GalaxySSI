@@ -839,6 +839,7 @@
 "signalasi.common.select" = "选择";
 "signalasi.common.show" = "显示";
 "signalasi.common.view" = "查看";
+"signalasi.tab.voice" = "语音";
 "signalasi.tab.messages" = "消息";
 "signalasi.tab.contacts" = "通讯录";
 "signalasi.tab.discover" = "发现";
