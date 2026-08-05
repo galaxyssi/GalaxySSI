@@ -27,6 +27,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n\n")
     appendSchema(to: &prompt)
     appendActionRules(to: &prompt, settings: normalizedSettings)
+    appendResponseLanguageRule(to: &prompt, request: request)
     appendRuntimeRules(to: &prompt, request: request)
     appendCoordinationRules(to: &prompt, settings: normalizedSettings)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
@@ -73,6 +74,26 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "CALL_NATIVE_TOOL requires an exact tool_id from the phone-native inventory and arguments matching its input schema. ")
     append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
     append(&prompt, "Never create more than \(settings.maxActions) actions.\n\n")
+  }
+
+  private static func appendResponseLanguageRule(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest
+  ) {
+    let resolved = LanguagePolicySettings.resolve(request.planRequest.responseLanguage)
+    let languageName = LanguagePolicySettings.modelLanguageName(request.planRequest.responseLanguage)
+    let responseCode = resolved
+      .split(separator: "-", maxSplits: 1)
+      .first
+      .map { String($0).lowercased() } ?? "en"
+    append(
+      &prompt,
+      "Preferred response language: \(languageName) (\(resolved)). Use this for user-facing plan summaries, expected results, rollback text, and action descriptions unless the user explicitly asks for another language. "
+    )
+    append(
+      &prompt,
+      "When creating CALL_NATIVE_TOOL or CONTROL_DEVICE actions, set parameters.response_language to \"\(responseCode)\".\n\n"
+    )
   }
 
   private static func appendRuntimeRules(
