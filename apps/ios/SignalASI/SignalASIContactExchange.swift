@@ -171,13 +171,20 @@ enum SignalASIContactExchange {
     guard isContactQRCodeObject(object) else {
       throw SignalASIError.invalidPayload("Contact QR type is not supported.")
     }
-    let fingerprint = object.string("identity_fingerprint").ifBlank(object.string("identity_key_sha256"))
-    let publicKey = object.string("identity_public_key").ifBlank(object.string("identity_key"))
-    guard !fingerprint.isEmpty, !publicKey.isEmpty else {
+    let fingerprint = object.string("identity_fingerprint")
+      .ifBlank(object.string("identity_key_sha256"))
+      .ifBlank(object.string("desktop_fingerprint"))
+    let publicKey = object.string("identity_public_key")
+      .ifBlank(object.string("identity_key"))
+      .ifBlank(object.string("desktop_public_key"))
+      .ifBlank(object.string("public_key"))
+    let desktopAgent = isDesktopAgentQRCodeObject(object)
+    guard !fingerprint.isEmpty, !publicKey.isEmpty || desktopAgent else {
       throw SignalASIError.invalidPayload("Contact QR is missing identity material.")
     }
     let signalASIId = object.string("signalasi_id")
       .ifBlank(object.string("hermes_id"))
+      .ifBlank(scopedDesktopAgentId(from: object))
       .ifBlank(object.string("mobile_contact_id"))
       .ifBlank(object.string("agent_id"))
       .ifBlank(object.string("id"))
@@ -212,7 +219,7 @@ enum SignalASIContactExchange {
       mqttInboxTopic: mqttTopic,
       signalBundleRef: signalBundleReference(object),
       agentKind: agentKind,
-      desktopId: object.string("desktop_id"),
+      desktopId: desktopId(from: object),
       desktopName: object.string("desktop_name"),
       deviceId: object.string("device_id"),
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
@@ -242,6 +249,11 @@ enum SignalASIContactExchange {
       !object.string("mobile_contact_id").isEmpty
   }
 
+  private static func isDesktopAgentQRCodeObject(_ object: [String: Any]) -> Bool {
+    isAgentQRCodeObject(object) &&
+      (!desktopId(from: object).isEmpty || !object.string("desktop_fingerprint").isEmpty)
+  }
+
   private static func isDeviceQRCodeObject(_ object: [String: Any]) -> Bool {
     let type = normalized(object.string("type"))
     let contactType = normalized(object.string("contact_type"))
@@ -260,6 +272,34 @@ enum SignalASIContactExchange {
       agentId.contains("device") ||
       agentId.contains("hub") ||
       (!deviceId.isEmpty && !isAgentQRCodeObject(object))
+  }
+
+  private static func scopedDesktopAgentId(from object: [String: Any]) -> String {
+    guard isAgentQRCodeObject(object) else { return "" }
+    let rawId = object.string("id")
+    if normalized(rawId).hasPrefix("desktop_"), rawId.contains(":") {
+      return rawId
+    }
+    let desktopId = desktopId(from: object)
+    let idSuffix = rawId.contains(":")
+      ? (rawId.split(separator: ":").last.map(String.init) ?? rawId)
+      : rawId
+    let agentId = object.string("agent_id")
+      .ifBlank(object.string("mobile_contact_id"))
+      .ifBlank(idSuffix)
+    guard !desktopId.isEmpty, !agentId.isEmpty else { return "" }
+    return "\(desktopId):\(agentId)"
+  }
+
+  private static func desktopId(from object: [String: Any]) -> String {
+    let explicit = object.string("desktop_id")
+    if !explicit.isEmpty { return explicit }
+    let rawId = object.string("id")
+    if normalized(rawId).hasPrefix("desktop_"), rawId.contains(":") {
+      return rawId.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+    }
+    let fingerprint = object.string("desktop_fingerprint")
+    return fingerprint.isEmpty ? "" : "desktop_\(fingerprint.prefix(16))"
   }
 
   private static func defaultAgentKind(for requestType: String, object: [String: Any]) -> String {
