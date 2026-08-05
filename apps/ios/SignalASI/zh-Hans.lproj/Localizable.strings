@@ -144,6 +144,16 @@
 "signalasi.cloud.section_contact" = "联系人";
 "signalasi.cloud.contact_name" = "联系人名称";
 "signalasi.cloud.model_id" = "模型 ID";
+"signalasi.cloud.provider_section" = "Provider";
+"signalasi.cloud.selected_model_section" = "已选模型";
+"signalasi.cloud.models_section" = "模型";
+"signalasi.cloud.model_picker" = "模型";
+"signalasi.cloud.add_model" = "添加模型";
+"signalasi.cloud.contact_not_found" = "未找到云模型联系人。";
+"signalasi.cloud.preset" = "预设";
+"signalasi.cloud.api_style" = "API 风格";
+"cloud_model_id" = "模型 ID";
+"device_custom_endpoint" = "端点";
 "signalasi.cloud.section_key" = "密钥";
 "signalasi.cloud.save_start_chat" = "保存并开始聊天";
 "signalasi.cloud.provider.openai.subtitle" = "GPT-5.5、GPT-5.4 mini/nano 等 OpenAI API 模型";

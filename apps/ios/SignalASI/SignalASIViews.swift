@@ -1531,7 +1531,7 @@ struct CloudModelProviderDetailView: View {
   var body: some View {
     Form {
       if let contact {
-        Section("Provider") {
+        Section(header: Text(t("signalasi.cloud.provider_section", "Provider"))) {
           Text(contact.displayName)
           Text(contact.cloudProvider.ifBlank(contact.id))
             .font(.caption)
@@ -1540,14 +1540,14 @@ struct CloudModelProviderDetailView: View {
             Label(String(format: t("Selected: %@", "Selected: %@"), selected.modelId), systemImage: "checkmark.circle")
           }
         }
-        Section("Selected Model") {
-          Picker("Model", selection: selectedModelBinding(contact)) {
+        Section(header: Text(t("signalasi.cloud.selected_model_section", "Selected Model"))) {
+          Picker(t("signalasi.cloud.model_picker", "Model"), selection: selectedModelBinding(contact)) {
             ForEach(contact.cloudModels) { model in
               Text(model.displayName).tag(model.modelId)
             }
           }
         }
-        Section("Models") {
+        Section(header: Text(t("signalasi.cloud.models_section", "Models"))) {
           ForEach(contact.cloudModels) { model in
             VStack(alignment: .leading, spacing: 6) {
               HStack {
@@ -1578,16 +1578,16 @@ struct CloudModelProviderDetailView: View {
         Button {
           showingAddModel = true
         } label: {
-          Label("Add Model", systemImage: "plus.circle")
+          Label(t("signalasi.cloud.add_model", "Add Model"), systemImage: "plus.circle")
         }
       } else {
-        Section("Provider") {
-          Text("Cloud model contact not found.")
+        Section(header: Text(t("signalasi.cloud.provider_section", "Provider"))) {
+          Text(t("signalasi.cloud.contact_not_found", "Cloud model contact not found."))
             .foregroundColor(.secondary)
         }
       }
     }
-    .navigationTitle(contact?.displayName ?? t("Cloud Model", "Cloud Model"))
+    .navigationTitle(contact?.displayName ?? t("signalasi.status.cloud_model", "Cloud Model"))
     .sheet(isPresented: $showingAddModel) {
       AddCloudModelView(initialProvider: contact?.cloudProvider)
     }
@@ -1609,7 +1609,10 @@ struct CloudModelProviderDetailView: View {
       provider: contact.cloudProvider,
       setupStatus: contact.setupStatus
     )
-    return Label(ready ? t("Ready", "Ready") : t("Needs Setup", "Needs Setup"), systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
+    return Label(
+      ready ? t("signalasi.status.ready", "Ready") : t("status_needs_setup", "Needs Setup"),
+      systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.triangle"
+    )
       .font(.caption)
       .foregroundColor(ready ? .green : .orange)
   }
@@ -1647,7 +1650,7 @@ struct AddCloudModelView: View {
   var body: some View {
     NavigationView {
       Form {
-        Picker("Preset", selection: $selectedPreset) {
+        Picker(t("signalasi.cloud.preset", "Preset"), selection: $selectedPreset) {
           ForEach(CloudModelPreset.androidParity) { preset in
             Text("\(preset.provider) \(preset.name)").tag(preset)
           }
@@ -1659,21 +1662,21 @@ struct AddCloudModelView: View {
           endpoint = preset.endpoint
           apiStyle = preset.apiStyle
         }
-        TextField("Provider", text: $provider)
-        TextField("Display Name", text: $displayName)
-        TextField("Model ID", text: $modelId)
+        TextField(t("signalasi.cloud.provider_section", "Provider"), text: $provider)
+        TextField(t("Display Name", "Display Name"), text: $displayName)
+        TextField(t("cloud_model_id", "Model ID"), text: $modelId)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
-        TextField("Endpoint", text: $endpoint)
+        TextField(t("device_custom_endpoint", "Endpoint"), text: $endpoint)
           .keyboardType(.URL)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
-        Picker("API Style", selection: $apiStyle) {
+        Picker(t("signalasi.cloud.api_style", "API Style"), selection: $apiStyle) {
           ForEach(SignalASICloudAPIStyle.allCases) { style in
             Text(style.rawValue).tag(style)
           }
         }
-        SecureField("API Key", text: $apiKey)
+        SecureField(t("API Key", "API Key"), text: $apiKey)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
         if !errorText.isEmpty {
@@ -1681,13 +1684,13 @@ struct AddCloudModelView: View {
             .foregroundColor(.red)
         }
       }
-      .navigationTitle(t("Add Model", "Add Model"))
+      .navigationTitle(t("signalasi.cloud.add_model", "Add Model"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
+          Button(t("common_cancel", "Cancel")) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Save") { save() }
+          Button(t("common_save", "Save")) { save() }
             .disabled(!canSave)
         }
       }
