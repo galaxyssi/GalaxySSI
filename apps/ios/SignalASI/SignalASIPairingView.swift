@@ -106,7 +106,7 @@ struct PairingView: View {
             subtitle: link.desktopId,
             systemImage: "trash",
             tint: .red,
-            badge: t("Delete", "Delete"),
+            badge: t("common_delete", "Delete"),
             monospacedSubtitle: true
           ) {
             store.removeServer(desktopId: link.desktopId)
@@ -229,6 +229,32 @@ struct PairingView: View {
         tint: pairing.access.fullDesktopExecutor ? .signalASIAccent : .orange,
         badge: t("status_enabled", "Enabled")
       )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.pairing.access_scopes", "Allowed Scopes"),
+        subtitle: accessScopeSummary(for: pairing),
+        systemImage: "checklist",
+        tint: pairing.access.fullDesktopExecutor ? .signalASIAccent : .orange,
+        badge: t("status_enabled", "Enabled")
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.pairing.authorization_token", "Desktop Control Authorization"),
+        subtitle: authorizationStatus(for: pairing),
+        systemImage: "key.fill",
+        tint: pairing.controlAuthorizationToken.isEmpty ? .orange : .signalASIAccent,
+        badge: pairing.controlAuthorizationToken.isEmpty
+          ? t("signalasi.status.needs_setup", "Needs Setup")
+          : t("status_enabled", "Enabled")
+      )
+      SignalASISecurityStatusRow(
+        title: t("signalasi.pairing.agent_count", "Desktop Agents"),
+        subtitle: String(
+          format: t("signalasi.pairing.agent_count_value", "%d Agents will be added"),
+          desktopAgentCount(for: pairing)
+        ),
+        systemImage: "person.3.fill",
+        tint: .signalASIInsightText,
+        badge: "\(desktopAgentCount(for: pairing))"
+      )
       SignalASISecurityPrimaryButton(
         title: t("signalasi.pairing.confirm_title", "Confirm Pairing"),
         systemImage: "checkmark.shield",
@@ -291,6 +317,64 @@ struct PairingView: View {
 
   private var canSubmitQR: Bool {
     !qrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private func accessScopeSummary(for pairing: PairingQRCode) -> String {
+    let labels = pairing.access.scopes.sorted { lhs, rhs in
+      let leftRank = Self.orderedAccessScopes.firstIndex(of: lhs) ?? Int.max
+      let rightRank = Self.orderedAccessScopes.firstIndex(of: rhs) ?? Int.max
+      if leftRank == rightRank {
+        return lhs < rhs
+      }
+      return leftRank < rightRank
+    }.map(scopeLabel)
+    return labels.isEmpty
+      ? t("signalasi.pairing.access_scopes_none", "No scopes declared")
+      : labels.joined(separator: " / ")
+  }
+
+  private func authorizationStatus(for pairing: PairingQRCode) -> String {
+    pairing.controlAuthorizationToken.isEmpty
+      ? t("signalasi.pairing.authorization_missing", "Not included in QR; desktop control may require re-pairing")
+      : t("signalasi.pairing.authorization_included", "Included in the encrypted pairing claim")
+  }
+
+  private func desktopAgentCount(for pairing: PairingQRCode) -> Int {
+    if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw), !source.agents.isEmpty {
+      return source.agents.count
+    }
+    return 6
+  }
+
+  private static let orderedAccessScopes = [
+    "agent.chat",
+    "agent.attachments.explicit",
+    "desktop.task_workspace",
+    "desktop.executor.full",
+    "desktop.control",
+    "desktop.native_tools",
+    "desktop.files.external",
+  ]
+
+  private func scopeLabel(_ scope: String) -> String {
+    switch scope {
+    case "agent.chat":
+      return t("desktop_control_scope_agent_chat", "Agent Chat")
+    case "agent.attachments.explicit":
+      return t("desktop_control_scope_explicit_attachments", "Explicit Attachments")
+    case "desktop.task_workspace":
+      return t("desktop_control_scope_task_workspace", "Task Workspace")
+    case "desktop.executor.full":
+      return t("signalasi.pairing.scope_desktop_executor", "View Screen")
+    case "desktop.control":
+      return t("signalasi.pairing.scope_desktop_control", "Click and Control")
+    case "desktop.native_tools":
+      return t("signalasi.pairing.scope_desktop_native_tools", "Type Text and Native Tools")
+    case "desktop.files.external":
+      return t("signalasi.pairing.scope_desktop_external_files", "Select External Files")
+    default:
+      return scope
+    }
   }
 
   private func handleEnteredQR() {
