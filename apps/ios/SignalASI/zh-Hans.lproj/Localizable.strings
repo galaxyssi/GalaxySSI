@@ -3041,6 +3041,7 @@
 "signalasi.permissions.secure_status" = "安全";
 "signalasi.permissions_summary_ios" = "需要的 iOS 权限已就绪 %d / %d";
 "signalasi.permissions_ios_section" = "iOS 权限";
+"feature_identity_protection" = "身份保护";
 "feature_audit_log" = "审计日志";
 "cc_accessibility_title" = "辅助功能";
 "cc_accessibility_subtitle" = "界面理解与受控执行";
