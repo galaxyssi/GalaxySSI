@@ -168,6 +168,18 @@ struct ContactDetailView: View {
           tint: setupTint(for: contact),
           badge: setupStatusText(for: contact)
         )
+        if !contact.connectorAgentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          ContactDetailCopyRow(
+            title: t("signalasi.contact_detail.agent_id", "Agent ID"),
+            value: contact.connectorAgentId,
+            systemImage: "number.circle",
+            tint: .teal,
+            badge: t("common_copy", "Copy"),
+            copiedTitle: t("signalasi.contact_detail.copied_agent_id", "Agent ID copied"),
+            monospacedSubtitle: true,
+            onCopy: setStatus
+          )
+        }
         if !contact.desktopName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
            !contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           ContactDetailCopyRow(

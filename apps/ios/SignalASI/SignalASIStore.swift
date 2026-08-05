@@ -1643,6 +1643,8 @@ final class SignalASIStore: ObservableObject {
     next.signalBundleRef = request.signalBundleRef
     next.setupStatus = "ready"
     next.setupDetail = setupDetail
+    next.agentId = nil
+    next.agentId = requestType == "agent" ? next.connectorAgentId : nil
     next.deleted = false
     next.deletedAt = nil
     next.updatedAt = now
@@ -2008,6 +2010,7 @@ final class SignalASIStore: ObservableObject {
       contact.displayName = displayName
       contact.type = "agent"
       contact.agentKind = kind
+      contact.agentId = agentId
       contact.deliveryMode = .link
       contact.trustState = isPaired ? .verified : .unverified
       contact.desktopId = desktopId

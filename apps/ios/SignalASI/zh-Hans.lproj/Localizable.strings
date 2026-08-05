@@ -1333,12 +1333,14 @@
 "signalasi.contact_detail.not_found_title" = "未找到联系人。";
 "signalasi.contact_detail.not_found_subtitle" = "此联系人可能已被删除，或来自较旧的备份。";
 "signalasi.contact_detail.delete_with_chat_message" = "此联系人和聊天记录将从本机删除。";
+"signalasi.contact_detail.agent_id" = "智能体 ID";
 "signalasi.contact_detail.route" = "路由";
 "signalasi.contact_detail.topic" = "主题";
 "signalasi.contact_detail.inbox" = "收件箱";
 "signalasi.contact_detail.bundle" = "Bundle";
 "signalasi.contact_detail.also_delete_chat" = "同时删除聊天记录";
 "signalasi.contact_detail.copied_id" = "已复制 SignalASI ID";
+"signalasi.contact_detail.copied_agent_id" = "已复制智能体 ID";
 "signalasi.contact_detail.copied_fingerprint" = "已复制指纹";
 "signalasi.contact_detail.copied_desktop" = "已复制桌面信息";
 "signalasi.contact_detail.copied_topic" = "已复制 Topic";
