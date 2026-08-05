@@ -225,6 +225,11 @@ struct AddContactView: View {
         pendingPairing = nil
         pendingFriendRequest = stored
         setImportStatus(requestReceivedStatus(stored), isError: false)
+      case .contacts(let requests):
+        let stored = requests.map { store.addFriendRequest($0) }
+        pendingPairing = nil
+        pendingFriendRequest = stored.first
+        setImportStatus(requestsReceivedStatus(stored), isError: false)
       }
     } catch {
       clearPendingScanResult()
@@ -315,6 +320,13 @@ struct AddContactView: View {
       fallback = "Contact request received: %@"
     }
     return String(format: t(key, fallback), request.name)
+  }
+
+  private func requestsReceivedStatus(_ requests: [SignalASIFriendRequest]) -> String {
+    String(
+      format: t("signalasi.pairing.agent_requests_received", "%d Agent requests received."),
+      requests.count
+    )
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

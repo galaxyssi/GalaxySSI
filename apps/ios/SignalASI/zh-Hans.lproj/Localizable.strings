@@ -1056,6 +1056,7 @@
 "signalasi.pairing.invalid_qr" = "无效的二维码";
 "signalasi.pairing.contact_request_received" = "已收到联系人请求：%@";
 "signalasi.pairing.agent_request_received" = "已收到 Agent 请求：%@";
+"signalasi.pairing.agent_requests_received" = "已收到 %d 个 Agent 请求。";
 "signalasi.pairing.device_request_received" = "已收到设备请求：%@";
 "signalasi.pairing.hermes_request_received" = "已收到 Hermes 请求：%@";
 "signalasi.pairing.scan_failed" = "扫描失败：%@";

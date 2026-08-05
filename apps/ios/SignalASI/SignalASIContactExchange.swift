@@ -3,6 +3,7 @@ import Foundation
 enum SignalASIQRCodeImport {
   case desktopPairing(PairingQRCode)
   case contact(SignalASIFriendRequest)
+  case contacts([SignalASIFriendRequest])
 }
 
 enum SignalASIQRCodePayload {
@@ -155,6 +156,10 @@ enum SignalASIContactExchange {
     if isPairingQRCode {
       return .desktopPairing(try SignalASILinkProtocol.validatePairingQRCode(object, now: now))
     }
+    let connectorRequests = try importConnectorAgentRequests(object, now: now)
+    if !connectorRequests.isEmpty {
+      return .contacts(connectorRequests)
+    }
     if isContactQRCodeObject(object) {
       return .contact(try importContactQRCodeObject(object, now: now))
     }
@@ -226,6 +231,97 @@ enum SignalASIContactExchange {
       source: "qr",
       createdAt: now
     )
+  }
+
+  private static func importConnectorAgentRequests(_ object: [String: Any], now: Date) throws -> [SignalASIFriendRequest] {
+    guard let agents = object["connector_agents"] as? [[String: Any]], !agents.isEmpty else {
+      return []
+    }
+    let type = normalized(object.string("type"))
+    guard ["connector_status", "capability_manifest", "pairing_confirmed"].contains(type) ||
+      isPairingOrConnectorStatusObject(object) else {
+      return []
+    }
+    let inherited = inheritedDesktopAgentFields(from: object)
+    var requests: [SignalASIFriendRequest] = []
+    for (index, rawAgent) in agents.enumerated() {
+      var agent = rawAgent
+      inherited.forEach { key, value in
+        if agent.string(key).isEmpty {
+          agent[key] = value
+        }
+      }
+      if agent.string("type").isEmpty {
+        agent["type"] = "agent"
+      }
+      if agent.string("contact_type").isEmpty {
+        agent["contact_type"] = "agent"
+      }
+      if agent.string("agent_id").isEmpty {
+        let rawId = agent.string("id")
+        let idSuffix = rawId.contains(":")
+          ? (rawId.split(separator: ":").last.map(String.init) ?? rawId)
+          : rawId
+        agent["agent_id"] = idSuffix
+      }
+      if agent.string("display_name").isEmpty {
+        let agentName = agent.string("name").ifBlank(agent.string("agent_id")).ifBlank(agent.string("id"))
+        let desktopName = agent.string("desktop_name")
+        if !agentName.isEmpty, !desktopName.isEmpty {
+          agent["display_name"] = "\(agentName) - \(desktopName)"
+        }
+      }
+      if agent.string("setup_detail").isEmpty, !agent.string("detail").isEmpty {
+        agent["setup_detail"] = agent.string("detail")
+      }
+      if agent.string("agent_id") == "cloud-model" || agent.string("kind") == "cloud-model" {
+        continue
+      }
+      do {
+        var request = try importContactQRCodeObject(
+          agent,
+          now: now.addingTimeInterval(Double(index) / 1_000.0)
+        )
+        request.id = "\(request.id)_\(index + 1)"
+        requests.append(request)
+      } catch {
+        continue
+      }
+    }
+    return requests
+  }
+
+  private static func inheritedDesktopAgentFields(from object: [String: Any]) -> [String: Any] {
+    var inherited: [String: Any] = [:]
+    let desktopFingerprint = object.string("desktop_fingerprint")
+      .ifBlank(object.string("identity_key_sha256"))
+      .ifBlank(object.string("identity_fingerprint"))
+    let desktopId = object.string("desktop_id")
+      .ifBlank(desktopFingerprint.isEmpty ? "" : "desktop_\(desktopFingerprint.prefix(16))")
+    [
+      "desktop_id": desktopId,
+      "desktop_name": object.string("desktop_name"),
+      "desktop_fingerprint": desktopFingerprint,
+      "desktop_public_key": object.string("desktop_public_key").ifBlank(object.string("identity_public_key")),
+      "mqtt_topic": object.string("mqtt_topic").ifBlank(object.string("mqtt_inbox_topic")).ifBlank(object.string("mqtt_recv_topic")),
+      "mqtt_inbox_topic": object.string("mqtt_inbox_topic").ifBlank(object.string("mqtt_topic")),
+      "desktop_access_profile": object.string("desktop_access_profile")
+    ].forEach { key, value in
+      if !value.isEmpty {
+        inherited[key] = value
+      }
+    }
+    if let scopes = object["desktop_access_scopes"] {
+      inherited["desktop_access_scopes"] = scopes
+    }
+    return inherited
+  }
+
+  private static func isPairingOrConnectorStatusObject(_ object: [String: Any]) -> Bool {
+    !object.string("desktop_id").isEmpty ||
+      !object.string("desktop_fingerprint").isEmpty ||
+      !object.string("identity_key_sha256").isEmpty ||
+      !object.string("identity_fingerprint").isEmpty
   }
 
   private static func isContactQRCodeObject(_ object: [String: Any]) -> Bool {
