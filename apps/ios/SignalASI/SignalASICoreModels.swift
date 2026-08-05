@@ -491,11 +491,79 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
   var paired: Bool
   var accessProfile: String
   var accessScopes: Set<String>
+  var capabilityManifestVersion: Int
   var updatedAt: Date
+
+  init(
+    desktopId: String,
+    desktopName: String,
+    desktopFingerprint: String,
+    signalName: String,
+    routes: SignalASILinkRoutes,
+    paired: Bool,
+    accessProfile: String,
+    accessScopes: Set<String>,
+    capabilityManifestVersion: Int = 0,
+    updatedAt: Date
+  ) {
+    self.desktopId = desktopId
+    self.desktopName = desktopName
+    self.desktopFingerprint = desktopFingerprint
+    self.signalName = signalName
+    self.routes = routes
+    self.paired = paired
+    self.accessProfile = accessProfile
+    self.accessScopes = accessScopes
+    self.capabilityManifestVersion = max(capabilityManifestVersion, 0)
+    self.updatedAt = updatedAt
+  }
 
   var fullDesktopExecutor: Bool {
     accessProfile == SignalASILinkProtocol.accessDesktopExecutor &&
       accessScopes.contains(SignalASILinkProtocol.scopeDesktopExecutor)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case desktopId
+    case desktopName
+    case desktopFingerprint
+    case signalName
+    case routes
+    case paired
+    case accessProfile
+    case accessScopes
+    case capabilityManifestVersion = "capability_manifest_version"
+    case updatedAt
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      desktopId: try container.decode(String.self, forKey: .desktopId),
+      desktopName: try container.decode(String.self, forKey: .desktopName),
+      desktopFingerprint: try container.decode(String.self, forKey: .desktopFingerprint),
+      signalName: try container.decode(String.self, forKey: .signalName),
+      routes: try container.decode(SignalASILinkRoutes.self, forKey: .routes),
+      paired: try container.decode(Bool.self, forKey: .paired),
+      accessProfile: try container.decode(String.self, forKey: .accessProfile),
+      accessScopes: try container.decode(Set<String>.self, forKey: .accessScopes),
+      capabilityManifestVersion: try container.decodeIfPresent(Int.self, forKey: .capabilityManifestVersion) ?? 0,
+      updatedAt: try container.decode(Date.self, forKey: .updatedAt)
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(desktopId, forKey: .desktopId)
+    try container.encode(desktopName, forKey: .desktopName)
+    try container.encode(desktopFingerprint, forKey: .desktopFingerprint)
+    try container.encode(signalName, forKey: .signalName)
+    try container.encode(routes, forKey: .routes)
+    try container.encode(paired, forKey: .paired)
+    try container.encode(accessProfile, forKey: .accessProfile)
+    try container.encode(accessScopes, forKey: .accessScopes)
+    try container.encode(capabilityManifestVersion, forKey: .capabilityManifestVersion)
+    try container.encode(updatedAt, forKey: .updatedAt)
   }
 }
 

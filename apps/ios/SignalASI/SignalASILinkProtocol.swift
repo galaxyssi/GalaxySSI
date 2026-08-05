@@ -29,6 +29,7 @@ enum SignalASILinkProtocol {
   static let scopeDesktopControl = "desktop.control"
   static let scopeDesktopNativeTools = "desktop.native_tools"
   static let scopeDesktopExternalFiles = "desktop.files.external"
+  static let capabilityManifestVersion = 2
 
   private static let maxQRAgeMilliseconds: Double = 10 * 60 * 1000
   private static let maxClockSkewMilliseconds: Double = 5 * 60 * 1000
@@ -49,6 +50,10 @@ enum SignalASILinkProtocol {
   static func validRouteId(_ value: String) -> Bool {
     let range = NSRange(value.startIndex..<value.endIndex, in: value)
     return routePattern.firstMatch(in: value, range: range) != nil
+  }
+
+  static func needsCapabilityManifest(_ link: ServerLink) -> Bool {
+    link.capabilityManifestVersion < capabilityManifestVersion
   }
 
   static func decodePairingQRCode(from text: String, now: Date = Date()) throws -> PairingQRCode {
