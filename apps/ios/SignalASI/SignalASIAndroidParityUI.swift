@@ -764,29 +764,99 @@ struct DiscoverView: View {
         )
         ScrollView {
           VStack(spacing: 10) {
-            SignalASIAndroidMenuLink(
-              title: t("cc_profile_title", "My SignalASI"),
-              subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
-              systemImage: "person.crop.circle",
-              tint: .signalASITextPrimary
-            ) {
-              SignalASIProfileIdentityView()
+            SignalASIAndroidMenuGroup {
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.ai_agent_title", "AI Agent"),
+                subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
+                systemImage: "cpu",
+                tint: .signalASIAccent
+              ) {
+                SignalASIMyAgentsView()
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.device_center", "Device Center"),
+                subtitle: t("signalasi.discover.device.subtitle", "Manage and control your devices"),
+                systemImage: "antenna.radiowaves.left.and.right",
+                tint: .signalASIAccent
+              ) {
+                DeviceManagementView()
+              }
             }
-            SignalASIAndroidMenuLink(
-              title: t("settings_my_signalasi", "My SignalASI"),
-              subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
-              systemImage: "slider.horizontal.3",
-              tint: .signalASIAccent
-            ) {
-              SignalASIControlCenterView()
+            SignalASIAndroidMenuGroup {
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.automation.title", "Automation"),
+                subtitle: t("signalasi.automation.hero_subtitle", "Create and manage automated tasks"),
+                systemImage: "clock",
+                tint: .orange
+              ) {
+                SignalASIAutomationView()
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.security_center_title", "Security Center"),
+                subtitle: t("signalasi.discover.security_center_subtitle", "View security status and permissions"),
+                systemImage: "checkmark.shield",
+                tint: .signalASIAccent
+              ) {
+                SignalASISecurityCenterView()
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.lab_title", "Lab"),
+                subtitle: t("signalasi.discover.lab_subtitle", "Explore frontier features"),
+                systemImage: "sparkles",
+                tint: .purple
+              ) {
+                SignalASILocalModelLabView()
+              }
             }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.ai_agent_title", "AI Agent"),
-              subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
-              systemImage: "cpu",
-              tint: .signalASIAccent
-            ) {
-              SignalASIMyAgentsView()
+            SignalASIAndroidMenuGroup {
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.scan_title", "Scan"),
+                subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
+                systemImage: "qrcode.viewfinder",
+                tint: .signalASIAccent
+              ) {
+                AddContactView(autoOpenScanner: true)
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuButton(
+                title: t("signalasi.discover.my_qr_title", "My QR Code"),
+                subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
+                systemImage: "qrcode",
+                tint: .signalASITextPrimary
+              ) {
+                myQRCodePresented = true
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.create_group_title", "Create Group"),
+                subtitle: t("signalasi.discover.create_group_subtitle", "Secure multi-person communication"),
+                systemImage: "person.3",
+                tint: .signalASIAccent
+              ) {
+                SignalASICreateGroupView()
+              }
+            }
+            SignalASIAndroidMenuGroup {
+              SignalASIAndroidGroupedMenuLink(
+                title: t("cc_profile_title", "My SignalASI"),
+                subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
+                systemImage: "person.crop.circle",
+                tint: .signalASITextPrimary
+              ) {
+                SignalASIProfileIdentityView()
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
+                title: t("settings_my_signalasi", "My SignalASI"),
+                subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
+                systemImage: "slider.horizontal.3",
+                tint: .signalASIAccent
+              ) {
+                SignalASIControlCenterView()
+              }
             }
             SignalASIAndroidMenuLink(
               title: t("cc_learning_title", "Learning & Skill Evolution"),
@@ -803,38 +873,6 @@ struct DiscoverView: View {
               tint: .signalASIAccent
             ) {
               SignalASIAgentCoreView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.scan_title", "Scan"),
-              subtitle: t("signalasi.discover.scan_subtitle", "Add contacts or devices"),
-              systemImage: "qrcode.viewfinder",
-              tint: .signalASIAccent
-            ) {
-              AddContactView(autoOpenScanner: true)
-            }
-            SignalASIAndroidMenuButton(
-              title: t("signalasi.discover.my_qr_title", "My QR Code"),
-              subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
-              systemImage: "qrcode",
-              tint: .signalASITextPrimary
-            ) {
-              myQRCodePresented = true
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.create_group_title", "Create Group"),
-              subtitle: t("signalasi.discover.create_group_subtitle", "Secure multi-person communication"),
-              systemImage: "person.3",
-              tint: .signalASIAccent
-            ) {
-              SignalASICreateGroupView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.security_center_title", "Security Center"),
-              subtitle: t("signalasi.discover.security_center_subtitle", "View security status and permissions"),
-              systemImage: "checkmark.shield",
-              tint: .signalASIAccent
-            ) {
-              SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_permissions_title", "Permissions & Audit"),
@@ -925,36 +963,12 @@ struct DiscoverView: View {
               SignalASIGeneralControlCenterView()
             }
             SignalASIAndroidMenuLink(
-              title: t("signalasi.automation.title", "Automation"),
-              subtitle: t("signalasi.automation.hero_subtitle", "Let AI actively handle fixed tasks"),
-              systemImage: "clock",
-              tint: .orange
-            ) {
-              SignalASIAutomationView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.lab_title", "Lab"),
-              subtitle: t("signalasi.discover.lab_subtitle", "Explore frontier features"),
-              systemImage: "sparkles",
-              tint: .purple
-            ) {
-              SignalASILocalModelLabView()
-            }
-            SignalASIAndroidMenuLink(
               title: t("cc_runtime_title", "On-device Linux Runtime"),
               subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
               systemImage: "terminal",
               tint: .teal
             ) {
               SignalASIOnDeviceRuntimeView()
-            }
-            SignalASIAndroidMenuLink(
-              title: t("signalasi.discover.device_center", "Device Center"),
-              subtitle: t("signalasi.discover.device.subtitle", "Custom devices, Home Assistant and connectors"),
-              systemImage: "antenna.radiowaves.left.and.right",
-              tint: .signalASIAccent
-            ) {
-              DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_nodes_title", "Agents, Models & Nodes"),
@@ -1151,6 +1165,123 @@ private struct AgentStatusChip: View {
     .padding(.vertical, 6)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct SignalASIAndroidMenuGroup<Content: View>: View {
+  let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      content
+    }
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  let destination: Destination
+
+  init(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    tint: Color,
+    @ViewBuilder destination: () -> Destination
+  ) {
+    self.title = title
+    self.subtitle = subtitle
+    self.systemImage = systemImage
+    self.tint = tint
+    self.destination = destination()
+  }
+
+  var body: some View {
+    NavigationLink(destination: destination) {
+      SignalASIAndroidGroupedMenuRowContent(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint
+      )
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct SignalASIAndroidGroupedMenuButton: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  var action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      SignalASIAndroidGroupedMenuRowContent(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint
+      )
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct SignalASIAndroidGroupedMenuRowContent: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+
+  var body: some View {
+    HStack(spacing: 12) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(tint.opacity(0.16))
+        Image(systemName: systemImage)
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(tint)
+      }
+      .frame(width: 42, height: 42)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.82)
+        Text(subtitle)
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(2)
+      }
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 11)
+    .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+  }
+}
+
+private struct SignalASIAndroidMenuDivider: View {
+  var body: some View {
+    Rectangle()
+      .fill(Color.signalASISeparator)
+      .frame(height: 0.5)
+      .padding(.leading, 66)
   }
 }
 
