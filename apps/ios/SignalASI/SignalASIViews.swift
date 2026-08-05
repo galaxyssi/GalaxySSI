@@ -706,10 +706,15 @@ struct MessageBubble: View {
     HStack {
       if message.isMine { Spacer(minLength: 48) }
       VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
-        Text(message.content)
+        SignalASIRichContentView(
+          content: message.content,
+          richOutputJson: message.richOutputJson,
+          isOutgoing: message.isMine
+        )
           .padding(.horizontal, 12)
           .padding(.vertical, 9)
           .foregroundColor(.signalASITextPrimary)
+          .frame(maxWidth: bubbleMaxWidth, alignment: .leading)
           .background(messageBubbleColor)
           .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -734,6 +739,10 @@ struct MessageBubble: View {
       return Color.signalASIButtonSoft
     }
     return message.isMine ? Color.signalASISentBubble : Color.signalASIIncomingBubble
+  }
+
+  private var bubbleMaxWidth: CGFloat {
+    min(UIScreen.main.bounds.width * 0.74, 520)
   }
 }
 

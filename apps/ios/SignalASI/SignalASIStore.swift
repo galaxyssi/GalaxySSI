@@ -1361,7 +1361,8 @@ final class SignalASIStore: ObservableObject {
     status: ChatDeliveryStatus = .delivered,
     traceStage: String = "received",
     conversationId: String = "",
-    turnId: String = ""
+    turnId: String = "",
+    richOutputJson: String = ""
   ) -> ChatMessage {
     let resolvedConversationId = conversationId.ifBlank(activeConversationId(for: contactId))
     let createdAt = Date()
@@ -1374,7 +1375,8 @@ final class SignalASIStore: ObservableObject {
       deliveryTrace: [DeliveryTraceEvent(stage: traceStage)],
       conversationId: resolvedConversationId,
       turnId: turnId,
-      remoteMessageId: remoteMessageId
+      remoteMessageId: remoteMessageId,
+      richOutputJson: richOutputJson
     )
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)

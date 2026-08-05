@@ -1264,8 +1264,13 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
-    let content = appPayload.string("content").ifBlank(appPayload.string("text"))
-    guard !content.isEmpty else {
+    let richOutputJson = AgentRichContentCodec.normalize(
+      appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
+    )
+    let content = appPayload.string("content")
+      .ifBlank(appPayload.string("text"))
+      .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+    guard !content.isEmpty || !richOutputJson.isEmpty else {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
@@ -1276,13 +1281,17 @@ final class MessageCoordinator: ObservableObject {
       from: contactId,
       remoteMessageId: appPayload.string("message_id"),
       conversationId: appPayload.string("conversation_id"),
-      turnId: appPayload.string("turn_id")
+      turnId: appPayload.string("turn_id"),
+      richOutputJson: richOutputJson
     )
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
-    NotificationService.notify(title: store.contact(id: contactId)?.displayName ?? "SignalASI", body: content)
+    NotificationService.notify(
+      title: store.contact(id: contactId)?.displayName ?? "SignalASI",
+      body: content.ifBlank("Rich content")
+    )
   }
 
   private func handleConnectorAgentStatus(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
