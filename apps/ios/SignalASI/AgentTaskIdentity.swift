@@ -96,6 +96,28 @@ enum AgentTaskIdentityPolicy {
     return nameBasedUUID(seed).uuidString.lowercased()
   }
 
+  static func taskId(
+    ownerId: String,
+    contactId: String,
+    sourceMessageId: String,
+    conversationId: String,
+    turnId: String,
+    requested: String = ""
+  ) -> String {
+    let explicit = trim(requested)
+    if !explicit.isEmpty {
+      return explicit
+    }
+    let seed = [
+      trim(ownerId),
+      trim(contactId),
+      trim(sourceMessageId),
+      trim(conversationId),
+      trim(turnId)
+    ].joined(separator: "\u{001f}")
+    return nameBasedUUID(seed).uuidString.lowercased()
+  }
+
   static func matchesDesktopResponse(
     expected: [String: String],
     conversationId: String,
@@ -112,6 +134,14 @@ enum AgentTaskIdentityPolicy {
       conversationId == expectedConversationId &&
       taskId == expectedTaskId &&
       turnId == expectedTurnId
+  }
+
+  static func routesToMainAgent(
+    superseded: Bool,
+    hasRuntime: Bool,
+    resolvedConversationId: String
+  ) -> Bool {
+    superseded || hasRuntime || !isBlank(resolvedConversationId)
   }
 
   private static func nameBasedUUID(_ value: String) -> UUID {
@@ -133,5 +163,109 @@ enum AgentTaskIdentityPolicy {
 
   private static func isBlank(_ value: String) -> Bool {
     trim(value).isEmpty
+  }
+}
+
+final class AgentTaskIdentityStore {
+  private let defaults: UserDefaults
+  private let storageKeyPrefix: String
+  private let encoder = JSONEncoder()
+  private let decoder = JSONDecoder()
+  private let lock = NSRecursiveLock()
+
+  init(
+    defaults: UserDefaults = .standard,
+    storageKeyPrefix: String = "signalasi_agent_task_identities"
+  ) {
+    self.defaults = defaults
+    self.storageKeyPrefix = storageKeyPrefix
+  }
+
+  func register(
+    contactId: String,
+    sourceMessageId: Int64,
+    identity: AgentTaskIdentity
+  ) {
+    guard sourceMessageId > 0 else { return }
+    register(
+      contactId: contactId,
+      sourceMessageId: String(sourceMessageId),
+      identity: identity
+    )
+  }
+
+  func register(
+    contactId: String,
+    sourceMessageId: String,
+    identity: AgentTaskIdentity
+  ) {
+    guard let contactId = clean(contactId),
+          let sourceMessageId = clean(sourceMessageId),
+          identity.isComplete,
+          let encoded = try? encoder.encode(identity) else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    defaults.set(
+      String(decoding: encoded, as: UTF8.self),
+      forKey: storageKey(contactId, sourceMessageId)
+    )
+  }
+
+  func matches(payload: [String: Any]) -> Bool {
+    matchesStored(payload: payload, requireRegistered: false)
+  }
+
+  func matchesRegistered(payload: [String: Any]) -> Bool {
+    matchesStored(payload: payload, requireRegistered: true)
+  }
+
+  private func matchesStored(payload: [String: Any], requireRegistered: Bool) -> Bool {
+    guard let contactId = clean(payload.string("contact_id")),
+          let sourceMessageId = clean(sourceMessageIdentity(from: payload)) else {
+      return false
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    let encoded = defaults.string(forKey: storageKey(contactId, sourceMessageId))
+    guard let encoded else {
+      return !requireRegistered
+    }
+    guard let expected = decodeIdentity(encoded) else {
+      return false
+    }
+    return payload.string("client_route_id") == expected.clientRouteId &&
+      payload.string("conversation_id") == expected.conversationId &&
+      payload.string("task_id") == expected.taskId &&
+      payload.string("turn_id") == expected.turnId
+  }
+
+  private func sourceMessageIdentity(from payload: [String: Any]) -> String {
+    let source = payload.string("source_message_id")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if !source.isEmpty {
+      return source
+    }
+    return payload.string("client_message_id")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func decodeIdentity(_ encoded: String) -> AgentTaskIdentity? {
+    guard let data = encoded.data(using: .utf8) else { return nil }
+    return try? decoder.decode(AgentTaskIdentity.self, from: data)
+  }
+
+  private func storageKey(_ contactId: String, _ sourceMessageId: String) -> String {
+    let raw = "\(contactId)\u{001f}\(sourceMessageId)"
+    let digest = SHA256.hash(data: Data(raw.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "\(storageKeyPrefix).\(digest)"
+  }
+
+  private func clean(_ value: String) -> String? {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean.isEmpty ? nil : clean
   }
 }
