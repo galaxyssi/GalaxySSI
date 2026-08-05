@@ -70,7 +70,7 @@ struct FriendRequestDetailView: View {
         title: t("settings_identity_fingerprint", "Fingerprint"),
         value: SignalASISecurityFormatter.fingerprint(
           request.identityFingerprint,
-          unknown: t("Unavailable", "Unavailable")
+          unknown: t("signalasi.common.unavailable", "Unavailable")
         ),
         copyValue: request.identityFingerprint,
         systemImage: "checkmark.shield",
@@ -89,7 +89,7 @@ struct FriendRequestDetailView: View {
         SignalASISecuritySectionTitle(title: t("signalasi.contact.messaging", "Messaging"))
         if !request.mqttTopic.isEmpty {
           copyRow(
-            title: t("Topic", "Topic"),
+            title: t("signalasi.contact_detail.topic", "Topic"),
             value: request.mqttTopic,
             systemImage: "antenna.radiowaves.left.and.right",
             tint: .purple,
@@ -99,7 +99,7 @@ struct FriendRequestDetailView: View {
         }
         if !request.mqttInboxTopic.isEmpty {
           copyRow(
-            title: t("Inbox", "Inbox"),
+            title: t("signalasi.contact_detail.inbox", "Inbox"),
             value: request.mqttInboxTopic,
             systemImage: "tray.and.arrow.down",
             tint: .teal,
@@ -109,7 +109,7 @@ struct FriendRequestDetailView: View {
         }
         if !request.signalBundleRef.isEmpty {
           copyRow(
-            title: t("Bundle", "Bundle"),
+            title: t("signalasi.contact_detail.bundle", "Bundle"),
             value: request.signalBundleRef,
             systemImage: "shippingbox",
             tint: .orange,

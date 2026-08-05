@@ -860,6 +860,7 @@
 "signalasi.friend_request.reject" = "拒绝";
 "signalasi.friend_request.added" = "已为 %@ 添加好友请求。";
 "signalasi.friend_request.added_to_contacts" = "已添加到通讯录";
+"friend_request_view" = "查看";
 "signalasi.friend_request.not_found" = "未找到好友请求。";
 "signalasi.friend_request.title" = "好友请求";
 "signalasi.friend_request.not_found_subtitle" = "此请求可能已处理或已删除。";
@@ -882,6 +883,7 @@
 "signalasi.common.rejected" = "已拒绝";
 "signalasi.common.copied" = "已复制";
 "signalasi.common.none" = "无";
+"signalasi.common.unavailable" = "不可用";
 "signalasi.common.copy" = "复制";
 "signalasi.common.delete" = "删除";
 "signalasi.common.done" = "完成";
