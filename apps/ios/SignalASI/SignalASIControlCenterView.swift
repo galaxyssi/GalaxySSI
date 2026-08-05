@@ -203,7 +203,7 @@ struct SignalASIControlCenterView: View {
         tint: homeAssistantTint,
         badge: homeAssistantBadge
       ) {
-        DeviceManagementView()
+        SignalASISmartSpacesView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_tasks_title", "Task Center"),
