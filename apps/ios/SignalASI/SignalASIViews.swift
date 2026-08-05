@@ -1734,10 +1734,7 @@ struct AvatarView: View {
     ]
       .joined(separator: " ")
       .lowercased()
-    if identity.contains("hermes") {
-      return "HermesLogo"
-    }
-    if contact.deliveryMode == .link || identity.contains("signalasi") {
+    if contact.deliveryMode == .link || identity.contains("signalasi") || identity.contains("hermes") {
       return "SignalASILogo"
     }
     return nil
