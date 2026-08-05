@@ -126,17 +126,48 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertNil(object["allowsPhoneRuntimeTools"])
   }
 
+  func testAgentModelPlanningPromptAppliesAndroidGlobalContextDispatchPolicy() {
+    let globalContext = "Durable global memory should be reserved for real tasks."
+    let context = AgentConversationContext(
+      conversationId: "conversation-1",
+      summary: "Earlier summary",
+      turns: [],
+      privateMode: false,
+      globalContext: globalContext
+    )
+    let greeting = AgentModelPlanningPrompt.build(
+      request: promptRequest(goal: "Hello!", conversationContext: context),
+      settings: AgentModelPlannerSettings()
+    )
+    let attachedGreeting = AgentModelPlanningPrompt.build(
+      request: promptRequest(goal: "hello", conversationContext: context, hasAttachments: true),
+      settings: AgentModelPlannerSettings()
+    )
+    let taskGreeting = AgentModelPlanningPrompt.build(
+      request: promptRequest(goal: "hello, summarize the attachment", conversationContext: context),
+      settings: AgentModelPlannerSettings()
+    )
+
+    XCTAssertTrue(greeting.contains("Earlier summary"))
+    XCTAssertFalse(greeting.contains(globalContext))
+    XCTAssertTrue(attachedGreeting.contains(globalContext))
+    XCTAssertTrue(taskGreeting.contains(globalContext))
+  }
+
   private func promptRequest(
+    goal: String = "Research SignalASI and summarize",
     visibleTexts: [String] = ["Welcome to SignalASI"],
     parsingContext: AgentModelPlanParsingContext? = nil,
+    conversationContext: AgentConversationContext? = nil,
     executionHistory: [AgentAction] = [],
     nativeTools: [AgentNativeToolDescriptor] = [],
     requirements: AgentTaskRequirements = AgentTaskRequirements(mode: .balanced),
+    hasAttachments: Bool? = nil,
     allowsPhoneRuntimeTools: Bool? = nil
   ) -> AgentModelPlanningPromptRequest {
     AgentModelPlanningPromptRequest(
       planRequest: AgentPlanRequest(
-        goal: "Research SignalASI and summarize",
+        goal: goal,
         screen: AgentScreenContext(
           foregroundApp: "SignalASI",
           pageTitle: "Agent",
@@ -151,7 +182,7 @@ final class AgentModelPlanningPromptTests: XCTestCase {
         contextDigest: "prompt-test"
       ),
       parsingContext: parsingContext ?? context(),
-      conversationContext: AgentConversationContext(
+      conversationContext: conversationContext ?? AgentConversationContext(
         conversationId: "conversation-1",
         summary: "The user is comparing mobile parity.",
         turns: [
@@ -161,6 +192,7 @@ final class AgentModelPlanningPromptTests: XCTestCase {
       ),
       executionHistory: executionHistory,
       requirements: requirements,
+      hasAttachments: hasAttachments,
       allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
     )
   }
