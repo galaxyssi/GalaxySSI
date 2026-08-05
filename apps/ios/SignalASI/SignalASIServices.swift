@@ -1056,14 +1056,15 @@ final class MessageCoordinator: ObservableObject {
     originalPayload: String,
     allowStage: Bool
   ) {
+    let link = serverLink(for: topic, payload: object)
     if object.string("type") == "pairing_confirmed" {
       let access = SignalASILinkProtocol.pairingAccess(from: object.dictionary("pairing_access"))
       store.markServerPaired(desktopId: object.string("desktop_id"), access: access)
+      _ = store.updateDesktopAgentContacts(from: object, link: serverLink(for: topic, payload: object) ?? link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
       return
     }
-    let link = serverLink(for: topic, payload: object)
     let appPayload: [String: Any]
     if let envelope = object.dictionary("envelope") {
       guard let unwrapped = SignalASILinkProtocol.unwrapEnvelope(envelope) else {
@@ -1152,6 +1153,12 @@ final class MessageCoordinator: ObservableObject {
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
     }
+    if handleConnectorAgentStatus(appPayload, link: link) {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let content = appPayload.string("content").ifBlank(appPayload.string("text"))
     guard !content.isEmpty else {
@@ -1172,6 +1179,49 @@ final class MessageCoordinator: ObservableObject {
       deliveryStore.completeIncoming(messageId: messageId)
     }
     NotificationService.notify(title: store.contact(id: contactId)?.displayName ?? "SignalASI", body: content)
+  }
+
+  private func handleConnectorAgentStatus(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
+    let type = payload.string("type")
+    guard type == "connector_status" || type == "capability_manifest" || type == "pairing_confirmed" else {
+      return false
+    }
+    let hasConnectorAgents = (payload["connector_agents"] as? [[String: Any]])?.isEmpty == false
+    guard hasConnectorAgents || type == "pairing_confirmed" else {
+      return false
+    }
+
+    var link = incomingLink
+    if type == "pairing_confirmed" {
+      let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      let access = SignalASILinkProtocol.pairingAccess(from: payload.dictionary("pairing_access"))
+      if !desktopId.isEmpty {
+        store.markServerPaired(desktopId: desktopId, access: access)
+        link = serverLink(for: "", payload: ["desktop_id": desktopId]) ?? link
+      }
+      pairingStatus = "Pairing confirmed"
+      scheduleOutboxFlush(after: 0)
+    }
+
+    if hasConnectorAgents {
+      _ = store.updateDesktopAgentContacts(from: payload, link: link)
+    }
+
+    let suppliedContent = payload.string("content").ifBlank(payload.string("text"))
+    guard type != "capability_manifest" || !suppliedContent.isEmpty else {
+      return true
+    }
+    let content = suppliedContent.ifBlank(
+      type == "pairing_confirmed" ? "Pairing confirmed" : "Connector status updated"
+    )
+    let systemMessage = store.appendSystem(
+      content,
+      to: "system",
+      conversationId: payload.string("conversation_id")
+    )
+    onIncomingMessage?(systemMessage)
+    NotificationService.notify(title: "SignalASI", body: content)
+    return true
   }
 
   private func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {

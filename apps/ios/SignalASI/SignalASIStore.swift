@@ -1880,23 +1880,54 @@ final class SignalASIStore: ObservableObject {
     save()
   }
 
+  @discardableResult
+  func updateDesktopAgentContacts(from payload: [String: Any], link incomingLink: ServerLink? = nil) -> Int {
+    guard let agents = payload["connector_agents"] as? [[String: Any]], !agents.isEmpty else {
+      return 0
+    }
+    let link = incomingLink ?? serverLink(forConnectorPayload: payload)
+    let updated = upsertDesktopAgentContacts(
+      payloads: desktopAgentPayloads(from: agents, parentPayload: payload, link: link),
+      link: link
+    )
+    if updated > 0 {
+      save()
+    }
+    return updated
+  }
+
   private func upsertDesktopAgentContacts(from pairing: PairingQRCode, link: ServerLink) {
-    desktopAgentPayloads(from: pairing, link: link).forEach { payload in
+    _ = upsertDesktopAgentContacts(payloads: desktopAgentPayloads(from: pairing, link: link), link: link)
+  }
+
+  @discardableResult
+  private func upsertDesktopAgentContacts(payloads: [[String: Any]], link incomingLink: ServerLink?) -> Int {
+    var updated = 0
+    payloads.forEach { payload in
+      let link = incomingLink ?? serverLink(forConnectorPayload: payload)
       let agentId = desktopAgentId(from: payload)
       guard !agentId.isEmpty, agentId != "hermes", agentId != "cloud-model",
-            payload.string("kind") != "cloud-model" else {
+            payload.string("kind") != "cloud-model",
+            payload.string("agent_kind") != "cloud-model" else {
         return
       }
+      let desktopId = desktopId(from: payload, link: link)
+      guard !desktopId.isEmpty else { return }
+      let desktopName = payload.string("desktop_name").ifBlank(link?.desktopName ?? "SignalASI Desktop")
+      let desktopFingerprint = desktopFingerprint(from: payload, link: link)
+      let isPaired = link?.paired == true
       let rawId = payload.string("id")
       let contactId: String
-      if rawId.contains(":"), rawId.hasPrefix(link.desktopId) || rawId.hasPrefix("desktop_") {
+      if rawId.contains(":"), rawId.hasPrefix(desktopId) || rawId.hasPrefix("desktop_") {
         contactId = rawId
       } else {
-        contactId = "\(link.desktopId):\(agentId)"
+        contactId = "\(desktopId):\(agentId)"
       }
       let agentName = payload.string("name").ifBlank(agentId)
-      let displayName = payload.string("display_name").ifBlank("\(agentName) - \(link.desktopName)")
-      let kind = payload.string("kind").ifBlank("custom-cli")
+      let displayName = payload.string("display_name")
+        .ifBlank(payload.string("label"))
+        .ifBlank("\(agentName) - \(desktopName)")
+      let kind = payload.string("kind").ifBlank(payload.string("agent_kind")).ifBlank("custom-cli")
       let now = Date()
       var contact = contact(id: contactId) ?? SignalASIContact(
         id: contactId,
@@ -1906,12 +1937,12 @@ final class SignalASIStore: ObservableObject {
         type: "agent",
         agentKind: kind,
         deliveryMode: .link,
-        trustState: link.paired ? .verified : .unverified,
-        desktopId: link.desktopId,
-        desktopName: link.desktopName,
-        identityFingerprint: link.desktopFingerprint,
-        setupStatus: link.paired ? "ready" : "pairing",
-        setupDetail: link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
+        trustState: isPaired ? .verified : .unverified,
+        desktopId: desktopId,
+        desktopName: desktopName,
+        identityFingerprint: desktopFingerprint,
+        setupStatus: isPaired ? "ready" : "pairing",
+        setupDetail: isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
         cloudProvider: "",
         cloudModels: [],
         selectedCloudModelId: "",
@@ -1925,26 +1956,33 @@ final class SignalASIStore: ObservableObject {
       contact.type = "agent"
       contact.agentKind = kind
       contact.deliveryMode = .link
-      contact.trustState = link.paired ? .verified : .unverified
-      contact.desktopId = link.desktopId
-      contact.desktopName = link.desktopName
-      contact.identityFingerprint = link.desktopFingerprint
-      contact.setupStatus = payload.string("status").ifBlank(link.paired ? "ready" : "pairing")
-      contact.setupDetail = payload.string("detail").ifBlank(
-        link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
+      contact.trustState = isPaired ? .verified : .unverified
+      contact.desktopId = desktopId
+      contact.desktopName = desktopName
+      contact.identityFingerprint = desktopFingerprint
+      contact.setupStatus = payload.string("status")
+        .ifBlank(payload.string("setup_status"))
+        .ifBlank(isPaired ? "ready" : "pairing")
+      contact.setupDetail = payload.string("detail")
+        .ifBlank(payload.string("setup_detail"))
+        .ifBlank(payload.string("setup"))
+        .ifBlank(
+          isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
       )
-      contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link.routes.upTopic)
-      contact.mqttInboxTopic = link.routes.downTopic
+      contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
+      contact.mqttInboxTopic = link?.routes.downTopic
       contact.deleted = false
       contact.deletedAt = nil
       contact.updatedAt = now
       upsert(contact)
+      updated += 1
     }
+    return updated
   }
 
   private func desktopAgentPayloads(from pairing: PairingQRCode, link: ServerLink) -> [[String: Any]] {
     if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
-      return agents
+      return desktopAgentPayloads(from: agents, parentPayload: pairing.raw, link: link)
     }
     let fallbackAgents = [
       ("hermes", "Hermes Agent", "local-cli"),
@@ -1975,6 +2013,120 @@ final class SignalASIStore: ObservableObject {
       ]
       return payload
     }
+  }
+
+  private func desktopAgentPayloads(
+    from agents: [[String: Any]],
+    parentPayload: [String: Any],
+    link: ServerLink?
+  ) -> [[String: Any]] {
+    let access = SignalASILinkProtocol.pairingAccess(from: parentPayload.dictionary("pairing_access"))
+    return agents.map { agent in
+      var payload = agent
+      inheritConnectorValue(
+        "desktop_id",
+        into: &payload,
+        value: parentPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      )
+      inheritConnectorValue(
+        "desktop_name",
+        into: &payload,
+        value: parentPayload.string("desktop_name").ifBlank(link?.desktopName ?? "SignalASI Desktop")
+      )
+      inheritConnectorValue(
+        "desktop_fingerprint",
+        into: &payload,
+        value: parentPayload.string("desktop_fingerprint")
+          .ifBlank(parentPayload.string("identity_key_sha256"))
+          .ifBlank(parentPayload.string("identity_fingerprint"))
+          .ifBlank(link?.desktopFingerprint ?? "")
+      )
+      inheritConnectorValue(
+        "desktop_access_profile",
+        into: &payload,
+        value: parentPayload.string("desktop_access_profile")
+          .ifBlank(access?.profile ?? "")
+          .ifBlank(link?.accessProfile ?? "")
+      )
+      inheritConnectorValue(
+        "mqtt_topic",
+        into: &payload,
+        value: parentPayload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
+      )
+      if payload.stringArray("desktop_access_scopes").isEmpty {
+        let inheritedScopes = parentPayload.stringArray("desktop_access_scopes")
+        let fallbackScopes = Array(access?.scopes ?? link?.accessScopes ?? []).sorted()
+        let scopes = inheritedScopes.isEmpty ? fallbackScopes : inheritedScopes
+        if !scopes.isEmpty {
+          payload["desktop_access_scopes"] = scopes
+        }
+      }
+      if payload.string("status").isEmpty {
+        inheritConnectorValue("status", into: &payload, value: parentPayload.string("status"))
+      }
+      if payload.string("detail").isEmpty {
+        inheritConnectorValue(
+          "detail",
+          into: &payload,
+          value: parentPayload.string("detail")
+            .ifBlank(parentPayload.string("setup_detail"))
+            .ifBlank(parentPayload.string("setup"))
+        )
+      }
+      return payload
+    }
+  }
+
+  private func serverLink(forConnectorPayload payload: [String: Any]) -> ServerLink? {
+    let desktopId = payload.string("desktop_id")
+    if !desktopId.isEmpty, let link = serverLinks.first(where: { $0.desktopId == desktopId }) {
+      return link
+    }
+    let fingerprint = desktopFingerprint(from: payload, link: nil).lowercased()
+    if !fingerprint.isEmpty,
+       let link = serverLinks.first(where: { $0.desktopFingerprint.lowercased() == fingerprint }) {
+      return link
+    }
+    let serverRouteId = payload.string("server_route_id")
+    if !serverRouteId.isEmpty, let link = serverLinks.first(where: { $0.routes.serverRouteId == serverRouteId }) {
+      return link
+    }
+    return nil
+  }
+
+  private func desktopId(from payload: [String: Any], link: ServerLink?) -> String {
+    payload.string("desktop_id")
+      .ifBlank(desktopId(fromRawAgentId: payload.string("id")))
+      .ifBlank(link?.desktopId ?? "")
+      .ifBlank(desktopId(fromFingerprint: desktopFingerprint(from: payload, link: link)))
+  }
+
+  private func desktopId(fromRawAgentId rawId: String) -> String {
+    guard rawId.hasPrefix("desktop_"), let separator = rawId.firstIndex(of: ":") else { return "" }
+    return String(rawId[..<separator])
+  }
+
+  private func desktopId(fromFingerprint fingerprint: String) -> String {
+    let normalized = fingerprint
+      .replacingOccurrences(of: ":", with: "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    guard !normalized.isEmpty else { return "" }
+    return "desktop_\(String(normalized.prefix(16)))"
+  }
+
+  private func desktopFingerprint(from payload: [String: Any], link: ServerLink?) -> String {
+    payload.string("desktop_fingerprint")
+      .ifBlank(payload.string("identity_key_sha256"))
+      .ifBlank(payload.string("identity_fingerprint"))
+      .ifBlank(link?.desktopFingerprint ?? "")
+  }
+
+  private func inheritConnectorValue(_ key: String, into payload: inout [String: Any], value: String) {
+    guard payload.string(key).isEmpty, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return
+    }
+    payload[key] = value
   }
 
   private func desktopAgentId(from payload: [String: Any]) -> String {
