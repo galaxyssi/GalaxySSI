@@ -315,22 +315,19 @@ struct AgentHomeView: View {
           .foregroundColor(.signalASITextSecondary)
       }
       Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 4) {
-        Text(t("signalasi.agent.session.new", "New session"))
-          .font(.system(size: 14, weight: .bold))
-          .foregroundColor(.signalASIAgentSessionTitle)
-          .lineLimit(1)
-        Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.tab.subtitle", "Phone-native super agent"))
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-          .lineLimit(1)
-      }
-      .frame(width: 96, alignment: .trailing)
-      NavigationLink(destination: OnDeviceAgentPermissionsView()) {
-        Image(systemName: "cpu")
-          .font(.system(size: 20, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .frame(width: 36, height: 44)
+      NavigationLink(destination: SignalASIAgentSessionsView()) {
+        VStack(alignment: .trailing, spacing: 4) {
+          Text(t("signalasi.agent.session.new", "New session"))
+            .font(.system(size: 14, weight: .bold))
+            .foregroundColor(.signalASIAgentSessionTitle)
+            .lineLimit(1)
+          Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.tab.subtitle", "Phone-native super agent"))
+            .font(.system(size: 10, weight: .regular))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+        }
+        .frame(width: 128, minHeight: 44, alignment: .trailing)
+        .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       NavigationLink(destination: SettingsView()) {
