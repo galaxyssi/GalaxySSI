@@ -164,6 +164,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var languagePolicy: LanguagePolicySettings
   var displaySettings: AppDisplaySettings
   var agentSafetySettings: AgentSafetySettings
+  var agentPreferenceMode: AgentPreferenceMode
   var cloudAPISecrets: [String: String]
   var taskBudget: AgentTaskBudget
   var customDeviceConnectors: [CustomDeviceConnector]
@@ -186,6 +187,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     languagePolicy: .default,
     displaySettings: .default,
     agentSafetySettings: .default,
+    agentPreferenceMode: .cautious,
     cloudAPISecrets: [:],
     taskBudget: .default,
     customDeviceConnectors: [],
@@ -209,6 +211,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     languagePolicy: LanguagePolicySettings = .default,
     displaySettings: AppDisplaySettings = .default,
     agentSafetySettings: AgentSafetySettings = .default,
+    agentPreferenceMode: AgentPreferenceMode = .cautious,
     cloudAPISecrets: [String: String],
     taskBudget: AgentTaskBudget = .default,
     customDeviceConnectors: [CustomDeviceConnector] = [],
@@ -232,6 +235,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.languagePolicy = languagePolicy
     self.displaySettings = displaySettings
     self.agentSafetySettings = agentSafetySettings
+    self.agentPreferenceMode = agentPreferenceMode
     self.cloudAPISecrets = cloudAPISecrets
     self.taskBudget = taskBudget
     self.customDeviceConnectors = Array(customDeviceConnectors.suffix(CustomDeviceConnector.maximumConnectors))
@@ -255,6 +259,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case languagePolicy = "language_policy"
     case displaySettings = "display_settings"
     case agentSafetySettings = "agent_safety_settings"
+    case agentPreferenceMode = "agent_preference_mode"
     case cloudAPISecrets = "cloud_api_secrets"
     case taskBudget = "task_budget"
     case customDeviceConnectors = "custom_device_connectors"
@@ -301,6 +306,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
     displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
     agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
+    agentPreferenceMode = try container.decodeIfPresent(AgentPreferenceMode.self, forKey: .agentPreferenceMode) ?? .cautious
     cloudAPISecrets = try container.decodeIfPresent([String: String].self, forKey: .cloudAPISecrets) ?? [:]
     taskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .taskBudget) ?? .default
     customDeviceConnectors = Array(

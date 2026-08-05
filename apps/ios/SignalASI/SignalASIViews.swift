@@ -1156,6 +1156,16 @@ struct AgentSafetySettingsView: View {
 
   var body: some View {
     Form {
+      Section(header: Text(t("agent_preference_mode_section", "Agent Preference Mode"))) {
+        Picker(t("agent_preference_mode_section", "Agent Preference Mode"), selection: preferenceModeBinding) {
+          ForEach(AgentPreferenceMode.allCases) { mode in
+            Text(t(mode.titleKey, mode.titleFallback)).tag(mode)
+          }
+        }
+        Text(t(store.agentPreferenceMode.detailKey, store.agentPreferenceMode.detailFallback))
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
       Section("Task Execution") {
         Picker("Task execution", selection: taskExecutionModeBinding) {
           ForEach(AgentTaskExecutionMode.allCases) { mode in
@@ -1189,6 +1199,13 @@ struct AgentSafetySettingsView: View {
       }
     }
     .navigationTitle(t("Agent Safety", "Agent Safety"))
+  }
+
+  private var preferenceModeBinding: Binding<AgentPreferenceMode> {
+    Binding(
+      get: { store.agentPreferenceMode },
+      set: { value in store.updateAgentPreferenceMode(value) }
+    )
   }
 
   private var taskExecutionModeBinding: Binding<AgentTaskExecutionMode> {

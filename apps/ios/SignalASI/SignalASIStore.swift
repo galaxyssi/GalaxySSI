@@ -106,6 +106,12 @@ final class SignalASIStore: ObservableObject {
   @Published var agentSafetySettings: AgentSafetySettings {
     didSet { save() }
   }
+  @Published var agentPreferenceMode: AgentPreferenceMode {
+    didSet {
+      agentPreferenceModeStore.save(agentPreferenceMode)
+      save()
+    }
+  }
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
@@ -155,6 +161,7 @@ final class SignalASIStore: ObservableObject {
     var languagePolicy: LanguagePolicySettings
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
+    var agentPreferenceMode: AgentPreferenceMode
     var agentTaskBudget: AgentTaskBudget
     var proactiveTasks: [AgentProactiveTask]
     var proactiveRuns: [AgentProactiveRun]
@@ -179,6 +186,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: LanguagePolicySettings = .default,
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
+      agentPreferenceMode: AgentPreferenceMode = .cautious,
       agentTaskBudget: AgentTaskBudget = .default,
       proactiveTasks: [AgentProactiveTask] = [],
       proactiveRuns: [AgentProactiveRun] = [],
@@ -202,6 +210,7 @@ final class SignalASIStore: ObservableObject {
       self.languagePolicy = languagePolicy
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
+      self.agentPreferenceMode = agentPreferenceMode
       self.agentTaskBudget = agentTaskBudget
       self.proactiveTasks = Array(proactiveTasks.suffix(200))
       self.proactiveRuns = Array(proactiveRuns.suffix(500))
@@ -228,6 +237,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
+      agentPreferenceMode = try container.decodeIfPresent(AgentPreferenceMode.self, forKey: .agentPreferenceMode) ?? .cautious
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
       proactiveTasks = Array(
         (try container.decodeIfPresent([AgentProactiveTask].self, forKey: .proactiveTasks) ?? [])
@@ -266,6 +276,7 @@ final class SignalASIStore: ObservableObject {
   private let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   private let agentMemoryStore: UserDefaultsAgentMemoryStore
   private let agentWorkspaceStore: AgentWorkspaceStore
+  private let agentPreferenceModeStore: AgentPreferenceModeStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
@@ -275,9 +286,11 @@ final class SignalASIStore: ObservableObject {
     self.secrets = secrets
     let deletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
     let memoryStore = UserDefaultsAgentMemoryStore(defaults: defaults, deletionIndex: deletionIndex)
+    let preferenceModeStore = AgentPreferenceModeStore(defaults: defaults)
     self.memoryDeletionIndex = deletionIndex
     self.agentMemoryStore = memoryStore
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
+    self.agentPreferenceModeStore = preferenceModeStore
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -290,6 +303,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = state.languagePolicy
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
+      agentPreferenceMode = state.agentPreferenceMode
       agentTaskBudget = state.agentTaskBudget
       proactiveTasks = state.proactiveTasks
       proactiveRuns = state.proactiveRuns
@@ -333,6 +347,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = .default
       displaySettings = .default
       agentSafetySettings = .default
+      agentPreferenceMode = preferenceModeStore.load()
       agentTaskBudget = .default
       proactiveTasks = []
       proactiveRuns = []
@@ -348,6 +363,7 @@ final class SignalASIStore: ObservableObject {
       globalAgentSettings = .default
       save()
     }
+    agentPreferenceModeStore.save(agentPreferenceMode)
   }
 
   var visibleContacts: [SignalASIContact] {
@@ -1264,6 +1280,16 @@ final class SignalASIStore: ObservableObject {
     agentSafetySettings = next
   }
 
+  func updateAgentPreferenceMode(_ mode: AgentPreferenceMode) {
+    let profile = AgentPreferenceModePolicy.profile(mode)
+    agentPreferenceMode = mode
+    updateAgentSafetySettings {
+      $0.taskExecutionMode = profile.taskExecutionMode
+      $0.permissionMode = profile.permissionMode
+      $0.highRiskGuard = profile.highRiskGuard
+    }
+  }
+
   func selectAgentTaskBudgetProfile(_ profile: AgentTaskBudgetProfile) {
     agentTaskBudget = AgentTaskBudget.forProfile(profile)
   }
@@ -1684,6 +1710,7 @@ final class SignalASIStore: ObservableObject {
         languagePolicy: languagePolicy,
         displaySettings: displaySettings,
         agentSafetySettings: agentSafetySettings,
+        agentPreferenceMode: agentPreferenceMode,
         cloudAPISecrets: cloudSecrets,
         taskBudget: agentTaskBudget,
         customDeviceConnectors: customDeviceConnectors,
@@ -1720,6 +1747,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = payload.agentData.languagePolicy
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
+      agentPreferenceMode = payload.agentData.agentPreferenceMode
       agentTaskBudget = payload.agentData.taskBudget
       try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
       try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
@@ -2723,6 +2751,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: languagePolicy,
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
+      agentPreferenceMode: agentPreferenceMode,
       agentTaskBudget: agentTaskBudget,
       proactiveTasks: proactiveTasks,
       proactiveRuns: proactiveRuns,

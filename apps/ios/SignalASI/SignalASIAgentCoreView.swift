@@ -74,7 +74,7 @@ struct SignalASIAgentCoreView: View {
         subtitle: t("cc_autonomy_subtitle", "Low-risk actions run directly; sensitive actions ask first"),
         systemImage: "checkmark.shield",
         tint: .blue,
-        badge: t(store.agentSafetySettings.permissionMode.displayTitle, store.agentSafetySettings.permissionMode.displayTitle)
+        badge: t(store.agentPreferenceMode.titleKey, store.agentPreferenceMode.titleFallback)
       ) {
         AgentSafetySettingsView()
       }
