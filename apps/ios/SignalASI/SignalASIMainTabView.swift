@@ -25,11 +25,6 @@ struct SignalASIMainTabView: View {
   @ViewBuilder
   private var activeContent: some View {
     switch selection {
-    case .voice:
-      NavigationView {
-        SignalASIVoiceControlCenterView(showsBackButton: false)
-      }
-      .navigationViewStyle(StackNavigationViewStyle())
     case .agent:
       AgentHomeView()
     case .messages:
@@ -70,7 +65,7 @@ struct SignalASIMainTabView: View {
       return unreadTotal
     case .contacts:
       return store.pendingFriendRequests.count
-    case .voice, .agent, .discover, .settings:
+    case .agent, .discover, .settings:
       return 0
     }
   }
@@ -81,7 +76,6 @@ struct SignalASIMainTabView: View {
 }
 
 private enum SignalASIMainTab: String, CaseIterable, Identifiable {
-  case voice
   case agent
   case messages
   case contacts
@@ -92,8 +86,6 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var titleKey: String {
     switch self {
-    case .voice:
-      return "signalasi.tab.voice"
     case .agent:
       return "signalasi.tab.agent"
     case .messages:
@@ -109,8 +101,6 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var fallbackTitle: String {
     switch self {
-    case .voice:
-      return "Voice"
     case .agent:
       return "Agent"
     case .messages:
@@ -126,8 +116,6 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var systemImage: String {
     switch self {
-    case .voice:
-      return "waveform"
     case .agent:
       return "cpu"
     case .messages:
@@ -143,8 +131,6 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var selectedSystemImage: String {
     switch self {
-    case .voice:
-      return "waveform.circle.fill"
     case .agent:
       return "cpu.fill"
     case .messages:
