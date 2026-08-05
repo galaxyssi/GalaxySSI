@@ -502,6 +502,10 @@ struct VoiceSettings: Codable, Equatable {
   var asrProvider: VoiceASRProvider
   var asrModelId: String
   var asrRuntimeMode: VoiceWhisperUserVoiceMode
+  var onlineAsrAllowed: Bool
+  var onlineAsrWifiOnly: Bool
+  var onlineAsrRequestServerDeletion: Bool
+  var remoteWhisperAllowed: Bool
   var ttsProvider: VoiceTTSProvider
   var microsoftVoice: String
   var targetContactId: String
@@ -522,6 +526,10 @@ struct VoiceSettings: Codable, Equatable {
     asrProvider: VoiceASRProvider = VoiceASRProvider.defaultValue,
     asrModelId: String = VoiceSettings.defaultAsrModelId,
     asrRuntimeMode: VoiceWhisperUserVoiceMode = .automatic,
+    onlineAsrAllowed: Bool = false,
+    onlineAsrWifiOnly: Bool = true,
+    onlineAsrRequestServerDeletion: Bool = true,
+    remoteWhisperAllowed: Bool = false,
     ttsProvider: VoiceTTSProvider = VoiceTTSProvider.defaultValue,
     microsoftVoice: String = VoiceSettings.defaultMicrosoftVoice,
     targetContactId: String = "hermes",
@@ -541,6 +549,10 @@ struct VoiceSettings: Codable, Equatable {
     self.asrProvider = asrProvider
     self.asrModelId = VoiceWhisperModelCatalog.normalizedModelId(asrModelId)
     self.asrRuntimeMode = asrRuntimeMode
+    self.onlineAsrAllowed = onlineAsrAllowed
+    self.onlineAsrWifiOnly = onlineAsrWifiOnly
+    self.onlineAsrRequestServerDeletion = onlineAsrRequestServerDeletion
+    self.remoteWhisperAllowed = remoteWhisperAllowed
     self.ttsProvider = ttsProvider
     self.microsoftVoice = microsoftVoice.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultMicrosoftVoice)
     self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
@@ -562,6 +574,10 @@ struct VoiceSettings: Codable, Equatable {
     asrProvider: VoiceASRProvider.defaultValue,
     asrModelId: defaultAsrModelId,
     asrRuntimeMode: .automatic,
+    onlineAsrAllowed: false,
+    onlineAsrWifiOnly: true,
+    onlineAsrRequestServerDeletion: true,
+    remoteWhisperAllowed: false,
     ttsProvider: VoiceTTSProvider.defaultValue,
     microsoftVoice: defaultMicrosoftVoice,
     targetContactId: "hermes",
@@ -602,6 +618,10 @@ struct VoiceSettings: Codable, Equatable {
       asrProvider: asrProvider,
       asrModelId: asrModelId,
       asrRuntimeMode: asrRuntimeMode,
+      onlineAsrAllowed: onlineAsrAllowed,
+      onlineAsrWifiOnly: onlineAsrWifiOnly,
+      onlineAsrRequestServerDeletion: onlineAsrRequestServerDeletion,
+      remoteWhisperAllowed: remoteWhisperAllowed,
       ttsProvider: ttsProvider,
       microsoftVoice: microsoftVoice,
       targetContactId: targetContactId,
@@ -624,6 +644,10 @@ struct VoiceSettings: Codable, Equatable {
     case asrProvider = "asr_provider"
     case asrModelId = "asr_model"
     case asrRuntimeMode = "asr_runtime_mode"
+    case onlineAsrAllowed = "online_asr_allowed"
+    case onlineAsrWifiOnly = "online_asr_wifi_only"
+    case onlineAsrRequestServerDeletion = "online_asr_request_server_deletion"
+    case remoteWhisperAllowed = "remote_whisper_allowed"
     case ttsProvider = "tts_provider"
     case microsoftVoice = "microsoft_voice"
     case targetContactId = "target_contact_id"
@@ -649,6 +673,10 @@ struct VoiceSettings: Codable, Equatable {
       asrRuntimeMode: VoiceWhisperUserVoiceMode.normalized(
         try container.decodeIfPresent(String.self, forKey: .asrRuntimeMode)
       ),
+      onlineAsrAllowed: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrAllowed) ?? false,
+      onlineAsrWifiOnly: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrWifiOnly) ?? true,
+      onlineAsrRequestServerDeletion: try container.decodeIfPresent(Bool.self, forKey: .onlineAsrRequestServerDeletion) ?? true,
+      remoteWhisperAllowed: try container.decodeIfPresent(Bool.self, forKey: .remoteWhisperAllowed) ?? false,
       ttsProvider: VoiceTTSProvider.normalized(try container.decodeIfPresent(String.self, forKey: .ttsProvider)),
       microsoftVoice: try container.decodeIfPresent(String.self, forKey: .microsoftVoice) ?? Self.defaultMicrosoftVoice,
       targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",

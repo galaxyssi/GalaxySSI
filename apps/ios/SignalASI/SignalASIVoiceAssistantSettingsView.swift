@@ -168,7 +168,7 @@ struct SignalASIVoiceAssistantSettingsView: View {
         tint: .purple,
         badge: t("common_select", "Select")
       ) {
-        VoiceWhisperModelSettingsView()
+        SignalASIVoiceASRProviderView()
       }
       SignalASIVoiceMenuRow(
         title: t("voice_asr_language", "ASR Language"),
@@ -180,19 +180,6 @@ struct SignalASIVoiceAssistantSettingsView: View {
         selectedValue: store.languagePolicy.asrLanguage
       ) { value in
         store.updateLanguagePolicy { $0.asrLanguage = value }
-      }
-      SignalASIVoiceMenuRow(
-        title: t("signalasi.voice.model_selection", "Model selection"),
-        subtitle: t(settings.asrRuntimeMode.displayTitle, settings.asrRuntimeMode.displayTitle),
-        systemImage: "dial.min",
-        tint: .teal,
-        badge: t("common_select", "Select"),
-        choices: VoiceWhisperUserVoiceMode.allCases.map {
-          SignalASIVoiceChoice(value: $0.rawValue, title: t($0.displayTitle, $0.displayTitle))
-        },
-        selectedValue: settings.asrRuntimeMode.rawValue
-      ) { value in
-        store.updateVoiceSettings { $0.asrRuntimeMode = VoiceWhisperUserVoiceMode.normalized(value) }
       }
       toggleRow(
         title: t("signalasi.voice.auto_send_transcripts", "Auto-send transcripts"),
@@ -227,16 +214,14 @@ struct SignalASIVoiceAssistantSettingsView: View {
       ) {
         store.updateVoiceSettings { $0.textToSpeechEnabled.toggle() }
       }
-      SignalASIVoiceMenuRow(
+      SignalASISecurityNavigationRow(
         title: t("voice_tts_provider", "TTS Provider"),
         subtitle: ttsProviderSummary,
         systemImage: "speaker.wave.2",
         tint: .orange,
-        badge: t("common_select", "Select"),
-        choices: ttsProviderChoices,
-        selectedValue: settings.ttsProvider.rawValue
-      ) { value in
-        store.updateVoiceSettings { $0.ttsProvider = VoiceTTSProvider.normalized(value) }
+        badge: SignalASIVoiceProviderFormatter.capabilityStatus(activeTtsCapability, language: interfaceLanguage)
+      ) {
+        SignalASIVoiceTTSProviderView()
       }
       SignalASIVoiceMenuRow(
         title: t("language_policy_tts_language", "TTS language"),
@@ -339,6 +324,19 @@ struct SignalASIVoiceAssistantSettingsView: View {
     }
   }
 
+  private var activeTtsCapability: VoiceProviderCapability {
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    var capabilitySettings = settings.normalized
+    capabilitySettings.preferredLocaleIdentifier = LanguagePolicySettings.resolve(store.languagePolicy.ttsLanguage)
+    let capabilities = VoiceProviderCapabilityDetector.detect(
+      settings: capabilitySettings,
+      validatedNetworkAvailable: probe.networkPresent && probe.internetCapable && probe.validated
+    )
+    return capabilities[
+      settings.ttsProvider == .system ? .androidSystemTTS : .microsoftEdgeTTS
+    ]
+  }
+
   private var wakeProviderChoices: [SignalASIVoiceChoice] {
     [
       SignalASIVoiceChoice(
@@ -348,19 +346,6 @@ struct SignalASIVoiceAssistantSettingsView: View {
       SignalASIVoiceChoice(
         value: VoiceWakeProvider.androidASR.rawValue,
         title: t("voice_wake_engine_ios_speech", "iOS Speech wake")
-      )
-    ]
-  }
-
-  private var ttsProviderChoices: [SignalASIVoiceChoice] {
-    [
-      SignalASIVoiceChoice(
-        value: VoiceTTSProvider.system.rawValue,
-        title: t("voice_tts_ios", "iOS System TTS")
-      ),
-      SignalASIVoiceChoice(
-        value: VoiceTTSProvider.microsoftEdge.rawValue,
-        title: t("voice_tts_microsoft", "Microsoft Edge Xiaoxiao")
       )
     ]
   }
