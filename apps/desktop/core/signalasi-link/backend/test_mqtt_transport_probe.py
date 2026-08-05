@@ -1,0 +1,117 @@
+import json
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import mqtt_bridge
+
+
+class _PublishInfo:
+    def __init__(self, rc=0):
+        self.rc = rc
+        self.mid = 1
+
+
+class _ProbeMqtt:
+    def __init__(self, rc=0):
+        self.rc = rc
+        self.publishes = []
+
+    def publish(self, topic, payload, **kwargs):
+        self.publishes.append((topic, json.loads(payload), kwargs))
+        return _PublishInfo(self.rc)
+
+
+class MqttTransportProbeStateTests(unittest.TestCase):
+    def test_probe_is_inactive_until_connect_completes(self):
+        state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
+
+        self.assertFalse(state.should_publish(100.0))
+        generation = state.connected(100.0, initial_delay_seconds=2.0)
+
+        self.assertEqual(1, generation)
+        self.assertFalse(state.should_publish(101.9))
+        self.assertTrue(state.should_publish(102.0))
+
+    def test_matching_loopback_acknowledges_probe(self):
+        state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
+        state.connected(100.0)
+        self.assertTrue(state.begin("expected", 100.0))
+
+        self.assertIsNone(state.acknowledge("other", 100.2))
+        self.assertEqual(0.5, state.acknowledge("expected", 100.5))
+        self.assertFalse(state.should_publish(115.4))
+        self.assertTrue(state.should_publish(115.5))
+
+    def test_missing_loopback_becomes_stalled(self):
+        state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
+        generation = state.connected(100.0)
+        self.assertTrue(state.begin("pending", 100.0))
+
+        stalled, elapsed, observed_generation = state.stalled(109.9)
+        self.assertFalse(stalled)
+        self.assertAlmostEqual(9.9, elapsed)
+        self.assertEqual(generation, observed_generation)
+        self.assertEqual((True, 10.0, generation), state.stalled(110.0))
+        state.disconnected()
+        self.assertEqual((False, 0.0, generation), state.stalled(120.0))
+
+
+class MqttTransportProbeIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
+        self.state_patch = patch.object(mqtt_bridge, "transport_probe_state", self.state)
+        self.topic_patch = patch.object(
+            mqtt_bridge,
+            "_transport_probe_topic",
+            return_value="signalasichat/v1/server/health",
+        )
+        self.state_patch.start()
+        self.topic_patch.start()
+
+    def tearDown(self):
+        self.topic_patch.stop()
+        self.state_patch.stop()
+
+    def test_published_probe_is_consumed_without_route_dispatch(self):
+        mqttc = _ProbeMqtt()
+        self.state.connected(100.0)
+
+        self.assertTrue(mqtt_bridge._publish_transport_probe(mqttc, now=100.0))
+        topic, payload, kwargs = mqttc.publishes[0]
+        self.assertEqual("signalasichat/v1/server/health", topic)
+        self.assertEqual("signalasi_transport_probe", payload["type"])
+        self.assertEqual(mqtt_bridge.MQTT_QOS, kwargs["qos"])
+
+        message = SimpleNamespace(
+            topic=topic,
+            payload=json.dumps(payload).encode("utf-8"),
+        )
+        with patch.object(mqtt_bridge.time, "monotonic", return_value=100.25):
+            self.assertTrue(mqtt_bridge._handle_transport_probe_message(message))
+
+        self.assertEqual((False, 0.0, 1), self.state.stalled(120.0))
+
+    def test_invalid_probe_payload_is_consumed_but_not_acknowledged(self):
+        self.state.connected(100.0)
+        self.assertTrue(self.state.begin("pending", 100.0))
+        message = SimpleNamespace(
+            topic="signalasichat/v1/server/health",
+            payload=b"not-json",
+        )
+
+        self.assertTrue(mqtt_bridge._handle_transport_probe_message(message))
+        self.assertEqual((True, 10.0, 1), self.state.stalled(110.0))
+
+    def test_rejected_probe_requests_transport_recovery(self):
+        mqttc = _ProbeMqtt(rc=4)
+        self.state.connected(100.0)
+
+        with patch.object(mqtt_bridge, "_request_transport_reconnect") as recover:
+            self.assertFalse(mqtt_bridge._publish_transport_probe(mqttc, now=100.0))
+
+        recover.assert_called_once_with(mqttc, "probe_publish_rc_4")
+
+
+if __name__ == "__main__":
+    unittest.main()

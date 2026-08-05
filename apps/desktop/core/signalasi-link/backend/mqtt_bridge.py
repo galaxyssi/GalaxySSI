@@ -146,6 +146,18 @@ PRESENCE_INTERVAL_SECONDS = max(
 )
 presence_stop_event = threading.Event()
 presence_thread: threading.Thread | None = None
+MQTT_PROBE_INTERVAL_SECONDS = max(
+    5.0,
+    float(os.environ.get("SIGNALASI_MQTT_PROBE_INTERVAL_SECONDS", "15")),
+)
+MQTT_PROBE_TIMEOUT_SECONDS = max(
+    3.0,
+    float(os.environ.get("SIGNALASI_MQTT_PROBE_TIMEOUT_SECONDS", "10")),
+)
+MQTT_PROBE_INITIAL_DELAY_SECONDS = 2.0
+transport_probe_stop_event = threading.Event()
+transport_probe_thread: threading.Thread | None = None
+transport_reconnect_in_progress = threading.Event()
 inbound_route_queues: dict[str, queue.Queue] = {}
 inbound_route_queues_lock = threading.Lock()
 INBOUND_ROUTE_IDLE_SECONDS = 120
@@ -204,6 +216,82 @@ EVOLUTION_COMMAND_TYPES = {
 
 class PhoneToolSessionRoutingError(RuntimeError):
     """Raised when a phone tool message is not bound to its paired session."""
+
+
+class MqttTransportProbeState:
+    def __init__(self, interval_seconds: float, timeout_seconds: float) -> None:
+        if interval_seconds <= 0 or timeout_seconds <= 0:
+            raise ValueError("MQTT transport probe timing must be positive")
+        self.interval_seconds = float(interval_seconds)
+        self.timeout_seconds = float(timeout_seconds)
+        self._lock = threading.Lock()
+        self._pending_nonce = ""
+        self._sent_at = 0.0
+        self._next_probe_at = 0.0
+        self._generation = 0
+        self._connected = False
+
+    def connected(self, now: float, initial_delay_seconds: float = 0.0) -> int:
+        with self._lock:
+            self._generation += 1
+            self._connected = True
+            self._pending_nonce = ""
+            self._sent_at = 0.0
+            self._next_probe_at = float(now) + max(0.0, float(initial_delay_seconds))
+            return self._generation
+
+    def disconnected(self) -> None:
+        with self._lock:
+            self._connected = False
+            self._pending_nonce = ""
+            self._sent_at = 0.0
+
+    def should_publish(self, now: float) -> bool:
+        with self._lock:
+            return (
+                self._connected
+                and not self._pending_nonce
+                and float(now) >= self._next_probe_at
+            )
+
+    def begin(self, nonce: str, now: float) -> bool:
+        with self._lock:
+            if (
+                not self._connected
+                or self._pending_nonce
+                or float(now) < self._next_probe_at
+            ):
+                return False
+            self._pending_nonce = str(nonce)
+            self._sent_at = float(now)
+            return True
+
+    def acknowledge(self, nonce: str, now: float) -> float | None:
+        with self._lock:
+            if not self._pending_nonce or str(nonce) != self._pending_nonce:
+                return None
+            elapsed = max(0.0, float(now) - self._sent_at)
+            self._pending_nonce = ""
+            self._sent_at = 0.0
+            self._next_probe_at = float(now) + self.interval_seconds
+            return elapsed
+
+    def stalled(self, now: float) -> tuple[bool, float, int]:
+        with self._lock:
+            elapsed = max(0.0, float(now) - self._sent_at) if self._pending_nonce else 0.0
+            return (
+                self._connected
+                and bool(self._pending_nonce)
+                and elapsed >= self.timeout_seconds,
+                elapsed,
+                self._generation,
+            )
+
+
+transport_probe_state = MqttTransportProbeState(
+    MQTT_PROBE_INTERVAL_SECONDS,
+    MQTT_PROBE_TIMEOUT_SECONDS,
+)
 
 
 @dataclass
@@ -1232,10 +1320,135 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
         mqttc.unsubscribe(active_topics)
 
 
+def _transport_probe_topic() -> str:
+    return f"signalasichat/v1/{server_route_id()}/health"
+
+
 def _subscribe_all_routes(mqttc) -> None:
     mqttc.subscribe(LinkTopics(server_route_id()).pairing, qos=MQTT_QOS)
+    mqttc.subscribe(_transport_probe_topic(), qos=MQTT_QOS)
     for paired_client in list_clients():
         _subscribe_client(mqttc, paired_client)
+
+
+def _handle_transport_probe_message(msg) -> bool:
+    if str(msg.topic or "") != _transport_probe_topic():
+        return False
+    try:
+        payload = json.loads(bytes(msg.payload or b"").decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        log.warning("MQTT transport probe ignored: invalid payload")
+        return True
+    nonce = str(payload.get("nonce") or "")
+    elapsed = transport_probe_state.acknowledge(nonce, time.monotonic())
+    if elapsed is not None:
+        log.debug("MQTT transport probe acknowledged elapsed_ms=%s", round(elapsed * 1000))
+    return True
+
+
+def _publish_transport_probe(mqttc, now: float | None = None) -> bool:
+    observed_at = time.monotonic() if now is None else float(now)
+    nonce = secrets.token_urlsafe(18)
+    if not transport_probe_state.begin(nonce, observed_at):
+        return False
+    payload = json.dumps(
+        {"type": "signalasi_transport_probe", "nonce": nonce},
+        separators=(",", ":"),
+    )
+    try:
+        info = mqttc.publish(_transport_probe_topic(), payload, qos=MQTT_QOS)
+    except Exception as exc:
+        log.warning("MQTT transport probe publish failed: %s", exc)
+        _request_transport_reconnect(mqttc, "probe_publish_exception")
+        return False
+    if info.rc != mqtt.MQTT_ERR_SUCCESS:
+        log.warning("MQTT transport probe publish rejected rc=%s", info.rc)
+        _request_transport_reconnect(mqttc, f"probe_publish_rc_{info.rc}")
+        return False
+    return True
+
+
+def _force_close_transport_if_still_stale(mqttc, generation: int) -> None:
+    if transport_probe_stop_event.wait(2.0):
+        return
+    stalled_generation = transport_probe_state.stalled(time.monotonic())[2]
+    if client is not mqttc or stalled_generation != generation:
+        return
+    try:
+        if not mqttc.is_connected():
+            return
+    except Exception:
+        return
+    try:
+        active_socket = mqttc.socket()
+        if active_socket is not None:
+            active_socket.shutdown(socket.SHUT_RDWR)
+            active_socket.close()
+            log.warning("MQTT stale transport socket force-closed")
+    except (OSError, AttributeError) as exc:
+        log.debug("MQTT stale transport socket was already closed: %s", exc)
+
+
+def _request_transport_reconnect(mqttc, reason: str, generation: int | None = None) -> None:
+    if transport_reconnect_in_progress.is_set():
+        return
+    transport_reconnect_in_progress.set()
+    if generation is None:
+        generation = transport_probe_state.stalled(time.monotonic())[2]
+    transport_probe_state.disconnected()
+    log.warning("MQTT transport recovery requested reason=%s generation=%s", reason, generation)
+    try:
+        mqttc.disconnect()
+    except Exception as exc:
+        log.warning("MQTT transport disconnect request failed: %s", exc)
+    threading.Thread(
+        target=_force_close_transport_if_still_stale,
+        args=(mqttc, generation),
+        daemon=True,
+        name="signalasi-mqtt-force-close",
+    ).start()
+
+
+def _transport_probe_loop() -> None:
+    global transport_probe_thread
+    try:
+        while not transport_probe_stop_event.wait(0.5):
+            mqttc = client
+            if mqttc is None or transport_reconnect_in_progress.is_set():
+                continue
+            try:
+                if not mqttc.is_connected():
+                    continue
+            except Exception:
+                continue
+            now = time.monotonic()
+            stalled, elapsed, generation = transport_probe_state.stalled(now)
+            if stalled:
+                log.warning(
+                    "MQTT transport probe timed out elapsed_ms=%s generation=%s",
+                    round(elapsed * 1000),
+                    generation,
+                )
+                _request_transport_reconnect(mqttc, "probe_timeout", generation)
+                continue
+            if transport_probe_state.should_publish(now):
+                _publish_transport_probe(mqttc, now)
+    finally:
+        if threading.current_thread() is transport_probe_thread:
+            transport_probe_thread = None
+
+
+def _ensure_transport_probe_thread() -> None:
+    global transport_probe_thread
+    if transport_probe_thread is not None and transport_probe_thread.is_alive():
+        return
+    transport_probe_stop_event.clear()
+    transport_probe_thread = threading.Thread(
+        target=_transport_probe_loop,
+        daemon=True,
+        name="signalasi-mqtt-probe",
+    )
+    transport_probe_thread.start()
 
 
 def _dispatch_codex_event(task_id: str, event: dict) -> None:
@@ -1695,7 +1908,13 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
         status = publish_connector_status(mqttc, reason="mqtt_connected")
         if not status.get("ok"):
             log.warning("Desktop recovery presence publish skipped: %s", status)
+        transport_reconnect_in_progress.clear()
+        transport_probe_state.connected(
+            time.monotonic(),
+            MQTT_PROBE_INITIAL_DELAY_SECONDS,
+        )
     else:
+        transport_probe_state.disconnected()
         log.warning(f"MQTT connection failed rc={reason_code}")
 
 
@@ -1839,6 +2058,7 @@ def _clear_mqtt_wire_transport_state() -> None:
 
 def on_disconnect(mqttc, userdata, *args):
     reason_code = args[-2] if len(args) >= 2 else (args[0] if args else "unknown")
+    transport_probe_state.disconnected()
     _clear_mqtt_wire_transport_state()
     log.warning(f"MQTT disconnected rc={reason_code}")
 
@@ -5624,6 +5844,8 @@ def _queue_inbound_message(mqttc, route_key: str, message: _InboundMqttMessage) 
 
 def on_mqtt_message(mqttc, userdata, msg):
     """Keep the Paho network loop responsive while preserving Signal order per route."""
+    if _handle_transport_probe_message(msg):
+        return
     payload = bytes(msg.payload or b"")
     if len(payload) > MAX_MQTT_WIRE_BYTES:
         log.warning("MQTT message rejected: envelope exceeds size limit")
@@ -6654,9 +6876,9 @@ def start():
     client_id = f"signalasi-pc-{MQTT_TRANSPORT_EPOCH}-{stable_desktop_id}"
     callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
     if callback_api_version is not None:
-        mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=False)
+        mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=True)
     else:
-        mqttc = mqtt.Client(client_id=client_id, clean_session=False)
+        mqttc = mqtt.Client(client_id=client_id, clean_session=True)
     client = mqttc
     mqttc.on_connect = on_connect
     mqttc.on_disconnect = on_disconnect
@@ -6685,17 +6907,21 @@ def start_background():
     _ensure_presence_thread()
     _ensure_outbound_retry_thread()
     _ensure_codex_warm_thread()
+    _ensure_transport_probe_thread()
     t = threading.Thread(target=start, daemon=True)
     t.start()
     log.info("MQTT bridge started in background")
 
 
 def stop():
-    global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread
+    global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread, transport_probe_thread
     running = False
     codex_warm_stop_event.set()
     presence_stop_event.set()
     outbound_retry_stop_event.set()
+    transport_probe_stop_event.set()
+    transport_probe_state.disconnected()
+    transport_reconnect_in_progress.clear()
     _stop_inbound_route_workers()
     _close_phone_tool_sessions(reason="Desktop MQTT bridge stopped")
     if client:
