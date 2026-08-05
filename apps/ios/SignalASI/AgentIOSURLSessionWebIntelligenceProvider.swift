@@ -2,7 +2,7 @@ import Foundation
 
 struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolProviding {
   var implementationId: String = "signalasi.ios.urlsession_web_intelligence"
-  var engineCatalogSize: Int = 3
+  var engineCatalogSize: Int = AgentIOSWebIntelligenceSourceCatalog.sourceCount
   var rankerId: String = "ios-urlsession-evidence-ranker-v1"
   var webMediaProvider: AgentIOSWebMediaToolProviding
   var nowMillis: () -> Int64
