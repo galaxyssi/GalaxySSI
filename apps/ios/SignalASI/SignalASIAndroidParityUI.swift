@@ -302,7 +302,7 @@ struct AgentHomeView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       HStack(spacing: 4) {
-        NavigationLink(destination: VoiceSettingsView()) {
+        NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
           Text(t("signalasi.agent.voice_button", "Hold to Talk"))
             .font(.system(size: 15, weight: .bold))
             .foregroundColor(Color(signalASIColor(0x087CFF)))
@@ -503,12 +503,36 @@ struct DiscoverView: View {
         ScrollView {
           VStack(spacing: 10) {
             SignalASIAndroidMenuLink(
+              title: t("cc_profile_title", "My SignalASI"),
+              subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
+              systemImage: "person.crop.circle",
+              tint: .signalASITextPrimary
+            ) {
+              SignalASIProfileIdentityView()
+            }
+            SignalASIAndroidMenuLink(
+              title: t("settings_my_signalasi", "My SignalASI"),
+              subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
+              systemImage: "slider.horizontal.3",
+              tint: .signalASIAccent
+            ) {
+              SignalASIControlCenterView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.ai_agent_title", "AI Agent"),
               subtitle: t("signalasi.discover.ai_agent_subtitle", "Explore powerful AI assistants"),
               systemImage: "cpu",
               tint: .signalASIAccent
             ) {
               SignalASIMyAgentsView()
+            }
+            SignalASIAndroidMenuLink(
+              title: t("cc_agent_core_title", "Agent Core"),
+              subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
+              systemImage: "cpu",
+              tint: .signalASIAccent
+            ) {
+              SignalASIAgentCoreView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.discover.scan_title", "Scan"),
@@ -535,6 +559,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_system_status_title", "System Status"),
+              subtitle: t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+              systemImage: "info.circle",
+              tint: .signalASIAccent
+            ) {
+              SignalASISystemStatusView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.pairing", "Pairing"),
               subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
               systemImage: "qrcode.viewfinder",
@@ -556,7 +588,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              VoiceSettingsView()
+              SignalASIVoiceAssistantSettingsView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
