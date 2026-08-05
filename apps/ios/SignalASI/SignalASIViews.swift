@@ -925,8 +925,8 @@ struct PairingView: View {
                 .foregroundColor(.secondary)
               Text(
                 pendingPairing.access.fullDesktopExecutor
-                  ? t("signalasi.pairing.access_full", "Desktop executor")
-                  : t("signalasi.pairing.access_restricted", "Restricted desktop access")
+                  ? t("signalasi.pairing.access_full", "Desktop Executor")
+                  : t("signalasi.pairing.access_restricted", "Restricted Desktop Access")
               )
               .font(.caption)
               .foregroundColor(.secondary)
@@ -1350,12 +1350,36 @@ struct SettingsView: View {
           NavigationLink(destination: DiscoverView()) {
             Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
           }
+          NavigationLink(destination: SignalASIGeneralControlCenterView()) {
+            Label(t("cc_general_page_title", "General"), systemImage: "gearshape")
+          }
+          NavigationLink(destination: SignalASIAppServicesView()) {
+            Label(t("cc_app_services_page_title", "Apps & Services"), systemImage: "square.grid.2x2")
+          }
+        }
+        Section(t("settings_control_general", "General")) {
+          NavigationLink(destination: SignalASIGeneralSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_general_page_title", "General"))
+              Text(t("signalasi.general_settings.subtitle", "Language, appearance, text size, notifications, and app information"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.language", "Language")) {
           NavigationLink(destination: SignalASILanguageSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.language_policy.title", "Voice & Language"))
               Text(languagePolicySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIVoiceControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_voice_title", "Voice & Interaction"))
+              Text(t("signalasi.discover.voice.subtitle", "Wake, transcription and local voice models"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1380,6 +1404,30 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIGlobalAgentControlView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_global_agent_title", "Global Super Agent"))
+              Text(globalAgentSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIPermissionsAuditView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_permissions_title", "Permissions & Audit"))
+              Text(t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIExecutionPolicyView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_execution_policy_title", "Execution Policy"))
+              Text(t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentCoreView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("cc_agent_core_title", "Agent Core"))
@@ -1396,10 +1444,26 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIMemoryControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_memory_title", "Memory & Personalization"))
+              Text(memoryControlSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAgentMemoryView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_memory.title", "Personal Memory"))
               Text(memorySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASILearningSkillEvolutionView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_learning_title", "Learning & Skill Evolution"))
+              Text(t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1452,6 +1516,30 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIMcpControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("agent_mcp_title", "MCP"))
+              Text(mcpSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIAppToolsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_app_tools_title", "Apps & Tools"))
+              Text(t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIPhoneCapabilitiesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_phone_title", "Phone Capabilities"))
+              Text(t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAppAdaptersView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("agent_app_adapters_title", "Specialized App Adapters"))
@@ -1461,6 +1549,14 @@ struct SettingsView: View {
                   SignalASIAppAdapterCatalog.adapterCount
                 )
               )
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIAgentsModelsNodesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_nodes_title", "Agents, Models & Nodes"))
+              Text(t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1481,6 +1577,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.planning", "Planning & Coordination")) {
+          NavigationLink(destination: SignalASIResourceRoutingView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_resource_routing_title", "Models & Resource Routing"))
+              Text(t("cc_resource_routing_subtitle", "Choose by quality, latency, privacy, cost, and availability"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentModelPlannerSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.discover.model_planner", "Model Planner"))
@@ -1497,6 +1601,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIOnDeviceRuntimeView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_runtime_title", "On-device Linux Runtime"))
+              Text(t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
@@ -1507,6 +1619,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
+          NavigationLink(destination: SignalASISmartSpacesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_smart_spaces_title", "Smart Spaces"))
+              Text(t("cc_spaces_subtitle", "Home Assistant and custom devices"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: CustomDeviceConnectorsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.device_connectors", "Device Connectors"))
@@ -1578,6 +1698,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.backup", "Backup")) {
+          NavigationLink(destination: SignalASIDataBackupView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_data_title", "Data & Backup"))
+              Text(t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           SecureField(t("signalasi.settings.password", "Password"), text: $backupPassword)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled(true)
@@ -1603,7 +1731,15 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.privacy", "Privacy")) {
-          NavigationLink(destination: AgentDataDisclosureDashboardView()) {
+          NavigationLink(destination: SignalASIPrivacyControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_privacy_dashboard_title", "Privacy Dashboard"))
+              Text(t("cc_privacy_dashboard_hero_subtitle", "A metadata-only audit of data sent to cloud models and trusted Desktop Agents"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIPrivacyDashboardView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.model_data_sharing", "Model Data Sharing"))
               Text(t("signalasi.settings.model_data_sharing.subtitle", "Review metadata-only disclosure events and destination blocks"))
@@ -1829,6 +1965,14 @@ struct SettingsView: View {
     )
   }
 
+  private var memoryControlSummary: String {
+    let snapshot = store.agentMemorySnapshot()
+    return String(
+      format: t("cc_memory_subtitle", "%d long-term memories / user controlled"),
+      snapshot.activeCount
+    )
+  }
+
   private var knowledgeSummary: String {
     let stats = store.agentKnowledgeStats
     return String(
@@ -1837,6 +1981,17 @@ struct SettingsView: View {
       stats.sourceCount,
       store.agentKnowledgeAccessAudit.count
     )
+  }
+
+  private var globalAgentSummary: String {
+    let settings = store.globalAgentSettings
+    let status = settings.enabled
+      ? t("cc_global_understanding_active", "Global understanding active")
+      : t("signalasi.status.paused", "Paused")
+    let cognition = settings.allowCloudCognition
+      ? t("cc_global_cloud_allowed", "Cloud cognition")
+      : t("cc_global_local_first", "Local first")
+    return "\(status) / \(cognition) / \(settings.dailyBackgroundModelCallBudget) calls"
   }
 
   private var recentTaskSummary: String {
@@ -1880,6 +2035,20 @@ struct SettingsView: View {
       format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
       tools.count,
       available
+    )
+  }
+
+  private var mcpSummary: String {
+    let connections = AgentMcpRegistry(FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())).list()
+    let ready = connections.filter {
+      $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+    }.count
+    let recommended = AgentDefaultCapabilityCatalog.mcpEntries.count
+    return String(
+      format: t("signalasi.mcp.summary", "%d installed / %d ready / %d recommended"),
+      connections.count,
+      ready,
+      recommended
     )
   }
 

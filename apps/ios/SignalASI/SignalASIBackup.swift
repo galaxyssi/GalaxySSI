@@ -46,6 +46,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
   var includesCustomDeviceConnectors: Bool
   var includesHomeAssistantSettings: Bool
   var includesModelPlannerSettings: Bool
+  var includesGlobalAgentSettings: Bool
   var includesCloudAPISecrets: Bool
 
   init(
@@ -64,6 +65,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesCustomDeviceConnectors: Bool = false,
     includesHomeAssistantSettings: Bool = false,
     includesModelPlannerSettings: Bool = false,
+    includesGlobalAgentSettings: Bool = false,
     includesCloudAPISecrets: Bool
   ) {
     self.includesIdentity = includesIdentity
@@ -81,6 +83,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     self.includesCustomDeviceConnectors = includesCustomDeviceConnectors
     self.includesHomeAssistantSettings = includesHomeAssistantSettings
     self.includesModelPlannerSettings = includesModelPlannerSettings
+    self.includesGlobalAgentSettings = includesGlobalAgentSettings
     self.includesCloudAPISecrets = includesCloudAPISecrets
   }
 
@@ -100,6 +103,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesCustomDeviceConnectors: false,
     includesHomeAssistantSettings: false,
     includesModelPlannerSettings: false,
+    includesGlobalAgentSettings: false,
     includesCloudAPISecrets: false
   )
 
@@ -119,6 +123,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     case includesCustomDeviceConnectors = "includes_custom_device_connectors"
     case includesHomeAssistantSettings = "includes_home_assistant_settings"
     case includesModelPlannerSettings = "includes_model_planner_settings"
+    case includesGlobalAgentSettings = "includes_global_agent_settings"
     case includesCloudAPISecrets = "includes_cloud_api_secrets"
   }
 
@@ -139,6 +144,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesCustomDeviceConnectors = try container.decodeIfPresent(Bool.self, forKey: .includesCustomDeviceConnectors) ?? false
     includesHomeAssistantSettings = try container.decodeIfPresent(Bool.self, forKey: .includesHomeAssistantSettings) ?? false
     includesModelPlannerSettings = try container.decodeIfPresent(Bool.self, forKey: .includesModelPlannerSettings) ?? false
+    includesGlobalAgentSettings = try container.decodeIfPresent(Bool.self, forKey: .includesGlobalAgentSettings) ?? false
     includesCloudAPISecrets = try container.decodeIfPresent(Bool.self, forKey: .includesCloudAPISecrets) ?? false
   }
 }
@@ -163,6 +169,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var customDeviceConnectors: [CustomDeviceConnector]
   var homeAssistantSettings: HomeAssistantSettings
   var modelPlannerSettings: AgentModelPlannerSettings
+  var globalAgentSettings: GlobalAgentSettings
 
   static let empty = SignalASIBackupAgentData(
     serverLinks: [],
@@ -183,7 +190,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskBudget: .default,
     customDeviceConnectors: [],
     homeAssistantSettings: .default,
-    modelPlannerSettings: .default
+    modelPlannerSettings: .default,
+    globalAgentSettings: .default
   )
 
   init(
@@ -205,7 +213,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskBudget: AgentTaskBudget = .default,
     customDeviceConnectors: [CustomDeviceConnector] = [],
     homeAssistantSettings: HomeAssistantSettings = .default,
-    modelPlannerSettings: AgentModelPlannerSettings = .default
+    modelPlannerSettings: AgentModelPlannerSettings = .default,
+    globalAgentSettings: GlobalAgentSettings = .default
   ) {
     self.serverLinks = serverLinks
     self.memory = memory.map { Array($0.suffix(AgentMemoryPolicy.maxItems)) }
@@ -228,6 +237,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.customDeviceConnectors = Array(customDeviceConnectors.suffix(CustomDeviceConnector.maximumConnectors))
     self.homeAssistantSettings = homeAssistantSettings
     self.modelPlannerSettings = modelPlannerSettings
+    self.globalAgentSettings = globalAgentSettings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -250,6 +260,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case customDeviceConnectors = "custom_device_connectors"
     case homeAssistantSettings = "home_assistant"
     case modelPlannerSettings = "model_planner"
+    case globalAgentSettings = "global_agent"
   }
 
   init(from decoder: Decoder) throws {
@@ -298,6 +309,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     )
     homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
     modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
+    globalAgentSettings = try container.decodeIfPresent(GlobalAgentSettings.self, forKey: .globalAgentSettings) ?? .default
   }
 }
 
