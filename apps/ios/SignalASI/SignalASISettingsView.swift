@@ -22,6 +22,7 @@ struct SettingsView: View {
             profileSection
             statusSection
             agentSection
+            agentToolsSection
             knowledgeExecutionSection
             trustSection
             localIntelligenceSection
@@ -189,6 +190,57 @@ struct SettingsView: View {
         badge: t("signalasi.common.view", "View")
       ) {
         SignalASIAppAdaptersView()
+      }
+    }
+  }
+
+  private var agentToolsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SettingsSectionTitle(title: t("settings_agent_tools", "Agent tools"))
+      SettingsNavigationRow(
+        title: t("agent_quick_understand", "Understand"),
+        subtitle: t("signalasi.settings.agent_tools.understand_subtitle", "Screen understanding, app adapters, and visible UI readiness"),
+        systemImage: "rectangle.on.rectangle",
+        tint: .signalASIInsightText,
+        badge: t("signalasi.common.view", "View")
+      ) {
+        SignalASIAppAdaptersView()
+      }
+      SettingsNavigationRow(
+        title: t("agent_quick_save_screen", "Memory"),
+        subtitle: memorySummary,
+        systemImage: "brain",
+        tint: .purple,
+        badge: t("signalasi.common.view", "View")
+      ) {
+        SignalASIAgentMemoryView()
+      }
+      SettingsNavigationRow(
+        title: t("agent_quick_search_knowledge", "Knowledge"),
+        subtitle: knowledgeSummary,
+        systemImage: "book.closed",
+        tint: .signalASIInsightText,
+        badge: t("signalasi.common.view", "View")
+      ) {
+        SignalASIAgentKnowledgeView()
+      }
+      SettingsNavigationRow(
+        title: t("agent_quick_permissions", "Controls"),
+        subtitle: t("signalasi.settings.agent_tools.controls_subtitle", "Permissions, on-device access, and action boundaries"),
+        systemImage: "hand.raised",
+        tint: .orange,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        OnDeviceAgentPermissionsView()
+      }
+      SettingsNavigationRow(
+        title: t("agent_section_recent_tasks", "Recent Tasks"),
+        subtitle: recentTaskSummary,
+        systemImage: "clock.arrow.circlepath",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.view", "View")
+      ) {
+        SignalASIAgentRecentTasksView()
       }
     }
   }
