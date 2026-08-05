@@ -365,7 +365,7 @@ struct SignalASIMyAgentsView: View {
                 }
                 .buttonStyle(.plain)
               } else {
-                NavigationLink(destination: SignalASIAgentConnectionPlaceholderView(item: item)) {
+                NavigationLink(destination: SignalASIAgentConnectionDetailView(item: item)) {
                   SignalASIAgentDirectoryRow(item: item)
                 }
                 .buttonStyle(.plain)
@@ -389,66 +389,6 @@ struct SignalASIMyAgentsView: View {
       SignalASIDirectorySegment(id: "official", title: t("signalasi.discover.segment_official", "Official")),
       SignalASIDirectorySegment(id: "running", title: t("signalasi.discover.segment_running", "Running"))
     ]
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct SignalASIAgentConnectionPlaceholderView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  var item: SignalASIAgentDirectoryItem
-
-  var body: some View {
-    VStack(spacing: 0) {
-      SignalASITopBar(
-        title: item.title,
-        leading: { SignalASIBackButton() },
-        trailing: { Color.clear }
-      )
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-          SignalASIDirectoryHeroCard(
-            title: item.title,
-            subtitle: item.subtitle,
-            systemImage: item.systemImage,
-            tint: item.tint,
-            badge: item.badge
-          )
-          sectionTitle(t("signalasi.section.status", "Status"))
-          SignalASIDirectoryInfoRow(
-            title: t("signalasi.status.pending_connection", "Pending Connection"),
-            subtitle: t("signalasi.agent.new_connection_subtitle", "New connections require mutual confirmation to protect privacy and identity"),
-            systemImage: "checkmark.shield",
-            tint: .orange,
-            badge: t("signalasi.common.connect", "Connect")
-          )
-          NavigationLink(destination: AddContactView()) {
-            Text(t("signalasi.common.connect", "Connect"))
-              .font(.system(size: 17, weight: .semibold))
-              .foregroundColor(.white)
-              .frame(maxWidth: .infinity, minHeight: 46)
-              .background(Color.signalASIAccent)
-              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          }
-          .buttonStyle(.plain)
-          .padding(.top, 6)
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 18)
-      }
-    }
-    .background(Color.signalASIPageBackground.ignoresSafeArea())
-    .navigationBarHidden(true)
-  }
-
-  private func sectionTitle(_ title: String) -> some View {
-    Text(title)
-      .font(.system(size: 13, weight: .semibold))
-      .foregroundColor(.signalASITextSecondary)
-      .padding(.horizontal, 4)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -708,12 +648,12 @@ private struct SignalASIAgentDirectorySnapshot {
   }
 }
 
-private enum SignalASIAgentDirectoryCategory {
+enum SignalASIAgentDirectoryCategory {
   case local
   case official
 }
 
-private struct SignalASIAgentDirectoryItem: Identifiable {
+struct SignalASIAgentDirectoryItem: Identifiable {
   var id: String
   var contactId: String
   var title: String
