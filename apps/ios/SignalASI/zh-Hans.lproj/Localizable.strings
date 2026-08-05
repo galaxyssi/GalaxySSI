@@ -2295,6 +2295,8 @@
 "voice_performance_resource_conserve" = "节能";
 "voice_performance_resource_degraded" = "已降级";
 "voice_performance_resource_blocked" = "已阻止";
+"voice_performance_circuits" = "已打开的熔断器";
+"voice_performance_circuits_subtitle" = "失败的功能与模型会被独立隔离";
 "voice_performance_no_samples" = "暂无延迟样本";
 "voice_performance_no_samples_subtitle" = "完成语音任务后将在这里显示数据";
 "voice_performance_metric_samples" = "%d 个样本";
@@ -2303,6 +2305,12 @@
 "voice_performance_health_watch" = "需关注";
 "voice_performance_health_degraded" = "已降级";
 "voice_performance_health_no_data" = "暂无数据";
+"voice_performance_metric_asr" = "说完到转写";
+"voice_performance_metric_model" = "模型首个输出";
+"voice_performance_metric_tts" = "TTS 首段音频";
+"voice_performance_metric_agent_accept" = "Agent 接受任务";
+"voice_performance_metric_agent_progress" = "Agent 首个进度";
+"voice_performance_metric_agent_output" = "Agent 首个输出";
 "web_sources_title" = "联网智能来源";
 "web_sources_subtitle" = "覆盖生活、科技、研究、媒体与本地证据的 287 个来源";
 "web_sources_hero_title" = "SignalASI 联网智能";

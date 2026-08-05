@@ -306,6 +306,13 @@ struct SignalASIVoicePerformanceDashboardView: View {
         tint: resourceTint,
         badge: resourceLabel
       )
+      SignalASISecurityStatusRow(
+        title: t("voice_performance_circuits", "Open circuit breakers"),
+        subtitle: t("voice_performance_circuits_subtitle", "Failed features and model profiles are isolated"),
+        systemImage: "shield",
+        tint: openCircuitCount == 0 ? .signalASIAccent : .orange,
+        badge: "\(openCircuitCount)"
+      )
       SignalASISecurityNavigationRow(
         title: t("signalasi.advanced.voice_models", "Voice Models"),
         subtitle: t("signalasi.advanced.voice_models_subtitle", "Manage Whisper models, benchmarks, and local ASR runtime"),
@@ -377,21 +384,48 @@ struct SignalASIVoicePerformanceDashboardView: View {
   }
 
   private var resourceSubtitle: String {
-    let activeCount = summary.oomCount +
+    if resourceConstraintCount == 0 {
+      return t("voice_performance_no_constraints", "No active constraint")
+    }
+    return String(format: t("voice_performance_active_constraints", "%d active constraints"), resourceConstraintCount)
+  }
+
+  private var resourceConstraintCount: Int {
+    summary.oomCount +
       summary.nativeCrashCount +
       summary.thermalDegradeCount +
       summary.modelVerificationFailureCount
-    if activeCount == 0 {
-      return t("voice_performance_no_constraints", "No active constraint")
-    }
-    return String(format: t("voice_performance_active_constraints", "%d active constraints"), activeCount)
+  }
+
+  private var openCircuitCount: Int {
+    [
+      summary.oomCount,
+      summary.nativeCrashCount,
+      summary.thermalDegradeCount,
+      summary.modelVerificationFailureCount
+    ].filter { $0 > 0 }.count
   }
 
   private func metricTitle(_ key: String) -> String {
-    key
-      .replacingOccurrences(of: "_ms", with: "")
-      .replacingOccurrences(of: "_", with: " ")
-      .capitalized
+    switch key {
+    case "asr_total_ms":
+      return t("voice_performance_metric_asr", "Speech end to transcript")
+    case "model_first_delta_ms":
+      return t("voice_performance_metric_model", "Model first output")
+    case "tts_first_audio_ms":
+      return t("voice_performance_metric_tts", "TTS first audio")
+    case "agent_accept_ms":
+      return t("voice_performance_metric_agent_accept", "Agent accepted")
+    case "agent_first_progress_ms":
+      return t("voice_performance_metric_agent_progress", "Agent first progress")
+    case "agent_first_output_ms":
+      return t("voice_performance_metric_agent_output", "Agent first output")
+    default:
+      return key
+        .replacingOccurrences(of: "_ms", with: "")
+        .replacingOccurrences(of: "_", with: " ")
+        .capitalized
+    }
   }
 
   private func percent(_ value: Double) -> String {
