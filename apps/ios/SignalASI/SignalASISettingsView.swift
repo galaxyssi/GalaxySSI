@@ -672,14 +672,11 @@ struct SettingsView: View {
   }
 
   private var languagePolicySummary: String {
-    let interface = interfaceLanguageDisplayName(store.languagePolicy.interfaceLanguage)
-    let response = voiceLanguageDisplayName(store.languagePolicy.responseLanguage)
-    let asrLocale = store.voiceSettings.preferredLocaleIdentifier
-    return String(
-      format: t("signalasi.language_policy.settings_summary", "%@ / Reply %@ / ASR %@"),
-      interface,
-      response,
-      asrLocale
+    SignalASILanguagePolicyFormatter { key, fallback in
+      t(key, fallback)
+    }.summary(
+      policy: store.languagePolicy,
+      asrLocaleIdentifier: store.voiceSettings.preferredLocaleIdentifier
     )
   }
 
@@ -820,36 +817,6 @@ struct SettingsView: View {
     UIPasteboard.general.string = value
     statusText = message
     statusIsError = false
-  }
-
-  private func interfaceLanguageDisplayName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeInterface(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.en:
-      return t("signalasi.language.en", "English")
-    default:
-      let resolved = LanguagePolicySettings.resolveInterface(LanguagePolicySettings.auto)
-      let resolvedName = resolved == LanguagePolicySettings.zhCN
-        ? t("signalasi.language.zh_cn", "Simplified Chinese")
-        : t("signalasi.language.en", "English")
-      return String(format: t("signalasi.language.auto_format", "Automatic (%@)"), resolvedName)
-    }
-  }
-
-  private func voiceLanguageDisplayName(_ value: String) -> String {
-    switch LanguagePolicySettings.normalizeVoice(value) {
-    case LanguagePolicySettings.zhCN:
-      return t("signalasi.language.zh_cn", "Simplified Chinese")
-    case LanguagePolicySettings.enUS:
-      return t("signalasi.language.en_us", "English (United States)")
-    case LanguagePolicySettings.zhHK:
-      return t("signalasi.language.zh_hk", "Traditional Chinese (Hong Kong)")
-    case LanguagePolicySettings.zhTW:
-      return t("signalasi.language.zh_tw", "Traditional Chinese (Taiwan)")
-    default:
-      return t("signalasi.language.auto", "Automatic")
-    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
