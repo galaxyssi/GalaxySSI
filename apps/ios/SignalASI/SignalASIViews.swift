@@ -1,9 +1,7 @@
 import AVFoundation
 import CoreImage
-import PhotosUI
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 @main
 struct SignalASIApp: App {
@@ -196,8 +194,10 @@ struct ConversationView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
   @State private var attachments: [SignalASIDraftAttachment] = []
+  @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
   @State private var photoPickerPresented = false
+  @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
   @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
@@ -214,6 +214,17 @@ struct ConversationView: View {
 
   private var canSend: Bool {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+  }
+
+  private var displayedMessages: [ChatMessage] {
+    let all = store.messages(for: contact.id)
+    guard isAgentSessionContact,
+          let active = store.agentSession(id: store.activeAgentConversationId),
+          active.status == .active,
+          active.mergedIntoConversationId.isBlank else {
+      return all
+    }
+    return all.filter { $0.conversationId == active.id }
   }
 
   private var contactStatusText: String {
@@ -241,7 +252,7 @@ struct ConversationView: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 10) {
-            ForEach(store.messages(for: contact.id)) { message in
+            ForEach(displayedMessages) { message in
               MessageBubble(message: message)
                 .id(message.id)
                 .contextMenu {
@@ -268,8 +279,8 @@ struct ConversationView: View {
           .padding(.bottom, 10)
         }
         .background(Color.signalASIPageBackground)
-        .onChange(of: store.messages(for: contact.id).count) { _ in
-          if let last = store.messages(for: contact.id).last {
+        .onChange(of: displayedMessages.count) { _ in
+          if let last = displayedMessages.last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
@@ -293,7 +304,9 @@ struct ConversationView: View {
         }
         HStack(spacing: 8) {
           Button {
-            fileImporterPresented = true
+            withAnimation(.easeOut(duration: 0.16)) {
+              attachmentMenuPresented = true
+            }
           } label: {
             Image(systemName: "plus")
               .font(.system(size: 20, weight: .semibold))
@@ -310,20 +323,23 @@ struct ConversationView: View {
                 .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
             )
           Button {
-            photoPickerPresented = true
-          } label: {
-            Image(systemName: "photo")
-              .font(.system(size: 20, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-          }
-          .agentDeviceTouchTarget(deviceInputPolicy)
-          Button {
-            let text = draft
+            let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             let outgoingAttachments = attachments
+            let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
+            let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
+              ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
+              : ""
             draft = ""
             attachments.removeAll()
             attachmentError = ""
-            Task { await coordinator.send(text, to: contact, attachments: outgoingAttachments) }
+            Task {
+              await coordinator.send(
+                text,
+                to: contact,
+                attachments: outgoingAttachments,
+                agentGoalOverride: agentGoal
+              )
+            }
           } label: {
             Image(systemName: "arrow.up")
               .font(.system(size: 17, weight: .bold))
@@ -340,6 +356,7 @@ struct ConversationView: View {
       .background(Color.signalASIBarBackground)
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .overlay(attachmentMenuOverlay)
     .navigationBarHidden(true)
     .onAppear {
       store.markContactRead(contact.id)
@@ -366,6 +383,11 @@ struct ConversationView: View {
     }
     .sheet(isPresented: $photoPickerPresented) {
       PhotoLibraryPickerView { attachment in
+        appendAttachment(attachment)
+      }
+    }
+    .fullScreenCover(isPresented: $cameraPickerPresented) {
+      CameraAttachmentPickerView { attachment in
         appendAttachment(attachment)
       }
     }
@@ -436,6 +458,110 @@ struct ConversationView: View {
     .background(Color.signalASIBarBackground)
   }
 
+  @ViewBuilder
+  private var attachmentMenuOverlay: some View {
+    if attachmentMenuPresented {
+      ZStack(alignment: .bottom) {
+        Color.black.opacity(0.28)
+          .ignoresSafeArea()
+          .onTapGesture {
+            withAnimation(.easeIn(duration: 0.12)) {
+              attachmentMenuPresented = false
+            }
+          }
+        VStack(spacing: 0) {
+          Spacer(minLength: 0)
+          VStack(spacing: 0) {
+            if isAgentSessionContact {
+              SignalASIAttachmentMenuRow(
+                title: t("agent_attachment_new_task", "New session"),
+                systemImage: "square.and.pencil"
+              ) {
+                dismissAttachmentMenu(then: createAgentConversation)
+              }
+              SignalASIAttachmentMenuDivider()
+            }
+            SignalASIAttachmentMenuRow(
+              title: t("agent_attachment_take_photo", "Take photo"),
+              systemImage: "camera"
+            ) {
+              dismissAttachmentMenu(then: openCameraAttachmentPicker)
+            }
+            SignalASIAttachmentMenuDivider()
+            SignalASIAttachmentMenuRow(
+              title: t("agent_attachment_add_photos", "Add photos"),
+              systemImage: "photo.on.rectangle"
+            ) {
+              dismissAttachmentMenu(then: {
+                photoPickerPresented = true
+              })
+            }
+            SignalASIAttachmentMenuDivider()
+            SignalASIAttachmentMenuRow(
+              title: t("agent_attachment_add_file", "Add file"),
+              systemImage: "doc"
+            ) {
+              dismissAttachmentMenu(then: {
+                fileImporterPresented = true
+              })
+            }
+          }
+          .background(Color.signalASISurface)
+          .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+          .padding(.horizontal, 10)
+          .padding(.bottom, 10)
+        }
+      }
+      .transition(.opacity)
+    }
+  }
+
+  private var isAgentSessionContact: Bool {
+    contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
+  }
+
+  private func dismissAttachmentMenu(then action: @escaping () -> Void) {
+    withAnimation(.easeIn(duration: 0.12)) {
+      attachmentMenuPresented = false
+    }
+    action()
+  }
+
+  private func createAgentConversation() {
+    if isAgentSessionContact {
+      _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+    }
+    draft = ""
+    attachments.removeAll()
+    attachmentError = ""
+  }
+
+  private func openCameraAttachmentPicker() {
+    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+      attachmentError = t("agent_attachment_camera_unavailable", "Camera is unavailable")
+      return
+    }
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .denied, .restricted:
+      attachmentError = t("signalasi.scanner.camera_access_required", "Camera access is required to scan SignalASI QR codes.")
+    case .authorized, .notDetermined:
+      cameraPickerPresented = true
+    @unknown default:
+      cameraPickerPresented = true
+    }
+  }
+
+  private func attachmentLabel(for values: [SignalASIDraftAttachment]) -> String {
+    switch values.count {
+    case 0:
+      return ""
+    case 1:
+      return values[0].label
+    default:
+      return String(format: t("agent_attachment_count", "%d attachments"), values.count)
+    }
+  }
+
   private func addAttachment(url: URL) {
     do {
       let attachment = try SignalASIAttachmentPayloadBuilder.makeAttachment(from: url)
@@ -447,7 +573,7 @@ struct ConversationView: View {
 
   private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
     guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
-      attachmentError = t("signalasi.attachment.limit", "Attachment limit reached or file is too large.")
+      attachmentError = t("agent_attachment_rejected", "Some attachments were skipped. You can add up to 10 files, 20 MB each.")
       return
     }
     attachments.append(attachment)
@@ -2918,115 +3044,6 @@ enum SignalASIQRCodeImageRenderer {
     filter.setValue("M", forKey: "inputCorrectionLevel")
     guard let output = filter.outputImage else { return nil }
     return UIImage(ciImage: output.transformed(by: CGAffineTransform(scaleX: 10, y: 10)))
-  }
-}
-
-struct AttachmentPreviewStrip: View {
-  var attachments: [SignalASIDraftAttachment]
-  var onRemove: (SignalASIDraftAttachment) -> Void
-
-  var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        ForEach(attachments) { attachment in
-          AttachmentPreviewChip(attachment: attachment) {
-            onRemove(attachment)
-          }
-        }
-      }
-      .padding(.vertical, 2)
-    }
-  }
-}
-
-struct AttachmentPreviewChip: View {
-  var attachment: SignalASIDraftAttachment
-  var onRemove: () -> Void
-
-  var body: some View {
-    HStack(spacing: 8) {
-      thumbnail
-      VStack(alignment: .leading, spacing: 2) {
-        Text(attachment.displayName)
-          .font(.caption)
-          .lineLimit(1)
-        Text(attachment.humanSize)
-          .font(.caption2)
-          .foregroundColor(.secondary)
-      }
-      Button(action: onRemove) {
-        Image(systemName: "xmark.circle.fill")
-          .foregroundColor(.secondary)
-      }
-    }
-    .padding(8)
-    .background(Color(.secondarySystemBackground))
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-  }
-
-  @ViewBuilder
-  private var thumbnail: some View {
-    if attachment.isImage,
-       let image = UIImage(data: attachment.data) {
-      Image(uiImage: image)
-        .resizable()
-        .scaledToFill()
-        .frame(width: 34, height: 34)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    } else {
-      Image(systemName: "doc")
-        .frame(width: 34, height: 34)
-        .background(Color(.tertiarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-  }
-}
-
-struct PhotoLibraryPickerView: UIViewControllerRepresentable {
-  var onAttachment: (SignalASIDraftAttachment) -> Void
-
-  func makeUIViewController(context: Context) -> PHPickerViewController {
-    var configuration = PHPickerConfiguration(photoLibrary: .shared())
-    configuration.filter = .images
-    configuration.selectionLimit = SignalASIAttachmentPayloadBuilder.maximumAttachmentCount
-    let controller = PHPickerViewController(configuration: configuration)
-    controller.delegate = context.coordinator
-    return controller
-  }
-
-  func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(onAttachment: onAttachment)
-  }
-
-  final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-    private let onAttachment: (SignalASIDraftAttachment) -> Void
-
-    init(onAttachment: @escaping (SignalASIDraftAttachment) -> Void) {
-      self.onAttachment = onAttachment
-    }
-
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-      picker.dismiss(animated: true)
-      results.forEach { result in
-        let provider = result.itemProvider
-        let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
-          UTType(identifier)?.conforms(to: .image) == true
-        } ?? UTType.image.identifier
-        provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
-          guard let data else { return }
-          let name = provider.suggestedName.map { "\($0).jpg" } ?? "photo.jpg"
-          let attachment = SignalASIAttachmentPayloadBuilder.makePhotoAttachment(
-            data: data,
-            suggestedName: name
-          )
-          DispatchQueue.main.async {
-            self.onAttachment(attachment)
-          }
-        }
-      }
-    }
   }
 }
 

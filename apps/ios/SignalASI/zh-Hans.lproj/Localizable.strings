@@ -904,6 +904,16 @@
 "signalasi.message.delete" = "删除消息";
 "signalasi.message.details" = "详情";
 "signalasi.message.input" = "消息";
+"agent_attachment_take_photo" = "拍照";
+"agent_attachment_add_photos" = "添加照片";
+"agent_attachment_new_task" = "新建会话";
+"agent_attachment_add_file" = "添加文件";
+"agent_attachment_remove" = "移除附件";
+"agent_attachment_count" = "%d 个附件";
+"agent_attachment_default_goal" = "用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。";
+"agent_attachment_rejected" = "部分附件未添加。最多可添加 10 个文件，每个不超过 20 MB。";
+"agent_attachment_camera_unavailable" = "无法打开相机";
+"agent_attachment_photo_marker" = "[照片]";
 "signalasi.message.section" = "消息";
 "signalasi.message.sent_by_me" = "由我发送";
 "signalasi.message.sent_time" = "发送时间";
