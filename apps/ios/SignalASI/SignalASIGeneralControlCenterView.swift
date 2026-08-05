@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 struct SignalASIGeneralControlCenterView: View {
@@ -47,13 +48,15 @@ struct SignalASIGeneralControlCenterView: View {
       ) {
         SignalASILanguageSettingsView()
       }
-      SignalASISecurityStatusRow(
+      SignalASISecurityActionRow(
         title: t("cc_appearance_title", "Appearance"),
         subtitle: t("cc_appearance_subtitle_ios", "Use iOS light and dark appearance"),
         systemImage: "circle.lefthalf.filled",
         tint: .blue,
         badge: t("cc_managed_by_ios", "iOS")
-      )
+      ) {
+        openAppSettings()
+      }
       SignalASISecurityNavigationRow(
         title: t("cc_text_size_title", "Text Size"),
         subtitle: textScaleSummary,
@@ -191,6 +194,11 @@ struct SignalASIGeneralControlCenterView: View {
           : t("signalasi.status.not_allowed", "Not allowed")
       }
     }
+  }
+
+  private func openAppSettings() {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    UIApplication.shared.open(url)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
