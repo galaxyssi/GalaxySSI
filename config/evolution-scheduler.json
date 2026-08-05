@@ -1,6 +1,6 @@
 {
   "schema": "signalasi.evolution-scheduler.v2",
-  "enabled": true,
+  "enabled": false,
   "run_on_start": false,
   "evolutions_per_day": 1,
   "execution_mode": "serial",
