@@ -252,8 +252,15 @@ struct AddContactView: View {
       pendingPairing = nil
       setImportStatus(
         String(
-          format: t("signalasi.pairing.desktop_claim_sent", "%@ added. Agents are ready in Contacts."),
-          pairing.desktopName
+          format: t(
+            "signalasi.pairing.desktop_claim_sent_detailed",
+            "%@ added with %@. %d Agents are ready in Contacts."
+          ),
+          pairing.desktopName,
+          pairing.access.fullDesktopExecutor
+            ? t("signalasi.pairing.access_full", "Full Desktop Access")
+            : t("signalasi.pairing.access_restricted", "Restricted Desktop Access"),
+          Self.desktopAgentCount(pairing)
         ),
         isError: false
       )
@@ -297,6 +304,13 @@ struct AddContactView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private static func desktopAgentCount(_ pairing: PairingQRCode) -> Int {
+    if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
+      return agents.count
+    }
+    return 6
   }
 }
 
@@ -506,6 +520,13 @@ private struct AddContactPairingConfirmCard: View {
             .font(.system(size: 13))
             .foregroundColor(.signalASITextSecondary)
             .fixedSize(horizontal: false, vertical: true)
+          Text(t("signalasi.pairing.status_pending", "Pending Confirmation"))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 22)
+            .background(Color.signalASIAccent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         Spacer(minLength: 0)
       }
@@ -544,13 +565,34 @@ private struct AddContactPairingConfirmCard: View {
       )
       AddContactValueRow(
         title: pairing.access.fullDesktopExecutor
-          ? t("signalasi.pairing.access_full", "Desktop Executor")
+          ? t("signalasi.pairing.access_full", "Full Desktop Access")
           : t("signalasi.pairing.access_restricted", "Restricted Desktop Access"),
         value: pairing.access.fullDesktopExecutor
           ? t("signalasi.pairing.access_full_subtitle", "Desktop tools, control, and external files; sensitive actions require approval")
           : t("signalasi.pairing.access_restricted_subtitle", "Agent chat and files explicitly attached to the current task only"),
         systemImage: "lock.shield",
         tint: pairing.access.fullDesktopExecutor ? .signalASIAccent : .orange
+      )
+      AddContactValueRow(
+        title: t("signalasi.pairing.access_scopes", "Allowed Scopes"),
+        value: accessScopeSummary,
+        systemImage: "checklist",
+        tint: pairing.access.fullDesktopExecutor ? .signalASIAccent : .orange
+      )
+      AddContactValueRow(
+        title: t("signalasi.pairing.authorization_token", "Desktop Control Authorization"),
+        value: authorizationStatus,
+        systemImage: "key.fill",
+        tint: pairing.controlAuthorizationToken.isEmpty ? .orange : .signalASIAccent
+      )
+      AddContactValueRow(
+        title: t("signalasi.pairing.agent_count", "Desktop Agents"),
+        value: String(
+          format: t("signalasi.pairing.agent_count_value", "%d Agents will be added"),
+          Self.desktopAgentCount(pairing)
+        ),
+        systemImage: "person.3.fill",
+        tint: .signalASIInsightText
       )
       HStack(spacing: 10) {
         Button(action: onConfirm) {
@@ -575,6 +617,64 @@ private struct AddContactPairingConfirmCard: View {
     .padding(12)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var accessScopeSummary: String {
+    let labels = pairing.access.scopes.sorted { lhs, rhs in
+      let leftRank = Self.orderedAccessScopes.firstIndex(of: lhs) ?? Int.max
+      let rightRank = Self.orderedAccessScopes.firstIndex(of: rhs) ?? Int.max
+      if leftRank == rightRank {
+        return lhs < rhs
+      }
+      return leftRank < rightRank
+    }.map(scopeLabel)
+    return labels.isEmpty
+      ? t("signalasi.pairing.access_scopes_none", "No scopes declared")
+      : labels.joined(separator: " / ")
+  }
+
+  private var authorizationStatus: String {
+    pairing.controlAuthorizationToken.isEmpty
+      ? t("signalasi.pairing.authorization_missing", "Not included in QR; desktop control may require re-pairing")
+      : t("signalasi.pairing.authorization_included", "Included in the encrypted pairing claim")
+  }
+
+  private static let orderedAccessScopes = [
+    "agent.chat",
+    "agent.attachments.explicit",
+    "desktop.task_workspace",
+    "desktop.executor.full",
+    "desktop.control",
+    "desktop.native_tools",
+    "desktop.files.external",
+  ]
+
+  private static func desktopAgentCount(_ pairing: PairingQRCode) -> Int {
+    if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
+      return agents.count
+    }
+    return 6
+  }
+
+  private func scopeLabel(_ scope: String) -> String {
+    switch scope {
+    case "agent.chat":
+      return t("desktop_control_scope_agent_chat", "Agent Chat")
+    case "agent.attachments.explicit":
+      return t("desktop_control_scope_explicit_attachments", "Explicit Attachments")
+    case "desktop.task_workspace":
+      return t("desktop_control_scope_task_workspace", "Task Workspace")
+    case "desktop.executor.full":
+      return t("signalasi.pairing.scope_desktop_executor", "View Screen")
+    case "desktop.control":
+      return t("signalasi.pairing.scope_desktop_control", "Click and Control")
+    case "desktop.native_tools":
+      return t("signalasi.pairing.scope_desktop_native_tools", "Type Text and Native Tools")
+    case "desktop.files.external":
+      return t("signalasi.pairing.scope_desktop_external_files", "Select External Files")
+    default:
+      return scope
+    }
   }
 }
 
