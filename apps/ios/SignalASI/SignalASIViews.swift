@@ -1373,6 +1373,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIVoiceControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_voice_title", "Voice & Interaction"))
+              Text(t("signalasi.discover.voice.subtitle", "Wake, transcription and local voice models"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.display", "Display")) {
           NavigationLink(destination: SignalASITextSizeSettingsView()) {

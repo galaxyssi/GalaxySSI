@@ -2055,3 +2055,8 @@
 "cc_camera_permission_subtitle" = "拍摄、二维码配对与视觉任务";
 "cc_recent_operations_title" = "最近操作";
 "cc_recent_operations_subtitle" = "查看本机工具、Agent 操作与确认决定";
+"voice_settings_subtitle" = "配置唤醒、ASR、TTS、语言、路由与录音";
+"voice_capability_checking" = "检查中";
+"voice_capability_needs_download" = "下载";
+"voice_capability_needs_network" = "网络";
+"signalasi.status.not_available" = "不可用";
