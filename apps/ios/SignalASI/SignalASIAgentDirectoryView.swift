@@ -358,6 +358,20 @@ struct SignalASIMyAgentsView: View {
           ) {
             CloudModelProviderSelectionView()
           }
+          if hasTrustedDesktop {
+            SignalASIDirectoryMenuLink(
+              title: t("signalasi.agent_connection.scan_qr", "Scan or Paste Agent QR"),
+              subtitle: t(
+                "signalasi.agent_connection.scan_qr_subtitle",
+                "Pair Codex, Claude Code, local models, or desktop Agents with the Android-compatible QR flow"
+              ),
+              systemImage: "qrcode.viewfinder",
+              tint: .orange,
+              badge: t("security_scan", "Scan")
+            ) {
+              AddContactView(autoOpenScanner: true)
+            }
+          }
           if !hasTrustedDesktop {
             SignalASIDirectoryMenuLink(
               title: t("cc_no_desktop_title", "No trusted Desktop node"),
