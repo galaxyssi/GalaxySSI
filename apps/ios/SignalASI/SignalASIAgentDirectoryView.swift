@@ -101,6 +101,7 @@ struct SignalASINewFriendsView: View {
               ForEach(store.pendingFriendRequests) { request in
                 SignalASINewFriendCard(
                   request: request,
+                  viewTitle: t("friend_request_view", "View"),
                   approveTitle: t("signalasi.friend_request.approve", "Approve"),
                   rejectTitle: t("signalasi.friend_request.reject", "Reject"),
                   onApprove: { approve(request) },
@@ -731,6 +732,7 @@ private struct SignalASIAgentDirectoryRow: View {
 
 private struct SignalASINewFriendCard: View {
   var request: SignalASIFriendRequest
+  var viewTitle: String
   var approveTitle: String
   var rejectTitle: String
   var onApprove: () -> Void
@@ -750,6 +752,18 @@ private struct SignalASINewFriendCard: View {
             .lineLimit(2)
         }
         Spacer(minLength: 0)
+        NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
+          Label(viewTitle, systemImage: "eye")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 32)
+            .background(Color.signalASIAccent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
       }
       Text(request.identityFingerprint.signalASIDirectoryFingerprint)
         .font(.system(size: 12, design: .monospaced))

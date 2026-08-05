@@ -1781,6 +1781,7 @@ struct AvatarView: View {
 }
 
 struct FriendRequestRow: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var request: SignalASIFriendRequest
 
   var body: some View {
@@ -1802,13 +1803,32 @@ struct FriendRequestRow: View {
           .foregroundColor(.signalASITextSecondary)
       }
       Spacer()
-      Text(request.status.rawValue)
+      Text(statusLabel(request.status))
         .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
     .background(Color.signalASISurface)
+  }
+
+  private func statusLabel(_ status: SignalASIFriendRequestStatus) -> String {
+    switch status {
+    case .pending:
+      return t("signalasi.friend_request.pending", "Pending Verification")
+    case .approved:
+      return t("signalasi.friend_request.status_approved", "Approved")
+    case .rejected:
+      return t("signalasi.common.rejected", "Rejected")
+    case .deleted:
+      return t("signalasi.security_center.status_revoked", "Revoked")
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
