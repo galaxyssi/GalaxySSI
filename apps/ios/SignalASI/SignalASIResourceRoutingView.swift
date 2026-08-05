@@ -206,18 +206,24 @@ struct SignalASIResourceRoutingView: View {
   private func callableTarget(_ contact: SignalASIContact) -> AgentCallableTarget {
     let status = connectorStatus(contact)
     let kind = connectorKind(contact)
+    let resolvedCapabilities = capabilities(contact, kind: kind)
+    let resolvedAdapterType = adapterType(contact)
     return AgentCallableTarget(
       id: contact.id,
       title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
       kind: kind,
       status: status,
-      capabilities: capabilities(contact, kind: kind),
+      capabilities: resolvedCapabilities,
       failureDomain: failureDomain(contact, kind: kind),
-      adapterType: adapterType(contact),
+      adapterType: resolvedAdapterType,
       desktopAccessProfile: contact.connectorDesktopAccessProfile,
-      providerProfile: contact.deliveryMode == .cloudAPI
-        ? ProviderProfileCatalog.fromCloudContact(contact, status: status)
-        : nil
+      providerProfile: providerProfile(
+        contact,
+        kind: kind,
+        status: status,
+        capabilities: resolvedCapabilities,
+        adapterType: resolvedAdapterType
+      )
     )
   }
 
@@ -263,6 +269,10 @@ struct SignalASIResourceRoutingView: View {
   }
 
   private func capabilities(_ contact: SignalASIContact, kind: AgentConnectorKind) -> [AgentCapability] {
+    let connectorCapabilities = contact.connectorCapabilitySet
+    if !connectorCapabilities.isEmpty {
+      return connectorCapabilities.sorted { $0.rawValue < $1.rawValue }
+    }
     switch kind {
     case .model:
       return [.chat, .reasoning, .toolUse, .liveData]
@@ -289,11 +299,35 @@ struct SignalASIResourceRoutingView: View {
   }
 
   private func adapterType(_ contact: SignalASIContact) -> String {
+    if !contact.connectorAdapterName.isEmpty {
+      return contact.connectorAdapterName
+    }
     switch contact.deliveryMode {
     case .cloudAPI: return "cloud-api"
     case .link: return "signalasi-link"
     case .local: return "local"
     }
+  }
+
+  private func providerProfile(
+    _ contact: SignalASIContact,
+    kind: AgentConnectorKind,
+    status: AgentConnectorStatus,
+    capabilities: [AgentCapability],
+    adapterType: String
+  ) -> ProviderProfile? {
+    if contact.deliveryMode == .cloudAPI {
+      return ProviderProfileCatalog.fromCloudContact(contact, status: status)
+    }
+    if kind == .agent, contact.deliveryMode == .link {
+      return ProviderProfileCatalog.fromConnectorContact(
+        contact,
+        status: status,
+        capabilities: capabilities,
+        adapterType: adapterType
+      )
+    }
+    return nil
   }
 
   private func resourceSubtitle(_ resource: AgentResourceDescriptor) -> String {
