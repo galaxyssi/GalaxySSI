@@ -371,14 +371,18 @@ enum SignalASIAttachmentPayloadBuilder {
     )
   }
 
-  static func makePhotoAttachment(data: Data, suggestedName: String = "photo.jpg") -> SignalASIDraftAttachment {
+  static func makePhotoAttachment(
+    data: Data,
+    suggestedName: String = "photo.jpg",
+    sourceDescription: String = "photo-library"
+  ) -> SignalASIDraftAttachment {
     let normalizedData = AgentAnimatedImageTiming.normalizeZeroFrameDelays(data)
     let type = imageMimeType(for: normalizedData) ?? "image/jpeg"
     return SignalASIDraftAttachment(
       displayName: sanitizeName(suggestedName),
       mimeType: type,
       data: normalizedData,
-      sourceDescription: "photo-library"
+      sourceDescription: sourceDescription
     )
   }
 

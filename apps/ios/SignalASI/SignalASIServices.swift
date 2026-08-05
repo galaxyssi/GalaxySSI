@@ -627,17 +627,21 @@ final class MessageCoordinator: ObservableObject {
   func send(
     _ text: String,
     to contact: SignalASIContact,
-    attachments: [SignalASIDraftAttachment] = []
+    attachments: [SignalASIDraftAttachment] = [],
+    agentGoalOverride: String = ""
   ) async {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
+    let requestText = agentGoalOverride
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(displayText)
     let outgoing = store.appendOutgoing(displayText, to: contact.id)
     var disclosureTicket: AgentDisclosureTicket?
     do {
       switch contact.deliveryMode {
       case .cloudAPI:
-        let cloudText = cloudPrompt(text: displayText, attachments: attachments)
+        let cloudText = cloudPrompt(text: requestText, attachments: attachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
@@ -664,7 +668,7 @@ final class MessageCoordinator: ObservableObject {
           desktopId: contact.desktopId,
           providerId: contact.signalASIId,
           title: contact.displayName,
-          text: displayText,
+          text: requestText,
           attachments: attachments.map { AgentDataDisclosureAttachment($0) },
           conversationId: outgoing.conversationId,
           taskId: outgoing.id.uuidString,
@@ -674,7 +678,7 @@ final class MessageCoordinator: ObservableObject {
           throw AgentDataDisclosureBlockedError(destination: contact.displayName)
         }
         let disclosureStatus = try await publishLinkMessage(
-          displayText,
+          requestText,
           contact: contact,
           outgoing: outgoing,
           attachments: attachments

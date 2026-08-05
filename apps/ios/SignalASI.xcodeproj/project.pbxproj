@@ -87,6 +87,7 @@
     A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* SignalASILinkReliability.swift */; };
     A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */; };
     A10000000000000000000010 /* SignalASIAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* SignalASIAttachments.swift */; };
+    A10000000000000000001420 /* SignalASIAttachmentInputViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001420 /* SignalASIAttachmentInputViews.swift */; };
     A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */; };
     A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SignalASIAttachmentTests.swift */; };
     A10000000000000000000012 /* SignalASIBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* SignalASIBackup.swift */; };
@@ -735,6 +736,7 @@
     A20000000000000000000010 /* SignalASILinkReliability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliability.swift; sourceTree = "<group>"; };
     A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000012 /* SignalASIAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachments.swift; sourceTree = "<group>"; };
+    A20000000000000000001420 /* SignalASIAttachmentInputViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentInputViews.swift; sourceTree = "<group>"; };
     A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentRecoveryProtocol.swift; sourceTree = "<group>"; };
     A20000000000000000000013 /* SignalASIAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentTests.swift; sourceTree = "<group>"; };
     A20000000000000000000014 /* SignalASIBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIBackup.swift; sourceTree = "<group>"; };
@@ -1670,6 +1672,7 @@
         A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
+        A20000000000000000001420 /* SignalASIAttachmentInputViews.swift */,
         A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */,
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
         A20000000000000000000482 /* AgentNoReplyReason.swift */,
@@ -2427,6 +2430,7 @@
         A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
+        A10000000000000000001420 /* SignalASIAttachmentInputViews.swift in Sources */,
         A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */,
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
         A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */,
@@ -2863,7 +2867,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes.";
+        INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
@@ -2899,7 +2903,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes.";
+        INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
