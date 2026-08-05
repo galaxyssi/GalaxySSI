@@ -216,6 +216,8 @@ struct ConversationView: View {
   @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
+  @State private var agentSessionsShortcutActive = false
+  @State private var scanShortcutActive = false
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -370,6 +372,7 @@ struct ConversationView: View {
       .background(Color.signalASIBarBackground)
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .background(navigationShortcuts)
     .overlay(attachmentMenuOverlay)
     .navigationBarHidden(true)
     .onAppear {
@@ -494,7 +497,25 @@ struct ConversationView: View {
                 dismissAttachmentMenu(then: createAgentConversation)
               }
               SignalASIAttachmentMenuDivider()
+              SignalASIAttachmentMenuRow(
+                title: t("agent_attachment_sessions", "Sessions"),
+                systemImage: "list.bullet.rectangle"
+              ) {
+                dismissAttachmentMenu(then: {
+                  agentSessionsShortcutActive = true
+                })
+              }
+              SignalASIAttachmentMenuDivider()
             }
+            SignalASIAttachmentMenuRow(
+              title: t("agent_attachment_scan", "Scan"),
+              systemImage: "qrcode.viewfinder"
+            ) {
+              dismissAttachmentMenu(then: {
+                scanShortcutActive = true
+              })
+            }
+            SignalASIAttachmentMenuDivider()
             SignalASIAttachmentMenuRow(
               title: t("agent_attachment_take_photo", "Take photo"),
               systemImage: "camera"
@@ -528,6 +549,25 @@ struct ConversationView: View {
       }
       .transition(.opacity)
     }
+  }
+
+  @ViewBuilder
+  private var navigationShortcuts: some View {
+    NavigationLink(
+      destination: SignalASIAgentSessionsView(),
+      isActive: $agentSessionsShortcutActive
+    ) {
+      EmptyView()
+    }
+    .hidden()
+
+    NavigationLink(
+      destination: AddContactView(autoOpenScanner: true),
+      isActive: $scanShortcutActive
+    ) {
+      EmptyView()
+    }
+    .hidden()
   }
 
   private var isAgentSessionContact: Bool {
