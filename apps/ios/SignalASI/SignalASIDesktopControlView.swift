@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SignalASIDesktopControlView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -300,6 +301,19 @@ private struct SignalASIDesktopControlDetail: View {
 
   private var authorizationSection: some View {
     section(t("desktop_control_authorization", "Authorization")) {
+      SignalASIDesktopControlActionRow(
+        title: t("signalasi.security.desktop_fingerprint", "Computer Fingerprint"),
+        subtitle: SignalASISecurityFormatter.fingerprint(
+          link.desktopFingerprint,
+          unknown: t("signalasi.status.unknown", "Unknown")
+        ),
+        systemImage: "checkmark.shield",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.copy", "Copy"),
+        enabled: !link.desktopFingerprint.isBlank
+      ) {
+        copy(link.desktopFingerprint, message: t("signalasi.security_center.copied_desktop_fingerprint", "Desktop fingerprint copied"))
+      }
       SignalASIDesktopControlRow(
         title: t("desktop_control_access_profile", "Access profile"),
         subtitle: link.accessProfile.ifBlank(SignalASILinkProtocol.accessRestricted),
@@ -424,6 +438,13 @@ private struct SignalASIDesktopControlDetail: View {
 
   private func markPendingAction() {
     statusMessage = t("desktop_control_request_sent", "Encrypted request sent")
+  }
+
+  private func copy(_ value: String, message: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleaned.isEmpty else { return }
+    UIPasteboard.general.string = cleaned
+    statusMessage = message
   }
 }
 
