@@ -130,7 +130,7 @@ struct SignalASILanguageSettingsView: View {
               ),
               systemImage: "mic",
               tint: .teal,
-              badge: store.voiceSettings.preferredLocaleIdentifier
+              badge: resolvedASRLocaleIdentifier
             )
             LanguageSettingsStatusRow(
               title: t("signalasi.language_policy.tts_voice", "TTS voice"),
@@ -140,7 +140,7 @@ struct SignalASILanguageSettingsView: View {
               ),
               systemImage: "speaker",
               tint: .orange,
-              badge: store.voiceSettings.microsoftVoice
+              badge: resolvedTTSVoice
             )
           }
         }
@@ -203,6 +203,17 @@ struct SignalASILanguageSettingsView: View {
 
   private var interfaceResolvedLabel: String {
     languageFormatter.interfaceResolvedName(store.languagePolicy.interfaceLanguage)
+  }
+
+  private var resolvedASRLocaleIdentifier: String {
+    store.languagePolicy.asrLocaleIdentifier
+  }
+
+  private var resolvedTTSVoice: String {
+    LanguagePolicySettings.microsoftVoice(
+      languageTag: store.languagePolicy.ttsLanguage,
+      configuredVoice: store.voiceSettings.microsoftVoice
+    )
   }
 
   private func setInterfaceLanguage(_ value: String) {
