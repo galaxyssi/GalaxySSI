@@ -14,6 +14,7 @@ struct AddContactView: View {
   @State private var pastedQRCodeText = ""
   @State private var pendingPairing: PairingQRCode?
   @State private var pendingFriendRequest: SignalASIFriendRequest?
+  @State private var pendingScannedRequests: [SignalASIFriendRequest] = []
   @State private var pairingInFlight = false
   @State private var scannerAutoOpened = false
 
@@ -117,7 +118,25 @@ struct AddContactView: View {
               t: t
             )
           }
-          if let pendingFriendRequest {
+          if pendingScannedRequests.count > 1 {
+            sectionTitle(t("signalasi.pairing.scanned_agents_title", "Scanned Agents"))
+            AddContactBulkAgentImportCard(
+              count: pendingScannedRequests.count,
+              title: t("signalasi.pairing.scanned_agents_title", "Scanned Agents"),
+              subtitle: String(
+                format: t(
+                  "signalasi.pairing.scanned_agents_subtitle",
+                  "%d Agents are ready to save as Contacts."
+                ),
+                pendingScannedRequests.count
+              ),
+              approveTitle: t("signalasi.pairing.add_all_agents", "Add All"),
+              cancelTitle: t("signalasi.common.cancel", "Cancel"),
+              onApprove: approvePendingScannedRequests,
+              onCancel: clearPendingScanResult
+            )
+          }
+          if let pendingFriendRequest, pendingScannedRequests.count <= 1 {
             sectionTitle(t("signalasi.friend_request.pending", "Pending Verification"))
             AddContactFriendRequestCard(
               request: pendingFriendRequest,
@@ -216,6 +235,7 @@ struct AddContactView: View {
       case .desktopPairing(let pairing):
         pendingPairing = pairing
         pendingFriendRequest = nil
+        pendingScannedRequests = []
         setImportStatus(
           t("signalasi.pairing.ready_to_confirm", "Review fingerprints, then save trust."),
           isError: false
@@ -224,11 +244,13 @@ struct AddContactView: View {
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
         pendingFriendRequest = stored
+        pendingScannedRequests = [stored]
         setImportStatus(requestReceivedStatus(stored), isError: false)
       case .contacts(let requests):
         let stored = requests.map { store.addFriendRequest($0) }
         pendingPairing = nil
         pendingFriendRequest = stored.first
+        pendingScannedRequests = stored
         setImportStatus(requestsReceivedStatus(stored), isError: false)
       }
     } catch {
@@ -250,6 +272,7 @@ struct AddContactView: View {
     do {
       try await coordinator.pair(using: scannedQRCodeText)
       pendingPairing = nil
+      pendingScannedRequests = []
       setImportStatus(
         String(
           format: t(
@@ -275,6 +298,7 @@ struct AddContactView: View {
       if pendingFriendRequest?.id == request.id {
         pendingFriendRequest = nil
       }
+      pendingScannedRequests.removeAll { $0.id == request.id }
       setImportStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"), isError: false)
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
@@ -286,7 +310,28 @@ struct AddContactView: View {
       if pendingFriendRequest?.id == request.id {
         pendingFriendRequest = nil
       }
+      pendingScannedRequests.removeAll { $0.id == request.id }
       setImportStatus(t("signalasi.common.rejected", "Rejected"), isError: false)
+    } else {
+      setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
+    }
+  }
+
+  private func approvePendingScannedRequests() {
+    let requests = pendingScannedRequests
+    let approvedCount = requests.reduce(0) { count, request in
+      store.approveFriendRequest(id: request.id) ? count + 1 : count
+    }
+    pendingScannedRequests = []
+    pendingFriendRequest = nil
+    if approvedCount > 0 {
+      setImportStatus(
+        String(
+          format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
+          approvedCount
+        ),
+        isError: false
+      )
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
     }
@@ -295,6 +340,7 @@ struct AddContactView: View {
   private func clearPendingScanResult() {
     pendingPairing = nil
     pendingFriendRequest = nil
+    pendingScannedRequests = []
   }
 
   private func setImportStatus(_ message: String, isError: Bool) {
@@ -702,6 +748,66 @@ private struct AddContactPairingConfirmCard: View {
     default:
       return scope
     }
+  }
+}
+
+private struct AddContactBulkAgentImportCard: View {
+  var count: Int
+  var title: String
+  var subtitle: String
+  var approveTitle: String
+  var cancelTitle: String
+  var onApprove: () -> Void
+  var onCancel: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 12) {
+        AddContactIcon(systemImage: "person.3.fill", tint: .signalASIAccent)
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            Text(title)
+              .font(.system(size: 18, weight: .bold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.82)
+            Text("\(count)")
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .padding(.horizontal, 8)
+              .frame(minHeight: 24)
+              .background(Color.signalASIAccent.opacity(0.12))
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          Text(subtitle)
+            .font(.system(size: 13))
+            .foregroundColor(.signalASITextSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 0)
+      }
+      HStack(spacing: 10) {
+        Button(action: onApprove) {
+          Label(approveTitle, systemImage: "checkmark.circle.fill")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(Color.signalASIAccent)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        Button(action: onCancel) {
+          Text(cancelTitle)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.signalASITextSecondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(12)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
 

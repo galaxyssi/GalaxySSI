@@ -1057,6 +1057,10 @@
 "signalasi.pairing.contact_request_received" = "已收到联系人请求：%@";
 "signalasi.pairing.agent_request_received" = "已收到 Agent 请求：%@";
 "signalasi.pairing.agent_requests_received" = "已收到 %d 个 Agent 请求。";
+"signalasi.pairing.scanned_agents_title" = "已扫描 Agent";
+"signalasi.pairing.scanned_agents_subtitle" = "%d 个 Agent 已准备加入通讯录。";
+"signalasi.pairing.add_all_agents" = "全部加入";
+"signalasi.pairing.agent_requests_added" = "已添加 %d 个 Agent 到通讯录。";
 "signalasi.pairing.device_request_received" = "已收到设备请求：%@";
 "signalasi.pairing.hermes_request_received" = "已收到 Hermes 请求：%@";
 "signalasi.pairing.scan_failed" = "扫描失败：%@";
