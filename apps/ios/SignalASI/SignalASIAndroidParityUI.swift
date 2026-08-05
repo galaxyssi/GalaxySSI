@@ -914,7 +914,7 @@ struct DiscoverView: View {
               systemImage: "gearshape",
               tint: .signalASIInsightText
             ) {
-              SignalASIGeneralSettingsView()
+              SignalASIGeneralControlCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),
