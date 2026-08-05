@@ -357,10 +357,10 @@ struct SettingsView: View {
       }
       SettingsNavigationRow(
         title: t("cc_system_status_title", "System Status"),
-        subtitle: t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
-        systemImage: "info.circle",
-        tint: .signalASIAccent,
-        badge: t("signalasi.common.status", "Status")
+        subtitle: systemStatusSubtitle,
+        systemImage: systemStatusIcon,
+        tint: systemStatusNeedsAttention ? .orange : .signalASIAccent,
+        badge: systemStatusNeedsAttention ? t("cc_status_degraded", "Degraded") : t("cc_status_normal", "Normal")
       ) {
         SignalASISystemStatusView()
       }
@@ -618,6 +618,33 @@ struct SettingsView: View {
       return String(format: t("signalasi.settings.paired_desktop_count", "%d paired"), count)
     }
     return t("settings_status_link_off", "No trusted Desktop yet")
+  }
+
+  private var systemStatusIcon: String {
+    systemStatusNeedsAttention ? "exclamationmark.triangle" : "checkmark.shield"
+  }
+
+  private var systemStatusSubtitle: String {
+    if systemStatusNeedsAttention {
+      return t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+    }
+    return t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available")
+  }
+
+  private var systemStatusNeedsAttention: Bool {
+    store.agentSafetySettings.executionPaused ||
+      !systemStatusLinkReady ||
+      systemStatusAvailableResourceCount == 0
+  }
+
+  private var systemStatusLinkReady: Bool {
+    store.serverLinks.contains(where: \.paired) && linkDiagnosticsSnapshot.failureCount == 0
+  }
+
+  private var systemStatusAvailableResourceCount: Int {
+    store.cloudModelContacts.count +
+      store.serverLinks.filter(\.paired).count +
+      store.customDeviceConnectors.filter(\.enabled).count
   }
 
   private var modelPlannerSummary: String {
