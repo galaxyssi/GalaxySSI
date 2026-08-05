@@ -150,11 +150,7 @@ struct DeviceManagementView: View {
               tint: .purple,
               badge: remoteControlStatusLabel
             ) {
-              if pairedDesktopLinks.isEmpty {
-                PairingView()
-              } else {
-                SignalASILinkDiagnosticsView()
-              }
+              SignalASIDesktopControlView()
             }
           }
         }
