@@ -623,6 +623,14 @@ struct DiscoverView: View {
               DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_resource_routing_title", "Models & Resource Routing"),
+              subtitle: t("cc_resource_routing_subtitle", "Choose by quality, latency, privacy, cost, and availability"),
+              systemImage: "point.3.connected.trianglepath.dotted",
+              tint: .blue
+            ) {
+              SignalASIResourceRoutingView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_phone_title", "Phone Capabilities"),
               subtitle: t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"),
               systemImage: "iphone",
