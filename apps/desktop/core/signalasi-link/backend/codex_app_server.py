@@ -135,8 +135,7 @@ class CodexRun:
     last_output_delta_text: str = ""
     last_output_delta_monotonic: float = 0.0
     working_directory: str = ""
-    file_access_scope: object | None = field(default=None, repr=False)
-    workspace_capture: object | None = field(default=None, repr=False)
+    host_config_guard: object | None = field(default=None, repr=False)
 
 
 class CodexAppServer:
@@ -151,6 +150,7 @@ class CodexAppServer:
         self._runs: dict[str, CodexRun] = {}
         self._turn_tasks: dict[str, str] = {}
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
+        self._loaded_thread_ids: set[str] = set()
         self._initialized_process_pid = 0
 
     def warm(self) -> dict[str, object]:
@@ -161,6 +161,35 @@ class CodexAppServer:
             "ready": True,
             "pid": self.process.pid if self.process is not None else 0,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+        }
+
+    def prewarm_recent_threads(self, limit: int = 3) -> dict[str, object]:
+        """Load recent persisted conversations into the current App Server process."""
+        self._ensure_started()
+        with self._lock:
+            candidates = list(self._conversation_threads.items())[-max(0, int(limit)):]
+        resumed: list[str] = []
+        removed: list[str] = []
+        for conversation_key, thread_id in reversed(candidates):
+            if not thread_id or thread_id in self._loaded_thread_ids:
+                continue
+            try:
+                self._resume_thread(thread_id)
+                resumed.append(thread_id)
+            except RuntimeError as exc:
+                if not self._is_thread_not_found_error(exc):
+                    raise
+                with self._lock:
+                    if self._conversation_threads.get(conversation_key) == thread_id:
+                        self._conversation_threads.pop(conversation_key, None)
+                        removed.append(thread_id)
+        if removed:
+            self._save_conversation_threads()
+        return {
+            "ready": self.is_ready(),
+            "resumed": len(resumed),
+            "removed": len(removed),
+            "loaded": len(self._loaded_thread_ids),
         }
 
     def is_ready(self) -> bool:
@@ -208,7 +237,7 @@ class CodexAppServer:
             execution_harness=execution_harness,
             working_directory=str(Path(cwd).expanduser().resolve()),
         )
-        run.workspace_capture = self._begin_file_access_capture(run)
+        run.host_config_guard = self._begin_host_config_guard(run)
         reused_thread = False
         try:
             with self._lock:
@@ -218,6 +247,19 @@ class CodexAppServer:
                 self._runs[task_id] = run
                 conversation_key = self._conversation_key(clean_conversation_id)
                 run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
+                if run.thread_id and run.thread_id not in self._loaded_thread_ids:
+                    try:
+                        self._resume_thread(
+                            run.thread_id,
+                            approval_policy=approval_policy,
+                            sandbox=sandbox,
+                        )
+                    except RuntimeError as exc:
+                        if not self._is_thread_not_found_error(exc):
+                            raise
+                        self._conversation_threads.pop(conversation_key, None)
+                        self._save_conversation_threads()
+                        run.thread_id = ""
                 reused_thread = bool(run.thread_id)
                 if not run.thread_id:
                     run.thread_id = self._start_thread(
@@ -255,7 +297,7 @@ class CodexAppServer:
                     reasoning_effort=run.execution_policy.reasoning_effort.value,
                 )
             except RuntimeError as exc:
-                if not run.thread_id or "thread not found" not in str(exc).lower():
+                if not run.thread_id or not self._is_thread_not_found_error(exc):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -369,6 +411,8 @@ class CodexAppServer:
                 "approvalPolicy": approval_policy,
                 "sandbox": sandbox,
             }, timeout=30)
+            with self._lock:
+                self._loaded_thread_ids.add(clean_thread_id)
             if run.finished:
                 return run
             thread = response.get("thread") or {}
@@ -402,7 +446,7 @@ class CodexAppServer:
                         output_tokens=estimate_text_tokens(run.final_text),
                         estimated=True,
                     )
-                host_config_failure = self._finish_file_access_capture(run)
+                host_config_failure = self._finish_host_config_guard(run)
                 if host_config_failure:
                     run.final_text = host_config_failure
                     run.finished = True
@@ -427,7 +471,7 @@ class CodexAppServer:
                 })
                 return run
             if turn_status in {"failed", "interrupted"}:
-                host_config_failure = self._finish_file_access_capture(run)
+                host_config_failure = self._finish_host_config_guard(run)
                 run.finished = True
                 self._remove_turn_mapping(run)
                 reason = self._turn_error(turn)
@@ -480,7 +524,7 @@ class CodexAppServer:
             ).start()
             return run
         except Exception:
-            self._finish_file_access_capture(run)
+            self._finish_host_config_guard(run)
             run.finished = True
             self._remove_turn_mapping(run)
             raise
@@ -536,7 +580,7 @@ class CodexAppServer:
             ):
                 continue
             run.finished = True
-            self._finish_file_access_capture(run)
+            self._finish_host_config_guard(run)
             message = (
                 "Codex \u957f\u65f6\u95f4\u6ca1\u6709\u65b0\u8fdb\u5c55\uff0c\u4efb\u52a1\u5df2\u505c\u6b62\uff0c\u907f\u514d\u7ee7\u7eed\u963b\u585e\u540e\u7eed\u8bf7\u6c42\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
                 if run.prefers_chinese else
@@ -669,7 +713,7 @@ class CodexAppServer:
             if run.finished:
                 return
             run.finished = True
-        self._finish_file_access_capture(run)
+        self._finish_host_config_guard(run)
         self._checkpoint_progress(
             run,
             "failed",
@@ -723,10 +767,38 @@ class CodexAppServer:
             "approvalPolicy": approval_policy, "sandbox": sandbox,
         }, timeout=30)
         thread_id = str((response.get("thread") or {}).get("id") or "")
-        if conversation_id and thread_id:
-            self._conversation_threads[self._conversation_key(conversation_id)] = thread_id
-            self._save_conversation_threads()
+        if thread_id:
+            with self._lock:
+                self._loaded_thread_ids.add(thread_id)
+                if conversation_id:
+                    conversation_key = self._conversation_key(conversation_id)
+                    self._conversation_threads.pop(conversation_key, None)
+                    self._conversation_threads[conversation_key] = thread_id
+                    self._save_conversation_threads()
         return thread_id
+
+    def _resume_thread(
+        self,
+        thread_id: str,
+        *,
+        approval_policy: str = "on-request",
+        sandbox: str = "workspace-write",
+    ) -> None:
+        clean_thread_id = str(thread_id or "").strip()
+        if not clean_thread_id or clean_thread_id in self._loaded_thread_ids:
+            return
+        self._request("thread/resume", {
+            "threadId": clean_thread_id,
+            "approvalPolicy": approval_policy,
+            "sandbox": sandbox,
+        }, timeout=30)
+        with self._lock:
+            self._loaded_thread_ids.add(clean_thread_id)
+
+    @staticmethod
+    def _is_thread_not_found_error(exc: Exception) -> bool:
+        value = str(exc or "").casefold()
+        return "thread not found" in value or "thread_not_found" in value
 
     @staticmethod
     def _conversation_key(conversation_id: str) -> str:
@@ -895,7 +967,7 @@ class CodexAppServer:
 
     def _discard_run(self, run: CodexRun) -> None:
         run.finished = True
-        self._finish_file_access_capture(run)
+        self._finish_host_config_guard(run)
         with self._lock:
             if self._turn_tasks.get(run.turn_id) == run.task_id:
                 self._turn_tasks.pop(run.turn_id, None)
@@ -903,107 +975,34 @@ class CodexAppServer:
                 self._runs.pop(run.task_id, None)
 
     @staticmethod
-    def _begin_file_access_capture(run: CodexRun):
+    def _begin_host_config_guard(run: CodexRun):
         try:
-            from agent_file_access_ledger import (
-                AgentWorkspaceCapture,
-                FileAccessScope,
-                agent_file_access_ledger,
-                repository_identity,
-            )
-            from agent_task_manager import agent_task_manager
+            from host_execution_config_guard import HostExecutionConfigGuard
 
-            root = Path(run.working_directory).expanduser().resolve()
-            task = agent_task_manager.get(run.task_id)
-            scope = FileAccessScope.create(
-                client_route_id=(
-                    getattr(task, "client_route_id", "")
-                    or "desktop-local"
-                ),
-                conversation_id=(
-                    getattr(task, "client_conversation_id", "")
-                    or run.conversation_id
-                    or run.task_id
-                ),
-                task_id=run.task_id,
-                repository_id=repository_identity(root),
-            )
-            run.file_access_scope = scope
-            return AgentWorkspaceCapture.begin(
-                root,
-                scope=scope,
+            return HostExecutionConfigGuard.begin(
+                Path(run.working_directory),
                 agent_id="codex",
-                ledger=agent_file_access_ledger(),
-                capture_id=f"codex:{run.task_id}:{time.time_ns()}",
+                capture_id=run.task_id,
             )
         except Exception:
-            log.debug(
-                "Codex file access capture could not start",
-                exc_info=True,
-            )
+            log.debug("Codex host configuration guard could not start", exc_info=True)
             return None
 
     @staticmethod
-    def _record_file_changes(run: CodexRun, item: dict) -> None:
-        if run.file_access_scope is None or not run.working_directory:
-            return
-        try:
-            from agent_file_access_ledger import (
-                FileObservation,
-                agent_file_access_ledger,
-                observation_for_path,
-            )
-
-            root = Path(run.working_directory).expanduser().resolve()
-            writes: list[FileObservation] = []
-            for change in item.get("changes") or []:
-                if not isinstance(change, dict):
-                    continue
-                raw_path = str(
-                    change.get("path") or change.get("file") or ""
-                ).strip()
-                if not raw_path:
-                    continue
-                candidate = Path(raw_path)
-                if not candidate.is_absolute():
-                    candidate = root / candidate
-                try:
-                    writes.append(observation_for_path(root, candidate))
-                except Exception:
-                    continue
-            if writes:
-                agent_file_access_ledger().record_batch(
-                    run.file_access_scope,
-                    agent_id="codex",
-                    writes=writes,
-                    event_id=(
-                        f"codex-file-change:{run.task_id}:"
-                        f"{item.get('id') or ''}"
-                    ),
-                    observation_mode="codex_app_server",
-                )
-        except Exception:
-            log.debug("Codex file change telemetry failed", exc_info=True)
-
-    @staticmethod
-    def _finish_file_access_capture(run: CodexRun) -> str:
-        capture = run.workspace_capture
-        run.workspace_capture = None
-        if capture is None:
+    def _finish_host_config_guard(run: CodexRun) -> str:
+        guard = run.host_config_guard
+        run.host_config_guard = None
+        if guard is None:
             return ""
         try:
-            capture.finish()
-        except Exception as exc:
-            from host_execution_config_guard import (
-                HostExecutionConfigViolation,
-            )
+            violations = guard.finish()
+        except Exception:
+            log.debug("Codex host configuration guard could not finish", exc_info=True)
+            return ""
+        if violations:
+            from host_execution_config_guard import HostExecutionConfigViolation
 
-            if isinstance(exc, HostExecutionConfigViolation):
-                return str(exc)
-            log.debug(
-                "Codex file access capture could not finish",
-                exc_info=True,
-            )
+            return str(HostExecutionConfigViolation(violations))
         return ""
 
     def _load_conversation_threads(self) -> dict[str, str]:
@@ -1103,6 +1102,7 @@ class CodexAppServer:
             process = self.process
             self.process = None
             self._initialized_process_pid = 0
+            self._loaded_thread_ids.clear()
             self._runs.clear()
             self._turn_tasks.clear()
         if process is None or process.poll() is not None:
@@ -1133,6 +1133,7 @@ class CodexAppServer:
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
                 self._initialized_process_pid = 0
+                self._loaded_thread_ids.clear()
                 threading.Thread(target=self._read_stdout, daemon=True).start()
                 threading.Thread(target=self._drain_stderr, daemon=True).start()
             self._request("initialize", {
@@ -1304,7 +1305,6 @@ class CodexAppServer:
                             text_override=text,
                         )
             elif item_type == "fileChange":
-                self._record_file_changes(run, item)
                 self._emit_item_progress(
                     task_id,
                     common,
@@ -1377,7 +1377,7 @@ class CodexAppServer:
                     mapped = "failed"
                     run.final_text = str(exc)
             run.finished = True
-            host_config_failure = self._finish_file_access_capture(run)
+            host_config_failure = self._finish_host_config_guard(run)
             if host_config_failure:
                 mapped = "failed"
                 run.final_text = host_config_failure

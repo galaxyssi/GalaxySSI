@@ -37,6 +37,9 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
     }
 
     @Synchronized
+    fun encodedValueLength(key: String): Int = preferences.getString(key, null)?.length ?: 0
+
+    @Synchronized
     fun contains(key: String): Boolean {
         val raw = preferences.getString(key, null) ?: return false
         return AgentStorageCipher.decrypt(raw, associatedData(key)) != null
@@ -68,6 +71,31 @@ class AgentEncryptedDatabase(
                 defaultValue
             } else {
                 AgentStorageCipher.decrypt(cursor.getString(0), associatedData(key)) ?: defaultValue
+            }
+        }
+    }
+
+    fun readStrings(keys: Collection<String>): Map<String, String> = synchronized(database) {
+        val requested = keys.distinct()
+        if (requested.isEmpty()) return@synchronized emptyMap()
+        buildMap {
+            requested.chunked(MAX_QUERY_KEYS).forEach { chunk ->
+                val placeholders = List(chunk.size) { "?" }.joinToString(",")
+                database.readableDatabase.query(
+                    TABLE_VALUES,
+                    arrayOf("storage_key", "encrypted_value"),
+                    "storage_key IN ($placeholders)",
+                    chunk.toTypedArray(),
+                    null,
+                    null,
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val key = cursor.getString(0)
+                        AgentStorageCipher.decrypt(cursor.getString(1), associatedData(key))
+                            ?.let { value -> put(key, value) }
+                    }
+                }
             }
         }
     }
@@ -211,6 +239,7 @@ class AgentEncryptedDatabase(
 
     private companion object {
         const val TABLE_VALUES = "encrypted_values"
+        const val MAX_QUERY_KEYS = 500
         val DATABASES = ConcurrentHashMap<String, SharedEncryptedDatabase>()
 
         fun sharedDatabase(context: Context, databaseName: String): SharedEncryptedDatabase =

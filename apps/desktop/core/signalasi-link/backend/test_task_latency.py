@@ -180,11 +180,11 @@ class TaskLatencyTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-1",
             resolved_desktop_name="Desktop",
-            resolved_connector_agents=[],
             include_progress_replay=True,
         )
 
         self.assertEqual(latest, payload["progress_event"])
+        self.assertNotIn("connector_agents", payload)
         self.assertEqual(
             [{
                 "event_id": "two",
@@ -215,7 +215,6 @@ class TaskLatencyTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-1",
             resolved_desktop_name="Desktop",
-            resolved_connector_agents=[],
         )
 
         self.assertEqual(8, payload["status_seq"])
@@ -252,7 +251,6 @@ class TaskLatencyTests(unittest.TestCase):
                 [{"stage": "stale", "at": 500, "detail": ""}],
                 resolved_desktop_id="desktop-1",
                 resolved_desktop_name="Desktop",
-                resolved_connector_agents=[],
             )
 
         self.assertEqual("trace-1", payload["trace_id"])
@@ -282,7 +280,6 @@ class TaskLatencyTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-1",
             resolved_desktop_name="Desktop",
-            resolved_connector_agents=[],
             include_progress_replay=True,
         )
 
@@ -322,7 +319,6 @@ class TaskLatencyTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-1",
             resolved_desktop_name="Desktop",
-            resolved_connector_agents=[],
             include_progress_replay=True,
         )
 

@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import codex_app_server
-from host_execution_config_guard import HostExecutionConfigViolation
 
 
 class CodexConversationThreadTests(unittest.TestCase):
@@ -72,34 +71,21 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("", reasoning["event_detail"])
         self.assertNotIn("private internal reasoning", str(reasoning))
 
-    def test_completed_turn_fails_when_host_configuration_write_is_rolled_back(self):
+    def test_file_change_event_does_not_start_file_tree_audit(self):
         server, run, events = self._event_server()
-
-        class ViolatingCapture:
-            @staticmethod
-            def finish():
-                raise HostExecutionConfigViolation(({
-                    "path": ".git/hooks/pre-commit",
-                    "operation": "created",
-                    "reason_code": "git_hook_configuration",
-                    "reason": "Git hooks execute automatically on the host",
-                },))
-
-        run.workspace_capture = ViolatingCapture()
-        run.final_text = "Unsafe success"
-
         server._handle_event({
-            "method": "turn/completed",
+            "method": "item/completed",
             "params": {
                 "turnId": run.turn_id,
-                "turn": {"status": "completed"},
+                "item": {
+                    "id": "file-1",
+                    "type": "fileChange",
+                    "changes": [{"path": "result.txt"}],
+                },
             },
         })
-
-        final = events[-1][1]
-        self.assertEqual("failed", final["status"])
-        self.assertIn("blocked and rolled back", final["result"])
-        self.assertNotIn("Unsafe success", final["result"])
+        self.assertFalse(hasattr(run, "workspace_capture"))
+        self.assertEqual("running", events[-1][1]["status"])
 
     @staticmethod
     def _event_server():
@@ -631,7 +617,7 @@ class CodexConversationThreadTests(unittest.TestCase):
 
             def request(method, params, timeout):
                 calls.append((method, params, timeout))
-                if method == "turn/start" and params["threadId"] == "stale-thread":
+                if method == "thread/resume" and params["threadId"] == "stale-thread":
                     raise RuntimeError("thread not found: stale-thread")
                 if method == "thread/start":
                     return {"thread": {"id": "fresh-thread"}}
@@ -643,7 +629,37 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual(run.thread_id, "fresh-thread")
             self.assertEqual(run.turn_id, "fresh-turn")
             self.assertEqual(server._conversation_threads[conversation_key], "fresh-thread")
-            self.assertEqual([method for method, _, _ in calls], ["turn/start", "thread/start", "turn/start"])
+            self.assertEqual([method for method, _, _ in calls], ["thread/resume", "thread/start", "turn/start"])
+
+    def test_prewarm_restores_recent_threads_once_per_process(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ):
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            server._conversation_threads = {
+                "v2:conversation-1": "thread-1",
+                "v2:conversation-2": "thread-2",
+                "v2:conversation-3": "thread-3",
+            }
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                return {"thread": {"id": params["threadId"]}}
+
+            server._request = request
+            first = server.prewarm_recent_threads(limit=2)
+            second = server.prewarm_recent_threads(limit=2)
+
+            self.assertEqual(2, first["resumed"])
+            self.assertEqual(0, second["resumed"])
+            self.assertEqual(
+                ["thread-3", "thread-2"],
+                [params["threadId"] for method, params, _ in calls if method == "thread/resume"],
+            )
 
     def test_local_images_are_sent_as_native_app_server_input(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(

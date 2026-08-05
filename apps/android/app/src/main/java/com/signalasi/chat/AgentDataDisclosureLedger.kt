@@ -144,7 +144,14 @@ class EncryptedAgentDataDisclosureStore(context: Context) : AgentDataDisclosureS
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE_NAME)
 
     override fun append(record: AgentDataDisclosureRecord) = synchronized(STORAGE_LOCK) {
-        saveRecords(loadRecords().plus(record).takeLast(InMemoryAgentDataDisclosureStore.MAX_RECORDS))
+        val indexUpdate = AgentDisclosureRecordIndex.append(loadRecordIds(), record.eventId)
+        database.mutateStrings(
+            upserts = mapOf(
+                KEY_RECORD_IDS to JSONArray(indexUpdate.recordIds).toString(),
+                recordKey(record.eventId) to record.toJson().toString()
+            ),
+            removeKeys = indexUpdate.evictedIds.map(::recordKey) + KEY_LEGACY_RECORDS
+        )
     }
 
     override fun update(
@@ -152,30 +159,34 @@ class EncryptedAgentDataDisclosureStore(context: Context) : AgentDataDisclosureS
         status: AgentDisclosureStatus,
         failureReason: String
     ) = synchronized(STORAGE_LOCK) {
-        val records = loadRecords().toMutableList()
-        val index = records.indexOfLast { it.eventId == eventId }
-        if (index < 0) return@synchronized
-        records[index] = records[index].copy(
+        val record = loadRecord(eventId) ?: return@synchronized
+        val updated = record.copy(
             status = status,
             failureReason = failureReason.take(InMemoryAgentDataDisclosureStore.MAX_FAILURE_REASON),
             updatedAtMillis = System.currentTimeMillis()
         )
-        saveRecords(records)
+        database.writeString(recordKey(eventId), updated.toJson().toString())
     }
 
     override fun list(limit: Int): List<AgentDataDisclosureRecord> =
         synchronized(STORAGE_LOCK) {
-            loadRecords().asReversed()
+            val selectedIds = loadRecordIds().asReversed()
                 .take(limit.coerceIn(1, InMemoryAgentDataDisclosureStore.MAX_LIST_LIMIT))
+            val values = database.readStrings(selectedIds.map(::recordKey))
+            selectedIds.mapNotNull { id ->
+                values[recordKey(id)]?.let(::parseRecord)
+            }
         }
 
     override fun find(eventId: String): AgentDataDisclosureRecord? =
         synchronized(STORAGE_LOCK) {
-            loadRecords().lastOrNull { it.eventId == eventId }
+            loadRecord(eventId)
         }
 
     override fun clearHistory() = synchronized(STORAGE_LOCK) {
-        database.remove(KEY_RECORDS)
+        database.removeAll(
+            database.keys(RECORD_KEY_PREFIX) + listOf(KEY_RECORD_IDS, KEY_LEGACY_RECORDS)
+        )
     }
 
     override fun blockedDestinationIds(): Set<String> = synchronized(STORAGE_LOCK) {
@@ -201,25 +212,30 @@ class EncryptedAgentDataDisclosureStore(context: Context) : AgentDataDisclosureS
         )
     }
 
-    private fun loadRecords(): List<AgentDataDisclosureRecord> = runCatching {
-        val source = JSONArray(database.readString(KEY_RECORDS, "[]"))
+    private fun loadRecordIds(): List<String> = runCatching {
+        val source = JSONArray(database.readString(KEY_RECORD_IDS, "[]"))
         buildList {
             for (index in 0 until source.length()) {
-                source.optJSONObject(index)?.toDisclosureRecord()?.let(::add)
+                source.optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
             }
         }
     }.getOrDefault(emptyList())
 
-    private fun saveRecords(records: List<AgentDataDisclosureRecord>) {
-        database.writeString(
-            KEY_RECORDS,
-            JSONArray().apply { records.forEach { put(it.toJson()) } }.toString()
-        )
-    }
+    private fun loadRecord(eventId: String): AgentDataDisclosureRecord? =
+        database.readString(recordKey(eventId), "")
+            .takeIf(String::isNotBlank)
+            ?.let(::parseRecord)
+
+    private fun parseRecord(value: String): AgentDataDisclosureRecord? =
+        runCatching { JSONObject(value).toDisclosureRecord() }.getOrNull()
+
+    private fun recordKey(eventId: String): String = "$RECORD_KEY_PREFIX$eventId"
 
     companion object {
         const val DATABASE_NAME = "signalasi_data_disclosure_ledger_v1"
-        private const val KEY_RECORDS = "records"
+        private const val KEY_RECORD_IDS = "record_ids"
+        private const val RECORD_KEY_PREFIX = "record:"
+        private const val KEY_LEGACY_RECORDS = "records"
         private const val KEY_BLOCKED_DESTINATIONS = "blocked_destinations"
         private val STORAGE_LOCK = Any()
     }
@@ -361,6 +377,33 @@ object AgentDataDisclosureLedger {
         }
         store.append(stored)
         return AgentDisclosureTicket(stored.eventId, !blocked)
+    }
+}
+
+internal data class AgentDisclosureRecordIndexUpdate(
+    val recordIds: List<String>,
+    val evictedIds: List<String>
+)
+
+internal object AgentDisclosureRecordIndex {
+    fun append(
+        currentIds: List<String>,
+        eventId: String,
+        maxRecords: Int = InMemoryAgentDataDisclosureStore.MAX_RECORDS
+    ): AgentDisclosureRecordIndexUpdate {
+        val normalized = currentIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot { it == eventId }
+            .distinct()
+            .plus(eventId)
+            .toList()
+        val keepCount = maxRecords.coerceAtLeast(1)
+        val evictedCount = (normalized.size - keepCount).coerceAtLeast(0)
+        return AgentDisclosureRecordIndexUpdate(
+            recordIds = normalized.drop(evictedCount),
+            evictedIds = normalized.take(evictedCount)
+        )
     }
 }
 

@@ -128,6 +128,9 @@ running = False
 codex_app_server: CodexAppServer | None = None
 codex_task_callbacks: dict[str, Callable[[str, dict], None]] = {}
 codex_task_callbacks_lock = threading.Lock()
+codex_warm_stop_event = threading.Event()
+codex_warm_thread: threading.Thread | None = None
+CODEX_WARM_INTERVAL_SECONDS = 30.0
 pending_delivery_acks: dict[int, dict] = {}
 pending_delivery_acks_lock = threading.Lock()
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
@@ -1250,10 +1253,15 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
 
 def _codex_server(executable: str, env: dict) -> CodexAppServer:
     global codex_app_server
+    previous = None
     with codex_task_callbacks_lock:
         if codex_app_server is None or codex_app_server.executable != executable:
+            previous = codex_app_server
             codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event)
-    return codex_app_server
+        server = codex_app_server
+    if previous is not None:
+        previous.close()
+    return server
 
 
 def warm_codex_app_server() -> None:
@@ -1262,13 +1270,41 @@ def warm_codex_app_server() -> None:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
 
         executable = _find_codex_desktop_cli() or "codex"
-        result = _codex_server(executable, _agent_env(BASE_AGENTS["codex"])).warm()
+        server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+        result = server.warm()
+        thread_result = server.prewarm_recent_threads(limit=3)
         log.info(
-            "Codex App Server prewarmed pid=%s elapsed_ms=%s executable=%s",
-            result.get("pid", 0), result.get("elapsed_ms", 0), executable,
+            "Codex App Server prewarmed pid=%s elapsed_ms=%s threads=%s executable=%s",
+            result.get("pid", 0), result.get("elapsed_ms", 0),
+            thread_result.get("loaded", 0), executable,
         )
     except Exception as exc:
         log.warning("Codex App Server prewarm failed; first task will retry: %s", exc)
+
+
+def _codex_warm_loop() -> None:
+    global codex_warm_thread
+    try:
+        while not codex_warm_stop_event.is_set():
+            warm_codex_app_server()
+            if codex_warm_stop_event.wait(CODEX_WARM_INTERVAL_SECONDS):
+                break
+    finally:
+        if threading.current_thread() is codex_warm_thread:
+            codex_warm_thread = None
+
+
+def _ensure_codex_warm_thread() -> None:
+    global codex_warm_thread
+    if codex_warm_thread is not None and codex_warm_thread.is_alive():
+        return
+    codex_warm_stop_event.clear()
+    codex_warm_thread = threading.Thread(
+        target=_codex_warm_loop,
+        daemon=True,
+        name="signalasi-codex-warm",
+    )
+    codex_warm_thread.start()
 
 
 phone_publish_lock = threading.RLock()
@@ -1552,6 +1588,21 @@ def _enqueue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]
             elapsed = time.monotonic() - task_event_last_published_at.get(task_id, 0.0)
             delay = max(0.0, TASK_EVENT_DELTA_COALESCE_SECONDS - elapsed)
         _schedule_task_event_locked(task_id, delay)
+
+
+def _drop_queued_task_progress(task_id: str) -> None:
+    clean_task_id = str(task_id or "").strip()
+    if not clean_task_id:
+        return
+    with task_event_publish_snapshots_lock:
+        task_event_publish_snapshots.pop(clean_task_id, None)
+        timer = task_event_publish_timers.pop(clean_task_id, None)
+        if timer is not None:
+            timer.cancel()
+        if clean_task_id not in task_event_publish_inflight:
+            task_event_publish_scheduled.discard(clean_task_id)
+    with pending_task_events_lock:
+        pending_task_events.pop(clean_task_id, None)
 
 
 def _task_event_is_coalescible(task: dict) -> bool:
@@ -2580,7 +2631,6 @@ def _agent_task_payload(
     *,
     resolved_desktop_id: str,
     resolved_desktop_name: str,
-    resolved_connector_agents: list[dict],
     include_progress_replay: bool = False,
 ) -> dict:
     status = str(task.get("status") or "")
@@ -2634,7 +2684,6 @@ def _agent_task_payload(
         "output_files": task.get("output_files", []),
         "desktop_id": resolved_desktop_id,
         "desktop_name": resolved_desktop_name,
-        "connector_agents": resolved_connector_agents,
         "sender": "system",
         "time": time.time(),
         "delivery_trace": outbound_trace,
@@ -2683,10 +2732,6 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
         pending.trace,
         resolved_desktop_id=desktop_id(),
         resolved_desktop_name=desktop_name(),
-        resolved_connector_agents=mobile_connector_agents(
-            str(pending.task.get("client_route_id") or ""),
-            detailed=False,
-        ),
         include_progress_replay=pending.replay_progress,
     )
     status = str(pending.task.get("status") or "").strip().lower()
@@ -3166,6 +3211,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
     from agent_execution_harness import (
         AgentExecutionMode,
+        AgentTaskKind,
         execution_contract,
         execution_policy_for,
     )
@@ -3188,6 +3234,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         ),
     )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    fast_chat_delivery = (
+        execution_policy.task_kind == AgentTaskKind.CHAT
+        and not has_attachments
+        and not plan_only
+    )
     if plan_only:
         active_conversation_task = None
         active_turn_decision = None
@@ -3422,6 +3473,27 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     def publish_event(task: dict) -> None:
         # Android merges these events into one task row by task_id/status_seq.
         # Publish changed steps immediately and same-step liveness every 15 s.
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATES and str(task.get("result") or "").strip():
+            # The final reply carries the terminal task state. Publishing a
+            # second terminal envelope first only delays that reply.
+            _drop_queued_task_progress(str(task.get("task_id") or ""))
+            return
+        if fast_chat_delivery and status in {"queued", "starting"}:
+            # The phone already owns the local processing timer. Empty setup
+            # envelopes would occupy the ordered channel ahead of the answer.
+            return
+        if fast_chat_delivery and status == "running":
+            partial_result = task.get("partial_result")
+            has_partial = (
+                isinstance(partial_result, dict)
+                and bool(str(partial_result.get("text") or "").strip())
+            )
+            events = task.get("events") if isinstance(task.get("events"), list) else []
+            if not has_partial and not _readable_progress_replay(events):
+                # Keep real narration, tool progress and streamed output, but
+                # suppress content-free liveness heartbeats.
+                return
         if not progress_event_gate.should_publish(task):
             return
         _enqueue_task_event(mqttc, wire_payload, task, task_trace_snapshot())
@@ -3660,31 +3732,41 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         from response_policy import remove_unfulfilled_artifact_claims, sanitize_assistant_response
         from task_workspace import referenced_task_artifact_paths, task_workspace
         task_id = str(task.get("task_id") or "")
-        hidden_inputs = [
-            str(path) for path in (
-                task_workspace(task_id, agent_id) / "downloads" / "input"
-            ).glob("*")
-        ]
         raw_result = str(task.get("result") or "")
-        hidden_artifact_paths = [str(path) for path in referenced_task_artifact_paths(raw_result)]
-        finalization = (
-            ArtifactFinalization(
+        hidden_inputs: list[str] = []
+        hidden_artifact_paths: list[str] = []
+        if fast_chat_delivery:
+            finalization = ArtifactFinalization(
                 output_files=(),
-                verification={
-                    "status": "not_required",
-                    "reason": AgentExecutionMode.PLAN_ONLY.value,
-                },
+                verification={"status": "not_required", "reason": "chat"},
             )
-            if plan_only
-            else finalize_task_artifacts(
-                task_id,
-                current_user_request,
-                agent_id,
-                allow_device_install=full_desktop_executor,
+        else:
+            hidden_inputs = [
+                str(path) for path in (
+                    task_workspace(task_id, agent_id) / "downloads" / "input"
+                ).glob("*")
+            ]
+            hidden_artifact_paths = [
+                str(path) for path in referenced_task_artifact_paths(raw_result)
+            ]
+            finalization = (
+                ArtifactFinalization(
+                    output_files=(),
+                    verification={
+                        "status": "not_required",
+                        "reason": AgentExecutionMode.PLAN_ONLY.value,
+                    },
+                )
+                if plan_only
+                else finalize_task_artifacts(
+                    task_id,
+                    current_user_request,
+                    agent_id,
+                    allow_device_install=full_desktop_executor,
+                )
             )
-        )
         output_files = list(finalization.output_files)
-        artifacts = prepare_artifacts(task_id, output_files)
+        artifacts = [] if fast_chat_delivery else prepare_artifacts(task_id, output_files)
         deliverable_paths = {item.relative_path.casefold() for item in artifacts}
         deliverable_output_files = [
             item for item in output_files
@@ -3692,14 +3774,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             in deliverable_paths
         ]
         retain_on_desktop = bool(
-            full_desktop_executor
+            not fast_chat_delivery
+            and full_desktop_executor
             and _requests_desktop_artifact_retention(current_user_request)
         )
-        register_artifact_batch(
-            artifacts,
-            client_route_id=client_route_id,
-            retain_on_desktop=retain_on_desktop,
-        )
+        if artifacts:
+            register_artifact_batch(
+                artifacts,
+                client_route_id=client_route_id,
+                retain_on_desktop=retain_on_desktop,
+            )
         cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs + hidden_artifact_paths)
         cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, deliverable_output_files)
         reply, rich_output = build_rich_output(
@@ -3728,10 +3812,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "agent_id": agent_id,
             "desktop_id": desktop_id(),
             "desktop_name": desktop_name(),
-            "connector_agents": mobile_connector_agents(
-                str(wire_payload.get("_client_route_id") or ""),
-                detailed=False,
-            ),
             "source_message_id": source_message_id,
             "conversation_id": task.get("client_conversation_id")
             or client_conversation_id,
@@ -6604,15 +6684,16 @@ def start_background():
     _ensure_task_event_publisher()
     _ensure_presence_thread()
     _ensure_outbound_retry_thread()
-    threading.Thread(target=warm_codex_app_server, daemon=True, name="signalasi-codex-prewarm").start()
+    _ensure_codex_warm_thread()
     t = threading.Thread(target=start, daemon=True)
     t.start()
     log.info("MQTT bridge started in background")
 
 
 def stop():
-    global client, running, codex_app_server, presence_thread, outbound_retry_thread
+    global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread
     running = False
+    codex_warm_stop_event.set()
     presence_stop_event.set()
     outbound_retry_stop_event.set()
     _stop_inbound_route_workers()

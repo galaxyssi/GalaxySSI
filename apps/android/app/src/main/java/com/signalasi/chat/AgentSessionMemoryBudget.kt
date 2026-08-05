@@ -233,14 +233,36 @@ object AgentSessionMemoryBudgetRuntime {
         Thread(task, "SignalASI-Session-Memory-Budget").apply { isDaemon = true }
     }
     @Volatile private var monitor: AgentSessionMemoryBudgetMonitor? = null
+    @Volatile private var initializing = false
 
     @Synchronized
     fun start(context: Context) {
-        if (monitor != null) return
-        monitor = AgentSessionMemoryBudgetMonitor(
-            sampler = AndroidAgentMemoryPssSampler(),
-            store = EncryptedAgentSessionMemoryBudgetStore(context.applicationContext)
-        )
+        if (monitor != null || initializing) return
+        initializing = true
+        val applicationContext = context.applicationContext
+        executor.execute {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val initialized = runCatching {
+                AgentSessionMemoryBudgetMonitor(
+                    sampler = AndroidAgentMemoryPssSampler(),
+                    store = EncryptedAgentSessionMemoryBudgetStore(applicationContext)
+                )
+            }
+            synchronized(this) {
+                initialized.onSuccess { monitor = it }
+                initializing = false
+            }
+            initialized
+                .onSuccess {
+                    android.util.Log.i(
+                        "SignalASIStartup",
+                        "session_memory_budget_ready total=${android.os.SystemClock.elapsedRealtime() - startedAt}ms"
+                    )
+                }
+                .onFailure { error ->
+                    android.util.Log.w("SignalASIStartup", "session_memory_budget_init_failed", error)
+                }
+        }
     }
 
     fun begin(): AgentSessionMemoryBaseline? = monitor?.let {

@@ -132,13 +132,24 @@ class EncryptedAgentMemoryPssSampleStore(context: Context) : AgentMemoryPssSampl
 
     @Synchronized
     override fun recent(limit: Int, sinceMillis: Long): List<AgentMemoryPssSample> =
-        database.entries(SAMPLE_PREFIX)
+        database.keys(SAMPLE_PREFIX)
             .asSequence()
-            .mapNotNull { (_, value) -> decode(value) }
-            .filter { it.sampledAtMillis >= sinceMillis }
-            .sortedWith(compareBy<AgentMemoryPssSample> { it.sampledAtMillis }.thenBy { it.id })
+            .mapNotNull { key ->
+                val timestamp = key.removePrefix(SAMPLE_PREFIX)
+                    .substringBefore(':')
+                    .toLongOrNull()
+                    ?: return@mapNotNull null
+                key to timestamp
+            }
+            .filter { (_, timestamp) -> timestamp >= sinceMillis }
+            .sortedWith(compareBy<Pair<String, Long>> { it.second }.thenBy { it.first })
             .toList()
             .takeLast(limit.coerceAtLeast(1))
+            .map { it.first }
+            .let(database::readStrings)
+            .values
+            .mapNotNull(::decode)
+            .sortedWith(compareBy<AgentMemoryPssSample> { it.sampledAtMillis }.thenBy { it.id })
 
     @Synchronized
     override fun prune(beforeMillis: Long, maxSamples: Int) {
@@ -275,7 +286,10 @@ class AgentMemoryPssMonitor(
     private val retentionMillis: Long = DEFAULT_RETENTION_MILLIS,
     private val maxSamples: Int = DEFAULT_MAX_SAMPLES
 ) {
-    private var history = store.recent(maxSamples, clock() - retentionMillis).toMutableList()
+    private var history = store.recent(
+        minOf(maxSamples, STARTUP_HYDRATION_SAMPLE_LIMIT),
+        clock() - retentionMillis
+    ).toMutableList()
     private var capturesSincePrune = 0
     @Volatile private var cachedSnapshot = AgentMemoryPssAggregation.snapshot(history)
 
@@ -344,6 +358,7 @@ class AgentMemoryPssMonitor(
     companion object {
         const val DEFAULT_RETENTION_MILLIS = 24L * 60L * 60L * 1_000L
         const val DEFAULT_MAX_SAMPLES = 4_096
+        private const val STARTUP_HYDRATION_SAMPLE_LIMIT = 256
         private const val PRUNE_EVERY_CAPTURES = 24
 
         fun providerIdForAgent(agentId: String): String {
@@ -367,6 +382,7 @@ object AgentMemoryPssRuntime {
     @Volatile private var monitor: AgentMemoryPssMonitor? = null
     @Volatile private var workspaces: (() -> List<AgentWorkspace>)? = null
     @Volatile private var scheduled = false
+    @Volatile private var initializing = false
     private val captureQueued = java.util.concurrent.atomic.AtomicBoolean(false)
     private val pendingWorkspaces = java.util.concurrent.ConcurrentLinkedQueue<AgentWorkspace>()
 
@@ -374,21 +390,49 @@ object AgentMemoryPssRuntime {
     fun start(context: Context, activeWorkspaces: () -> List<AgentWorkspace>) {
         workspaces = activeWorkspaces
         AgentSessionMemoryBudgetRuntime.start(context.applicationContext)
-        if (monitor == null) {
-            monitor = AgentMemoryPssMonitor(
-                sampler = AndroidAgentMemoryPssSampler(),
-                store = EncryptedAgentMemoryPssSampleStore(context.applicationContext)
-            )
+        if (monitor != null) {
+            scheduleCaptureLoop()
+            return
         }
-        if (!scheduled) {
-            scheduled = true
-            executor.scheduleWithFixedDelay(
-                { captureSafely() },
-                0L,
-                SAMPLE_INTERVAL_SECONDS,
-                TimeUnit.SECONDS
-            )
+        if (initializing) return
+        initializing = true
+        val applicationContext = context.applicationContext
+        executor.execute {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val initialized = runCatching {
+                AgentMemoryPssMonitor(
+                    sampler = AndroidAgentMemoryPssSampler(),
+                    store = EncryptedAgentMemoryPssSampleStore(applicationContext)
+                )
+            }
+            synchronized(this) {
+                initialized.onSuccess { monitor = it }
+                initializing = false
+            }
+            initialized
+                .onSuccess {
+                    android.util.Log.i(
+                        "SignalASIStartup",
+                        "agent_memory_pss_ready total=${android.os.SystemClock.elapsedRealtime() - startedAt}ms"
+                    )
+                    scheduleCaptureLoop()
+                }
+                .onFailure { error ->
+                    android.util.Log.w("SignalASIStartup", "agent_memory_pss_init_failed", error)
+                }
         }
+    }
+
+    @Synchronized
+    private fun scheduleCaptureLoop() {
+        if (scheduled || monitor == null) return
+        scheduled = true
+        executor.scheduleWithFixedDelay(
+            { captureSafely() },
+            0L,
+            SAMPLE_INTERVAL_SECONDS,
+            TimeUnit.SECONDS
+        )
     }
 
     fun requestCapture(workspace: AgentWorkspace? = null) {

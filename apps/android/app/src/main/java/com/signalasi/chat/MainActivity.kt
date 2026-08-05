@@ -295,6 +295,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
         private const val CLOUD_STREAM_UI_INTERVAL_MS = 80L
+        private const val AGENT_CONNECTOR_STREAM_UI_INTERVAL_MS = 250L
         private const val AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS = 16L
         private const val UNROUTABLE_CONNECTOR_GRACE_MILLIS = 5L * 60L * 1_000L
         private const val GLOBAL_AGENT_FOREGROUND_RETRY_MILLIS = 5_000L
@@ -527,6 +528,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentTranscriptContentExecutor = Executors.newSingleThreadExecutor()
     private val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
     private val agentSubmissionExecutor = Executors.newSingleThreadExecutor()
+    private val outboundMessageExecutor = Executors.newSingleThreadExecutor()
     private val agentRoutingExecutor = Executors.newSingleThreadExecutor()
     private val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     private val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
@@ -593,11 +595,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentRuntimePackCatalogManager: AgentRuntimePackCatalogManager
     private val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
     private var agentSessionsDialog: android.app.Dialog? = null
+    private val pendingAgentConnectorStreamUpdates =
+        ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
+    private val agentConnectorStreamRefreshScheduled = AtomicBoolean(false)
+    private val agentConnectorStreamRefreshRunnable = Runnable {
+        agentConnectorStreamRefreshScheduled.set(false)
+        val updates = pendingAgentConnectorStreamUpdates.values.toList()
+        updates.forEach { update ->
+            pendingAgentConnectorStreamUpdates.remove(update.sourceMessageId, update)
+        }
+        var shouldRender = false
+        updates.forEach { update ->
+            shouldRender = applyAgentConnectorStreamUpdate(update) || shouldRender
+        }
+        if (shouldRender && activeMainTab == PAGE_AGENT) {
+            renderAgentTranscript(agentTranscriptWindow.entries)
+        }
+        scheduleAgentConnectorStreamRefresh()
+    }
     private val agentConnectorResponseListener = AgentConnectorResponseListener { response ->
-        runOnUiThread { consumeAgentConnectorResponse(response) }
+        pendingAgentConnectorStreamUpdates.remove(response.sourceMessageId)
+        runOnUiThread {
+            liveAgentConnectorStreams.remove(response.sourceMessageId)
+            consumeAgentConnectorResponse(response)
+        }
     }
     private val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
-        runOnUiThread { consumeAgentConnectorStreamUpdate(update) }
+        pendingAgentConnectorStreamUpdates[update.sourceMessageId] = update
+        scheduleAgentConnectorStreamRefresh()
     }
     private val liveAgentConnectorStreams = ConcurrentHashMap<Long, AgentTranscriptEntry>()
     private val agentTaskLivenessListener = AgentTaskLivenessListener { signal ->
@@ -1468,6 +1493,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (::agentRuntimePackCatalogManager.isInitialized) agentRuntimePackCatalogManager.close()
         agentRegistryHeartbeatExecutor.shutdown()
         agentSubmissionExecutor.shutdown()
+        outboundMessageExecutor.shutdown()
         agentRoutingExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
@@ -1587,6 +1613,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         DesktopRemoteControl.pauseScreenshotStreams()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         AgentConnectorStreamBus.removeListener(agentConnectorStreamListener)
+        handler.removeCallbacks(agentConnectorStreamRefreshRunnable)
+        pendingAgentConnectorStreamUpdates.clear()
+        agentConnectorStreamRefreshScheduled.set(false)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
         flushChatHistoryAsync()
@@ -1684,8 +1713,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         resumeAgentConnectorResponse(response, runtime, responseKey)
     }
 
-    private fun consumeAgentConnectorStreamUpdate(update: AgentConnectorStreamUpdate) {
-        if (update.sourceMessageId in supersededConnectorSourceIds) return
+    private fun scheduleAgentConnectorStreamRefresh() {
+        if (pendingAgentConnectorStreamUpdates.isEmpty()) return
+        if (agentConnectorStreamRefreshScheduled.compareAndSet(false, true)) {
+            handler.postDelayed(
+                agentConnectorStreamRefreshRunnable,
+                AGENT_CONNECTOR_STREAM_UI_INTERVAL_MS
+            )
+        }
+    }
+
+    private fun applyAgentConnectorStreamUpdate(update: AgentConnectorStreamUpdate): Boolean {
+        if (update.sourceMessageId in supersededConnectorSourceIds) return false
         val runtime = runtimeForConnectorResponse(
             update.sourceMessageId,
             update.contactId,
@@ -1697,7 +1736,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val turnId = update.turnId.ifBlank {
             runtime?.let(agentRuntimeTurnIds::get).orEmpty()
         }
-        val conversationId = connectorConversationId(update.conversationId, runtime, turnId) ?: return
+        val conversationId = connectorConversationId(update.conversationId, runtime, turnId) ?: return false
         if (update.content.isBlank()) {
             liveAgentConnectorStreams.remove(update.sourceMessageId)
         } else {
@@ -1716,11 +1755,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = update.taskId.ifBlank { turnId }
             )
         }
-        if (conversationId == agentTranscriptStore.activeConversation().id &&
-            activeMainTab == PAGE_AGENT
-        ) {
-            renderAgentTranscript(agentTranscriptWindow.entries)
-        }
+        return conversationId == agentTranscriptStore.activeConversation().id
     }
 
     private fun resumeAgentConnectorResponse(
@@ -16753,7 +16788,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         renderedAgentTranscriptSourceEntries = filteredEntries
         val visibleEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
-        val incomingIds = visibleEntries.map(AgentTranscriptEntry::id)
+        val incomingIds = visibleEntries.map(AgentTranscriptRenderPolicy::identity)
         val renderedIds = renderedAgentTranscriptIds.toList()
         val diff = AgentTranscriptRenderPolicy.diff(
             renderedIds,
@@ -16769,8 +16804,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             renderedAgentTranscriptIds.clear()
             renderedAgentTranscriptSignatures.clear()
             visibleEntries.forEach { entry ->
-                renderedAgentTranscriptIds += entry.id
-                renderedAgentTranscriptSignatures[entry.id] =
+                val identity = AgentTranscriptRenderPolicy.identity(entry)
+                renderedAgentTranscriptIds += identity
+                renderedAgentTranscriptSignatures[identity] =
                     AgentTranscriptRenderPolicy.signature(entry)
             }
             changed = visibleEntries.isNotEmpty() || renderedIds.isNotEmpty()
@@ -16778,15 +16814,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             diff.replacementIndices.forEach { index ->
                 val entry = visibleEntries[index]
                 agentTranscriptAdapter.replaceAt(index, entry)
-                renderedAgentTranscriptSignatures[entry.id] =
+                renderedAgentTranscriptSignatures[AgentTranscriptRenderPolicy.identity(entry)] =
                     AgentTranscriptRenderPolicy.signature(entry)
                 changed = true
             }
             val appended = visibleEntries.drop(diff.appendFromIndex)
             agentTranscriptAdapter.append(appended)
             appended.forEach { entry ->
-                renderedAgentTranscriptIds += entry.id
-                renderedAgentTranscriptSignatures[entry.id] =
+                val identity = AgentTranscriptRenderPolicy.identity(entry)
+                renderedAgentTranscriptIds += identity
+                renderedAgentTranscriptSignatures[identity] =
                     AgentTranscriptRenderPolicy.signature(entry)
                 changed = true
             }
@@ -21212,28 +21249,37 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (target != null) {
             selectVoiceCoordinatorRoute(voiceTraceId, VoiceRouteKind.REMOTE_AGENT, contact.id)
             appendDeliveryTrace(msg.id, contact.id, "queued", target)
-            val publishResult = SignalASIMqttClient.publishUserMessageResult(
-                content,
-                contact.id,
-                topicOverride = target,
-                clientMessageId = msg.id,
-                deliveryTrace = deliveryTraceJson(msg.deliveryTrace),
-                traceId = voiceTraceId
-            )
-            when (publishResult) {
-                MqttPublishResult.PUBLISHED -> {
-                    appendDeliveryTrace(msg.id, contact.id, "mqtt_published", target)
-                    updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_sent))
-                    markDeliveredSoon(msg, contact.id)
-                }
-                MqttPublishResult.QUEUED -> {
-                    updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_queued))
-                }
-                MqttPublishResult.FAILED -> {
-                    appendDeliveryTrace(msg.id, contact.id, "publish_failed", target)
-                    updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_failed))
-                    failVoiceCoordinator(voiceTraceId, "publish_failed")
-                    voiceCoordinatorIdsBySourceMessage.remove(msg.id)
+            val deliveryTrace = deliveryTraceJson(msg.deliveryTrace)
+            outboundMessageExecutor.execute {
+                val publishResult = runCatching {
+                    SignalASIMqttClient.publishUserMessageResult(
+                        content,
+                        contact.id,
+                        topicOverride = target,
+                        clientMessageId = msg.id,
+                        deliveryTrace = deliveryTrace,
+                        traceId = voiceTraceId
+                    )
+                }.onFailure {
+                    Log.e("SignalASILink", "Message publish failed", it)
+                }.getOrDefault(MqttPublishResult.FAILED)
+                runOnUiThread {
+                    when (publishResult) {
+                        MqttPublishResult.PUBLISHED -> {
+                            appendDeliveryTrace(msg.id, contact.id, "mqtt_published", target)
+                            updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_sent))
+                            markDeliveredSoon(msg, contact.id)
+                        }
+                        MqttPublishResult.QUEUED -> {
+                            updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_queued))
+                        }
+                        MqttPublishResult.FAILED -> {
+                            appendDeliveryTrace(msg.id, contact.id, "publish_failed", target)
+                            updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_failed))
+                            failVoiceCoordinator(voiceTraceId, "publish_failed")
+                            voiceCoordinatorIdsBySourceMessage.remove(msg.id)
+                        }
+                    }
                 }
             }
         } else {

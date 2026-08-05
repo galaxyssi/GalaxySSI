@@ -52,7 +52,6 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-test",
             resolved_desktop_name="Test Desktop",
-            resolved_connector_agents=[],
         )
         self.assertEqual("phone-turn-1", payload["turn_id"])
         self.assertEqual("codex-turn-1", payload["agent_turn_id"])
@@ -116,7 +115,6 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             [],
             resolved_desktop_id="desktop-test",
             resolved_desktop_name="Test Desktop",
-            resolved_connector_agents=[],
         )
 
         self.assertEqual("", mqtt_bridge._client_task_turn_id(task))
@@ -157,7 +155,6 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
                 [],
                 resolved_desktop_id="desktop_test",
                 resolved_desktop_name="Test Desktop",
-                resolved_connector_agents=[],
             )
 
         self.assertEqual(receipt, payload["execution_receipt"])

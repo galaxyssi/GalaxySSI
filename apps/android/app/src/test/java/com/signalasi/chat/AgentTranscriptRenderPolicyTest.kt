@@ -131,6 +131,26 @@ class AgentTranscriptRenderPolicyTest {
         assertEquals(2, diff.appendFromIndex)
     }
 
+    @Test
+    fun streamedAssistantBecomesFinalWithoutResettingTheTranscript() {
+        val stream = entry("stream-1", "Part").copy(
+            role = AgentTranscriptRole.ASSISTANT,
+            dedupeKey = "assistant-final:turn:turn-1"
+        )
+        val final = stream.copy(id = "persisted-1", text = "Complete")
+        val identity = AgentTranscriptRenderPolicy.identity(stream)
+
+        val diff = AgentTranscriptRenderPolicy.diff(
+            renderedIds = listOf(identity),
+            renderedSignatures = mapOf(identity to AgentTranscriptRenderPolicy.signature(stream)),
+            incoming = listOf(final)
+        )
+
+        assertFalse(diff.reset)
+        assertEquals(listOf(0), diff.replacementIndices)
+        assertEquals(1, diff.appendFromIndex)
+    }
+
     private fun entry(
         id: String,
         text: String,
