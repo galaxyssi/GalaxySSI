@@ -1979,3 +1979,16 @@
 "signalasi.learning.status_title" = "学习状态";
 "signalasi.learning.proposal" = "学习提案";
 "signalasi.learning.rejected_status" = "技能提案已拒绝";
+"cc_nodes_ready_title" = "%d 个智能资源可用";
+"cc_nodes_ready_subtitle" = "节点主动发布状态，离线资源不会进入路由候选";
+"cc_section_this_device" = "本机";
+"cc_section_cloud_apis" = "云端 API";
+"cc_no_desktop_title" = "尚无可信 Desktop 节点";
+"cc_no_desktop_subtitle" = "扫描 SignalASI Desktop 二维码后添加它提供的 Agent";
+"cc_nodes_phone_agent_subtitle" = "此 iPhone、本机 Agent 身份与可信联系人上下文";
+"cc_nodes_local_model_title" = "本地模型运行时";
+"cc_nodes_local_model_subtitle" = "本机模型实验室、路由计划与本地推理设置";
+"cc_nodes_device_info_subtitle" = "手机权限、已配对电脑、自定义设备与连接器";
+"count_items" = "%d 项";
+"security_scan" = "扫描";
+"default_desktop_name" = "电脑";

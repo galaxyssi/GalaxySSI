@@ -1,0 +1,201 @@
+import SwiftUI
+
+struct SignalASIAgentsModelsNodesView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+
+  private var desktopLinks: [ServerLink] {
+    store.serverLinks.sorted { lhs, rhs in
+      lhs.desktopName.localizedCaseInsensitiveCompare(rhs.desktopName) == .orderedAscending
+    }
+  }
+
+  private var cloudContacts: [SignalASIContact] {
+    store.cloudModelContacts
+  }
+
+  private var availableResourceCount: Int {
+    let onlineDesktops = desktopLinks.filter { $0.paired && coordinator.mqttClient.isConnected }.count
+    let configuredClouds = cloudContacts.filter { $0.selectedCloudModel != nil }.count
+    return 2 + onlineDesktops + configuredClouds
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_nodes_title", "Agents, Models & Nodes"),
+        leading: {
+          SignalASIBackButton()
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: String(
+              format: t("cc_nodes_ready_title", "%d intelligence resources available"),
+              availableResourceCount
+            ),
+            subtitle: t(
+              "cc_nodes_ready_subtitle",
+              "Nodes publish health; offline resources are excluded from routing"
+            ),
+            systemImage: "link.circle",
+            tint: availableResourceCount > 0 ? .signalASIAccent : .orange,
+            badge: "\(availableResourceCount)"
+          )
+          desktopSection
+          thisDeviceSection
+          cloudAPISection
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+
+  private var desktopSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("default_desktop_name", "Computer"))
+      if desktopLinks.isEmpty {
+        SignalASISecurityNavigationRow(
+          title: t("cc_no_desktop_title", "No trusted Desktop node"),
+          subtitle: t("cc_no_desktop_subtitle", "Scan a SignalASI Desktop QR code to add its available Agents"),
+          systemImage: "qrcode.viewfinder",
+          tint: .orange,
+          badge: t("security_scan", "Scan")
+        ) {
+          AddContactView(autoOpenScanner: true)
+        }
+      } else {
+        ForEach(desktopLinks) { link in
+          SignalASISecurityNavigationRow(
+            title: desktopTitle(link),
+            subtitle: String(format: t("count_items", "%d items"), desktopAgentCount(link)),
+            systemImage: "desktopcomputer",
+            tint: desktopOnline(link) ? .signalASIAccent : .gray,
+            badge: desktopOnline(link)
+              ? t("cc_status_online", "Online")
+              : t("status_disconnected", "Disconnected")
+          ) {
+            SignalASISecurityCenterView()
+          }
+        }
+      }
+    }
+  }
+
+  private var thisDeviceSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_section_this_device", "This Device"))
+      SignalASISecurityNavigationRow(
+        title: t("cc_agent_identity_title", "Agent Identity"),
+        subtitle: t(
+          "cc_nodes_phone_agent_subtitle",
+          "This iPhone, local Agent identity, and trusted contact context"
+        ),
+        systemImage: "iphone",
+        tint: .signalASIAccent,
+        badge: t("cc_status_ready", "Ready")
+      ) {
+        SignalASIMyAgentsView()
+      }
+      SignalASISecurityNavigationRow(
+        title: t("cc_nodes_local_model_title", "Local Model Runtime"),
+        subtitle: t(
+          "cc_nodes_local_model_subtitle",
+          "On-device model lab, routing plans, and local inference settings"
+        ),
+        systemImage: "memorychip",
+        tint: .teal,
+        badge: t("cc_status_ready", "Ready")
+      ) {
+        SignalASILocalModelLabView()
+      }
+      SignalASISecurityNavigationRow(
+        title: t("cc_device_info_title", "Device Information"),
+        subtitle: t(
+          "cc_nodes_device_info_subtitle",
+          "Phone permissions, paired computers, custom devices, and connectors"
+        ),
+        systemImage: "antenna.radiowaves.left.and.right",
+        tint: .blue,
+        badge: t("cc_status_ready", "Ready")
+      ) {
+        DeviceManagementView()
+      }
+    }
+  }
+
+  private var cloudAPISection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_section_cloud_apis", "Cloud APIs"))
+      if cloudContacts.isEmpty {
+        SignalASISecurityNavigationRow(
+          title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
+          subtitle: t("cc_add_cloud_provider_subtitle", "Configure a phone-direct API resource"),
+          systemImage: "cloud.fill",
+          tint: .purple,
+          badge: "+"
+        ) {
+          CloudModelProviderSelectionView()
+        }
+      } else {
+        ForEach(cloudContacts) { contact in
+          SignalASISecurityNavigationRow(
+            title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+            subtitle: cloudSubtitle(contact),
+            systemImage: "cloud.fill",
+            tint: contact.selectedCloudModel == nil ? .orange : .signalASIInsightText,
+            badge: contact.selectedCloudModel == nil
+              ? t("cc_status_not_configured", "Not configured")
+              : t("cc_status_ready", "Ready")
+          ) {
+            CloudModelProviderDetailView(contactId: contact.id)
+          }
+        }
+        SignalASISecurityNavigationRow(
+          title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
+          subtitle: t("cc_add_cloud_provider_subtitle", "Configure a phone-direct API resource"),
+          systemImage: "plus",
+          tint: .purple,
+          badge: "+"
+        ) {
+          CloudModelProviderSelectionView()
+        }
+      }
+    }
+  }
+
+  private func desktopTitle(_ link: ServerLink) -> String {
+    link.desktopName.ifBlank(link.signalName).ifBlank(t("default_desktop_name", "Computer"))
+  }
+
+  private func desktopOnline(_ link: ServerLink) -> Bool {
+    link.paired && coordinator.mqttClient.isConnected
+  }
+
+  private func desktopAgentCount(_ link: ServerLink) -> Int {
+    store.contacts.filter { contact in
+      !contact.deleted &&
+        contact.desktopId == link.desktopId &&
+        (contact.type == "agent" || contact.id == "hermes" || contact.deliveryMode == .link)
+    }.count
+  }
+
+  private func cloudSubtitle(_ contact: SignalASIContact) -> String {
+    let provider = contact.cloudProvider.ifBlank(contact.signalASIId).ifBlank(contact.id)
+    let model = contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model")
+    return "\(provider) / \(model)"
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}

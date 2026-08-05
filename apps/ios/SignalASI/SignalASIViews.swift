@@ -1510,6 +1510,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentsModelsNodesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_nodes_title", "Agents, Models & Nodes"))
+              Text(t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           if store.agentSafetySettings.executionPaused {
             Label(t("signalasi.settings.execution_paused", "Execution Paused"), systemImage: "pause.circle")
               .foregroundColor(.orange)
