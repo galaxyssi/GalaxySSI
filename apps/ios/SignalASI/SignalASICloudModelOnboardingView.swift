@@ -42,6 +42,7 @@ struct CloudModelProviderSelectionView: View {
                 title: provider,
                 subtitle: providerSubtitle(provider),
                 systemImage: "cloud.fill",
+                assetImageName: providerLogoAssetName(provider),
                 tint: providerTint(provider),
                 badge: providerCount(provider)
               ) {
@@ -141,6 +142,7 @@ struct CloudModelPickerView: View {
             title: provider,
             subtitle: providerSubtitle,
             systemImage: "cloud.fill",
+            assetImageName: providerLogoAssetName(provider),
             tint: providerTint(provider),
             badge: t("signalasi.cloud.select_model", "Select Model")
           )
@@ -231,6 +233,7 @@ struct CloudModelConfigurationView: View {
             title: preset.name,
             subtitle: "\(preset.provider) - \(preset.apiStyle.rawValue)",
             systemImage: "cloud.fill",
+            assetImageName: providerLogoAssetName(preset.provider),
             tint: providerTint(preset.provider),
             badge: "API"
           )
@@ -244,6 +247,7 @@ struct CloudModelConfigurationView: View {
             title: "Provider",
             value: preset.provider,
             systemImage: "cloud.fill",
+            assetImageName: providerLogoAssetName(preset.provider),
             tint: providerTint(preset.provider)
           )
           sectionTitle(t("signalasi.cloud.section_model", "Model"))
@@ -370,19 +374,19 @@ private struct CloudModelHeroView: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String? = nil
   var tint: Color
   var badge: String
 
   var body: some View {
     HStack(alignment: .center, spacing: 12) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(tint.opacity(0.16))
-        Image(systemName: systemImage)
-          .font(.system(size: 24, weight: .semibold))
-          .foregroundColor(tint)
-      }
-      .frame(width: 52, height: 52)
+      CloudModelProviderIconView(
+        systemImage: systemImage,
+        assetImageName: assetImageName,
+        tint: tint,
+        size: 52,
+        symbolSize: 24
+      )
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 8) {
           Text(title)
@@ -415,6 +419,7 @@ private struct CloudModelNavigationRow<Destination: View>: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String?
   var tint: Color
   var badge: String
   let destination: Destination
@@ -423,6 +428,7 @@ private struct CloudModelNavigationRow<Destination: View>: View {
     title: String,
     subtitle: String,
     systemImage: String,
+    assetImageName: String? = nil,
     tint: Color,
     badge: String,
     @ViewBuilder destination: () -> Destination
@@ -430,6 +436,7 @@ private struct CloudModelNavigationRow<Destination: View>: View {
     self.title = title
     self.subtitle = subtitle
     self.systemImage = systemImage
+    self.assetImageName = assetImageName
     self.tint = tint
     self.badge = badge
     self.destination = destination()
@@ -441,6 +448,7 @@ private struct CloudModelNavigationRow<Destination: View>: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImageName: assetImageName,
         tint: tint,
         badge: badge
       )
@@ -453,18 +461,18 @@ private struct CloudModelValueRow: View {
   var title: String
   var value: String
   var systemImage: String
+  var assetImageName: String? = nil
   var tint: Color
 
   var body: some View {
     HStack(spacing: 12) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(tint.opacity(0.16))
-        Image(systemName: systemImage)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(tint)
-      }
-      .frame(width: 42, height: 42)
+      CloudModelProviderIconView(
+        systemImage: systemImage,
+        assetImageName: assetImageName,
+        tint: tint,
+        size: 42,
+        symbolSize: 18
+      )
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
           .font(.system(size: 12))
@@ -536,19 +544,19 @@ private struct CloudModelRowContent: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImageName: String? = nil
   var tint: Color
   var badge: String
 
   var body: some View {
     HStack(spacing: 12) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(tint.opacity(0.16))
-        Image(systemName: systemImage)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(tint)
-      }
-      .frame(width: 42, height: 42)
+      CloudModelProviderIconView(
+        systemImage: systemImage,
+        assetImageName: assetImageName,
+        tint: tint,
+        size: 42,
+        symbolSize: 18
+      )
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
           .font(.system(size: 16, weight: .semibold))
@@ -579,6 +587,52 @@ private struct CloudModelRowContent: View {
     .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct CloudModelProviderIconView: View {
+  var systemImage: String
+  var assetImageName: String?
+  var tint: Color
+  var size: CGFloat
+  var symbolSize: CGFloat
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(tint.opacity(0.16))
+      if let assetImageName {
+        Image(assetImageName)
+          .resizable()
+          .scaledToFit()
+          .padding(size * 0.18)
+          .accessibilityHidden(true)
+      } else {
+        Image(systemName: systemImage)
+          .font(.system(size: symbolSize, weight: .semibold))
+          .foregroundColor(tint)
+      }
+    }
+    .frame(width: size, height: size)
+  }
+}
+
+private func providerLogoAssetName(_ provider: String) -> String? {
+  switch provider {
+  case "OpenAI":
+    return "CloudProviderOpenAI"
+  case "Anthropic":
+    return "CloudProviderAnthropic"
+  case "Google Gemini":
+    return "CloudProviderGemini"
+  case "DeepSeek":
+    return "CloudProviderDeepSeek"
+  case "Qwen":
+    return "CloudProviderQwen"
+  case "OpenRouter":
+    return "CloudProviderOpenRouter"
+  default:
+    return nil
   }
 }
 
