@@ -908,7 +908,7 @@
     <string name="agent_screen_empty">No matching screen items</string>
     <string name="agent_screen_disabled">Enable screen access to inspect this page</string>
     <string name="agent_screen_bounds">Bounds: %1$s</string>
-    <string name="agent_goal_hint">Enter message...</string>
+    <string name="agent_goal_hint">Enter message or hold to talk...</string>
     <string name="agent_voice_button">Hold to talk</string>
     <string name="agent_voice_listening">Listening</string>
     <string name="agent_confirm_button">✓</string>
@@ -1071,6 +1071,10 @@
     <string name="agent_attachment_take_photo">Take photo</string>
     <string name="agent_attachment_add_photos">Add photos</string>
     <string name="agent_attachment_new_task">New session</string>
+    <string name="agent_attachment_sessions">Sessions</string>
+    <string name="agent_attachment_scan">Scan</string>
+    <string name="agent_attachment_open_menu">More actions</string>
+    <string name="agent_attachment_close_menu">Close actions</string>
     <string name="common_select_all">Select all</string>
     <string name="agent_message_all_selected">All message text selected</string>
     <string name="agent_sessions_title">Sessions</string>
@@ -1875,6 +1879,7 @@
     <string name="agent_trace_task_interrupted">Task interrupted</string>
     <string name="voice_release_to_send">Release to send</string>
     <string name="voice_release_to_cancel">Release to cancel</string>
+    <string name="agent_voice_recording_hint">Release to send · Swipe up to cancel</string>
     <string name="voice_too_short">Recording is too short</string>
     <string name="voice_cancelled">Recording cancelled</string>
     <string name="agent_task_detail_title">Task details</string>
