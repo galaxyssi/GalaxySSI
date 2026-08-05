@@ -158,6 +158,21 @@ struct AgentHomeView: View {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
   }
 
+  private var activeAgentTasks: [AgentTaskRecord] {
+    store.recentAgentTasks(limit: 24).filter { task in
+      switch task.phase {
+      case .observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused:
+        return true
+      case .cancelled, .blocked, .completed, .failed:
+        return false
+      }
+    }
+  }
+
+  private var activeAgentPhase: AgentPhase? {
+    activeAgentTasks.first?.phase
+  }
+
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
@@ -220,14 +235,19 @@ struct AgentHomeView: View {
             onCommand: prefillAgentScreenCommand,
             t: t
           )
+          AgentProcessCard(
+            activePhase: activeAgentPhase,
+            executionPaused: store.agentSafetySettings.executionPaused
+          )
+          AgentInfoCard(
+            currentApp: "SignalASI iOS",
+            callableTargets: store.visibleContacts.count,
+            runningTasks: activeAgentTasks.count,
+            memorySnapshot: store.agentMemorySnapshot(),
+            knowledgeStats: store.agentKnowledgeStats
+          )
           if messages.isEmpty {
             AgentInsightBanner(unreadTotal: unreadTotal)
-            AgentProcessCard()
-            AgentInfoCard(
-              currentApp: "SignalASI iOS",
-              callableTargets: store.visibleContacts.count,
-              runningTasks: 0
-            )
           } else {
             ForEach(messages) { message in
               MessageBubble(message: message)
@@ -389,28 +409,6 @@ struct AgentHomeView: View {
     sendAgentMessage()
   }
 
-  private var agentRuntimePanel: some View {
-    SignalASIAgentRuntimePanelView(
-      activeTask: store.activeAgentTask,
-      recentTasks: store.recentAgentTasks(limit: 12),
-      nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
-      auditRecords: agentRuntimeAuditRecords,
-      safetySettings: store.agentSafetySettings,
-      plannerSettings: store.agentModelPlannerSettings,
-      budget: AgentTaskBudget(),
-      runningTaskCount: store.agentTasks.filter { $0.status == .running || $0.status == .waitingInput }.count,
-      targetCount: store.visibleContacts.count,
-      onCyclePermissionMode: cycleAgentPermissionMode,
-      onToggleHighRiskGuard: {
-        store.updateAgentSafetySettings { $0.highRiskGuardEnabled.toggle() }
-      },
-      onToggleMemoryCapture: {
-        store.updateAgentSafetySettings { $0.memoryCaptureAllowed.toggle() }
-      },
-      t: t
-    )
-  }
-
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
     SignalASIAgentScreenContextSnapshotBuilder.make(
       messages: messages,
@@ -517,36 +515,76 @@ struct AgentHomeView: View {
 
 private struct AgentProcessCard: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var activePhase: AgentPhase?
+  var executionPaused: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(t("signalasi.agent.section.process", "Process"))
+      Text(t("agent_section_process", "Process"))
         .font(.system(size: 13, weight: .bold))
         .foregroundColor(.signalASITextPrimary)
       AgentProcessStepRow(
-        title: t("signalasi.agent.step.observe", "Read current screen structure"),
-        status: t("signalasi.agent.step.current", "Current"),
-        active: true
+        number: 1,
+        title: t("agent_step_observe", "Read current screen structure"),
+        status: statusText(stepStatus(for: .observeScreen)),
+        statusValue: stepStatus(for: .observeScreen)
       )
       AgentProcessStepRow(
-        title: t("signalasi.agent.step.analyze", "Analyze user goal"),
-        status: t("signalasi.agent.step.waiting", "Waiting"),
-        active: false
+        number: 2,
+        title: t("agent_step_analyze", "Analyze user goal"),
+        status: statusText(stepStatus(for: .analyzeGoal)),
+        statusValue: stepStatus(for: .analyzeGoal)
       )
       AgentProcessStepRow(
-        title: t("signalasi.agent.step.plan", "Generate executable plan"),
-        status: t("signalasi.agent.step.waiting", "Waiting"),
-        active: false
+        number: 3,
+        title: t("agent_step_plan", "Build executable plan"),
+        status: statusText(stepStatus(for: .buildPlan)),
+        statusValue: stepStatus(for: .buildPlan)
       )
       AgentProcessStepRow(
-        title: t("signalasi.agent.step.act", "Execute after confirmation"),
-        status: t("signalasi.agent.step.safe", "Safe"),
-        active: false
+        number: 4,
+        title: t("agent_step_act", "Confirm before action"),
+        status: statusText(stepStatus(for: .confirmAndAct)),
+        statusValue: stepStatus(for: .confirmAndAct)
       )
     }
     .padding(12)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func stepStatus(for kind: AgentStepKind) -> AgentStepStatus {
+    if executionPaused {
+      return kind == .confirmAndAct ? .current : .done
+    }
+    switch activePhase {
+    case .some(.observing):
+      return kind == .observeScreen ? .current : (kind == .confirmAndAct ? .safe : .waiting)
+    case .some(.planning):
+      if kind == .observeScreen { return .done }
+      return kind == .analyzeGoal ? .current : (kind == .confirmAndAct ? .safe : .waiting)
+    case .some(.waitingConfirmation), .some(.executing), .some(.verifying), .some(.waitingResponse), .some(.paused):
+      return kind == .confirmAndAct ? .current : .done
+    case .some(.completed):
+      return .done
+    case .some(.cancelled), .some(.blocked), .some(.failed):
+      return kind == .confirmAndAct ? .safe : .done
+    case .none:
+      return kind == .observeScreen ? .current : (kind == .confirmAndAct ? .safe : .waiting)
+    }
+  }
+
+  private func statusText(_ status: AgentStepStatus) -> String {
+    switch status {
+    case .current:
+      return t("agent_step_status_current", "Current")
+    case .done:
+      return t("agent_step_status_done", "Done")
+    case .waiting:
+      return t("agent_step_status_waiting", "Waiting")
+    case .safe:
+      return t("agent_step_status_safe", "Safe")
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -555,23 +593,52 @@ private struct AgentProcessCard: View {
 }
 
 private struct AgentProcessStepRow: View {
+  var number: Int
   var title: String
   var status: String
-  var active: Bool
+  var statusValue: AgentStepStatus
+
+  private var isCurrent: Bool { statusValue == .current }
+  private var isDone: Bool { statusValue == .done }
+  private var tint: Color {
+    switch statusValue {
+    case .current, .done:
+      return .signalASIAccent
+    case .safe:
+      return .signalASITextSecondary
+    case .waiting:
+      return .signalASITextSecondary
+    }
+  }
 
   var body: some View {
     HStack(spacing: 10) {
       Circle()
-        .fill(active ? Color.signalASIAccent : Color.signalASISeparator)
-        .frame(width: 9, height: 9)
+        .fill(isCurrent ? Color.signalASIAccent : (isDone ? Color.signalASIAccent.opacity(0.14) : Color.signalASISurface))
+        .overlay(
+          Circle()
+            .stroke(isCurrent || isDone ? Color.signalASIAccent : Color.signalASISeparator, lineWidth: 1)
+        )
+        .overlay(
+          Text("\(number)")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(isCurrent ? .white : tint)
+        )
+        .frame(width: 24, height: 24)
       Text(title)
         .font(.system(size: 13))
         .foregroundColor(.signalASITextPrimary)
+        .lineLimit(1)
       Spacer(minLength: 8)
       Text(status)
         .font(.system(size: 11, weight: .bold))
-        .foregroundColor(active ? .signalASIAccent : .signalASITextSecondary)
+        .foregroundColor(tint)
+        .lineLimit(1)
     }
+    .padding(.horizontal, 14)
+    .frame(minHeight: 50)
+    .background(Color.signalASIInsightBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
 
@@ -580,15 +647,39 @@ private struct AgentInfoCard: View {
   var currentApp: String
   var callableTargets: Int
   var runningTasks: Int
+  var memorySnapshot: AgentMemorySnapshot
+  var knowledgeStats: AgentKnowledgeStats
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(t("signalasi.agent.section.info", "Info"))
+      Text(t("agent_section_info", "Info"))
         .font(.system(size: 13, weight: .bold))
         .foregroundColor(.signalASITextPrimary)
-      Text(String(format: t("signalasi.agent.current_app", "Current App: %@"), currentApp))
-      Text(String(format: t("signalasi.agent.callable_targets", "Callable targets: %d"), callableTargets))
-      Text(String(format: t("signalasi.agent.running_tasks", "Running tasks: %d"), runningTasks))
+      VStack(spacing: 0) {
+        infoValueRow(String(format: t("agent_current_app_value", "Current app: %@"), currentApp))
+        separator
+        infoValueRow(String(format: t("agent_callable_targets_value", "Callable targets: %d"), callableTargets))
+        separator
+        infoValueRow(String(format: t("agent_running_tasks_value", "Running tasks: %d"), runningTasks))
+        separator
+        NavigationLink(destination: SignalASIAgentMemoryView()) {
+          infoNavigationRow(
+            String(format: t("agent_memory_value", "Memory: %d / conflicts: %d"), memorySnapshot.activeCount, memorySnapshot.conflicts.count),
+            systemImage: "brain"
+          )
+        }
+        .buttonStyle(.plain)
+        separator
+        NavigationLink(destination: SignalASIAgentKnowledgeView()) {
+          infoNavigationRow(
+            String(format: t("agent_knowledge_value", "Knowledge: %d items / %d sources / %d hits"), knowledgeStats.itemCount, knowledgeStats.sourceCount, 0),
+            systemImage: "books.vertical"
+          )
+        }
+        .buttonStyle(.plain)
+      }
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .font(.system(size: 13))
     .foregroundColor(.signalASIInsightText)
@@ -600,6 +691,43 @@ private struct AgentInfoCard: View {
         .stroke(Color.signalASIInsightStroke, lineWidth: 1)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var separator: some View {
+    Rectangle()
+      .fill(Color.signalASISeparator)
+      .frame(height: 0.5)
+      .padding(.leading, 14)
+  }
+
+  private func infoValueRow(_ value: String) -> some View {
+    Text(value)
+      .font(.system(size: 13))
+      .foregroundColor(.signalASITextPrimary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.75)
+      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+      .padding(.horizontal, 14)
+  }
+
+  private func infoNavigationRow(_ value: String, systemImage: String) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: systemImage)
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundColor(.signalASIAccent)
+        .frame(width: 18)
+      Text(value)
+        .font(.system(size: 13))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 11, weight: .bold))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 42)
+    .padding(.horizontal, 14)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
