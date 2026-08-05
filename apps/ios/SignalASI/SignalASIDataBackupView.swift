@@ -1,9 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum SignalASIDataBackupInitialMode {
+  case overview
+  case export
+  case importBackup
+}
+
 struct SignalASIDataBackupView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  private let initialMode: SignalASIDataBackupInitialMode
   @State private var backupPassword = ""
   @State private var backupIncludeMessages = true
   @State private var backupDocument: SignalASIBackupDocument?
@@ -14,6 +21,11 @@ struct SignalASIDataBackupView: View {
   @State private var pendingImportPreview: SignalASIBackupImportPreview?
   @State private var cacheBytes: Int64 = 0
   @State private var freeStorageBytes: Int64 = 0
+  @State private var didApplyInitialMode = false
+
+  init(initialMode: SignalASIDataBackupInitialMode = .overview) {
+    self.initialMode = initialMode
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -38,6 +50,7 @@ struct SignalASIDataBackupView: View {
             tint: .signalASIAccent,
             badge: t("signalasi.status.ready", "Ready")
           )
+          initialModeCard
           backupSection
           storageSection
         }
@@ -73,12 +86,45 @@ struct SignalASIDataBackupView: View {
         setBackupStatus(error.localizedDescription, isError: true)
       }
     }
-    .onAppear(perform: refreshStorageMetrics)
+    .onAppear {
+      refreshStorageMetrics()
+      applyInitialModeIfNeeded()
+    }
     .onChange(of: backupPassword) { _ in
       pendingImportPreview = nil
     }
     .onChange(of: backupIncludeMessages) { _ in
       pendingImportPreview = nil
+    }
+  }
+
+  @ViewBuilder
+  private var initialModeCard: some View {
+    switch initialMode {
+    case .overview:
+      EmptyView()
+    case .export:
+      SignalASISecurityStatusRow(
+        title: t("backup_export_title", "Back Up Chat History"),
+        subtitle: t(
+          "signalasi.data_backup.export_ready_hint",
+          "Enter a backup password, choose whether to include chat history, then export."
+        ),
+        systemImage: "square.and.arrow.up",
+        tint: .blue,
+        badge: t("signalasi.common.export", "Export")
+      )
+    case .importBackup:
+      SignalASISecurityStatusRow(
+        title: t("backup_import_title", "Import Encrypted Backup"),
+        subtitle: t(
+          "signalasi.data_backup.import_ready_hint",
+          "Enter the backup password, choose the chat-history restore option, then import a backup file."
+        ),
+        systemImage: "square.and.arrow.down",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.import", "Import")
+      )
     }
   }
 
@@ -393,6 +439,31 @@ struct SignalASIDataBackupView: View {
       freeStorageBytes = bytes
     } else {
       freeStorageBytes = 0
+    }
+  }
+
+  private func applyInitialModeIfNeeded() {
+    guard !didApplyInitialMode else { return }
+    didApplyInitialMode = true
+    switch initialMode {
+    case .overview:
+      return
+    case .export:
+      setBackupStatus(
+        t(
+          "signalasi.data_backup.export_ready_hint",
+          "Enter a backup password, choose whether to include chat history, then export."
+        ),
+        isError: false
+      )
+    case .importBackup:
+      setBackupStatus(
+        t(
+          "signalasi.data_backup.import_ready_hint",
+          "Enter the backup password, choose the chat-history restore option, then import a backup file."
+        ),
+        isError: false
+      )
     }
   }
 

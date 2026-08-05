@@ -1190,6 +1190,10 @@
 "signalasi.settings.add_model" = "添加模型";
 "signalasi.settings.link_diagnostics" = "Link 诊断";
 "signalasi.settings.backup" = "备份";
+"settings_backup_chat" = "备份";
+"settings_import_backup" = "导入";
+"settings_backup_scope" = "加密导出身份、联系人、Agent 数据与聊天记录";
+"settings_import_scope" = "导入 .hcback 加密备份并恢复数据";
 "signalasi.settings.password" = "密码";
 "signalasi.settings.include_messages" = "包含消息";
 "signalasi.settings.privacy" = "隐私";
@@ -2167,12 +2171,16 @@
 "cc_storage_title" = "SignalASI 存储";
 "cc_storage_subtitle" = "知识库、模型、媒体、临时文件与数据库";
 "backup_password_hint" = "设置加密密码";
+"backup_export_title" = "备份聊天记录";
+"backup_import_title" = "导入加密备份";
 "backup_include_messages" = "备份聊天记录";
 "backup_include_agent_data" = "智能体记忆与知识库";
 "backup_include_agent_data_subtitle" = "记忆、知识库、工作流、定时计划与事件触发器、任务历史、安全设置和 Home Assistant 配置";
 "backup_included" = "已包含";
 "signalasi.data_backup.password_hint" = "至少使用 %d 个字符";
 "signalasi.data_backup.backup_status" = "备份状态";
+"signalasi.data_backup.export_ready_hint" = "输入备份密码，选择是否包含聊天记录，然后导出。";
+"signalasi.data_backup.import_ready_hint" = "输入备份密码，选择聊天记录恢复选项，然后导入备份文件。";
 "signalasi.data_backup.cache_cleared" = "已清理 %@ 可重建缓存";
 "signalasi.backup.verifying" = "正在验证备份...";
 "signalasi.backup.verified" = "备份已验证，请先查看恢复预览。";
