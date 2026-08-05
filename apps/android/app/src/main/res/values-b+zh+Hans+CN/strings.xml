@@ -343,8 +343,11 @@
     <string name="agent_current_app_value">当前 App：%1$s</string>
     <string name="agent_callable_targets_value">可调用对象：%1$d</string>
     <string name="agent_running_tasks_value">运行任务：%1$d</string>
-    <string name="agent_goal_hint">输入消息...</string>
+    <string name="agent_goal_hint">输入消息或按住说话...</string>
     <string name="agent_voice_button">按住说话</string>
+    <string name="agent_voice_recording_hint">松手发送 · 上滑取消</string>
+    <string name="voice_release_to_send">松开发送</string>
+    <string name="voice_release_to_cancel">松开取消</string>
     <string name="agent_voice_listening">松开发送</string>
     <string name="agent_empty_goal">请输入 SignalASI Agent 的目标</string>
     <string name="agent_voice_not_ready">语音命令绑定将在下一步接入</string>
@@ -476,6 +479,10 @@
     <string name="agent_attachment_take_photo">拍照</string>
     <string name="agent_attachment_add_photos">添加照片</string>
     <string name="agent_attachment_new_task">新建会话</string>
+    <string name="agent_attachment_sessions">会话列表</string>
+    <string name="agent_attachment_scan">扫一扫</string>
+    <string name="agent_attachment_open_menu">更多功能</string>
+    <string name="agent_attachment_close_menu">收起功能</string>
     <string name="common_select_all">全选</string>
     <string name="agent_message_all_selected">已选中整条消息</string>
     <string name="agent_sessions_title">会话</string>

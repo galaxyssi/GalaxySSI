@@ -19,6 +19,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
@@ -70,6 +71,7 @@ import com.rementia.openwakeword.lib.WakeWordEngine
 import com.rementia.openwakeword.lib.model.DetectionMode
 import com.rementia.openwakeword.lib.model.WakeWordModel
 import com.signalasi.chat.SignalASIMqttClient.Listener
+import com.signalasi.chat.ui.AgentComposerUiPolicy
 import com.signalasi.chat.ui.AppleHoldToTalkController
 import com.signalasi.chat.ui.VoiceWaveformView
 import com.signalasi.chat.voice.TranscriptHypothesis
@@ -299,7 +301,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val AGENT_BRAND_LOGO_BASE_DP = 39
         private const val AGENT_BRAND_LOGO_MIN_DP = 32
         private const val AGENT_BRAND_LOGO_MAX_DP = 56
-        private const val AUTOMOTIVE_VOICE_BUTTON_WIDTH_DP = 160
         private const val EXTRA_REOPEN_CONTROL_CENTER_CHILD = "signalasi_reopen_control_center_child"
         private const val CONTROL_CENTER_CHILD_TEXT_SIZE = "text_size"
         private const val CAPABILITY_KIND_NATIVE_TOOL = "native_tool"
@@ -405,11 +406,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentAuditTrailList: LinearLayout
     private lateinit var agentRecentTaskList: LinearLayout
     private lateinit var agentGoalInput: EditText
-    private lateinit var agentVoiceButton: TextView
     private lateinit var agentInsightBar: LinearLayout
     private lateinit var agentInsightText: TextView
-    private lateinit var agentInputContent: LinearLayout
-    private lateinit var agentRecordingCenter: LinearLayout
+    private lateinit var agentComposerRow: LinearLayout
+    private lateinit var agentPrimaryActionSlot: FrameLayout
+    private lateinit var agentActionTray: LinearLayout
+    private lateinit var agentRecordingCenter: View
+    private lateinit var agentRecordingInstruction: TextView
     private lateinit var agentRecordingWaveform: VoiceWaveformView
     private lateinit var agentRecordingTranscript: TextView
     private lateinit var agentRecordingTimer: TextView
@@ -419,6 +422,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentBrandLogo: ImageView
     private lateinit var agentAttachmentPreviewScroll: HorizontalScrollView
     private lateinit var agentAttachmentPreviewList: LinearLayout
+    private var agentActionTrayExpanded = false
+    private var agentComposerTextMode = false
+    private var agentComposerKeyboardObserved = false
+    private var agentComposerKeyboardClosedAt = 0L
     private lateinit var contactPage: LinearLayout
     private lateinit var directoryPage: LinearLayout
     private lateinit var discoverPage: LinearLayout
@@ -1031,11 +1038,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentAuditTrailList = findViewById(R.id.agentAuditTrailList)
         agentRecentTaskList = findViewById(R.id.agentRecentTaskList)
         agentGoalInput = findViewById(R.id.agentGoalInput)
-        agentVoiceButton = findViewById(R.id.agentVoiceButton)
         agentInsightBar = findViewById(R.id.agentInsightBar)
         agentInsightText = findViewById(R.id.agentInsightText)
-        agentInputContent = findViewById(R.id.agentInputContent)
+        agentComposerRow = findViewById(R.id.agentComposerRow)
+        agentPrimaryActionSlot = findViewById(R.id.agentPrimaryActionSlot)
+        agentActionTray = findViewById(R.id.agentAttachmentActionTray)
         agentRecordingCenter = findViewById(R.id.agentRecordingCenter)
+        agentRecordingInstruction = findViewById(R.id.agentRecordingInstruction)
         agentRecordingWaveform = findViewById(R.id.agentRecordingWaveform)
         agentRecordingTranscript = findViewById(R.id.agentRecordingTranscript)
         agentRecordingTimer = findViewById(R.id.agentRecordingTimer)
@@ -1378,7 +1387,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun applyDeviceProfileInputTargets() {
         val targetPx = dp(deviceProfile.minimumTouchTargetDp)
         listOf(
-            agentVoiceButton,
+            agentGoalInput,
             agentAttachButton,
             agentSubmitButton,
             imageButton,
@@ -1394,11 +1403,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             view.layoutParams = params
         }
         pressToTalkButton.minimumHeight = targetPx
-        if (deviceProfile.voiceFirst) {
-            val params = agentVoiceButton.layoutParams
-            params.width = maxOf(params.width, dp(AUTOMOTIVE_VOICE_BUTTON_WIDTH_DP))
-            agentVoiceButton.layoutParams = params
-        }
     }
 
     override fun onDestroy() {
@@ -2149,6 +2153,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onBackPressed() {
+        if (SystemClock.elapsedRealtime() - agentComposerKeyboardClosedAt < 700L) {
+            agentComposerKeyboardClosedAt = 0L
+            return
+        }
+        if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
+            setAgentActionTrayExpanded(false)
+            return
+        }
+        if (::agentGoalInput.isInitialized && agentComposerTextMode) {
+            exitAgentComposerTextMode(hideKeyboard = true)
+            return
+        }
         if (featurePage.visibility == View.VISIBLE) {
             performFeatureBack()
             return
@@ -4444,11 +4460,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentMemoryText.setOnClickListener { showAgentMemoryPage() }
         agentKnowledgeText.setOnClickListener { showAgentKnowledgePage() }
         agentAttachButton.setOnClickListener { showAgentAttachmentMenu() }
+        findViewById<View>(R.id.agentActionNewSession).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            createAgentConversation()
+        }
+        findViewById<View>(R.id.agentActionSessions).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            showAgentSessionsPage()
+        }
+        findViewById<View>(R.id.agentActionScan).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            scanMode = "contact"
+            startSecurityScan()
+        }
+        findViewById<View>(R.id.agentActionCamera).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentCamera()
+        }
+        findViewById<View>(R.id.agentActionAddFile).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentAttachmentPicker(imagesOnly = false)
+        }
         agentSubmitButton.setOnClickListener {
             Log.d("SignalASIAgent", "Agent submit clicked")
+            exitAgentComposerTextMode(hideKeyboard = true)
             handleAgentPrimaryAction()
         }
         agentGoalInput.setOnEditorActionListener { _, _, _ ->
+            exitAgentComposerTextMode(hideKeyboard = true)
             submitAgentGoal()
             true
         }
@@ -4459,6 +4498,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
+        agentGoalInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) setAgentActionTrayExpanded(false)
+        }
         updateAgentSubmitButtonAppearance(agentGoalInput.text?.isNotBlank() == true || agentInputAttachments.isNotEmpty())
         agentScreenSearchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -4469,8 +4511,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
         agentHoldToTalkController = AppleHoldToTalkController(
             activity = this,
-            pressButton = agentVoiceButton,
-            idleContent = agentInputContent,
+            pressTarget = agentGoalInput,
+            instruction = agentRecordingInstruction,
+            idleContent = agentComposerRow,
             recordingGroup = agentRecordingCenter,
             waveform = agentRecordingWaveform,
             transcript = agentRecordingTranscript,
@@ -4483,9 +4526,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             },
             startRecording = { startRecording("agent_input") },
             currentAmplitude = { currentVoiceAmplitude() },
-            finishRecording = { send -> stopAgentInputRecording(send) }
+            finishRecording = { send -> stopAgentInputRecording(send) },
+            onTap = { enterAgentComposerTextMode() },
+            onRecordingStarted = {
+                setAgentActionTrayExpanded(false)
+                agentGoalInput.clearFocus()
+                getSystemService(InputMethodManager::class.java)
+                    .hideSoftInputFromWindow(agentGoalInput.windowToken, 0)
+            },
+            stableTranscriptColor = Color.WHITE,
+            unstableTranscriptColor = Color.parseColor("#E8FFE9"),
+            idleInstructionRes = R.string.agent_voice_recording_hint,
+            recordingInstructionRes = R.string.agent_voice_recording_hint,
+            holdStartDelayMillis = 280L
         )
-        agentVoiceButton.setOnTouchListener(agentHoldToTalkController)
+        agentRecordingWaveform.useDenseRecordingStyle()
+        agentRecordingWaveform.setColors(Color.WHITE, getColorCompat(R.color.apple_voice_cancel))
+        agentGoalInput.setOnTouchListener { view, event ->
+            if (agentComposerTextMode) false else agentHoldToTalkController.onTouch(view, event)
+        }
+        installAgentComposerKeyboardObserver()
+        exitAgentComposerTextMode(hideKeyboard = false)
         if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)) {
             restoreVoiceAgentRunCards()
         }
@@ -5709,6 +5770,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
 
     private fun updateAgentSubmitButtonAppearance(hasInput: Boolean) {
+        val runtimeState = lastRenderedAgentState ?: mobileNativeAgent.snapshot()
+        val hasPendingPrimaryAction = runtimeState.phase == AgentPhase.PAUSED || runtimeState.pendingAction != null
+        val composerState = AgentComposerUiPolicy.resolve(
+            hasInput = hasInput,
+            hasPendingPrimaryAction = hasPendingPrimaryAction,
+            textModeActive = agentComposerTextMode,
+            actionTrayRequested = agentActionTrayExpanded
+        )
+        agentActionTrayExpanded = composerState.showActionTray
+        agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
+        agentAttachButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
+        agentSubmitButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
+        agentActionTray.visibility = if (composerState.showActionTray) View.VISIBLE else View.GONE
+        agentAttachButton.rotation = if (composerState.showActionTray) 45f else 0f
+        agentAttachButton.contentDescription = getString(
+            if (composerState.showActionTray) R.string.agent_attachment_close_menu
+            else R.string.agent_attachment_open_menu
+        )
         agentSubmitButton.setBackgroundResource(
             if (hasInput) R.drawable.agent_send_button_active_background
             else R.drawable.agent_send_button_background
@@ -5716,6 +5795,64 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentSubmitButton.imageTintList = android.content.res.ColorStateList.valueOf(
             if (hasInput) android.graphics.Color.parseColor("#087F69") else android.graphics.Color.WHITE
         )
+    }
+
+    private fun setAgentActionTrayExpanded(expanded: Boolean) {
+        if (expanded) {
+            exitAgentComposerTextMode(hideKeyboard = true)
+        }
+        agentActionTrayExpanded = expanded
+        updateAgentSubmitButtonAppearance(
+            agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
+        )
+    }
+
+    private fun enterAgentComposerTextMode() {
+        if (agentComposerTextMode) return
+        agentComposerTextMode = true
+        agentComposerKeyboardObserved = false
+        agentComposerRow.clearFocus()
+        agentGoalInput.requestFocus()
+        agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
+        updateAgentSubmitButtonAppearance(
+            agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
+        )
+        agentGoalInput.post {
+            getSystemService(InputMethodManager::class.java)
+                .showSoftInput(agentGoalInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun exitAgentComposerTextMode(hideKeyboard: Boolean) {
+        agentComposerTextMode = false
+        agentComposerKeyboardObserved = false
+        if (hideKeyboard) {
+            getSystemService(InputMethodManager::class.java)
+                .hideSoftInputFromWindow(agentGoalInput.windowToken, 0)
+        }
+        agentGoalInput.clearFocus()
+        agentComposerRow.isFocusableInTouchMode = true
+        agentComposerRow.requestFocus()
+        updateAgentSubmitButtonAppearance(
+            agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
+        )
+    }
+
+    private fun installAgentComposerKeyboardObserver() {
+        val root = findViewById<View>(android.R.id.content)
+        root.viewTreeObserver.addOnGlobalLayoutListener {
+            if (!agentComposerTextMode) return@addOnGlobalLayoutListener
+            val visibleFrame = Rect()
+            root.getWindowVisibleDisplayFrame(visibleFrame)
+            val rootHeight = root.rootView.height.coerceAtLeast(1)
+            val keyboardVisible = rootHeight - visibleFrame.bottom > rootHeight * 0.15f
+            if (keyboardVisible) {
+                agentComposerKeyboardObserved = true
+            } else if (agentComposerKeyboardObserved) {
+                agentComposerKeyboardClosedAt = SystemClock.elapsedRealtime()
+                exitAgentComposerTextMode(hideKeyboard = false)
+            }
+        }
     }
 
     private fun bindAgentExecutionLoop(
@@ -7549,11 +7686,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         runCatching {
             agentVoiceListening = true
-            agentVoiceButton.text = getString(R.string.agent_voice_listening)
+            agentRecordingInstruction.text = getString(R.string.agent_voice_listening)
             speechRecognizer?.startListening(intent)
         }.onFailure {
             agentVoiceListening = false
-            agentVoiceButton.text = getString(R.string.agent_voice_button)
+            agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
             Toast.makeText(this, it.message ?: getString(R.string.voice_status_retry_later), Toast.LENGTH_SHORT).show()
         }
     }
@@ -7562,12 +7699,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!agentVoiceListening) return
         agentVoiceListening = false
         runCatching { speechRecognizer?.cancel() }
-        agentVoiceButton.text = getString(R.string.agent_voice_button)
+        agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
     }
 
     private fun handleAgentVoiceResult(text: String) {
         agentVoiceListening = false
-        agentVoiceButton.text = getString(R.string.agent_voice_button)
+        agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
         if (text.isBlank()) {
             Toast.makeText(this, getString(R.string.voice_error_no_valid_speech), Toast.LENGTH_SHORT).show()
             return
@@ -7771,7 +7908,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                     if (agentVoiceListening) {
                         agentVoiceListening = false
-                        agentVoiceButton.text = getString(R.string.agent_voice_button)
+                        agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
                         Toast.makeText(this@MainActivity, errorDetail, Toast.LENGTH_SHORT).show()
                         return
                     }
@@ -16054,7 +16191,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         agentRenderedConversationId = conversationId
-        if (state == lastRenderedAgentState) return
+        if (state == lastRenderedAgentState) {
+            updateAgentSubmitButtonAppearance(
+                agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
+            )
+            return
+        }
         lastRenderedAgentState = state
         val pendingAction = state.pendingAction
         if (syncTranscript) renderAgentOutput(state, conversationId, turnId)
@@ -16077,14 +16219,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentMemoryCaptureButton.setTextColor(
             if (safetySettings.memoryCapture) getColorCompat(R.color.wechat_green) else getColorCompat(R.color.text_secondary)
         )
-        agentVoiceButton.text = if (agentVoiceListening) {
+        agentRecordingInstruction.text = if (agentVoiceListening) {
             getString(R.string.agent_voice_listening)
         } else {
-            getString(R.string.agent_voice_button)
+            getString(R.string.agent_voice_recording_hint)
         }
         agentSubmitButton.isEnabled = true
         agentSubmitButton.alpha = 1f
         latestAgentScreenContext = state.currentScreen
+        updateAgentSubmitButtonAppearance(
+            agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
+        )
     }
 
     private fun recordRunControlProgress(state: AgentUiState, turnId: String) {
@@ -20804,6 +20949,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showMainTab(tab: String) {
         val previousTab = activeMainTab
+        if (tab != PAGE_AGENT && ::agentActionTray.isInitialized && agentActionTrayExpanded) {
+            setAgentActionTrayExpanded(false)
+        }
+        if (tab != PAGE_AGENT && ::agentGoalInput.isInitialized && agentComposerTextMode) {
+            exitAgentComposerTextMode(hideKeyboard = true)
+        }
         if (tab != PAGE_AGENT && agentVoiceListening) {
             stopAgentVoiceInput()
         }
@@ -20910,7 +21061,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         holdToTalkController = AppleHoldToTalkController(
             activity = this,
-            pressButton = pressToTalkButton,
+            pressTarget = pressToTalkButton,
+            instruction = pressToTalkButton,
             recordingGroup = chatRecordingCenter,
             waveform = chatRecordingWaveform,
             transcript = chatRecordingTranscript,
@@ -33618,42 +33770,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showAgentAttachmentMenu() {
-        val dialog = Dialog(this)
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(8), 0, dp(10))
-            setBackgroundResource(R.drawable.agent_attachment_sheet_background)
-        }
-        fun addRow(label: String, action: () -> Unit) {
-            content.addView(TextView(this).apply {
-                text = label
-                gravity = Gravity.CENTER_VERTICAL
-                setTextColor(getColorCompat(R.color.text_primary))
-                textSize = 17f
-                setPadding(dp(22), 0, dp(22), 0)
-                setOnClickListener {
-                    dialog.dismiss()
-                    action()
-                }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)))
-            content.addView(View(this).apply {
-                setBackgroundColor(getColorCompat(R.color.separator))
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
-        }
-        addRow(getString(R.string.agent_attachment_new_task)) { createAgentConversation() }
-        addRow(getString(R.string.agent_attachment_take_photo)) { openAgentCamera() }
-        addRow(getString(R.string.agent_attachment_add_photos)) { openAgentAttachmentPicker(imagesOnly = true) }
-        addRow(getString(R.string.agent_attachment_add_file)) { openAgentAttachmentPicker(imagesOnly = false) }
-        if (content.childCount > 0) content.removeViewAt(content.childCount - 1)
-        dialog.setContentView(content)
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setGravity(Gravity.BOTTOM)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.28f }
-        }
-        dialog.show()
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        setAgentActionTrayExpanded(!agentActionTrayExpanded)
     }
 
     private fun openAgentCamera() {
