@@ -127,6 +127,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var mqttTopic: String
   var mqttInboxTopic: String
   var signalBundleRef: String
+  var agentKind: String
+  var desktopId: String
+  var desktopName: String
+  var deviceId: String
+  var setupDetail: String
   var source: String
   var status: SignalASIFriendRequestStatus
   var createdAt: Date
@@ -146,6 +151,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     mqttTopic: String,
     mqttInboxTopic: String,
     signalBundleRef: String = "",
+    agentKind: String = "",
+    desktopId: String = "",
+    desktopName: String = "",
+    deviceId: String = "",
+    setupDetail: String = "",
     source: String = "qr",
     status: SignalASIFriendRequestStatus = .pending,
     createdAt: Date = Date(),
@@ -164,6 +174,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.mqttTopic = mqttTopic
     self.mqttInboxTopic = mqttInboxTopic
     self.signalBundleRef = signalBundleRef
+    self.agentKind = agentKind
+    self.desktopId = desktopId
+    self.desktopName = desktopName
+    self.deviceId = deviceId
+    self.setupDetail = setupDetail
     self.source = source
     self.status = status
     self.createdAt = createdAt
@@ -184,6 +199,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case mqttTopic = "mqtt_topic"
     case mqttInboxTopic = "mqtt_inbox_topic"
     case signalBundleRef = "signal_bundle_ref"
+    case agentKind = "agent_kind"
+    case desktopId = "desktop_id"
+    case desktopName = "desktop_name"
+    case deviceId = "device_id"
+    case setupDetail = "setup_detail"
     case source
     case status
     case createdAt = "created_at"
@@ -205,6 +225,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     mqttTopic = try container.decodeIfPresent(String.self, forKey: .mqttTopic) ?? ""
     mqttInboxTopic = try container.decodeIfPresent(String.self, forKey: .mqttInboxTopic) ?? mqttTopic
     signalBundleRef = try container.decodeIfPresent(String.self, forKey: .signalBundleRef) ?? ""
+    agentKind = try container.decodeIfPresent(String.self, forKey: .agentKind) ?? ""
+    desktopId = try container.decodeIfPresent(String.self, forKey: .desktopId) ?? ""
+    desktopName = try container.decodeIfPresent(String.self, forKey: .desktopName) ?? ""
+    deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? ""
+    setupDetail = try container.decodeIfPresent(String.self, forKey: .setupDetail) ?? ""
     source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
     status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
     createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()

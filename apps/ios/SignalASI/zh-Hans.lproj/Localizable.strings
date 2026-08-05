@@ -920,6 +920,9 @@
 "signalasi.pairing.scope_desktop_external_files" = "选择外部文件";
 "signalasi.pairing.invalid_qr" = "无效的二维码";
 "signalasi.pairing.contact_request_received" = "已收到联系人请求：%@";
+"signalasi.pairing.agent_request_received" = "已收到 Agent 请求：%@";
+"signalasi.pairing.device_request_received" = "已收到设备请求：%@";
+"signalasi.pairing.hermes_request_received" = "已收到 Hermes 请求：%@";
 "signalasi.pairing.scan_failed" = "扫描失败：%@";
 "signalasi.pairing.desktop_added" = "%@ 已添加";
 "signalasi.pairing.desktop_claim_sending" = "正在添加 %@...";
@@ -931,6 +934,12 @@
 "signalasi.contact.messaging" = "消息通道";
 "signalasi.contact.payload" = "载荷";
 "signalasi.contact.copy_payload" = "复制载荷";
+"signalasi.contact.agent_kind" = "Agent 类型";
+"signalasi.contact.desktop_id" = "Desktop ID";
+"signalasi.contact.device_id" = "设备 ID";
+"contact_tag_model" = "模型";
+"contact_tag_device" = "设备";
+"contact_tag_agent" = "Agent";
 "signalasi.contact.my_qr_title" = "我的二维码";
 "contact_my_fingerprint" = "我的指纹";
 "contact_scan_confirm_identity" = "扫描后需要双方确认身份";

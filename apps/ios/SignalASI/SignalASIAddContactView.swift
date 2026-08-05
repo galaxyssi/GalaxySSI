@@ -145,7 +145,8 @@ struct AddContactView: View {
                   },
                   onReject: {
                     rejectFriendRequest(request)
-                  }
+                  },
+                  t: t
                 )
                 if request.id != store.pendingFriendRequests.last?.id {
                   Divider()
@@ -223,13 +224,7 @@ struct AddContactView: View {
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
         pendingFriendRequest = stored
-        setImportStatus(
-          String(
-            format: t("signalasi.pairing.contact_request_received", "Contact request received: %@"),
-            stored.name
-          ),
-          isError: false
-        )
+        setImportStatus(requestReceivedStatus(stored), isError: false)
       }
     } catch {
       clearPendingScanResult()
@@ -300,6 +295,26 @@ struct AddContactView: View {
   private func setImportStatus(_ message: String, isError: Bool) {
     contactImportStatus = message
     contactImportIsError = isError
+  }
+
+  private func requestReceivedStatus(_ request: SignalASIFriendRequest) -> String {
+    let key: String
+    let fallback: String
+    switch request.type {
+    case "agent":
+      key = "signalasi.pairing.agent_request_received"
+      fallback = "Agent request received: %@"
+    case "device":
+      key = "signalasi.pairing.device_request_received"
+      fallback = "Device request received: %@"
+    case "hermes":
+      key = "signalasi.pairing.hermes_request_received"
+      fallback = "Hermes request received: %@"
+    default:
+      key = "signalasi.pairing.contact_request_received"
+      fallback = "Contact request received: %@"
+    }
+    return String(format: t(key, fallback), request.name)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -686,14 +701,32 @@ private struct AddContactFriendRequestCard: View {
   var onReject: () -> Void
   var t: (String, String) -> String
 
+  private var kindPresentation: SignalASIContactKindPresentation? {
+    SignalASIContactKindPresentation.forRequest(request, t: t)
+  }
+
+  private var deviceIdentifier: String {
+    request.desktopId.ifBlank(request.deviceId)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
-        AddContactIcon(systemImage: "person.2.fill", tint: .signalASIAccent)
+        AddContactIcon(
+          systemImage: kindPresentation?.systemImage ?? "person.2.fill",
+          tint: kindPresentation?.foreground ?? .signalASIAccent
+        )
         VStack(alignment: .leading, spacing: 3) {
-          Text(request.name)
-            .font(.system(size: 18, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
+          HStack(spacing: 6) {
+            Text(request.name)
+              .font(.system(size: 18, weight: .bold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.82)
+            if let kindPresentation {
+              SignalASIContactKindBadge(presentation: kindPresentation)
+            }
+          }
           Text(request.signalASIId)
             .font(.system(size: 12, design: .monospaced))
             .foregroundColor(.signalASITextSecondary)
@@ -715,6 +748,25 @@ private struct AddContactFriendRequestCard: View {
           systemImage: "antenna.radiowaves.left.and.right",
           tint: .signalASIInsightText,
           copyValue: request.mqttInboxTopic
+        )
+      }
+      if !request.agentKind.isEmpty {
+        AddContactValueRow(
+          title: t("signalasi.contact.agent_kind", "Agent Kind"),
+          value: request.agentKind,
+          systemImage: "sparkles",
+          tint: kindPresentation?.foreground ?? .signalASIAccent
+        )
+      }
+      if !deviceIdentifier.isEmpty {
+        AddContactValueRow(
+          title: request.type == "device"
+            ? t("signalasi.contact.device_id", "Device ID")
+            : t("signalasi.contact.desktop_id", "Desktop ID"),
+          value: deviceIdentifier,
+          systemImage: request.type == "device" ? "iphone.gen3" : "desktopcomputer",
+          tint: .signalASIInsightText,
+          copyValue: deviceIdentifier
         )
       }
       HStack(spacing: 10) {
@@ -748,15 +800,29 @@ private struct AddContactFriendRequestRow: View {
   var rejectTitle: String
   var onApprove: () -> Void
   var onReject: () -> Void
+  var t: (String, String) -> String
+
+  private var kindPresentation: SignalASIContactKindPresentation? {
+    SignalASIContactKindPresentation.forRequest(request, t: t)
+  }
 
   var body: some View {
     HStack(spacing: 12) {
-      AddContactIcon(systemImage: "person.2.fill", tint: .signalASIAccent, size: 38)
+      AddContactIcon(
+        systemImage: kindPresentation?.systemImage ?? "person.2.fill",
+        tint: kindPresentation?.foreground ?? .signalASIAccent,
+        size: 38
+      )
       VStack(alignment: .leading, spacing: 3) {
-        Text(request.name)
-          .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+        HStack(spacing: 6) {
+          Text(request.name)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+          if let kindPresentation {
+            SignalASIContactKindBadge(presentation: kindPresentation)
+          }
+        }
         Text(request.signalASIId)
           .font(.system(size: 12, design: .monospaced))
           .foregroundColor(.signalASITextSecondary)

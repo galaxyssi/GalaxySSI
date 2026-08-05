@@ -147,17 +147,27 @@ struct ChatListView: View {
 }
 
 struct ContactRow: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var contact: SignalASIContact
   var summary: ContactConversationSummary
+
+  private var kindPresentation: SignalASIContactKindPresentation? {
+    SignalASIContactKindPresentation.forContact(contact, t: t)
+  }
 
   var body: some View {
     HStack(spacing: 12) {
       AvatarView(contact: contact)
       VStack(alignment: .leading, spacing: 4) {
-        HStack {
+        HStack(spacing: 6) {
           Text(contact.displayName)
             .font(.system(size: 16, weight: summary.hasUnreadMessages ? .semibold : .regular))
             .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+          if let kindPresentation {
+            SignalASIContactKindBadge(presentation: kindPresentation)
+          }
           Spacer()
           if let latestMessage = summary.lastMessage {
             Text(latestMessage.createdAt, style: .time)
@@ -185,6 +195,10 @@ struct ContactRow: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
     .background(Color.signalASISurface)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 

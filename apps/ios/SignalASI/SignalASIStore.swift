@@ -1577,20 +1577,24 @@ final class SignalASIStore: ObservableObject {
     request.readdRequired = false
     friendRequests[index] = request
     let contactId = request.type == "hermes" ? "hermes" : request.signalASIId
+    let requestType = request.type.ifBlank("person")
+    let requestAgentKind = request.agentKind.ifBlank(agentKind(forFriendRequestType: requestType))
+    let requestDesktopId = request.desktopId.ifBlank(request.deviceId)
+    let setupDetail = approvedContactSetupDetail(for: request)
     var next = contact(id: contactId) ?? SignalASIContact(
       id: contactId,
       signalASIId: request.signalASIId,
       name: request.name,
       displayName: request.name,
-      type: request.type.ifBlank("person"),
-      agentKind: agentKind(forFriendRequestType: request.type),
+      type: requestType,
+      agentKind: requestAgentKind,
       deliveryMode: .link,
       trustState: .verified,
-      desktopId: "",
-      desktopName: "",
+      desktopId: requestDesktopId,
+      desktopName: request.desktopName,
       identityFingerprint: request.identityFingerprint,
       setupStatus: "ready",
-      setupDetail: "Verified from contact QR",
+      setupDetail: setupDetail,
       cloudProvider: "",
       cloudModels: [],
       selectedCloudModelId: "",
@@ -1601,16 +1605,18 @@ final class SignalASIStore: ObservableObject {
     next.signalASIId = request.signalASIId
     next.name = request.name
     next.displayName = request.name
-    next.type = request.type.ifBlank("person")
-    next.agentKind = agentKind(forFriendRequestType: request.type)
+    next.type = requestType
+    next.agentKind = requestAgentKind
     next.deliveryMode = .link
     next.trustState = .verified
+    next.desktopId = requestDesktopId
+    next.desktopName = request.desktopName
     next.identityFingerprint = request.identityFingerprint
     next.mqttTopic = request.mqttTopic
     next.mqttInboxTopic = request.mqttInboxTopic
     next.signalBundleRef = request.signalBundleRef
     next.setupStatus = "ready"
-    next.setupDetail = request.mqttInboxTopic.isEmpty ? "Verified from contact QR" : "SignalASI contact QR verified"
+    next.setupDetail = setupDetail
     next.deleted = false
     next.deletedAt = nil
     next.updatedAt = now
@@ -1983,8 +1989,26 @@ final class SignalASIStore: ObservableObject {
       return "desktop-agent"
     case "agent":
       return "contact-agent"
+    case "device":
+      return "device"
     default:
       return "person"
+    }
+  }
+
+  private func approvedContactSetupDetail(for request: SignalASIFriendRequest) -> String {
+    if !request.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return request.setupDetail
+    }
+    switch request.type {
+    case "agent":
+      return request.mqttInboxTopic.isEmpty ? "Verified from Agent QR" : "SignalASI Agent QR verified"
+    case "device":
+      return request.mqttInboxTopic.isEmpty ? "Verified from device QR" : "SignalASI device QR verified"
+    case "hermes":
+      return "Hermes identity verified from QR"
+    default:
+      return request.mqttInboxTopic.isEmpty ? "Verified from contact QR" : "SignalASI contact QR verified"
     }
   }
 
