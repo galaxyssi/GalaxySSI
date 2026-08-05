@@ -1,0 +1,354 @@
+import SwiftUI
+import UIKit
+
+struct SignalASIProfileIdentityView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var statusMessage = ""
+  @State private var showingQRCode = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_profile_title", "My SignalASI"),
+        leading: {
+          SignalASIBackButton()
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          hero
+          if !statusMessage.isEmpty {
+            SignalASISecurityStatusRow(
+              title: t("signalasi.status.ready", "Ready"),
+              subtitle: statusMessage,
+              systemImage: "checkmark.circle",
+              tint: .signalASIAccent,
+              badge: t("signalasi.status.ready", "Ready")
+            )
+          }
+          identitySection
+          statusSection
+          recoverySection
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+    .sheet(isPresented: $showingQRCode) {
+      MyContactQRCodeView()
+    }
+  }
+
+  private var hero: some View {
+    HStack(alignment: .center, spacing: 12) {
+      SignalASILogoView(size: 58, cornerRadius: 10)
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(store.profile.name.ifBlank(t("signalasi.settings.profile", "Profile")))
+            .font(.system(size: 22, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+          Text(agentBadge)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(agentTint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 7)
+            .frame(minHeight: 22)
+            .background(agentTint.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        Text(t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"))
+          .font(.system(size: 14))
+          .foregroundColor(.signalASITextSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 4)
+  }
+
+  private var identitySection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_section_identity", "Identity"))
+      SignalASIProfileNicknameRow(
+        title: t("cc_nickname_title", "Nickname"),
+        subtitle: t("cc_nickname_subtitle", "Shown to verified contacts"),
+        badge: store.profile.name.ifBlank(t("signalasi.settings.profile", "Profile")),
+        text: Binding(
+          get: { store.profile.name },
+          set: { store.updateProfileName($0) }
+        )
+      )
+      SignalASISecurityActionRow(
+        title: t("settings_signalasi_id", "SignalASI ID"),
+        subtitle: store.profile.signalASIId.ifBlank(t("signalasi.status.unknown", "Unknown")),
+        systemImage: "link",
+        tint: .blue,
+        badge: t("common_copy", "Copy"),
+        monospacedSubtitle: true
+      ) {
+        copy(store.profile.signalASIId, message: t("signalasi.security_center.copied_signalasi_id", "SignalASI ID copied"))
+      }
+      SignalASISecurityActionRow(
+        title: t("settings_identity_fingerprint", "Identity Fingerprint"),
+        subtitle: SignalASISecurityFormatter.fingerprint(
+          store.profile.identityFingerprint,
+          unknown: t("signalasi.status.unknown", "Unknown")
+        ),
+        systemImage: "fingerprint",
+        tint: .signalASIAccent,
+        badge: t("cc_identity_verified", "Identity verified"),
+        monospacedSubtitle: true
+      ) {
+        copy(store.profile.identityFingerprint, message: t("signalasi.security_center.copied_phone_fingerprint", "Phone fingerprint copied"))
+      }
+      SignalASISecurityActionRow(
+        title: t("signalasi.discover.my_qr_title", "My QR Code"),
+        subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
+        systemImage: "qrcode",
+        tint: .purple,
+        badge: t("common_view", "View")
+      ) {
+        showingQRCode = true
+      }
+    }
+  }
+
+  private var statusSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("common_status", "Status"))
+      SignalASISecurityNavigationRow(
+        title: t("cc_agent_identity_title", "Agent Identity"),
+        subtitle: t("cc_agent_identity_subtitle", "This device can execute autonomous tasks"),
+        systemImage: "cpu",
+        tint: agentTint,
+        badge: agentBadge
+      ) {
+        AgentSafetySettingsView()
+      }
+      SignalASISecurityStatusRow(
+        title: t("cc_device_info_title", "Device Information"),
+        subtitle: deviceInfo,
+        systemImage: "iphone",
+        tint: .blue,
+        badge: t("cc_device_profile_phone", "Phone profile")
+      )
+      SignalASISecurityStatusRow(
+        title: t("cc_section_connected_devices", "Connected devices"),
+        subtitle: String(
+          format: t("cc_trusted_devices_badge", "%d trusted devices"),
+          store.serverLinks.count
+        ),
+        systemImage: "desktopcomputer",
+        tint: store.serverLinks.isEmpty ? .orange : .signalASIAccent,
+        badge: "\(store.serverLinks.count)"
+      )
+    }
+  }
+
+  private var recoverySection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("security_section_identity", "Identity"))
+      SignalASISecurityNavigationRow(
+        title: t("cc_identity_recovery_title", "Identity Recovery Package"),
+        subtitle: t("cc_identity_recovery_subtitle", "Export encrypted identity and trust relationships"),
+        systemImage: "square.and.arrow.up",
+        tint: .orange,
+        badge: t("common_view", "View")
+      ) {
+        SignalASIIdentityRecoveryExportView()
+      }
+      SignalASISecurityNavigationRow(
+        title: t("cc_security_title", "Security & Trust"),
+        subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
+        systemImage: "checkmark.shield",
+        tint: .signalASIAccent,
+        badge: t("common_view", "View")
+      ) {
+        SignalASISecurityCenterView()
+      }
+    }
+  }
+
+  private var agentBadge: String {
+    store.agentSafetySettings.executionPaused
+      ? t("on_device_agent_status_paused", "Paused")
+      : t("status_enabled", "Enabled")
+  }
+
+  private var agentTint: Color {
+    store.agentSafetySettings.executionPaused ? .orange : .signalASIAccent
+  }
+
+  private var deviceInfo: String {
+    "\(UIDevice.current.model) - iOS \(UIDevice.current.systemVersion) - \(t("cc_device_profile_phone", "Phone profile"))"
+  }
+
+  private func copy(_ value: String, message: String) {
+    UIPasteboard.general.string = value
+    statusMessage = message
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+struct SignalASIIdentityRecoveryExportView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var password = ""
+  @State private var backupDocument: SignalASIBackupDocument?
+  @State private var backupExportPresented = false
+  @State private var statusMessage = ""
+  @State private var statusIsError = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_identity_recovery_title", "Identity Recovery Package"),
+        leading: {
+          SignalASIBackButton()
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: t("cc_identity_recovery_title", "Identity Recovery Package"),
+            subtitle: t("cc_identity_recovery_subtitle", "Export encrypted identity and trust relationships"),
+            systemImage: "square.and.arrow.up",
+            tint: .orange,
+            badge: t("cc_status_secure", "Secure")
+          )
+          SignalASISecuritySectionTitle(title: t("cc_section_identity", "Identity"))
+          SignalASISecurityStatusRow(
+            title: t("settings_signalasi_id", "SignalASI ID"),
+            subtitle: store.profile.signalASIId.ifBlank(t("signalasi.status.unknown", "Unknown")),
+            systemImage: "link",
+            tint: .blue,
+            badge: t("cc_identity_verified", "Identity verified"),
+            monospacedSubtitle: true
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_section_connected_devices", "Connected devices"),
+            subtitle: String(
+              format: t("cc_trusted_devices_badge", "%d trusted devices"),
+              store.serverLinks.count
+            ),
+            systemImage: "desktopcomputer",
+            tint: store.serverLinks.isEmpty ? .orange : .signalASIAccent,
+            badge: "\(store.serverLinks.count)"
+          )
+          SignalASISecuritySectionTitle(title: t("cc_identity_recovery_title", "Identity Recovery Package"))
+          SecureField(t("signalasi.settings.password", "Password"), text: $password)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .font(.system(size: 15))
+            .foregroundColor(.signalASITextPrimary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 46)
+            .background(Color.signalASISurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          SignalASISecurityPrimaryButton(
+            title: t("signalasi.common.export", "Export"),
+            systemImage: "square.and.arrow.up",
+            tint: .signalASIAccent
+          ) {
+            exportIdentityRecovery()
+          }
+          .disabled(password.count < SignalASIBackupManager.minimumPasswordLength)
+          if !statusMessage.isEmpty {
+            SignalASISecurityStatusRow(
+              title: t("signalasi.status.ready", "Ready"),
+              subtitle: statusMessage,
+              systemImage: statusIsError ? "exclamationmark.triangle" : "checkmark.circle",
+              tint: statusIsError ? .red : .signalASIAccent,
+              badge: statusIsError ? t("cc_status_degraded", "Degraded") : t("cc_status_ready", "Ready")
+            )
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+    .fileExporter(
+      isPresented: $backupExportPresented,
+      document: backupDocument,
+      contentType: .data,
+      defaultFilename: SignalASIBackupManager.defaultFilename()
+    ) { result in
+      switch result {
+      case .success:
+        setStatus(t("signalasi.backup.exported", "Backup exported."), isError: false)
+      case .failure(let error):
+        setStatus(error.localizedDescription, isError: true)
+      }
+    }
+  }
+
+  private func exportIdentityRecovery() {
+    let payload = store.exportBackupPayload(includeContacts: true, includeMessages: false)
+    setStatus(t("signalasi.backup.preparing", "Preparing backup..."), isError: false)
+    do {
+      let data = try SignalASIBackupManager.encryptPayload(payload, password: password)
+      backupDocument = SignalASIBackupDocument(data: data)
+      backupExportPresented = true
+      setStatus(t("signalasi.backup.ready", "Backup ready."), isError: false)
+    } catch {
+      setStatus(error.localizedDescription, isError: true)
+    }
+  }
+
+  private func setStatus(_ value: String, isError: Bool) {
+    statusMessage = value
+    statusIsError = isError
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIProfileNicknameRow: View {
+  var title: String
+  var subtitle: String
+  var badge: String
+  @Binding var text: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecurityStatusRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: "person.crop.circle",
+        tint: .blue,
+        badge: badge
+      )
+      TextField(title, text: $text)
+        .font(.system(size: 15))
+        .foregroundColor(.signalASITextPrimary)
+        .textInputAutocapitalization(.words)
+        .disableAutocorrection(true)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 46)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+  }
+}
