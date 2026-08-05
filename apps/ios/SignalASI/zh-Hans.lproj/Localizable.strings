@@ -2090,6 +2090,8 @@
 "status_disconnected" = "已断开";
 "protocol_quality_title" = "协议与质量";
 "protocol_quality_hero_subtitle" = "安全通信与 Agent 协作协议";
+"settings_protocol_quality" = "协议与质量";
+"settings_protocol_quality_subtitle" = "安全通信与 Agent 协作状态";
 "protocol_section_quality" = "质量";
 "protocol_delivery_ack" = "送达确认";
 "protocol_delivery_ack_subtitle" = "消息发送后等待对方确认";
