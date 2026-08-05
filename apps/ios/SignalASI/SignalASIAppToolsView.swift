@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 struct SignalASIAppToolsView: View {
@@ -73,7 +74,7 @@ struct SignalASIAppToolsView: View {
       ) {
         SignalASIAppAdaptersView()
       }
-      SignalASISecurityNavigationRow(
+      SignalASISecurityActionRow(
         title: t("cc_accessibility_executor_title", "Universal App Executor"),
         subtitle: t(
           "cc_accessibility_executor_subtitle",
@@ -83,7 +84,7 @@ struct SignalASIAppToolsView: View {
         tint: screenExecutorReady ? .signalASIAccent : .orange,
         badge: screenExecutorReady ? t("status_enabled", "Enabled") : t("signalasi.status.needs_setup", "Needs Setup")
       ) {
-        OnDeviceAgentPermissionsView()
+        openAppSettings()
       }
     }
   }
@@ -141,6 +142,11 @@ struct SignalASIAppToolsView: View {
         )
       }
     }
+  }
+
+  private func openAppSettings() {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    UIApplication.shared.open(url)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
