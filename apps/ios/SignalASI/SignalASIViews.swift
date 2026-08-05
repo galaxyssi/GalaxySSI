@@ -1558,6 +1558,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIOnDeviceRuntimeView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_runtime_title", "On-device Linux Runtime"))
+              Text(t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
