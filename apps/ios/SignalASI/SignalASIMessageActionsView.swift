@@ -244,7 +244,7 @@ struct SignalASIMessageActionsView: View {
   }
 
   private var displayLocale: Locale {
-    Locale(identifier: interfaceLanguage == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
+    SignalASILocalization.dateLocale(language: interfaceLanguage)
   }
 
   private func traceLabel(_ stage: String) -> String {

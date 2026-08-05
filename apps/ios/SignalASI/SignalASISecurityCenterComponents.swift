@@ -9,10 +9,10 @@ enum SignalASISecurityFormatter {
     return chunk(limited, into: 32).joined(separator: "\n")
   }
 
-  static func time(_ date: Date, unknown: String) -> String {
+  static func time(_ date: Date, unknown: String, language: String = LanguagePolicySettings.auto) -> String {
     guard date.timeIntervalSince1970 > 1 else { return unknown }
     let formatter = DateFormatter()
-    formatter.locale = .autoupdatingCurrent
+    formatter.locale = SignalASILocalization.dateLocale(language: language)
     formatter.dateFormat = "MM/dd HH:mm"
     return formatter.string(from: date)
   }

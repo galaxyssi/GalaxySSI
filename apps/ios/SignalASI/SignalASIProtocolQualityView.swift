@@ -493,7 +493,7 @@ struct SignalASILinkProtocolView: View {
       return t("signalasi.status.unknown", "Unknown")
     }
     let formatter = DateFormatter()
-    formatter.locale = .autoupdatingCurrent
+    formatter.locale = SignalASILocalization.dateLocale(language: interfaceLanguage)
     formatter.dateFormat = "MM/dd HH:mm"
     return formatter.string(from: Date(timeIntervalSince1970: Double(millis) / 1_000))
   }

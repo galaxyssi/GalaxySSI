@@ -1063,7 +1063,7 @@ enum SignalASIPrivacyLabels {
       return t("cc_privacy_time_unknown", "Unknown time", language: language)
     }
     let formatter = DateFormatter()
-    formatter.locale = .autoupdatingCurrent
+    formatter.locale = SignalASILocalization.dateLocale(language: language)
     formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
     return formatter.string(from: Date(timeIntervalSince1970: Double(timestamp) / 1_000))
   }
