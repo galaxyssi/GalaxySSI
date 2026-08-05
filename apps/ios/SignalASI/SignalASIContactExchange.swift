@@ -5,6 +5,95 @@ enum SignalASIQRCodeImport {
   case contact(SignalASIFriendRequest)
 }
 
+enum SignalASIQRCodePayload {
+  static func decodeObject(from contents: String, label: String) throws -> [String: Any] {
+    for candidate in candidateTexts(from: contents) {
+      guard let data = candidate.data(using: .utf8),
+            let raw = try? JSONSerialization.jsonObject(with: data, options: []),
+            let object = raw as? [String: Any] else {
+        continue
+      }
+      return object
+    }
+    throw SignalASIError.invalidPayload("\(label) root must be a JSON object.")
+  }
+
+  private static func candidateTexts(from contents: String) -> [String] {
+    var results: [String] = []
+
+    func add(_ value: String) {
+      let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !clean.isEmpty, !results.contains(clean) else { return }
+      results.append(clean)
+      if let decoded = clean.removingPercentEncoding,
+         decoded != clean {
+        add(decoded)
+      }
+      if let base64Decoded = decodeBase64Text(clean) {
+        add(base64Decoded)
+      }
+      if let jsonSlice = embeddedJSONObject(in: clean) {
+        add(jsonSlice)
+      }
+    }
+
+    let clean = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+    add(clean)
+
+    if let components = URLComponents(string: clean),
+       components.scheme != nil || components.host != nil {
+      let payloadKeys: Set<String> = [
+        "payload", "payload_b64", "data", "data_b64", "json", "qr", "qr_b64",
+        "q", "text", "value", "contact", "pairing"
+      ]
+      components.queryItems?.forEach { item in
+        guard let value = item.value else { return }
+        if payloadKeys.contains(item.name.lowercased()) {
+          add(value)
+        }
+      }
+      if let fragment = components.percentEncodedFragment?.removingPercentEncoding ?? components.fragment {
+        add(fragment)
+      }
+      if let host = components.host {
+        add(host)
+      }
+      let pathParts = components.path
+        .split(separator: "/")
+        .map(String.init)
+      pathParts.forEach(add)
+      pathParts.last.map(add)
+    }
+
+    return results
+  }
+
+  private static func decodeBase64Text(_ value: String) -> String? {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let encoded = clean.contains(",") && clean.lowercased().contains(";base64,")
+      ? (clean.split(separator: ",").last.map(String.init) ?? "")
+      : clean
+    guard encoded.count >= 16 else { return nil }
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+    guard encoded.rangeOfCharacter(from: allowed.inverted) == nil else { return nil }
+    let data = Data(base64URLEncoded: encoded) ?? Data(base64Encoded: encoded)
+    guard let data,
+          let text = String(data: data, encoding: .utf8) else {
+      return nil
+    }
+    return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+  }
+
+  private static func embeddedJSONObject(in value: String) -> String? {
+    guard let start = value.firstIndex(of: "{"),
+          let end = value.lastIndex(of: "}"),
+          start < end else {
+      return nil
+    }
+    return String(value[start...end])
+  }
+}
+
 enum SignalASIContactExchange {
   static let contactType = "signalasi_contact"
   static let hermesContactType = "hermes_contact"
@@ -211,14 +300,7 @@ enum SignalASIContactExchange {
   }
 
   private static func decodeQRCodeObject(_ contents: String, label: String) throws -> [String: Any] {
-    guard let data = contents.data(using: .utf8) else {
-      throw SignalASIError.invalidPayload("\(label) text is not UTF-8.")
-    }
-    let raw = try JSONSerialization.jsonObject(with: data, options: [])
-    guard let object = raw as? [String: Any] else {
-      throw SignalASIError.invalidPayload("\(label) root must be a JSON object.")
-    }
-    return object
+    try SignalASIQRCodePayload.decodeObject(from: contents, label: label)
   }
 
   static func localInboxTopic(serverLinks: [ServerLink]) -> String {
