@@ -44,7 +44,7 @@ struct ContactDetailView: View {
             manageSection(contact)
           } else {
             ContactDetailEmptyView(
-              title: t("Contact not found.", "Contact not found."),
+              title: t("signalasi.contact_detail.not_found_title", "Contact not found."),
               subtitle: t(
                 "signalasi.contact_detail.not_found_subtitle",
                 "This contact may have been deleted or restored from an older backup."
@@ -63,24 +63,24 @@ struct ContactDetailView: View {
     .onChange(of: contact?.displayName ?? "") { _ in
       syncRemarkName()
     }
-    .alert(t("Delete Contact?", "Delete Contact?"), isPresented: $showingDeleteConfirmation) {
+    .alert(t("delete_contact_title", "Delete Contact"), isPresented: $showingDeleteConfirmation) {
       Button(role: .destructive) {
         deleteContact()
       } label: {
-        Text(t("Delete", "Delete"))
+        Text(t("common_delete", "Delete"))
       }
       Button(role: .cancel) {
       } label: {
-        Text(t("Cancel", "Cancel"))
+        Text(t("common_cancel", "Cancel"))
       }
     } message: {
       Text(
         deleteMessagesWhenDeleting
           ? t(
-            "The contact and chat history will be removed from this device.",
+            "signalasi.contact_detail.delete_with_chat_message",
             "The contact and chat history will be removed from this device."
           )
-          : t("The contact will be removed from this device.", "The contact will be removed from this device.")
+          : t("delete_contact_subtitle", "Add and verify this contact again before communicating.")
       )
     }
   }
@@ -118,8 +118,8 @@ struct ContactDetailView: View {
       if remarkEditorExpanded {
         ContactDetailRemarkEditor(
           remarkName: $remarkName,
-          title: t("contact_remark_name", "Remark Name"),
-          placeholder: t("Display Name", "Display Name"),
+          title: t("contact_edit_remark_title", "Edit Remark"),
+          placeholder: t("contact_remark_name", "Remark Name"),
           saveTitle: t("common_save", "Save"),
           disabled: remarkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             remarkName == contact.displayName
@@ -189,10 +189,10 @@ struct ContactDetailView: View {
   private func routeSection(_ contact: SignalASIContact) -> some View {
     if hasRouteDetails(contact) {
       VStack(alignment: .leading, spacing: 8) {
-        SignalASISecuritySectionTitle(title: t("Route", "Route"))
+        SignalASISecuritySectionTitle(title: t("signalasi.contact_detail.route", "Route"))
         if let mqttTopic = contact.mqttTopic, !mqttTopic.isEmpty {
           ContactDetailCopyRow(
-            title: t("Topic", "Topic"),
+            title: t("signalasi.contact_detail.topic", "Topic"),
             value: mqttTopic,
             systemImage: "antenna.radiowaves.left.and.right",
             tint: .purple,
@@ -204,7 +204,7 @@ struct ContactDetailView: View {
         }
         if let mqttInboxTopic = contact.mqttInboxTopic, !mqttInboxTopic.isEmpty {
           ContactDetailCopyRow(
-            title: t("Inbox", "Inbox"),
+            title: t("signalasi.contact_detail.inbox", "Inbox"),
             value: mqttInboxTopic,
             systemImage: "tray.and.arrow.down",
             tint: .teal,
@@ -216,7 +216,7 @@ struct ContactDetailView: View {
         }
         if let signalBundleRef = contact.signalBundleRef, !signalBundleRef.isEmpty {
           ContactDetailCopyRow(
-            title: t("Bundle", "Bundle"),
+            title: t("signalasi.contact_detail.bundle", "Bundle"),
             value: signalBundleRef,
             systemImage: "shippingbox",
             tint: .orange,
@@ -234,9 +234,9 @@ struct ContactDetailView: View {
   private func cloudModelSection(_ contact: SignalASIContact) -> some View {
     if contact.deliveryMode == .cloudAPI {
       VStack(alignment: .leading, spacing: 8) {
-        SignalASISecuritySectionTitle(title: t("Cloud Model", "Cloud Model"))
+        SignalASISecuritySectionTitle(title: t("signalasi.status.cloud_model", "Cloud Model"))
         SignalASISecurityStatusRow(
-          title: contact.cloudProvider.ifBlank(t("Cloud Model", "Cloud Model")),
+          title: contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud Model")),
           subtitle: t("signalasi.contact_detail.cloud_provider_subtitle", "Configured cloud model provider"),
           systemImage: "cloud",
           tint: .purple,
@@ -270,19 +270,19 @@ struct ContactDetailView: View {
 
   private func manageSection(_ contact: SignalASIContact) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("Manage", "Manage"))
+      SignalASISecuritySectionTitle(title: t("signalasi.common.manage", "Manage"))
       SignalASISecurityActionRow(
-        title: t("Delete Chat History", "Delete Chat History"),
-        subtitle: t("signalasi.contact_detail.delete_chat_subtitle", "Remove only this conversation on this device"),
+        title: t("delete_chat_title", "Delete Chat"),
+        subtitle: t("delete_chat_subtitle", "Only local chat history is deleted. Contacts are not affected."),
         systemImage: "trash",
         tint: .orange,
-        badge: t("Delete", "Delete")
+        badge: t("common_delete", "Delete")
       ) {
         store.deleteMessages(for: contact.id)
-        setStatus(t("Chat history deleted.", "Chat history deleted."), isError: false)
+        setStatus(t("delete_chat_toast", "Chat deleted"), isError: false)
       }
       ContactDetailToggleRow(
-        title: t("Also Delete Chat History", "Also Delete Chat History"),
+        title: t("signalasi.contact_detail.also_delete_chat", "Also Delete Chat History"),
         subtitle: t(
           "signalasi.contact_detail.delete_contact_chat_subtitle",
           "Apply when deleting the contact itself"
@@ -292,11 +292,11 @@ struct ContactDetailView: View {
         isOn: $deleteMessagesWhenDeleting
       )
       SignalASISecurityActionRow(
-        title: t("Delete Contact", "Delete Contact"),
-        subtitle: t("The contact will be removed from this device.", "The contact will be removed from this device."),
+        title: t("delete_contact_title", "Delete Contact"),
+        subtitle: t("delete_contact_subtitle", "Add and verify this contact again before communicating."),
         systemImage: "person.crop.circle.badge.xmark",
         tint: .red,
-        badge: t("Delete", "Delete")
+        badge: t("common_delete", "Delete")
       ) {
         showingDeleteConfirmation = true
       }
@@ -331,7 +331,7 @@ struct ContactDetailView: View {
   private func saveRemark() {
     if store.renameContact(id: contactId, displayName: remarkName) {
       remarkEditorExpanded = false
-      setStatus(t("Contact updated.", "Contact updated."), isError: false)
+      setStatus(t("contact_remark_saved", "Remark updated"), isError: false)
     } else {
       setStatus(t("signalasi.contact_detail.remark_save_failed", "Unable to save this remark."), isError: true)
     }
@@ -353,7 +353,7 @@ struct ContactDetailView: View {
   private func deliveryBadge(for contact: SignalASIContact) -> String {
     switch contact.deliveryMode {
     case .cloudAPI:
-      return t("Cloud Model", "Cloud Model")
+      return t("signalasi.status.cloud_model", "Cloud Model")
     case .link:
       return setupStatusText(for: contact)
     case .local:
