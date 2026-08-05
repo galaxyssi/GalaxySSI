@@ -475,6 +475,17 @@ struct SettingsView: View {
         SignalASIOnDeviceRuntimeView()
       }
       SettingsNavigationRow(
+        title: t("settings_on_device_agent", "On-device Agent & Permissions"),
+        subtitle: t("settings_on_device_agent_subtitle", "Manage perception, voice, automation permissions, and local action boundaries"),
+        systemImage: "hand.raised",
+        tint: .orange,
+        badge: store.agentSafetySettings.executionPaused
+          ? t("on_device_agent_status_paused", "Paused")
+          : t("on_device_agent_status_running", "Running")
+      ) {
+        OnDeviceAgentPermissionsView()
+      }
+      SettingsNavigationRow(
         title: t("voice_settings_title", "Voice Wake & ASR/TTS"),
         subtitle: voiceSettingsSummary,
         systemImage: "waveform",
