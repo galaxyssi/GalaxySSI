@@ -200,6 +200,7 @@ struct ConversationView: View {
   @State private var photoPickerPresented = false
   @State private var attachmentError = ""
   @State private var showingDeleteChatConfirmation = false
+  @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
   var contactId: String
 
@@ -225,6 +226,13 @@ struct ConversationView: View {
     case .local:
       return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
     }
+  }
+
+  private var cloudModelHeaderText: String {
+    if let selected = contact.selectedCloudModel {
+      return selected.displayName.ifBlank(selected.modelId)
+    }
+    return contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud model"))
   }
 
   var body: some View {
@@ -364,6 +372,13 @@ struct ConversationView: View {
     .sheet(item: $selectedMessageForDetails) { message in
       MessageDetailView(message: message, contact: contact)
     }
+    .sheet(isPresented: $cloudModelSwitchPresented) {
+      NavigationView {
+        SignalASICloudModelSwitchView(contactId: contact.id, dismissAfterSelection: true)
+          .environmentObject(store)
+      }
+      .navigationViewStyle(StackNavigationViewStyle())
+    }
   }
 
   private var conversationHeader: some View {
@@ -386,6 +401,26 @@ struct ConversationView: View {
         }
       }
       Spacer(minLength: 8)
+      if contact.deliveryMode == .cloudAPI {
+        Button {
+          cloudModelSwitchPresented = true
+        } label: {
+          HStack(spacing: 5) {
+            Image(systemName: "cloud.fill")
+              .font(.system(size: 13, weight: .semibold))
+            Text(cloudModelHeaderText)
+              .font(.system(size: 12, weight: .semibold))
+              .lineLimit(1)
+              .minimumScaleFactor(0.72)
+          }
+          .foregroundColor(.signalASIInsightText)
+          .padding(.horizontal, 8)
+          .frame(maxWidth: 126, minHeight: 32)
+          .background(Color.signalASIInsightBackground)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+      }
       Button(role: .destructive) {
         showingDeleteChatConfirmation = true
       } label: {
@@ -1568,7 +1603,7 @@ struct SettingsView: View {
         }
         Section(t("signalasi.settings.cloud_models", "Cloud Models")) {
           ForEach(store.cloudModelContacts) { contact in
-            NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
+            NavigationLink(destination: SignalASICloudModelSwitchView(contactId: contact.id)) {
               VStack(alignment: .leading) {
                 Text(contact.displayName)
                 Text(contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model"))
