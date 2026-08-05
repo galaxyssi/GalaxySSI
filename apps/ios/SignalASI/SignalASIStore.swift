@@ -140,6 +140,9 @@ final class SignalASIStore: ObservableObject {
   @Published var modelPlannerSettings: AgentModelPlannerSettings {
     didSet { save() }
   }
+  @Published var globalAgentSettings: GlobalAgentSettings {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -163,6 +166,7 @@ final class SignalASIStore: ObservableObject {
     var customDeviceConnectors: [CustomDeviceConnector]
     var homeAssistantSettings: HomeAssistantSettings
     var modelPlannerSettings: AgentModelPlannerSettings
+    var globalAgentSettings: GlobalAgentSettings
 
     init(
       profile: SignalASIProfile,
@@ -185,7 +189,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskRecords: [AgentTaskRecord] = [],
       customDeviceConnectors: [CustomDeviceConnector] = [],
       homeAssistantSettings: HomeAssistantSettings = .default,
-      modelPlannerSettings: AgentModelPlannerSettings = .default
+      modelPlannerSettings: AgentModelPlannerSettings = .default,
+      globalAgentSettings: GlobalAgentSettings = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -208,6 +213,7 @@ final class SignalASIStore: ObservableObject {
       self.customDeviceConnectors = customDeviceConnectors
       self.homeAssistantSettings = homeAssistantSettings
       self.modelPlannerSettings = modelPlannerSettings
+      self.globalAgentSettings = globalAgentSettings
     }
 
     init(from decoder: Decoder) throws {
@@ -251,6 +257,7 @@ final class SignalASIStore: ObservableObject {
       customDeviceConnectors = try container.decodeIfPresent([CustomDeviceConnector].self, forKey: .customDeviceConnectors) ?? []
       homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
       modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
+      globalAgentSettings = try container.decodeIfPresent(GlobalAgentSettings.self, forKey: .globalAgentSettings) ?? .default
     }
   }
 
@@ -313,6 +320,7 @@ final class SignalASIStore: ObservableObject {
         defaultEntityId: state.homeAssistantSettings.defaultEntityId
       )
       modelPlannerSettings = state.modelPlannerSettings
+      globalAgentSettings = state.globalAgentSettings
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -337,6 +345,7 @@ final class SignalASIStore: ObservableObject {
       customDeviceConnectors = []
       homeAssistantSettings = .default
       modelPlannerSettings = .default
+      globalAgentSettings = .default
       save()
     }
   }
@@ -518,6 +527,8 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
+    defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
+    defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
     agentWorkspaceStore.clear()
@@ -1288,6 +1299,12 @@ final class SignalASIStore: ObservableObject {
     modelPlannerSettings = next.normalized
   }
 
+  func updateGlobalAgentSettings(_ mutate: (inout GlobalAgentSettings) -> Void) {
+    var next = globalAgentSettings
+    mutate(&next)
+    globalAgentSettings = next.normalized
+  }
+
   @discardableResult
   func appendOutgoing(_ content: String, to contactId: String, status: ChatDeliveryStatus = .queued) -> ChatMessage {
     let messageId = UUID()
@@ -1643,6 +1660,7 @@ final class SignalASIStore: ObservableObject {
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
         includesModelPlannerSettings: true,
+        includesGlobalAgentSettings: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
@@ -1664,7 +1682,8 @@ final class SignalASIStore: ObservableObject {
         taskBudget: agentTaskBudget,
         customDeviceConnectors: customDeviceConnectors,
         homeAssistantSettings: homeAssistantSettings,
-        modelPlannerSettings: modelPlannerSettings
+        modelPlannerSettings: modelPlannerSettings,
+        globalAgentSettings: globalAgentSettings
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
@@ -1699,6 +1718,7 @@ final class SignalASIStore: ObservableObject {
       try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
       try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
       modelPlannerSettings = payload.agentData.modelPlannerSettings
+      globalAgentSettings = payload.agentData.globalAgentSettings
       agentMemoryItems = agentMemoryStore.restoreBackupItems(
         payload.agentData.memory,
         tombstones: payload.agentData.memoryDeletionIndex
@@ -1991,6 +2011,7 @@ final class SignalASIStore: ObservableObject {
     customDeviceConnectors = []
     homeAssistantSettings = .default
     modelPlannerSettings = .default
+    globalAgentSettings = .default
   }
 
   private func defaultAutomationAgentTargetId() -> String {
@@ -2520,7 +2541,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskRecords: agentTaskRecords,
       customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken),
       homeAssistantSettings: homeAssistantSettings.withoutAccessToken,
-      modelPlannerSettings: modelPlannerSettings
+      modelPlannerSettings: modelPlannerSettings,
+      globalAgentSettings: globalAgentSettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)
