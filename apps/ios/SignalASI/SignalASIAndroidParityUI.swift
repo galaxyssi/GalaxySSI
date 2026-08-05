@@ -559,6 +559,14 @@ struct DiscoverView: View {
               SignalASISecurityCenterView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
+              subtitle: t("cc_privacy_dashboard_subtitle", "See what data leaves this phone and where it is processed"),
+              systemImage: "lock.doc",
+              tint: .signalASIInsightText
+            ) {
+              SignalASIPrivacyDashboardView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("cc_data_title", "Data & Backup"),
               subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
               systemImage: "externaldrive",

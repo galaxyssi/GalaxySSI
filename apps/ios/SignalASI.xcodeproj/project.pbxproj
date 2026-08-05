@@ -38,6 +38,7 @@
     A10000000000000000001070 /* SignalASIAdvancedOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001070 /* SignalASIAdvancedOptionsView.swift */; };
     A10000000000000000001080 /* SignalASITextSizeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */; };
     A10000000000000000001100 /* SignalASIResetDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001100 /* SignalASIResetDataView.swift */; };
+    A10000000000000000001186 /* SignalASIPrivacyDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001186 /* SignalASIPrivacyDashboardView.swift */; };
     A10000000000000000001185 /* SignalASIGeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001185 /* SignalASIGeneralSettingsView.swift */; };
     A10000000000000000001184 /* SignalASIDataBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001184 /* SignalASIDataBackupView.swift */; };
     A10000000000000000001183 /* SignalASISmartSpacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001183 /* SignalASISmartSpacesView.swift */; };
@@ -656,6 +657,7 @@
     A20000000000000000001070 /* SignalASIAdvancedOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAdvancedOptionsView.swift; sourceTree = "<group>"; };
     A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASITextSizeSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001100 /* SignalASIResetDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIResetDataView.swift; sourceTree = "<group>"; };
+    A20000000000000000001186 /* SignalASIPrivacyDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPrivacyDashboardView.swift; sourceTree = "<group>"; };
     A20000000000000000001185 /* SignalASIGeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGeneralSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001184 /* SignalASIDataBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIDataBackupView.swift; sourceTree = "<group>"; };
     A20000000000000000001183 /* SignalASISmartSpacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISmartSpacesView.swift; sourceTree = "<group>"; };
@@ -1652,6 +1654,7 @@
         A20000000000000000001070 /* SignalASIAdvancedOptionsView.swift */,
         A20000000000000000001080 /* SignalASITextSizeSettingsView.swift */,
         A20000000000000000001100 /* SignalASIResetDataView.swift */,
+        A20000000000000000001186 /* SignalASIPrivacyDashboardView.swift */,
         A20000000000000000001185 /* SignalASIGeneralSettingsView.swift */,
         A20000000000000000001184 /* SignalASIDataBackupView.swift */,
         A20000000000000000001183 /* SignalASISmartSpacesView.swift */,
@@ -2379,6 +2382,7 @@
         A10000000000000000001070 /* SignalASIAdvancedOptionsView.swift in Sources */,
         A10000000000000000001080 /* SignalASITextSizeSettingsView.swift in Sources */,
         A10000000000000000001100 /* SignalASIResetDataView.swift in Sources */,
+        A10000000000000000001186 /* SignalASIPrivacyDashboardView.swift in Sources */,
         A10000000000000000001185 /* SignalASIGeneralSettingsView.swift in Sources */,
         A10000000000000000001184 /* SignalASIDataBackupView.swift in Sources */,
         A10000000000000000001183 /* SignalASISmartSpacesView.swift in Sources */,
