@@ -169,7 +169,7 @@ struct SignalASISecurityCenterView: View {
         tint: .orange,
         badge: t("signalasi.common.view", "View")
       ) {
-        AgentSafetySettingsView()
+        SignalASIExecutionPolicyView()
       }
       ForEach(connectorContacts.prefix(8)) { contact in
         SignalASISecurityStatusRow(
