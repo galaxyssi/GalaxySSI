@@ -36,7 +36,7 @@ struct VoiceWhisperModelSettingsView: View {
 
   var body: some View {
     Form {
-      Section("Whisper Model") {
+      Section(header: Text(t("voice_asr_model_section", "Whisper Model"))) {
         ForEach(rows) { row in
           Button {
             handle(row)
@@ -71,7 +71,7 @@ struct VoiceWhisperModelSettingsView: View {
               Button(role: .destructive) {
                 remove(row.model)
               } label: {
-                Label("Remove", systemImage: "trash")
+                Label(t("voice_asr_model_remove", "Remove model"), systemImage: "trash")
               }
             }
           }
@@ -94,7 +94,7 @@ struct VoiceWhisperModelSettingsView: View {
       Alert(
         title: Text(details.title),
         message: Text(details.message),
-        dismissButton: .default(Text("Done"))
+        dismissButton: .default(Text(t("Done", "Done")))
       )
     }
   }
