@@ -16,6 +16,12 @@ enum SignalASIContactExchange {
     "signalasi_agent",
     "signalasi_agent_contact"
   ]
+  private static let deviceContactTypes: Set<String> = [
+    "device",
+    "device_contact",
+    "signalasi_device",
+    "signalasi_device_contact"
+  ]
 
   static func makeContactQRText(
     profile: SignalASIProfile,
@@ -90,15 +96,22 @@ enum SignalASIContactExchange {
     let mqttTopic = object.string("mqtt_topic")
       .ifBlank(object.string("mqtt_inbox_topic"))
       .ifBlank(object.string("mqtt_recv_topic"))
-    let name = object.string("name").ifBlank(type == verifyType ? "Hermes" : "Friend")
+    let name = object.string("display_name")
+      .ifBlank(object.string("name"))
+      .ifBlank(type == verifyType ? "Hermes" : "Friend")
     let requestType: String
     if type == verifyType {
       requestType = "hermes"
+    } else if isDeviceQRCodeObject(object) {
+      requestType = "device"
     } else if isAgentQRCodeObject(object) {
       requestType = "agent"
     } else {
       requestType = object.string("contact_type").ifBlank("person")
     }
+    let agentKind = object.string("agent_kind")
+      .ifBlank(object.string("kind"))
+      .ifBlank(defaultAgentKind(for: requestType, object: object))
     return SignalASIFriendRequest(
       id: "req_\(Int64(now.timeIntervalSince1970 * 1000))",
       signalASIId: signalASIId,
@@ -109,6 +122,11 @@ enum SignalASIContactExchange {
       mqttTopic: mqttTopic,
       mqttInboxTopic: mqttTopic,
       signalBundleRef: signalBundleReference(object),
+      agentKind: agentKind,
+      desktopId: object.string("desktop_id"),
+      desktopName: object.string("desktop_name"),
+      deviceId: object.string("device_id"),
+      setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
       source: "qr",
       createdAt: now
     )
@@ -118,8 +136,10 @@ enum SignalASIContactExchange {
     let type = normalized(object.string("type"))
     return [contactType, hermesContactType, verifyType].contains(type) ||
       agentContactTypes.contains(type) ||
+      deviceContactTypes.contains(type) ||
       !object.string("signalasi_id").isEmpty ||
       !object.string("hermes_id").isEmpty ||
+      isDeviceQRCodeObject(object) ||
       isAgentQRCodeObject(object)
   }
 
@@ -131,6 +151,47 @@ enum SignalASIContactExchange {
       !object.string("agent_kind").isEmpty ||
       !object.string("agent_id").isEmpty ||
       !object.string("mobile_contact_id").isEmpty
+  }
+
+  private static func isDeviceQRCodeObject(_ object: [String: Any]) -> Bool {
+    let type = normalized(object.string("type"))
+    let contactType = normalized(object.string("contact_type"))
+    let kind = normalized(object.string("agent_kind").ifBlank(object.string("kind")))
+    let deviceId = normalized(object.string("device_id"))
+    let agentId = normalized(
+      object.string("agent_id")
+        .ifBlank(object.string("mobile_contact_id"))
+        .ifBlank(object.string("id"))
+    )
+    return deviceContactTypes.contains(type) ||
+      contactType == "device" ||
+      kind == "device" ||
+      agentId == "pc_agent" ||
+      agentId == "home_hub" ||
+      agentId.contains("device") ||
+      agentId.contains("hub") ||
+      (!deviceId.isEmpty && !isAgentQRCodeObject(object))
+  }
+
+  private static func defaultAgentKind(for requestType: String, object: [String: Any]) -> String {
+    switch requestType {
+    case "hermes":
+      return "desktop-agent"
+    case "agent":
+      let identifier = normalized(
+        object.string("agent_id")
+          .ifBlank(object.string("mobile_contact_id"))
+          .ifBlank(object.string("signalasi_id"))
+      )
+      if identifier.contains("model") || identifier.contains("llm") {
+        return "local-model"
+      }
+      return "custom-cli"
+    case "device":
+      return "device"
+    default:
+      return ""
+    }
   }
 
   private static func signalBundleReference(_ object: [String: Any]) -> String {
