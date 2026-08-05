@@ -122,7 +122,7 @@ struct SignalASISystemStatusView: View {
         tint: store.agentSafetySettings.executionPaused ? .orange : .signalASIAccent,
         badge: store.agentSafetySettings.executionPaused ? t("on_device_agent_status_paused", "Paused") : t("cc_status_online", "Online")
       ) {
-        AgentSafetySettingsView()
+        SignalASIAgentCoreView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_service_link", "SignalASI Link"),
@@ -131,7 +131,7 @@ struct SignalASISystemStatusView: View {
         tint: linkReady ? .signalASIAccent : .orange,
         badge: linkReady ? t("cc_status_online", "Online") : t("cc_status_degraded", "Degraded")
       ) {
-        SignalASILinkDiagnosticsView()
+        SignalASIAgentsModelsNodesView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_service_router", "Resource Router"),
@@ -144,7 +144,7 @@ struct SignalASISystemStatusView: View {
         tint: availableResourceCount > 0 ? .blue : .orange,
         badge: availableResourceCount > 0 ? t("cc_status_ready", "Ready") : t("cc_status_degraded", "Degraded")
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_service_knowledge", "Knowledge Index"),
@@ -164,7 +164,7 @@ struct SignalASISystemStatusView: View {
   private var diagnosticsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("advanced_section_diagnostics", "Diagnostics"))
-      SignalASISecurityStatusRow(
+      SignalASISecurityNavigationRow(
         title: t("cc_agent_memory_telemetry_title", "Agent Memory"),
         subtitle: String(
           format: t("cc_agent_memory_telemetry_summary", "Current %@ - peak %@"),
@@ -174,7 +174,9 @@ struct SignalASISystemStatusView: View {
         systemImage: "memorychip",
         tint: .purple,
         badge: t("cc_agent_memory_pss_badge", "PSS")
-      )
+      ) {
+        SignalASIAgentMemoryTelemetryView()
+      }
       SignalASISecurityNavigationRow(
         title: t("protocol_transport_diagnostics", "Transport Diagnostics"),
         subtitle: linkDiagnosticsSummary,
