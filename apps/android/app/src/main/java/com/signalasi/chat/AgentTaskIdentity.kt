@@ -67,6 +67,12 @@ internal object AgentTaskIdentityPolicy {
             taskId == expectedTaskId &&
             turnId == expectedTurnId
     }
+
+    fun routesToMainAgent(
+        superseded: Boolean,
+        hasRuntime: Boolean,
+        resolvedConversationId: String
+    ): Boolean = superseded || hasRuntime || resolvedConversationId.isNotBlank()
 }
 
 internal object AgentTaskIdentityStore {

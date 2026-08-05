@@ -84,4 +84,22 @@ class AgentTaskIdentityPolicyTest {
             )
         )
     }
+
+    @Test
+    fun persistedMainAgentConversationRoutesWithoutLiveRuntime() {
+        assertTrue(
+            AgentTaskIdentityPolicy.routesToMainAgent(
+                superseded = false,
+                hasRuntime = false,
+                resolvedConversationId = "conversation-a"
+            )
+        )
+        assertFalse(
+            AgentTaskIdentityPolicy.routesToMainAgent(
+                superseded = false,
+                hasRuntime = false,
+                resolvedConversationId = ""
+            )
+        )
+    }
 }
