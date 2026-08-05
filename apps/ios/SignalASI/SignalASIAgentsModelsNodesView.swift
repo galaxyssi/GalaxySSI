@@ -84,7 +84,7 @@ struct SignalASIAgentsModelsNodesView: View {
               ? t("cc_status_online", "Online")
               : t("status_disconnected", "Disconnected")
           ) {
-            SignalASIDesktopControlView()
+            SignalASIDesktopControlView(initialDesktopId: link.desktopId)
           }
         }
       }
