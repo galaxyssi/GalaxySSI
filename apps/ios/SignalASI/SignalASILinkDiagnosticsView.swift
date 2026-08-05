@@ -1,44 +1,45 @@
 import SwiftUI
 
 struct SignalASILinkDiagnosticsView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var snapshot = SignalASILinkTransportDiagnostics.snapshot()
 
   var body: some View {
     List {
-      Section("Summary") {
+      Section(header: Text(t("protocol_transport_summary", "Summary"))) {
         metricRow(
-          "Replay Events",
+          t("protocol_replay_events", "Replay Events"),
           value: snapshot.replayCount,
-          subtitle: "Encrypted and pending replay handling",
+          subtitle: t("protocol_replay_events_subtitle", "Encrypted and pending replay handling"),
           systemImage: "arrow.clockwise",
           tint: .blue
         )
         metricRow(
-          "Duplicate Events",
+          t("protocol_duplicate_events", "Duplicate Events"),
           value: snapshot.duplicateCount,
-          subtitle: "Duplicate messages, receipts, and chunks",
+          subtitle: t("protocol_duplicate_events_subtitle", "Duplicate messages, receipts, and chunks"),
           systemImage: "doc.on.doc",
           tint: .orange
         )
         metricRow(
-          "Old Counter Events",
+          t("protocol_old_counter_events", "Old Counter Events"),
           value: snapshot.oldCounterCount,
-          subtitle: "Rejected stale encrypted counters",
+          subtitle: t("protocol_old_counter_events_subtitle", "Rejected stale encrypted counters"),
           systemImage: "shield",
           tint: .purple
         )
         metricRow(
-          "Transport Failures",
+          t("protocol_transport_failures", "Transport Failures"),
           value: snapshot.failureCount,
-          subtitle: "Decrypt and fragment rejection events",
+          subtitle: t("protocol_transport_failures_subtitle", "Decrypt and fragment rejection events"),
           systemImage: "exclamationmark.triangle",
           tint: .red
         )
       }
 
-      Section("Recent Events") {
+      Section(header: Text(t("protocol_recent_transport_events", "Recent Events"))) {
         if snapshot.recentEvents.isEmpty {
-          Label("No Transport Anomalies", systemImage: "checkmark.shield")
+          Label(t("protocol_no_transport_anomalies", "No Transport Anomalies"), systemImage: "checkmark.shield")
             .foregroundColor(.secondary)
         } else {
           ForEach(Array(snapshot.recentEvents.prefix(20))) { event in
@@ -47,14 +48,14 @@ struct SignalASILinkDiagnosticsView: View {
         }
       }
     }
-    .navigationTitle("Link Diagnostics")
+    .navigationTitle(t("signalasi.settings.link_diagnostics", "Link Diagnostics"))
     .toolbar {
       ToolbarItem(placement: .navigationBarTrailing) {
         Button {
           SignalASILinkTransportDiagnostics.clear()
           refresh()
         } label: {
-          Label("Clear", systemImage: "trash")
+          Label(t("common_clear", "Clear"), systemImage: "trash")
         }
         .disabled(snapshot.totalEvents == 0)
       }
@@ -95,7 +96,7 @@ struct SignalASILinkDiagnosticsView: View {
         .foregroundColor(event.kind.tint)
         .frame(width: 24)
       VStack(alignment: .leading, spacing: 4) {
-        Text(event.kind.displayTitle)
+        Text(event.kind.displayTitle(language: interfaceLanguage))
         Text(eventSubtitle(event))
           .font(.caption)
           .foregroundColor(.secondary)
@@ -111,26 +112,52 @@ struct SignalASILinkDiagnosticsView: View {
   }
 
   private func eventSubtitle(_ event: SignalASILinkDiagnosticEvent) -> String {
-    let date = Date(timeIntervalSince1970: Double(event.recordedAtMillis) / 1_000)
-      .formatted(date: .abbreviated, time: .standard)
+    let date = formattedEventTime(event.recordedAtMillis)
     let references = [event.endpointRef, event.messageRef]
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
       .joined(separator: " / ")
-    return references.isEmpty ? "\(date) / Unknown reference" : "\(date) / \(references)"
+    if references.isEmpty {
+      return String(
+        format: t("protocol_transport_event_subtitle", "%@ / anonymous references %@"),
+        date,
+        t("protocol_unknown_reference", "Unknown reference")
+      )
+    }
+    return String(format: t("protocol_transport_event_subtitle", "%@ / anonymous references %@"), date, references)
+  }
+
+  private func formattedEventTime(_ timestampMillis: Int64) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: interfaceLanguage == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .medium
+    return formatter.string(from: Date(timeIntervalSince1970: Double(timestampMillis) / 1_000))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
 private extension SignalASILinkDiagnosticKind {
-  var displayTitle: String {
+  func displayTitle(language: String) -> String {
     switch self {
-    case .encryptedReplay: return "Encrypted Replay"
-    case .pendingReplay: return "Pending Replay"
-    case .duplicateMessage: return "Duplicate Message"
-    case .duplicateReceipt: return "Duplicate Receipt"
-    case .oldCounter: return "Old Counter"
-    case .decryptFailure: return "Decrypt Failure"
-    case .chunkDuplicate: return "Chunk Duplicate"
-    case .fragmentRejected: return "Fragment Rejected"
+    case .encryptedReplay:
+      return t("protocol_event_encrypted_replay", "Encrypted Replay", language: language)
+    case .pendingReplay:
+      return t("protocol_event_pending_replay", "Pending Replay", language: language)
+    case .duplicateMessage:
+      return t("protocol_event_duplicate_message", "Duplicate Message", language: language)
+    case .duplicateReceipt:
+      return t("protocol_event_duplicate_receipt", "Duplicate Receipt", language: language)
+    case .oldCounter:
+      return t("protocol_event_old_counter", "Old Counter", language: language)
+    case .decryptFailure:
+      return t("protocol_event_decrypt_failure", "Decrypt Failure", language: language)
+    case .chunkDuplicate:
+      return t("protocol_event_chunk_duplicate", "Chunk Duplicate", language: language)
+    case .fragmentRejected:
+      return t("protocol_event_fragment_rejected", "Fragment Rejected", language: language)
     }
   }
 
@@ -158,5 +185,9 @@ private extension SignalASILinkDiagnosticKind {
     case .decryptFailure, .fragmentRejected:
       return .red
     }
+  }
+
+  private func t(_ key: String, _ fallback: String, language: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: language)
   }
 }
