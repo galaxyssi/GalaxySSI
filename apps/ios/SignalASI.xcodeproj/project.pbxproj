@@ -86,6 +86,7 @@
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001435 /* SignalASIAgentComposerView.swift */; };
     A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */; };
+    A10000000000000000001440 /* SignalASIAgentRuntimePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */; };
     A10000000000000000001438 /* SignalASIMainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001438 /* SignalASIMainTabView.swift */; };
     A10000000000000000001437 /* SignalASIAgentHoldToTalkController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */; };
     A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
@@ -743,6 +744,7 @@
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000001435 /* SignalASIAgentComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerView.swift; sourceTree = "<group>"; };
     A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScreenContextView.swift; sourceTree = "<group>"; };
+    A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRuntimePanelView.swift; sourceTree = "<group>"; };
     A20000000000000000001438 /* SignalASIMainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMainTabView.swift; sourceTree = "<group>"; };
     A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHoldToTalkController.swift; sourceTree = "<group>"; };
     A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
@@ -1707,6 +1709,7 @@
         A20000000000000000000888 /* SignalASIAndroidParityUI.swift */,
         A20000000000000000001435 /* SignalASIAgentComposerView.swift */,
         A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */,
+        A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */,
         A20000000000000000001438 /* SignalASIMainTabView.swift */,
         A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */,
         A20000000000000000001370 /* SignalASIMessageActionsView.swift */,
@@ -2473,6 +2476,7 @@
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */,
         A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */,
+        A10000000000000000001440 /* SignalASIAgentRuntimePanelView.swift in Sources */,
         A10000000000000000001438 /* SignalASIMainTabView.swift in Sources */,
         A10000000000000000001437 /* SignalASIAgentHoldToTalkController.swift in Sources */,
         A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */,
