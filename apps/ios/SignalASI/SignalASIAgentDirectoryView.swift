@@ -358,6 +358,17 @@ struct SignalASIMyAgentsView: View {
           ) {
             CloudModelProviderSelectionView()
           }
+          if !hasTrustedDesktop {
+            SignalASIDirectoryMenuLink(
+              title: t("cc_no_desktop_title", "No trusted Desktop node"),
+              subtitle: t("cc_no_desktop_subtitle", "Scan a SignalASI Desktop QR code to add its available Agents"),
+              systemImage: "qrcode.viewfinder",
+              tint: .orange,
+              badge: t("security_scan", "Scan")
+            ) {
+              AddContactView(autoOpenScanner: true)
+            }
+          }
           VStack(spacing: 8) {
             ForEach(filteredItems) { item in
               if item.connected {
@@ -381,6 +392,10 @@ struct SignalASIMyAgentsView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+  }
+
+  private var hasTrustedDesktop: Bool {
+    store.serverLinks.contains { $0.paired }
   }
 
   private var segmentOptions: [SignalASIDirectorySegment] {
