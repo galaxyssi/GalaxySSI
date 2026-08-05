@@ -166,7 +166,7 @@ struct SignalASIAgentConnectionDetailView: View {
   }
 
   private var subtitle: String {
-    contact?.setupDetail.ifBlank(item.subtitle) ?? item.subtitle
+    contact.map { connectorDetail($0, fallback: item.subtitle) } ?? item.subtitle
   }
 
   private var statusBadge: String {
@@ -178,7 +178,7 @@ struct SignalASIAgentConnectionDetailView: View {
 
   private var statusSubtitle: String {
     if let contact {
-      let detail = contact.setupDetail.ifBlank(item.subtitle)
+      let detail = connectorDetail(contact, fallback: item.subtitle)
       return "\(detail) - \(routeBadge)"
     }
     return t(
@@ -305,6 +305,12 @@ struct SignalASIAgentConnectionDetailView: View {
   private var isLocalModelRoute: Bool {
     let kind = contact?.agentKind.lowercased() ?? item.id.lowercased()
     return kind.contains("local-model") || kind.contains("local_llm") || item.id == "local-llm"
+  }
+
+  private func connectorDetail(_ contact: SignalASIContact, fallback: String) -> String {
+    contact.setupDetail
+      .ifBlank(contact.connectorSetupNextStep)
+      .ifBlank(fallback)
   }
 
   private func statusLabel(_ value: String, fallback: String) -> String {

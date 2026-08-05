@@ -1334,6 +1334,10 @@
 "signalasi.contact_detail.not_found_subtitle" = "此联系人可能已被删除，或来自较旧的备份。";
 "signalasi.contact_detail.delete_with_chat_message" = "此联系人和聊天记录将从本机删除。";
 "signalasi.contact_detail.agent_id" = "智能体 ID";
+"signalasi.contact_detail.access_profile" = "访问配置";
+"signalasi.contact_detail.access_scopes" = "访问范围";
+"signalasi.contact_detail.desktop_access" = "桌面权限";
+"signalasi.contact_detail.scope_count" = "%d 个范围";
 "signalasi.contact_detail.route" = "路由";
 "signalasi.contact_detail.topic" = "主题";
 "signalasi.contact_detail.inbox" = "收件箱";

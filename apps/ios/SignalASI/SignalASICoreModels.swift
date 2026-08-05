@@ -52,6 +52,9 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var mqttTopic: String? = nil
   var mqttInboxTopic: String? = nil
   var signalBundleRef: String? = nil
+  var setupNextStep: String? = nil
+  var desktopAccessProfile: String? = nil
+  var desktopAccessScopes: [String]? = nil
   var deletedAt: Date? = nil
 
   var selectedCloudModel: CloudModelConfig? {
@@ -128,6 +131,22 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   }
 }
 
+extension SignalASIContact {
+  var connectorSetupNextStep: String {
+    (setupNextStep ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var connectorDesktopAccessProfile: String {
+    (desktopAccessProfile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var connectorDesktopAccessScopes: [String] {
+    (desktopAccessScopes ?? [])
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+  }
+}
+
 enum SignalASIFriendRequestStatus: String, Codable, CaseIterable {
   case pending
   case approved
@@ -150,6 +169,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var desktopName: String
   var deviceId: String
   var setupDetail: String
+  var setupNextStep: String
+  var desktopAccessProfile: String
+  var desktopAccessScopes: [String]
   var source: String
   var status: SignalASIFriendRequestStatus
   var createdAt: Date
@@ -174,6 +196,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     desktopName: String = "",
     deviceId: String = "",
     setupDetail: String = "",
+    setupNextStep: String = "",
+    desktopAccessProfile: String = "",
+    desktopAccessScopes: [String] = [],
     source: String = "qr",
     status: SignalASIFriendRequestStatus = .pending,
     createdAt: Date = Date(),
@@ -197,6 +222,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.desktopName = desktopName
     self.deviceId = deviceId
     self.setupDetail = setupDetail
+    self.setupNextStep = setupNextStep
+    self.desktopAccessProfile = desktopAccessProfile
+    self.desktopAccessScopes = desktopAccessScopes
     self.source = source
     self.status = status
     self.createdAt = createdAt
@@ -222,6 +250,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case desktopName = "desktop_name"
     case deviceId = "device_id"
     case setupDetail = "setup_detail"
+    case setupNextStep = "setup_next_step"
+    case desktopAccessProfile = "desktop_access_profile"
+    case desktopAccessScopes = "desktop_access_scopes"
     case source
     case status
     case createdAt = "created_at"
@@ -248,6 +279,9 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     desktopName = try container.decodeIfPresent(String.self, forKey: .desktopName) ?? ""
     deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? ""
     setupDetail = try container.decodeIfPresent(String.self, forKey: .setupDetail) ?? ""
+    setupNextStep = try container.decodeIfPresent(String.self, forKey: .setupNextStep) ?? ""
+    desktopAccessProfile = try container.decodeIfPresent(String.self, forKey: .desktopAccessProfile) ?? ""
+    desktopAccessScopes = try container.decodeIfPresent([String].self, forKey: .desktopAccessScopes) ?? []
     source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
     status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
     createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()

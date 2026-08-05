@@ -214,7 +214,7 @@ struct SignalASIResourceRoutingView: View {
       capabilities: capabilities(contact, kind: kind),
       failureDomain: failureDomain(contact, kind: kind),
       adapterType: adapterType(contact),
-      desktopAccessProfile: contact.desktopName,
+      desktopAccessProfile: contact.connectorDesktopAccessProfile,
       providerProfile: contact.deliveryMode == .cloudAPI
         ? ProviderProfileCatalog.fromCloudContact(contact, status: status)
         : nil

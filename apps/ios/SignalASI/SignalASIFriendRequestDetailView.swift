@@ -35,6 +35,7 @@ struct FriendRequestDetailView: View {
             )
             identitySection(request)
             messagingSection(request)
+            connectorSection(request)
             requestStateSection(request)
             actionSection(request)
           } else {
@@ -114,6 +115,67 @@ struct FriendRequestDetailView: View {
             systemImage: "shippingbox",
             tint: .orange,
             copiedMessage: t("signalasi.friend_request.copied_bundle", "Bundle copied"),
+            monospacedSubtitle: true
+          )
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func connectorSection(_ request: SignalASIFriendRequest) -> some View {
+    if hasConnectorDetails(request) {
+      VStack(alignment: .leading, spacing: 8) {
+        SignalASISecuritySectionTitle(title: t("contact_connector_section", "Connector"))
+        if !request.desktopName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+           !request.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          copyRow(
+            title: t("signalasi.pairing.section_desktop", "Desktop"),
+            value: request.desktopName.ifBlank(request.desktopId),
+            copyValue: request.desktopId.ifBlank(request.desktopName),
+            systemImage: "desktopcomputer",
+            tint: .signalASIInsightText,
+            copiedMessage: t("signalasi.contact_detail.copied_desktop", "Desktop copied")
+          )
+        }
+        if !request.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("common_status", "Status"),
+            subtitle: request.setupDetail,
+            systemImage: "person.crop.circle.badge.checkmark",
+            tint: .orange,
+            badge: t("signalasi.friend_request.pending", "Pending Verification")
+          )
+        }
+        if !request.setupNextStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("common_next_step", "Next Step"),
+            subtitle: request.setupNextStep,
+            systemImage: "arrow.right.circle",
+            tint: .orange,
+            badge: t("signalasi.common.view", "View")
+          )
+        }
+        if !request.desktopAccessProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.access_profile", "Access Profile"),
+            subtitle: request.desktopAccessProfile,
+            systemImage: "lock.shield",
+            tint: .purple,
+            badge: t("signalasi.contact_detail.desktop_access", "Desktop Access"),
+            monospacedSubtitle: true
+          )
+        }
+        if !request.desktopAccessScopes.isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.access_scopes", "Access Scopes"),
+            subtitle: request.desktopAccessScopes.joined(separator: ", "),
+            systemImage: "list.bullet",
+            tint: .blue,
+            badge: String(
+              format: t("signalasi.contact_detail.scope_count", "%d scopes"),
+              request.desktopAccessScopes.count
+            ),
             monospacedSubtitle: true
           )
         }
@@ -238,6 +300,15 @@ struct FriendRequestDetailView: View {
 
   private func signalASIId(for request: SignalASIFriendRequest) -> String {
     request.signalASIId.ifBlank(request.id)
+  }
+
+  private func hasConnectorDetails(_ request: SignalASIFriendRequest) -> Bool {
+    !request.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !request.desktopName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !request.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !request.setupNextStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !request.desktopAccessProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !request.desktopAccessScopes.isEmpty
   }
 
   private func statusSubtitle(for request: SignalASIFriendRequest) -> String {

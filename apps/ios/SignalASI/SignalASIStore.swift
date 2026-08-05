@@ -1645,6 +1645,9 @@ final class SignalASIStore: ObservableObject {
     next.setupDetail = setupDetail
     next.agentId = nil
     next.agentId = requestType == "agent" ? next.connectorAgentId : nil
+    next.setupNextStep = request.setupNextStep.nonEmpty
+    next.desktopAccessProfile = request.desktopAccessProfile.nonEmpty
+    next.desktopAccessScopes = request.desktopAccessScopes.isEmpty ? nil : request.desktopAccessScopes
     next.deleted = false
     next.deletedAt = nil
     next.updatedAt = now
@@ -1983,6 +1986,17 @@ final class SignalASIStore: ObservableObject {
         .ifBlank(
           isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
         )
+      let setupNextStep = payload.string("setup_next_step")
+        .ifBlank(payload.string("setup"))
+      let desktopAccessProfile = payload.string("desktop_access_profile")
+        .ifBlank((link?.accessProfile ?? "").ifBlank(SignalASILinkProtocol.accessRestricted))
+      let payloadAccessScopes = payload.stringArray("desktop_access_scopes")
+      let desktopAccessScopes = (payloadAccessScopes.isEmpty
+        ? Array(link?.accessScopes ?? []).sorted()
+        : payloadAccessScopes
+      )
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
       let now = Date()
       var contact = contact(id: contactId) ?? SignalASIContact(
         id: contactId,
@@ -2018,6 +2032,9 @@ final class SignalASIStore: ObservableObject {
       contact.identityFingerprint = desktopFingerprint
       contact.setupStatus = setupStatus
       contact.setupDetail = setupDetail
+      contact.setupNextStep = setupNextStep.nonEmpty
+      contact.desktopAccessProfile = desktopAccessProfile.nonEmpty
+      contact.desktopAccessScopes = desktopAccessScopes.isEmpty ? nil : desktopAccessScopes
       contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
       contact.mqttInboxTopic = payload.string("mqtt_inbox_topic").ifBlank(link?.routes.downTopic ?? "")
       contact.deleted = false
@@ -2133,6 +2150,13 @@ final class SignalASIStore: ObservableObject {
           value: parentPayload.string("detail")
             .ifBlank(parentPayload.string("setup_detail"))
             .ifBlank(parentPayload.string("setup"))
+        )
+      }
+      if payload.string("setup_next_step").isEmpty {
+        inheritConnectorValue(
+          "setup_next_step",
+          into: &payload,
+          value: parentPayload.string("setup_next_step").ifBlank(parentPayload.string("setup"))
         )
       }
       return payload
