@@ -76,7 +76,7 @@ struct SignalASIAgentCoreView: View {
         tint: .blue,
         badge: t(store.agentSafetySettings.permissionMode.displayTitle, store.agentSafetySettings.permissionMode.displayTitle)
       ) {
-        AgentSafetySettingsView()
+        SignalASIExecutionPolicyView()
       }
     }
   }
@@ -112,7 +112,7 @@ struct SignalASIAgentCoreView: View {
         tint: .orange,
         badge: t("signalasi.status.ready", "Ready")
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -121,7 +121,7 @@ struct SignalASIAgentCoreView: View {
         tint: .purple,
         badge: resourceRoutingBadge
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
     }
   }
