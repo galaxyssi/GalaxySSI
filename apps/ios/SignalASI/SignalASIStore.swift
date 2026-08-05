@@ -1798,6 +1798,7 @@ final class SignalASIStore: ObservableObject {
       paired: existing?.paired ?? false,
       accessProfile: pairing.access.profile,
       accessScopes: pairing.access.scopes,
+      capabilityManifestVersion: existing?.capabilityManifestVersion ?? 0,
       updatedAt: Date()
     )
     serverLinks.removeAll { $0.desktopId == link.desktopId }
@@ -1845,6 +1846,21 @@ final class SignalASIStore: ObservableObject {
       contacts[contactIndex].updatedAt = Date()
     }
     save()
+  }
+
+  @discardableResult
+  func markCapabilityManifestReceived(desktopId: String, version: Int) -> ServerLink? {
+    guard let index = serverLinks.firstIndex(where: { $0.desktopId == desktopId }) else {
+      return nil
+    }
+    let normalizedVersion = max(version, 0)
+    guard normalizedVersion > serverLinks[index].capabilityManifestVersion else {
+      return serverLinks[index]
+    }
+    serverLinks[index].capabilityManifestVersion = normalizedVersion
+    serverLinks[index].updatedAt = Date()
+    save()
+    return serverLinks[index]
   }
 
   func removeServer(desktopId: String) {

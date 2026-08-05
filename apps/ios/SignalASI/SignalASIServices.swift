@@ -1187,9 +1187,12 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     let hasConnectorAgents = (payload["connector_agents"] as? [[String: Any]])?.isEmpty == false
-    guard hasConnectorAgents || type == "pairing_confirmed" else {
-      return false
-    }
+    let suppliedManifestVersion = payload.int("manifest_version")
+    let manifestVersion = suppliedManifestVersion > 0
+      ? suppliedManifestVersion
+      : payload.int("capability_manifest_version")
+    let hasManifestVersion = type == "capability_manifest" && manifestVersion > 0
+    guard hasConnectorAgents || type == "pairing_confirmed" || hasManifestVersion else { return false }
 
     var link = incomingLink
     if type == "pairing_confirmed" {
@@ -1201,6 +1204,16 @@ final class MessageCoordinator: ObservableObject {
       }
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
+    }
+
+    if hasManifestVersion {
+      let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      if !desktopId.isEmpty {
+        link = store.markCapabilityManifestReceived(
+          desktopId: desktopId,
+          version: manifestVersion
+        ) ?? link
+      }
     }
 
     if hasConnectorAgents {

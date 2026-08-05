@@ -129,6 +129,53 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.contact(id: "\(link.desktopId):codex")?.setupStatus, "ready")
   }
 
+  func testServerLinkTracksAndroidCapabilityManifestVersion() throws {
+    let store = makeStore()
+
+    let link = try store.addServerLink(from: makePairingQRCode())
+
+    XCTAssertEqual(SignalASILinkProtocol.capabilityManifestVersion, 2)
+    XCTAssertEqual(link.capabilityManifestVersion, 0)
+    XCTAssertTrue(SignalASILinkProtocol.needsCapabilityManifest(link))
+
+    let updated = try XCTUnwrap(store.markCapabilityManifestReceived(
+      desktopId: link.desktopId,
+      version: SignalASILinkProtocol.capabilityManifestVersion
+    ))
+    XCTAssertEqual(updated.capabilityManifestVersion, 2)
+    XCTAssertFalse(SignalASILinkProtocol.needsCapabilityManifest(updated))
+
+    let retained = try XCTUnwrap(store.markCapabilityManifestReceived(desktopId: link.desktopId, version: 1))
+    XCTAssertEqual(retained.capabilityManifestVersion, 2)
+
+    let rescanned = try store.addServerLink(from: makePairingQRCode(), rotateClientRoute: false)
+    XCTAssertEqual(rescanned.capabilityManifestVersion, 2)
+  }
+
+  func testServerLinkDecodesLegacyPayloadWithoutCapabilityManifestVersion() throws {
+    let link = ServerLink(
+      desktopId: "desktop-legacy",
+      desktopName: "Desktop",
+      desktopFingerprint: String(repeating: "c", count: 64),
+      signalName: "desktop-legacy",
+      routes: SignalASILinkRoutes(serverRouteId: "abcdefghijklmnopqrstuv", clientRouteId: "zyxwvutsrqponmlkjihgfe"),
+      paired: true,
+      accessProfile: SignalASILinkProtocol.accessRestricted,
+      accessScopes: [SignalASILinkProtocol.scopeAgentChat],
+      capabilityManifestVersion: 2,
+      updatedAt: Date(timeIntervalSince1970: 1)
+    )
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder.signalASI.encode(link)) as? [String: Any])
+    object.removeValue(forKey: "capability_manifest_version")
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+    let decoded = try JSONDecoder.signalASI.decode(ServerLink.self, from: legacyData)
+
+    XCTAssertEqual(decoded.desktopId, "desktop-legacy")
+    XCTAssertEqual(decoded.capabilityManifestVersion, 0)
+    XCTAssertTrue(SignalASILinkProtocol.needsCapabilityManifest(decoded))
+  }
+
   func testContactSearchMatchesAndroidNameAndIdFiltering() throws {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(signalASIId: "friend-alice", name: "Alice"))
