@@ -45,6 +45,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var cloudProvider: String
   var cloudModels: [CloudModelConfig]
   var selectedCloudModelId: String
+  var agentId: String? = nil
   var deleted: Bool
   var createdAt: Date
   var updatedAt: Date
@@ -59,6 +60,23 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
 
   var isCommunicable: Bool {
     !deleted && trustState == .verified
+  }
+
+  var connectorAgentId: String {
+    let stored = (agentId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !stored.isEmpty {
+      return stored
+    }
+    let rawIds = [id, signalASIId].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    for rawId in rawIds where !rawId.isEmpty {
+      if !desktopId.isEmpty, rawId.hasPrefix("\(desktopId):") {
+        return String(rawId.dropFirst(desktopId.count + 1))
+      }
+      if deliveryMode == .link, rawId.contains(":") {
+        return rawId.split(separator: ":", maxSplits: 1).last.map(String.init) ?? rawId
+      }
+    }
+    return ""
   }
 
   static func hermes() -> SignalASIContact {
