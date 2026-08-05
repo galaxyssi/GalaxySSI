@@ -248,6 +248,18 @@ struct SignalASIControlCenterView: View {
         SignalASISecurityCenterView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
+        subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
+        systemImage: "lock.doc",
+        tint: disclosureSummary.cloud > 0 ? .orange : .signalASIAccent,
+        badge: String(
+          format: t("cc_privacy_destination_count", "%d destinations"),
+          disclosureSummary.destinations
+        )
+      ) {
+        SignalASIPrivacyControlCenterView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_audit_title", "Permissions & Audit"),
         subtitle: t("cc_audit_subtitle_ios", "Confirmation policy, iOS permissions, and operation history"),
         systemImage: "fingerprint",
@@ -284,13 +296,10 @@ struct SignalASIControlCenterView: View {
         title: t("cc_data_title", "Data & Backup"),
         subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
         systemImage: "externaldrive",
-        tint: disclosureSummary.blocked > 0 ? .orange : .purple,
-        badge: String(
-          format: t("cc_privacy_destination_count", "%d destinations"),
-          disclosureSummary.destinations
-        )
+        tint: .purple,
+        badge: t("signalasi.data_backup.available", "Available")
       ) {
-        AgentDataDisclosureDashboardView()
+        SignalASIDataBackupView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_general_title", "General & About"),
