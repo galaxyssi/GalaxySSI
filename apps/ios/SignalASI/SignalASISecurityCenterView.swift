@@ -27,6 +27,10 @@ struct SignalASISecurityCenterView: View {
       }
   }
 
+  private var trustedContactCount: Int {
+    store.visibleContacts.filter(\.isCommunicable).count
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -133,6 +137,15 @@ struct SignalASISecurityCenterView: View {
           ) {
             SignalASIDeviceSecurityDetailView(desktopId: summary.link.desktopId)
           }
+        }
+        SignalASISecurityNavigationRow(
+          title: t("cc_contacts_title", "Contacts"),
+          subtitle: t("cc_contacts_subtitle", "People, Agents, models, devices, and remarks"),
+          systemImage: "person.2",
+          tint: .purple,
+          badge: "\(trustedContactCount)"
+        ) {
+          ContactsView()
         }
         SignalASISecurityNavigationRow(
           title: t("signalasi.security_center.scan", "Scan"),
