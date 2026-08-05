@@ -158,6 +158,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var taskHistory: [AgentTaskRecord]?
   var proactiveTasks: [AgentProactiveTask]?
   var proactiveRuns: [AgentProactiveRun]?
+  var globalProactiveMessages: [GlobalProactiveMessage]?
+  var globalAgentFeedback: [GlobalAgentFeedback]?
   var agentConversations: [AgentConversation]?
   var activeAgentConversationId: String
   var voiceSettings: VoiceSettings
@@ -181,6 +183,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskHistory: nil,
     proactiveTasks: nil,
     proactiveRuns: nil,
+    globalProactiveMessages: nil,
+    globalAgentFeedback: nil,
     agentConversations: nil,
     activeAgentConversationId: "",
     voiceSettings: .default,
@@ -205,6 +209,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskHistory: [AgentTaskRecord]? = nil,
     proactiveTasks: [AgentProactiveTask]? = nil,
     proactiveRuns: [AgentProactiveRun]? = nil,
+    globalProactiveMessages: [GlobalProactiveMessage]? = nil,
+    globalAgentFeedback: [GlobalAgentFeedback]? = nil,
     agentConversations: [AgentConversation]? = nil,
     activeAgentConversationId: String = "",
     voiceSettings: VoiceSettings,
@@ -229,6 +235,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.taskHistory = taskHistory.map { Array($0.suffix(200)) }
     self.proactiveTasks = proactiveTasks.map { Array($0.suffix(200)) }
     self.proactiveRuns = proactiveRuns.map { Array($0.suffix(500)) }
+    self.globalProactiveMessages = globalProactiveMessages.map { Array($0.suffix(500)) }
+    self.globalAgentFeedback = globalAgentFeedback.map { Array($0.suffix(500)) }
     self.agentConversations = agentConversations.map { Array($0.suffix(200)) }
     self.activeAgentConversationId = activeAgentConversationId
     self.voiceSettings = voiceSettings
@@ -253,6 +261,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case taskHistory = "task_history"
     case proactiveTasks = "proactive_tasks"
     case proactiveRuns = "proactive_runs"
+    case globalProactiveMessages = "global_proactive_messages"
+    case globalAgentFeedback = "global_agent_feedback"
     case agentConversations = "agent_conversations"
     case activeAgentConversationId = "active_agent_conversation_id"
     case voiceSettings = "voice_settings"
@@ -296,6 +306,12 @@ struct SignalASIBackupAgentData: Codable, Equatable {
       Array($0.suffix(200))
     }
     proactiveRuns = try container.decodeIfPresent([AgentProactiveRun].self, forKey: .proactiveRuns).map {
+      Array($0.suffix(500))
+    }
+    globalProactiveMessages = try container.decodeIfPresent([GlobalProactiveMessage].self, forKey: .globalProactiveMessages).map {
+      Array($0.suffix(500))
+    }
+    globalAgentFeedback = try container.decodeIfPresent([GlobalAgentFeedback].self, forKey: .globalAgentFeedback).map {
       Array($0.suffix(500))
     }
     agentConversations = try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations).map {

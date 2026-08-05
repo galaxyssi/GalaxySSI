@@ -22,6 +22,8 @@ struct SignalASIGlobalAgentControlView: View {
       knowledgeAudit: store.agentKnowledgeAccessAudit,
       automationTasks: store.automationTasks(),
       automationRuns: store.recentAutomationRuns(limit: 80),
+      proactiveMessages: store.globalProactiveMessages,
+      proactiveFeedback: store.globalAgentFeedback,
       cognitionTasks: cognitionTasks,
       autonomousRuns: autonomousRuns,
       longHorizonGoals: longHorizonGoals,
@@ -450,16 +452,31 @@ struct SignalASIGlobalAgentControlView: View {
     subtitle: String,
     systemImage: String,
     tint: Color
-  ) -> some View {
-    SignalASISecurityNavigationRow(
-      title: title,
-      subtitle: subtitle,
-      systemImage: systemImage,
-      tint: tint,
-      badge: "\(snapshot.count(for: kind))"
-    ) {
-      SignalASIGlobalAgentDetailView(kind: kind, snapshot: snapshot)
+  ) -> AnyView {
+    if kind == .insights {
+      return AnyView(
+        SignalASISecurityNavigationRow(
+          title: title,
+          subtitle: subtitle,
+          systemImage: systemImage,
+          tint: tint,
+          badge: "\(snapshot.count(for: kind))"
+        ) {
+          SignalASIGlobalAgentInsightInboxView()
+        }
+      )
     }
+    return AnyView(
+      SignalASISecurityNavigationRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: "\(snapshot.count(for: kind))"
+      ) {
+        SignalASIGlobalAgentDetailView(kind: kind, snapshot: snapshot)
+      }
+    )
   }
 
   private func toggleRow(
@@ -561,7 +578,247 @@ struct SignalASIGlobalAgentControlView: View {
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
+    if LanguagePolicySettings.resolveInterface(interfaceLanguage) == LanguagePolicySettings.zhCN,
+       let localized = Self.zhOverrides[key] {
+      return localized
+    }
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  fileprivate static let zhOverrides: [String: String] = [
+    "agent_global_feedback_helpful": "有帮助",
+    "agent_global_feedback_not_relevant": "不相关",
+    "agent_global_feedback_too_frequent": "太频繁",
+    "agent_global_feedback_saved": "反馈已保存，SignalASI 会调整后续洞察。",
+    "agent_global_feedback_unavailable": "这条洞察已无法关联到来源。",
+    "agent_global_insights_title": "SignalASI 洞察",
+    "agent_global_insights_empty": "暂无近期 SignalASI 洞察。",
+    "agent_global_insight_current_topic": "当前话题",
+    "agent_global_insight_new_topic": "新话题",
+    "agent_global_insight_digest": "摘要",
+    "agent_global_insight_urgent": "重要",
+    "agent_global_insight_open_topic": "打开话题",
+    "agent_global_insight_source": "来自 %@",
+    "agent_global_insight_feedback_hint": "你的反馈会影响 SignalASI 之后介入的时机和方式。"
+  ]
+}
+
+struct SignalASIGlobalAgentInsightInboxView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var statusMessage = ""
+
+  private var items: [GlobalProactiveInboxItem] {
+    store.globalProactiveInboxItems(limit: 40)
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("agent_global_insights_title", "SignalASI insights"),
+        leading: { SignalASIBackButton() },
+        trailing: { Color.clear }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          if !statusMessage.isEmpty {
+            SignalASISecurityStatusRow(
+              title: t("agent_global_feedback_saved", "Feedback saved. SignalASI will adapt future insights."),
+              subtitle: statusMessage,
+              systemImage: "checkmark.circle",
+              tint: .signalASIAccent,
+              badge: t("signalasi.status.ready", "Ready")
+            )
+          }
+          if items.isEmpty {
+            SignalASIGlobalAgentPlainRow(
+              title: t("agent_global_insights_empty", "No recent SignalASI insights."),
+              subtitle: t("cc_global_pending_insights_subtitle", "Findings waiting for the right delivery moment"),
+              systemImage: "sparkles",
+              tint: .purple,
+              badge: "0"
+            )
+          } else {
+            ForEach(items) { item in
+              SignalASIGlobalInsightCard(
+                item: item,
+                targetLabel: targetLabel(item.target),
+                feedbackLabel: item.feedbackKind.map(feedbackLabel),
+                feedbackHint: t(
+                  "agent_global_insight_feedback_hint",
+                  "Your feedback changes when and where SignalASI intervenes."
+                ),
+                sourceLabel: sourceLabel(item),
+                openTitle: t("agent_global_insight_open_topic", "Open topic"),
+                helpfulTitle: t("agent_global_feedback_helpful", "Helpful"),
+                notRelevantTitle: t("agent_global_feedback_not_relevant", "Not relevant"),
+                tooFrequentTitle: t("agent_global_feedback_too_frequent", "Too frequent"),
+                onOpen: markViewed,
+                onFeedback: recordFeedback
+              )
+              .onAppear { store.markGlobalProactiveInboxViewed(item) }
+            }
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+
+  private func sourceLabel(_ item: GlobalProactiveInboxItem) -> String {
+    var parts = [targetLabel(item.target)]
+    if item.urgent {
+      parts.append(t("agent_global_insight_urgent", "Important"))
+    }
+    let source = item.topic.ifBlank(item.sourceConversationId).ifBlank("SignalASI")
+    parts.append(String(format: t("agent_global_insight_source", "From %@"), source))
+    return parts.joined(separator: " / ")
+  }
+
+  private func targetLabel(_ target: GlobalProactiveTarget) -> String {
+    switch target {
+    case .currentConversation:
+      return t("agent_global_insight_current_topic", "Current topic")
+    case .newConversation:
+      return t("agent_global_insight_new_topic", "New topic")
+    case .globalDigest:
+      return t("agent_global_insight_digest", "Digest")
+    }
+  }
+
+  private func feedbackLabel(_ kind: GlobalAgentFeedbackKind) -> String {
+    switch kind {
+    case .helpful:
+      return t("agent_global_feedback_helpful", "Helpful")
+    case .notRelevant:
+      return t("agent_global_feedback_not_relevant", "Not relevant")
+    case .tooFrequent:
+      return t("agent_global_feedback_too_frequent", "Too frequent")
+    }
+  }
+
+  private func markViewed(_ item: GlobalProactiveInboxItem) {
+    store.markGlobalProactiveInboxViewed(item)
+  }
+
+  private func recordFeedback(_ item: GlobalProactiveInboxItem, _ kind: GlobalAgentFeedbackKind) {
+    if store.recordGlobalInsightFeedback(inboxItem: item, kind: kind) {
+      statusMessage = t("agent_global_feedback_saved", "Feedback saved. SignalASI will adapt future insights.")
+    } else {
+      statusMessage = t("agent_global_feedback_unavailable", "This insight can no longer be linked to its source.")
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    if LanguagePolicySettings.resolveInterface(interfaceLanguage) == LanguagePolicySettings.zhCN,
+       let localized = SignalASIGlobalAgentControlView.zhOverrides[key] {
+      return localized
+    }
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIGlobalInsightCard: View {
+  var item: GlobalProactiveInboxItem
+  var targetLabel: String
+  var feedbackLabel: String?
+  var feedbackHint: String
+  var sourceLabel: String
+  var openTitle: String
+  var helpfulTitle: String
+  var notRelevantTitle: String
+  var tooFrequentTitle: String
+  var onOpen: (GlobalProactiveInboxItem) -> Void
+  var onFeedback: (GlobalProactiveInboxItem, GlobalAgentFeedbackKind) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top, spacing: 10) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill((item.urgent ? Color.orange : Color.purple).opacity(0.14))
+          Image(systemName: item.urgent ? "exclamationmark.bubble" : "sparkles")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(item.urgent ? .orange : .purple)
+        }
+        .frame(width: 38, height: 38)
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            Text(item.title.ifBlank(targetLabel))
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(2)
+            if item.isNew {
+              SignalASIGlobalAgentBadge(text: "NEW", tint: .purple)
+            }
+            if let feedbackLabel {
+              SignalASIGlobalAgentBadge(text: feedbackLabel, tint: .signalASIAccent)
+            }
+          }
+          Text(sourceLabel)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.signalASITextSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 0)
+      }
+      Text(item.content.ifBlank(item.topic))
+        .font(.system(size: 14))
+        .foregroundColor(.signalASITextPrimary)
+        .fixedSize(horizontal: false, vertical: true)
+      Text(feedbackHint)
+        .font(.system(size: 12))
+        .foregroundColor(.signalASITextSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      LazyVGrid(columns: feedbackColumns, alignment: .leading, spacing: 8) {
+        NavigationLink(destination: SignalASIAgentSessionsView()) {
+          SignalASIGlobalFeedbackChip(title: openTitle, emphasized: false)
+        }
+        .simultaneousGesture(TapGesture().onEnded { onOpen(item) })
+        Button { onFeedback(item, .helpful) } label: {
+          SignalASIGlobalFeedbackChip(title: helpfulTitle, emphasized: item.feedbackKind == .helpful)
+        }
+        Button { onFeedback(item, .notRelevant) } label: {
+          SignalASIGlobalFeedbackChip(title: notRelevantTitle, emphasized: item.feedbackKind == .notRelevant)
+        }
+        Button { onFeedback(item, .tooFrequent) } label: {
+          SignalASIGlobalFeedbackChip(title: tooFrequentTitle, emphasized: item.feedbackKind == .tooFrequent)
+        }
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(12)
+    .background(Color.signalASISurface)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+      .stroke(Color.signalASISeparator, lineWidth: 0.5)
+    )
+    .cornerRadius(8)
+  }
+
+  private var feedbackColumns: [GridItem] {
+    [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
+  }
+}
+
+private struct SignalASIGlobalFeedbackChip: View {
+  var title: String
+  var emphasized: Bool
+
+  var body: some View {
+    Text(title)
+      .font(.system(size: 12, weight: .semibold))
+      .foregroundColor(emphasized ? .white : .signalASITextPrimary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
+      .padding(.horizontal, 9)
+      .padding(.vertical, 7)
+      .background(emphasized ? Color.signalASIAccent : Color.signalASIButtonSoft)
+      .cornerRadius(7)
   }
 }
 
