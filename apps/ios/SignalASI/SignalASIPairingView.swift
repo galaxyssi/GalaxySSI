@@ -314,6 +314,13 @@ struct PairingView: View {
           format: t("signalasi.friend_request.added", "Friend request added for %@."),
           stored.name
         )
+      case .contacts(let requests):
+        let stored = requests.map { store.addFriendRequest($0) }
+        pendingPairing = nil
+        errorText = String(
+          format: t("signalasi.pairing.agent_requests_received", "%d Agent requests received."),
+          stored.count
+        )
       }
     } catch {
       pendingPairing = nil
