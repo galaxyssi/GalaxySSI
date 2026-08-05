@@ -2802,6 +2802,18 @@
 "delivery_trace_agent_started" = "Agent 已启动";
 "delivery_trace_agent_first_output" = "Agent 首次输出";
 "delivery_trace_agent_replied" = "Agent 已回复";
+"agent_task_status_accepted" = "已接受";
+"agent_task_status_queued" = "排队中";
+"agent_task_status_starting" = "正在启动";
+"agent_task_status_recovering" = "正在恢复";
+"agent_task_status_running" = "运行中";
+"agent_task_status_waiting_input" = "等待输入";
+"agent_task_status_waiting_approval" = "等待审批";
+"agent_task_status_completed" = "已完成";
+"agent_task_status_failed" = "执行失败";
+"agent_task_status_cancelled" = "已取消";
+"agent_task_status_timed_out" = "已超时";
+"agent_task_status_cancelling" = "正在取消";
 "delivery_trace_desktop_reply_queued" = "桌面回复已入队";
 "delivery_trace_desktop_reply_ack" = "桌面回复 Broker ACK";
 "delivery_trace_desktop_broker_ack" = "Broker 已确认";
@@ -2816,6 +2828,7 @@
 "delivery_trace_cloud_reply" = "模型已回复";
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
+"delivery_status_local_saved" = "本地保存";
 "section_current" = "当前";
 "settings_language_use" = "使用";
 "voice_asr_recognition_mode_section" = "识别模式";

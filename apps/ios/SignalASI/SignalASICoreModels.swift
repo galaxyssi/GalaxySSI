@@ -391,6 +391,18 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
     case "agent_started": return "Agent started"
     case "agent_first_output": return "First Agent output"
     case "agent_replied": return "Agent replied"
+    case "agent_accepted": return "Accepted"
+    case "agent_queued": return "Queued"
+    case "agent_starting": return "Starting"
+    case "agent_recovering": return "Recovering"
+    case "agent_running": return "Running"
+    case "agent_waiting_input": return "Waiting for input"
+    case "agent_waiting_approval": return "Waiting for approval"
+    case "agent_completed": return "Completed"
+    case "agent_failed": return "Failed"
+    case "agent_cancelled": return "Cancelled"
+    case "agent_timed_out": return "Timed out"
+    case "agent_cancelling": return "Cancelling"
     case "desktop_reply_publish_queued": return "Desktop reply queued"
     case "desktop_reply_broker_ack": return "Desktop reply Broker ACK"
     case "desktop_broker_ack": return "Broker confirmed"
@@ -405,6 +417,7 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
     case "cloud_reply": return "Model replied"
     case "cloud_reply_received": return "Model reply received"
     case "cloud_error": return "Model error"
+    case "local_saved": return "Saved locally"
     default: return stage
     }
   }
