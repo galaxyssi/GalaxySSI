@@ -282,7 +282,8 @@ enum AgentTranscriptPresentationPolicy {
 
   static func collapseProcessGroups(_ entries: [AgentTranscriptEntry]) -> [AgentTranscriptEntry] {
     let retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filter { entry in
-      !isRedundantConnectorCompletion(entry) &&
+      !AgentVoiceTranscriptPolicy.isPending(entry) &&
+        !isRedundantConnectorCompletion(entry) &&
         !isInternalRuntimeHandoff(entry) &&
         !isLegacyToolStepSummary(entry)
     }
@@ -602,6 +603,22 @@ enum AgentConversationStatus: String, Codable, CaseIterable, Identifiable {
     var container = encoder.singleValueContainer()
     try container.encode(rawValue)
   }
+}
+
+enum AgentVoiceTranscriptPolicy {
+  static func dedupeKey(recordingName: String) -> String {
+    "\(dedupePrefix)\(recordingName.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  static func isVoiceTranscript(_ entry: AgentTranscriptEntry) -> Bool {
+    entry.role == .user && entry.dedupeKey.hasPrefix(dedupePrefix)
+  }
+
+  static func isPending(_ entry: AgentTranscriptEntry) -> Bool {
+    isVoiceTranscript(entry) && entry.turnId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private static let dedupePrefix = "agent-voice-transcription:"
 }
 
 struct AgentConversation: Codable, Equatable, Identifiable {
