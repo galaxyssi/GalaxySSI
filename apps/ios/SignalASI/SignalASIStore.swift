@@ -518,6 +518,8 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
+    defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
+    defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
     agentWorkspaceStore.clear()
