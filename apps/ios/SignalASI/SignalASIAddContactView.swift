@@ -26,6 +26,10 @@ struct AddContactView: View {
     self.autoOpenScanner = autoOpenScanner
   }
 
+  private var pendingScannedAgentRequests: [SignalASIFriendRequest] {
+    pendingScannedRequests.filter { $0.type == "agent" }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -120,25 +124,20 @@ struct AddContactView: View {
               t: t
             )
           }
-          if pendingScannedRequests.count > 1 {
+          if !pendingScannedAgentRequests.isEmpty {
+            let agentCount = pendingScannedAgentRequests.count
             sectionTitle(t("signalasi.pairing.scanned_agents_title", "Scanned Agents"))
             AddContactBulkAgentImportCard(
-              count: pendingScannedRequests.count,
+              count: agentCount,
               title: t("signalasi.pairing.scanned_agents_title", "Scanned Agents"),
-              subtitle: String(
-                format: t(
-                  "signalasi.pairing.scanned_agents_subtitle",
-                  "%d Agents are ready to save as Contacts."
-                ),
-                pendingScannedRequests.count
-              ),
-              approveTitle: t("signalasi.pairing.add_all_agents", "Add All"),
+              subtitle: scannedAgentsSubtitle(count: agentCount),
+              approveTitle: scannedAgentsApproveTitle(count: agentCount),
               cancelTitle: t("signalasi.common.cancel", "Cancel"),
               onApprove: approvePendingScannedRequests,
               onCancel: clearPendingScanResult
             )
           }
-          if let pendingFriendRequest, pendingScannedRequests.count <= 1 {
+          if let pendingFriendRequest, pendingScannedAgentRequests.isEmpty && pendingScannedRequests.count <= 1 {
             sectionTitle(t("signalasi.friend_request.pending", "Pending Verification"))
             AddContactFriendRequestCard(
               request: pendingFriendRequest,
@@ -349,13 +348,13 @@ struct AddContactView: View {
     pendingScannedRequests = []
     pendingFriendRequest = nil
     if approvedCount > 0 {
-      setImportStatus(
-        String(
-          format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
-          approvedCount
-        ),
-        isError: false
-      )
+      let message = approvedCount == 1
+        ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
+        : String(
+            format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
+            approvedCount
+          )
+      setImportStatus(message, isError: false)
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
     }
@@ -399,6 +398,22 @@ struct AddContactView: View {
       format: t("signalasi.pairing.agent_requests_received", "%d Agent requests received."),
       requests.count
     )
+  }
+
+  private func scannedAgentsSubtitle(count: Int) -> String {
+    if count == 1 {
+      return t("signalasi.pairing.scanned_agent_subtitle", "1 Agent is ready to save as a Contact.")
+    }
+    return String(
+      format: t("signalasi.pairing.scanned_agents_subtitle", "%d Agents are ready to save as Contacts."),
+      count
+    )
+  }
+
+  private func scannedAgentsApproveTitle(count: Int) -> String {
+    count == 1
+      ? t("signalasi.pairing.add_agent", "Add Agent")
+      : t("signalasi.pairing.add_all_agents", "Add All")
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

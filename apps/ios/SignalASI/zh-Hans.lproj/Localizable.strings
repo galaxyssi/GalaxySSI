@@ -1101,13 +1101,16 @@
 "signalasi.pairing.agent_request_received" = "已收到 Agent 请求：%@";
 "signalasi.pairing.agent_requests_received" = "已收到 %d 个 Agent 请求。";
 "signalasi.pairing.scanned_agents_title" = "已扫描 Agent";
+"signalasi.pairing.scanned_agent_subtitle" = "1 个 Agent 已准备加入通讯录。";
 "signalasi.pairing.scanned_agents_subtitle" = "%d 个 Agent 已准备加入通讯录。";
 "signalasi.pairing.added_agents_title" = "已添加 Agent";
 "signalasi.pairing.added_agents_subtitle" = "%d 个来自 %@ 的 Agent 已可在通讯录中使用。";
 "signalasi.pairing.more_added_agents" = "还有 %d 个 Agent";
 "signalasi.pairing.view_contacts" = "查看通讯录";
 "signalasi.pairing.view_contacts_subtitle" = "打开通讯录查看完整导入的 Agent 列表。";
+"signalasi.pairing.add_agent" = "加入 Agent";
 "signalasi.pairing.add_all_agents" = "全部加入";
+"signalasi.pairing.agent_request_added" = "已添加 Agent 到通讯录。";
 "signalasi.pairing.agent_requests_added" = "已添加 %d 个 Agent 到通讯录。";
 "signalasi.pairing.device_request_received" = "已收到设备请求：%@";
 "signalasi.pairing.hermes_request_received" = "已收到 Hermes 请求：%@";
