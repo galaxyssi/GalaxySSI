@@ -579,7 +579,11 @@ final class MessageCoordinator: ObservableObject {
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
+  private var lastConnectorStatusRequestAtMillis: Int64 = 0
+  private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
+  private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
+  private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
 
   init(
     store: SignalASIStore,
@@ -612,6 +616,7 @@ final class MessageCoordinator: ObservableObject {
       guard connected else { return }
       Task { @MainActor in
         self?.scheduleOutboxFlush(after: 0)
+        self?.requestConnectorStatuses()
       }
     }
   }
@@ -622,6 +627,50 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
+  }
+
+  @discardableResult
+  func requestCapabilityManifestRefresh(force: Bool = false, now: Date = Date()) -> Bool {
+    if !force && !store.serverLinks.contains(where: {
+      $0.paired && SignalASILinkProtocol.needsCapabilityManifest($0)
+    }) {
+      return false
+    }
+    return requestConnectorStatuses(forceCapabilityManifest: force, now: now)
+  }
+
+  @discardableResult
+  private func requestConnectorStatuses(
+    forceCapabilityManifest: Bool = false,
+    now: Date = Date()
+  ) -> Bool {
+    guard mqttClient.isConnected else {
+      return false
+    }
+    let links = store.serverLinks.filter { $0.paired }
+    guard !links.isEmpty else {
+      return false
+    }
+    let nowMillis = Int64(now.timeIntervalSince1970 * 1000)
+    if forceCapabilityManifest {
+      guard nowMillis - lastCapabilityManifestRequestAtMillis >= Self.capabilityManifestRequestThrottleMillis else {
+        return false
+      }
+      lastCapabilityManifestRequestAtMillis = nowMillis
+    } else {
+      guard nowMillis - lastConnectorStatusRequestAtMillis >= Self.connectorStatusRequestThrottleMillis else {
+        return false
+      }
+      lastConnectorStatusRequestAtMillis = nowMillis
+    }
+    Task { [weak self] in
+      await self?.publishConnectorStatusRequests(
+        links: links,
+        forceCapabilityManifest: forceCapabilityManifest,
+        now: now
+      )
+    }
+    return true
   }
 
   func send(
@@ -844,6 +893,7 @@ final class MessageCoordinator: ObservableObject {
     if result.accepted {
       store.markServerPaired(desktopId: qr.desktopId, access: qr.access)
       pairingStatus = "Pairing confirmed"
+      requestCapabilityManifestRefresh(force: true)
     } else {
       pairingStatus = "Pairing claim failed"
       throw SignalASIError.invalidPayload("SignalASI Link is offline")
@@ -1042,6 +1092,24 @@ final class MessageCoordinator: ObservableObject {
     return (messageId, String(decoding: wireData, as: UTF8.self), wireData)
   }
 
+  private func publishConnectorStatusRequests(
+    links: [ServerLink],
+    forceCapabilityManifest: Bool,
+    now: Date
+  ) async {
+    for link in links {
+      let payload = SignalASILinkProtocol.connectorStatusRequestPayload(
+        link: link,
+        forceCapabilityManifest: forceCapabilityManifest,
+        now: now
+      )
+      guard let wire = try? linkWirePayload(payload, link: link) else {
+        continue
+      }
+      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    }
+  }
+
   private func handleIncoming(topic: String, payload: Data) {
     guard let rawObject = try? JSONSerialization.jsonObject(with: payload),
           let object = rawObject as? [String: Any] else {
@@ -1063,6 +1131,7 @@ final class MessageCoordinator: ObservableObject {
       _ = store.updateDesktopAgentContacts(from: object, link: serverLink(for: topic, payload: object) ?? link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
+      requestCapabilityManifestRefresh(force: true)
       return
     }
     let appPayload: [String: Any]
@@ -1204,6 +1273,7 @@ final class MessageCoordinator: ObservableObject {
       }
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
+      requestCapabilityManifestRefresh(force: true)
     }
 
     if hasManifestVersion {

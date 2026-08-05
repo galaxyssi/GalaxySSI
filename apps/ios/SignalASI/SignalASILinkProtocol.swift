@@ -56,6 +56,22 @@ enum SignalASILinkProtocol {
     link.capabilityManifestVersion < capabilityManifestVersion
   }
 
+  static func connectorStatusRequestPayload(
+    link: ServerLink,
+    contactId: String = "system",
+    forceCapabilityManifest: Bool = false,
+    now: Date = Date()
+  ) -> [String: Any] {
+    [
+      "type": "connector_status_request",
+      "contact_id": contactId,
+      "desktop_id": link.desktopId,
+      "capability_manifest_version": link.capabilityManifestVersion,
+      "request_capability_manifest": forceCapabilityManifest || needsCapabilityManifest(link),
+      "time": Int64(now.timeIntervalSince1970 * 1000)
+    ]
+  }
+
   static func decodePairingQRCode(from text: String, now: Date = Date()) throws -> PairingQRCode {
     let object = try SignalASIQRCodePayload.decodeObject(from: text, label: "Pairing QR")
     return try validatePairingQRCode(object, now: now)
