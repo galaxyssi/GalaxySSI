@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -127,8 +128,9 @@ struct AgentHomeView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
   @State private var attachments: [SignalASIDraftAttachment] = []
+  @State private var actionTrayPresented = false
   @State private var fileImporterPresented = false
-  @State private var photoPickerPresented = false
+  @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
 
@@ -180,8 +182,8 @@ struct AgentHomeView: View {
           attachmentError = error.localizedDescription
         }
       }
-      .sheet(isPresented: $photoPickerPresented) {
-        PhotoLibraryPickerView { attachment in
+      .fullScreenCover(isPresented: $cameraPickerPresented) {
+        CameraAttachmentPickerView { attachment in
           appendAttachment(attachment)
         }
       }
@@ -289,87 +291,89 @@ struct AgentHomeView: View {
   }
 
   private var agentComposer: some View {
-    VStack(spacing: 8) {
-      if !attachments.isEmpty {
-        AttachmentPreviewStrip(attachments: attachments) { attachment in
-          attachments.removeAll { $0.id == attachment.id }
-        }
-      }
-      if !attachmentError.isEmpty {
-        Text(attachmentError)
-          .font(.caption)
-          .foregroundColor(.red)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      HStack(spacing: 4) {
-        NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
-          Text(t("signalasi.agent.voice_button", "Hold to Talk"))
-            .font(.system(size: 15, weight: .bold))
-            .foregroundColor(Color(signalASIColor(0x087CFF)))
-            .frame(width: 112, height: 54)
-            .background(Color.signalASISurface)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .agentDeviceTouchTarget(deviceInputPolicy)
-
-        HStack(spacing: 6) {
-          TextField(t("signalasi.agent.goal_hint", "Type a message..."), text: $draft)
-            .textInputAutocapitalization(.sentences)
-            .lineLimit(1)
-          Button {
-            fileImporterPresented = true
-          } label: {
-            Image(systemName: "plus.circle")
-              .font(.system(size: 21, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-          }
-          .agentDeviceTouchTarget(deviceInputPolicy)
-          Button {
-            photoPickerPresented = true
-          } label: {
-            Image(systemName: "photo")
-              .font(.system(size: 20, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-          }
-          .agentDeviceTouchTarget(deviceInputPolicy)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
-        .frame(minHeight: 54)
-        .background(Color.signalASISurface)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-        Button {
-          sendAgentMessage()
-        } label: {
-          Image(systemName: "arrow.up")
-            .font(.system(size: 20, weight: .bold))
-            .foregroundColor(canSend ? .white : .signalASITextSecondary)
-            .frame(width: 54, height: 54)
-            .background(
-              RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(canSend ? Color.signalASIAccent : Color.signalASIButtonSoft)
-            )
-        }
-        .buttonStyle(.plain)
-        .agentDeviceTouchTarget(deviceInputPolicy)
-        .disabled(!canSend)
-      }
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .background(Color.signalASIBarBackground)
+    SignalASIAgentComposerView(
+      draft: $draft,
+      actionTrayPresented: $actionTrayPresented,
+      attachments: attachments,
+      attachmentError: attachmentError,
+      canSend: canSend,
+      deviceInputPolicy: deviceInputPolicy,
+      onRemoveAttachment: { attachment in
+        attachments.removeAll { $0.id == attachment.id }
+      },
+      onNewSession: createAgentConversation,
+      onTakePhoto: openCameraAttachmentPicker,
+      onAddFile: {
+        fileImporterPresented = true
+      },
+      onSend: sendAgentMessage,
+      t: t
+    )
   }
 
   private func sendAgentMessage() {
-    let text = draft
+    let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = attachments
+    let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
+    let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
+      ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
+      : ""
     draft = ""
     attachments.removeAll()
+    actionTrayPresented = false
     attachmentError = ""
     Task {
-      await coordinator.send(text, to: contact, attachments: outgoingAttachments)
+      await coordinator.send(
+        text,
+        to: contact,
+        attachments: outgoingAttachments,
+        agentGoalOverride: agentGoal
+      )
+    }
+  }
+
+  private func createAgentConversation() {
+    _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+    draft = ""
+    attachments.removeAll()
+    actionTrayPresented = false
+    attachmentError = ""
+  }
+
+  private func openCameraAttachmentPicker() {
+    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+      attachmentError = t("agent_attachment_camera_unavailable", "Camera is unavailable")
+      return
+    }
+
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      cameraPickerPresented = true
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async {
+          if granted {
+            cameraPickerPresented = true
+          } else {
+            attachmentError = t("signalasi.scanner.camera_access_required", "Camera access is required to scan SignalASI QR codes.")
+          }
+        }
+      }
+    case .denied, .restricted:
+      attachmentError = t("signalasi.scanner.camera_access_required", "Camera access is required to scan SignalASI QR codes.")
+    @unknown default:
+      cameraPickerPresented = true
+    }
+  }
+
+  private func attachmentLabel(for values: [SignalASIDraftAttachment]) -> String {
+    switch values.count {
+    case 0:
+      return ""
+    case 1:
+      return values[0].label
+    default:
+      return String(format: t("agent_attachment_count", "%d attachments"), values.count)
     }
   }
 
@@ -384,7 +388,7 @@ struct AgentHomeView: View {
 
   private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
     guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
-      attachmentError = t("signalasi.attachment.limit", "Attachment limit reached or file is too large.")
+      attachmentError = t("agent_attachment_rejected", "Some attachments were skipped. You can add up to 10 files, 20 MB each.")
       return
     }
     attachments.append(attachment)

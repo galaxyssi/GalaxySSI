@@ -948,6 +948,10 @@
 "agent_attachment_take_photo" = "拍照";
 "agent_attachment_add_photos" = "添加照片";
 "agent_attachment_new_task" = "新建会话";
+"agent_attachment_sessions" = "会话列表";
+"agent_attachment_scan" = "扫一扫";
+"agent_attachment_open_menu" = "更多功能";
+"agent_attachment_close_menu" = "收起功能";
 "agent_attachment_add_file" = "添加文件";
 "agent_attachment_remove" = "移除附件";
 "agent_attachment_count" = "%d 个附件";
