@@ -2258,7 +2258,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 } else null
                 val originatingChatMessage = messages[msg.contact.id]
                     ?.firstOrNull { it.isMine && it.id == sourceMessageId }
-                if (matchingAgentRuntime == null && originatingChatMessage != null) {
+                val nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
+                    superseded = supersededResponse,
+                    hasRuntime = matchingAgentRuntime != null,
+                    resolvedConversationId = resolvedResponseConversationId
+                )
+                if (!nativeAgentResponse && originatingChatMessage != null) {
                     val expectedConversationId = AgentTaskIdentityPolicy.conversationId(
                         msg.contact.id,
                         ""
@@ -2279,8 +2284,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         return@runOnUiThread
                     }
                 }
-                val nativeAgentResponse = supersededResponse || matchingAgentRuntime != null
-                if (publishAgentConnectorResponse(envelope, msg)) return@runOnUiThread
+                if (nativeAgentResponse && publishAgentConnectorResponse(envelope, msg)) {
+                    return@runOnUiThread
+                }
                 val voiceTraceId = envelope?.optString("trace_id").orEmpty()
                 if (voiceTraceId.isNotBlank()) {
                     activeVoiceTraceId = voiceTraceId

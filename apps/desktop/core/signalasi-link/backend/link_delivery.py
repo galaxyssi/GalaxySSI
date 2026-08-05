@@ -429,16 +429,29 @@ def _outbound_retry_due(status: str, attempts: int, updated_at: float, now: floa
     return now >= updated_at + outbound_retry_delay_seconds(attempts)
 
 
-def outbound_inflight_count(now: float | None = None) -> int:
+def outbound_inflight_count(
+    now: float | None = None,
+    *,
+    client_route_id: str = "",
+) -> int:
     observed_at = time.time() if now is None else float(now)
+    normalized_route_id = str(client_route_id or "").strip()
     with _lock:
         db = _connect()
         try:
-            rows = db.execute(
-                """SELECT status,attempts,updated_at
-                   FROM outbound_messages
-                   WHERE status IN ('sending','published')"""
-            ).fetchall()
+            if normalized_route_id:
+                rows = db.execute(
+                    """SELECT status,attempts,updated_at
+                       FROM outbound_messages
+                       WHERE client_route_id=? AND status IN ('sending','published')""",
+                    (_route(normalized_route_id),),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT status,attempts,updated_at
+                       FROM outbound_messages
+                       WHERE status IN ('sending','published')"""
+                ).fetchall()
         finally:
             db.close()
     return sum(
@@ -453,9 +466,11 @@ def pending_outbound(
     *,
     limit: int | None = None,
     now: float | None = None,
+    client_route_id: str = "",
 ) -> list[dict]:
     del max_attempts
     observed_at = time.time() if now is None else float(now)
+    normalized_route_id = str(client_route_id or "").strip()
     with _lock:
         db = _connect()
         try:
@@ -463,18 +478,28 @@ def pending_outbound(
                 "DELETE FROM outbound_messages WHERE created_at < ?",
                 (time.time() - OUTBOUND_RETENTION_SECONDS,),
             )
-            rows = db.execute(
-                """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                          updated_at,status
-                   FROM outbound_messages
-                   WHERE status IN ('queued','sending','published')
-                   ORDER BY CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
-            ).fetchall()
+            if normalized_route_id:
+                rows = db.execute(
+                    """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
+                              updated_at,status
+                       FROM outbound_messages
+                       WHERE client_route_id=? AND status IN ('queued','sending','published')
+                       ORDER BY created_at""",
+                    (_route(normalized_route_id),),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
+                              updated_at,status
+                       FROM outbound_messages
+                       WHERE status IN ('queued','sending','published')
+                       ORDER BY CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
+                ).fetchall()
             db.commit()
         finally:
             db.close()
-    pending = [
-        {
+    decoded = [
+        ({
             "client_route_id": _unroute(row[0]),
             "message_id": row[1],
             "topic": _reveal(row[2], "topic"),
@@ -483,8 +508,18 @@ def pending_outbound(
             "created_at": row[5],
             "updated_at": row[6],
             "status": row[7],
-        }
+        }, _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at))
         for row in rows
-        if _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at)
     ]
+    if normalized_route_id:
+        pending = []
+        for item, retry_due in decoded:
+            if retry_due:
+                pending.append(item)
+            elif item["status"] == "queued":
+                # A failed earlier ciphertext must be retried before later
+                # ciphertexts for the same Signal session are published.
+                break
+    else:
+        pending = [item for item, retry_due in decoded if retry_due]
     return pending if limit is None else pending[:max(0, int(limit))]

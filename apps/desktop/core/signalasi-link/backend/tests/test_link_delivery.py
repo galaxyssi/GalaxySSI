@@ -61,6 +61,46 @@ class LinkDeliveryTest(unittest.TestCase):
                 due = link_delivery.pending_outbound(limit=2, now=101.0)
                 self.assertEqual(["message-2", "message-3"], [item["message_id"] for item in due])
 
+    def test_route_filter_keeps_failed_ciphertexts_in_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "delivery.db"
+            with patch.object(link_delivery, "DB_PATH", database):
+                with patch.object(link_delivery.time, "time", return_value=100.0):
+                    link_delivery.queue_outbound("current", "first", "topic", "wire-1")
+                    link_delivery.queue_outbound("offline", "other", "topic", "wire-old")
+                with patch.object(link_delivery.time, "time", return_value=101.0):
+                    link_delivery.mark_outbound_sending("offline", "other")
+                    link_delivery.mark_outbound_sending("current", "first")
+                    link_delivery.mark_outbound_retryable("current", "first")
+                with patch.object(link_delivery.time, "time", return_value=102.0):
+                    link_delivery.queue_outbound("current", "second", "topic", "wire-2")
+
+                with patch.object(link_delivery.time, "time", return_value=102.0):
+                    self.assertEqual(
+                        1,
+                        link_delivery.outbound_inflight_count(
+                            now=102.0,
+                            client_route_id="offline",
+                        ),
+                    )
+                    self.assertEqual(
+                        [],
+                        link_delivery.pending_outbound(
+                            now=105.999,
+                            client_route_id="current",
+                        ),
+                    )
+                    self.assertEqual(
+                        ["first", "second"],
+                        [
+                            item["message_id"]
+                            for item in link_delivery.pending_outbound(
+                                now=106.0,
+                                client_route_id="current",
+                            )
+                        ],
+                    )
+
     def test_transport_epoch_clears_obsolete_outbox_only_once(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "delivery.db"

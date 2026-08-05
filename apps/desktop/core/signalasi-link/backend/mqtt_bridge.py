@@ -120,7 +120,7 @@ PORT = int(os.environ.get("SIGNALASI_MQTT_PORT", "8883"))
 MQTT_TLS = os.environ.get("SIGNALASI_MQTT_TLS", "1") != "0"
 FILES_DIR = Path.home() / "signalasi_files"
 MQTT_QOS = 1
-MQTT_TRANSPORT_EPOCH = "v7-flow-control"
+MQTT_TRANSPORT_EPOCH = "v8-route-ordered-delivery"
 MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
@@ -149,8 +149,9 @@ INBOUND_ROUTE_IDLE_SECONDS = 120
 MQTT_MAX_INFLIGHT = 64
 MAX_FRAGMENT_INFLIGHT = 48
 MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
-MAX_DURABLE_OUTBOUND_INFLIGHT = 8
-MAX_DURABLE_OUTBOUND_BATCH = 4
+MAX_DURABLE_OUTBOUND_INFLIGHT = 32
+MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 4
+MAX_DURABLE_OUTBOUND_BATCH = 8
 OUTBOUND_RETRY_POLL_SECONDS = 1.0
 durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
@@ -5941,26 +5942,55 @@ def publish_capability_manifest(mqttc, client_route_id: str) -> bool:
 def _publish_to_registered_client(
     mqttc, paired_client: dict, payload: dict, channel: str = "down", durable: bool = True
 ):
-    application_envelope = make_envelope(
-        payload,
-        source_id=desktop_id(),
-        target_id=paired_client["signal_name"],
-        conversation_id=str(payload.get("conversation_id") or ""),
-        reply_to=str(payload.get("source_message_id") or ""),
+    with phone_publish_lock:
+        application_envelope = make_envelope(
+            payload,
+            source_id=desktop_id(),
+            target_id=paired_client["signal_name"],
+            conversation_id=str(payload.get("conversation_id") or ""),
+            reply_to=str(payload.get("source_message_id") or ""),
+        )
+        topic = paired_client["topics"][channel]
+        message_id = application_envelope["message_id"]
+        client_route_id = paired_client["client_route_id"]
+        if durable and outbound_status(client_route_id, message_id):
+            published = flush_outbound_messages(
+                mqttc,
+                preferred_client_route_id=client_route_id,
+            )
+            return published.get((client_route_id, message_id), _DeferredPublishInfo())
+        encrypted = encrypt_signal_payload(
+            application_envelope,
+            remote_name=paired_client["signal_name"],
+        )
+        wire_payload = json.dumps(encrypted, ensure_ascii=False)
+        if not durable:
+            return _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
+        queue_outbound(client_route_id, message_id, topic, wire_payload)
+        published = flush_outbound_messages(
+            mqttc,
+            preferred_client_route_id=client_route_id,
+        )
+        return published.get((client_route_id, message_id), _DeferredPublishInfo())
+
+
+def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]:
+    preferred = str(preferred_client_route_id or "").strip()
+    clients = list_clients()
+    return sorted(
+        clients,
+        key=lambda paired: (
+            0 if str(paired.get("client_route_id") or "") == preferred else 1,
+            -float(paired.get("last_seen_at") or 0),
+        ),
     )
-    encrypted = encrypt_signal_payload(application_envelope, remote_name=paired_client["signal_name"])
-    topic = paired_client["topics"][channel]
-    wire_payload = json.dumps(encrypted, ensure_ascii=False)
-    message_id = application_envelope["message_id"]
-    if not durable:
-        return _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
-    client_route_id = paired_client["client_route_id"]
-    queue_outbound(client_route_id, message_id, topic, wire_payload)
-    published = flush_outbound_messages(mqttc)
-    return published.get((client_route_id, message_id), _DeferredPublishInfo())
 
 
-def flush_outbound_messages(mqttc) -> dict[tuple[str, str], object]:
+def flush_outbound_messages(
+    mqttc,
+    *,
+    preferred_client_route_id: str = "",
+) -> dict[tuple[str, str], object]:
     if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
         return {}
     published: dict[tuple[str, str], object] = {}
@@ -5972,7 +6002,34 @@ def flush_outbound_messages(mqttc) -> dict[tuple[str, str], object]:
         batch_size = min(MAX_DURABLE_OUTBOUND_BATCH, available)
         if batch_size <= 0:
             return published
-        for pending in pending_outbound(limit=batch_size):
+        route_candidates: list[list[dict]] = []
+        for paired_client in _ordered_outbound_clients(preferred_client_route_id):
+            client_route_id = str(paired_client.get("client_route_id") or "")
+            route_available = max(
+                0,
+                MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT - outbound_inflight_count(
+                    client_route_id=client_route_id,
+                ),
+            )
+            if route_available <= 0:
+                continue
+            candidates = pending_outbound(
+                limit=min(route_available, batch_size),
+                client_route_id=client_route_id,
+            )
+            if candidates:
+                route_candidates.append(candidates)
+        selected: list[dict] = []
+        while route_candidates and len(selected) < batch_size:
+            next_round: list[list[dict]] = []
+            for candidates in route_candidates:
+                selected.append(candidates.pop(0))
+                if candidates:
+                    next_round.append(candidates)
+                if len(selected) >= batch_size:
+                    break
+            route_candidates = next_round
+        for pending in selected:
             client_route_id = str(pending["client_route_id"])
             message_id = str(pending["message_id"])
             if not get_client(client_route_id):
