@@ -1323,6 +1323,22 @@ struct SettingsView: View {
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
+          NavigationLink(destination: SignalASIProfileIdentityView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_profile_title", "My SignalASI"))
+              Text(t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_my_signalasi", "My SignalASI"))
+              Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.pages", "App Pages")) {
           NavigationLink(destination: ChatListView()) {
@@ -1372,6 +1388,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAgentCoreView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_agent_core_title", "Agent Core"))
+              Text(t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentSafetySettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.execution_policy", "Execution Policy"))
@@ -1384,6 +1408,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_memory.title", "Personal Memory"))
               Text(memorySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIAgentMemoryTelemetryView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_memory.telemetry_title", "Agent Memory"))
+              Text(t("signalasi.agent_memory.telemetry_subtitle", "iOS resident memory sampled across active Agent tasks"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1473,6 +1505,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
+              Text(voiceSettingsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
           NavigationLink(destination: CustomDeviceConnectorsView()) {
@@ -1512,6 +1552,14 @@ struct SettingsView: View {
           }
         }
         Section("SignalASI Link") {
+          NavigationLink(destination: SignalASISystemStatusView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_system_status_title", "System Status"))
+              Text(t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIProtocolQualityView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("protocol_quality_title", "Protocol & Quality"))
@@ -1711,6 +1759,12 @@ struct SettingsView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var voiceSettingsSummary: String {
+    let enabled = store.voiceSettings.wakeListeningEnabled ? t("common_on", "On") : t("common_off", "Off")
+    let model = VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName
+    return "\(enabled) / \(model) / \(store.voiceSettings.preferredLocaleIdentifier)"
   }
 
   private var customDeviceSummary: String {
