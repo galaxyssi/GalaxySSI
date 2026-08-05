@@ -1460,6 +1460,14 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIPhoneCapabilitiesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_phone_title", "Phone Capabilities"))
+              Text(t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAppAdaptersView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("agent_app_adapters_title", "Specialized App Adapters"))

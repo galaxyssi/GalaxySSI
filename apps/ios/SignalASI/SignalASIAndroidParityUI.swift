@@ -623,6 +623,14 @@ struct DiscoverView: View {
               DeviceManagementView()
             }
             SignalASIAndroidMenuLink(
+              title: t("cc_phone_title", "Phone Capabilities"),
+              subtitle: t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"),
+              systemImage: "iphone",
+              tint: .signalASIAccent
+            ) {
+              SignalASIPhoneCapabilitiesView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.model_planner", "Model Planner"),
               subtitle: t("signalasi.discover.planner.subtitle", "Agent planning, budget and model routing"),
               systemImage: "slider.horizontal.3",
