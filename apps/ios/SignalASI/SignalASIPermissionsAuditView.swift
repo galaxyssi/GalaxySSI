@@ -11,13 +11,13 @@ struct SignalASIPermissionsAuditView: View {
   @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
   @State private var auditCount = 0
 
-  private var agentReady: Bool {
-    !store.agentSafetySettings.executionPaused
+  private var screenExecutorReady: Bool {
+    store.agentSafetySettings.screenObservationAllowed
   }
 
   private var grantedCount: Int {
     [
-      agentReady,
+      screenExecutorReady,
       notificationGranted,
       microphonePermission == .granted,
       cameraStatus == .authorized
@@ -76,14 +76,14 @@ struct SignalASIPermissionsAuditView: View {
   private var permissionsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.permissions_ios_section", "iOS Permissions"))
-      SignalASISecurityNavigationRow(
-        title: t("signalasi.security_center.on_device_agent_permissions", "On-device Agent Permissions"),
+      SignalASISecurityActionRow(
+        title: t("cc_accessibility_title", "Accessibility"),
         subtitle: t("cc_accessibility_subtitle", "Interface understanding and controlled execution"),
-        systemImage: "hand.raised",
-        tint: agentReady ? .signalASIAccent : .orange,
-        badge: agentReady ? t("signalasi.status.ready", "Ready") : t("signalasi.on_device_agent.status_paused", "Paused")
+        systemImage: "hand.tap",
+        tint: screenExecutorReady ? .signalASIAccent : .orange,
+        badge: screenExecutorReady ? t("signalasi.permission.allowed", "Allowed") : t("signalasi.permission.needs_setup", "Needs setup")
       ) {
-        OnDeviceAgentPermissionsView()
+        openAppSettings()
       }
       SignalASISecurityActionRow(
         title: t("cc_notification_access_title", "Notification Access"),
@@ -212,6 +212,11 @@ struct SignalASIPermissionsAuditView: View {
         refresh()
       }
     }
+  }
+
+  private func openAppSettings() {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    UIApplication.shared.open(url)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
