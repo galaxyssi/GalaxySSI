@@ -3157,6 +3157,15 @@
 "signalasi.voice.permission_missing" = "缺少麦克风或语音识别权限。";
 "signalasi.voice.speech_disabled" = "语音识别已关闭。";
 "signalasi.voice.speech_unavailable" = "语音识别无法启动。";
+"agent_preference_mode_section" = "Agent 偏好模式";
+"agent_preference_fewer_questions" = "少问问题";
+"agent_preference_fewer_questions_subtitle" = "减少澄清问题，同时仍会确认可执行动作。";
+"agent_preference_cautious" = "谨慎";
+"agent_preference_cautious_subtitle" = "执行动作前询问，并保持高风险保护开启。";
+"agent_preference_automation" = "自动化";
+"agent_preference_automation_subtitle" = "低风险任务直接执行，敏感动作仍需确认。";
+"agent_preference_developer" = "开发者";
+"agent_preference_developer_subtitle" = "面向技术工作流，偏好结构化细节和低风险自动化。";
 "signalasi.common.send" = "发送";
 "signalasi.settings.fingerprint" = "指纹";
 "signalasi.status.deleted" = "已删除";
