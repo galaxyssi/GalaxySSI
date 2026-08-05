@@ -513,6 +513,24 @@ enum VoiceRoutingMode: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum WakeWordPolicy {
+  static let wakeWord = "hello"
+  static let configuredWords = [wakeWord]
+
+  static func matches(_ transcript: String) -> Bool {
+    transcript
+      .lowercased(with: Locale(identifier: "en_US_POSIX"))
+      .split(whereSeparator: { !isWakeLetter($0) })
+      .contains { String($0) == wakeWord }
+  }
+
+  private static func isWakeLetter(_ character: Character) -> Bool {
+    character.unicodeScalars.allSatisfy { scalar in
+      scalar.value >= 97 && scalar.value <= 122
+    }
+  }
+}
+
 struct VoiceSettings: Codable, Equatable {
   var wakeListeningEnabled: Bool
   var speechRecognitionEnabled: Bool
@@ -610,13 +628,7 @@ struct VoiceSettings: Codable, Equatable {
     routingMode: .nativeAgent
   )
 
-  static let defaultWakeWords = [
-    "SignalASI",
-    "signal asi",
-    "signal ai",
-    "hello",
-    "hi"
-  ]
+  static let defaultWakeWords = WakeWordPolicy.configuredWords
 
   static let defaultWelcomeText = "I am here. Welcome to SignalASI. Say your question or task."
   static let defaultWakeModel = "hello_world.onnx"

@@ -306,6 +306,30 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  func testWakeWordPolicyMatchesAndroidStandaloneHelloOnly() {
+    XCTAssertEqual(WakeWordPolicy.wakeWord, "hello")
+    XCTAssertEqual(WakeWordPolicy.configuredWords, ["hello"])
+    XCTAssertEqual(VoiceSettings.defaultWakeWords, WakeWordPolicy.configuredWords)
+
+    ["hello", "Hello!", "please, hello now", "hello world"].forEach { transcript in
+      XCTAssertTrue(WakeWordPolicy.matches(transcript), transcript)
+    }
+
+    [
+      "SignalASI",
+      "signal asi",
+      "hi",
+      "wake up",
+      "assistant",
+      "\u{4f60}\u{597d}",
+      "\u{5c0f}\u{4fe1}",
+      "\u{9192}\u{9192}",
+      "shelloworld"
+    ].forEach { transcript in
+      XCTAssertFalse(WakeWordPolicy.matches(transcript), transcript)
+    }
+  }
+
   func testVoiceSettingsNormalizeAdvancedAndroidParityFields() {
     let store = makeStore()
 
