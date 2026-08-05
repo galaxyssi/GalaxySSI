@@ -1323,6 +1323,22 @@ struct SettingsView: View {
           Text(store.profile.identityFingerprint.chunkedFingerprint)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
+          NavigationLink(destination: SignalASIProfileIdentityView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_profile_title", "My SignalASI"))
+              Text(t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIControlCenterView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("settings_my_signalasi", "My SignalASI"))
+              Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.pages", "App Pages")) {
           NavigationLink(destination: ChatListView()) {
@@ -1374,6 +1390,22 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIExecutionPolicyView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_execution_policy_title", "Execution Policy"))
+              Text(t("cc_permission_mode_banner_subtitle", "This setting is enforced by the local safety policy before every action."))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIAgentCoreView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_agent_core_title", "Agent Core"))
+              Text(t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentSafetySettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.execution_policy", "Execution Policy"))
@@ -1386,6 +1418,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.agent_memory.title", "Personal Memory"))
               Text(memorySummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIAgentMemoryTelemetryView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("signalasi.agent_memory.telemetry_title", "Agent Memory"))
+              Text(t("signalasi.agent_memory.telemetry_subtitle", "iOS resident memory sampled across active Agent tasks"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1430,6 +1470,22 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIAppToolsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_app_tools_title", "Apps & Tools"))
+              Text(t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: SignalASIPhoneCapabilitiesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_phone_title", "Phone Capabilities"))
+              Text(t("signalasi.phone_capabilities.summary_subtitle", "Native tools, permissions, and iOS capability boundaries"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIAppAdaptersView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("agent_app_adapters_title", "Specialized App Adapters"))
@@ -1459,6 +1515,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.planning", "Planning & Coordination")) {
+          NavigationLink(destination: SignalASIResourceRoutingView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_resource_routing_title", "Models & Resource Routing"))
+              Text(t("cc_resource_routing_subtitle", "Choose by quality, latency, privacy, cost, and availability"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: AgentModelPlannerSettingsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.discover.model_planner", "Model Planner"))
@@ -1475,8 +1539,24 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("voice_settings_title", "Voice Wake & ASR/TTS"))
+              Text(voiceSettingsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section(t("signalasi.settings.custom_devices", "Custom Devices")) {
+          NavigationLink(destination: SignalASISmartSpacesView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_smart_spaces_title", "Smart Spaces"))
+              Text(t("cc_spaces_subtitle", "Home Assistant and custom devices"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: CustomDeviceConnectorsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("signalasi.settings.device_connectors", "Device Connectors"))
@@ -1514,6 +1594,14 @@ struct SettingsView: View {
           }
         }
         Section("SignalASI Link") {
+          NavigationLink(destination: SignalASISystemStatusView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_system_status_title", "System Status"))
+              Text(t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           NavigationLink(destination: SignalASIProtocolQualityView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text(t("protocol_quality_title", "Protocol & Quality"))
@@ -1540,6 +1628,14 @@ struct SettingsView: View {
           }
         }
         Section(t("signalasi.settings.backup", "Backup")) {
+          NavigationLink(destination: SignalASIDataBackupView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("cc_data_title", "Data & Backup"))
+              Text(t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           SecureField(t("signalasi.settings.password", "Password"), text: $backupPassword)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled(true)
@@ -1713,6 +1809,12 @@ struct SettingsView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var voiceSettingsSummary: String {
+    let enabled = store.voiceSettings.wakeListeningEnabled ? t("common_on", "On") : t("common_off", "Off")
+    let model = VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName
+    return "\(enabled) / \(model) / \(store.voiceSettings.preferredLocaleIdentifier)"
   }
 
   private var customDeviceSummary: String {
