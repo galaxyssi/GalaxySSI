@@ -229,7 +229,7 @@ struct SignalASISecurityCenterView: View {
         tint: .teal,
         badge: t("signalasi.common.view", "View")
       ) {
-        AgentDataDisclosureDashboardView()
+        SignalASIPrivacyDashboardView()
       }
       SignalASISecurityNavigationRow(
         title: t("signalasi.security_center.revoke_all_pc", "Revoke all PC pairings"),

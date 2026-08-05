@@ -837,7 +837,13 @@ final class MessageCoordinator: ObservableObject {
     let encrypted = try SignalASILinkProtocol.encryptPairingClaim(claim: claim, pairing: qr)
     let payload = try SignalASILinkProtocol.jsonData(encrypted)
     let result = await mqttClient.publish(topic: link.routes.pairingTopic, payload: payload)
-    pairingStatus = result == .published ? "Pairing claim sent" : "Pairing claim queued"
+    if result.accepted {
+      store.markServerPaired(desktopId: qr.desktopId, access: qr.access)
+      pairingStatus = "Pairing confirmed"
+    } else {
+      pairingStatus = "Pairing claim failed"
+      throw SignalASIError.invalidPayload("SignalASI Link is offline")
+    }
   }
 
   private func publishLinkMessage(
