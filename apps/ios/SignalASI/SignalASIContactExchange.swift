@@ -104,11 +104,7 @@ enum SignalASIQRCodePayload {
     let hasPairing = !object.string("pairing_token").isEmpty ||
       !object.string("server_route_id").isEmpty ||
       object.string("protocol") == SignalASILinkProtocol.name
-    let hasAgentList = object["connector_agents"] != nil ||
-      object["desktop_agents"] != nil ||
-      object["mobile_agents"] != nil ||
-      object["agent_contacts"] != nil ||
-      object["agents"] != nil
+    let hasAgentList = SignalASIContactExchange.connectorAgentListKeys.contains { object[$0] != nil }
     let hasAgentIdentity = !object.string("agent_id").isEmpty ||
       !object.string("mobile_contact_id").isEmpty ||
       !object.string("device_id").isEmpty
@@ -210,6 +206,20 @@ enum SignalASIContactExchange {
   static let hermesContactType = "hermes_contact"
   static let verifyType = "signalasi_verify"
   static let version = 1
+  fileprivate static let connectorAgentListKeys = [
+    "connector_agents",
+    "desktop_agents",
+    "mobile_agents",
+    "agent_contacts",
+    "agents",
+    "available_agents",
+    "connected_agents",
+    "agent_targets",
+    "callable_targets",
+    "available_targets",
+    "targets",
+    "connectors"
+  ]
   private static let agentContactTypes: Set<String> = [
     "agent",
     "agent_contact",
@@ -292,7 +302,11 @@ enum SignalASIContactExchange {
       "data",
       "runtime",
       "status",
-      "mobile_manifest"
+      "mobile_manifest",
+      "agent_manifest",
+      "connector_manifest",
+      "desktop_status",
+      "desktop_state"
     ]
     var index = 0
     while index < candidates.count, candidates.count < 24 {
@@ -413,7 +427,9 @@ enum SignalASIContactExchange {
     let agents = source.agents
     let type = normalized(parent.string("type"))
     guard ["connector_status", "capability_manifest", "pairing_confirmed"].contains(type) ||
-      isPairingOrConnectorStatusObject(parent) else {
+      ["agent_manifest", "connector_manifest", "desktop_status", "signalasi_agents"].contains(type) ||
+      isPairingOrConnectorStatusObject(parent) ||
+      agents.contains(where: isContactQRCodeObject) else {
       return []
     }
     let inherited = inheritedDesktopAgentFields(from: parent)
@@ -538,11 +554,28 @@ enum SignalASIContactExchange {
   private static func isAgentQRCodeObject(_ object: [String: Any]) -> Bool {
     let type = normalized(object.string("type"))
     let contactType = normalized(object.string("contact_type"))
+    let kind = normalized(object.string("agent_kind").ifBlank(object.string("kind")))
+    let rawId = object.string("id")
+    let hasDesktopContext = !desktopId(from: object).isEmpty ||
+      !object.string("desktop_fingerprint").isEmpty ||
+      !object.string("desktop_id").isEmpty
+    let agentLikeKind = [
+      "agent",
+      "desktop-agent",
+      "local-cli",
+      "custom-cli",
+      "local-model",
+      "model"
+    ].contains(kind) ||
+      kind.contains("agent") ||
+      kind.contains("model") ||
+      kind.contains("cli")
     return agentContactTypes.contains(type) ||
       contactType == "agent" ||
       !object.string("agent_kind").isEmpty ||
       !object.string("agent_id").isEmpty ||
-      !object.string("mobile_contact_id").isEmpty
+      !object.string("mobile_contact_id").isEmpty ||
+      (hasDesktopContext && !rawId.isEmpty && agentLikeKind)
   }
 
   private static func isDesktopAgentQRCodeObject(_ object: [String: Any]) -> Bool {
@@ -621,7 +654,7 @@ enum SignalASIContactExchange {
   }
 
   private static func connectorAgents(in object: [String: Any]) -> [[String: Any]]? {
-    for key in ["connector_agents", "desktop_agents", "mobile_agents", "agent_contacts", "agents"] {
+    for key in connectorAgentListKeys {
       if let agents = object[key] as? [[String: Any]], !agents.isEmpty {
         return agents
       }

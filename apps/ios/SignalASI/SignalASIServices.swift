@@ -1290,7 +1290,8 @@ final class MessageCoordinator: ObservableObject {
     guard type == "connector_status" || type == "capability_manifest" || type == "pairing_confirmed" else {
       return false
     }
-    let hasConnectorAgents = (payload["connector_agents"] as? [[String: Any]])?.isEmpty == false
+    let connectorAgentSource = SignalASIContactExchange.connectorAgentSource(from: payload)
+    let hasConnectorAgents = connectorAgentSource?.agents.isEmpty == false
     let suppliedManifestVersion = payload.int("manifest_version")
     let manifestVersion = suppliedManifestVersion > 0
       ? suppliedManifestVersion

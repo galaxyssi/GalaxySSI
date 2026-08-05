@@ -73,6 +73,21 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(request.signalASIId, "signalasi:device-agent")
   }
 
+  func testClassifyQRCodeDetectsSingleDesktopConnectorAgent() throws {
+    let result = try SignalASIContactExchange.classifyQRCode(singleDesktopConnectorAgentQR())
+
+    guard case .contact(let request) = result else {
+      XCTFail("Expected single desktop connector Agent QR")
+      return
+    }
+    XCTAssertEqual(request.signalASIId, "desktop-office:codex")
+    XCTAssertEqual(request.name, "Codex Agent")
+    XCTAssertEqual(request.type, "agent")
+    XCTAssertEqual(request.agentKind, "local-cli")
+    XCTAssertEqual(request.desktopId, "desktop-office")
+    XCTAssertEqual(request.identityFingerprint, String(repeating: "e", count: 64))
+  }
+
   func testClassifyQRCodeImportsNestedCapabilityManifestAgents() throws {
     let result = try SignalASIContactExchange.classifyQRCode(nestedCapabilityManifest(agentKey: "agents"))
 
@@ -85,12 +100,26 @@ final class SignalASIContactExchangeTests: XCTestCase {
       "desktop-office:codex",
       "desktop-office:research"
     ])
-    XCTAssertEqual(requests.first?.name, "Codex Agent - Office PC")
+    XCTAssertEqual(requests.first?.name, "Codex Agent · Office PC")
     XCTAssertEqual(requests.first?.type, "agent")
     XCTAssertEqual(requests.first?.agentKind, "local-cli")
     XCTAssertEqual(requests.first?.desktopId, "desktop-office")
     XCTAssertEqual(requests.first?.desktopName, "Office PC")
     XCTAssertEqual(requests.first?.identityFingerprint, String(repeating: "e", count: 64))
+  }
+
+  func testClassifyQRCodeImportsAndroidAvailableTargetsAgents() throws {
+    let result = try SignalASIContactExchange.classifyQRCode(nestedCapabilityManifest(agentKey: "available_targets"))
+
+    guard case .contacts(let requests) = result else {
+      XCTFail("Expected Android-style available target Agent requests")
+      return
+    }
+    XCTAssertEqual(requests.count, 2)
+    XCTAssertEqual(requests.map(\.signalASIId), [
+      "desktop-office:codex",
+      "desktop-office:research"
+    ])
   }
 
   func testStoreUpsertsNestedCapabilityManifestAgents() throws {
@@ -100,7 +129,7 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(store.updateDesktopAgentContacts(from: payload), 2)
 
     let codex = try XCTUnwrap(store.contact(id: "desktop-office:codex"))
-    XCTAssertEqual(codex.displayName, "Codex Agent - Office PC")
+    XCTAssertEqual(codex.displayName, "Codex Agent · Office PC")
     XCTAssertEqual(codex.type, "agent")
     XCTAssertEqual(codex.agentKind, "local-cli")
     XCTAssertEqual(codex.desktopId, "desktop-office")
@@ -194,6 +223,20 @@ final class SignalASIContactExchangeTests: XCTestCase {
       "identity_fingerprint": String(repeating: "d", count: 64),
       "mqtt_topic": "signalasichat/v1/device/inbox",
       "mqtt_inbox_topic": "signalasichat/v1/device/inbox"
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+  }
+
+  private func singleDesktopConnectorAgentQR() -> String {
+    let object: [String: Any] = [
+      "id": "codex",
+      "name": "Codex Agent",
+      "kind": "local-cli",
+      "desktop_id": "desktop-office",
+      "desktop_name": "Office PC",
+      "desktop_fingerprint": String(repeating: "e", count: 64),
+      "mqtt_topic": "signalasichat/v1/desktop/up"
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!
