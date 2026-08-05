@@ -21,11 +21,17 @@ class EvolutionV2Runtime:
         with self._lock:
             if self._started:
                 return
-            self.recovered_tasks = self.manager.recover_interrupted(resume=True)
+            resume_interrupted = bool(self.scheduler.config.get("enabled", False))
+            self.recovered_tasks = self.manager.recover_interrupted(
+                resume=resume_interrupted,
+            )
             self.scheduler.start()
             self.manager.audit.append(
                 "runtime_started",
-                payload={"recovered_tasks": self.recovered_tasks},
+                payload={
+                    "recovered_tasks": self.recovered_tasks,
+                    "resumed_interrupted": resume_interrupted,
+                },
             )
             self._started = True
 

@@ -62,6 +62,7 @@ class FakeManager:
         self.issue_scanner = FakeIssueScanner()
         self.tasks: dict[str, SimpleNamespace] = {}
         self.published: list[str] = []
+        self.cancelled: list[str] = []
 
     def create_from_proposal(self, proposal, **values):
         task_id = f"task-{len(self.tasks) + 1}"
@@ -85,6 +86,12 @@ class FakeManager:
         task.status = "published"
         task.pull_request_url = f"https://github.com/signalasi/SignalASI/pull/{len(self.published) + 1}"
         self.published.append(task_id)
+        return task
+
+    def cancel(self, task_id: str):
+        task = self.require(task_id)
+        task.status = "cancelled"
+        self.cancelled.append(task_id)
         return task
 
 
@@ -166,6 +173,30 @@ class EvolutionSchedulerTests(unittest.TestCase):
         self.assertTrue(status["config"]["auto_publish"])
         start.assert_called_once()
         wake.assert_called_once()
+
+    def test_disabling_scheduler_cancels_and_reconciles_active_runs(self) -> None:
+        scheduler = self.scheduler({"enabled": True})
+        task = SimpleNamespace(
+            task_id="task-active",
+            status="running",
+            approval_hash="",
+            pull_request_url="",
+        )
+        scheduler.manager.tasks[task.task_id] = task
+        scheduler._save_state({
+            "active_evolutions": [{
+                "task_id": task.task_id,
+                "status": "running",
+            }],
+        })
+
+        scheduler.update_config({"enabled": False})
+
+        status = scheduler.status()
+        self.assertEqual([task.task_id], scheduler.manager.cancelled)
+        self.assertEqual([], status["state"]["active_evolutions"])
+        self.assertEqual("cancelled", status["state"]["history"][0]["status"])
+        self.assertEqual(0, status["computed"]["next_evolution_millis"])
 
     def test_serial_waits_and_parallel_respects_the_configured_capacity(self) -> None:
         scheduler = self.scheduler({

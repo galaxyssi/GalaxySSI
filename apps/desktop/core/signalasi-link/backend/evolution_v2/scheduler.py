@@ -163,6 +163,7 @@ class EvolutionScheduler:
             self.wake()
         else:
             self.stop()
+            self._cancel_active_evolutions()
         self.manager.audit.append(
             "scheduler_config_updated",
             payload={
@@ -173,6 +174,41 @@ class EvolutionScheduler:
             },
         )
         return self.status()
+
+    def _cancel_active_evolutions(self) -> None:
+        with self._lock:
+            state = self._state()
+            task_ids = [
+                str(record.get("task_id") or "")
+                for record in state.get("active_evolutions") or []
+                if str(record.get("task_id") or "")
+            ]
+        for task_id in task_ids:
+            try:
+                task = self.manager.require(task_id)
+                if task.status not in TERMINAL_TASK_STATUSES:
+                    self.manager.cancel(task_id)
+            except Exception as exc:
+                self.manager.audit.append(
+                    "scheduled_evolution_cancel_failed",
+                    task_id=task_id,
+                    payload={"error": str(exc)[:1_000]},
+                )
+        with self._lock:
+            state = self._state()
+            result = {
+                "published": [],
+                "errors": [],
+            }
+            self._reconcile_active(
+                state,
+                result,
+                now_millis(),
+                allow_publish=False,
+            )
+            state["pending_evolution"] = False
+            state["next_evolution_millis"] = 0
+            self._save_state(state)
 
     def status(self) -> dict[str, Any]:
         state = self._state()
