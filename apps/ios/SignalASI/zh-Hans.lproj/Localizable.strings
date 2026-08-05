@@ -2167,6 +2167,8 @@
 "signalasi.data_backup.import_messages_subtitle" = "%d 个会话 · %d 条消息";
 "signalasi.data_backup.import_agent_data" = "Agent 数据";
 "signalasi.data_backup.import_agent_data_subtitle" = "%d 条记忆 · %d 条知识 · %d 个任务 · %d 个会话";
+"signalasi.data_backup.import_language_voice" = "语言与语音";
+"signalasi.data_backup.import_language_voice_subtitle" = "%@ · 语音 %@ · %@ · ASR %@";
 "signalasi.data_backup.import_configuration" = "配置";
 "signalasi.data_backup.import_configuration_subtitle" = "%d 个服务链接 · %d 个设备 · %d 个云端密钥";
 "signalasi.data_backup.restore_preview_action" = "恢复此备份";

@@ -241,6 +241,13 @@ struct SignalASIDataBackupView: View {
         badge: preview.agentDataBadge(localized: t)
       )
       SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_language_voice", "Language & Voice"),
+        subtitle: preview.languageVoiceSubtitle(localized: t),
+        systemImage: "globe",
+        tint: preview.includesAgentData ? .signalASIAccent : .gray,
+        badge: preview.agentDataBadge(localized: t)
+      )
+      SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_configuration", "Configuration"),
         subtitle: String(
           format: t(
@@ -563,5 +570,40 @@ private struct SignalASIBackupImportPreview {
     payload.includesAgentData
       ? t("backup_included", "Included")
       : t("signalasi.data_backup.not_included", "Not included")
+  }
+
+  func languageVoiceSubtitle(localized t: (String, String) -> String) -> String {
+    guard payload.includesAgentData else {
+      return t("signalasi.data_backup.not_included", "Not included")
+    }
+    let policy = payload.agentData.languagePolicy
+    let settings = payload.agentData.voiceSettings
+    let voiceState = settings.wakeListeningEnabled
+      ? t("common_on", "On")
+      : t("common_off", "Off")
+    let modelName = VoiceWhisperModelCatalog.model(settings.asrModelId).displayName
+    return String(
+      format: t(
+        "signalasi.data_backup.import_language_voice_subtitle",
+        "%@ / Voice %@ / %@ / ASR %@"
+      ),
+      languagePolicyStatusBadge(for: policy, localized: t),
+      voiceState,
+      modelName,
+      settings.preferredLocaleIdentifier
+    )
+  }
+
+  private func languagePolicyStatusBadge(
+    for policy: LanguagePolicySettings,
+    localized t: (String, String) -> String
+  ) -> String {
+    let allAuto = LanguagePolicySettings.normalizeInterface(policy.interfaceLanguage) == LanguagePolicySettings.auto &&
+      LanguagePolicySettings.normalizeVoice(policy.responseLanguage) == LanguagePolicySettings.auto &&
+      LanguagePolicySettings.normalizeVoice(policy.asrLanguage) == LanguagePolicySettings.auto &&
+      LanguagePolicySettings.normalizeVoice(policy.ttsLanguage) == LanguagePolicySettings.auto
+    return allAuto
+      ? t("signalasi.language_policy.auto_short", "Auto")
+      : t("signalasi.language_policy.configured_short", "Configured")
   }
 }
