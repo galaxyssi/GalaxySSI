@@ -5648,13 +5648,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     executionMode = taskExecutionMode
                 )
             }
-            appendRunControlEvent(
-                run = run,
-                messageId = turnId,
-                taskId = turnId,
-                agentId = selectedAgentId,
-                type = AgentRunControlEventType.RUN_CREATED,
-                payload = if (activeTurn != null && interventionDisposition.isNotBlank()) {
+            val createdEventPayload: AgentNativeJsonObject =
+                if (activeTurn != null && interventionDisposition.isNotBlank()) {
                     mapOf(
                         "task_disposition" to interventionDisposition,
                         "active_turn_id" to activeTurn.turnId,
@@ -5667,13 +5662,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 } else {
                     emptyMap()
                 }
-            )
-            appendRunControlEvent(
+            appendRunControlEvents(
                 run = run,
                 messageId = turnId,
                 taskId = turnId,
                 agentId = selectedAgentId,
-                type = AgentRunControlEventType.RUN_STARTED
+                events = listOf(
+                    AgentRunControlEventType.RUN_CREATED to createdEventPayload,
+                    AgentRunControlEventType.RUN_STARTED to emptyMap()
+                )
             )
             Log.i(
                 "SignalASILatency",
@@ -6926,6 +6923,35 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 timestampMillis = timestampMillis,
                 payload = payload
             )
+        )
+    }
+
+    private fun appendRunControlEvents(
+        run: AgentRecordedRun,
+        messageId: String,
+        taskId: String,
+        agentId: String,
+        events: List<Pair<AgentRunControlEventType, AgentNativeJsonObject>>,
+        timestampMillis: Long = System.currentTimeMillis()
+    ) {
+        if (events.isEmpty()) return
+        val profile = AppStore.profile(this)
+        val deviceId = profile.optString("device_id").ifBlank { profile.optString("signalasi_id") }
+        agentRunEventStore.appendNextAll(
+            events.mapIndexed { index, (type, payload) ->
+                AgentRunControlEvent(
+                    conversationId = run.conversationId,
+                    messageId = messageId,
+                    taskId = taskId,
+                    runId = run.runId,
+                    agentId = agentId,
+                    deviceId = deviceId,
+                    type = type,
+                    sequence = 0L,
+                    timestampMillis = timestampMillis + index,
+                    payload = payload
+                )
+            }
         )
     }
 

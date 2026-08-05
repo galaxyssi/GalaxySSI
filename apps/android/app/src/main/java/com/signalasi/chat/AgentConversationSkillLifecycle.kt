@@ -77,18 +77,15 @@ class AgentRunRecorder(context: Context) {
             parentRunId = parent?.runId.orEmpty(),
             revisionNumber = (parent?.revisionNumber ?: 0) + 1
         )
-        saveRun(run)
-        retainRunId(run.runId)
-        saveContext(
-            AgentTaskThreadContext(
-                taskThreadId = taskThreadId,
-                conversationId = conversationId,
-                activeRunId = run.runId,
-                activeArtifactId = currentContext?.activeArtifactId.orEmpty(),
-                activeSkillId = activeSkillId,
-                revisionNumber = run.revisionNumber
-            )
+        val taskContext = AgentTaskThreadContext(
+            taskThreadId = taskThreadId,
+            conversationId = conversationId,
+            activeRunId = run.runId,
+            activeArtifactId = currentContext?.activeArtifactId.orEmpty(),
+            activeSkillId = activeSkillId,
+            revisionNumber = run.revisionNumber
         )
+        saveNewRunAndContext(run, taskContext)
         GlobalConversationEventBus.publishRecordedRunStartedAsync(appContext, run)
         return run
     }
@@ -263,6 +260,34 @@ class AgentRunRecorder(context: Context) {
         runCache[run.runId] = run
     }
 
+    private fun saveNewRunAndContext(run: AgentRecordedRun, context: AgentTaskThreadContext) {
+        val currentRunIds = runIds()
+        val retainedRunIds = (currentRunIds.filterNot { it == run.runId } + run.runId).takeLast(MAX_RUNS)
+        val staleRunIds = currentRunIds - retainedRunIds.toSet()
+        val currentContextIds = contextIds()
+        val retainedContextIds = (
+            currentContextIds.filterNot { it == context.conversationId } + context.conversationId
+            ).takeLast(MAX_CONTEXTS)
+        val staleContextIds = currentContextIds - retainedContextIds.toSet()
+
+        database.mutateStrings(
+            upserts = mapOf(
+                runKey(run.runId) to run.toJson().toString(),
+                KEY_RUN_IDS to JSONArray(retainedRunIds).toString(),
+                contextKey(context.conversationId) to context.toJson().toString(),
+                KEY_CONTEXT_IDS to JSONArray(retainedContextIds).toString()
+            ),
+            removeKeys = staleRunIds.map(::runKey) + staleContextIds.map(::contextKey)
+        )
+
+        staleRunIds.forEach(runCache::remove)
+        staleContextIds.forEach(contextCache::remove)
+        runCache[run.runId] = run
+        contextCache[context.conversationId] = context
+        runIdsCache = retainedRunIds
+        contextIdsCache = retainedContextIds
+    }
+
     private fun saveContext(context: AgentTaskThreadContext) {
         database.writeString(contextKey(context.conversationId), context.toJson().toString())
         contextCache[context.conversationId] = context
@@ -291,16 +316,6 @@ class AgentRunRecorder(context: Context) {
         saveContextIds(retainedIds)
     }
 
-    private fun retainRunId(runId: String) {
-        val ids = (runIds().filterNot { it == runId } + runId).takeLast(MAX_RUNS)
-        val staleIds = runIds() - ids.toSet()
-        staleIds.forEach { staleId ->
-            database.remove(runKey(staleId))
-            runCache.remove(staleId)
-        }
-        saveRunIds(ids)
-    }
-
     private fun runIds(): List<String> = runIdsCache ?: decodeIds(
         database.readString(KEY_RUN_IDS, "[]")
     ).also { runIdsCache = it }
@@ -308,11 +323,6 @@ class AgentRunRecorder(context: Context) {
     private fun contextIds(): List<String> = contextIdsCache ?: decodeIds(
         database.readString(KEY_CONTEXT_IDS, "[]")
     ).also { contextIdsCache = it }
-
-    private fun saveRunIds(ids: List<String>) {
-        database.writeString(KEY_RUN_IDS, JSONArray(ids).toString())
-        runIdsCache = ids.toList()
-    }
 
     private fun saveContextIds(ids: List<String>) {
         database.writeString(KEY_CONTEXT_IDS, JSONArray(ids).toString())

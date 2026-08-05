@@ -63,6 +63,26 @@ class AgentEncryptedStorageInstrumentedTest {
         database.close()
     }
 
+    @Test
+    fun encryptedDatabaseMutatesMultipleValuesInOneTransaction() {
+        val databaseName = newStorageName()
+        val database = AgentEncryptedDatabase(context, databaseName)
+        database.writeString("obsolete", "remove me")
+
+        database.mutateStrings(
+            upserts = mapOf(
+                "run" to "created",
+                "context" to "ready"
+            ),
+            removeKeys = listOf("obsolete")
+        )
+
+        assertEquals("created", database.readString("run", "missing"))
+        assertEquals("ready", database.readString("context", "missing"))
+        assertFalse(database.contains("obsolete"))
+        database.close()
+    }
+
     private fun newStorageName(): String =
         "signalasi_current_storage_test_${UUID.randomUUID()}".also(storageNames::add)
 }
