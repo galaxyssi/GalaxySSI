@@ -114,33 +114,33 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
     }
   }
 
-  var systemImage: String {
+  var iconAssetName: String {
     switch self {
     case .agent:
-      return "cpu"
+      return "TabAgent"
     case .messages:
-      return "message"
+      return "TabMessages"
     case .contacts:
-      return "person.2"
+      return "TabContacts"
     case .discover:
-      return "safari"
+      return "TabDiscover"
     case .settings:
-      return "gearshape"
+      return "TabSettings"
     }
   }
 
-  var selectedSystemImage: String {
+  var selectedIconAssetName: String {
     switch self {
     case .agent:
-      return "cpu.fill"
+      return "TabAgentSelected"
     case .messages:
-      return "message.fill"
+      return "TabMessagesSelected"
     case .contacts:
-      return "person.2.fill"
+      return "TabContactsSelected"
     case .discover:
-      return "safari.fill"
+      return "TabDiscoverSelected"
     case .settings:
-      return "gearshape.fill"
+      return "TabSettingsSelected"
     }
   }
 }
@@ -156,9 +156,11 @@ private struct SignalASIMainTabButton: View {
     Button(action: action) {
       VStack(spacing: 4) {
         ZStack(alignment: .topTrailing) {
-          Image(systemName: isSelected ? tab.selectedSystemImage : tab.systemImage)
-            .font(.system(size: 20, weight: .semibold))
-            .frame(width: 30, height: 24)
+          Image(isSelected ? tab.selectedIconAssetName : tab.iconAssetName)
+            .resizable()
+            .renderingMode(.original)
+            .scaledToFit()
+            .frame(width: 24, height: 24)
           if badgeCount > 0 {
             Text(badgeCount > 99 ? "99+" : "\(badgeCount)")
               .font(.system(size: 9, weight: .bold))
