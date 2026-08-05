@@ -47,13 +47,15 @@ struct SignalASIGeneralControlCenterView: View {
       ) {
         SignalASILanguageSettingsView()
       }
-      SignalASISecurityStatusRow(
+      SignalASISecurityActionRow(
         title: t("cc_appearance_title", "Appearance"),
         subtitle: t("cc_appearance_subtitle_ios", "Use iOS light and dark appearance"),
         systemImage: "circle.lefthalf.filled",
         tint: .blue,
         badge: t("cc_managed_by_ios", "iOS")
-      )
+      ) {
+        openAppSettings()
+      }
       SignalASISecurityNavigationRow(
         title: t("cc_text_size_title", "Text Size"),
         subtitle: textScaleSummary,
