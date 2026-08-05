@@ -125,7 +125,7 @@ struct SignalASIControlCenterView: View {
         tint: agentCoreTint,
         badge: agentCoreBadge
       ) {
-        AgentSafetySettingsView()
+        SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -134,7 +134,7 @@ struct SignalASIControlCenterView: View {
         tint: .blue,
         badge: resourcesBadge
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_memory_title", "Memory & Personalization"),
