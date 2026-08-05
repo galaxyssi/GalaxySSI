@@ -493,6 +493,22 @@ extension SignalASIStoreTests {
       },
       "11111111-2222-3333-4444-555555555555"
     )
+    XCTAssertEqual(
+      AgentTaskIdentityPolicy.taskId(
+        ownerId: "signalasi:phone",
+        contactId: "codex",
+        sourceMessageId: "message-uuid",
+        conversationId: conversationId,
+        turnId: turnId
+      ),
+      AgentTaskIdentityPolicy.taskId(
+        ownerId: "signalasi:phone",
+        contactId: "codex",
+        sourceMessageId: "message-uuid",
+        conversationId: conversationId,
+        turnId: turnId
+      )
+    )
   }
 
   func testAgentTaskIdentityPolicyMatchesDesktopResponseIdentity() {
@@ -545,6 +561,37 @@ extension SignalASIStoreTests {
     )
   }
 
+  func testAgentTaskIdentityPolicyRoutesPersistedMainAgentConversationLikeAndroid() {
+    XCTAssertTrue(
+      AgentTaskIdentityPolicy.routesToMainAgent(
+        superseded: false,
+        hasRuntime: false,
+        resolvedConversationId: "conversation-a"
+      )
+    )
+    XCTAssertTrue(
+      AgentTaskIdentityPolicy.routesToMainAgent(
+        superseded: true,
+        hasRuntime: false,
+        resolvedConversationId: ""
+      )
+    )
+    XCTAssertTrue(
+      AgentTaskIdentityPolicy.routesToMainAgent(
+        superseded: false,
+        hasRuntime: true,
+        resolvedConversationId: ""
+      )
+    )
+    XCTAssertFalse(
+      AgentTaskIdentityPolicy.routesToMainAgent(
+        superseded: false,
+        hasRuntime: false,
+        resolvedConversationId: ""
+      )
+    )
+  }
+
   func testAgentTaskIdentityCompletenessAndWireNames() throws {
     let identity = AgentTaskIdentity(
       clientRouteId: "route-1",
@@ -583,6 +630,66 @@ extension SignalASIStoreTests {
     )
     XCTAssertEqual(decoded.clientRouteId, "route-2")
     XCTAssertTrue(decoded.isComplete)
+  }
+
+  func testAgentTaskIdentityStoreMatchesRegisteredAndroidTurnIdentity() throws {
+    let suite = "AgentTaskIdentityStoreTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AgentTaskIdentityStore(defaults: defaults)
+    let identity = AgentTaskIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-a",
+      taskId: "task-a",
+      turnId: "turn-a"
+    )
+    let payload: [String: Any] = [
+      "client_route_id": "route-1",
+      "conversation_id": "conversation-a",
+      "task_id": "task-a",
+      "turn_id": "turn-a",
+      "contact_id": "codex",
+      "source_message_id": "message-uuid"
+    ]
+
+    XCTAssertTrue(store.matches(payload: payload))
+    XCTAssertFalse(store.matchesRegistered(payload: payload))
+
+    store.register(contactId: "codex", sourceMessageId: "message-uuid", identity: identity)
+
+    XCTAssertTrue(store.matches(payload: payload))
+    XCTAssertTrue(store.matchesRegistered(payload: payload))
+
+    var staleRoute = payload
+    staleRoute["client_route_id"] = "route-2"
+    XCTAssertFalse(store.matches(payload: staleRoute))
+    XCTAssertFalse(store.matchesRegistered(payload: staleRoute))
+  }
+
+  func testAgentTaskIdentityStoreFallsBackToClientMessageIdForOutboundPayloads() throws {
+    let suite = "AgentTaskIdentityStoreClientMessageTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AgentTaskIdentityStore(defaults: defaults)
+    let identity = AgentTaskIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-a",
+      taskId: "task-a",
+      turnId: "turn-a"
+    )
+
+    store.register(contactId: "codex", sourceMessageId: "42", identity: identity)
+
+    XCTAssertTrue(
+      store.matchesRegistered(payload: [
+        "client_route_id": "route-1",
+        "conversation_id": "conversation-a",
+        "task_id": "task-a",
+        "turn_id": "turn-a",
+        "contact_id": "codex",
+        "client_message_id": 42
+      ])
+    )
   }
 
   func testAgentTaskIntentClassifierMatchesAndroidCanonicalIntents() {

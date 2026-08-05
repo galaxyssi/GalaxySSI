@@ -576,6 +576,7 @@ final class MessageCoordinator: ObservableObject {
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
+  private let taskIdentityStore: AgentTaskIdentityStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
@@ -590,6 +591,7 @@ final class MessageCoordinator: ObservableObject {
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
+    taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
@@ -600,6 +602,7 @@ final class MessageCoordinator: ObservableObject {
     self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
     self.disclosureStore = disclosureStore
+    self.taskIdentityStore = taskIdentityStore
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
@@ -859,14 +862,37 @@ final class MessageCoordinator: ObservableObject {
     guard let link = store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first else {
       throw SignalASIError.notPaired
     }
+    let sourceMessageId = outgoing.id.uuidString
+    let conversationId = AgentTaskIdentityPolicy.conversationId(
+      contactId: contact.id,
+      requested: outgoing.conversationId
+    )
+    let turnId = outgoing.turnId.ifBlank(sourceMessageId)
+    let taskId = AgentTaskIdentityPolicy.taskId(
+      ownerId: store.profile.signalASIId,
+      contactId: contact.id,
+      sourceMessageId: sourceMessageId,
+      conversationId: conversationId,
+      turnId: turnId,
+      requested: outgoing.id.uuidString
+    )
+    let taskIdentity = AgentTaskIdentity(
+      clientRouteId: link.routes.clientRouteId,
+      conversationId: conversationId,
+      taskId: taskId,
+      turnId: turnId
+    )
     var payload: [String: Any] = [
       "type": "text",
-      "message_id": outgoing.id.uuidString,
+      "message_id": sourceMessageId,
       "content": text,
       "contact_id": contact.id,
+      "task_id": taskIdentity.taskId,
       "sender": store.profile.signalASIId,
-      "conversation_id": outgoing.conversationId,
-      "client_message_id": outgoing.id.uuidString,
+      "conversation_id": taskIdentity.conversationId,
+      "turn_id": taskIdentity.turnId,
+      "client_route_id": taskIdentity.clientRouteId,
+      "client_message_id": sourceMessageId,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
     let mediaProfile = mediaNetworkProfileProvider()
@@ -884,10 +910,10 @@ final class MessageCoordinator: ObservableObject {
         contactId: contact.id,
         desktopId: link.desktopId,
         clientRouteId: link.routes.clientRouteId,
-        conversationId: outgoing.conversationId.ifBlank("ios-\(contact.id)"),
-        taskId: outgoing.id.uuidString,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-        clientMessageId: outgoing.id.uuidString
+        conversationId: taskIdentity.conversationId,
+        taskId: taskIdentity.taskId,
+        turnId: taskIdentity.turnId,
+        clientMessageId: sourceMessageId
       )
       outboundAttachments = try attachmentTransferStore.prepare(
         scope: scope,
@@ -905,6 +931,11 @@ final class MessageCoordinator: ObservableObject {
         payload["attachments"] = attachmentDescriptors
       }
     }
+    taskIdentityStore.register(
+      contactId: contact.id,
+      sourceMessageId: sourceMessageId,
+      identity: taskIdentity
+    )
     let wire = try linkWirePayload(payload, link: link)
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
@@ -1080,6 +1111,10 @@ final class MessageCoordinator: ObservableObject {
       appPayload = unwrapped
     } else {
       appPayload = object
+    }
+    if shouldValidateAgentTaskIdentity(appPayload),
+       !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
+      return
     }
     let messageId = appPayload.string("message_id")
     if appPayload.string("type") == "delivery_ack" {
@@ -1293,6 +1328,34 @@ final class MessageCoordinator: ObservableObject {
     scheduleOutboxFlushFromStore()
   }
 
+  private func shouldValidateAgentTaskIdentity(_ payload: [String: Any]) -> Bool {
+    guard !payload.string("task_id").isEmpty else { return false }
+    return Self.taskIdentityValidatedTypes.contains(payload.string("type"))
+  }
+
+  private func validateAgentTaskIdentity(_ payload: [String: Any], link: ServerLink?, topic: String) -> Bool {
+    let identity = AgentTaskIdentity(
+      clientRouteId: payload.string("client_route_id"),
+      conversationId: payload.string("conversation_id"),
+      taskId: payload.string("task_id"),
+      turnId: payload.string("turn_id")
+    )
+    guard let link,
+          identity.isComplete,
+          identity.clientRouteId == link.routes.clientRouteId,
+          taskIdentityStore.matches(payload: payload) else {
+      recordLinkDiagnostic(
+        .decryptFailure,
+        link: link,
+        topic: topic,
+        messageIdentity: payload.string("message_id").ifBlank(payload.string("task_id")),
+        detailCode: "task_identity_mismatch"
+      )
+      return false
+    }
+    return true
+  }
+
   private func publishInboundReceipt(link: ServerLink?, receivedMessageId: String) {
     guard let link, !receivedMessageId.isEmpty else { return }
     let ackPayload: [String: Any] = [
@@ -1416,6 +1479,14 @@ final class MessageCoordinator: ObservableObject {
   private var mqttClientId: String {
     "signalasi-ios-v1-\(store.profile.identityFingerprint.prefix(16))"
   }
+
+  private static let taskIdentityValidatedTypes: Set<String> = [
+    "agent_task_event",
+    "agent_task_approval_result",
+    "text",
+    "artifact_chunk",
+    AgentAttachmentRecoveryRequest.requestType
+  ]
 }
 
 enum NotificationService {
