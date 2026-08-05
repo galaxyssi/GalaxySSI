@@ -215,7 +215,7 @@ struct SignalASIControlCenterView: View {
         tint: intelligenceResourceCount > 0 ? .signalASIAccent : .orange,
         badge: "\(intelligenceResourceCount)"
       ) {
-        SignalASIMyAgentsView()
+        SignalASIAgentsModelsNodesView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_security_title", "Security & Trust"),

@@ -636,7 +636,7 @@ struct DiscoverView: View {
               systemImage: "waveform",
               tint: .signalASIInsightText
             ) {
-              SignalASIVoiceAssistantSettingsView()
+              SignalASIVoiceControlCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("cc_app_tools_title", "Apps & Tools"),
