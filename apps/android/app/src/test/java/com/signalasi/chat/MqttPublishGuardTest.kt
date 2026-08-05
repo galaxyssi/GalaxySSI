@@ -115,4 +115,42 @@ class MqttPublishGuardTest {
             state.complete(generation, succeeded = true)
         )
     }
+
+    @Test
+    fun `broker ack watchdog uses the oldest outstanding publish`() {
+        val watchdog = MqttBrokerAckWatchdog(timeoutMillis = 12_000L)
+
+        watchdog.onPublished(messageId = 7, nowElapsedMillis = 1_000L)
+        watchdog.onPublished(messageId = 8, nowElapsedMillis = 4_000L)
+
+        assertEquals(2, watchdog.pendingCount())
+        assertEquals(7_000L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 6_000L))
+        assertEquals(5_000L, watchdog.oldestPendingAgeMillis(nowElapsedMillis = 6_000L))
+    }
+
+    @Test
+    fun `broker ack watchdog advances after an acknowledgement`() {
+        val watchdog = MqttBrokerAckWatchdog(timeoutMillis = 12_000L)
+        watchdog.onPublished(messageId = 7, nowElapsedMillis = 1_000L)
+        watchdog.onPublished(messageId = 8, nowElapsedMillis = 4_000L)
+
+        watchdog.onAcknowledged(messageId = 7)
+
+        assertEquals(1, watchdog.pendingCount())
+        assertEquals(10_000L, watchdog.nextCheckDelayMillis(nowElapsedMillis = 6_000L))
+        watchdog.onAcknowledged(messageId = 8)
+        assertEquals(null, watchdog.nextCheckDelayMillis(nowElapsedMillis = 6_000L))
+    }
+
+    @Test
+    fun `broker ack watchdog clears stale transport state`() {
+        val watchdog = MqttBrokerAckWatchdog(timeoutMillis = 12_000L)
+        watchdog.onPublished(messageId = 7, nowElapsedMillis = 1_000L)
+
+        assertEquals(12_000L, watchdog.oldestPendingAgeMillis(nowElapsedMillis = 13_000L))
+        watchdog.clear()
+
+        assertEquals(0, watchdog.pendingCount())
+        assertEquals(null, watchdog.oldestPendingAgeMillis(nowElapsedMillis = 13_000L))
+    }
 }

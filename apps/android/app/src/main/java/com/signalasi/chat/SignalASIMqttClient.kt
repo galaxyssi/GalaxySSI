@@ -44,6 +44,46 @@ internal object MqttOutboxDispatchPolicy {
         if (connected && published) MqttPublishResult.PUBLISHED else MqttPublishResult.QUEUED
 }
 
+internal class MqttBrokerAckWatchdog(
+    private val timeoutMillis: Long
+) {
+    init {
+        require(timeoutMillis > 0L)
+    }
+
+    private val publishedAtByMessageId = LinkedHashMap<Int, Long>()
+
+    @Synchronized
+    fun onPublished(messageId: Int, nowElapsedMillis: Long) {
+        publishedAtByMessageId.putIfAbsent(messageId, nowElapsedMillis)
+    }
+
+    @Synchronized
+    fun onAcknowledged(messageId: Int) {
+        publishedAtByMessageId.remove(messageId)
+    }
+
+    @Synchronized
+    fun nextCheckDelayMillis(nowElapsedMillis: Long): Long? =
+        publishedAtByMessageId.values.minOrNull()?.let { publishedAt ->
+            (timeoutMillis - (nowElapsedMillis - publishedAt)).coerceAtLeast(0L)
+        }
+
+    @Synchronized
+    fun oldestPendingAgeMillis(nowElapsedMillis: Long): Long? =
+        publishedAtByMessageId.values.minOrNull()?.let { publishedAt ->
+            (nowElapsedMillis - publishedAt).coerceAtLeast(0L)
+        }
+
+    @Synchronized
+    fun pendingCount(): Int = publishedAtByMessageId.size
+
+    @Synchronized
+    fun clear() {
+        publishedAtByMessageId.clear()
+    }
+}
+
 internal class MqttConnectionRetryPolicy(
     private val delaysMillis: LongArray = longArrayOf(2_000L, 5_000L, 10_000L, 20_000L, 30_000L)
 ) {
@@ -125,6 +165,7 @@ object SignalASIMqttClient {
     private const val MAX_OUTBOX_RETRY_BATCH = 4
     private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
+    private const val MQTT_BROKER_ACK_TIMEOUT_MILLIS = 12_000L
 
     private data class PendingPairingClaim(
         val desktopId: String,
@@ -148,6 +189,7 @@ object SignalASIMqttClient {
     private val connecting = AtomicBoolean(false)
     private val connectionRetryScheduled = AtomicBoolean(false)
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
+    private val transportRecoveryInProgress = AtomicBoolean(false)
     private val inboundReplayScheduled = AtomicBoolean(false)
     private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-inbound-replay").apply { isDaemon = true }
@@ -171,6 +213,15 @@ object SignalASIMqttClient {
                 retryPendingMessages()
                 scheduleOutboxRetries()
             }
+        }
+    }
+    private val brokerAckWatchdog = MqttBrokerAckWatchdog(MQTT_BROKER_ACK_TIMEOUT_MILLIS)
+    private val brokerAckWatchdogRunnable = Runnable {
+        val oldestAgeMillis = brokerAckWatchdog.oldestPendingAgeMillis(SystemClock.elapsedRealtime())
+        if (connected && oldestAgeMillis != null && oldestAgeMillis >= MQTT_BROKER_ACK_TIMEOUT_MILLIS) {
+            recoverStalledTransport(oldestAgeMillis)
+        } else {
+            scheduleBrokerAckWatchdog()
         }
     }
     private val subscriptionRetryRunnable = Runnable {
@@ -440,13 +491,16 @@ object SignalASIMqttClient {
             MemoryPersistence()
         ).also {
             client = it
-            it.setCallback(object : MqttCallbackExtended {
+            val callbackClient = it
+            callbackClient.setCallback(object : MqttCallbackExtended {
                 override fun connectComplete(reconnect: Boolean, serverURI: String?) {
+                    if (client !== callbackClient) return
                     Log.i(TAG, "MQTT connectComplete reconnect=$reconnect")
                     appContext?.let(::onTransportConnected)
                 }
 
                 override fun connectionLost(cause: Throwable?) {
+                    if (client !== callbackClient) return
                     Log.w(TAG, "MQTT connection lost", cause)
                     connecting.set(false)
                     invalidateSubscriptions()
@@ -458,6 +512,7 @@ object SignalASIMqttClient {
                 }
 
                 override fun messageArrived(topic: String?, message: MqttMessage?) {
+                    if (client !== callbackClient) return
                     val payload = message?.payload?.toString(Charsets.UTF_8).orEmpty()
                     if (payload.isBlank()) return
                     runCatching { handleIncoming(topic.orEmpty(), JSONObject(payload)) }
@@ -465,19 +520,20 @@ object SignalASIMqttClient {
                 }
 
                 override fun deliveryComplete(token: IMqttDeliveryToken?) {
+                    if (client !== callbackClient) return
                     val context = appContext ?: return
                     val mid = token?.messageId ?: return
-                    if (completeFragmentDelivery(context, mid)) return
-                    val messageId = deliveryMessageIds.remove(mid) ?: return
-                    SignalASILinkDeliveryStore.markPublished(context, messageId)
-                    retryHandler.post { scheduleOutboxRetries() }
+                    handleBrokerDeliveryComplete(context, mid)
                 }
             })
         }
 
         val options = MqttConnectOptions().apply {
             isAutomaticReconnect = true
-            isCleanSession = false
+            // SignalASI's encrypted outbox owns durable delivery. Retaining a second broker-side
+            // session can preserve stale QoS inflight packets and leave an apparently connected
+            // client unable to publish new work.
+            isCleanSession = true
             keepAliveInterval = 30
             connectionTimeout = 10
             maxInflight = MQTT_MAX_INFLIGHT
@@ -486,11 +542,13 @@ object SignalASIMqttClient {
         retryHandler.removeCallbacks(connectionRetryRunnable)
         val listener = object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
+                if (client !== mqtt) return
                 Log.i(TAG, "MQTT connected")
                 onTransportConnected(context.applicationContext)
             }
 
             override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                if (client !== mqtt) return
                 Log.e(TAG, "MQTT connect failed", exception)
                 connecting.set(false)
                 invalidateSubscriptions()
@@ -1309,10 +1367,13 @@ object SignalASIMqttClient {
                 mqttMessage(packets.first()),
                 purpose
             ) ?: return false
+            trackBrokerDelivery(token)
             if (!durableMessageId.isNullOrBlank()) {
                 deliveryMessageIds[token.messageId] = durableMessageId
-                if (token.isComplete && deliveryMessageIds.remove(token.messageId) != null) {
-                    appContext?.let { SignalASILinkDeliveryStore.markPublished(it, durableMessageId) }
+            }
+            if (token.isComplete) {
+                appContext?.let { context ->
+                    retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
                 }
             }
             return true
@@ -1382,6 +1443,12 @@ object SignalASIMqttClient {
                 transfer.outstanding += 1
                 fragmentInflight += 1
                 fragmentTransferKeysByMid[token.messageId] = transfer.key
+                trackBrokerDelivery(token)
+                if (token.isComplete) {
+                    appContext?.let { context ->
+                        retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
+                    }
+                }
                 madeProgress = true
             }
         } while (madeProgress && fragmentInflight < MAX_FRAGMENT_INFLIGHT)
@@ -1418,6 +1485,56 @@ object SignalASIMqttClient {
         return true
     }
 
+    private fun trackBrokerDelivery(token: IMqttDeliveryToken) {
+        brokerAckWatchdog.onPublished(token.messageId, SystemClock.elapsedRealtime())
+        scheduleBrokerAckWatchdog()
+    }
+
+    private fun handleBrokerDeliveryComplete(context: Context, mid: Int) {
+        brokerAckWatchdog.onAcknowledged(mid)
+        scheduleBrokerAckWatchdog()
+        if (completeFragmentDelivery(context, mid)) return
+        val messageId = deliveryMessageIds.remove(mid) ?: return
+        SignalASILinkDeliveryStore.markPublished(context, messageId)
+        retryHandler.post { scheduleOutboxRetries() }
+    }
+
+    private fun scheduleBrokerAckWatchdog() {
+        retryHandler.removeCallbacks(brokerAckWatchdogRunnable)
+        if (!connected) return
+        val delayMillis = brokerAckWatchdog.nextCheckDelayMillis(SystemClock.elapsedRealtime()) ?: return
+        retryHandler.postDelayed(brokerAckWatchdogRunnable, delayMillis.coerceAtLeast(100L))
+    }
+
+    private fun recoverStalledTransport(oldestAgeMillis: Long) {
+        val context = appContext ?: return
+        if (!transportRecoveryInProgress.compareAndSet(false, true)) return
+        val staleClient = client
+        val pendingCount = brokerAckWatchdog.pendingCount()
+        Log.w(
+            TAG,
+            "MQTT broker ACK stalled; rebuilding transport pending=$pendingCount " +
+                "oldest_age_ms=$oldestAgeMillis"
+        )
+        client = null
+        connecting.set(false)
+        invalidateSubscriptions()
+        retryHandler.removeCallbacks(retryRunnable)
+        retryHandler.removeCallbacks(brokerAckWatchdogRunnable)
+        clearWireTransportState()
+        setConnected(false)
+        setSecureReady(false)
+        SignalASILinkDeliveryStore.makePendingImmediatelyRetryable(context)
+        runCatching { staleClient?.disconnectForcibly(0L, 0L, false) }
+            .onFailure { Log.w(TAG, "Failed to force-close stalled MQTT transport", it) }
+        runCatching { staleClient?.close(true) }
+            .onFailure { Log.w(TAG, "Failed to close stalled MQTT client", it) }
+        retryHandler.post {
+            transportRecoveryInProgress.set(false)
+            connect(context)
+        }
+    }
+
     private fun isFragmentTransferActive(messageId: String): Boolean =
         synchronized(fragmentTransferLock) {
             fragmentTransfers.containsKey("durable:$messageId")
@@ -1425,6 +1542,8 @@ object SignalASIMqttClient {
 
     private fun clearWireTransportState() {
         deliveryMessageIds.clear()
+        brokerAckWatchdog.clear()
+        retryHandler.removeCallbacks(brokerAckWatchdogRunnable)
         inboundChunkAssembler.clear()
         synchronized(fragmentTransferLock) {
             fragmentTransfers.clear()
