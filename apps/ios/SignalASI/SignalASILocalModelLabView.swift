@@ -317,7 +317,7 @@ struct SignalASILocalModelLabView: View {
       )
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.download_source", "Local Model Download"),
-        subtitle: t(VoiceWhisperModelSettingsPresenter.mirrorNote, VoiceWhisperModelSettingsPresenter.mirrorNote),
+        subtitle: t(VoiceWhisperModelSettingsPresenter.mirrorNoteKey, VoiceWhisperModelSettingsPresenter.mirrorNote),
         systemImage: "arrow.down.circle",
         tint: .teal,
         badge: t("signalasi.local_model.hub_source", "Hugging Face model")
