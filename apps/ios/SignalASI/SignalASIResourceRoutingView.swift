@@ -145,7 +145,7 @@ struct SignalASIResourceRoutingView: View {
         tint: .blue,
         badge: ""
       ) {
-        SignalASIContactDirectoryActionsView()
+        SignalASIAgentsModelsNodesView()
       }
     }
   }
