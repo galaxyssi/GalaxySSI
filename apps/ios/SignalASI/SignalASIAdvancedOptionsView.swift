@@ -600,7 +600,7 @@ struct SignalASIAgentPermissionAuditView: View {
         tint: .purple,
         badge: t("common_view", "View")
       ) {
-        AgentDataDisclosureDashboardView()
+        SignalASIPrivacyDashboardView()
       }
     }
   }

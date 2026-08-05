@@ -1,0 +1,477 @@
+import Foundation
+import SwiftUI
+
+struct SignalASIOnDeviceRuntimeView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+
+  private var packs: [AgentRuntimePackStatus] {
+    Self.packStatuses()
+  }
+
+  private var runtimeAvailability: AgentNativeToolAvailability {
+    runtimeProvider.availability(operation: .execute)
+  }
+
+  private var runtimeReady: Bool {
+    runtimeAvailability.status == .available
+  }
+
+  private var readyPackCount: Int {
+    packs.filter { $0.state == .ready }.count
+  }
+
+  private var readyLanguageCount: Int {
+    guard runtimeReady else { return 0 }
+    return AgentRuntimeLanguage.allCases.filter { language in
+      let pack = packs.first { $0.id == language.requiredPack }
+      return pack?.state == .ready && pack?.manifest?.capabilities.contains(language.requiredCapability) == true
+    }.count
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_runtime_title", "On-device Linux Runtime"),
+        leading: {
+          SignalASIBackButton()
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: t(runtimeReady ? "cc_runtime_ready_title" : "cc_runtime_setup_title",
+                     runtimeReady ? "iOS-local runtime is ready" : "On-device runtime needs setup"),
+            subtitle: runtimeAvailability.reason.ifBlank(t(
+              "cc_runtime_overview_subtitle",
+              "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
+            )),
+            systemImage: "terminal",
+            tint: runtimeReady ? .signalASIAccent : .orange,
+            badge: runtimeReady ? t("cc_status_ready", "Ready") : t("cc_status_not_configured", "Not configured")
+          )
+          SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
+          managementSection
+          environmentSection
+          receiptSection
+          securitySection
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+
+  private var runtimeMetrics: [SignalASIRuntimeMetric] {
+    [
+      SignalASIRuntimeMetric(
+        value: "\(readyPackCount)",
+        label: t("cc_runtime_metric_ready", "Ready packs"),
+        tint: readyPackCount == packs.count ? .signalASIAccent : .orange
+      ),
+      SignalASIRuntimeMetric(
+        value: "\(packs.count)",
+        label: t("cc_runtime_metric_total", "Total packs"),
+        tint: .blue
+      ),
+      SignalASIRuntimeMetric(
+        value: "\(readyLanguageCount)",
+        label: t("cc_runtime_metric_languages", "Languages"),
+        tint: runtimeReady ? .signalASIAccent : .gray
+      )
+    ]
+  }
+
+  private var managementSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_section_management", "Runtime Management"))
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_lifecycle_title", "Guest lifecycle"),
+        subtitle: runtimeAvailability.reason.ifBlank(t("cc_runtime_lifecycle_subtitle", "Start, health, restart backoff, and recovery state")),
+        systemImage: "link",
+        tint: runtimeReady ? .signalASIAccent : .orange,
+        badge: runtimeReady ? t("cc_runtime_lifecycle_ready", "Ready") : t("cc_runtime_lifecycle_no_controller", "Not packaged")
+      )
+      SignalASISecurityNavigationRow(
+        title: t("cc_runtime_software_center_title", "Software Center"),
+        subtitle: t("cc_runtime_software_center_subtitle", "Find and install verified language, browser, and media tools"),
+        systemImage: "shippingbox",
+        tint: softwareReadyCount == softwarePackCount ? .signalASIAccent : .blue,
+        badge: String(format: t("cc_runtime_software_center_status", "Installed %d/%d"), softwareReadyCount, softwarePackCount)
+      ) {
+        SignalASIRuntimeSoftwareCenterView()
+      }
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_catalog_refresh_title", "Runtime catalog"),
+        subtitle: t("cc_runtime_catalog_refresh_subtitle", "Load compatible packs from the signed SignalASI release catalog"),
+        systemImage: "checklist",
+        tint: .blue,
+        badge: "\(packs.count)"
+      )
+    }
+  }
+
+  private var environmentSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_section_environment", "Base Runtime"))
+      ForEach(environmentPacks) { pack in
+        SignalASISecurityStatusRow(
+          title: Self.packTitle(pack.id, language: interfaceLanguage),
+          subtitle: Self.packSubtitle(pack, language: interfaceLanguage),
+          systemImage: "terminal",
+          tint: Self.packTint(pack),
+          badge: Self.packBadge(pack, language: interfaceLanguage)
+        )
+      }
+    }
+  }
+
+  private var receiptSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_section_receipts", "Recent Execution Receipts"))
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_receipt_empty_title", "No runtime executions yet"),
+        subtitle: t("cc_runtime_receipt_empty_subtitle", "Verified execution receipts appear here after local runtime tasks run"),
+        systemImage: "clock.arrow.circlepath",
+        tint: .gray,
+        badge: ""
+      )
+    }
+  }
+
+  private var securitySection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_section_security", "Isolation & Policy"))
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_isolation_title", "Task Workspace Isolation"),
+        subtitle: t("cc_runtime_isolation_subtitle", "Each task gets CPU, memory, storage, time, output, and artifact limits"),
+        systemImage: "checkmark.shield",
+        tint: .signalASIAccent,
+        badge: t("cc_status_ready", "Ready")
+      )
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_network_title", "Guest Network by Default"),
+        subtitle: t("cc_runtime_network_subtitle", "Off by default unless the current task receives scoped network authorization"),
+        systemImage: "network",
+        tint: .gray,
+        badge: t("signalasi.status.off", "Off")
+      )
+    }
+  }
+
+  private var environmentPacks: [AgentRuntimePackStatus] {
+    packs.filter { ["linux-base", "python-uv"].contains($0.id) }
+  }
+
+  private var softwarePacks: [AgentRuntimePackStatus] {
+    packs.filter { !["linux-base", "python-uv"].contains($0.id) }
+  }
+
+  private var softwarePackCount: Int {
+    softwarePacks.count
+  }
+
+  private var softwareReadyCount: Int {
+    softwarePacks.filter { $0.state == .ready }.count
+  }
+
+  static func packStatuses(
+    runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
+    fileManager: FileManager = .default
+  ) -> [AgentRuntimePackStatus] {
+    AgentRuntimePackCatalogPolicy.requiredPacks.map { packId in
+      packStatus(packId, runtimeRootURL: runtimeRootURL, fileManager: fileManager)
+    }
+  }
+
+  static func packStatus(
+    _ packId: String,
+    runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
+    fileManager: FileManager = .default
+  ) -> AgentRuntimePackStatus {
+    let manifestURL = runtimeRootURL
+      .appendingPathComponent("packs", isDirectory: true)
+      .appendingPathComponent(packId, isDirectory: true)
+      .appendingPathComponent("manifest.json", isDirectory: false)
+    guard fileManager.fileExists(atPath: manifestURL.path) else {
+      return AgentRuntimePackStatus(id: packId, state: .notInstalled, reason: "Runtime pack is not installed")
+    }
+    do {
+      let manifest = try JSONDecoder().decode(AgentRuntimePackManifest.self, from: try Data(contentsOf: manifestURL))
+      guard manifest.id == packId else {
+        return AgentRuntimePackStatus(id: packId, state: .invalid, reason: "Runtime pack manifest id does not match", manifest: manifest)
+      }
+      guard AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.contains(manifest.architecture) else {
+        return AgentRuntimePackStatus(id: packId, state: .incompatible, reason: "Runtime pack architecture is not supported on this iOS device", manifest: manifest)
+      }
+      let missing = (AgentRuntimePackCatalogPolicy.requiredPackCapabilities[packId] ?? [])
+        .subtracting(Set(manifest.capabilities))
+      guard missing.isEmpty else {
+        return AgentRuntimePackStatus(
+          id: packId,
+          state: .invalid,
+          reason: "Runtime pack is missing capabilities: \(missing.sorted().joined(separator: ","))",
+          manifest: manifest
+        )
+      }
+      return AgentRuntimePackStatus(id: packId, state: .ready, reason: "", manifest: manifest)
+    } catch {
+      return AgentRuntimePackStatus(id: packId, state: .invalid, reason: error.localizedDescription.ifBlank("Runtime pack manifest could not be read"))
+    }
+  }
+
+  static func packTitle(_ id: String, language: String) -> String {
+    switch id {
+    case "linux-base":
+      return SignalASILocalization.string("cc_runtime_pack_linux", fallback: "Linux base", language: language)
+    case "python-uv":
+      return SignalASILocalization.string("cc_runtime_pack_python", fallback: "Python and uv", language: language)
+    case "node-js":
+      return SignalASILocalization.string("cc_runtime_pack_node", fallback: "Node.js and JavaScript", language: language)
+    case "browser-automation":
+      return SignalASILocalization.string("cc_runtime_pack_browser", fallback: "Browser automation", language: language)
+    case "cpp":
+      return "C / C++"
+    case "ffmpeg":
+      return "FFmpeg"
+    default:
+      return id.uppercased()
+    }
+  }
+
+  static func packSubtitle(_ pack: AgentRuntimePackStatus, language: String) -> String {
+    if let manifest = pack.manifest {
+      return "\(manifest.version) / \(formatBytes(manifest.installedSizeBytes)) / \(manifest.license.ifBlank("unknown"))"
+    }
+    return SignalASILocalization.string(
+      "cc_runtime_pack_subtitle",
+      fallback: pack.reason.ifBlank("Signed modular runtime pack"),
+      language: language
+    )
+  }
+
+  static func packBadge(_ pack: AgentRuntimePackStatus, language: String) -> String {
+    switch pack.state {
+    case .ready:
+      return SignalASILocalization.string("cc_status_ready", fallback: "Ready", language: language)
+    case .notInstalled:
+      return SignalASILocalization.string("cc_runtime_catalog_install", fallback: "Install", language: language)
+    case .invalid, .incompatible:
+      return SignalASILocalization.string("cc_runtime_catalog_repair", fallback: "Repair", language: language)
+    }
+  }
+
+  static func packTint(_ pack: AgentRuntimePackStatus) -> Color {
+    switch pack.state {
+    case .ready:
+      return .signalASIAccent
+    case .notInstalled:
+      return .blue
+    case .invalid, .incompatible:
+      return .orange
+    }
+  }
+
+  static func formatBytes(_ bytes: Int64) -> String {
+    guard bytes > 0 else { return "0 B" }
+    let units = ["B", "KB", "MB", "GB"]
+    var value = Double(bytes)
+    var index = 0
+    while value >= 1024 && index < units.count - 1 {
+      value /= 1024
+      index += 1
+    }
+    return index == 0 ? "\(Int(value)) \(units[index])" : String(format: "%.1f %@", value, units[index])
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+struct SignalASIRuntimeSoftwareCenterView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var searchText = ""
+
+  private var packs: [AgentRuntimePackStatus] {
+    SignalASIOnDeviceRuntimeView.packStatuses()
+      .filter { !["linux-base", "python-uv"].contains($0.id) }
+  }
+
+  private var filteredPacks: [AgentRuntimePackStatus] {
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !query.isEmpty else { return packs }
+    return packs.filter { pack in
+      pack.id.lowercased().contains(query) ||
+        SignalASIOnDeviceRuntimeView.packTitle(pack.id, language: interfaceLanguage)
+          .lowercased()
+          .contains(query)
+    }
+  }
+
+  private var installedCount: Int {
+    packs.filter { $0.state == .ready }.count
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_runtime_software_center_title", "Software Center"),
+        leading: {
+          SignalASIBackButton()
+        },
+        trailing: {
+          Color.clear
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: t("cc_runtime_software_overview_title", "Trusted software catalog"),
+            subtitle: t(
+              "cc_runtime_software_overview_subtitle",
+              "Software runs inside an isolated iOS-local runtime; verified sources and signatures gate installation"
+            ),
+            systemImage: "shippingbox",
+            tint: .blue,
+            badge: t("cc_runtime_software_verified_badge", "Signed and verified")
+          )
+          SignalASIRuntimeMetricStrip(metrics: [
+            SignalASIRuntimeMetric(
+              value: "\(installedCount)",
+              label: t("cc_runtime_software_metric_installed", "Installed"),
+              tint: installedCount == packs.count ? .signalASIAccent : .orange
+            ),
+            SignalASIRuntimeMetric(
+              value: "\(packs.count)",
+              label: t("cc_runtime_software_metric_available", "Available"),
+              tint: .blue
+            ),
+            SignalASIRuntimeMetric(
+              value: "iOS",
+              label: t("cc_runtime_software_metric_catalog", "Catalog"),
+              tint: .signalASIInsightText
+            )
+          ])
+          searchSection
+          catalogSection
+          advancedSection
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+
+  private var searchSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_find", "Find Software"))
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .foregroundColor(.signalASITextSecondary)
+        TextField(t("cc_runtime_software_search_hint", "Software name"), text: $searchText)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !searchText.isEmpty {
+          Button {
+            searchText = ""
+          } label: {
+            Image(systemName: "xmark.circle.fill")
+              .foregroundColor(.signalASITextSecondary)
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .font(.system(size: 15))
+      .padding(.horizontal, 12)
+      .frame(height: 40)
+      .background(Color.signalASISearchBackground)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+  }
+
+  private var catalogSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_catalog", "Compatible Software"))
+      if filteredPacks.isEmpty {
+        SignalASISecurityStatusRow(
+          title: t("cc_runtime_software_no_results_title", "No compatible software found"),
+          subtitle: String(format: t("cc_runtime_software_no_results_subtitle", "No verified software pack matches \"%@\""), searchText),
+          systemImage: "magnifyingglass",
+          tint: .orange,
+          badge: ""
+        )
+      } else {
+        ForEach(filteredPacks) { pack in
+          SignalASISecurityStatusRow(
+            title: SignalASIOnDeviceRuntimeView.packTitle(pack.id, language: interfaceLanguage),
+            subtitle: SignalASIOnDeviceRuntimeView.packSubtitle(pack, language: interfaceLanguage),
+            systemImage: pack.id == "ffmpeg" ? "film" : "shippingbox",
+            tint: SignalASIOnDeviceRuntimeView.packTint(pack),
+            badge: SignalASIOnDeviceRuntimeView.packBadge(pack, language: interfaceLanguage)
+          )
+        }
+      }
+    }
+  }
+
+  private var advancedSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_advanced", "Advanced Installation"))
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_import_title", "Install runtime pack"),
+        subtitle: t("cc_runtime_import_subtitle", "Import a SignalASI-signed .sarpack package"),
+        systemImage: "tray.and.arrow.down",
+        tint: .orange,
+        badge: t("cc_runtime_lifecycle_no_controller", "Not packaged")
+      )
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIRuntimeMetric: Identifiable {
+  var value: String
+  var label: String
+  var tint: Color
+
+  var id: String { label }
+}
+
+private struct SignalASIRuntimeMetricStrip: View {
+  var metrics: [SignalASIRuntimeMetric]
+
+  var body: some View {
+    HStack(spacing: 8) {
+      ForEach(metrics) { metric in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(metric.value)
+            .font(.system(size: 22, weight: .bold))
+            .foregroundColor(metric.tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+          Text(metric.label)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .padding(.horizontal, 10)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      }
+    }
+  }
+}
