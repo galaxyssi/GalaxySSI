@@ -1970,8 +1970,17 @@ final class SignalASIStore: ObservableObject {
       let agentName = payload.string("name").ifBlank(agentId)
       let displayName = payload.string("display_name")
         .ifBlank(payload.string("label"))
-        .ifBlank("\(agentName) - \(desktopName)")
+        .ifBlank("\(agentName) · \(desktopName)")
       let kind = payload.string("kind").ifBlank(payload.string("agent_kind")).ifBlank("custom-cli")
+      let setupStatus = payload.string("status")
+        .ifBlank(payload.string("setup_status"))
+        .ifBlank(isPaired ? "ready" : "unknown")
+      let setupDetail = payload.string("detail")
+        .ifBlank(payload.string("setup_detail"))
+        .ifBlank(payload.string("setup"))
+        .ifBlank(
+          isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
+        )
       let now = Date()
       var contact = contact(id: contactId) ?? SignalASIContact(
         id: contactId,
@@ -1985,8 +1994,8 @@ final class SignalASIStore: ObservableObject {
         desktopId: desktopId,
         desktopName: desktopName,
         identityFingerprint: desktopFingerprint,
-        setupStatus: isPaired ? "ready" : "pairing",
-        setupDetail: isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
+        setupStatus: setupStatus,
+        setupDetail: setupDetail,
         cloudProvider: "",
         cloudModels: [],
         selectedCloudModelId: "",
@@ -2004,17 +2013,10 @@ final class SignalASIStore: ObservableObject {
       contact.desktopId = desktopId
       contact.desktopName = desktopName
       contact.identityFingerprint = desktopFingerprint
-      contact.setupStatus = payload.string("status")
-        .ifBlank(payload.string("setup_status"))
-        .ifBlank(isPaired ? "ready" : "pairing")
-      contact.setupDetail = payload.string("detail")
-        .ifBlank(payload.string("setup_detail"))
-        .ifBlank(payload.string("setup"))
-        .ifBlank(
-          isPaired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status"
-      )
+      contact.setupStatus = setupStatus
+      contact.setupDetail = setupDetail
       contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
-      contact.mqttInboxTopic = link?.routes.downTopic
+      contact.mqttInboxTopic = payload.string("mqtt_inbox_topic").ifBlank(link?.routes.downTopic ?? "")
       contact.deleted = false
       contact.deletedAt = nil
       contact.updatedAt = now
@@ -2042,14 +2044,14 @@ final class SignalASIStore: ObservableObject {
         "id": "\(link.desktopId):\(agentId)",
         "agent_id": agentId,
         "name": name,
-        "display_name": "\(name) - \(link.desktopName)",
+        "display_name": "\(name) · \(link.desktopName)",
         "kind": kind,
         "desktop_id": link.desktopId,
         "desktop_name": link.desktopName,
         "desktop_fingerprint": link.desktopFingerprint,
         "desktop_access_profile": link.accessProfile,
         "desktop_access_scopes": Array(link.accessScopes).sorted(),
-        "status": link.paired ? "ready" : "pairing",
+        "status": link.paired ? "ready" : "unknown",
         "detail": link.paired ? "SignalASI Link is paired" : "Waiting for SignalASI Desktop status",
         "setup": "",
         "mqtt_topic": link.routes.upTopic,
