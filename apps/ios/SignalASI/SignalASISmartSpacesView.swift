@@ -103,7 +103,7 @@ struct SignalASISmartSpacesView: View {
         tint: .red,
         badge: t("signalasi.common.confirm", "Confirm")
       ) {
-        OnDeviceAgentPermissionsView()
+        SignalASIExecutionPolicyView()
       }
     }
   }
