@@ -11,6 +11,38 @@ enum AgentAvatarStyle: String, Codable, CaseIterable, Identifiable {
   case generic = "GENERIC"
 
   var id: String { rawValue }
+
+  var androidParityAssetName: String? {
+    switch self {
+    case .codex:
+      return "CodexLogo"
+    case .claude:
+      return "ClaudeLogo"
+    case .hermes:
+      return "HermesLogo"
+    case .openclaw, .localModel, .cloudModel, .device, .generic:
+      return nil
+    }
+  }
+}
+
+enum SignalASIAgentAvatarAssetCatalog {
+  static func assetName(for fields: [String]) -> String? {
+    let identity = fields
+      .joined(separator: " ")
+      .lowercased()
+
+    if identity.contains("codex") {
+      return AgentAvatarStyle.codex.androidParityAssetName
+    }
+    if identity.contains("claude") || identity.contains("anthropic") {
+      return AgentAvatarStyle.claude.androidParityAssetName
+    }
+    if identity.contains("hermes") {
+      return AgentAvatarStyle.hermes.androidParityAssetName
+    }
+    return nil
+  }
 }
 
 struct AgentIdentityPresentation: Codable, Equatable, Identifiable {
