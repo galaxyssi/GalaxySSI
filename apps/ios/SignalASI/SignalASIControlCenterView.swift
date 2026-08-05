@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -405,6 +406,23 @@ struct SignalASIControlCenterView: View {
 
 struct SignalASIControlCenterAppServicesView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+
+  private var contactCount: Int {
+    store.visibleContacts.count
+  }
+
+  private var backgroundStatusTitle: String {
+    t(
+      coordinator.mqttClient.isConnected ? "cc_status_online" : "cc_status_degraded",
+      coordinator.mqttClient.isConnected ? "Online" : "Degraded"
+    )
+  }
+
+  private var backgroundTint: Color {
+    coordinator.mqttClient.isConnected ? .signalASIAccent : .orange
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -432,7 +450,7 @@ struct SignalASIControlCenterAppServicesView: View {
             subtitle: t("cc_messages_subtitle", "Conversations, media, delivery, and background connection"),
             systemImage: "bubble.left.and.bubble.right",
             tint: .signalASIAccent,
-            badge: t("common_view", "View")
+            badge: t("cc_status_normal", "Normal")
           ) {
             ChatListView()
           }
@@ -441,7 +459,7 @@ struct SignalASIControlCenterAppServicesView: View {
             subtitle: t("cc_contacts_subtitle", "People, Agents, models, devices, and remarks"),
             systemImage: "person.2",
             tint: .blue,
-            badge: t("common_view", "View")
+            badge: "\(contactCount)"
           ) {
             ContactsView()
           }
@@ -453,6 +471,25 @@ struct SignalASIControlCenterAppServicesView: View {
             badge: t("common_view", "View")
           ) {
             DiscoverView()
+          }
+          SignalASISecuritySectionTitle(title: t("cc_section_message_settings", "Message Settings"))
+          SignalASISecurityActionRow(
+            title: t("cc_background_connection_title", "Background Message Connection"),
+            subtitle: t("cc_background_connection_subtitle", "Encrypted MQTT session and offline message recovery"),
+            systemImage: "link",
+            tint: backgroundTint,
+            badge: backgroundStatusTitle
+          ) {
+            openAppSettings()
+          }
+          SignalASIControlCenterNavigationRow(
+            title: t("cc_chat_history_title", "Chat History"),
+            subtitle: t("cc_chat_history_subtitle", "Encrypted local storage managed per conversation"),
+            systemImage: "clock.arrow.circlepath",
+            tint: .gray,
+            badge: ""
+          ) {
+            SignalASIAgentSessionsView()
           }
         }
         .padding(.horizontal, 12)
@@ -466,6 +503,11 @@ struct SignalASIControlCenterAppServicesView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func openAppSettings() {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+    UIApplication.shared.open(url)
   }
 }
 
