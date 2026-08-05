@@ -176,7 +176,7 @@ struct SignalASIControlCenterView: View {
         tint: nativeToolSummary.available > 0 ? .signalASIAccent : .orange,
         badge: "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
       ) {
-        SignalASINativeToolCatalogView()
+        SignalASIPhoneCapabilitiesView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_runtime_title", "On-device Linux Runtime"),
@@ -194,7 +194,7 @@ struct SignalASIControlCenterView: View {
         tint: .blue,
         badge: "\(SignalASIAppAdapterCatalog.adapterCount)"
       ) {
-        SignalASIAppAdaptersView()
+        SignalASIAppToolsView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_spaces_title", "Smart Spaces"),
@@ -254,7 +254,7 @@ struct SignalASIControlCenterView: View {
         tint: .purple,
         badge: t("common_view", "View")
       ) {
-        OnDeviceAgentPermissionsView()
+        SignalASIPermissionsAuditView()
       }
     }
   }
@@ -269,7 +269,7 @@ struct SignalASIControlCenterView: View {
         tint: store.voiceSettings.wakeListeningEnabled ? .signalASIAccent : .blue,
         badge: store.voiceSettings.wakeListeningEnabled ? t("status_enabled", "Enabled") : t("common_off", "Off")
       ) {
-        VoiceSettingsView()
+        SignalASIVoiceControlCenterView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_app_services_title", "Messages - Contacts - Discover"),
