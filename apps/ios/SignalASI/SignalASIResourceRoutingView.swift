@@ -150,14 +150,37 @@ struct SignalASIResourceRoutingView: View {
     }
   }
 
+  @ViewBuilder
   private func resourceRow(_ resource: AgentResourceDescriptor) -> some View {
-    SignalASISecurityStatusRow(
-      title: resource.title,
-      subtitle: resourceSubtitle(resource),
-      systemImage: resourceIcon(resource),
-      tint: statusTint(resource.status),
-      badge: statusLabel(resource.status)
-    )
+    let title = resource.title
+    let subtitle = resourceSubtitle(resource)
+    let systemImage = resourceIcon(resource)
+    let tint = statusTint(resource.status)
+    let badge = statusLabel(resource.status)
+
+    if let contact = routeContact(for: resource) {
+      SignalASISecurityNavigationRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge
+      ) {
+        if contact.deliveryMode == .cloudAPI {
+          CloudModelProviderDetailView(contactId: contact.id)
+        } else {
+          ContactDetailView(contactId: contact.id)
+        }
+      }
+    } else {
+      SignalASISecurityStatusRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge
+      )
+    }
   }
 
   private func metricCard(value: String, label: String) -> some View {
@@ -196,6 +219,21 @@ struct SignalASIResourceRoutingView: View {
         ? ProviderProfileCatalog.fromCloudContact(contact, status: status)
         : nil
     )
+  }
+
+  private func routeContact(for resource: AgentResourceDescriptor) -> SignalASIContact? {
+    let candidates = [resource.targetId, resource.id].flatMap { raw in
+      let withoutTarget = raw.hasPrefix("target:") ? String(raw.dropFirst("target:".count)) : raw
+      let withoutCloud = withoutTarget.hasPrefix("cloud:") ? String(withoutTarget.dropFirst("cloud:".count)) : withoutTarget
+      return [raw, withoutTarget, withoutCloud]
+    }
+    for candidate in candidates {
+      let id = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+      if let contact = store.contact(id: id), !contact.deleted {
+        return contact
+      }
+    }
+    return nil
   }
 
   private func connectorKind(_ contact: SignalASIContact) -> AgentConnectorKind {
