@@ -146,7 +146,7 @@ struct SignalASIControlCenterView: View {
         tint: store.agentSafetySettings.memoryCapture ? .signalASIAccent : .orange,
         badge: store.agentSafetySettings.memoryCapture ? t("status_enabled", "Enabled") : t("common_off", "Off")
       ) {
-        SignalASIMemoryControlView()
+        SignalASIMemoryControlCenterView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_knowledge_title", "Knowledge Base"),
