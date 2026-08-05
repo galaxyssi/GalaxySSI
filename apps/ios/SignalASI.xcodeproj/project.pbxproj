@@ -13,6 +13,7 @@
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001370 /* SignalASIMessageActionsView.swift */; };
+    A10000000000000000001433 /* SignalASIPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001433 /* SignalASIPairingView.swift */; };
 		A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */; };
 		A10000000000000000001430 /* SignalASIContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001430 /* SignalASIContactDetailView.swift */; };
 		A10000000000000000001432 /* SignalASIMyContactQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */; };
@@ -663,6 +664,7 @@
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000001370 /* SignalASIMessageActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMessageActionsView.swift; sourceTree = "<group>"; };
+    A20000000000000000001433 /* SignalASIPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPairingView.swift; sourceTree = "<group>"; };
 		A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIFriendRequestDetailView.swift; sourceTree = "<group>"; };
 		A20000000000000000001430 /* SignalASIContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactDetailView.swift; sourceTree = "<group>"; };
 		A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMyContactQRCodeView.swift; sourceTree = "<group>"; };
@@ -1692,6 +1694,7 @@
         A41000000000000000000890 /* Localizable.strings */,
         A20000000000000000000888 /* SignalASIAndroidParityUI.swift */,
         A20000000000000000001370 /* SignalASIMessageActionsView.swift */,
+        A20000000000000000001433 /* SignalASIPairingView.swift */,
 				A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */,
 				A20000000000000000001430 /* SignalASIContactDetailView.swift */,
 				A20000000000000000001432 /* SignalASIMyContactQRCodeView.swift */,
@@ -2451,6 +2454,7 @@
         A10000000000000000000004 /* SignalASIServices.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */,
+        A10000000000000000001433 /* SignalASIPairingView.swift in Sources */,
 				A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */,
 				A10000000000000000001430 /* SignalASIContactDetailView.swift in Sources */,
 				A10000000000000000001432 /* SignalASIMyContactQRCodeView.swift in Sources */,

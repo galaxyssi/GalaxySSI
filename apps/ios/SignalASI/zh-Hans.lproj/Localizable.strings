@@ -882,7 +882,14 @@
 "signalasi.agent.new_connection_subtitle" = "新连接均需要双向确认，保护隐私和身份";
 "signalasi.pairing.title" = "配对";
 "signalasi.pairing.section_desktop" = "桌面";
+"signalasi.pairing.desktop_count" = "%d 台桌面";
+"signalasi.pairing.no_desktops" = "暂无已配对桌面";
+"signalasi.pairing.no_desktops_subtitle" = "扫描 SignalASI Desktop 二维码以建立可信连接。";
+"signalasi.pairing.remove_desktop" = "移除桌面连接";
+"signalasi.pairing.desktop_removed" = "%@ 已移除。";
 "signalasi.pairing.section_qr" = "二维码";
+"signalasi.pairing.scan_subtitle" = "扫描 SignalASI Desktop 或联系人二维码。";
+"signalasi.pairing.paste_qr_payload" = "粘贴二维码载荷";
 "signalasi.pairing.section_status" = "状态";
 "signalasi.pairing.action_scan" = "扫描";
 "signalasi.pairing.action_pair" = "配对";
@@ -914,6 +921,7 @@
 "signalasi.pairing.invalid_qr" = "无效的二维码";
 "signalasi.pairing.contact_request_received" = "已收到联系人请求：%@";
 "signalasi.pairing.scan_failed" = "扫描失败：%@";
+"signalasi.pairing.desktop_added" = "%@ 已添加";
 "signalasi.pairing.desktop_claim_sending" = "正在添加 %@...";
 "signalasi.pairing.desktop_claim_sent" = "%@ 已添加，可在联系人中使用。";
 "signalasi.pairing.desktop_claim_sent_detailed" = "%@ 已添加为 %@，%d 个 Agent 可在联系人中使用。";
