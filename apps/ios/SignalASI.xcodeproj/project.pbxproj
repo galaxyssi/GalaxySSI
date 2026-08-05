@@ -42,6 +42,7 @@
     A10000000000000000001130 /* SignalASIProfileIdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001130 /* SignalASIProfileIdentityView.swift */; };
     A10000000000000000001120 /* SignalASIControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001120 /* SignalASIControlCenterView.swift */; };
     A10000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift */; };
+    A10000000000000000001150 /* SignalASIVoiceProviderPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001150 /* SignalASIVoiceProviderPagesView.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000000891 /* SignalASILocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000891 /* SignalASILocalization.swift */; };
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
@@ -653,6 +654,7 @@
     A20000000000000000001130 /* SignalASIProfileIdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIProfileIdentityView.swift; sourceTree = "<group>"; };
     A20000000000000000001120 /* SignalASIControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceAssistantSettingsView.swift; sourceTree = "<group>"; };
+    A20000000000000000001150 /* SignalASIVoiceProviderPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceProviderPagesView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000000891 /* SignalASILocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalization.swift; sourceTree = "<group>"; };
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1642,6 +1644,7 @@
         A20000000000000000001130 /* SignalASIProfileIdentityView.swift */,
         A20000000000000000001120 /* SignalASIControlCenterView.swift */,
         A20000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift */,
+        A20000000000000000001150 /* SignalASIVoiceProviderPagesView.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -2362,6 +2365,7 @@
         A10000000000000000001130 /* SignalASIProfileIdentityView.swift in Sources */,
         A10000000000000000001120 /* SignalASIControlCenterView.swift in Sources */,
         A10000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift in Sources */,
+        A10000000000000000001150 /* SignalASIVoiceProviderPagesView.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
