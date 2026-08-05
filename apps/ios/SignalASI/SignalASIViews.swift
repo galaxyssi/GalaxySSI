@@ -1252,9 +1252,9 @@ struct CustomDeviceConnectorsView: View {
 
   var body: some View {
     Form {
-      Section("Devices") {
+      Section(header: Text(t("signalasi.settings.custom_devices", "Custom Devices"))) {
         if store.customDeviceConnectors.isEmpty {
-          Text("No custom devices")
+          Text(t("signalasi.settings.no_custom_devices", "No custom devices"))
             .foregroundColor(.secondary)
         }
         ForEach(store.customDeviceConnectors) { connector in
@@ -1283,11 +1283,11 @@ struct CustomDeviceConnectorsView: View {
       }
       Section {
         NavigationLink(destination: CustomDeviceConnectorEditorView(connector: CustomDeviceConnector())) {
-          Label("Add Custom Device", systemImage: "plus.circle")
+          Label(t("device_custom_add", "Add Custom Device"), systemImage: "plus.circle")
         }
       }
     }
-    .navigationTitle(t("Custom Devices", "Custom Devices"))
+    .navigationTitle(t("signalasi.settings.custom_devices", "Custom Devices"))
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -1309,25 +1309,25 @@ struct CustomDeviceConnectorEditorView: View {
 
   var body: some View {
     Form {
-      Section("Connection") {
-        TextField("Name", text: stringBinding(\.name))
-        Picker("Transport", selection: transportBinding) {
+      Section(header: Text(t("device_custom_section_connection", "Connection"))) {
+        TextField(t("device_custom_name", "Device Name"), text: stringBinding(\.name))
+        Picker(t("device_custom_transport", "Transport"), selection: transportBinding) {
           ForEach(CustomDeviceTransport.allCases) { transport in
             Text(t(transport.displayName, transport.displayName)).tag(transport)
           }
         }
-        TextField("Endpoint", text: stringBinding(\.endpoint))
+        TextField(t("device_custom_endpoint", "Endpoint"), text: stringBinding(\.endpoint))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
-        TextField("Command Target", text: stringBinding(\.commandTarget))
+        TextField(t("device_custom_target", "Command Target"), text: stringBinding(\.commandTarget))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
       }
-      Section("Authentication") {
-        TextField("Username", text: stringBinding(\.username))
+      Section(header: Text(t("signalasi.device.section_authentication", "Authentication"))) {
+        TextField(t("device_custom_username", "Username"), text: stringBinding(\.username))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
-        SecureField("Auth Token", text: stringBinding(\.authToken))
+        SecureField(t("device_custom_token", "Token or Password"), text: stringBinding(\.authToken))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
         if !draft.maskedAuthToken.isEmpty {
@@ -1336,20 +1336,20 @@ struct CustomDeviceConnectorEditorView: View {
             .foregroundColor(.secondary)
         }
       }
-      Section("Safety") {
-        Picker("Risk", selection: riskBinding) {
+      Section(header: Text(t("device_custom_section_safety", "Safety"))) {
+        Picker(t("device_custom_risk", "Risk Level"), selection: riskBinding) {
           ForEach(CustomDeviceRisk.allCases) { risk in
             Text(t(risk.displayName, risk.displayName)).tag(risk)
           }
         }
-        Toggle("Enabled", isOn: boolBinding(\.enabled))
+        Toggle(t("device_custom_enabled", "Connector Enabled"), isOn: boolBinding(\.enabled))
       }
-      Section("Status") {
+      Section(header: Text(t("signalasi.common.status", "Status"))) {
         if draft.configured {
-          Label("Configured", systemImage: "checkmark.circle")
+          Label(t("signalasi.device.home_assistant_configured", "Configured"), systemImage: "checkmark.circle")
             .foregroundColor(.green)
         } else {
-          Label("Name and endpoint are required", systemImage: "exclamationmark.triangle")
+          Label(t("device_custom_required", "Device name and endpoint are required"), systemImage: "exclamationmark.triangle")
             .foregroundColor(.orange)
         }
       }
@@ -1358,7 +1358,7 @@ struct CustomDeviceConnectorEditorView: View {
           store.upsertCustomDeviceConnector(draft)
           dismiss()
         } label: {
-          Label("Save", systemImage: "checkmark.circle")
+          Label(t("common_save", "Save"), systemImage: "checkmark.circle")
         }
         .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
           draft.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1368,12 +1368,12 @@ struct CustomDeviceConnectorEditorView: View {
             store.deleteCustomDeviceConnector(id: originalId)
             dismiss()
           } label: {
-            Label("Delete", systemImage: "trash")
+            Label(t("common_delete", "Delete"), systemImage: "trash")
           }
         }
       }
     }
-    .navigationTitle(t("Custom Device", "Custom Device"))
+    .navigationTitle(t("device_custom_editor_title", "Custom Device Connector"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
@@ -1416,13 +1416,13 @@ struct HomeAssistantSettingsView: View {
 
   var body: some View {
     Form {
-      Section("Connection") {
-        Toggle("Enable Home Assistant", isOn: boolBinding(\.enabled))
-        TextField("Server URL", text: stringBinding(\.baseUrl))
+      Section(header: Text(t("device_custom_section_connection", "Connection"))) {
+        Toggle(t("signalasi.device.home_assistant_enable", "Enable Home Assistant"), isOn: boolBinding(\.enabled))
+        TextField(t("signalasi.device.home_assistant_url", "Server URL"), text: stringBinding(\.baseUrl))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
           .keyboardType(.URL)
-        SecureField("Access Token", text: stringBinding(\.accessToken))
+        SecureField(t("signalasi.device.home_assistant_token", "Access Token"), text: stringBinding(\.accessToken))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
         if !store.homeAssistantSettings.maskedAccessToken.isEmpty {
@@ -1431,28 +1431,28 @@ struct HomeAssistantSettingsView: View {
             .foregroundColor(.secondary)
         }
       }
-      Section("Default Target") {
-        TextField("Default Entity", text: stringBinding(\.defaultEntityId))
+      Section(header: Text(t("signalasi.device.home_assistant_default_target_section", "Default Target"))) {
+        TextField(t("signalasi.device.home_assistant_default_entity", "Default Entity"), text: stringBinding(\.defaultEntityId))
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
-        Text("Example: light.living_room")
+        Text(t("signalasi.device.home_assistant_default_entity_subtitle", "Example: light.living_room"))
           .font(.caption)
           .foregroundColor(.secondary)
       }
-      Section("Status") {
+      Section(header: Text(t("signalasi.common.status", "Status"))) {
         if store.homeAssistantSettings.configured {
-          Label("Configured", systemImage: "checkmark.circle")
+          Label(t("signalasi.device.home_assistant_configured", "Configured"), systemImage: "checkmark.circle")
             .foregroundColor(.green)
         } else if store.homeAssistantSettings.credentialsConfigured {
-          Label("Configured, disabled", systemImage: "pause.circle")
+          Label(t("signalasi.device.home_assistant_configured_disabled", "Configured, disabled"), systemImage: "pause.circle")
             .foregroundColor(.orange)
         } else {
-          Label("Not configured", systemImage: "exclamationmark.triangle")
+          Label(t("signalasi.device.home_assistant_not_configured", "Not configured"), systemImage: "exclamationmark.triangle")
             .foregroundColor(.secondary)
         }
       }
     }
-    .navigationTitle(t("Home Assistant", "Home Assistant"))
+    .navigationTitle(t("signalasi.device.home_assistant", "Home Assistant"))
     .navigationBarTitleDisplayMode(.inline)
   }
 
