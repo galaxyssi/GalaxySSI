@@ -96,6 +96,14 @@ struct SignalASILanguagePolicyFormatter {
     }
   }
 
+  func autoResolutionDetail(resolvedName: String, timeZoneIdentifier: String) -> String {
+    String(
+      format: t("signalasi.language_policy.auto_resolution_detail", "Automatic - %@ / Time zone %@"),
+      resolvedName,
+      timeZoneIdentifier
+    )
+  }
+
   func voiceResolvedName(_ value: String) -> String {
     let resolved = LanguagePolicySettings.resolve(value)
     switch LanguagePolicySettings.normalizeVoice(resolved) {
@@ -114,7 +122,7 @@ struct SignalASILanguagePolicyFormatter {
 
   private func effectiveLabel(resolvedName: String) -> String {
     String(
-      format: t("signalasi.language_policy.effective", "Automatic · %@"),
+      format: t("signalasi.language_policy.effective", "Automatic - %@"),
       resolvedName
     )
   }
