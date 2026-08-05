@@ -104,7 +104,7 @@ struct SignalASIAdvancedOptionsView: View {
         tint: .orange,
         badge: t("common_view", "View")
       ) {
-        OnDeviceAgentPermissionsView()
+        SignalASIPermissionsAuditView()
       }
     }
   }
