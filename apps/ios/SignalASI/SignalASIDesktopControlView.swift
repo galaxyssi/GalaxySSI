@@ -5,6 +5,12 @@ struct SignalASIDesktopControlView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var selectedDesktopId = ""
+  private let initialDesktopId: String
+
+  init(initialDesktopId: String = "") {
+    self.initialDesktopId = initialDesktopId
+    _selectedDesktopId = State(initialValue: initialDesktopId)
+  }
 
   private var desktopLinks: [ServerLink] {
     store.serverLinks.sorted {
@@ -52,7 +58,9 @@ struct SignalASIDesktopControlView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear {
-      if selectedDesktopId.isEmpty {
+      if !initialDesktopId.isEmpty, desktopLinks.contains(where: { $0.desktopId == initialDesktopId }) {
+        selectedDesktopId = initialDesktopId
+      } else if selectedDesktopId.isEmpty {
         selectedDesktopId = desktopLinks.first?.desktopId ?? ""
       }
     }
