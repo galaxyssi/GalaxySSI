@@ -229,7 +229,7 @@ struct SignalASISecurityPrimaryButton: View {
   }
 }
 
-private struct SignalASISecurityRowContent: View {
+struct SignalASISecurityRowContent: View {
   var title: String
   var subtitle: String
   var systemImage: String
