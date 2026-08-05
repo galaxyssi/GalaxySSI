@@ -137,6 +137,7 @@ struct AgentHomeView: View {
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
+  @State private var composerFocusRequest = 0
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -210,6 +211,12 @@ struct AgentHomeView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 10) {
+          SignalASIAgentScreenContextCard(
+            screen: agentScreenSnapshot.screen,
+            sections: agentScreenSnapshot.sections,
+            onCommand: prefillAgentScreenCommand,
+            t: t
+          )
           if messages.isEmpty {
             AgentInsightBanner(unreadTotal: unreadTotal)
             AgentProcessCard()
@@ -311,6 +318,7 @@ struct AgentHomeView: View {
       canSend: canSend,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
+      focusRequest: composerFocusRequest,
       onRemoveAttachment: { attachment in
         attachments.removeAll { $0.id == attachment.id }
       },
@@ -354,6 +362,26 @@ struct AgentHomeView: View {
     }
     draft = cleanTranscript
     sendAgentMessage()
+  }
+
+  private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
+    SignalASIAgentScreenContextSnapshotBuilder.make(
+      messages: messages,
+      draft: draft,
+      attachments: attachments,
+      unreadTotal: unreadTotal,
+      screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
+      t: t
+    )
+  }
+
+  private func prefillAgentScreenCommand(_ command: String) {
+    let cleanCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanCommand.isEmpty else { return }
+    draft = cleanCommand
+    actionTrayPresented = false
+    attachmentError = ""
+    composerFocusRequest += 1
   }
 
   private func createAgentConversation() {
