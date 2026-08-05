@@ -1900,7 +1900,9 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private let onError: (String) -> Void
   private let messages: QRScannerMessages
   private let session = AVCaptureSession()
+  private let sessionQueue = DispatchQueue(label: "signalasi.qr-scanner.session")
   private var configured = false
+  private var didFinish = false
 
   fileprivate init(
     onCode: @escaping (String) -> Void,
@@ -1921,6 +1923,20 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     super.viewDidLoad()
     view.backgroundColor = .black
     prepareCamera()
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    stopSession()
+  }
+
+  deinit {
+    let session = session
+    sessionQueue.async {
+      if session.isRunning {
+        session.stopRunning()
+      }
+    }
   }
 
   private func prepareCamera() {
@@ -1967,10 +1983,30 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     preview.frame = view.bounds
     view.layer.addSublayer(preview)
     configured = true
-    session.startRunning()
+    startSession()
+  }
+
+  private func startSession() {
+    sessionQueue.async { [weak self] in
+      guard let self else { return }
+      if !self.session.isRunning {
+        self.session.startRunning()
+      }
+    }
+  }
+
+  private func stopSession() {
+    sessionQueue.async { [weak self] in
+      guard let self else { return }
+      if self.session.isRunning {
+        self.session.stopRunning()
+      }
+    }
   }
 
   private func reportScannerError(_ message: String) {
+    guard !didFinish else { return }
+    didFinish = true
     onError(message)
     let label = UILabel()
     label.text = message
@@ -1998,11 +2034,13 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     didOutput metadataObjects: [AVMetadataObject],
     from connection: AVCaptureConnection
   ) {
-    guard let readable = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+    guard !didFinish,
+          let readable = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
           let value = readable.stringValue else {
       return
     }
-    session.stopRunning()
+    didFinish = true
+    stopSession()
     onCode(value)
   }
 }
