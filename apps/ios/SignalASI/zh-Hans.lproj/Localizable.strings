@@ -1153,6 +1153,7 @@
 "signalasi.settings.model_data_sharing" = "模型数据共享";
 "signalasi.settings.model_data_sharing.subtitle" = "查看仅元数据披露事件和目标拦截";
 "signalasi.settings.reset_private_data" = "重置私有数据";
+"signalasi.settings.reset_private_data_warning" = "这会清除此设备上的身份、联系人、聊天记录、配对链接、语音设置、Agent 安全设置、任务预算、自定义设备连接器、Home Assistant 配置、模型规划器设置和已保存的模型密钥。";
 "signalasi.settings.notifications" = "通知";
 "signalasi.settings.enable_notifications" = "启用通知";
 "signalasi.settings.private_data_reset" = "私有数据已重置。";

@@ -1484,8 +1484,11 @@ struct ResetPrivateDataView: View {
   var body: some View {
     NavigationView {
       Form {
-        Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, Home Assistant configuration, model planner settings, and saved model keys on this device.")
+        Section(header: Text(t("settings_reset_short", "Reset"))) {
+          Text(t(
+            "signalasi.settings.reset_private_data_warning",
+            "This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, Home Assistant configuration, model planner settings, and saved model keys on this device."
+          ))
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)
@@ -1494,15 +1497,15 @@ struct ResetPrivateDataView: View {
             onReset()
             dismiss()
           } label: {
-            Label("Reset Private Data", systemImage: "trash")
+            Label(t("signalasi.settings.reset_private_data", "Reset Private Data"), systemImage: "trash")
           }
           .disabled(confirmation != "RESET")
         }
       }
-      .navigationTitle(t("Reset", "Reset"))
+      .navigationTitle(t("settings_reset_short", "Reset"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") {
+          Button(t("common_cancel", "Cancel")) {
             dismiss()
           }
         }
