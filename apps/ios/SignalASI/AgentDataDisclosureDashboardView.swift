@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AgentDataDisclosureDashboardView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   private let disclosureStore: AgentDataDisclosureStore
   @State private var records: [AgentDataDisclosureRecord] = []
   @State private var blockedDestinationIds: Set<String> = []
@@ -15,17 +16,37 @@ struct AgentDataDisclosureDashboardView: View {
 
   var body: some View {
     List {
-      Section("Summary") {
+      Section(t("signalasi.data_disclosure.summary", "Summary")) {
         let summary = AgentDataDisclosureLedger.summary(records)
-        metricRow("Events", value: summary.total, subtitle: "Model and Desktop data-sharing receipts", systemImage: "list.bullet.rectangle")
-        metricRow("Cloud", value: summary.cloud, subtitle: "Requests sent to configured cloud models", systemImage: "cloud")
-        metricRow("Desktop", value: summary.trustedDesktop, subtitle: "SignalASI Link requests to paired Desktop agents", systemImage: "desktopcomputer")
-        metricRow("Blocked", value: summary.blocked, subtitle: "Requests stopped by destination controls", systemImage: "hand.raised")
+        metricRow(
+          t("cc_privacy_metric_events", "Recent flows"),
+          value: summary.total,
+          subtitle: t("signalasi.data_disclosure.events_subtitle", "Model and Desktop data-sharing receipts"),
+          systemImage: "list.bullet.rectangle"
+        )
+        metricRow(
+          t("cc_privacy_metric_cloud", "Cloud flows"),
+          value: summary.cloud,
+          subtitle: t("signalasi.data_disclosure.cloud_subtitle", "Requests sent to configured cloud models"),
+          systemImage: "cloud"
+        )
+        metricRow(
+          t("cc_privacy_location_desktop", "Trusted Desktop"),
+          value: summary.trustedDesktop,
+          subtitle: t("signalasi.data_disclosure.desktop_subtitle", "SignalASI Link requests to paired Desktop agents"),
+          systemImage: "desktopcomputer"
+        )
+        metricRow(
+          t("cc_privacy_blocked", "Blocked"),
+          value: summary.blocked,
+          subtitle: t("signalasi.data_disclosure.blocked_subtitle", "Requests stopped by destination controls"),
+          systemImage: "hand.raised"
+        )
       }
 
-      Section("Destinations") {
+      Section(t("cc_privacy_destinations_title", "Data Destinations")) {
         if destinationSummaries.isEmpty {
-          Label("No Destinations Yet", systemImage: "checkmark.shield")
+          Label(t("cc_privacy_no_destinations", "No external destination configured"), systemImage: "checkmark.shield")
             .foregroundColor(.secondary)
         } else {
           ForEach(destinationSummaries) { destination in
@@ -39,9 +60,9 @@ struct AgentDataDisclosureDashboardView: View {
         }
       }
 
-      Section("Recent Events") {
+      Section(t("cc_privacy_recent_title", "Recent Data Flows")) {
         if records.isEmpty {
-          Label("No Disclosure Events", systemImage: "lock.doc")
+          Label(t("cc_privacy_no_events", "No external data flow yet"), systemImage: "lock.doc")
             .foregroundColor(.secondary)
         } else {
           ForEach(records.prefix(30)) { record in
@@ -55,27 +76,27 @@ struct AgentDataDisclosureDashboardView: View {
         }
       }
 
-      Section("History") {
+      Section(t("cc_privacy_history_title", "History")) {
         Button(role: .destructive) {
           disclosureStore.clearHistory()
           refresh()
         } label: {
-          Label("Clear Event History", systemImage: "trash")
+          Label(t("cc_privacy_clear_title", "Clear Data-flow History"), systemImage: "trash")
         }
         .disabled(records.isEmpty)
 
-        Text("Clearing history keeps destination block controls in place.")
+        Text(t("cc_privacy_clear_subtitle", "Remove disclosure metadata while keeping destination blocks"))
           .font(.caption)
           .foregroundColor(.secondary)
       }
     }
-    .navigationTitle("Model Data Sharing")
+    .navigationTitle(t("cc_privacy_dashboard_title", "Privacy Dashboard"))
     .toolbar {
       ToolbarItem(placement: .navigationBarTrailing) {
         Button {
           refresh()
         } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
+          Label(t("signalasi.common.refresh", "Refresh"), systemImage: "arrow.clockwise")
         }
       }
     }
@@ -118,16 +139,16 @@ struct AgentDataDisclosureDashboardView: View {
 
   private func destinationRow(_ destination: AgentDisclosureDestinationSummary) -> some View {
     HStack(alignment: .top, spacing: 12) {
-      Image(systemName: destination.location.systemImage)
+      Image(systemName: SignalASIPrivacyLabels.destinationIcon(destination.location))
         .foregroundColor(destination.blocked ? .orange : .blue)
         .frame(width: 24)
       VStack(alignment: .leading, spacing: 4) {
         Text(destination.title)
-        Text(destination.subtitle)
+        Text(destination.subtitle(language: interfaceLanguage))
           .font(.caption)
           .foregroundColor(.secondary)
           .lineLimit(2)
-        Text(destination.kindsLabel)
+        Text(destination.kindsLabel(language: interfaceLanguage))
           .font(.caption2)
           .foregroundColor(.secondary)
           .lineLimit(1)
@@ -142,12 +163,16 @@ struct AgentDataDisclosureDashboardView: View {
 
   private func eventRow(_ record: AgentDataDisclosureRecord) -> some View {
     HStack(alignment: .top, spacing: 12) {
-      Image(systemName: record.location.systemImage)
-        .foregroundColor(record.status.tint)
+      Image(systemName: SignalASIPrivacyLabels.destinationIcon(record.location))
+        .foregroundColor(SignalASIPrivacyLabels.statusTint(record.status))
         .frame(width: 24)
       VStack(alignment: .leading, spacing: 4) {
         Text(record.destinationTitle)
-        Text("\(record.dataKinds.label) / \(record.updatedAtMillis.disclosureTimeLabel)")
+        Text(String(
+          format: t("cc_privacy_event_subtitle", "%@ / %@"),
+          dataKindsLabel(record.dataKinds),
+          SignalASIPrivacyLabels.relativeTime(record.updatedAtMillis, language: interfaceLanguage)
+        ))
           .font(.caption)
           .foregroundColor(.secondary)
           .lineLimit(2)
@@ -160,14 +185,28 @@ struct AgentDataDisclosureDashboardView: View {
         }
       }
       Spacer()
-      Text(record.status.displayTitle)
+      Text(SignalASIPrivacyLabels.status(record.status, language: interfaceLanguage))
         .font(.caption.weight(.semibold))
-        .foregroundColor(record.status.tint)
+        .foregroundColor(SignalASIPrivacyLabels.statusTint(record.status))
     }
+  }
+
+  private func dataKindsLabel(_ kinds: Set<AgentDisclosedDataKind>) -> String {
+    let separator = t("cc_privacy_kind_separator", ", ")
+    return kinds.sortedForDisplay.map {
+      SignalASIPrivacyLabels.dataKind($0, language: interfaceLanguage)
+    }
+    .joined(separator: separator)
+    .ifBlank(t("cc_privacy_no_data", "No content category"))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
 struct AgentDataDisclosureDestinationDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var destinationId: String
   private let disclosureStore: AgentDataDisclosureStore
   @State private var records: [AgentDataDisclosureRecord] = []
@@ -181,55 +220,74 @@ struct AgentDataDisclosureDestinationDetailView: View {
   var body: some View {
     List {
       if let summary {
-        Section("Destination") {
-          row("Name", value: summary.title, systemImage: "person.crop.circle")
-          row("Location", value: summary.location.displayTitle, systemImage: summary.location.systemImage)
-          row("Trust", value: summary.trust.displayTitle, systemImage: "checkmark.shield")
-          row("Protection", value: summary.protection.displayTitle, systemImage: "lock.shield")
+        Section(t("cc_privacy_destination_details", "Destination")) {
+          row(t("signalasi.data_disclosure.name", "Name"), value: summary.title, systemImage: "person.crop.circle")
+          row(
+            t("cc_privacy_location", "Processing location"),
+            value: SignalASIPrivacyLabels.location(summary.location, language: interfaceLanguage),
+            systemImage: SignalASIPrivacyLabels.destinationIcon(summary.location)
+          )
+          row(
+            t("cc_privacy_trust", "Trust level"),
+            value: SignalASIPrivacyLabels.trust(summary.trust, language: interfaceLanguage),
+            systemImage: "checkmark.shield"
+          )
+          row(
+            t("cc_privacy_protection", "Transport protection"),
+            value: SignalASIPrivacyLabels.protection(summary.protection, language: interfaceLanguage),
+            systemImage: "lock.shield"
+          )
         }
 
-        Section("Observed Data") {
+        Section(t("cc_privacy_observed_data_title", "Observed Data Types")) {
           ForEach(summary.dataKinds, id: \.self) { kind in
-            row(kind.displayTitle, value: "Metadata only", systemImage: kind.systemImage)
+            row(
+              SignalASIPrivacyLabels.dataKind(kind, language: interfaceLanguage),
+              value: t("cc_privacy_metadata_not_content", "Only type and size metadata is retained"),
+              systemImage: SignalASIPrivacyLabels.dataKindIcon(kind)
+            )
           }
         }
 
-        Section("Controls") {
-          Toggle("Block Destination", isOn: Binding(
-            get: { blockedDestinationIds.contains(destinationId) },
-            set: { value in
-              disclosureStore.setDestinationBlocked(destinationId: destinationId, blocked: value)
+        Section(t("cc_privacy_control_title", "Data Control")) {
+          Toggle(t("cc_privacy_allow_destination", "Allow data sharing"), isOn: Binding(
+            get: { !blockedDestinationIds.contains(destinationId) },
+            set: { allowed in
+              disclosureStore.setDestinationBlocked(destinationId: destinationId, blocked: !allowed)
               refresh()
             }
           ))
-          Text("Blocking this destination stops future cloud or Desktop requests before content leaves this iPhone.")
+          Text(t(
+            "cc_privacy_allow_destination_subtitle",
+            "Turning this off blocks future model and Agent requests to this exact destination"
+          ))
             .font(.caption)
             .foregroundColor(.secondary)
         }
 
-        Section("Recent Events") {
+        Section(t("cc_privacy_recent_title", "Recent Data Flows")) {
           ForEach(summary.records.prefix(30)) { record in
             NavigationLink(destination: AgentDataDisclosureEventDetailView(
               eventId: record.eventId,
               disclosureStore: disclosureStore
             )) {
               HStack {
-                Text(record.updatedAtMillis.disclosureTimeLabel)
+                Text(SignalASIPrivacyLabels.relativeTime(record.updatedAtMillis, language: interfaceLanguage))
                 Spacer()
-                Text(record.status.displayTitle)
-                  .foregroundColor(record.status.tint)
+                Text(SignalASIPrivacyLabels.status(record.status, language: interfaceLanguage))
+                  .foregroundColor(SignalASIPrivacyLabels.statusTint(record.status))
               }
             }
           }
         }
       } else {
         Section {
-          Label("Destination Not Found", systemImage: "questionmark.circle")
+          Label(t("signalasi.data_disclosure.destination_not_found", "Destination not found"), systemImage: "questionmark.circle")
             .foregroundColor(.secondary)
         }
       }
     }
-    .navigationTitle(summary?.title ?? "Destination")
+    .navigationTitle(summary?.title ?? t("cc_privacy_destination_details", "Destination"))
     .onAppear(perform: refresh)
   }
 
@@ -257,9 +315,14 @@ struct AgentDataDisclosureDestinationDetailView: View {
       }
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 struct AgentDataDisclosureEventDetailView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var eventId: String
   private let disclosureStore: AgentDataDisclosureStore
   @State private var record: AgentDataDisclosureRecord?
@@ -273,50 +336,94 @@ struct AgentDataDisclosureEventDetailView: View {
   var body: some View {
     List {
       if let record {
-        Section("Event") {
-          row("Destination", value: record.destinationTitle, systemImage: record.location.systemImage)
-          row("Status", value: record.status.displayTitle, systemImage: record.status.systemImage)
-          row("Purpose", value: record.purpose.ifBlank("Unspecified"), systemImage: "target")
-          row("Time", value: record.updatedAtMillis.disclosureExactTimeLabel, systemImage: "clock")
+        Section(t("cc_privacy_event_title", "Data-flow Receipt")) {
+          row(
+            t("cc_privacy_destination_details", "Destination"),
+            value: record.destinationTitle,
+            systemImage: SignalASIPrivacyLabels.destinationIcon(record.location)
+          )
+          row(
+            t("signalasi.data_disclosure.status", "Status"),
+            value: SignalASIPrivacyLabels.status(record.status, language: interfaceLanguage),
+            systemImage: record.status.systemImage
+          )
+          row(
+            t("cc_privacy_purpose", "Purpose"),
+            value: record.purpose.ifBlank(t("cc_privacy_destination_unspecified", "Not specified")),
+            systemImage: "target"
+          )
+          row(
+            t("cc_privacy_time", "Time"),
+            value: SignalASIPrivacyLabels.exactTime(record.updatedAtMillis, language: interfaceLanguage),
+            systemImage: "clock"
+          )
         }
 
-        Section("Shared Data") {
+        Section(t("cc_privacy_shared_data_title", "Data Shared")) {
           ForEach(record.dataKinds.sortedForDisplay, id: \.self) { kind in
-            row(kind.displayTitle, value: "Metadata only", systemImage: kind.systemImage)
+            row(
+              SignalASIPrivacyLabels.dataKind(kind, language: interfaceLanguage),
+              value: t("cc_privacy_metadata_not_content", "Only type and size metadata is retained"),
+              systemImage: SignalASIPrivacyLabels.dataKindIcon(kind)
+            )
           }
         }
 
-        Section("Size") {
-          row("Text", value: "\(record.textCharacters) characters", systemImage: "text.alignleft")
-          row("Attachments", value: "\(record.attachmentCount) files / \(record.attachmentBytes.byteCountLabel)", systemImage: "paperclip")
+        Section(t("signalasi.data_disclosure.size_section", "Size")) {
+          row(
+            t("cc_privacy_text_size", "Text size"),
+            value: String(format: t("cc_privacy_character_count", "%d characters"), record.textCharacters),
+            systemImage: "text.alignleft"
+          )
+          row(
+            t("cc_privacy_attachments", "Attachments"),
+            value: String(
+              format: t("cc_privacy_attachment_summary", "%d files / %@"),
+              record.attachmentCount,
+              ByteCountFormatter.string(fromByteCount: record.attachmentBytes, countStyle: .file)
+            ),
+            systemImage: "paperclip"
+          )
         }
 
-        Section("Protection") {
-          row("Location", value: record.location.displayTitle, systemImage: record.location.systemImage)
-          row("Trust", value: record.trust.displayTitle, systemImage: "checkmark.shield")
-          row("Transport", value: record.protection.displayTitle, systemImage: "lock.shield")
+        Section(t("cc_privacy_protection", "Transport protection")) {
+          row(
+            t("cc_privacy_location", "Processing location"),
+            value: SignalASIPrivacyLabels.location(record.location, language: interfaceLanguage),
+            systemImage: SignalASIPrivacyLabels.destinationIcon(record.location)
+          )
+          row(
+            t("cc_privacy_trust", "Trust level"),
+            value: SignalASIPrivacyLabels.trust(record.trust, language: interfaceLanguage),
+            systemImage: "checkmark.shield"
+          )
+          row(
+            t("cc_privacy_protection", "Transport protection"),
+            value: SignalASIPrivacyLabels.protection(record.protection, language: interfaceLanguage),
+            systemImage: "lock.shield"
+          )
           if !record.failureReason.isEmpty {
-            row("Reason", value: record.failureReason, systemImage: "exclamationmark.triangle")
+            row(t("signalasi.data_disclosure.reason", "Reason"), value: record.failureReason, systemImage: "exclamationmark.triangle")
           }
         }
 
-        Section("Controls") {
-          Toggle("Block Destination", isOn: Binding(
-            get: { blockedDestinationIds.contains(record.destinationId) },
-            set: { value in
-              disclosureStore.setDestinationBlocked(destinationId: record.destinationId, blocked: value)
+        Section(t("cc_privacy_control_title", "Data Control")) {
+          Toggle(t("cc_privacy_allow_destination", "Allow data sharing"), isOn: Binding(
+            get: { !blockedDestinationIds.contains(record.destinationId) },
+            set: { allowed in
+              disclosureStore.setDestinationBlocked(destinationId: record.destinationId, blocked: !allowed)
               refresh()
             }
           ))
         }
       } else {
         Section {
-          Label("Event Not Found", systemImage: "questionmark.circle")
+          Label(t("signalasi.data_disclosure.event_not_found", "Event not found"), systemImage: "questionmark.circle")
             .foregroundColor(.secondary)
         }
       }
     }
-    .navigationTitle("Disclosure Event")
+    .navigationTitle(t("cc_privacy_event_title", "Data-flow Receipt"))
     .onAppear(perform: refresh)
   }
 
@@ -338,6 +445,10 @@ struct AgentDataDisclosureEventDetailView: View {
       }
     }
   }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 private struct AgentDisclosureDestinationSummary: Identifiable, Equatable {
@@ -352,13 +463,27 @@ private struct AgentDisclosureDestinationSummary: Identifiable, Equatable {
   var records: [AgentDataDisclosureRecord]
   var blocked: Bool
 
-  var subtitle: String {
-    let model = modelId.ifBlank(providerId).ifBlank(location.displayTitle)
-    return "\(records.count) events / \(model) / \(protection.displayTitle)"
+  func subtitle(language: String) -> String {
+    let model = modelId.ifBlank(providerId).ifBlank(SignalASIPrivacyLabels.location(location, language: language))
+    return String(
+      format: SignalASILocalization.string(
+        "signalasi.data_disclosure.destination_summary",
+        fallback: "%d events / %@ / %@",
+        language: language
+      ),
+      records.count,
+      model,
+      SignalASIPrivacyLabels.protection(protection, language: language)
+    )
   }
 
-  var kindsLabel: String {
-    dataKinds.isEmpty ? "No data categories" : dataKinds.map(\.displayTitle).joined(separator: ", ")
+  func kindsLabel(language: String) -> String {
+    let separator = SignalASILocalization.string("cc_privacy_kind_separator", fallback: ", ", language: language)
+    return dataKinds.map {
+      SignalASIPrivacyLabels.dataKind($0, language: language)
+    }
+    .joined(separator: separator)
+    .ifBlank(SignalASILocalization.string("cc_privacy_no_data", fallback: "No content category", language: language))
   }
 
   static func build(
@@ -393,16 +518,6 @@ private struct AgentDisclosureDestinationSummary: Identifiable, Equatable {
 }
 
 private extension AgentDisclosureStatus {
-  var displayTitle: String {
-    switch self {
-    case .preparing: return "Preparing"
-    case .queued: return "Queued"
-    case .sent: return "Sent"
-    case .blocked: return "Blocked"
-    case .failed: return "Failed"
-    }
-  }
-
   var systemImage: String {
     switch self {
     case .preparing, .queued: return "clock"
@@ -411,134 +526,10 @@ private extension AgentDisclosureStatus {
     case .failed: return "exclamationmark.triangle"
     }
   }
-
-  var tint: Color {
-    switch self {
-    case .sent: return .green
-    case .preparing, .queued: return .blue
-    case .blocked, .failed: return .orange
-    }
-  }
-}
-
-private extension AgentDisclosedDataKind {
-  var displayTitle: String {
-    switch self {
-    case .messageText: return "Message Text"
-    case .conversationHistory: return "Conversation History"
-    case .systemInstructions: return "System Instructions"
-    case .toolOutput: return "Tool Output"
-    case .screenContext: return "Screen Context"
-    case .memoryContext: return "Memory Context"
-    case .knowledgeContext: return "Knowledge Context"
-    case .deviceContext: return "Device Context"
-    case .image: return "Image"
-    case .audio: return "Audio"
-    case .video: return "Video"
-    case .document: return "Document"
-    case .otherFile: return "Other File"
-    }
-  }
-
-  var systemImage: String {
-    switch self {
-    case .messageText, .conversationHistory: return "text.bubble"
-    case .systemInstructions: return "gearshape"
-    case .toolOutput: return "wrench.and.screwdriver"
-    case .screenContext: return "rectangle.on.rectangle"
-    case .memoryContext: return "brain"
-    case .knowledgeContext: return "books.vertical"
-    case .deviceContext: return "iphone"
-    case .image: return "photo"
-    case .audio: return "waveform"
-    case .video: return "video"
-    case .document: return "doc.text"
-    case .otherFile: return "paperclip"
-    }
-  }
 }
 
 private extension Set where Element == AgentDisclosedDataKind {
   var sortedForDisplay: [AgentDisclosedDataKind] {
     sorted { $0.rawValue < $1.rawValue }
-  }
-
-  var label: String {
-    sortedForDisplay.map(\.displayTitle).joined(separator: ", ").ifBlank("No data")
-  }
-}
-
-private extension Array where Element == AgentDisclosedDataKind {
-  var sortedForDisplay: [AgentDisclosedDataKind] {
-    sorted { $0.rawValue < $1.rawValue }
-  }
-}
-
-private extension AgentResourceLocation {
-  var displayTitle: String {
-    switch self {
-    case .phone: return "iPhone"
-    case .trustedDesktop: return "Trusted Desktop"
-    case .privateNetwork: return "Private Network"
-    case .cloud: return "Cloud"
-    }
-  }
-
-  var systemImage: String {
-    switch self {
-    case .phone: return "iphone"
-    case .trustedDesktop: return "desktopcomputer"
-    case .privateNetwork: return "network"
-    case .cloud: return "cloud"
-    }
-  }
-}
-
-private extension AgentResourceTrust {
-  var displayTitle: String {
-    switch self {
-    case .phoneSystem: return "Phone System"
-    case .verifiedPaired: return "Verified Paired"
-    case .privateConfigured: return "Private Configured"
-    case .cloudConfigured: return "Cloud Configured"
-    case .unknown: return "Unknown"
-    }
-  }
-}
-
-private extension AgentDisclosureProtection {
-  var displayTitle: String {
-    switch self {
-    case .onDevice: return "On Device"
-    case .signalE2EE: return "Signal E2EE"
-    case .tls: return "TLS"
-    }
-  }
-}
-
-private extension Int64 {
-  var disclosureTimeLabel: String {
-    guard self > 0 else { return "Unknown time" }
-    let elapsed = Swift.max(0, Int64(Date().timeIntervalSince1970 * 1_000) - self)
-    if elapsed < 60_000 {
-      return "Just now"
-    }
-    if elapsed < 3_600_000 {
-      return "\(elapsed / 60_000)m ago"
-    }
-    if elapsed < 86_400_000 {
-      return "\(elapsed / 3_600_000)h ago"
-    }
-    return disclosureExactTimeLabel
-  }
-
-  var disclosureExactTimeLabel: String {
-    guard self > 0 else { return "Unknown time" }
-    return Date(timeIntervalSince1970: Double(self) / 1_000)
-      .formatted(date: .abbreviated, time: .standard)
-  }
-
-  var byteCountLabel: String {
-    ByteCountFormatter.string(fromByteCount: self, countStyle: .file)
   }
 }

@@ -74,9 +74,9 @@ struct SignalASIAgentCoreView: View {
         subtitle: t("cc_autonomy_subtitle", "Low-risk actions run directly; sensitive actions ask first"),
         systemImage: "checkmark.shield",
         tint: .blue,
-        badge: t(store.agentSafetySettings.permissionMode.displayTitle, store.agentSafetySettings.permissionMode.displayTitle)
+        badge: t(store.agentPreferenceMode.titleKey, store.agentPreferenceMode.titleFallback)
       ) {
-        AgentSafetySettingsView()
+        SignalASIExecutionPolicyView()
       }
     }
   }
@@ -112,7 +112,7 @@ struct SignalASIAgentCoreView: View {
         tint: .orange,
         badge: t("signalasi.status.ready", "Ready")
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -121,7 +121,7 @@ struct SignalASIAgentCoreView: View {
         tint: .purple,
         badge: resourceRoutingBadge
       ) {
-        AgentModelPlannerSettingsView()
+        SignalASIResourceRoutingView()
       }
     }
   }

@@ -821,6 +821,14 @@ struct DiscoverView: View {
               myQRCodePresented = true
             }
             SignalASIAndroidMenuLink(
+              title: t("signalasi.discover.create_group_title", "Create Group"),
+              subtitle: t("signalasi.discover.create_group_subtitle", "Secure multi-person communication"),
+              systemImage: "person.3",
+              tint: .signalASIAccent
+            ) {
+              SignalASICreateGroupView()
+            }
+            SignalASIAndroidMenuLink(
               title: t("signalasi.discover.security_center_title", "Security Center"),
               subtitle: t("signalasi.discover.security_center_subtitle", "View security status and permissions"),
               systemImage: "checkmark.shield",
@@ -914,7 +922,7 @@ struct DiscoverView: View {
               systemImage: "gearshape",
               tint: .signalASIInsightText
             ) {
-              SignalASIGeneralSettingsView()
+              SignalASIGeneralControlCenterView()
             }
             SignalASIAndroidMenuLink(
               title: t("signalasi.automation.title", "Automation"),

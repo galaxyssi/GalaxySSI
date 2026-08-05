@@ -376,7 +376,7 @@ struct SignalASIDeviceSecurityDetailView: View {
         ? t("signalasi.status.enabled", "Enabled")
         : t("signalasi.security_center.manage", "Manage")
     ) {
-      SignalASILinkDiagnosticsView()
+      SignalASIDesktopControlView(initialDesktopId: link.desktopId)
     }
     SignalASISecuritySectionTitle(title: "Agent")
     if agents.isEmpty {

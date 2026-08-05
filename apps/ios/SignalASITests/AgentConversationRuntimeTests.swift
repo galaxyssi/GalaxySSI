@@ -1542,6 +1542,12 @@ extension SignalASIStoreTests {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
     XCTAssertEqual(DeliveryTraceEvent(stage: "cloud_request").displayTitle, "Model request")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "agent_accepted").displayTitle, "Accepted")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "agent_running").displayTitle, "Running")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "agent_waiting_input").displayTitle, "Waiting for input")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "agent_completed").displayTitle, "Completed")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "agent_timed_out").displayTitle, "Timed out")
+    XCTAssertEqual(DeliveryTraceEvent(stage: "local_saved").displayTitle, "Saved locally")
     XCTAssertEqual(DeliveryTraceEvent(stage: "unknown_stage").displayTitle, "unknown_stage")
   }
 
