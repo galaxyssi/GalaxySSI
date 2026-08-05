@@ -910,7 +910,7 @@ async function runUiSmoke() {
         || Object.values(settingsState.evolution).some((value) => !value)
         || !settingsState.evolutionV2.shell || !settingsState.evolutionV2.toolbar
         || settingsState.evolutionV2.tabs !== 7 || !settingsState.evolutionV2.stylesheet
-        || settingsState.evolutionV2.scheduler.enabled !== true
+        || settingsState.evolutionV2.scheduler.enabled !== false
         || settingsState.evolutionV2.scheduler.frequency !== "1"
         || settingsState.evolutionV2.scheduler.mode !== "serial"
         || settingsState.evolutionV2.scheduler.parallelLimit !== "2"

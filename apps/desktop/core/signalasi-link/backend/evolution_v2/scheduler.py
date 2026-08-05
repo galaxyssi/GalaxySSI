@@ -22,7 +22,7 @@ TERMINAL_TASK_STATUSES = {
 
 DEFAULT_SCHEDULE = {
     "schema": "signalasi.evolution-scheduler.v2",
-    "enabled": True,
+    "enabled": False,
     "run_on_start": False,
     "evolutions_per_day": 1,
     "execution_mode": "serial",
@@ -56,7 +56,7 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
 def _normalized_config(value: dict[str, Any]) -> dict[str, Any]:
     config = {**DEFAULT_SCHEDULE, **value}
     config["schema"] = DEFAULT_SCHEDULE["schema"]
-    config["enabled"] = bool(config.get("enabled", True))
+    config["enabled"] = bool(config.get("enabled", False))
     config["run_on_start"] = bool(config.get("run_on_start", False))
     config["evolutions_per_day"] = _bounded_int(
         config.get("evolutions_per_day"),
@@ -111,7 +111,7 @@ class EvolutionScheduler:
         self._lock = threading.RLock()
 
     def start(self) -> None:
-        if not bool(self.config.get("enabled", True)):
+        if not bool(self.config.get("enabled", False)):
             return
         with self._lock:
             if self._thread and self._thread.is_alive():
@@ -177,7 +177,7 @@ class EvolutionScheduler:
     def status(self) -> dict[str, Any]:
         state = self._state()
         active = list(state.get("active_evolutions") or [])
-        enabled = bool(self.config.get("enabled", True))
+        enabled = bool(self.config.get("enabled", False))
         return {
             "running": bool(enabled and self._thread and self._thread.is_alive()),
             "config": dict(self.config),

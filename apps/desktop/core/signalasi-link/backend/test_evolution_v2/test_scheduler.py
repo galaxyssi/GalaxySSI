@@ -119,6 +119,19 @@ class EvolutionSchedulerTests(unittest.TestCase):
         self.assertEqual(4, normalized["max_parallel_evolutions"])
         self.assertFalse(normalized["auto_merge"])
 
+    def test_scheduler_is_disabled_until_the_user_enables_it(self) -> None:
+        self.config_path.write_text("{}", encoding="utf-8")
+        scheduler = EvolutionScheduler(
+            FakeManager(self.root),
+            config_path=self.config_path,
+        )
+
+        scheduler.start()
+
+        self.assertFalse(scheduler.status()["config"]["enabled"])
+        self.assertFalse(scheduler.status()["running"])
+        self.assertIsNone(scheduler._thread)
+
     def test_disabled_scheduler_does_not_start_a_background_thread(self) -> None:
         scheduler = self.scheduler({"enabled": False})
 
