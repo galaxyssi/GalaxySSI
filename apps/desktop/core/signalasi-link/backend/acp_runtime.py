@@ -531,23 +531,14 @@ class AcpRuntime:
         )
         async with session_lock:
             entry = await self._ensure_process(agent_id, reason="execute")
-            from agent_file_access_ledger import (
-                AgentWorkspaceCapture,
-                FileAccessScope,
-                agent_file_access_ledger,
-                repository_identity,
+            from host_execution_config_guard import (
+                HostExecutionConfigGuard,
+                HostExecutionConfigViolation,
             )
 
-            workspace_capture = AgentWorkspaceCapture.begin(
+            host_config_guard = HostExecutionConfigGuard.begin(
                 cwd,
-                scope=FileAccessScope.create(
-                    client_route_id=client_route_id or "desktop-local",
-                    conversation_id=conversation_id or run_id,
-                    task_id=run_id,
-                    repository_id=repository_identity(cwd),
-                ),
                 agent_id=agent_id,
-                ledger=agent_file_access_ledger(),
                 capture_id=f"acp:{run_id}:{time.time_ns()}",
             )
             entry.active_prompts += 1
@@ -607,16 +598,11 @@ class AcpRuntime:
                             (agent_id, binding.session_id),
                             None,
                         )
-                try:
-                    workspace_capture.finish()
-                except Exception as exc:
-                    from host_execution_config_guard import (
-                        HostExecutionConfigViolation,
+                violations = host_config_guard.finish()
+                if violations:
+                    raise AcpExecutionError(
+                        str(HostExecutionConfigViolation(violations))
                     )
-
-                    if isinstance(exc, HostExecutionConfigViolation):
-                        raise AcpExecutionError(str(exc)) from exc
-                    raise
 
     async def _ensure_process(
         self,

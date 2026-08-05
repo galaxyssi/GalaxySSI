@@ -7,6 +7,9 @@ data class AgentTranscriptRenderDiff(
 )
 
 object AgentTranscriptRenderPolicy {
+    fun identity(entry: AgentTranscriptEntry): String =
+        entry.dedupeKey.trim().takeIf(String::isNotBlank) ?: entry.id
+
     fun signature(entry: AgentTranscriptEntry): Int {
         var result = entry.id.hashCode()
         result = 31 * result + entry.role.hashCode()
@@ -38,7 +41,7 @@ object AgentTranscriptRenderPolicy {
         renderedSignatures: Map<String, Int>,
         incoming: List<AgentTranscriptEntry>
     ): AgentTranscriptRenderDiff {
-        val incomingIds = incoming.map(AgentTranscriptEntry::id)
+        val incomingIds = incoming.map(::identity)
         val hasStablePrefix = renderedIds.size <= incomingIds.size &&
             incomingIds.take(renderedIds.size) == renderedIds
         if (!hasStablePrefix) {
@@ -50,7 +53,7 @@ object AgentTranscriptRenderPolicy {
         }
         val signatureReplacements = renderedIds.indices.filter { index ->
             val entry = incoming[index]
-            renderedSignatures[entry.id] != signature(entry)
+            renderedSignatures[identity(entry)] != signature(entry)
         }
         val changedAssistantGroups = incoming.withIndex()
             .filter { (index, entry) ->

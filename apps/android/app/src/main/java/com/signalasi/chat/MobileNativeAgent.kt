@@ -55,6 +55,18 @@ private const val INTERNAL_LONG_TERM_WRITE_ALLOWED = "_signalasi_long_term_write
 private const val INTERNAL_TASK_EXECUTION_MODE = "_signalasi_task_execution_mode"
 private const val RUNTIME_CONTEXT_CACHE_TTL_MILLIS = 2_000L
 
+private inline fun <T> traceMobileAgentInitialization(label: String, block: () -> T): T {
+    val startedAt = SystemClock.elapsedRealtime()
+    return try {
+        block()
+    } finally {
+        Log.i(
+            "SignalASIMobileAgentInit",
+            "$label=${SystemClock.elapsedRealtime() - startedAt}ms"
+        )
+    }
+}
+
 internal fun AgentAction.withDirectConversationContext(
     conversationContext: AgentConversationContext,
     turnId: String,
@@ -243,45 +255,81 @@ fun interface AgentNativeToolEventSink {
  */
 class MobileNativeAgent(
     context: Context,
-    private val perceptionProvider: ScreenPerceptionProvider = AndroidScreenPerceptionProvider(context),
-    private val planner: AgentPlanner = GuardedModelAgentPlanner(context),
-    private val safetySettingsStore: AgentSafetySettingsStore = SharedPreferencesAgentSafetySettingsStore(context),
+    private val perceptionProvider: ScreenPerceptionProvider = traceMobileAgentInitialization("perception_provider") {
+        AndroidScreenPerceptionProvider(context)
+    },
+    private val planner: AgentPlanner = traceMobileAgentInitialization("planner") {
+        GuardedModelAgentPlanner(context)
+    },
+    private val safetySettingsStore: AgentSafetySettingsStore = traceMobileAgentInitialization("safety_store") {
+        SharedPreferencesAgentSafetySettingsStore(context)
+    },
     private val confirmationConsentStore: AgentConfirmationConsentStore =
-        SharedPreferencesAgentConfirmationConsentStore(context),
+        traceMobileAgentInitialization("confirmation_store") {
+            SharedPreferencesAgentConfirmationConsentStore(context)
+        },
     private val safetyPolicy: AgentSafetyPolicy = DefaultAgentSafetyPolicy(
         safetySettingsStore,
         confirmationConsentStore
     ),
-    private val actionExecutor: AgentActionExecutor = PhoneExecutionAuthority.guarded(
-        NotifyingAgentActionExecutor(
-            context,
-            AgentControlPlaneActionExecutor(context, AndroidAgentActionExecutor(context))
+    private val actionExecutor: AgentActionExecutor = traceMobileAgentInitialization("action_executor") {
+        PhoneExecutionAuthority.guarded(
+            NotifyingAgentActionExecutor(
+                context,
+                AgentControlPlaneActionExecutor(context, AndroidAgentActionExecutor(context))
+            )
         )
-    ),
+    },
     private val observationController: AgentContinuousObservationController = AgentContinuousObservationController(),
     private val recoveryController: AgentActionRecoveryController = AgentActionRecoveryController(),
-    private val memoryStore: AgentMemoryStore = EncryptedAgentMemoryStore(context),
-    private val knowledgeStore: AgentKnowledgeStore = SharedPreferencesAgentKnowledgeStore(context),
-    private val taskStore: AgentTaskStore = SQLiteAgentTaskStore(context),
-    private val workflowStore: AgentWorkflowStore = SharedPreferencesAgentWorkflowStore(context),
-    private val workflowScheduleStore: AgentWorkflowScheduleStore = AgentWorkflowScheduleStore(context),
-    private val workflowTriggerStore: AgentWorkflowTriggerStore = AgentWorkflowTriggerStore(context),
-    private val workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(context),
-    private val connectorRegistry: AgentConnectorRegistry = AppStoreAgentConnectorRegistry(context),
-    private val reputationLedger: AgentReputationLedger = AgentReputationLedger.encrypted(context),
-    private val sessionStore: AgentSessionStore = SharedPreferencesAgentSessionStore(context),
+    private val memoryStore: AgentMemoryStore = traceMobileAgentInitialization("memory_store") {
+        EncryptedAgentMemoryStore(context)
+    },
+    private val knowledgeStore: AgentKnowledgeStore = traceMobileAgentInitialization("knowledge_store") {
+        SharedPreferencesAgentKnowledgeStore(context)
+    },
+    private val taskStore: AgentTaskStore = traceMobileAgentInitialization("task_store") {
+        SQLiteAgentTaskStore(context)
+    },
+    private val workflowStore: AgentWorkflowStore = traceMobileAgentInitialization("workflow_store") {
+        SharedPreferencesAgentWorkflowStore(context)
+    },
+    private val workflowScheduleStore: AgentWorkflowScheduleStore = traceMobileAgentInitialization("workflow_schedule_store") {
+        AgentWorkflowScheduleStore(context)
+    },
+    private val workflowTriggerStore: AgentWorkflowTriggerStore = traceMobileAgentInitialization("workflow_trigger_store") {
+        AgentWorkflowTriggerStore(context)
+    },
+    private val workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore = traceMobileAgentInitialization("workflow_history_store") {
+        AgentWorkflowExecutionHistoryStore(context)
+    },
+    private val connectorRegistry: AgentConnectorRegistry = traceMobileAgentInitialization("connector_registry") {
+        AppStoreAgentConnectorRegistry(context)
+    },
+    private val reputationLedger: AgentReputationLedger = traceMobileAgentInitialization("reputation_ledger") {
+        AgentReputationLedger.encrypted(context)
+    },
+    private val sessionStore: AgentSessionStore = traceMobileAgentInitialization("session_store") {
+        SharedPreferencesAgentSessionStore(context)
+    },
     private val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE,
     private val screenObservationOverride: Boolean? = null,
     executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE
 ) {
     private val appContext = context.applicationContext
-    private val preferenceModeStore = AgentPreferenceModeStore(appContext)
-    private var activePreferenceMode: AgentPreferenceMode = preferenceModeStore.load()
+    private val preferenceModeStore = traceMobileAgentInitialization("preference_store") {
+        AgentPreferenceModeStore(appContext)
+    }
+    private var activePreferenceMode: AgentPreferenceMode = traceMobileAgentInitialization("preference_load") {
+        preferenceModeStore.load()
+    }
     private var sessionId: String = UUID.randomUUID().toString()
     private var activeConversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false)
     private var activeConversationTurnId: String = ""
     private var activeTaskExecutionMode: AgentTaskExecutionMode =
-        safetySettingsStore.load().taskExecutionMode
+        traceMobileAgentInitialization("safety_load") {
+            safetySettingsStore.load().taskExecutionMode
+        }
     @Volatile private var phase: AgentPhase = AgentPhase.OBSERVING
     private var currentGoal: String = ""
     private var currentScreen: ScreenContext = ScreenContext(foregroundApp = "", pageTitle = "")
@@ -302,7 +350,9 @@ class MobileNativeAgent(
     }
 
     init {
-        restoreSession(sessionStore.load())
+        traceMobileAgentInitialization("session_restore") {
+            restoreSession(sessionStore.load())
+        }
     }
 
     fun bindExecutionLoopEventSink(sink: AgentExecutionLoopEventSink) {
@@ -11772,6 +11822,15 @@ class SharedPreferencesAgentSessionStore(
     private val prefs = AgentEncryptedPreferences(context, PREFS)
 
     override fun load(): AgentSessionSnapshot? {
+        val encodedLength = prefs.encodedValueLength(storageKey)
+        if (AgentSessionPersistencePolicy.shouldDiscardEncodedValue(encodedLength)) {
+            prefs.remove(storageKey)
+            Log.w(
+                "SignalASIAgentSession",
+                "Discarded oversized session checkpoint key=$storageKey encoded_chars=$encodedLength"
+            )
+            return null
+        }
         val raw = prefs.readString(storageKey, "").takeIf { it.isNotBlank() } ?: return null
         return runCatching {
             decodeSession(JSONObject(raw))
@@ -11779,7 +11838,13 @@ class SharedPreferencesAgentSessionStore(
     }
 
     override fun save(snapshot: AgentSessionSnapshot) {
-        prefs.writeString(storageKey, encodeSession(snapshot).toString())
+        val encoded = encodeSession(snapshot).toString()
+        val payload = if (encoded.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+            encoded
+        } else {
+            encodeRecoverySession(snapshot).toString()
+        }
+        prefs.writeString(storageKey, payload)
     }
 
     override fun clear() {
@@ -11787,14 +11852,35 @@ class SharedPreferencesAgentSessionStore(
     }
 
     private fun encodeSession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
-        .put("version", 5)
+        .put("version", 6)
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
-        .put("current_goal", snapshot.currentGoal)
+        .put("current_goal", AgentSessionPersistencePolicy.compactText(snapshot.currentGoal))
         .put("current_screen", encodeScreen(snapshot.currentScreen))
         .put("current_plan", snapshot.currentPlan?.let { encodePlan(it) })
         .put("audit_trail", JSONArray().also { array ->
-            snapshot.auditTrail.forEach { array.put(encodeAudit(it)) }
+            snapshot.auditTrail.takeLast(MAX_SESSION_AUDIT_ITEMS).forEach { array.put(encodeAudit(it)) }
+        })
+        .put("last_action_result", snapshot.lastActionResult?.let { encodeActionResult(it) })
+        .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId)
+        .put("task_execution_mode", snapshot.taskExecutionMode.name)
+        .put(
+            "execution_loop",
+            snapshot.executionLoopSnapshot
+                ?.let(AgentExecutionLoopJsonCodec::encode)
+                ?.let(::JSONObject)
+        )
+        .put("updated_at", snapshot.updatedAtMillis)
+
+    private fun encodeRecoverySession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
+        .put("version", 6)
+        .put("session_id", snapshot.sessionId)
+        .put("phase", snapshot.phase.name)
+        .put("current_goal", AgentSessionPersistencePolicy.compactText(snapshot.currentGoal))
+        .put("current_screen", encodeScreen(snapshot.currentScreen))
+        .put("current_plan", JSONObject.NULL)
+        .put("audit_trail", JSONArray().also { array ->
+            snapshot.auditTrail.takeLast(RECOVERY_AUDIT_ITEMS).forEach { array.put(encodeAudit(it)) }
         })
         .put("last_action_result", snapshot.lastActionResult?.let { encodeActionResult(it) })
         .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId)
@@ -11826,7 +11912,9 @@ class SharedPreferencesAgentSessionStore(
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 
-    private fun encodeScreen(screen: ScreenContext): JSONObject = JSONObject()
+    private fun encodeScreen(source: ScreenContext): JSONObject {
+        val screen = AgentSessionPersistencePolicy.compactScreen(source)
+        return JSONObject()
         .put("foreground_app", screen.foregroundApp)
         .put("activity_name", screen.activityName)
         .put("page_title", screen.pageTitle)
@@ -11853,6 +11941,7 @@ class SharedPreferencesAgentSessionStore(
         .put("device_status", encodeDeviceStatus(screen.deviceStatus))
         .put("is_accessibility_enabled", screen.isAccessibilityEnabled)
         .put("snapshot_age_millis", screen.snapshotAgeMillis)
+    }
 
     private fun decodeScreen(json: JSONObject?): ScreenContext {
         if (json == null) return ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent")
@@ -11996,7 +12085,7 @@ class SharedPreferencesAgentSessionStore(
     }
 
     private fun encodePlan(plan: AgentPlan): JSONObject = JSONObject()
-        .put("goal", plan.goal)
+        .put("goal", AgentSessionPersistencePolicy.compactText(plan.goal))
         .put("screen", encodeScreen(plan.screen))
         .put("execution_mode", plan.executionMode.name)
         .put("plan_id", plan.planId)
@@ -12014,19 +12103,21 @@ class SharedPreferencesAgentSessionStore(
         .put("route", encodeRoute(plan.route))
         .put("validation", encodePlanValidation(plan.validation))
         .put("verification_results", JSONArray().also { array ->
-            plan.verificationResults.forEach { array.put(encodeVerificationResult(it)) }
+            plan.verificationResults.takeLast(MAX_SESSION_VERIFICATION_RESULTS).forEach {
+                array.put(encodeVerificationResult(it))
+            }
         })
         .put("steps", JSONArray().also { array ->
-            plan.steps.forEach { array.put(encodeStep(it)) }
+            plan.steps.take(MAX_SESSION_STEPS).forEach { array.put(encodeStep(it)) }
         })
         .put("actions", JSONArray().also { array ->
-            plan.actions.forEach { array.put(encodeAction(it)) }
+            plan.actions.take(MAX_SESSION_ACTIONS).forEach { array.put(encodeAction(it)) }
         })
         .put("action_history", JSONArray().also { array ->
-            plan.actionHistory.forEach { array.put(encodeAction(it)) }
+            plan.actionHistory.takeLast(MAX_SESSION_ACTION_HISTORY).forEach { array.put(encodeAction(it)) }
         })
         .put("checkpoints", JSONArray().also { array ->
-            plan.checkpoints.forEach { array.put(encodeCheckpoint(it)) }
+            plan.checkpoints.takeLast(MAX_SESSION_CHECKPOINTS).forEach { array.put(encodeCheckpoint(it)) }
         })
         .put("safety_review", encodeSafetyReview(plan.safetyReview))
 
@@ -12225,11 +12316,11 @@ class SharedPreferencesAgentSessionStore(
         .put("target", action.target)
         .put("risk", action.risk.name)
         .put("status", action.status.name)
-        .put("description", action.description)
-        .put("parameters", JSONObject(action.parameters))
+        .put("description", AgentSessionPersistencePolicy.compactActionText(action.description))
+        .put("parameters", JSONObject(AgentSessionPersistencePolicy.compactMetadata(action.parameters)))
         .put("requires_confirmation", action.requiresConfirmation)
-        .put("result", action.result)
-        .put("evidence", action.evidence)
+        .put("result", AgentSessionPersistencePolicy.compactActionText(action.result))
+        .put("evidence", AgentSessionPersistencePolicy.compactActionText(action.evidence))
 
     private fun decodeActions(array: JSONArray?): List<AgentAction> {
         if (array == null) return emptyList()
@@ -12334,8 +12425,8 @@ class SharedPreferencesAgentSessionStore(
     private fun encodeActionResult(result: AgentActionResult): JSONObject = JSONObject()
         .put("action_id", result.actionId)
         .put("success", result.success)
-        .put("message", result.message)
-        .put("metadata", JSONObject(result.metadata))
+        .put("message", AgentSessionPersistencePolicy.compactActionText(result.message))
+        .put("metadata", JSONObject(AgentSessionPersistencePolicy.compactMetadata(result.metadata)))
 
     private fun decodeActionResult(json: JSONObject): AgentActionResult = AgentActionResult(
         actionId = json.optString("action_id"),
@@ -12346,7 +12437,7 @@ class SharedPreferencesAgentSessionStore(
 
     private fun encodeAudit(audit: AgentAuditEntry): JSONObject = JSONObject()
         .put("event", audit.event.name)
-        .put("detail", audit.detail)
+        .put("detail", AgentSessionPersistencePolicy.compactAuditText(audit.detail))
         .put("timestamp_millis", audit.timestampMillis)
 
     private fun decodeAuditTrail(array: JSONArray?): List<AgentAuditEntry> {
@@ -12481,6 +12572,13 @@ class SharedPreferencesAgentSessionStore(
         private const val KEY_SESSION = "session"
         private const val TASK_PREFIX = "task:"
         private const val MAX_SESSION_VISUAL_ELEMENTS = 60
+        private const val MAX_SESSION_AUDIT_ITEMS = 20
+        private const val RECOVERY_AUDIT_ITEMS = 4
+        private const val MAX_SESSION_VERIFICATION_RESULTS = 24
+        private const val MAX_SESSION_STEPS = 64
+        private const val MAX_SESSION_ACTIONS = 64
+        private const val MAX_SESSION_ACTION_HISTORY = 24
+        private const val MAX_SESSION_CHECKPOINTS = 16
 
         fun taskStorageKeys(context: Context): List<String> =
             AgentEncryptedPreferences(context, PREFS).keys()
@@ -12508,6 +12606,61 @@ class SharedPreferencesAgentSessionStore(
                 (expectedContact.isBlank() || contactId.isBlank() || expectedContact == contactId)
         }
     }
+}
+
+internal object AgentSessionPersistencePolicy {
+    const val MAX_SESSION_JSON_CHARACTERS = 96 * 1024
+    private const val MAX_ENCRYPTED_SESSION_CHARACTERS = 192 * 1024
+    private const val MAX_GENERAL_TEXT_CHARACTERS = 8 * 1024
+    private const val MAX_ACTION_TEXT_CHARACTERS = 4 * 1024
+    private const val MAX_AUDIT_TEXT_CHARACTERS = 1 * 1024
+    private const val MAX_METADATA_ENTRIES = 24
+    private const val MAX_METADATA_VALUE_CHARACTERS = 2 * 1024
+    private const val MAX_SCREEN_LABEL_CHARACTERS = 512
+
+    fun shouldDiscardEncodedValue(encodedLength: Int): Boolean =
+        encodedLength > MAX_ENCRYPTED_SESSION_CHARACTERS
+
+    fun compactText(value: String): String = value.take(MAX_GENERAL_TEXT_CHARACTERS)
+
+    fun compactActionText(value: String): String = value.take(MAX_ACTION_TEXT_CHARACTERS)
+
+    fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)
+
+    fun compactMetadata(metadata: Map<String, String>): Map<String, String> = metadata.entries
+        .take(MAX_METADATA_ENTRIES)
+        .associate { (key, value) ->
+            key.take(128) to value.take(MAX_METADATA_VALUE_CHARACTERS)
+        }
+
+    fun compactScreen(screen: ScreenContext): ScreenContext = screen.copy(
+        foregroundApp = screen.foregroundApp.take(256),
+        activityName = screen.activityName.take(256),
+        pageTitle = screen.pageTitle.take(256),
+        visibleTexts = emptyList(),
+        selectedText = screen.selectedText.take(MAX_SCREEN_LABEL_CHARACTERS),
+        focusedInputField = screen.focusedInputField?.copy(
+            label = screen.focusedInputField.label.take(MAX_SCREEN_LABEL_CHARACTERS),
+            viewId = screen.focusedInputField.viewId.take(256),
+            className = screen.focusedInputField.className.take(256),
+            bounds = screen.focusedInputField.bounds.take(128)
+        ),
+        clickableElements = emptyList(),
+        inputFields = emptyList(),
+        scrollableRegions = emptyList(),
+        sensitiveFlags = screen.sensitiveFlags.take(8).map { it.take(128) },
+        visualScene = screen.visualScene.copy(
+            modelProfile = screen.visualScene.modelProfile.take(128),
+            elements = emptyList()
+        ),
+        clipboard = ClipboardContext(),
+        notifications = AgentNotificationContext(
+            hasAccess = screen.notifications.hasAccess,
+            totalCount = screen.notifications.totalCount
+        ),
+        installedApps = emptyList(),
+        deviceStatus = screen.deviceStatus.copy(network = screen.deviceStatus.network.take(64))
+    )
 }
 
 private inline fun <reified T : Enum<T>> enumOrDefault(value: String, default: T): T =

@@ -51,12 +51,6 @@ from agent_collaboration_channels import (
     CollaborationScope,
     agent_collaboration_bus,
 )
-from agent_file_access_ledger import (
-    AgentFileAccessError,
-    FileAccessScope,
-    FileObservation,
-    agent_file_access_ledger,
-)
 from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
@@ -1309,7 +1303,11 @@ def api_agent_runtime(request: Request):
     return {
         **desktop_agent_runtime_server().health(),
         "collaboration": agent_collaboration_bus().health(),
-        "file_access": agent_file_access_ledger().health(),
+        "file_access": {
+            "enabled": False,
+            "status": "disabled",
+            "reason": "file_tree_audit_removed_from_task_runtime",
+        },
         "acp_runtime": acp_runtime_manifest(),
         "external_cli_runtime": external_cli_runtime_manifest(),
     }
@@ -1689,42 +1687,11 @@ def api_acknowledge_agent_collaboration_channel(
 @app.post("/api/agent-runtime/file-access")
 def api_record_agent_file_access(req: AgentFileAccessReq, request: Request):
     require_desktop_api_token(request)
-    try:
-        scope = FileAccessScope.create(
-            client_route_id=req.client_route_id,
-            conversation_id=req.conversation_id,
-            task_id=req.task_id,
-            repository_id=req.repository_id,
-            workspace_id=req.workspace_id,
-        )
-        observation = FileObservation.create(
-            req.path,
-            sha256=req.sha256,
-            exists=req.exists,
-            size_bytes=req.size_bytes,
-        )
-        kind = str(req.access_kind or "").strip().lower()
-        if kind == "read":
-            return agent_file_access_ledger().record_read(
-                scope,
-                agent_id=req.agent_id,
-                observation=observation,
-                event_id=req.event_id,
-            )
-        if kind == "write":
-            return agent_file_access_ledger().record_write(
-                scope,
-                agent_id=req.agent_id,
-                observation=observation,
-                event_id=req.event_id,
-                collaboration_channel_ids=req.collaboration_channel_ids,
-            )
-        raise AgentFileAccessError("File access kind must be read or write")
-    except AgentFileAccessError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=api_error("agent_file_access_invalid", str(exc)[:240]),
-        ) from exc
+    return {
+        "enabled": False,
+        "status": "disabled",
+        "recorded": False,
+    }
 
 
 @app.get("/api/agent-runtime/file-conflicts")
@@ -1740,26 +1707,7 @@ def api_list_agent_file_conflicts(
     limit: int = Query(100),
 ):
     require_desktop_api_token(request)
-    try:
-        return {
-            "conflicts": agent_file_access_ledger().conflicts(
-                FileAccessScope.create(
-                    client_route_id=client_route_id,
-                    conversation_id=conversation_id,
-                    task_id=task_id,
-                    repository_id=repository_id,
-                    workspace_id=workspace_id,
-                ),
-                requester_agent_id=agent_id,
-                status=status,
-                limit=limit,
-            )
-        }
-    except AgentFileAccessError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=api_error("agent_file_conflict_query_invalid", str(exc)[:240]),
-        ) from exc
+    return {"enabled": False, "status": "disabled", "conflicts": []}
 
 
 @app.post("/api/agent-runtime/file-conflicts/{conflict_id}/resolve")
@@ -1769,26 +1717,12 @@ def api_resolve_agent_file_conflict(
     request: Request,
 ):
     require_desktop_api_token(request)
-    try:
-        return {
-            "conflict": agent_file_access_ledger().resolve(
-                FileAccessScope.create(
-                    client_route_id=req.client_route_id,
-                    conversation_id=req.conversation_id,
-                    task_id=req.task_id,
-                    repository_id=req.repository_id,
-                    workspace_id=req.workspace_id,
-                ),
-                conflict_id,
-                reader_agent_id=req.agent_id,
-                reason=req.reason,
-            )
-        }
-    except AgentFileAccessError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=api_error("agent_file_conflict_invalid", str(exc)[:240]),
-        ) from exc
+    return {
+        "enabled": False,
+        "status": "disabled",
+        "conflict": None,
+        "conflict_id": conflict_id,
+    }
 
 
 @app.get("/api/desktop-tools")

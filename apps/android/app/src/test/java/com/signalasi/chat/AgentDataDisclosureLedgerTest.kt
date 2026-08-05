@@ -109,6 +109,30 @@ class AgentDataDisclosureLedgerTest {
         assertEquals(2, summary.destinations)
     }
 
+    @Test
+    fun disclosureIndexUpdatesOneRecordWithoutGrowingPastItsLimit() {
+        val update = AgentDisclosureRecordIndex.append(
+            currentIds = listOf("one", "two", "three"),
+            eventId = "four",
+            maxRecords = 3
+        )
+
+        assertEquals(listOf("two", "three", "four"), update.recordIds)
+        assertEquals(listOf("one"), update.evictedIds)
+    }
+
+    @Test
+    fun disclosureIndexMovesAnExistingRecordToTheNewestPosition() {
+        val update = AgentDisclosureRecordIndex.append(
+            currentIds = listOf("one", "two", "three"),
+            eventId = "two",
+            maxRecords = 3
+        )
+
+        assertEquals(listOf("one", "three", "two"), update.recordIds)
+        assertTrue(update.evictedIds.isEmpty())
+    }
+
     private fun record(
         destinationId: String,
         location: AgentResourceLocation = AgentResourceLocation.CLOUD,

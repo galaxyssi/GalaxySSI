@@ -810,35 +810,44 @@ class GlobalAgentRepository(context: Context) {
 
     fun clear() = synchronized(STORE_LOCK) {
         database.clear()
+        cachedEvents = null
+        cachedOverflowEvents = null
+        cachedContextJournal = null
         cachedWorld = null
         cachedTopicGraph = null
         cachedEntityMemoryGraph = null
     }
 
-    private fun loadEvents(): List<GlobalConversationEvent> = runCatching {
-        val array = JSONArray(database.readString(KEY_EVENTS, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeEvent(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadEvents(): List<GlobalConversationEvent> = cachedEvents ?: runCatching {
+        loadIndexedEvents(KEY_EVENTS_INDEX, KEY_EVENT_RECORD_PREFIX)
+    }.getOrDefault(emptyList()).also { cachedEvents = it }
 
     private fun saveEvents(events: List<GlobalConversationEvent>) {
-        val array = JSONArray()
-        events.forEach { array.put(encodeEvent(it)) }
-        database.writeString(KEY_EVENTS, array.toString())
+        val retained = events.distinctBy(GlobalConversationEvent::id).takeLast(MAX_PENDING_EVENTS)
+        saveIndexedEvents(
+            indexKey = KEY_EVENTS_INDEX,
+            recordPrefix = KEY_EVENT_RECORD_PREFIX,
+            legacyKey = KEY_EVENTS,
+            previous = cachedEvents ?: loadEvents(),
+            retained = retained
+        )
+        cachedEvents = retained
     }
 
-    private fun loadOverflowEvents(): List<GlobalConversationEvent> = runCatching {
-        val array = JSONArray(database.readString(KEY_OVERFLOW_EVENTS, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeEvent(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadOverflowEvents(): List<GlobalConversationEvent> = cachedOverflowEvents ?: runCatching {
+        loadIndexedEvents(KEY_OVERFLOW_EVENTS_INDEX, KEY_OVERFLOW_EVENT_RECORD_PREFIX)
+    }.getOrDefault(emptyList()).also { cachedOverflowEvents = it }
 
     private fun saveOverflowEvents(events: List<GlobalConversationEvent>) {
-        val array = JSONArray()
-        events.take(MAX_OVERFLOW_EVENTS).forEach { array.put(encodeEvent(it)) }
-        database.writeString(KEY_OVERFLOW_EVENTS, array.toString())
+        val retained = events.distinctBy(GlobalConversationEvent::id).take(MAX_OVERFLOW_EVENTS)
+        saveIndexedEvents(
+            indexKey = KEY_OVERFLOW_EVENTS_INDEX,
+            recordPrefix = KEY_OVERFLOW_EVENT_RECORD_PREFIX,
+            legacyKey = KEY_OVERFLOW_EVENTS,
+            previous = cachedOverflowEvents ?: loadOverflowEvents(),
+            retained = retained
+        )
+        cachedOverflowEvents = retained
     }
 
     private fun loadEventFailures(): List<GlobalEventProcessingFailure> = runCatching {
@@ -869,17 +878,56 @@ class GlobalAgentRepository(context: Context) {
         database.writeString(KEY_DEAD_LETTERS, array.toString())
     }
 
-    private fun loadContextJournal(): List<GlobalConversationEvent> = runCatching {
-        val array = JSONArray(database.readString(KEY_CONTEXT_JOURNAL, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeEvent(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadContextJournal(): List<GlobalConversationEvent> = cachedContextJournal ?: runCatching {
+        loadIndexedEvents(KEY_CONTEXT_JOURNAL_INDEX, KEY_CONTEXT_JOURNAL_RECORD_PREFIX)
+    }.getOrDefault(emptyList()).also { cachedContextJournal = it }
 
     private fun saveContextJournal(events: List<GlobalConversationEvent>) {
-        val array = JSONArray()
-        events.forEach { array.put(encodeEvent(it)) }
-        database.writeString(KEY_CONTEXT_JOURNAL, array.toString())
+        val retained = events.distinctBy(GlobalConversationEvent::id)
+        saveIndexedEvents(
+            indexKey = KEY_CONTEXT_JOURNAL_INDEX,
+            recordPrefix = KEY_CONTEXT_JOURNAL_RECORD_PREFIX,
+            legacyKey = KEY_CONTEXT_JOURNAL,
+            previous = cachedContextJournal ?: loadContextJournal(),
+            retained = retained
+        )
+        cachedContextJournal = retained
+    }
+
+    private fun loadIndexedEvents(indexKey: String, recordPrefix: String): List<GlobalConversationEvent> {
+        val ids = JSONArray(database.readString(indexKey, "[]")).strings().distinct()
+        if (ids.isEmpty()) return emptyList()
+        val records = database.readStrings(ids.map { "$recordPrefix$it" })
+        return ids.mapNotNull { id ->
+            records["$recordPrefix$id"]?.let { encoded ->
+                runCatching { decodeEvent(JSONObject(encoded)) }.getOrNull()
+            }
+        }
+    }
+
+    private fun saveIndexedEvents(
+        indexKey: String,
+        recordPrefix: String,
+        legacyKey: String,
+        previous: List<GlobalConversationEvent>,
+        retained: List<GlobalConversationEvent>
+    ) {
+        val previousById = previous.associateBy(GlobalConversationEvent::id)
+        val retainedById = retained.associateBy(GlobalConversationEvent::id)
+        val upserts = linkedMapOf<String, String>()
+        upserts[indexKey] = JSONArray().apply {
+            retained.forEach { put(it.id) }
+        }.toString()
+        retained.forEach { event ->
+            if (previousById[event.id] != event) {
+                upserts["$recordPrefix${event.id}"] = encodeEvent(event).toString()
+            }
+        }
+        val removedKeys = buildList {
+            previousById.keys.filterNot(retainedById::containsKey).forEach { add("$recordPrefix$it") }
+            add(legacyKey)
+        }
+        database.mutateStrings(upserts, removedKeys)
     }
 
     private fun loadResearchTasks(): List<GlobalResearchTask> = runCatching {
@@ -1620,10 +1668,16 @@ class GlobalAgentRepository(context: Context) {
     companion object {
         const val DATABASE_NAME = "signalasi_global_super_agent"
         private const val KEY_EVENTS = "conversation_events"
+        private const val KEY_EVENTS_INDEX = "conversation_events_index_v2"
+        private const val KEY_EVENT_RECORD_PREFIX = "conversation_event_v2:"
         private const val KEY_OVERFLOW_EVENTS = "conversation_event_overflow"
+        private const val KEY_OVERFLOW_EVENTS_INDEX = "conversation_event_overflow_index_v2"
+        private const val KEY_OVERFLOW_EVENT_RECORD_PREFIX = "conversation_event_overflow_v2:"
         private const val KEY_EVENT_FAILURES = "conversation_event_failures"
         private const val KEY_DEAD_LETTERS = "conversation_event_dead_letters"
         private const val KEY_CONTEXT_JOURNAL = "conversation_context_journal"
+        private const val KEY_CONTEXT_JOURNAL_INDEX = "conversation_context_journal_index_v2"
+        private const val KEY_CONTEXT_JOURNAL_RECORD_PREFIX = "conversation_context_journal_v2:"
         private const val KEY_WORLD = "personal_world_model"
         private const val KEY_RESEARCH_TASKS = "research_tasks"
         private const val KEY_PROACTIVE_MESSAGES = "proactive_messages"
@@ -1644,6 +1698,9 @@ class GlobalAgentRepository(context: Context) {
         private const val MAX_CONVERSATION_TOMBSTONES = 500
         private const val MAX_EVENT_CONTENT_CHARACTERS = 12_000
         private val STORE_LOCK = Any()
+        @Volatile private var cachedEvents: List<GlobalConversationEvent>? = null
+        @Volatile private var cachedOverflowEvents: List<GlobalConversationEvent>? = null
+        @Volatile private var cachedContextJournal: List<GlobalConversationEvent>? = null
         @Volatile private var cachedWorld: PersonalWorldModel? = null
         @Volatile private var cachedTopicGraph: GlobalTopicProjectGraph? = null
         @Volatile private var cachedEntityMemoryGraph: GlobalEntityMemoryGraph? = null

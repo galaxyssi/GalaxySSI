@@ -293,7 +293,7 @@ class AgentFileAccessLedgerTests(unittest.TestCase):
         self.assertTrue(identity.startswith("repo-"))
         self.assertNotIn(str(self.root), identity)
 
-    def test_open_conflict_is_injected_into_next_agent_execution(self):
+    def test_legacy_conflict_is_not_injected_into_agent_execution(self):
         with patch.dict(
             os.environ,
             {"SIGNALASI_STATE_DIR": str(self.root / "shared-state")},
@@ -355,8 +355,8 @@ class AgentFileAccessLedgerTests(unittest.TestCase):
                 )
 
         self.assertIn("current content", reply)
-        self.assertIn("file conflict evidence", prompts[0])
-        self.assertIn("src/app.py", prompts[0])
+        self.assertNotIn("file conflict evidence", prompts[0])
+        self.assertNotIn("src/app.py", prompts[0])
 
 
 class NativeToolFileAccessIntegrationTests(unittest.TestCase):
@@ -407,7 +407,7 @@ class NativeToolFileAccessIntegrationTests(unittest.TestCase):
             },
         )
 
-    def test_native_read_then_other_agent_write_creates_conflict(self):
+    def test_native_file_tools_do_not_write_the_legacy_file_ledger(self):
         source = self.workspace / "shared.txt"
         source.write_text("before", encoding="utf-8")
         with patch.dict(
@@ -444,8 +444,7 @@ class NativeToolFileAccessIntegrationTests(unittest.TestCase):
 
         self.assertEqual("succeeded", read["status"])
         self.assertEqual("succeeded", written["status"])
-        self.assertEqual(1, len(conflicts))
-        self.assertEqual("shared.txt", conflicts[0]["path"])
+        self.assertEqual([], conflicts)
 
     def test_file_access_api_is_token_protected(self):
         source = (
