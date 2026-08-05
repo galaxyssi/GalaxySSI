@@ -278,6 +278,12 @@ enum SignalASIContactExchange {
       desktopName: desktopName(from: object),
       deviceId: object.string("device_id"),
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
+      setupNextStep: object.string("setup_next_step").ifBlank(object.string("setup")),
+      desktopAccessProfile: object.string("desktop_access_profile")
+        .ifBlank(desktopAgent ? SignalASILinkProtocol.accessRestricted : ""),
+      desktopAccessScopes: object.stringArray("desktop_access_scopes")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty },
       source: "qr",
       createdAt: now
     )
@@ -371,7 +377,8 @@ enum SignalASIContactExchange {
         .ifBlank(server?.string("public_key") ?? ""),
       "mqtt_topic": object.string("mqtt_topic").ifBlank(object.string("mqtt_inbox_topic")).ifBlank(object.string("mqtt_recv_topic")),
       "mqtt_inbox_topic": object.string("mqtt_inbox_topic").ifBlank(object.string("mqtt_topic")),
-      "desktop_access_profile": object.string("desktop_access_profile")
+      "desktop_access_profile": object.string("desktop_access_profile"),
+      "setup_next_step": object.string("setup_next_step").ifBlank(object.string("setup"))
     ].forEach { key, value in
       if !value.isEmpty {
         inherited[key] = value

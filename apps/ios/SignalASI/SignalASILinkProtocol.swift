@@ -331,6 +331,22 @@ extension Dictionary where Key == String, Value == Any {
   }
 
   func stringArray(_ key: String) -> [String] {
-    self[key] as? [String] ?? []
+    if let values = self[key] as? [String] {
+      return values
+    }
+    if let values = self[key] as? [Any] {
+      return values.compactMap { value in
+        if let string = value as? String { return string }
+        if let number = value as? NSNumber { return number.stringValue }
+        return nil
+      }
+    }
+    if let value = self[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return value
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    }
+    return []
   }
 }

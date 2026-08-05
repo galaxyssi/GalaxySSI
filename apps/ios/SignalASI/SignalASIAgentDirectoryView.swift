@@ -562,11 +562,12 @@ private struct SignalASIAgentDirectorySnapshot {
     let setupStatus = contact?.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
     let isConnected = connected(id)
     let badge = statusBadge(setupStatus: setupStatus, connected: isConnected, fallback: fallbackStatus)
+    let fallbackSubtitle = t(subtitleKey, subtitleFallback)
     return SignalASIAgentDirectoryItem(
       id: id,
       contactId: contact?.id ?? id,
       title: contact?.displayName.ifBlank(fallbackTitle) ?? fallbackTitle,
-      subtitle: contact?.setupDetail.ifBlank(t(subtitleKey, subtitleFallback)) ?? t(subtitleKey, subtitleFallback),
+      subtitle: contact.map { connectorDetail($0, fallback: fallbackSubtitle) } ?? fallbackSubtitle,
       systemImage: systemImage,
       assetName: assetName,
       tint: statusTint(setupStatus: setupStatus, fallback: tint),
@@ -588,7 +589,7 @@ private struct SignalASIAgentDirectorySnapshot {
       id: contact.id,
       contactId: contact.id,
       title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
-      subtitle: contact.setupDetail.ifBlank(agentKindSubtitle(contact.agentKind)),
+      subtitle: connectorDetail(contact, fallback: agentKindSubtitle(contact.agentKind)),
       systemImage: systemImage(for: contact),
       assetName: assetName(for: contact),
       tint: statusTint(setupStatus: setupStatus, fallback: tint(for: contact)),
@@ -604,6 +605,12 @@ private struct SignalASIAgentDirectorySnapshot {
       contact.type == "agent" ||
       contact.deliveryMode == .cloudAPI ||
       ["local-cli", "local-model", "cloud-model", "cloud-api", "custom-cli", "desktop-agent"].contains(contact.agentKind)
+  }
+
+  private func connectorDetail(_ contact: SignalASIContact, fallback: String) -> String {
+    contact.setupDetail
+      .ifBlank(contact.connectorSetupNextStep)
+      .ifBlank(fallback)
   }
 
   private func connected(_ id: String) -> Bool {

@@ -163,7 +163,9 @@ struct ContactDetailView: View {
         SignalASISecuritySectionTitle(title: t("contact_connector_section", "Connector"))
         SignalASISecurityStatusRow(
           title: t("common_status", "Status"),
-          subtitle: contact.setupDetail.ifBlank(setupStatusText(for: contact)),
+          subtitle: contact.setupDetail
+            .ifBlank(contact.connectorSetupNextStep)
+            .ifBlank(setupStatusText(for: contact)),
           systemImage: "person.crop.circle.badge.checkmark",
           tint: setupTint(for: contact),
           badge: setupStatusText(for: contact)
@@ -178,6 +180,38 @@ struct ContactDetailView: View {
             copiedTitle: t("signalasi.contact_detail.copied_agent_id", "Agent ID copied"),
             monospacedSubtitle: true,
             onCopy: setStatus
+          )
+        }
+        if !contact.connectorSetupNextStep.isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("common_next_step", "Next Step"),
+            subtitle: contact.connectorSetupNextStep,
+            systemImage: "arrow.right.circle",
+            tint: .orange,
+            badge: t("signalasi.common.view", "View")
+          )
+        }
+        if !contact.connectorDesktopAccessProfile.isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.access_profile", "Access Profile"),
+            subtitle: contact.connectorDesktopAccessProfile,
+            systemImage: "lock.shield",
+            tint: .purple,
+            badge: t("signalasi.contact_detail.desktop_access", "Desktop Access"),
+            monospacedSubtitle: true
+          )
+        }
+        if !contact.connectorDesktopAccessScopes.isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.access_scopes", "Access Scopes"),
+            subtitle: contact.connectorDesktopAccessScopes.joined(separator: ", "),
+            systemImage: "list.bullet",
+            tint: .blue,
+            badge: String(
+              format: t("signalasi.contact_detail.scope_count", "%d scopes"),
+              contact.connectorDesktopAccessScopes.count
+            ),
+            monospacedSubtitle: true
           )
         }
         if !contact.desktopName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
