@@ -108,6 +108,8 @@ struct SignalASIGlobalAgentDashboardSnapshot {
     knowledgeAudit: [AgentKnowledgeAccessAuditEntry],
     automationTasks: [AgentProactiveTask],
     automationRuns: [AgentProactiveRun],
+    proactiveMessages: [GlobalProactiveMessage] = [],
+    proactiveFeedback: [GlobalAgentFeedback] = [],
     cognitionTasks: [GlobalCognitionTask],
     autonomousRuns: [GlobalAutonomousRun],
     longHorizonGoals: [GlobalLongHorizonGoal],
@@ -145,13 +147,21 @@ struct SignalASIGlobalAgentDashboardSnapshot {
       dailyTokenLimit: settings.dailyBackgroundTokenBudget,
       dailyReportedCostLimitMicros: settings.dailyBackgroundReportedCostBudgetMicros
     )
+    let inboxItems = GlobalProactiveInboxPolicy.project(
+      messages: proactiveMessages,
+      feedback: proactiveFeedback,
+      limit: 80
+    )
+    let pendingInsights = inboxItems.isEmpty
+      ? automationRuns.filter { $0.status == .waiting || $0.status == .failed }.count
+      : inboxItems.count
 
     return SignalASIGlobalAgentDashboardSnapshot(
       settings: settings,
       modelBudget: modelBudget,
       topicCount: topics,
       crossConversationLinkCount: links,
-      pendingInsightCount: automationRuns.filter { $0.status == .waiting || $0.status == .failed }.count,
+      pendingInsightCount: pendingInsights,
       activeGoalCount: activeGoals.count,
       activeTaskCount: activeTasks.count,
       unresolvedConflictCount: unresolvedConflicts,
@@ -161,7 +171,7 @@ struct SignalASIGlobalAgentDashboardSnapshot {
       longHorizonGoalCount: activeGoals.count,
       blockedLongHorizonGoalCount: blockedGoals.count,
       activeResearchCount: activeResearch.count,
-      feedbackCount: knowledgeAudit.count,
+      feedbackCount: proactiveFeedback.count + knowledgeAudit.count,
       learnedTopicCount: knowledgeStats.sourceCount,
       continuityPendingCount: researchState.events.count,
       continuityRetryingCount: cognitionTasks.filter { $0.status == .waitingForResource }.count +
@@ -175,7 +185,7 @@ struct SignalASIGlobalAgentDashboardSnapshot {
       runs: Self.runRows(autonomousRuns),
       longHorizon: Self.longHorizonRows(longHorizonGoals),
       research: Self.researchRows(researchState.tasks),
-      insights: Self.insightRows(tasks: automationTasks, runs: automationRuns),
+      insights: Self.insightRows(tasks: automationTasks, runs: automationRuns, inboxItems: inboxItems),
       learning: Self.learningRows(memory: memory, knowledgeStats: knowledgeStats, audit: knowledgeAudit),
       continuity: Self.continuityRows(researchState: researchState, cognitionTasks: cognitionTasks, blockedTasks: agentTasks.filter(\.blocked))
     )
@@ -373,8 +383,19 @@ struct SignalASIGlobalAgentDashboardSnapshot {
 
   private static func insightRows(
     tasks: [AgentProactiveTask],
-    runs: [AgentProactiveRun]
+    runs: [AgentProactiveRun],
+    inboxItems: [GlobalProactiveInboxItem] = []
   ) -> [SignalASIGlobalAgentRowItem] {
+    let inboxRows = inboxItems.map { item in
+      SignalASIGlobalAgentRowItem(
+        id: "inbox:\(item.id)",
+        title: item.title,
+        subtitle: item.content.ifBlank(item.topic),
+        systemImage: item.urgent ? "exclamationmark.bubble" : "sparkles",
+        badge: item.feedbackKind?.rawValue ?? (item.isNew ? "NEW" : item.target.rawValue),
+        tone: item.urgent ? .amber : .purple
+      )
+    }
     let taskRows = tasks.sorted { $0.updatedAtMillis > $1.updatedAtMillis }.map { task in
       SignalASIGlobalAgentRowItem(
         id: "task:\(task.taskId)",
@@ -398,7 +419,7 @@ struct SignalASIGlobalAgentDashboardSnapshot {
         tone: run.status == .failed ? .amber : .green
       )
     }
-    return Array((taskRows + runRows).prefix(80))
+    return Array((inboxRows + taskRows + runRows).prefix(80))
   }
 
   private static func learningRows(

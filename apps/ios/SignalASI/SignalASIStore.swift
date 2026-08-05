@@ -124,6 +124,12 @@ final class SignalASIStore: ObservableObject {
   @Published private(set) var proactiveRuns: [AgentProactiveRun] {
     didSet { save() }
   }
+  @Published private(set) var globalProactiveMessages: [GlobalProactiveMessage] {
+    didSet { save() }
+  }
+  @Published private(set) var globalAgentFeedback: [GlobalAgentFeedback] {
+    didSet { save() }
+  }
   @Published private(set) var agentConversations: [AgentConversation] {
     didSet { save() }
   }
@@ -165,6 +171,8 @@ final class SignalASIStore: ObservableObject {
     var agentTaskBudget: AgentTaskBudget
     var proactiveTasks: [AgentProactiveTask]
     var proactiveRuns: [AgentProactiveRun]
+    var globalProactiveMessages: [GlobalProactiveMessage]
+    var globalAgentFeedback: [GlobalAgentFeedback]
     var agentConversations: [AgentConversation]
     var activeAgentConversationId: String
     var agentKnowledgeItems: [AgentKnowledgeItem]
@@ -190,6 +198,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget: AgentTaskBudget = .default,
       proactiveTasks: [AgentProactiveTask] = [],
       proactiveRuns: [AgentProactiveRun] = [],
+      globalProactiveMessages: [GlobalProactiveMessage] = [],
+      globalAgentFeedback: [GlobalAgentFeedback] = [],
       agentConversations: [AgentConversation] = [],
       activeAgentConversationId: String = "",
       agentKnowledgeItems: [AgentKnowledgeItem] = [],
@@ -214,6 +224,8 @@ final class SignalASIStore: ObservableObject {
       self.agentTaskBudget = agentTaskBudget
       self.proactiveTasks = Array(proactiveTasks.suffix(200))
       self.proactiveRuns = Array(proactiveRuns.suffix(500))
+      self.globalProactiveMessages = Array(globalProactiveMessages.suffix(500))
+      self.globalAgentFeedback = Array(globalAgentFeedback.suffix(500))
       self.agentConversations = Array(agentConversations.suffix(200))
       self.activeAgentConversationId = activeAgentConversationId
       self.agentKnowledgeItems = Array(agentKnowledgeItems.suffix(500))
@@ -245,6 +257,14 @@ final class SignalASIStore: ObservableObject {
       )
       proactiveRuns = Array(
         (try container.decodeIfPresent([AgentProactiveRun].self, forKey: .proactiveRuns) ?? [])
+          .suffix(500)
+      )
+      globalProactiveMessages = Array(
+        (try container.decodeIfPresent([GlobalProactiveMessage].self, forKey: .globalProactiveMessages) ?? [])
+          .suffix(500)
+      )
+      globalAgentFeedback = Array(
+        (try container.decodeIfPresent([GlobalAgentFeedback].self, forKey: .globalAgentFeedback) ?? [])
           .suffix(500)
       )
       agentConversations = Array(
@@ -307,6 +327,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget = state.agentTaskBudget
       proactiveTasks = state.proactiveTasks
       proactiveRuns = state.proactiveRuns
+      globalProactiveMessages = state.globalProactiveMessages
+      globalAgentFeedback = state.globalAgentFeedback
       agentTaskRecords = state.agentTaskRecords
       agentConversations = state.agentConversations
       activeAgentConversationId = state.activeAgentConversationId
@@ -351,6 +373,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget = .default
       proactiveTasks = []
       proactiveRuns = []
+      globalProactiveMessages = []
+      globalAgentFeedback = []
       agentTaskRecords = []
       agentConversations = []
       activeAgentConversationId = ""
@@ -751,6 +775,92 @@ final class SignalASIStore: ObservableObject {
     var runs = proactiveRuns
     runs[index] = cancelled
     proactiveRuns = runs
+    return true
+  }
+
+  func globalProactiveInboxItems(limit: Int = 50) -> [GlobalProactiveInboxItem] {
+    GlobalProactiveInboxPolicy.project(
+      messages: globalProactiveMessages,
+      feedback: globalAgentFeedback,
+      limit: limit
+    )
+  }
+
+  func globalProactiveInboxNewCount(limit: Int = 100) -> Int {
+    GlobalProactiveInboxPolicy.newCount(globalProactiveInboxItems(limit: limit))
+  }
+
+  @discardableResult
+  func appendGlobalProactiveMessage(_ message: GlobalProactiveMessage) -> GlobalProactiveMessage {
+    let now = Self.nowMillis()
+    var stored = message
+    if stored.createdAtMillis <= 0 {
+      stored.createdAtMillis = now
+    }
+    if stored.status == .delivered && stored.deliveredAtMillis <= 0 {
+      stored.deliveredAtMillis = now
+    }
+    globalProactiveMessages.removeAll { $0.id == stored.id }
+    globalProactiveMessages = Array((globalProactiveMessages + [stored]).suffix(500))
+    return stored
+  }
+
+  @discardableResult
+  func markGlobalProactiveInboxViewed(_ item: GlobalProactiveInboxItem) -> Bool {
+    let updated = GlobalProactiveInboxPolicy.markViewed(
+      messages: globalProactiveMessages,
+      messageIds: item.messageIds,
+      nowMillis: Self.nowMillis()
+    )
+    guard updated != globalProactiveMessages else { return false }
+    globalProactiveMessages = Array(updated.suffix(500))
+    return true
+  }
+
+  @discardableResult
+  func recordGlobalInsightFeedback(
+    inboxItem: GlobalProactiveInboxItem,
+    kind: GlobalAgentFeedbackKind
+  ) -> Bool {
+    let targetIds = inboxItem.messageIds
+    guard !targetIds.isEmpty else { return false }
+    let now = Self.nowMillis()
+    var matched = 0
+    var updatedMessages = globalProactiveMessages
+    var updatedFeedback = globalAgentFeedback.filter { !targetIds.contains($0.proactiveMessageId) }
+
+    for index in updatedMessages.indices where targetIds.contains(updatedMessages[index].id) {
+      matched += 1
+      var message = updatedMessages[index]
+      message.viewedAtMillis = max(message.viewedAtMillis, now)
+      switch kind {
+      case .helpful:
+        if message.status == .pending || message.status == .notified || message.status == .delivering {
+          message.status = .delivered
+          message.deliveredAtMillis = max(message.deliveredAtMillis, now)
+        }
+      case .notRelevant, .tooFrequent:
+        message.status = .dismissed
+      }
+      updatedMessages[index] = message
+      updatedFeedback.append(
+        GlobalAgentFeedback(
+          proactiveMessageId: message.id,
+          deliveryGroupId: message.deliveryGroupId.ifBlank(inboxItem.key),
+          conversationId: message.deliveredConversationId
+            .ifBlank(inboxItem.destinationConversationId)
+            .ifBlank(message.sourceConversationId),
+          topic: message.topic.ifBlank(inboxItem.topic),
+          target: message.target,
+          kind: kind,
+          createdAtMillis: now
+        )
+      )
+    }
+
+    guard matched > 0 else { return false }
+    globalProactiveMessages = Array(updatedMessages.suffix(500))
+    globalAgentFeedback = Array(updatedFeedback.suffix(500))
     return true
   }
 
@@ -1700,7 +1810,7 @@ final class SignalASIStore: ObservableObject {
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
-        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty,
+        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
@@ -1717,6 +1827,8 @@ final class SignalASIStore: ObservableObject {
         taskHistory: recentAgentTasks(limit: 200),
         proactiveTasks: automationTasks(),
         proactiveRuns: Array(proactiveRuns.suffix(500)),
+        globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
+        globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
         agentConversations: agentSessions(includeArchived: true),
         activeAgentConversationId: activeAgentConversationId,
         voiceSettings: voiceSettings,
@@ -1775,6 +1887,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
       proactiveTasks = Array((payload.agentData.proactiveTasks ?? []).suffix(200))
       proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
+      globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
+      globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
       activeAgentConversationId = payload.agentData.activeAgentConversationId
       if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {
@@ -2358,6 +2472,8 @@ final class SignalASIStore: ObservableObject {
     agentTaskBudget = .default
     proactiveTasks = []
     proactiveRuns = []
+    globalProactiveMessages = []
+    globalAgentFeedback = []
     agentTaskRecords = []
     agentConversations = []
     activeAgentConversationId = ""
@@ -2891,6 +3007,8 @@ final class SignalASIStore: ObservableObject {
       agentTaskBudget: agentTaskBudget,
       proactiveTasks: proactiveTasks,
       proactiveRuns: proactiveRuns,
+      globalProactiveMessages: globalProactiveMessages,
+      globalAgentFeedback: globalAgentFeedback,
       agentConversations: agentConversations,
       activeAgentConversationId: activeAgentConversationId,
       agentKnowledgeItems: agentKnowledgeItems,

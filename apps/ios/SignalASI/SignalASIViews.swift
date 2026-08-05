@@ -35,7 +35,7 @@ struct RootView: View {
   var body: some View {
     SignalASIMainTabView()
       .accentColor(.signalASIAccent)
-      .signalASIInterfaceLanguage(store.languagePolicy.interfaceLanguage)
+      .signalASIInterfaceLanguage(interfaceLanguage)
       .id(interfaceLanguage)
   }
 }
