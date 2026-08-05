@@ -73,6 +73,45 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(request.signalASIId, "signalasi:device-agent")
   }
 
+  func testClassifyQRCodeImportsNestedCapabilityManifestAgents() throws {
+    let result = try SignalASIContactExchange.classifyQRCode(nestedCapabilityManifest(agentKey: "agents"))
+
+    guard case .contacts(let requests) = result else {
+      XCTFail("Expected connector Agent requests")
+      return
+    }
+    XCTAssertEqual(requests.count, 2)
+    XCTAssertEqual(requests.map(\.signalASIId), [
+      "desktop-office:codex",
+      "desktop-office:research"
+    ])
+    XCTAssertEqual(requests.first?.name, "Codex Agent - Office PC")
+    XCTAssertEqual(requests.first?.type, "agent")
+    XCTAssertEqual(requests.first?.agentKind, "local-cli")
+    XCTAssertEqual(requests.first?.desktopId, "desktop-office")
+    XCTAssertEqual(requests.first?.desktopName, "Office PC")
+    XCTAssertEqual(requests.first?.identityFingerprint, String(repeating: "e", count: 64))
+  }
+
+  func testStoreUpsertsNestedCapabilityManifestAgents() throws {
+    let store = makeStore()
+    let payload = try jsonObject(nestedCapabilityManifest(agentKey: "desktop_agents"))
+
+    XCTAssertEqual(store.updateDesktopAgentContacts(from: payload), 2)
+
+    let codex = try XCTUnwrap(store.contact(id: "desktop-office:codex"))
+    XCTAssertEqual(codex.displayName, "Codex Agent - Office PC")
+    XCTAssertEqual(codex.type, "agent")
+    XCTAssertEqual(codex.agentKind, "local-cli")
+    XCTAssertEqual(codex.desktopId, "desktop-office")
+    XCTAssertEqual(codex.desktopName, "Office PC")
+    XCTAssertEqual(codex.identityFingerprint, String(repeating: "e", count: 64))
+    XCTAssertEqual(codex.trustState, .unverified)
+
+    let research = try XCTUnwrap(store.contact(id: "desktop-office:research"))
+    XCTAssertEqual(research.setupDetail, "Ready for deep work")
+  }
+
   func testImportContactQRReplacesExistingPendingRequest() throws {
     let store = makeStore()
 
@@ -185,6 +224,40 @@ final class SignalASIContactExchangeTests: XCTestCase {
         ]
       ],
       "created_at": Int64(createdAt.timeIntervalSince1970 * 1000)
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+  }
+
+  private func nestedCapabilityManifest(agentKey: String) -> String {
+    let object: [String: Any] = [
+      "type": "capability_manifest",
+      "server": [
+        "id": "desktop-office",
+        "name": "Office PC",
+        "identity_key_sha256": String(repeating: "e", count: 64)
+      ],
+      agentKey: [
+        [
+          "id": "codex",
+          "name": "Codex Agent",
+          "kind": "local-cli",
+          "status": "ready",
+          "detail": "Ready for live coding"
+        ],
+        [
+          "mobile_contact_id": "research",
+          "name": "Research Agent",
+          "agent_kind": "custom-cli",
+          "status": "ready",
+          "detail": "Ready for deep work"
+        ],
+        [
+          "id": "cloud-model",
+          "name": "Cloud Model",
+          "kind": "cloud-model"
+        ]
+      ]
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!

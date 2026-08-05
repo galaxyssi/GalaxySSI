@@ -6,6 +6,11 @@ enum SignalASIQRCodeImport {
   case contacts([SignalASIFriendRequest])
 }
 
+struct SignalASIConnectorAgentSource {
+  var parentPayload: [String: Any]
+  var agents: [[String: Any]]
+}
+
 enum SignalASIQRCodePayload {
   static func decodeObject(from contents: String, label: String) throws -> [String: Any] {
     for candidate in candidateTexts(from: contents) {
@@ -171,18 +176,47 @@ enum SignalASIContactExchange {
     return try importContactQRCodeObject(object, now: now)
   }
 
+  static func connectorAgentSource(from object: [String: Any]) -> SignalASIConnectorAgentSource? {
+    var candidates: [[String: Any]] = [object]
+    ["capability_manifest", "manifest", "payload", "data"].forEach { key in
+      if let nested = object.dictionary(key) {
+        candidates.append(nested)
+      }
+    }
+
+    for candidate in candidates {
+      guard let agents = connectorAgents(in: candidate), !agents.isEmpty else {
+        continue
+      }
+      var parent = object
+      candidate.forEach { key, value in
+        parent[key] = value
+      }
+      return SignalASIConnectorAgentSource(parentPayload: parent, agents: agents)
+    }
+    return nil
+  }
+
   private static func importContactQRCodeObject(_ object: [String: Any], now: Date) throws -> SignalASIFriendRequest {
     let type = object.string("type")
     guard isContactQRCodeObject(object) else {
       throw SignalASIError.invalidPayload("Contact QR type is not supported.")
     }
+    let server = desktopServerObject(from: object)
     let fingerprint = object.string("identity_fingerprint")
       .ifBlank(object.string("identity_key_sha256"))
       .ifBlank(object.string("desktop_fingerprint"))
+      .ifBlank(server?.string("identity_key_sha256") ?? "")
+      .ifBlank(server?.string("identity_fingerprint") ?? "")
+      .ifBlank(server?.string("desktop_fingerprint") ?? "")
+      .ifBlank(server?.string("fingerprint") ?? "")
     let publicKey = object.string("identity_public_key")
       .ifBlank(object.string("identity_key"))
       .ifBlank(object.string("desktop_public_key"))
       .ifBlank(object.string("public_key"))
+      .ifBlank(server?.string("identity_public_key") ?? "")
+      .ifBlank(server?.string("desktop_public_key") ?? "")
+      .ifBlank(server?.string("public_key") ?? "")
     let desktopAgent = isDesktopAgentQRCodeObject(object)
     guard !fingerprint.isEmpty, !publicKey.isEmpty || desktopAgent else {
       throw SignalASIError.invalidPayload("Contact QR is missing identity material.")
@@ -225,7 +259,7 @@ enum SignalASIContactExchange {
       signalBundleRef: signalBundleReference(object),
       agentKind: agentKind,
       desktopId: desktopId(from: object),
-      desktopName: object.string("desktop_name"),
+      desktopName: desktopName(from: object),
       deviceId: object.string("device_id"),
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
       source: "qr",
@@ -234,15 +268,17 @@ enum SignalASIContactExchange {
   }
 
   private static func importConnectorAgentRequests(_ object: [String: Any], now: Date) throws -> [SignalASIFriendRequest] {
-    guard let agents = object["connector_agents"] as? [[String: Any]], !agents.isEmpty else {
+    guard let source = connectorAgentSource(from: object) else {
       return []
     }
-    let type = normalized(object.string("type"))
+    let parent = source.parentPayload
+    let agents = source.agents
+    let type = normalized(parent.string("type"))
     guard ["connector_status", "capability_manifest", "pairing_confirmed"].contains(type) ||
-      isPairingOrConnectorStatusObject(object) else {
+      isPairingOrConnectorStatusObject(parent) else {
       return []
     }
-    let inherited = inheritedDesktopAgentFields(from: object)
+    let inherited = inheritedDesktopAgentFields(from: parent)
     var requests: [SignalASIFriendRequest] = []
     for (index, rawAgent) in agents.enumerated() {
       var agent = rawAgent
@@ -293,16 +329,30 @@ enum SignalASIContactExchange {
 
   private static func inheritedDesktopAgentFields(from object: [String: Any]) -> [String: Any] {
     var inherited: [String: Any] = [:]
+    let server = desktopServerObject(from: object)
     let desktopFingerprint = object.string("desktop_fingerprint")
       .ifBlank(object.string("identity_key_sha256"))
       .ifBlank(object.string("identity_fingerprint"))
+      .ifBlank(server?.string("desktop_fingerprint") ?? "")
+      .ifBlank(server?.string("identity_key_sha256") ?? "")
+      .ifBlank(server?.string("identity_fingerprint") ?? "")
+      .ifBlank(server?.string("fingerprint") ?? "")
     let desktopId = object.string("desktop_id")
+      .ifBlank(server?.string("desktop_id") ?? "")
+      .ifBlank(server?.string("id") ?? "")
       .ifBlank(desktopFingerprint.isEmpty ? "" : "desktop_\(desktopFingerprint.prefix(16))")
+    let desktopName = object.string("desktop_name")
+      .ifBlank(server?.string("desktop_name") ?? "")
+      .ifBlank(server?.string("name") ?? "")
     [
       "desktop_id": desktopId,
-      "desktop_name": object.string("desktop_name"),
+      "desktop_name": desktopName,
       "desktop_fingerprint": desktopFingerprint,
-      "desktop_public_key": object.string("desktop_public_key").ifBlank(object.string("identity_public_key")),
+      "desktop_public_key": object.string("desktop_public_key")
+        .ifBlank(object.string("identity_public_key"))
+        .ifBlank(server?.string("desktop_public_key") ?? "")
+        .ifBlank(server?.string("identity_public_key") ?? "")
+        .ifBlank(server?.string("public_key") ?? ""),
       "mqtt_topic": object.string("mqtt_topic").ifBlank(object.string("mqtt_inbox_topic")).ifBlank(object.string("mqtt_recv_topic")),
       "mqtt_inbox_topic": object.string("mqtt_inbox_topic").ifBlank(object.string("mqtt_topic")),
       "desktop_access_profile": object.string("desktop_access_profile")
@@ -321,7 +371,8 @@ enum SignalASIContactExchange {
     !object.string("desktop_id").isEmpty ||
       !object.string("desktop_fingerprint").isEmpty ||
       !object.string("identity_key_sha256").isEmpty ||
-      !object.string("identity_fingerprint").isEmpty
+      !object.string("identity_fingerprint").isEmpty ||
+      desktopServerObject(from: object) != nil
   }
 
   private static func isContactQRCodeObject(_ object: [String: Any]) -> Bool {
@@ -390,12 +441,47 @@ enum SignalASIContactExchange {
   private static func desktopId(from object: [String: Any]) -> String {
     let explicit = object.string("desktop_id")
     if !explicit.isEmpty { return explicit }
+    if let server = desktopServerObject(from: object) {
+      let serverDesktopId = server.string("desktop_id").ifBlank(server.string("id"))
+      if !serverDesktopId.isEmpty { return serverDesktopId }
+    }
     let rawId = object.string("id")
     if normalized(rawId).hasPrefix("desktop_"), rawId.contains(":") {
       return rawId.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
     }
     let fingerprint = object.string("desktop_fingerprint")
+      .ifBlank(object.string("identity_key_sha256"))
+      .ifBlank(object.string("identity_fingerprint"))
+      .ifBlank(desktopServerObject(from: object)?.string("desktop_fingerprint") ?? "")
+      .ifBlank(desktopServerObject(from: object)?.string("identity_key_sha256") ?? "")
+      .ifBlank(desktopServerObject(from: object)?.string("identity_fingerprint") ?? "")
+      .ifBlank(desktopServerObject(from: object)?.string("fingerprint") ?? "")
     return fingerprint.isEmpty ? "" : "desktop_\(fingerprint.prefix(16))"
+  }
+
+  private static func desktopName(from object: [String: Any]) -> String {
+    object.string("desktop_name")
+      .ifBlank(desktopServerObject(from: object)?.string("desktop_name") ?? "")
+      .ifBlank(desktopServerObject(from: object)?.string("name") ?? "")
+  }
+
+  private static func desktopServerObject(from object: [String: Any]) -> [String: Any]? {
+    object.dictionary("server") ??
+      object.dictionary("desktop") ??
+      object.dictionary("desktop_identity")
+  }
+
+  private static func connectorAgents(in object: [String: Any]) -> [[String: Any]]? {
+    if let agents = object["connector_agents"] as? [[String: Any]] {
+      return agents
+    }
+    if let agents = object["desktop_agents"] as? [[String: Any]] {
+      return agents
+    }
+    if let agents = object["agents"] as? [[String: Any]] {
+      return agents
+    }
+    return nil
   }
 
   private static func defaultAgentKind(for requestType: String, object: [String: Any]) -> String {

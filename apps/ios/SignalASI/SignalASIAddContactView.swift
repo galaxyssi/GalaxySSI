@@ -334,8 +334,8 @@ struct AddContactView: View {
   }
 
   private static func desktopAgentCount(_ pairing: PairingQRCode) -> Int {
-    if let agents = pairing.raw["connector_agents"] as? [[String: Any]], !agents.isEmpty {
-      return agents.count
+    if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) {
+      return source.agents.count
     }
     return 6
   }
