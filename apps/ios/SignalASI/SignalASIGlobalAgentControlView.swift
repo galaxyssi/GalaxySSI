@@ -356,23 +356,23 @@ struct SignalASIGlobalAgentControlView: View {
 
   private var resourcesSection: some View {
     let current = snapshot
-    return section(t("cc_global_section_resources", "Resources")) {
+    return section(t("cc_global_section_resources", "Resource policy")) {
       toggleRow(
-        title: t("cc_global_battery_protection", "Battery protection"),
-        subtitle: t("cc_global_battery_protection_subtitle", "Delay background work when the phone is conserving power"),
+        title: t("cc_global_battery_protection_title", "Protect battery in background"),
+        subtitle: t("cc_global_battery_protection_subtitle", "Defer model reasoning and autonomous work during power saver or low battery"),
         systemImage: "battery.75",
         tint: .signalASIAccent,
         keyPath: \.protectBatteryForBackgroundWork
       )
       toggleRow(
-        title: t("cc_global_metered_research", "Metered research"),
-        subtitle: t("cc_global_metered_research_subtitle", "Allow background research while the network may be metered"),
+        title: t("cc_global_metered_research_title", "Research on metered networks"),
+        subtitle: t("cc_global_metered_research_subtitle", "Allow autonomous research to use cellular or another metered connection"),
         systemImage: "antenna.radiowaves.left.and.right",
         tint: .orange,
         keyPath: \.allowMeteredBackgroundResearch
       )
       choiceRow(
-        title: t("cc_global_daily_model_calls", "Daily model calls"),
+        title: t("cc_global_daily_model_calls_title", "Daily background model calls"),
         subtitle: "\(current.modelBudget.dispatchesInWindow) / \(store.globalAgentSettings.dailyBackgroundModelCallBudget)",
         systemImage: "number",
         tint: .blue,
@@ -382,7 +382,7 @@ struct SignalASIGlobalAgentControlView: View {
         set: { value in store.updateGlobalAgentSettings { $0.dailyBackgroundModelCallBudget = value } }
       )
       choiceRow(
-        title: t("cc_global_concurrent_model_calls", "Concurrent model calls"),
+        title: t("cc_global_concurrent_model_calls_title", "Concurrent background model calls"),
         subtitle: "\(current.modelBudget.activeCalls) / \(store.globalAgentSettings.maxConcurrentBackgroundModelCalls)",
         systemImage: "rectangle.stack",
         tint: .purple,
@@ -392,7 +392,7 @@ struct SignalASIGlobalAgentControlView: View {
         set: { value in store.updateGlobalAgentSettings { $0.maxConcurrentBackgroundModelCalls = value } }
       )
       choiceRow(
-        title: t("cc_global_daily_tokens", "Daily model tokens"),
+        title: t("cc_global_daily_model_tokens_title", "Daily background tokens"),
         subtitle: "\(current.modelBudget.totalTokensInWindow) / \(store.globalAgentSettings.dailyBackgroundTokenBudget)",
         systemImage: "textformat.abc",
         tint: .green,
@@ -402,7 +402,7 @@ struct SignalASIGlobalAgentControlView: View {
         set: { value in store.updateGlobalAgentSettings { $0.dailyBackgroundTokenBudget = value } }
       )
       choiceRow(
-        title: t("cc_global_daily_cost", "Daily reported cost"),
+        title: t("cc_global_daily_reported_cost_title", "Daily reported model spend"),
         subtitle: "\(costLabel(current.modelBudget.reportedCostMicrosInWindow)) / \(costLabel(store.globalAgentSettings.dailyBackgroundReportedCostBudgetMicros))",
         systemImage: "creditcard",
         tint: .orange,
@@ -425,8 +425,8 @@ struct SignalASIGlobalAgentControlView: View {
         enabled: store.globalAgentSettings.enabled
       )
       SignalASISecurityNavigationRow(
-        title: t("cc_global_sessions_title", "Agent sessions"),
-        subtitle: agentSessionsSummary,
+        title: t("cc_global_sessions_title", "Conversation tracking"),
+        subtitle: t("cc_global_sessions_subtitle", "Manage private, paused, and Agent-created topic conversations"),
         systemImage: "bubble.left.and.bubble.right",
         tint: .blue,
         badge: "\(store.agentSessions(includeArchived: true).count)"
@@ -528,8 +528,25 @@ struct SignalASIGlobalAgentControlView: View {
   }
 
   private func processNow() {
+    guard store.globalAgentSettings.enabled else {
+      statusMessage = t("signalasi.status.paused", "Paused")
+      return
+    }
+    let now = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    let limit = max(1, min(store.globalAgentSettings.dailyDiscoveryTaskBudget, 8))
+    let dueTasks = store.automationTasks()
+      .filter { task in
+        task.enabled && (task.nextRunAtMillis <= now || task.trigger.kind == .manual)
+      }
+      .prefix(limit)
+    var queued = 0
+    for task in dueTasks {
+      if (try? store.triggerAutomationTaskNow(id: task.taskId)) != nil {
+        queued += 1
+      }
+    }
     refreshRuntime()
-    statusMessage = t("cc_global_processed_result", "Global Agent snapshot refreshed.")
+    statusMessage = String(format: t("cc_global_processed_result", "Processed %d events"), queued)
   }
 
   private func compactNumber(_ value: Int64) -> String {
