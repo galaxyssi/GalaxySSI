@@ -138,6 +138,7 @@ struct AgentHomeView: View {
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
+  @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -182,6 +183,7 @@ struct AgentHomeView: View {
       .navigationBarHidden(true)
       .onAppear {
         store.markContactRead(contact.id)
+        refreshAgentRuntimeAuditRecords()
       }
       .fileImporter(
         isPresented: $fileImporterPresented,
@@ -211,6 +213,7 @@ struct AgentHomeView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 10) {
+          agentRuntimePanel
           SignalASIAgentScreenContextCard(
             screen: agentScreenSnapshot.screen,
             sections: agentScreenSnapshot.sections,
@@ -261,6 +264,7 @@ struct AgentHomeView: View {
           }
         }
         store.markContactRead(contact.id)
+        refreshAgentRuntimeAuditRecords()
       }
     }
   }
@@ -333,6 +337,27 @@ struct AgentHomeView: View {
     )
   }
 
+  private var agentRuntimePanel: some View {
+    SignalASIAgentRuntimePanelView(
+      safetySettings: store.agentSafetySettings,
+      modelPlannerSettings: store.modelPlannerSettings,
+      taskBudget: store.agentTaskBudget,
+      callableTargets: store.visibleContacts.count,
+      currentGoal: draft,
+      recentTasks: store.recentAgentTasks(limit: 12),
+      nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
+      auditRecords: agentRuntimeAuditRecords,
+      onCyclePermissionMode: cycleAgentPermissionMode,
+      onToggleHighRiskGuard: {
+        store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
+      },
+      onToggleMemoryCapture: {
+        store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
+      },
+      t: t
+    )
+  }
+
   private func sendAgentMessage() {
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = attachments
@@ -364,6 +389,28 @@ struct AgentHomeView: View {
     sendAgentMessage()
   }
 
+  private var agentRuntimePanel: some View {
+    SignalASIAgentRuntimePanelView(
+      activeTask: store.activeAgentTask,
+      recentTasks: store.recentAgentTasks(limit: 12),
+      nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
+      auditRecords: agentRuntimeAuditRecords,
+      safetySettings: store.agentSafetySettings,
+      plannerSettings: store.agentModelPlannerSettings,
+      budget: AgentTaskBudget(),
+      runningTaskCount: store.agentTasks.filter { $0.status == .running || $0.status == .waitingInput }.count,
+      targetCount: store.visibleContacts.count,
+      onCyclePermissionMode: cycleAgentPermissionMode,
+      onToggleHighRiskGuard: {
+        store.updateAgentSafetySettings { $0.highRiskGuardEnabled.toggle() }
+      },
+      onToggleMemoryCapture: {
+        store.updateAgentSafetySettings { $0.memoryCaptureAllowed.toggle() }
+      },
+      t: t
+    )
+  }
+
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
     SignalASIAgentScreenContextSnapshotBuilder.make(
       messages: messages,
@@ -382,6 +429,22 @@ struct AgentHomeView: View {
     actionTrayPresented = false
     attachmentError = ""
     composerFocusRequest += 1
+  }
+
+  private func cycleAgentPermissionMode() {
+    let modes = AgentPermissionMode.allCases
+    guard let index = modes.firstIndex(of: store.agentSafetySettings.permissionMode) else {
+      store.updateAgentSafetySettings { $0.permissionMode = .askBeforeAction }
+      return
+    }
+    store.updateAgentSafetySettings { $0.permissionMode = modes[(index + 1) % modes.count] }
+  }
+
+  private func refreshAgentRuntimeAuditRecords() {
+    agentRuntimeAuditRecords = AgentNativeToolDefaultStores
+      .makePersistentStores()
+      .auditStore
+      .list(limit: 12, toolId: "", status: nil)
   }
 
   private func createAgentConversation() {
