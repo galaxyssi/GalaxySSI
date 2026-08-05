@@ -757,7 +757,25 @@ struct ContactsView: View {
   }
 
   private var filteredContacts: [SignalASIContact] {
-    store.contactList(matching: contactSearchText)
+    let normalized = contactSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return allContacts }
+    return allContacts.filter { contactMatchesDirectorySearch($0, query: normalized) }
+  }
+
+  private var allContacts: [SignalASIContact] {
+    store.contactList(matching: "")
+  }
+
+  private var agentCount: Int {
+    allContacts.filter { isAgentContact($0) }.count
+  }
+
+  private var deviceCount: Int {
+    allContacts.filter { isDeviceContact($0) }.count
+  }
+
+  private var peopleCount: Int {
+    allContacts.filter { !isAgentContact($0) && !isDeviceContact($0) }.count
   }
 
   var body: some View {
@@ -788,7 +806,7 @@ struct ContactsView: View {
           HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
               .foregroundColor(.signalASITextSecondary)
-            TextField(t("signalasi.search.contacts", "Search contacts"), text: $contactSearchText)
+            TextField(t("search_messages_contacts", "Search messages or contacts"), text: $contactSearchText)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled(true)
           }
@@ -797,6 +815,12 @@ struct ContactsView: View {
           .frame(height: 36)
           .background(Color.signalASISearchBackground)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          ContactDirectoryCountSummary(
+            people: peopleCount,
+            agents: agentCount,
+            devices: deviceCount,
+            t: t
+          )
           SignalASIContactDirectoryActionsView()
           ScrollView {
             VStack(alignment: .leading, spacing: 8) {
@@ -867,8 +891,89 @@ struct ContactsView: View {
     }
   }
 
+  private func contactMatchesDirectorySearch(_ contact: SignalASIContact, query: String) -> Bool {
+    let summary = store.conversationSummary(for: contact.id)
+    return searchMatches([
+      contact.displayName,
+      contact.name,
+      contact.id,
+      contact.signalASIId,
+      contact.agentKind,
+      contact.setupDetail,
+      summary.lastMessage?.content ?? ""
+    ], query: query)
+  }
+
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func isAgentContact(_ contact: SignalASIContact) -> Bool {
+    contact.type == "agent" ||
+      contact.deliveryMode == .cloudAPI ||
+      ["local-cli", "local-model", "cloud-model", "cloud-api", "custom-cli", "desktop-agent"].contains(contact.agentKind)
+  }
+
+  private func isDeviceContact(_ contact: SignalASIContact) -> Bool {
+    contact.type == "device" ||
+      contact.agentKind == "device" ||
+      !contact.deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
+private struct ContactDirectoryCountSummary: View {
+  var people: Int
+  var agents: Int
+  var devices: Int
+  var t: (String, String) -> String
+
+  var body: some View {
+    HStack(spacing: 8) {
+      ContactDirectoryCountPill(
+        title: t("signalasi.contacts.people", "People"),
+        value: "\(people)",
+        systemImage: "person.2.fill",
+        tint: .signalASIAccent
+      )
+      ContactDirectoryCountPill(
+        title: t("signalasi.contacts.agents", "Agents"),
+        value: "\(agents)",
+        systemImage: "cpu",
+        tint: .signalASIInsightText
+      )
+      ContactDirectoryCountPill(
+        title: t("signalasi.contacts.devices", "Devices"),
+        value: "\(devices)",
+        systemImage: "desktopcomputer",
+        tint: .blue
+      )
+    }
+  }
+}
+
+private struct ContactDirectoryCountPill: View {
+  var title: String
+  var value: String
+  var systemImage: String
+  var tint: Color
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Image(systemName: systemImage)
+        .font(.system(size: 12, weight: .semibold))
+      Text(value)
+        .font(.system(size: 13, weight: .bold))
+        .monospacedDigit()
+      Text(title)
+        .font(.system(size: 12, weight: .semibold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+    }
+    .foregroundColor(tint)
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, minHeight: 30)
+    .background(tint.opacity(0.12))
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
 

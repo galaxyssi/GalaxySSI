@@ -846,8 +846,12 @@
 "signalasi.tab.settings" = "设置";
 "signalasi.search.chats" = "搜索聊天";
 "signalasi.search.contacts" = "搜索联系人";
+"search_messages_contacts" = "搜索消息或联系人";
 "signalasi.empty.chats" = "暂无匹配聊天";
 "signalasi.empty.contacts" = "暂无匹配联系人";
+"signalasi.contacts.people" = "联系人";
+"signalasi.contacts.agents" = "Agent";
+"signalasi.contacts.devices" = "设备";
 "signalasi.new_friends" = "新的朋友";
 "signalasi.group_chats" = "群聊";
 "signalasi.my_agents" = "我的 Agent";
