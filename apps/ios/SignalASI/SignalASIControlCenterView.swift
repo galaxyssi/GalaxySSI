@@ -9,6 +9,7 @@ struct SignalASIControlCenterView: View {
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
+  private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -180,12 +181,12 @@ struct SignalASIControlCenterView: View {
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_runtime_title", "On-device Linux Runtime"),
-        subtitle: t("cc_runtime_subtitle_ios", "iOS local model, Whisper, and native runtime readiness"),
+        subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
         systemImage: "terminal",
-        tint: .purple,
-        badge: t("cc_status_ready", "Ready")
+        tint: runtimeReady ? .signalASIAccent : .orange,
+        badge: runtimeReady ? t("cc_status_ready", "Ready") : t("status_needs_setup", "Needs Setup")
       ) {
-        SignalASILocalModelLabView()
+        SignalASIOnDeviceRuntimeView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_apps_title", "Apps & Tools"),
@@ -331,6 +332,10 @@ struct SignalASIControlCenterView: View {
 
   private var recentTaskCount: Int {
     recentTasks.count
+  }
+
+  private var runtimeReady: Bool {
+    runtimeProvider.availability(operation: .execute).status == .available
   }
 
   private var runningTaskCount: Int {

@@ -2667,7 +2667,7 @@
 "cc_knowledge_title" = "知识库";
 "cc_knowledge_subtitle" = "%d 个来源 · 回答可追溯";
 "cc_section_execution_devices" = "执行与设备";
-"cc_runtime_title" = "本机运行环境";
+"cc_runtime_title" = "本机 Linux 运行环境";
 "cc_runtime_subtitle_ios" = "iOS 本地模型、Whisper 与原生运行能力就绪状态";
 "cc_apps_title" = "应用与工具";
 "cc_apps_subtitle" = "消息、日历、浏览器、文件与应用适配器";
