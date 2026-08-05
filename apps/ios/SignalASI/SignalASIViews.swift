@@ -1166,8 +1166,8 @@ struct AgentSafetySettingsView: View {
           .font(.caption)
           .foregroundColor(.secondary)
       }
-      Section("Task Execution") {
-        Picker("Task execution", selection: taskExecutionModeBinding) {
+      Section(header: Text(t("Task Execution", "Task Execution"))) {
+        Picker(t("Task execution", "Task execution"), selection: taskExecutionModeBinding) {
           ForEach(AgentTaskExecutionMode.allCases) { mode in
             Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
           }
@@ -1176,8 +1176,8 @@ struct AgentSafetySettingsView: View {
           .font(.caption)
           .foregroundColor(.secondary)
       }
-      Section("Action Permissions") {
-        Picker("Execution Mode", selection: permissionModeBinding) {
+      Section(header: Text(t("Action Permissions", "Action Permissions"))) {
+        Picker(t("Execution Mode", "Execution Mode"), selection: permissionModeBinding) {
           ForEach(AgentPermissionMode.allCases) { mode in
             Text(t(mode.displayTitle, mode.displayTitle)).tag(mode)
           }
@@ -1186,16 +1186,16 @@ struct AgentSafetySettingsView: View {
           .font(.caption)
           .foregroundColor(.secondary)
       }
-      Section("Safety Guards") {
-        Toggle("High Risk Guard", isOn: boolBinding(\.highRiskGuard))
-        Toggle("Memory Capture", isOn: boolBinding(\.memoryCapture))
-        Toggle("Pause Execution", isOn: boolBinding(\.executionPaused))
+      Section(header: Text(t("Safety Guards", "Safety Guards"))) {
+        Toggle(t("High Risk Guard", "High Risk Guard"), isOn: boolBinding(\.highRiskGuard))
+        Toggle(t("Memory Capture", "Memory Capture"), isOn: boolBinding(\.memoryCapture))
+        Toggle(t("Pause Execution", "Pause Execution"), isOn: boolBinding(\.executionPaused))
       }
-      Section("Allowed Action Surfaces") {
-        Toggle("Screen Observation", isOn: boolBinding(\.screenObservationAllowed))
-        Toggle("Local Actions", isOn: boolBinding(\.localActionsAllowed))
-        Toggle("Connector Calls", isOn: boolBinding(\.connectorCallsAllowed))
-        Toggle("Device Control", isOn: boolBinding(\.deviceControlAllowed))
+      Section(header: Text(t("Allowed Action Surfaces", "Allowed Action Surfaces"))) {
+        Toggle(t("Screen Observation", "Screen Observation"), isOn: boolBinding(\.screenObservationAllowed))
+        Toggle(t("Local Actions", "Local Actions"), isOn: boolBinding(\.localActionsAllowed))
+        Toggle(t("Connector Calls", "Connector Calls"), isOn: boolBinding(\.connectorCallsAllowed))
+        Toggle(t("Device Control", "Device Control"), isOn: boolBinding(\.deviceControlAllowed))
       }
     }
     .navigationTitle(t("Agent Safety", "Agent Safety"))
