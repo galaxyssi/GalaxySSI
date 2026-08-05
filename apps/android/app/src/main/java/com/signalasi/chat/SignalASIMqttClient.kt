@@ -190,6 +190,7 @@ object SignalASIMqttClient {
     @Volatile private var connected = false
     @Volatile private var secureReady = false
     @Volatile private var lastConnectorStatusRequestAt = 0L
+    @Volatile private var lastCapabilityManifestRequestAt = 0L
     @Volatile private var appContext: Context? = null
 
     interface Listener {
@@ -1670,6 +1671,11 @@ object SignalASIMqttClient {
                 sourceDesktopId,
                 payload.optJSONObject("pairing_access")
             )
+            SignalASILinkProtocol.markCapabilityManifestReceived(
+                context,
+                sourceDesktopId,
+                payload.optInt("manifest_version", 0)
+            )
             RemoteWhisperNodeRegistry.ingest(context, payload, sourceDesktopId)
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
@@ -2015,19 +2021,31 @@ object SignalASIMqttClient {
         }, 500L)
     }
 
-    private fun requestConnectorStatuses(context: Context) {
+    private fun requestConnectorStatuses(
+        context: Context,
+        forceCapabilityManifest: Boolean = false
+    ) {
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
         val now = System.currentTimeMillis()
-        if (now - lastConnectorStatusRequestAt < 5_000L) return
-        lastConnectorStatusRequestAt = now
+        if (forceCapabilityManifest) {
+            if (now - lastCapabilityManifestRequestAt < 15_000L) return
+            lastCapabilityManifestRequestAt = now
+        } else {
+            if (now - lastConnectorStatusRequestAt < 5_000L) return
+            lastConnectorStatusRequestAt = now
+        }
         SignalASILinkProtocol.allServerLinks(context)
             .filter { it.paired && SignalASICrypto.hasDesktopSession(context, it.desktopId) }
             .forEach { link ->
+                val requestManifest = forceCapabilityManifest ||
+                    SignalASILinkProtocol.needsCapabilityManifest(link)
                 val payload = JSONObject()
                     .put("type", "connector_status_request")
                     .put("contact_id", "system")
                     .put("desktop_id", link.desktopId)
+                    .put("capability_manifest_version", link.capabilityManifestVersion)
+                    .put("request_capability_manifest", requestManifest)
                     .put("time", now)
                 val envelope = SignalASILinkProtocol.makeEnvelope(
                     payload,
@@ -2046,6 +2064,20 @@ object SignalASIMqttClient {
                     Log.i(TAG, "Requested connector status desktop=${link.desktopId.takeLast(8)}")
                 }
             }
+    }
+
+    fun requestCapabilityManifestRefresh(force: Boolean = false): Boolean {
+        val context = appContext ?: return false
+        val mqtt = client ?: return false
+        if (!mqtt.isConnected) return false
+        if (!force && SignalASILinkProtocol.allServerLinks(context).none {
+                it.paired && SignalASILinkProtocol.needsCapabilityManifest(it)
+            }
+        ) return false
+        retryHandler.post {
+            requestConnectorStatuses(context, forceCapabilityManifest = force)
+        }
+        return true
     }
 
     private fun subscribe() {

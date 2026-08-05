@@ -153,6 +153,7 @@ MAX_DURABLE_OUTBOUND_INFLIGHT = 32
 MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 4
 MAX_DURABLE_OUTBOUND_BATCH = 8
 OUTBOUND_RETRY_POLL_SECONDS = 1.0
+CAPABILITY_MANIFEST_VERSION = 2
 durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
 outbound_retry_thread: threading.Thread | None = None
@@ -174,6 +175,7 @@ DESKTOP_CONTROL_AUTHORIZATIONS_TYPE = "desktop_control_authorizations"
 DESKTOP_CONTROL_REVOKE_TYPE = "desktop_control_revoke"
 DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE = "desktop_control_authorization_changed"
 DESKTOP_CONTROL_REQUEST_SLOTS = threading.BoundedSemaphore(4)
+CONNECTOR_STATUS_SYNC_SLOTS = threading.BoundedSemaphore(4)
 ARTIFACT_CHUNK_TYPE = "artifact_chunk"
 ARTIFACT_RECEIPT_TYPE = "artifact_receipt"
 INPUT_ATTACHMENT_MANIFEST_TYPE = "input_attachment_manifest"
@@ -2681,7 +2683,10 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
         pending.trace,
         resolved_desktop_id=desktop_id(),
         resolved_desktop_name=desktop_name(),
-        resolved_connector_agents=mobile_connector_agents(),
+        resolved_connector_agents=mobile_connector_agents(
+            str(pending.task.get("client_route_id") or ""),
+            detailed=False,
+        ),
         include_progress_replay=pending.replay_progress,
     )
     status = str(pending.task.get("status") or "").strip().lower()
@@ -3723,7 +3728,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "agent_id": agent_id,
             "desktop_id": desktop_id(),
             "desktop_name": desktop_name(),
-            "connector_agents": mobile_connector_agents(str(wire_payload.get("_client_route_id") or "")),
+            "connector_agents": mobile_connector_agents(
+                str(wire_payload.get("_client_route_id") or ""),
+                detailed=False,
+            ),
             "source_message_id": source_message_id,
             "conversation_id": task.get("client_conversation_id")
             or client_conversation_id,
@@ -5342,15 +5350,11 @@ def _process_message(mqttc, userdata, msg):
             return
 
         if msg_type == "connector_status_request":
-            status = publish_connector_status(
+            _schedule_requested_connector_state(
                 mqttc,
-                reason="client_connected",
-                client_route_id=client_route_id,
+                client_route_id,
+                include_capability_manifest=_capability_manifest_requested(payload),
             )
-            publish_capability_manifest(mqttc, client_route_id)
-            publish_desktop_control_status(mqttc, client_route_id, reason="client_connected")
-            if not status.get("ok"):
-                log.warning("Requested connector status publish failed: %s", status)
             return
 
         if msg_type == "agent_task_cancel":
@@ -5677,7 +5681,7 @@ def handle_pairing_claim(mqttc, payload: dict):
         "routes": paired_client["topics"],
         "signal_bundle": get_signal_bundle(),
         "sender": "system",
-        "connector_agents": mobile_connector_agents(client_route_id),
+        "connector_agents": mobile_connector_agents(client_route_id, detailed=False),
         "pairing_access": client_grant(paired_client),
         "desktop_control": {
             "enabled": bool(desktop_control_manager().settings().get("enabled")),
@@ -5700,7 +5704,11 @@ def handle_pairing_claim(mqttc, payload: dict):
     control_timer.start()
 
 
-def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
+def mobile_connector_agents(
+    client_route_id: str = "",
+    *,
+    detailed: bool = True,
+) -> list[dict]:
     diagnostics = connector_diagnostics(quick=True)
     agents = []
     did = desktop_id()
@@ -5709,19 +5717,21 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
     up_topic = _client_topics(client_route_id).up if client_route_id else ""
     paired_client = get_client(client_route_id) if client_route_id else None
     access = client_grant(paired_client)
-    profile_catalog = diagnostics.get("provider_profiles") or {}
-    profiles_by_resource = {
-        str(profile.get("resource_id") or ""): profile
-        for profile in profile_catalog.get("profiles") or []
-        if isinstance(profile, dict)
-    }
-    try:
-        from agent_reputation_ledger import agent_reputation_ledger
+    profiles_by_resource = {}
+    reputation_ledger = None
+    if detailed:
+        profile_catalog = diagnostics.get("provider_profiles") or {}
+        profiles_by_resource = {
+            str(profile.get("resource_id") or ""): profile
+            for profile in profile_catalog.get("profiles") or []
+            if isinstance(profile, dict)
+        }
+        try:
+            from agent_reputation_ledger import agent_reputation_ledger
 
-        reputation_ledger = agent_reputation_ledger()
-    except Exception as exc:
-        log.warning("Agent reputation ledger unavailable for connector status: %s", exc)
-        reputation_ledger = None
+            reputation_ledger = agent_reputation_ledger()
+        except Exception as exc:
+            log.warning("Agent reputation ledger unavailable for connector status: %s", exc)
     for agent in diagnostics.get("agents", []):
         agent_id = agent.get("mobile_contact_id") or agent.get("id")
         if agent_id in MOBILE_HIDDEN_AGENT_IDS or agent.get("kind") in MOBILE_HIDDEN_AGENT_IDS:
@@ -5743,39 +5753,42 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
             "detail": agent.get("detail") or "",
             "setup": agent.get("setup") or "",
             "kind": agent.get("kind") or "",
-            "adapter": agent.get("adapter") or {},
-            "capabilities": capabilities,
-            "protocols": (agent.get("adapter") or {}).get("protocols") or [],
-            "mqtt_topic": up_topic,
             "updated_at": int(time.time() * 1000),
             "desktop_access_profile": access["profile"],
             "desktop_access_scopes": list(access["scopes"]),
         }
-        provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
-        if provider_profile is not None:
-            profile_namespace = (
-                "model"
-                if provider_profile.get("kind") in {"local_model", "cloud_model"}
-                else "agent"
-            )
-            entry["provider_profile"] = {
-                **provider_profile,
-                "profile_id": f"{profile_namespace}:{full_agent_id}",
-                "resource_id": full_agent_id,
-                "failure_domain": str(
-                    provider_profile.get("failure_domain") or f"desktop:{did}"
-                ),
-                "metadata": {
-                    **dict(provider_profile.get("metadata") or {}),
-                    "desktop_id": did,
-                    "native_product_identity": str(agent_id),
-                },
-            }
-        if reputation_ledger is not None:
-            entry["reputation"] = reputation_ledger.snapshot(
-                full_agent_id,
-                capabilities,
-            )
+        if detailed:
+            entry.update({
+                "adapter": agent.get("adapter") or {},
+                "capabilities": capabilities,
+                "protocols": (agent.get("adapter") or {}).get("protocols") or [],
+                "mqtt_topic": up_topic,
+            })
+            provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
+            if provider_profile is not None:
+                profile_namespace = (
+                    "model"
+                    if provider_profile.get("kind") in {"local_model", "cloud_model"}
+                    else "agent"
+                )
+                entry["provider_profile"] = {
+                    **provider_profile,
+                    "profile_id": f"{profile_namespace}:{full_agent_id}",
+                    "resource_id": full_agent_id,
+                    "failure_domain": str(
+                        provider_profile.get("failure_domain") or f"desktop:{did}"
+                    ),
+                    "metadata": {
+                        **dict(provider_profile.get("metadata") or {}),
+                        "desktop_id": did,
+                        "native_product_identity": str(agent_id),
+                    },
+                }
+            if reputation_ledger is not None:
+                entry["reputation"] = reputation_ledger.snapshot(
+                    full_agent_id,
+                    capabilities,
+                )
         agents.append(entry)
     return agents
 
@@ -5821,16 +5834,16 @@ def capability_manifest(client_route_id: str = "") -> dict:
         advertised_tools.extend(["desktop_native_tools", "desktop_control"])
     if remote_whisper.get("available"):
         advertised_tools.append("remote_whisper")
+    connector_agents = mobile_connector_agents(client_route_id)
     return {
         "type": "capability_manifest",
-        "manifest_version": 1,
+        "manifest_version": CAPABILITY_MANIFEST_VERSION,
         "server": {
             "id": desktop_id(),
             "name": desktop_name(),
             "platform": "windows",
             "role": "server",
         },
-        "agents": mobile_connector_agents(client_route_id),
         "models": routable_model_profiles(provider_profiles),
         "provider_profiles": provider_profiles,
         "tools": advertised_tools,
@@ -5921,7 +5934,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "mqtt_fragment_inflight_per_transfer": MAX_FRAGMENT_INFLIGHT_PER_TRANSFER,
         },
         "generated_at": int(time.time() * 1000),
-        "connector_agents": mobile_connector_agents(client_route_id),
+        "connector_agents": connector_agents,
     }
 
 
@@ -5937,6 +5950,42 @@ def publish_capability_manifest(mqttc, client_route_id: str) -> bool:
     except Exception as exc:
         log.warning("Capability manifest publish failed client=%s: %s", client_route_id, exc)
         return False
+
+
+def _capability_manifest_requested(payload: dict) -> bool:
+    return payload.get("request_capability_manifest") is True
+
+
+def _schedule_requested_connector_state(
+    mqttc,
+    client_route_id: str,
+    *,
+    include_capability_manifest: bool,
+) -> bool:
+    if not CONNECTOR_STATUS_SYNC_SLOTS.acquire(blocking=False):
+        log.warning("Connector status refresh skipped because all sync slots are busy")
+        return False
+
+    def run() -> None:
+        try:
+            status = publish_connector_status(
+                mqttc,
+                reason="client_connected",
+                client_route_id=client_route_id,
+            )
+            if not status.get("ok"):
+                log.warning("Requested connector status publish failed: %s", status)
+            if include_capability_manifest:
+                publish_capability_manifest(mqttc, client_route_id)
+        finally:
+            CONNECTOR_STATUS_SYNC_SLOTS.release()
+
+    threading.Thread(
+        target=run,
+        daemon=True,
+        name=f"signalasi-capability-sync-{client_route_id[-8:]}",
+    ).start()
+    return True
 
 
 def _publish_to_registered_client(
@@ -6125,7 +6174,7 @@ def publish_connector_status(mqttc=None, reason: str = "status_update", client_r
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "sender": "system",
         "reason": reason,
-        "connector_agents": mobile_connector_agents(client_route_id),
+        "capability_manifest_version": CAPABILITY_MANIFEST_VERSION,
         "delivery_trace": _desktop_trace(_trace_event("desktop_connector_status", reason)),
         "time": time.time(),
     }
@@ -6135,7 +6184,13 @@ def publish_connector_status(mqttc=None, reason: str = "status_update", client_r
             _publish_to_registered_client(
                 mqttc,
                 target,
-                {**payload, "connector_agents": mobile_connector_agents(target["client_route_id"])},
+                {
+                    **payload,
+                    "connector_agents": mobile_connector_agents(
+                        target["client_route_id"],
+                        detailed=False,
+                    ),
+                },
                 "control",
                 durable=False,
             ).mid
@@ -6343,7 +6398,7 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         "agent_id": agent_id,
         "desktop_id": desktop_id(),
         "desktop_name": desktop_name(),
-        "connector_agents": mobile_connector_agents(route_id),
+        "connector_agents": mobile_connector_agents(route_id, detailed=False),
         "conversation_id": task.get("client_conversation_id")
         or task.get("conversation_id", ""),
         "client_route_id": route_id,

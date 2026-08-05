@@ -31,6 +31,7 @@ object SignalASILinkProtocol {
     const val SCOPE_DESKTOP_CONTROL = "desktop.control"
     const val SCOPE_DESKTOP_NATIVE_TOOLS = "desktop.native_tools"
     const val SCOPE_DESKTOP_EXTERNAL_FILES = "desktop.files.external"
+    const val CAPABILITY_MANIFEST_VERSION = 2
     private const val MAX_TEXT_BYTES = 128 * 1024
     private val routePattern = Regex("^[A-Za-z0-9_-]{22}$")
     private val random = SecureRandom()
@@ -55,7 +56,8 @@ object SignalASILinkProtocol {
         val routes: Routes,
         val paired: Boolean,
         val accessProfile: String = ACCESS_RESTRICTED,
-        val accessScopes: Set<String> = emptySet()
+        val accessScopes: Set<String> = emptySet(),
+        val capabilityManifestVersion: Int = 0
     ) {
         val fullDesktopExecutor: Boolean
             get() = accessProfile == ACCESS_DESKTOP_EXECUTOR &&
@@ -71,6 +73,7 @@ object SignalASILinkProtocol {
             .put("paired", paired)
             .put("access_profile", accessProfile)
             .put("access_scopes", JSONArray(accessScopes.sorted()))
+            .put("capability_manifest_version", capabilityManifestVersion)
             .put("updated_at", System.currentTimeMillis())
     }
 
@@ -90,6 +93,9 @@ object SignalASILinkProtocol {
     }
 
     fun validRouteId(value: String): Boolean = routePattern.matches(value)
+
+    fun needsCapabilityManifest(link: ServerLink): Boolean =
+        link.capabilityManifestVersion < CAPABILITY_MANIFEST_VERSION
 
     fun validatePairingQr(qr: JSONObject, nowMs: Long = System.currentTimeMillis()): Boolean {
         if (qr.optString("type") != "signalasi_verify") return false
@@ -171,6 +177,19 @@ object SignalASILinkProtocol {
         return updated
     }
 
+    @Synchronized
+    fun markCapabilityManifestReceived(
+        context: Context,
+        desktopId: String,
+        version: Int
+    ): ServerLink? {
+        val current = serverLink(context, desktopId) ?: return null
+        if (version <= current.capabilityManifestVersion) return current
+        val updated = current.copy(capabilityManifestVersion = version)
+        save(context, updated)
+        return updated
+    }
+
     fun serverLink(context: Context, desktopId: String): ServerLink? =
         allServerLinks(context).firstOrNull { it.desktopId == desktopId }
 
@@ -190,7 +209,8 @@ object SignalASILinkProtocol {
                             routes = Routes(item.getString("server_route_id"), item.getString("client_route_id")),
                             paired = item.optBoolean("paired", false),
                             accessProfile = item.optString("access_profile", ACCESS_RESTRICTED),
-                            accessScopes = item.optJSONArray("access_scopes").toStringSet()
+                            accessScopes = item.optJSONArray("access_scopes").toStringSet(),
+                            capabilityManifestVersion = item.optInt("capability_manifest_version", 0)
                         )
                     )
                 }
