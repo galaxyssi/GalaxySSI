@@ -15,6 +15,8 @@ struct AddContactView: View {
   @State private var pendingPairing: PairingQRCode?
   @State private var pendingFriendRequest: SignalASIFriendRequest?
   @State private var pendingScannedRequests: [SignalASIFriendRequest] = []
+  @State private var pairedDesktopName = ""
+  @State private var pairedDesktopAgentNames: [String] = []
   @State private var pairingInFlight = false
   @State private var scannerAutoOpened = false
 
@@ -151,6 +153,24 @@ struct AddContactView: View {
               t: t
             )
           }
+          if !pairedDesktopAgentNames.isEmpty {
+            sectionTitle(t("signalasi.pairing.added_agents_title", "Added Agents"))
+            AddContactPairedAgentsCard(
+              desktopName: pairedDesktopName,
+              agentNames: pairedDesktopAgentNames,
+              title: t("signalasi.pairing.added_agents_title", "Added Agents"),
+              subtitle: String(
+                format: t(
+                  "signalasi.pairing.added_agents_subtitle",
+                  "%d Agents from %@ are available in Contacts."
+                ),
+                pairedDesktopAgentNames.count,
+                pairedDesktopName.ifBlank(t("desktop_control_title", "Control Computer"))
+              ),
+              viewContactsTitle: t("signalasi.pairing.view_contacts", "View Contacts"),
+              t: t
+            )
+          }
           if !store.pendingFriendRequests.isEmpty {
             sectionTitle(t("signalasi.new_friends", "New Friends"))
             VStack(spacing: 0) {
@@ -230,6 +250,8 @@ struct AddContactView: View {
     }
     scannedQRCodeText = cleaned
     pastedQRCodeText = cleaned
+    pairedDesktopName = ""
+    pairedDesktopAgentNames = []
     do {
       switch try SignalASIContactExchange.classifyQRCode(cleaned) {
       case .desktopPairing(let pairing):
@@ -273,6 +295,8 @@ struct AddContactView: View {
       try await coordinator.pair(using: scannedQRCodeText)
       pendingPairing = nil
       pendingScannedRequests = []
+      pairedDesktopName = pairing.desktopName
+      pairedDesktopAgentNames = Self.desktopAgentNames(from: pairing)
       setImportStatus(
         String(
           format: t(
@@ -341,6 +365,8 @@ struct AddContactView: View {
     pendingPairing = nil
     pendingFriendRequest = nil
     pendingScannedRequests = []
+    pairedDesktopName = ""
+    pairedDesktopAgentNames = []
   }
 
   private func setImportStatus(_ message: String, isError: Bool) {
@@ -384,6 +410,33 @@ struct AddContactView: View {
       return source.agents.count
     }
     return 6
+  }
+
+  private static func desktopAgentNames(from pairing: PairingQRCode) -> [String] {
+    if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) {
+      let names = source.agents.compactMap { agent -> String? in
+        let agentId = agent.string("agent_id")
+          .ifBlank(agent.string("mobile_contact_id"))
+          .ifBlank(agent.string("id"))
+        let kind = agent.string("kind").ifBlank(agent.string("agent_kind"))
+        guard agentId != "cloud-model", kind != "cloud-model" else { return nil }
+        let displayName = agent.string("display_name")
+          .ifBlank(agent.string("name"))
+          .ifBlank(agentId)
+        return displayName.isEmpty ? nil : displayName
+      }
+      if !names.isEmpty {
+        return names
+      }
+    }
+    return [
+      "Hermes Agent",
+      "Codex Agent",
+      "Claude Code",
+      "OpenClaw",
+      "Local LLM",
+      "Custom Agent"
+    ]
   }
 }
 
@@ -564,6 +617,92 @@ private struct AddContactPasteCard: View {
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
       .buttonStyle(.plain)
+    }
+    .padding(12)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct AddContactPairedAgentsCard: View {
+  var desktopName: String
+  var agentNames: [String]
+  var title: String
+  var subtitle: String
+  var viewContactsTitle: String
+  var t: (String, String) -> String
+
+  private var visibleAgentNames: ArraySlice<String> {
+    agentNames.prefix(6)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 12) {
+        AddContactIcon(systemImage: "person.3.fill", tint: .signalASIAccent)
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            Text(title)
+              .font(.system(size: 18, weight: .bold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.82)
+            Text("\(agentNames.count)")
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .padding(.horizontal, 8)
+              .frame(minHeight: 24)
+              .background(Color.signalASIAccent.opacity(0.12))
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          Text(subtitle)
+            .font(.system(size: 13))
+            .foregroundColor(.signalASITextSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 0)
+      }
+      VStack(spacing: 8) {
+        ForEach(Array(visibleAgentNames.enumerated()), id: \.offset) { _, name in
+          AddContactValueRow(
+            title: name,
+            value: desktopName.ifBlank(t("desktop_control_title", "Control Computer")),
+            systemImage: "cpu",
+            tint: .signalASIInsightText
+          )
+        }
+        if agentNames.count > visibleAgentNames.count {
+          AddContactValueRow(
+            title: String(
+              format: t("signalasi.pairing.more_added_agents", "%d more Agents"),
+              agentNames.count - visibleAgentNames.count
+            ),
+            value: t("signalasi.pairing.view_contacts_subtitle", "Open Contacts to see the full imported Agent list."),
+            systemImage: "ellipsis",
+            tint: .signalASITextSecondary
+          )
+        }
+        NavigationLink(destination: ContactsView()) {
+          HStack(alignment: .center, spacing: 10) {
+            AddContactIcon(systemImage: "person.2", tint: .signalASIAccent, size: 34)
+            VStack(alignment: .leading, spacing: 3) {
+              Text(viewContactsTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+              Text(t("signalasi.pairing.view_contacts_subtitle", "Open Contacts to see the full imported Agent list."))
+                .font(.system(size: 12))
+                .foregroundColor(.signalASITextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+              .font(.system(size: 13, weight: .semibold))
+              .foregroundColor(.signalASITextSecondary)
+          }
+          .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+      }
     }
     .padding(12)
     .background(Color.signalASISurface)
