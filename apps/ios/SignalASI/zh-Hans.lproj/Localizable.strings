@@ -2060,3 +2060,4 @@
 "voice_capability_needs_download" = "下载";
 "voice_capability_needs_network" = "网络";
 "signalasi.status.not_available" = "不可用";
+"cc_appearance_subtitle_ios" = "使用 iOS 浅色与深色外观";

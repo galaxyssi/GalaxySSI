@@ -1350,6 +1350,9 @@ struct SettingsView: View {
           NavigationLink(destination: DiscoverView()) {
             Label(t("signalasi.tab.discover", "Discover"), systemImage: "safari")
           }
+          NavigationLink(destination: SignalASIGeneralControlCenterView()) {
+            Label(t("cc_general_page_title", "General"), systemImage: "gearshape")
+          }
           NavigationLink(destination: SignalASIAppServicesView()) {
             Label(t("cc_app_services_page_title", "Apps & Services"), systemImage: "square.grid.2x2")
           }
