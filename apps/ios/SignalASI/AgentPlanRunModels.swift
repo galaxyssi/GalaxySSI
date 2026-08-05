@@ -662,19 +662,22 @@ struct AgentPlanRequest: Codable, Equatable {
   var targets: [AgentCallableTarget]
   var nativeTools: [AgentNativeToolDescriptor]
   var contextDigest: String
+  var responseLanguage: String
 
   init(
     goal: String,
     screen: AgentScreenContext,
     targets: [AgentCallableTarget] = [],
     nativeTools: [AgentNativeToolDescriptor] = [],
-    contextDigest: String = ""
+    contextDigest: String = "",
+    responseLanguage: String = LanguagePolicySettings.auto
   ) {
     self.goal = goal
     self.screen = screen
     self.targets = targets
     self.nativeTools = nativeTools
     self.contextDigest = contextDigest
+    self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -683,6 +686,19 @@ struct AgentPlanRequest: Codable, Equatable {
     case targets
     case nativeTools = "native_tools"
     case contextDigest = "context_digest"
+    case responseLanguage = "response_language"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      goal: try container.decode(String.self, forKey: .goal),
+      screen: try container.decode(AgentScreenContext.self, forKey: .screen),
+      targets: try container.decodeIfPresent([AgentCallableTarget].self, forKey: .targets) ?? [],
+      nativeTools: try container.decodeIfPresent([AgentNativeToolDescriptor].self, forKey: .nativeTools) ?? [],
+      contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
+      responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto
+    )
   }
 }
 

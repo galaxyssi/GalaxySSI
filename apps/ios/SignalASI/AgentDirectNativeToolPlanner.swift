@@ -18,6 +18,7 @@ enum AgentDirectNativeToolPlanner {
     let goal = request.goal.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !goal.isEmpty else { return nil }
     let lower = goal.lowercased()
+    let responseLanguage = responseLanguageCode(for: request)
 
     if isSMSGoal(lower),
        let phoneNumber = phoneNumber(in: goal),
@@ -30,7 +31,7 @@ enum AgentDirectNativeToolPlanner {
         target: phoneNumber,
         description: "Send SMS message",
         input: ["phone_number": .string(phoneNumber), "message": .string(message)],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -43,7 +44,7 @@ enum AgentDirectNativeToolPlanner {
         target: phoneNumber,
         description: "Open phone dialer",
         input: ["phone_number": .string(phoneNumber)],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -63,7 +64,7 @@ enum AgentDirectNativeToolPlanner {
           parameters: ["url": handoff.url],
           topLevel: ["url": .string(handoff.url)]
         ),
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -78,7 +79,7 @@ enum AgentDirectNativeToolPlanner {
           target: handoff.target,
           parameters: ["package": handoff.bundleId]
         ),
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -94,7 +95,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Contacts",
         description: "Create contact",
         input: input,
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -106,7 +107,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Camera",
         description: "Take one user-visible photo",
         input: ["facing": .string("back")],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -118,7 +119,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Microphone",
         description: "Record user-visible audio",
         input: ["max_duration_seconds": .int(Int64(audioDurationSeconds(for: lower)))],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -137,7 +138,7 @@ enum AgentDirectNativeToolPlanner {
             "timer_seconds": String(seconds)
           ]
         ),
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -159,7 +160,7 @@ enum AgentDirectNativeToolPlanner {
             "message": goal.prefixString(200)
           ]
         ),
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -172,7 +173,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Audio",
         description: "Set media volume",
         input: ["stream": .string("music"), "percent": .int(Int64(percent))],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -184,7 +185,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Audio",
         description: "Set audio mute",
         input: ["stream": .string("music"), "muted": .bool(!isUnmuteGoal(lower))],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -196,7 +197,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Wi-Fi Settings",
         description: "Open Wi-Fi settings",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -208,7 +209,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Wi-Fi",
         description: "Read Wi-Fi status",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -220,7 +221,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Battery",
         description: "Read battery status",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -232,7 +233,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Power",
         description: "Read power status",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -244,7 +245,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Storage",
         description: "Read storage status",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -256,7 +257,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Network",
         description: "Read network status",
         input: [:],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -268,7 +269,7 @@ enum AgentDirectNativeToolPlanner {
         target: "Flashlight",
         description: "Set flashlight",
         input: ["enabled": .bool(!isTurnOffGoal(lower))],
-        responseLanguage: responseLanguage(for: goal)
+        responseLanguage: responseLanguage
       )
     }
 
@@ -352,7 +353,21 @@ enum AgentDirectNativeToolPlanner {
     return ""
   }
 
-  private static func responseLanguage(for goal: String) -> String {
+  private static func responseLanguageCode(for request: AgentPlanRequest) -> String {
+    let resolved = LanguagePolicySettings.resolve(request.responseLanguage)
+    let languageCode = resolved
+      .split(separator: "-", maxSplits: 1)
+      .first
+      .map { String($0).lowercased() } ?? ""
+    switch languageCode {
+    case "zh", "en":
+      return languageCode
+    default:
+      return responseLanguageCode(fromGoal: request.goal)
+    }
+  }
+
+  private static func responseLanguageCode(fromGoal goal: String) -> String {
     goal.unicodeScalars.contains { scalar in
       (0x4E00...0x9FFF).contains(Int(scalar.value))
     } ? "zh" : "en"
