@@ -827,6 +827,13 @@
 "signalasi.status.needs_setup" = "待设置";
 "signalasi.status.enabled" = "已启用";
 "signalasi.status.protected" = "受保护";
+"cc_loading" = "正在加载...";
+"cc_home_load_failed" = "无法读取 Home Assistant 数据";
+"cc_home_empty" = "没有匹配的 Home Assistant 项目";
+"cc_entity_state" = "状态：%@";
+"cc_home_result_summary" = "已显示 %d 个 / 匹配 %d 个";
+"signalasi.common.truncated" = "已截断";
+"signalasi.common.type" = "类型";
 "signalasi.status.off" = "关闭";
 "signalasi.status.paused" = "已暂停";
 "signalasi.status.running" = "运行中";

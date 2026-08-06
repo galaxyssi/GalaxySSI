@@ -76,7 +76,7 @@ struct SignalASISmartSpacesView: View {
         tint: homeAssistant.configured ? .signalASIAccent : .orange,
         badge: homeAssistant.configured ? t("signalasi.common.view", "View") : t("signalasi.status.needs_setup", "Needs Setup")
       ) {
-        HomeAssistantSettingsView()
+        SignalASIHomeAssistantBrowserView(collection: .entities)
       }
       SignalASISecurityNavigationRow(
         title: t("cc_home_automations_title", "Scenes & Automations"),
@@ -85,7 +85,7 @@ struct SignalASISmartSpacesView: View {
         tint: homeAssistant.configured ? .blue : .orange,
         badge: homeAssistant.configured ? t("signalasi.common.view", "View") : t("signalasi.status.needs_setup", "Needs Setup")
       ) {
-        HomeAssistantSettingsView()
+        SignalASIHomeAssistantBrowserView(collection: .automations)
       }
       SignalASISecurityNavigationRow(
         title: t("cc_custom_devices_title", "Custom Devices"),
