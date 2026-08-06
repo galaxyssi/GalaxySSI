@@ -2457,6 +2457,8 @@
 "settings_notifications" = "通知";
 "settings_notifications_subtitle" = "Agent 操作、安全提示与后台状态";
 "signalasi.settings.paired_desktop_count" = "%d 台已配对";
+"signalasi.settings.page_agent_subtitle" = "主 Agent 工作区、会话、附件与操作面板";
+"signalasi.settings.page_voice_subtitle" = "唤醒页、按住说话、ASR/TTS 与语音路由";
 "signalasi.settings.page_messages_subtitle" = "与联系人、Agent 和设备的对话";
 "signalasi.settings.page_contacts_subtitle" = "联系人、好友请求与可信 Agent";
 "discover_add_cloud_model_subtitle" = "在手机端直接调用 OpenAI、Claude、Gemini、DeepSeek、Qwen 等 API";
