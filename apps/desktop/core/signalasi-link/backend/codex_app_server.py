@@ -17,6 +17,7 @@ from typing import Callable
 from agent_execution_harness import (
     AgentExecutionHarness,
     AgentExecutionPolicy,
+    AgentTaskKind,
     AgentTaskBudgetExceeded,
     execution_contract,
     execution_policy_for,
@@ -222,6 +223,11 @@ class CodexAppServer:
             prompt,
             attachments=[*(image_paths or []), *(fresh_thread_image_paths or [])],
         )
+        fast_chat = (
+            resolved_policy.task_kind == AgentTaskKind.CHAT
+            and not local_images
+            and not restored_images
+        )
         execution_harness = AgentExecutionHarness(
             task_id,
             "codex",
@@ -237,7 +243,10 @@ class CodexAppServer:
             execution_harness=execution_harness,
             working_directory=str(Path(cwd).expanduser().resolve()),
         )
-        run.host_config_guard = self._begin_host_config_guard(run)
+        # Plain conversation does not read or modify the workspace, so a host
+        # configuration snapshot would only add file-system latency. Tool and
+        # artifact tasks retain the full before/after guard.
+        run.host_config_guard = None if fast_chat else self._begin_host_config_guard(run)
         reused_thread = False
         try:
             with self._lock:
@@ -276,9 +285,11 @@ class CodexAppServer:
             self._discard_run(run)
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
-        turn_prompt = self._with_execution_contract(
-            prompt if reused_thread else (fresh_thread_prompt or prompt),
-            run.execution_policy,
+        base_turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
+        turn_prompt = (
+            base_turn_prompt
+            if fast_chat
+            else self._with_execution_contract(base_turn_prompt, run.execution_policy)
         )
         turn_images = local_images if reused_thread else restored_images
         try:
@@ -295,6 +306,7 @@ class CodexAppServer:
                     turn_images,
                     cwd=cwd,
                     reasoning_effort=run.execution_policy.reasoning_effort.value,
+                    include_task_policy=not fast_chat,
                 )
             except RuntimeError as exc:
                 if not run.thread_id or not self._is_thread_not_found_error(exc):
@@ -313,16 +325,17 @@ class CodexAppServer:
                     "status": "starting", "thread_id": run.thread_id,
                     "current_step": "Starting a fresh Codex thread",
                 })
+                fallback_prompt = fresh_thread_prompt or prompt
                 response = self._start_turn(
                     run.thread_id,
-                    self._with_execution_contract(
-                        fresh_thread_prompt or prompt,
-                        run.execution_policy,
+                    fallback_prompt if fast_chat else self._with_execution_contract(
+                        fallback_prompt, run.execution_policy
                     ),
                     model,
                     restored_images,
                     cwd=cwd,
                     reasoning_effort=run.execution_policy.reasoning_effort.value,
+                    include_task_policy=not fast_chat,
                 )
         except Exception:
             self._discard_run(run)
@@ -906,10 +919,15 @@ class CodexAppServer:
         *,
         cwd: str,
         reasoning_effort: str,
+        include_task_policy: bool = True,
     ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
-            "input": self._user_input(prompt, image_paths, include_task_policy=True),
+            "input": self._user_input(
+                prompt,
+                image_paths,
+                include_task_policy=include_task_policy,
+            ),
             "model": model,
             "effort": reasoning_effort,
             "cwd": os.path.abspath(cwd),

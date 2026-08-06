@@ -136,6 +136,19 @@ class AgentControlPlaneActionExecutor private constructor(
         }
     }
 
+    /** Build and cache connector adapters before the first user request. */
+    fun warm() {
+        runBlocking {
+            provider.registrations().forEach { registration ->
+                directory.resolveAdapter(registration.agentId)
+            }
+        }
+    }
+
+    /** Complete the cached control-plane run when its remote response arrives. */
+    fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean =
+        provider.consumeResponse(response)
+
     private fun stableRunId(conversationId: String, turnId: String, actionId: String, agentId: String): String {
         val source = listOf(conversationId, turnId, actionId, agentId).joinToString("\u001f")
         return UUID.nameUUIDFromBytes(source.toByteArray(Charsets.UTF_8)).toString()

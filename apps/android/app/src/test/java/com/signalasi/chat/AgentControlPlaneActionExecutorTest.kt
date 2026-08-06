@@ -233,6 +233,54 @@ class AgentControlPlaneActionExecutorTest {
         AgentManagedConnectorResponseRegistry.clear()
     }
 
+    @Test
+    fun warmedExecutorKeepsDirectRunBoundUntilResponse() {
+        val provider = ActionExecutorAgentProvider(
+            registrationSource = { listOf(registration()) },
+            delegate = object : AgentActionExecutor {
+                override fun execute(action: AgentAction, screen: ScreenContext) = AgentActionResult(
+                    action.id,
+                    true,
+                    "Waiting",
+                    mapOf(
+                        "awaiting_response" to "true",
+                        "source_message_id" to "74",
+                        "contact_id" to "codex",
+                        "conversation_id" to "conversation",
+                        "turn_id" to "turn",
+                        "task_id" to "turn"
+                    )
+                )
+            }
+        )
+        val executor = AgentControlPlaneActionExecutor(provider)
+        executor.warm()
+        val dispatched = executor.execute(
+            connectorAction(),
+            ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent")
+        )
+
+        assertTrue(dispatched.success)
+        assertTrue(executor.consumeConnectorResponse(AgentConnectorResponse(
+            sourceMessageId = 74L,
+            contactId = "codex",
+            content = "Fast result",
+            conversationId = "conversation",
+            turnId = "turn",
+            taskId = "turn"
+        )))
+        assertFalse(executor.consumeConnectorResponse(AgentConnectorResponse(
+            sourceMessageId = 74L,
+            contactId = "codex",
+            content = "Duplicate",
+            conversationId = "conversation",
+            turnId = "turn",
+            taskId = "turn"
+        )))
+        val runId = requireNotNull(dispatched.metadata["control_plane_run_id"])
+        assertEquals("Fast result", provider.result("codex", runId)?.message)
+    }
+
     private fun connectorAction() = AgentAction(
         id = "route-codex",
         kind = AgentActionKind.CALL_CONNECTOR,

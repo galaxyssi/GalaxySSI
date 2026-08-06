@@ -3709,10 +3709,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 isinstance(partial_result, dict)
                 and bool(str(partial_result.get("text") or "").strip())
             )
-            events = task.get("events") if isinstance(task.get("events"), list) else []
-            if not has_partial and not _readable_progress_replay(events):
-                # Keep real narration, tool progress and streamed output, but
-                # suppress content-free liveness heartbeats.
+            if not has_partial:
+                # Plain conversation shows the phone-owned timer until the
+                # first user-visible model delta. Intermediate narration would
+                # occupy the ordered downlink immediately ahead of the answer.
                 return
         if not progress_event_gate.should_publish(task):
             return
@@ -4710,22 +4710,29 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         )
                     )
             if event_status == "completed" and str(event_result or "").strip():
-                from task_workspace import import_referenced_task_artifacts
-
-                source_task_ids = [
-                    str(candidate.get("task_id") or "")
-                    for candidate in agent_task_manager.list(limit=500)
-                    if str(candidate.get("task_id") or "") != task_id
-                    and str(candidate.get("agent_id") or "") == agent_id
-                    and str(candidate.get("conversation_id") or "") == backend_conversation_id
-                ]
-                imported = import_referenced_task_artifacts(
-                    task_id,
-                    str(event_result),
-                    source_task_ids=source_task_ids,
+                from task_workspace import (
+                    import_referenced_task_artifacts,
+                    referenced_relative_artifact_paths,
+                    referenced_task_artifact_paths,
                 )
-                if imported:
-                    add_task_trace("referenced_artifacts_imported", len(imported))
+
+                direct_references = referenced_task_artifact_paths(str(event_result))
+                relative_references = referenced_relative_artifact_paths(str(event_result))
+                if direct_references or relative_references:
+                    source_task_ids = [
+                        str(candidate.get("task_id") or "")
+                        for candidate in agent_task_manager.list(limit=500)
+                        if str(candidate.get("task_id") or "") != task_id
+                        and str(candidate.get("agent_id") or "") == agent_id
+                        and str(candidate.get("conversation_id") or "") == backend_conversation_id
+                    ] if relative_references else []
+                    imported = import_referenced_task_artifacts(
+                        task_id,
+                        str(event_result),
+                        source_task_ids=source_task_ids,
+                    )
+                    if imported:
+                        add_task_trace("referenced_artifacts_imported", len(imported))
             if (
                 event_status == "completed"
                 and execution_policy.requires_artifact
@@ -4967,7 +4974,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     stage_conversation_artifacts,
                 )
 
-                prior_tasks = [
+                prior_tasks = [] if fast_chat_delivery else [
                     candidate
                     for candidate in agent_task_manager.list(limit=500)
                     if str(candidate.get("task_id") or "") != task.task_id
@@ -4975,19 +4982,20 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     and str(candidate.get("conversation_id") or "") == codex_conversation_id
                 ]
                 prior_sources: list[Path] = []
-                if mobile_context.attachments:
+                if prior_tasks and mobile_context.attachments:
                     prior_sources = conversation_input_artifact_paths(
                         mobile_context,
                         prior_tasks,
                         current_task_id=task.task_id,
                     )
-                prior_sources.extend(
-                    conversation_output_artifact_paths(
-                        content,
-                        prior_tasks,
-                        current_task_id=task.task_id,
+                if prior_tasks:
+                    prior_sources.extend(
+                        conversation_output_artifact_paths(
+                            content,
+                            prior_tasks,
+                            current_task_id=task.task_id,
+                        )
                     )
-                )
                 if prior_sources:
                     restored_context_paths = stage_conversation_artifacts(
                         task.task_id,
@@ -5000,7 +5008,25 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         )
                 styled_turn = apply_response_policy(content, preferred_response_language)
                 compact_turn = compact_codex_turn_prompt(content, preferred_response_language)
-                full_turn = content_with_attachments(task.task_id, styled_turn)
+                has_prior_mobile_dialogue = bool(
+                    mobile_context.messages
+                    or mobile_context.summary
+                    or mobile_context.global_context
+                )
+                fresh_turn = (
+                    compact_turn
+                    if fast_chat_delivery and not has_prior_mobile_dialogue
+                    else styled_turn
+                )
+                full_turn = (
+                    (
+                        fresh_turn
+                        if full_desktop_executor
+                        else apply_restricted_agent_boundary(fresh_turn, workspace)
+                    )
+                    if fast_chat_delivery
+                    else content_with_attachments(task.task_id, fresh_turn)
+                )
                 restored_context_note = ""
                 if restored_context_paths:
                     restored_context_note = "\n\nPrior conversation artifacts restored for this thread:"
@@ -5029,15 +5055,30 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         )
                         or compact_turn
                     )
+                elif fast_chat_delivery and not has_prior_mobile_dialogue:
+                    selected_turn = compact_turn
                 else:
                     selected_turn = styled_turn
-                task_prompt = content_with_attachments(task.task_id, selected_turn)
+                task_prompt = (
+                    (
+                        selected_turn
+                        if full_desktop_executor
+                        else apply_restricted_agent_boundary(selected_turn, workspace)
+                    )
+                    if fast_chat_delivery
+                    else content_with_attachments(task.task_id, selected_turn)
+                )
                 if restored_context_note:
                     task_prompt += restored_context_note
                 fresh_task_prompt = full_turn
-                task_prompt += f"\n\n{execution_contract(execution_policy)}"
-                fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
-                input_paths = sorted((workspace / "downloads" / "input").glob("*"))
+                if not fast_chat_delivery:
+                    task_prompt += f"\n\n{execution_contract(execution_policy)}"
+                    fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
+                input_paths = (
+                    []
+                    if fast_chat_delivery
+                    else sorted((workspace / "downloads" / "input").glob("*"))
+                )
                 image_paths = [
                     str(path.resolve()) for path in input_paths
                     if path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
@@ -5085,7 +5126,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         current_step="Preparing task",
                     )
                 fast_result = None
-                if not plan_only:
+                if not plan_only and input_paths:
                     add_task_trace("desktop_file_tool_checked", f"inputs={len(input_paths)}")
                     try:
                         fast_result = try_execute_explicit_file_task(

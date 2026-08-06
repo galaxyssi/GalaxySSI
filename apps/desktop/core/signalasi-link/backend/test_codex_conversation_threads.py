@@ -414,7 +414,10 @@ class CodexConversationThreadTests(unittest.TestCase):
             codex_app_server,
             "CONVERSATION_THREADS_PATH",
             Path(temporary) / "threads.json",
-        ):
+        ), patch.object(
+            codex_app_server.CodexAppServer,
+            "_begin_host_config_guard",
+        ) as host_guard:
             server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
             server._ensure_started = lambda: None
             calls = []
@@ -438,10 +441,13 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual("on-request", thread_start["approvalPolicy"])
             turn_inputs = [params["input"][0]["text"] for method, params, _ in calls if method == "turn/start"]
             self.assertIn("first", turn_inputs[0])
-            self.assertIn("Do not synthesize replacement media or data.", turn_inputs[0])
-            self.assertIn("SignalASI execution contract:", turn_inputs[0])
+            self.assertNotIn("Do not synthesize replacement media or data.", turn_inputs[0])
+            self.assertNotIn("SignalASI execution contract:", turn_inputs[0])
+            self.assertIn("SignalASI response policy:", turn_inputs[0])
+            self.assertLess(len(turn_inputs[0]), 1_800)
             turn_starts = [params for method, params, _ in calls if method == "turn/start"]
             self.assertEqual(["low", "low"], [params["effort"] for params in turn_starts])
+            host_guard.assert_not_called()
             self.assertTrue(server.delete_conversation("conversation-1"))
             self.assertNotIn(server._conversation_key("conversation-1"), server._conversation_threads)
 
@@ -450,7 +456,10 @@ class CodexConversationThreadTests(unittest.TestCase):
             codex_app_server,
             "CONVERSATION_THREADS_PATH",
             Path(temporary) / "threads.json",
-        ), patch.object(codex_app_server.threading, "Thread"):
+        ), patch.object(codex_app_server.threading, "Thread"), patch.object(
+            codex_app_server.CodexAppServer,
+            "_begin_host_config_guard",
+        ) as host_guard:
             server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
             server._ensure_started = lambda: None
             calls = []
@@ -476,6 +485,7 @@ class CodexConversationThreadTests(unittest.TestCase):
                 "multi-file project must be packaged as ZIP",
                 turn["input"][0]["text"],
             )
+            host_guard.assert_called_once()
 
     def test_same_tool_failure_replans_once_then_exhausts_the_budget(self):
         server, run, _events = self._event_server()

@@ -9900,13 +9900,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val stableIdentity = action.parameters["idempotency_key"].orEmpty().ifBlank { action.id }
             AgentTeamDispatchIds.sourceMessageId("member:$stableIdentity")
         } else {
-            ChatHistoryStore.appendOutgoing(
-                context = context,
-                contactId = contactId,
-                content = historyPrompt,
-                deliveryStatus = context.getString(R.string.delivery_status_sending),
-                deliveryTrace = trace
-            )
+            ChatHistoryStore.reserveMessageId(context)
         }
         val observed = observationContextStore.peek(observationTargetId, conversationId)
         val clientConversationId = AgentTaskIdentityPolicy.conversationId(
@@ -9950,8 +9944,20 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         } else {
             null
         }
+        val promptAssemblyStartedAt = SystemClock.elapsedRealtime()
+        val outboundPrompt = promptWithConversationContext(
+            action,
+            promptWithObservedContext(prompt, observed),
+            managedByDesktop = AppStore.usesPcConnectorTunnel(context, contactId)
+        )
+        Log.i(
+            "SignalASILatency",
+            "agent_dispatch stage=prompt_ready source=$messageId " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - promptAssemblyStartedAt} " +
+                "chars=${outboundPrompt.length}"
+        )
         val published = SignalASIMqttClient.publishUserMessage(
-            content = promptWithConversationContext(action, promptWithObservedContext(prompt, observed)),
+            content = outboundPrompt,
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = messageId.takeIf { it > 0L },
@@ -9974,14 +9980,29 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         if (published) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
         if (!managedTeamAction) {
-            ChatHistoryStore.markOutgoingDelivery(
-                context = context,
-                contactId = contactId,
-                messageId = messageId,
-                stage = if (published) "mqtt_published" else "publish_failed",
-                detail = topic,
-                status = context.getString(if (published) R.string.delivery_status_sent else R.string.delivery_status_failed)
+            trace.put(
+                JSONObject()
+                    .put("stage", if (published) "mqtt_published" else "publish_failed")
+                    .put("at", System.currentTimeMillis())
+                    .put("detail", topic)
             )
+            val appContext = context.applicationContext
+            Thread({
+                runCatching {
+                    ChatHistoryStore.appendOutgoingReserved(
+                        context = appContext,
+                        messageId = messageId,
+                        contactId = contactId,
+                        content = historyPrompt,
+                        deliveryStatus = appContext.getString(
+                            if (published) R.string.delivery_status_sent else R.string.delivery_status_failed
+                        ),
+                        deliveryTrace = trace
+                    )
+                }.onFailure { failure ->
+                    Log.w("SignalASILatency", "connector_history_write_failed source=$messageId", failure)
+                }
+            }, "signalasi-connector-history-$messageId").start()
         }
         return AgentActionResult(
             actionId = action.id,
@@ -10327,7 +10348,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         )
     }
 
-    private fun promptWithConversationContext(action: AgentAction, prompt: String, cloud: Boolean = false): String {
+    private fun promptWithConversationContext(
+        action: AgentAction,
+        prompt: String,
+        cloud: Boolean = false,
+        managedByDesktop: Boolean = false
+    ): String {
         val contextBlock = action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty()
         val memoryBlock = action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty()
         val knowledgeBlock = action.parameters[
@@ -10339,7 +10365,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         ].orEmpty()
         val screenBlock = action.parameters[INTERNAL_SCREEN_CONTEXT].orEmpty()
         return assembleBoundedModelPrompt(
-            preamble = "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT",
+            preamble = if (managedByDesktop) {
+                ""
+            } else {
+                "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT"
+            },
             optionalSections = listOf(
                 contextBlock,
                 memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),

@@ -239,6 +239,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val turnId: String
     )
 
+    private data class PendingDirectConnectorRun(
+        val action: AgentAction,
+        val conversationId: String,
+        val turnId: String,
+        val taskId: String,
+        val contactId: String
+    )
+
     private data class DebugAgentAttachment(
         val name: String,
         val bytes: ByteArray
@@ -390,6 +398,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentRuntimeTurnIds = ConcurrentHashMap<MobileNativeAgent, String>()
     private val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val pendingDirectConnectorActions = ConcurrentHashMap<String, AgentAction>()
+    private val pendingDirectConnectorRuns = ConcurrentHashMap<Long, PendingDirectConnectorRun>()
+    private val directControlPlaneExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AgentControlPlaneActionExecutor(this, AndroidAgentActionExecutor(this))
+    }
+    private val directAgentActionExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        PhoneExecutionAuthority.guarded(
+            NotifyingAgentActionExecutor(this, directControlPlaneExecutor)
+        )
+    }
     private val agentConnectorTimeoutCallbacks = ConcurrentHashMap<String, Runnable>()
     private val agentTimelineOperationsInFlight = ConcurrentHashMap.newKeySet<String>()
     private val remoteAgentApprovalsInFlight = ConcurrentHashMap.newKeySet<String>()
@@ -924,6 +941,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             this,
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
+        thread(name = "signalasi-control-plane-prewarm") {
+            runCatching { directControlPlaneExecutor.warm() }
+                .onFailure { Log.w("SignalASILatency", "control_plane_prewarm_failed", it) }
+        }
         agentTranscriptStore = AgentTranscriptStore(this)
         AgentTaskRuntime.addLivenessListener(agentTaskLivenessListener)
         AgentTaskRuntime.supervisor(this)
@@ -1671,7 +1692,73 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             refreshGlobalAgentCognition()
             return true
         }
+        if (consumeBoundDirectConnectorResponse(response)) return true
         return AgentConnectorResponseBus.publish(this, response)
+    }
+
+    private fun consumeBoundDirectConnectorResponse(response: AgentConnectorResponse): Boolean {
+        val binding = pendingDirectConnectorRuns[response.sourceMessageId] ?: return false
+        if (binding.contactId.isNotBlank() && response.contactId.isNotBlank() &&
+            binding.contactId != response.contactId
+        ) return false
+        if (response.conversationId.isNotBlank() &&
+            agentTranscriptStore.resolveMergedConversationId(response.conversationId) != binding.conversationId
+        ) return false
+        if (response.turnId.isNotBlank() && response.turnId != binding.turnId) return false
+        if (!pendingDirectConnectorRuns.remove(response.sourceMessageId, binding)) return false
+
+        directControlPlaneExecutor.consumeConnectorResponse(response)
+        liveAgentConnectorStreams.remove(response.sourceMessageId)
+        val taskId = response.taskId.ifBlank { binding.taskId.ifBlank { binding.turnId } }
+        val stored = agentTranscriptStore.upsert(
+            role = AgentTranscriptRole.ASSISTANT,
+            text = response.content,
+            dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                turnId = binding.turnId,
+                sourceMessageId = response.sourceMessageId,
+                taskId = taskId
+            ),
+            conversationId = binding.conversationId,
+            turnId = binding.turnId,
+            taskId = taskId,
+            richOutputJson = response.richOutputJson
+        )
+        pendingDirectConnectorActions.remove(binding.turnId)?.let { action ->
+            recordDirectAgentRun(
+                turnId = binding.turnId,
+                action = action,
+                result = AgentActionResult(
+                    actionId = action.id,
+                    success = response.success,
+                    message = response.content,
+                    metadata = mapOf(
+                        "source_message_id" to response.sourceMessageId.toString(),
+                        "contact_id" to response.contactId,
+                        "conversation_id" to binding.conversationId,
+                        "turn_id" to binding.turnId,
+                        "task_id" to taskId
+                    )
+                )
+            )
+        }
+        deleteAgentTranscriptByDedupeKey(binding.conversationId, "connector-task:$taskId")
+        completedConnectorTaskIds.add(taskId)
+        agentTranscriptStore.recordUsage(
+            binding.conversationId,
+            response.inputTokens,
+            response.outputTokens,
+            response.costMicros
+        )
+        if (stored && binding.conversationId == agentTranscriptStore.activeConversation().id) {
+            refreshAgentTranscriptWindow(binding.conversationId)
+            refreshAgentConversationHeader()
+        }
+        Log.i(
+            "SignalASIAgent",
+            "Consumed bound direct connector response source=${response.sourceMessageId} " +
+                "turn=${binding.turnId.take(8)}"
+        )
+        return true
     }
 
     private fun consumeAgentConnectorResponse(response: AgentConnectorResponse) {
@@ -2132,6 +2219,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         deleteAgentTranscriptByDedupeKey(conversationId, "connector-task:$taskId")
         AgentConnectorResponseStore.remove(this, response)
+        pendingDirectConnectorRuns.remove(response.sourceMessageId)
         completedConnectorTaskIds.add(taskId)
         agentTranscriptStore.recordUsage(
             conversationId, response.inputTokens, response.outputTokens, response.costMicros
@@ -2616,6 +2704,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .show()
     }
 
+    private fun publishAgentTaskPartialResult(
+        envelope: JSONObject,
+        sourceMessageId: Long,
+        contactId: String,
+        status: String
+    ) {
+        if (status != "running") return
+        val partial = envelope.optJSONObject("partial_result") ?: return
+        if (!partial.optBoolean("user_visible", true)) return
+        val content = partial.optString("text").trim().take(64_000)
+        if (content.isBlank()) return
+        val sequence = partial.optLong("sequence", 0L)
+        AgentConnectorStreamBus.publish(
+            AgentConnectorStreamUpdate(
+                sourceMessageId = sourceMessageId,
+                contactId = contactId,
+                content = content,
+                conversationId = envelope.optString("conversation_id"),
+                turnId = envelope.optString("turn_id"),
+                taskId = envelope.optString("task_id"),
+                firstDelta = sequence <= 1L
+            )
+        )
+    }
+
     private fun handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         if (envelope?.optString("type") != "agent_task_event") return false
         if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) && ::voiceAgentRunBridge.isInitialized) {
@@ -2755,6 +2868,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         if (existingMessage != null && statusSeq > 0L && statusSeq < existingMessage.taskStatusSeq) return true
+        publishAgentTaskPartialResult(envelope, sourceMessageId, contactId, status)
         val baseStatusLabel = when (status) {
             "accepted" -> getString(R.string.agent_task_status_accepted)
             "queued" -> getString(R.string.agent_task_status_queued)
@@ -6345,6 +6459,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val screen = mobileNativeAgent.snapshot().currentScreen
         thread(name = "signalasi-agent-system-action") {
+            val dispatchStartedAt = SystemClock.elapsedRealtime()
             val outcome = runCatching {
                 if (contextualAction.kind == AgentActionKind.CALL_NATIVE_TOOL) {
                     val notifications = AgentActionNotificationCenter(this@MainActivity)
@@ -6353,17 +6468,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         notifications.showResult(contextualAction, result)
                     }
                 } else {
-                    PhoneExecutionAuthority.guarded(
-                        NotifyingAgentActionExecutor(
-                            this@MainActivity,
-                            AgentControlPlaneActionExecutor(
-                                this@MainActivity,
-                                AndroidAgentActionExecutor(this@MainActivity)
-                            )
-                        )
-                    ).execute(contextualAction, screen)
+                    directAgentActionExecutor.execute(contextualAction, screen)
                 }
             }
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=direct_action_dispatched turn=${turnId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - dispatchStartedAt}"
+            )
             runOnUiThread {
                 val result = outcome.getOrElse { error ->
                     AgentActionResult(contextualAction.id, false, error.message ?: "Agent operation failed")
@@ -6998,6 +7110,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ) {
         if (result.metadata["awaiting_response"] == "true") {
             pendingDirectConnectorActions[turnId] = action
+            result.metadata["source_message_id"]
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?.let { sourceMessageId ->
+                    pendingDirectConnectorRuns[sourceMessageId] = PendingDirectConnectorRun(
+                        action = action,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        taskId = result.metadata["remote_task_id"].orEmpty()
+                            .ifBlank { result.metadata["task_id"].orEmpty() }
+                            .ifBlank { turnId },
+                        contactId = result.metadata["contact_id"].orEmpty()
+                    )
+                }
             Log.i(
                 "SignalASIAgent",
                 "Direct connector awaiting response source=${result.metadata["source_message_id"].orEmpty()} " +
