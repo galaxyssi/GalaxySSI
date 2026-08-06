@@ -132,25 +132,34 @@ private class InMemoryAgentProviderHealthPersistence : AgentProviderHealthPersis
 
 private class EncryptedAgentProviderHealthPersistence(context: Context) : AgentProviderHealthPersistence {
     private val database = AgentEncryptedDatabase(context, DATABASE)
+    @Volatile private var cachedValues: Map<String, AgentProviderHealthSnapshot>? = null
 
+    @Synchronized
     override fun load(): Map<String, AgentProviderHealthSnapshot> {
+        cachedValues?.let { return it }
         val array = runCatching { JSONArray(database.readString(KEY_STATES, "[]")) }.getOrDefault(JSONArray())
         return buildMap {
             for (index in 0 until array.length()) {
                 array.optJSONObject(index)?.toProviderHealthSnapshot()?.let { put(it.scopeId, it) }
             }
-        }
+        }.also { cachedValues = it }
     }
 
+    @Synchronized
     override fun save(values: Collection<AgentProviderHealthSnapshot>) {
         val array = JSONArray()
-        values.sortedByDescending { max(it.lastFailureAtMillis, it.lastSuccessAtMillis) }
+        val retained = values.sortedByDescending { max(it.lastFailureAtMillis, it.lastSuccessAtMillis) }
             .take(MAX_SCOPES)
-            .forEach { array.put(it.toJson()) }
+        retained.forEach { array.put(it.toJson()) }
         database.writeString(KEY_STATES, array.toString())
+        cachedValues = retained.associateBy(AgentProviderHealthSnapshot::scopeId)
     }
 
-    override fun clear() = database.clear()
+    @Synchronized
+    override fun clear() {
+        database.clear()
+        cachedValues = emptyMap()
+    }
 
     companion object {
         const val DATABASE = "signalasi_agent_provider_health"

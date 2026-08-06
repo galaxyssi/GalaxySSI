@@ -9856,6 +9856,17 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
     }
 
     private fun dispatchContactTask(action: AgentAction, contactId: String, prompt: String): AgentActionResult {
+        val dispatchStartedAt = SystemClock.elapsedRealtime()
+        var dispatchCheckpointAt = dispatchStartedAt
+        fun traceDispatchStage(stage: String) {
+            val now = SystemClock.elapsedRealtime()
+            Log.i(
+                "SignalASILatency",
+                "agent_dispatch stage=$stage step_ms=${now - dispatchCheckpointAt} " +
+                    "total_ms=${now - dispatchStartedAt}"
+            )
+            dispatchCheckpointAt = now
+        }
         val deliveryMode = deliveryMode(action)
         val managedTeamAction = action.parameters[MANAGED_AGENT_TEAM_ACTION_PARAMETER]
             .orEmpty()
@@ -9890,6 +9901,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         val topic = AppStore.outgoingTopicForContact(context, contactId)
             ?: return AgentActionResult(action.id, false, "${action.target} is not verified")
+        traceDispatchStage("route_ready")
         val historyPrompt = displayPromptForAction(action, prompt)
         val trace = JSONArray()
             .put(JSONObject()
@@ -9902,7 +9914,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         } else {
             ChatHistoryStore.reserveMessageId(context)
         }
+        traceDispatchStage("message_id_reserved")
         val observed = observationContextStore.peek(observationTargetId, conversationId)
+        traceDispatchStage("observed_context_loaded")
         val clientConversationId = AgentTaskIdentityPolicy.conversationId(
             contactId,
             action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
@@ -9918,6 +9932,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             conversationId = clientConversationId,
             turnId = clientTurnId
         )
+        traceDispatchStage("identity_ready")
         val voiceAgentRun = if (
             messageId > 0L && VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(context)
         ) {
@@ -9944,6 +9959,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         } else {
             null
         }
+        traceDispatchStage("run_bridge_ready")
         val promptAssemblyStartedAt = SystemClock.elapsedRealtime()
         val outboundPrompt = promptWithConversationContext(
             action,
@@ -11439,8 +11455,9 @@ class AppStoreAgentConnectorRegistry(
 ) : AgentConnectorRegistry {
     private val appContext = context.applicationContext
 
-    override fun registrations(): List<AgentRegistration> =
-        super<AgentConnectorRegistry>.registrations().map { registration ->
+    override fun registrations(): List<AgentRegistration> {
+        val healthSnapshots = providerHealthLedger.snapshots().associateBy { it.scopeId }
+        return super<AgentConnectorRegistry>.registrations().map { registration ->
             val contact = contactForRegistration(registration.agentId) ?: return@map registration
             val projectedStatus = registration.status
             val reportedStatus = when (contact.optString("setup_status").lowercase(Locale.ROOT)) {
@@ -11495,7 +11512,9 @@ class AppStoreAgentConnectorRegistry(
                 lastHeartbeatMillis = contact.optLong("setup_updated_at", registration.lastHeartbeatMillis),
                 updatedAtMillis = contact.optLong("setup_updated_at", registration.updatedAtMillis)
             )
-            val healthState = providerHealthLedger.snapshot(projected).circuitState(System.currentTimeMillis())
+            val healthState = healthSnapshots[projected.runtimeHealthScope()]
+                ?.circuitState(System.currentTimeMillis())
+                ?: AgentProviderCircuitState.CLOSED
             projected.copy(
                 status = when {
                     projected.status !in setOf(
@@ -11510,6 +11529,7 @@ class AppStoreAgentConnectorRegistry(
                 }
             )
         }
+    }
 
     override fun availableTargets(): List<AgentCallableTarget> {
         val builtIn = fallback.availableTargets().map { target ->

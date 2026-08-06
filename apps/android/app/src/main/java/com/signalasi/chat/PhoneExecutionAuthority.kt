@@ -21,7 +21,7 @@ object PhoneExecutionAuthority {
         override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
             val taskId = action.parameters[TASK_ID_PARAMETER].orEmpty().ifBlank { action.id }
             if (isCancelled(taskId)) return cancelledResult(action, taskId)
-            if (action.isConcurrentPhoneRead()) {
+            if (action.runsOutsidePhoneSideEffectLock()) {
                 return delegate.execute(action, screen).withAuthorityMetadata(
                     taskId = taskId,
                     serialized = false
@@ -86,10 +86,10 @@ object PhoneExecutionAuthority {
         )
     )
 
-    private fun AgentAction.isConcurrentPhoneRead(): Boolean =
+    private fun AgentAction.runsOutsidePhoneSideEffectLock(): Boolean =
         kind == AgentActionKind.READ_SCREEN ||
             kind == AgentActionKind.DRAFT_PLAN ||
-            AgentConnectorExecutionPolicy.isDirectPhoneCloudModelRead(this)
+            kind == AgentActionKind.CALL_CONNECTOR
 }
 
 data class PhoneExecutionAuthoritySnapshot(

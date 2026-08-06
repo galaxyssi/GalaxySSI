@@ -208,15 +208,24 @@ class EncryptedAgentRunStartReceiptStore(
     clock: () -> Long = { System.currentTimeMillis() }
 ) : AbstractAgentRunStartReceiptStore(clock) {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+    @Volatile private var cachedReceipts: List<AgentRunStartReceipt>? = null
 
-    override fun readPersisted(): List<AgentRunStartReceipt> =
-        AgentRunStartReceiptJsonCodec.decode(database.readString(KEY_RECEIPTS, "[]"))
+    @Synchronized
+    override fun readPersisted(): List<AgentRunStartReceipt> = cachedReceipts ?: AgentRunStartReceiptJsonCodec
+        .decode(database.readString(KEY_RECEIPTS, "[]"))
+        .also { cachedReceipts = it }
 
+    @Synchronized
     override fun writePersisted(receipts: List<AgentRunStartReceipt>) {
         database.writeString(KEY_RECEIPTS, AgentRunStartReceiptJsonCodec.encode(receipts))
+        cachedReceipts = receipts
     }
 
-    override fun clearPersisted() = database.clear()
+    @Synchronized
+    override fun clearPersisted() {
+        database.clear()
+        cachedReceipts = emptyList()
+    }
 
     private companion object {
         const val DATABASE = "signalasi_run_start_receipts_v1"

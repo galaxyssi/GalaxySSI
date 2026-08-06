@@ -799,18 +799,18 @@ class LearnedSource:
         return evidence * 0.6 + diversity * 0.4
 
     def engine_spec(self, index: int) -> EngineSpec:
+        del index
         scoped_query = urllib.parse.quote_plus(f"site:{self.host} ")
         endpoint = (
-            f"https://html.duckduckgo.com/html/?q={scoped_query}{{query}}"
-            if index % 2 == 0
-            else f"https://www.bing.com/search?q={scoped_query}{{query}}&count={{limit}}"
+            "https://www.bing.com/search?format=rss&"
+            f"q={scoped_query}{{query}}&count={{limit}}"
         )
         return EngineSpec(
             self.source_id,
             self.host,
             self.vertical,
             endpoint,
-            parser="site_index",
+            parser="site_rss",
             authority=min(0.85, max(0.55, self.confidence())),
             default_enabled=self.status == "verified",
             allowed_hosts=(self.host,),
@@ -866,9 +866,8 @@ def _load_indexed_engine_specs() -> tuple[EngineSpec, ...]:
                 raise RuntimeError(f"Invalid authority for web source {source_id}") from exc
             scoped_query = urllib.parse.quote_plus(f"site:{scope} ")
             endpoint = (
-                f"https://html.duckduckgo.com/html/?q={scoped_query}{{query}}"
-                if index % 2 == 0
-                else f"https://www.bing.com/search?q={scoped_query}{{query}}&count={{limit}}"
+                "https://www.bing.com/search?format=rss&"
+                f"q={scoped_query}{{query}}&count={{limit}}"
             )
             output.append(
                 EngineSpec(
@@ -876,7 +875,7 @@ def _load_indexed_engine_specs() -> tuple[EngineSpec, ...]:
                     title,
                     vertical,
                     endpoint,
-                    parser="site_index",
+                    parser="site_rss",
                     languages=languages,
                     authority=authority,
                     allowed_hosts=(host,),
@@ -1065,7 +1064,14 @@ class FusedSearchResult:
 
 
 ENGINE_SPECS: tuple[EngineSpec, ...] = (
-    EngineSpec("bing", "Bing", "general", "https://www.bing.com/search?q={query}&count={limit}", weight=1.05),
+    EngineSpec(
+        "bing",
+        "Bing",
+        "general",
+        "https://www.bing.com/search?format=rss&q={query}&count={limit}",
+        parser="rss",
+        weight=1.05,
+    ),
     EngineSpec("duckduckgo", "DuckDuckGo", "general", "https://html.duckduckgo.com/html/?q={query}", weight=1.05),
     EngineSpec("baidu", "Baidu", "regional", "https://www.baidu.com/s?wd={query}&rn={limit}", languages=("zh",), weight=1.05),
     EngineSpec("brave", "Brave Search", "general", "https://search.brave.com/search?q={query}&source=web"),
@@ -1351,6 +1357,29 @@ def _tokens(value: str) -> list[str]:
         else:
             cjk.extend(group[index:index + 2] for index in range(len(group) - 1))
     return latin + cjk
+
+
+def _fast_search_evidence_sufficient(
+    query: str,
+    groups: Sequence[Sequence[RawSearchResult]],
+    limit: int,
+) -> bool:
+    """Return early only when fast search already has relevant evidence."""
+    query_tokens = set(_tokens(query))
+    if not query_tokens:
+        return False
+    required_matches = max(1, min(3, int(limit)))
+    minimum_overlap = 1.0 if len(query_tokens) <= 2 else 0.6
+    relevant_urls: set[str] = set()
+    for group in groups:
+        for row in group:
+            row_tokens = set(_tokens(f"{row.title} {row.excerpt}"))
+            if len(query_tokens & row_tokens) / len(query_tokens) < minimum_overlap:
+                continue
+            relevant_urls.add(canonical_url(row.url))
+            if len(relevant_urls) >= required_matches:
+                return True
+    return False
 
 
 def detect_language(value: str) -> str:
@@ -1639,7 +1668,7 @@ class SearchEngineAdapter:
             "zhihu_public", "xiaohongshu_public",
         }:
             return "text/html,application/xhtml+xml"
-        if self.spec.parser == "atom":
+        if self.spec.parser in {"atom", "rss", "site_rss"}:
             return "application/atom+xml,application/xml,text/xml"
         return "application/json,text/json"
 
@@ -1659,6 +1688,10 @@ class SearchEngineAdapter:
             return self._parse_indexed_social(text, response.url, limit)
         if parser == "atom":
             return self._parse_atom(text, limit)
+        if parser == "rss":
+            return self._parse_rss(text, limit)
+        if parser == "site_rss":
+            return self._parse_site_rss(text, limit)
         try:
             value = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -1779,6 +1812,25 @@ class SearchEngineAdapter:
             return []
         output: list[RawSearchResult] = []
         for row in self._parse_html(text, base_url, limit * 4):
+            host = (
+                urllib.parse.urlsplit(row.url).hostname or ""
+            ).casefold().removeprefix("www.")
+            if any(host == target or host.endswith(f".{target}") for target in allowed):
+                output.append(row)
+            if len(output) >= limit:
+                break
+        return output
+
+    def _parse_site_rss(self, text: str, limit: int) -> list[RawSearchResult]:
+        allowed = tuple(
+            host.casefold().removeprefix("www.")
+            for host in self.spec.allowed_hosts
+            if host
+        )
+        if not allowed:
+            return []
+        output: list[RawSearchResult] = []
+        for row in self._parse_rss(text, limit * 4):
             host = (
                 urllib.parse.urlsplit(row.url).hostname or ""
             ).casefold().removeprefix("www.")
@@ -2081,6 +2133,24 @@ class SearchEngineAdapter:
                     link = href
                     break
             result = self._result(len(output) + 1, title, link, summary, published)
+            if result:
+                output.append(result)
+        return output
+
+    def _parse_rss(self, text: str, limit: int) -> list[RawSearchResult]:
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError as exc:
+            raise WebIntelligenceError("invalid_engine_response", "RSS feed is invalid", retryable=True) from exc
+        output = []
+        for item in root.findall("./channel/item")[:limit]:
+            result = self._result(
+                len(output) + 1,
+                item.findtext("title", default=""),
+                item.findtext("link", default=""),
+                item.findtext("description", default=""),
+                item.findtext("pubDate", default=""),
+            )
             if result:
                 output.append(result)
         return output
@@ -3153,11 +3223,14 @@ class WebIntelligenceService:
         receipts: list[EngineReceipt] = []
         futures: dict[concurrent.futures.Future[list[RawSearchResult]], tuple[str, float]] = {}
         per_engine_timeout = max(1.0, min(8.0, timeout_seconds * 0.8))
+        fast_path_satisfied = False
         if engine_ids:
-            with concurrent.futures.ThreadPoolExecutor(
+            executor = concurrent.futures.ThreadPoolExecutor(
                 max_workers=min(self.max_workers, len(engine_ids)),
                 thread_name_prefix="signalasi-web",
-            ) as executor:
+            )
+            pending: set[concurrent.futures.Future[list[RawSearchResult]]] = set()
+            try:
                 for engine_id in engine_ids:
                     adapter = self.engines[engine_id]
                     submitted = time.monotonic()
@@ -3206,18 +3279,30 @@ class WebIntelligenceService:
                                 str(exc),
                                 True,
                             ))
+                    if profile == "fast" and _fast_search_evidence_sufficient(query, raw_groups, limit):
+                        fast_path_satisfied = True
+                        break
+            finally:
                 for future in pending:
                     engine_id, submitted = futures[future]
                     future.cancel()
                     receipts.append(EngineReceipt(
                         engine_id,
-                        "timeout",
+                        "cancelled" if fast_path_satisfied else "timeout",
                         int((time.monotonic() - submitted) * 1_000),
                         0,
-                        "engine_timeout",
-                        "Search source exceeded the shared request deadline",
-                        True,
+                        "fast_path_satisfied" if fast_path_satisfied else "engine_timeout",
+                        (
+                            "Fast search already collected sufficient relevant evidence"
+                            if fast_path_satisfied
+                            else "Search source exceeded the shared request deadline"
+                        ),
+                        not fast_path_satisfied,
                     ))
+                # Context-manager shutdown waits for every running source even
+                # after the shared deadline. Slow sources are isolated instead
+                # so completed evidence can return immediately.
+                executor.shutdown(wait=False, cancel_futures=True)
 
         for receipt in receipts:
             self.store.record_source_receipt(receipt)
@@ -3229,7 +3314,7 @@ class WebIntelligenceService:
             fused,
         )
         self._refresh_learned_sources()
-        status = "completed" if fused and all(item.status in {"completed", "empty"} for item in receipts) else (
+        status = "completed" if fused and all(item.status in {"completed", "empty", "cancelled"} for item in receipts) else (
             "partial" if fused else "failed"
         )
         result = self._base("search", arguments, started_at, status)
@@ -3250,13 +3335,14 @@ class WebIntelligenceService:
                 "engine_catalog_size": len(self.specs),
                 "engines_requested": engine_ids,
                 "engines_completed": sum(receipt.status == "completed" for receipt in receipts),
-                "engine_failures": sum(receipt.status not in {"completed", "empty"} for receipt in receipts),
+                "engine_failures": sum(receipt.status not in {"completed", "empty", "cancelled"} for receipt in receipts),
                 "profile": profile,
                 "engine_fanout": fanout,
                 "timeout_seconds": timeout_seconds,
                 "source_selection": (
                     "explicit_sources" if selection.explicit else "adaptive_health_weighted"
                 ),
+                "fast_path_satisfied": fast_path_satisfied,
                 "source_health": self._source_health_values(engine_ids),
                 "circuits_skipped": [
                     item.public(self._millis()) for item in selection.skipped
@@ -4020,6 +4106,28 @@ class WebIntelligenceService:
                 selected.append(match)
             if len(selected) >= fanout:
                 break
+        if len(selected) < fanout and desired and "general" not in desired:
+            general = next(
+                (
+                    item[2]
+                    for item in ranked
+                    if self.specs[item[2]].vertical == "general"
+                    and self.specs[item[2]].parser in {"rss", "atom"}
+                    and item[2] not in selected
+                ),
+                None,
+            )
+            if general is None:
+                general = next(
+                    (
+                        item[2]
+                        for item in ranked
+                        if self.specs[item[2]].vertical == "general" and item[2] not in selected
+                    ),
+                    None,
+                )
+            if general:
+                selected.append(general)
         for _, _, source_id in ranked:
             if len(selected) >= fanout:
                 break

@@ -892,8 +892,6 @@ for (const fileAccessContract of [
   [backendAgentFileAccess, "read_sets"],
   [backendAgentFileAccess, "write_sets"],
   [backendAgentFileAccess, "conflict_notifications"],
-  [backendDesktopNativeTools, "_record_exact_file_access"],
-  [backendGateway, "file_conflict_context"],
   [backendMain, "/api/agent-runtime/file-access"],
   [backendMain, "/api/agent-runtime/file-conflicts"]
 ]) {
