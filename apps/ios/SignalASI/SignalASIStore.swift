@@ -2071,7 +2071,8 @@ final class SignalASIStore: ObservableObject {
   func importDesktopAgentQRCodeAsContacts(_ contents: String) throws -> Int {
     let object = try SignalASIQRCodePayload.decodeObject(from: contents, label: "Agent QR")
     if let source = SignalASIContactExchange.connectorAgentSource(from: object) {
-      let link = serverLink(forConnectorPayload: source.parentPayload)
+      let link = serverLink(forConnectorPayload: source.parentPayload) ??
+        singleDesktopFallbackLink(for: source.parentPayload)
       let updated = upsertDesktopAgentContacts(
         payloads: desktopAgentPayloads(from: source.agents, parentPayload: source.parentPayload, link: link),
         link: link
@@ -2081,7 +2082,7 @@ final class SignalASIStore: ObservableObject {
       }
       return updated
     }
-    let link = serverLink(forConnectorPayload: object)
+    let link = serverLink(forConnectorPayload: object) ?? singleDesktopFallbackLink(for: object)
     guard let payload = singleDesktopAgentPayload(from: object, link: link) else {
       throw SignalASIError.invalidPayload("Unsupported Agent QR code.")
     }
@@ -2391,6 +2392,22 @@ final class SignalASIStore: ObservableObject {
     let serverRouteId = payload.string("server_route_id")
     if !serverRouteId.isEmpty, let link = serverLinks.first(where: { $0.routes.serverRouteId == serverRouteId }) {
       return link
+    }
+    return nil
+  }
+
+  private func singleDesktopFallbackLink(for payload: [String: Any]) -> ServerLink? {
+    guard desktopId(from: payload, link: nil).isEmpty,
+          desktopFingerprint(from: payload, link: nil).isEmpty,
+          payload.string("server_route_id").isEmpty else {
+      return nil
+    }
+    let pairedLinks = serverLinks.filter(\.paired)
+    if pairedLinks.count == 1 {
+      return pairedLinks[0]
+    }
+    if serverLinks.count == 1 {
+      return serverLinks[0]
     }
     return nil
   }
