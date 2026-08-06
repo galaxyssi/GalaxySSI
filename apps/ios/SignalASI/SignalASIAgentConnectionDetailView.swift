@@ -221,7 +221,7 @@ struct SignalASIAgentConnectionDetailView: View {
     switch contact.deliveryMode {
     case .cloudAPI:
       return t("signalasi.agent_connection.route_cloud", "Cloud API")
-    case .link:
+    case .link, .pcConnector:
       return t("signalasi.agent_connection.route_link", "SignalASI Link")
     case .local:
       return t("signalasi.agent_connection.route_local", "Local")

@@ -158,7 +158,7 @@ struct ContactDetailView: View {
 
   @ViewBuilder
   private func connectorSection(_ contact: SignalASIContact) -> some View {
-    if contact.deliveryMode == .link {
+    if contact.deliveryMode.isSignalASILinkFamily {
       VStack(alignment: .leading, spacing: 8) {
         SignalASISecuritySectionTitle(title: t("contact_connector_section", "Connector"))
         SignalASISecurityStatusRow(
@@ -400,7 +400,7 @@ struct ContactDetailView: View {
     switch contact.deliveryMode {
     case .cloudAPI:
       return t("signalasi.status.cloud_model", "Cloud Model")
-    case .link:
+    case .link, .pcConnector:
       return setupStatusText(for: contact)
     case .local:
       return t("signalasi.status.ready", "Ready")

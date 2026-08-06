@@ -281,7 +281,7 @@ struct SignalASIResourceRoutingView: View {
     case .knowledge:
       return [.knowledgeSearch]
     case .agent:
-      if contact.deliveryMode == .link {
+      if contact.deliveryMode.isSignalASILinkFamily {
         return [.chat, .reasoning, .toolUse, .taskExecution]
       }
       return [.chat, .reasoning]
@@ -305,6 +305,7 @@ struct SignalASIResourceRoutingView: View {
     switch contact.deliveryMode {
     case .cloudAPI: return "cloud-api"
     case .link: return "signalasi-link"
+    case .pcConnector: return "pc-connector"
     case .local: return "local"
     }
   }
@@ -319,7 +320,7 @@ struct SignalASIResourceRoutingView: View {
     if contact.deliveryMode == .cloudAPI {
       return ProviderProfileCatalog.fromCloudContact(contact, status: status)
     }
-    if kind == .agent, contact.deliveryMode == .link {
+    if kind == .agent, contact.deliveryMode.isSignalASILinkFamily {
       return ProviderProfileCatalog.fromConnectorContact(
         contact,
         status: status,

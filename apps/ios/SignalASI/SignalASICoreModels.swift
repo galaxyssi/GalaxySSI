@@ -11,6 +11,45 @@ enum SignalASIDeliveryMode: String, Codable, CaseIterable {
   case local
   case link
   case cloudAPI
+  case pcConnector = "pc_connector"
+
+  var isSignalASILinkFamily: Bool {
+    switch self {
+    case .link, .pcConnector:
+      return true
+    case .local, .cloudAPI:
+      return false
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> SignalASIDeliveryMode {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "_") ?? ""
+    switch normalized {
+    case "cloudapi", "cloud_api":
+      return .cloudAPI
+    case "link", "signalasi_link":
+      return .link
+    case "pc_connector", "pcconnector":
+      return .pcConnector
+    case "local":
+      return .local
+    default:
+      return .local
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 enum SignalASICloudAPIStyle: String, Codable, CaseIterable, Identifiable {
@@ -81,7 +120,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
       if !desktopId.isEmpty, rawId.hasPrefix("\(desktopId):") {
         return String(rawId.dropFirst(desktopId.count + 1))
       }
-      if deliveryMode == .link, rawId.contains(":") {
+      if deliveryMode.isSignalASILinkFamily, rawId.contains(":") {
         return rawId.split(separator: ":", maxSplits: 1).last.map(String.init) ?? rawId
       }
     }

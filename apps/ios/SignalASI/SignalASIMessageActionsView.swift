@@ -220,7 +220,7 @@ struct SignalASIMessageActionsView: View {
 
   private var securityStatusText: String {
     switch contact.deliveryMode {
-    case .link:
+    case .link, .pcConnector:
       return t("message_security_status_subtitle", "Protected by the SignalASI Link end-to-end session")
     case .cloudAPI:
       return t(
@@ -234,7 +234,7 @@ struct SignalASIMessageActionsView: View {
 
   private var securityBadge: String {
     switch contact.deliveryMode {
-    case .link:
+    case .link, .pcConnector:
       return "E2E"
     case .cloudAPI:
       return t("signalasi.status.cloud_model", "Cloud model")

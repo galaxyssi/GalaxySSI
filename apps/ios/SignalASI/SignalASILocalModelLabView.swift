@@ -44,7 +44,7 @@ struct SignalASILocalModelLabView: View {
   private var localModelConnectorCount: Int {
     store.contacts.filter { contact in
       !contact.deleted &&
-        contact.deliveryMode == .link &&
+        contact.deliveryMode.isSignalASILinkFamily &&
         (contact.agentKind.lowercased().contains("model") ||
           contact.id.lowercased().contains("local-model") ||
           contact.displayName.lowercased().contains("local model"))

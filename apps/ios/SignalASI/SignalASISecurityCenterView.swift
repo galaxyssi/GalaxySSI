@@ -8,7 +8,7 @@ struct SignalASISecurityCenterView: View {
 
   private var connectorContacts: [SignalASIContact] {
     store.contacts
-      .filter { !$0.deleted && $0.deliveryMode == .link && $0.type == "agent" }
+      .filter { !$0.deleted && $0.deliveryMode.isSignalASILinkFamily && $0.type == "agent" }
       .sorted { lhs, rhs in
         lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
       }
@@ -318,7 +318,7 @@ struct SignalASIDeviceSecurityDetailView: View {
 
   private var agents: [SignalASIContact] {
     store.contacts
-      .filter { !$0.deleted && $0.deliveryMode == .link && $0.type == "agent" && $0.desktopId == desktopId }
+      .filter { !$0.deleted && $0.deliveryMode.isSignalASILinkFamily && $0.type == "agent" && $0.desktopId == desktopId }
       .sorted { lhs, rhs in
         lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
       }
@@ -497,7 +497,7 @@ struct SignalASIRevokeDevicePairingView: View {
   }
 
   private var agents: [SignalASIContact] {
-    store.contacts.filter { !$0.deleted && $0.deliveryMode == .link && $0.type == "agent" && $0.desktopId == desktopId }
+    store.contacts.filter { !$0.deleted && $0.deliveryMode.isSignalASILinkFamily && $0.type == "agent" && $0.desktopId == desktopId }
   }
 
   var body: some View {
@@ -569,7 +569,7 @@ struct SignalASIRevokeAllPCPairingsView: View {
   @EnvironmentObject private var store: SignalASIStore
 
   private var summaries: [SignalASIDesktopSecuritySummary] {
-    let connectorContacts = store.contacts.filter { !$0.deleted && $0.deliveryMode == .link && $0.type == "agent" }
+    let connectorContacts = store.contacts.filter { !$0.deleted && $0.deliveryMode.isSignalASILinkFamily && $0.type == "agent" }
     return store.serverLinks
       .sorted { lhs, rhs in
         lhs.desktopName.localizedCaseInsensitiveCompare(rhs.desktopName) == .orderedAscending
