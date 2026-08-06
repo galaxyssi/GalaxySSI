@@ -10,18 +10,27 @@ import androidx.core.content.ContextCompat
 import kotlin.math.PI
 import kotlin.math.sin
 
-internal class AgentVoiceTranscriptionPendingView(context: Context) : LinearLayout(context) {
+internal class AgentVoiceTranscriptionPendingView(
+    context: Context,
+    bubbleBackground: Boolean = true,
+    accessibilityText: CharSequence = context.getString(R.string.voice_status_recognizing)
+) : LinearLayout(context) {
     private val dots = List(DOT_COUNT) { createDot() }
     private var pulseAnimator: ValueAnimator? = null
 
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER
-        minimumWidth = dp(96)
-        minimumHeight = dp(44)
-        setPadding(dp(15), dp(10), dp(15), dp(10))
-        setBackgroundResource(R.drawable.bubble_agent_user_background)
-        contentDescription = context.getString(R.string.voice_status_recognizing)
+        minimumWidth = dp(if (bubbleBackground) 96 else 48)
+        minimumHeight = dp(if (bubbleBackground) 44 else 32)
+        if (bubbleBackground) {
+            setPadding(dp(15), dp(10), dp(15), dp(10))
+            setBackgroundResource(R.drawable.bubble_agent_user_background)
+        } else {
+            setPadding(dp(2), dp(7), dp(2), dp(7))
+            background = null
+        }
+        contentDescription = accessibilityText
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         dots.forEachIndexed { index, dot ->
             addView(dot, LayoutParams(dp(7), dp(7)).apply {
