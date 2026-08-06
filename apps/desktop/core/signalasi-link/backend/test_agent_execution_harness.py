@@ -190,6 +190,16 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             type(policy).from_public(policy.public()),
         )
 
+    def test_traditional_chinese_mobile_game_request_requires_artifact(self):
+        policy = execution_policy_for(
+            "\u958b\u767c\u4e00\u500b\u53ef\u4ee5\u73a9\u7684\u904a\u6232\u4e26\u4e14\u767c\u5230\u624b\u6a5f\u4e0a\u4f86\u8b93\u6211\u73a9\u4e00\u4e0b"
+        )
+
+        self.assertEqual(AgentTaskKind.BUILD, policy.task_kind)
+        self.assertEqual(AgentReasoningEffort.MEDIUM, policy.reasoning_effort)
+        self.assertEqual("android", policy.target_platform)
+        self.assertTrue(policy.requires_artifact)
+
     def test_volatile_information_words_do_not_force_research_policy(self):
         for prompt in (
             "What is the weather today?",

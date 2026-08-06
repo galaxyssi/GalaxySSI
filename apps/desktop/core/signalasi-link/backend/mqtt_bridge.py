@@ -3962,15 +3962,36 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             discard_task_workspace_if_no_artifacts,
             prepare_artifacts,
             register_artifact_batch,
+            should_deliver_task_artifacts,
         )
         from rich_output import build_rich_output
         from response_policy import remove_unfulfilled_artifact_claims, sanitize_assistant_response
-        from task_workspace import referenced_task_artifact_paths, task_workspace
+        from task_workspace import (
+            referenced_task_artifact_paths,
+            task_artifacts,
+            task_workspace,
+        )
         task_id = str(task.get("task_id") or "")
         raw_result = str(task.get("result") or "")
         hidden_inputs: list[str] = []
         hidden_artifact_paths: list[str] = []
-        if fast_chat_delivery:
+        generated_output_files = task_artifacts(task_id)
+        referenced_output_paths = referenced_task_artifact_paths(raw_result)
+        deliver_task_artifacts = should_deliver_task_artifacts(
+            fast_chat_delivery=fast_chat_delivery,
+            plan_only=plan_only,
+            generated_output_files=generated_output_files,
+            referenced_output_paths=referenced_output_paths,
+        )
+        recover_artifact_delivery = fast_chat_delivery and deliver_task_artifacts
+        artifact_fast_path = fast_chat_delivery and not recover_artifact_delivery
+        if recover_artifact_delivery:
+            add_task_trace(
+                "artifact_delivery_recovered",
+                f"generated={len(generated_output_files)} referenced={len(referenced_output_paths)}",
+                once=True,
+            )
+        if artifact_fast_path:
             finalization = ArtifactFinalization(
                 output_files=(),
                 verification={"status": "not_required", "reason": "chat"},
@@ -3982,7 +4003,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 ).glob("*")
             ]
             hidden_artifact_paths = [
-                str(path) for path in referenced_task_artifact_paths(raw_result)
+                str(path) for path in referenced_output_paths
             ]
             finalization = (
                 ArtifactFinalization(
@@ -4001,7 +4022,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
             )
         output_files = list(finalization.output_files)
-        artifacts = [] if fast_chat_delivery else prepare_artifacts(task_id, output_files)
+        artifacts = [] if artifact_fast_path else prepare_artifacts(task_id, output_files)
         deliverable_paths = {item.relative_path.casefold() for item in artifacts}
         deliverable_output_files = [
             item for item in output_files
@@ -4009,7 +4030,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             in deliverable_paths
         ]
         retain_on_desktop = bool(
-            not fast_chat_delivery
+            not artifact_fast_path
             and full_desktop_executor
             and _requests_desktop_artifact_retention(current_user_request)
         )
