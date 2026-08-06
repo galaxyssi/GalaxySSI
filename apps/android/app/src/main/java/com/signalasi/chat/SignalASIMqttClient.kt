@@ -151,18 +151,28 @@ internal class MqttSubscriptionRecoveryState {
     }
 }
 
+internal fun mqttInboundRouteScope(topic: String): String {
+    val segments = topic.split('/')
+    return if (segments.size >= 5 && segments[0] == "signalasichat") {
+        "${segments[2]}/${segments[3]}"
+    } else {
+        topic
+    }
+}
+
 object SignalASIMqttClient {
     private const val TAG = "SignalASILink"
     private const val SERVER_URI = "ssl://broker.emqx.io:8883"
-    private const val MQTT_TRANSPORT_EPOCH = "v8-resumable-attachments"
+    private const val MQTT_TRANSPORT_EPOCH = "v9-bounded-route-delivery"
     private const val MQTT_QOS = 1
     private const val MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
     private const val SUBSCRIPTION_RETRY_DELAY_MILLIS = 3_000L
-    private const val MQTT_MAX_INFLIGHT = 64
-    private const val MAX_FRAGMENT_INFLIGHT = 48
-    private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
+    private const val MQTT_MAX_INFLIGHT = 12
+    private const val MAX_FRAGMENT_INFLIGHT = 8
+    private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
     private const val MAX_OUTBOX_RETRY_BATCH = 4
+    private const val MAX_OUTBOX_DELIVERY_ATTEMPTS = 6
     private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
     private const val MQTT_BROKER_ACK_TIMEOUT_MILLIS = 12_000L
@@ -194,6 +204,7 @@ object SignalASIMqttClient {
     private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-inbound-replay").apply { isDaemon = true }
     }
+    private val inboundMqttExecutors = ConcurrentHashMap<String, java.util.concurrent.ExecutorService>()
     private val attachmentTransferExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-link-attachments").apply { isDaemon = true }
     }
@@ -248,6 +259,7 @@ object SignalASIMqttClient {
         fun onConnectionChanged(isConnected: Boolean) = Unit
         fun onSecureChannelChanged(isReady: Boolean) = Unit
         fun onMessage(payload: String) = Unit
+        fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) = Unit
         fun onPcInfo(ip: String, port: Int) = Unit
     }
 
@@ -515,8 +527,20 @@ object SignalASIMqttClient {
                     if (client !== callbackClient) return
                     val payload = message?.payload?.toString(Charsets.UTF_8).orEmpty()
                     if (payload.isBlank()) return
-                    runCatching { handleIncoming(topic.orEmpty(), JSONObject(payload)) }
-                        .onFailure { Log.e(TAG, "Failed to handle incoming MQTT message", it) }
+                    val incomingTopic = topic.orEmpty()
+                    val routeScope = mqttInboundRouteScope(incomingTopic)
+                    val routeExecutor = inboundMqttExecutors.computeIfAbsent(routeScope) {
+                        Executors.newSingleThreadExecutor { runnable ->
+                            Thread(
+                                runnable,
+                                "signalasi-mqtt-inbound-${routeScope.hashCode().toUInt().toString(16)}"
+                            ).apply { isDaemon = true }
+                        }
+                    }
+                    routeExecutor.execute {
+                        runCatching { handleIncoming(incomingTopic, JSONObject(payload)) }
+                            .onFailure { Log.e(TAG, "Failed to handle incoming MQTT message", it) }
+                    }
                 }
 
                 override fun deliveryComplete(token: IMqttDeliveryToken?) {
@@ -1153,6 +1177,13 @@ object SignalASIMqttClient {
         queueOnly: Boolean = false,
         blockedByAttachmentTransferIds: Collection<String> = emptyList()
     ): MqttPublishResult {
+        if (SignalASITransportPrivacyPolicy.isLocalOnly(payload)) {
+            Log.w(
+                TAG,
+                "Publish rejected by local-only privacy boundary type=${payload.optString("type")}"
+            )
+            return MqttPublishResult.FAILED
+        }
         if (topic.isNullOrBlank()) {
             Log.w(TAG, "Publish rejected: target topic is blank")
             return MqttPublishResult.FAILED
@@ -1259,7 +1290,9 @@ object SignalASIMqttClient {
             topic,
             wirePayload,
             requiresValidatedNetwork = deferMediaUpload,
-            blockedByAttachmentTransferIds = blockedByAttachmentTransferIds
+            blockedByAttachmentTransferIds = blockedByAttachmentTransferIds,
+            clientSourceMessageId = payload.optLong("source_message_id"),
+            contactId = contactId
         )
         if (queueOnly) {
             if (client?.isConnected != true) connect(context)
@@ -1305,11 +1338,29 @@ object SignalASIMqttClient {
         val context = appContext ?: return
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
+        SignalASILinkDeliveryStore.discardExhausted(
+            context,
+            MAX_OUTBOX_DELIVERY_ATTEMPTS
+        ).forEach { exhausted ->
+            Log.e(
+                TAG,
+                "MQTT delivery exhausted message=${exhausted.messageId} " +
+                    "contact=${exhausted.contactId} attempts=${exhausted.attempts}"
+            )
+            listeners.forEach { listener ->
+                listener.onDeliveryFailed(
+                    exhausted.clientSourceMessageId,
+                    exhausted.contactId,
+                    "delivery_retry_exhausted"
+                )
+            }
+        }
         val mediaProfile = AgentMediaNetworkDetector.detect(context)
         for (
             pending in SignalASILinkDeliveryStore.pending(
                 context,
-                allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia
+                allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia,
+                maxAttempts = MAX_OUTBOX_DELIVERY_ATTEMPTS
             ).take(MAX_OUTBOX_RETRY_BATCH)
         ) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
@@ -1700,6 +1751,29 @@ object SignalASIMqttClient {
             return
         }
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
+        val incomingMessageId = payload.optString("message_id")
+        SignalASILinkDeliveryStore.bindCiphertext(
+            context,
+            ciphertextDigest,
+            incomingMessageId,
+            receiptRequired = payload.optString("type") != "delivery_ack"
+        )
+        if (SignalASITransportPrivacyPolicy.isLocalOnly(payload)) {
+            val stage = SignalASILinkDeliveryStore.stageIncoming(
+                context,
+                incomingMessageId,
+                payload.toString()
+            )
+            if (stage != SignalASILinkDeliveryStore.IncomingStageResult.INVALID) {
+                publishInboundReceipt(link, incomingMessageId)
+                SignalASILinkDeliveryStore.completeIncoming(context, incomingMessageId)
+            }
+            Log.w(
+                TAG,
+                "Dropped local-only payload received from transport type=${payload.optString("type")}"
+            )
+            return
+        }
         if (
             payload.optString("task_id").isNotBlank() &&
             payload.optString("type") in setOf(
@@ -1725,13 +1799,6 @@ object SignalASIMqttClient {
                 return
             }
         }
-        val incomingMessageId = payload.optString("message_id")
-        SignalASILinkDeliveryStore.bindCiphertext(
-            context,
-            ciphertextDigest,
-            incomingMessageId,
-            receiptRequired = payload.optString("type") != "delivery_ack"
-        )
         if (payload.optString("type") == "delivery_ack") {
             SignalASILinkDeliveryAckPolicy.transportMessageId(payload)
                 .takeIf(String::isNotBlank)

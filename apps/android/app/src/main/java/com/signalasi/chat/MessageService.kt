@@ -113,6 +113,18 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         if (isReady) requestRecoveryCycle()
     }
 
+    override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
+        if (sourceMessageId <= 0L || contactId.isBlank()) return
+        ChatHistoryStore.markOutgoingDelivery(
+            this,
+            contactId,
+            sourceMessageId,
+            "delivery_failed",
+            reason,
+            getString(R.string.delivery_status_failed)
+        )
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         scheduleServiceRecoveryWake()
         super.onTaskRemoved(rootIntent)

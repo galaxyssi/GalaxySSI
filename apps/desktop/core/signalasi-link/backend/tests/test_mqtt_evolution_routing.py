@@ -67,7 +67,7 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
         for item in reversed(self.patches):
             item.stop()
 
-    def test_snapshot_contains_only_tasks_owned_by_requesting_phone(self):
+    def test_snapshot_never_leaves_desktop(self):
         manager = FakeManager([
             fake_task("owned", "route-a"),
             fake_task("other-phone", "route-b"),
@@ -76,12 +76,9 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
         with patch.object(evolution_manager, "evolution_manager", return_value=manager):
             mqtt_bridge._publish_evolution_snapshot(object(), self.client)
 
-        self.assertEqual(["owned"], [
-            task["task_id"] for task in self.published[-1]["tasks"]
-        ])
-        self.assertEqual("desktop-test", self.published[-1]["desktop_id"])
+        self.assertEqual([], self.published)
 
-    def test_phone_cannot_control_another_phone_candidate(self):
+    def test_phone_cannot_control_private_evolution(self):
         manager = FakeManager([fake_task("other-phone", "route-b")])
         with (
             patch.object(evolution_manager, "evolution_manager", return_value=manager),
@@ -98,10 +95,9 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
 
         self.assertTrue(handled)
         self.assertEqual([], manager.cancelled)
-        self.assertEqual("task_owner_mismatch", self.published[-1]["error_code"])
-        self.assertEqual("desktop-test", self.published[-1]["desktop_id"])
+        self.assertEqual([], self.published)
 
-    def test_restricted_pairing_receives_a_named_rejection_event(self):
+    def test_restricted_pairing_does_not_receive_private_rejection_details(self):
         restricted = {
             **self.client,
             "access": grant_for_executor(False),
@@ -114,11 +110,9 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
         )
 
         self.assertTrue(handled)
-        self.assertEqual("desktop_executor_required", self.published[-1]["error_code"])
-        self.assertEqual("desktop-test", self.published[-1]["desktop_id"])
-        self.assertEqual("Test Desktop", self.published[-1]["desktop_name"])
+        self.assertEqual([], self.published)
 
-    def test_local_evolution_events_reach_only_full_executor_pairings(self):
+    def test_local_evolution_events_never_reach_pairings(self):
         restricted = {
             "client_route_id": "route-b",
             "access": grant_for_executor(False),
@@ -132,9 +126,23 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
                 "task": {"task_id": "desktop-local"},
             })
 
-        self.assertEqual({"ok": True, "published": 1}, result)
-        self.assertEqual(1, len(self.published))
-        self.assertEqual("candidate_ready", self.published[0]["event"])
+        self.assertEqual({"ok": True, "published": 0, "code": "local_only"}, result)
+        self.assertEqual([], self.published)
+
+    def test_transport_policy_blocks_all_private_global_payload_classes(self):
+        samples = [
+            {"type": "evolution_task_event"},
+            {"type": "memory_evolution_candidate"},
+            {"type": "global_agent_event"},
+            {"type": "text", "conversation_id": "global-research:task-1"},
+            {"type": "text", "task_kind": "self_evolution"},
+        ]
+
+        self.assertTrue(all(mqtt_bridge._local_only_transport_payload(item) for item in samples))
+        self.assertFalse(mqtt_bridge._local_only_transport_payload({
+            "type": "text",
+            "conversation_id": "user-conversation",
+        }))
 
 
 if __name__ == "__main__":

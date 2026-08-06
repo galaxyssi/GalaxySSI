@@ -42,6 +42,7 @@ from link_delivery import (
     claim_message,
     complete_message,
     ensure_transport_epoch,
+    fail_exhausted_outbound,
     mark_outbound_published,
     mark_outbound_retryable,
     mark_outbound_sending,
@@ -120,7 +121,7 @@ PORT = int(os.environ.get("SIGNALASI_MQTT_PORT", "8883"))
 MQTT_TLS = os.environ.get("SIGNALASI_MQTT_TLS", "1") != "0"
 FILES_DIR = Path.home() / "signalasi_files"
 MQTT_QOS = 1
-MQTT_TRANSPORT_EPOCH = "v8-route-ordered-delivery"
+MQTT_TRANSPORT_EPOCH = "v9-bounded-route-delivery"
 MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
@@ -161,12 +162,12 @@ transport_reconnect_in_progress = threading.Event()
 inbound_route_queues: dict[str, queue.Queue] = {}
 inbound_route_queues_lock = threading.Lock()
 INBOUND_ROUTE_IDLE_SECONDS = 120
-MQTT_MAX_INFLIGHT = 64
-MAX_FRAGMENT_INFLIGHT = 48
-MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
-MAX_DURABLE_OUTBOUND_INFLIGHT = 32
-MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 4
-MAX_DURABLE_OUTBOUND_BATCH = 8
+MQTT_MAX_INFLIGHT = 12
+MAX_FRAGMENT_INFLIGHT = 8
+MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
+MAX_DURABLE_OUTBOUND_INFLIGHT = 4
+MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 2
+MAX_DURABLE_OUTBOUND_BATCH = 4
 OUTBOUND_RETRY_POLL_SECONDS = 1.0
 CAPABILITY_MANIFEST_VERSION = 2
 durable_outbound_lock = threading.RLock()
@@ -204,6 +205,36 @@ EVOLUTION_CANDIDATE_ROLLBACK_TYPE = "evolution_candidate_rollback"
 EVOLUTION_CANDIDATE_PUBLISH_TYPE = "evolution_candidate_publish"
 EVOLUTION_TASK_LIST_REQUEST_TYPE = "evolution_task_list_request"
 PROACTIVE_TASK_EVENT_TYPE = "proactive_task_event"
+
+
+def _local_only_transport_payload(payload: Mapping[str, Any] | None) -> bool:
+    value = dict(payload or {})
+    message_type = str(value.get("type") or "").strip().lower()
+    if message_type.startswith((
+        "evolution_",
+        "self_evolution",
+        "memory_evolution",
+        "global_agent",
+        "global_memory",
+        "global_cognition",
+        "global_research",
+    )):
+        return True
+    conversation_id = str(value.get("conversation_id") or "").strip().lower()
+    if conversation_id.startswith((
+        "global-cognition:",
+        "global-research:",
+        "global-run:",
+        "global-replan:",
+        "self-evolution:",
+        "memory-evolution:",
+    )):
+        return True
+    return str(value.get("task_kind") or "").strip().lower() in {
+        "self_evolution",
+        "memory_evolution",
+        "global_agent",
+    }
 PROACTIVE_WEBHOOK_EVENT_TYPE = "proactive_webhook_event"
 EVOLUTION_COMMAND_TYPES = {
     EVOLUTION_TASK_CREATE_TYPE,
@@ -2240,6 +2271,12 @@ def _publish_phone_payload(
     *,
     durable: bool | None = None,
 ) -> bool:
+    if _local_only_transport_payload(reply_payload):
+        log.warning(
+            "Blocked local-only payload from phone transport type=%s",
+            reply_payload.get("type"),
+        )
+        return False
     paired_client = _wire_client(wire_payload)
     if not paired_client:
         log.warning("Phone publish skipped: no active client route")
@@ -2284,38 +2321,8 @@ def _publish_phone_payload(
 
 
 def publish_evolution_task_event_all(event: dict) -> dict:
-    mqttc = client
-    if mqttc is None:
-        return {"ok": False, "published": 0, "code": "mqtt_unavailable"}
-    value = dict(event or {})
-    requested_route = str(value.pop("_client_route_id", "") or "").strip()
-    value["type"] = EVOLUTION_TASK_EVENT_TYPE
-    value.setdefault("desktop_id", desktop_id())
-    value.setdefault("desktop_name", desktop_name())
-    candidates = (
-        [get_client(requested_route)]
-        if requested_route
-        else list_clients()
-    )
-    published = 0
-    for paired_client in candidates:
-        if (
-            not paired_client
-            or paired_client.get("revoked_at")
-            or not has_full_executor(paired_client)
-        ):
-            continue
-        route_id = str(paired_client.get("client_route_id") or "")
-        if not route_id:
-            continue
-        if _publish_phone_payload(
-            mqttc,
-            {"scheme": "signal", "_client_route_id": route_id},
-            dict(value),
-            durable=True,
-        ):
-            published += 1
-    return {"ok": published > 0, "published": published}
+    del event
+    return {"ok": True, "published": 0, "code": "local_only"}
 
 
 def publish_proactive_task_event_all(event: dict) -> dict:
@@ -2382,6 +2389,10 @@ def publish_proactive_webhook_event(
 
 
 def _publish_evolution_snapshot(mqttc, paired_client: dict) -> None:
+    del mqttc, paired_client
+    log.warning("Blocked private evolution snapshot from MQTT transport")
+    return
+
     from evolution_manager import evolution_manager
 
     route_id = str(paired_client.get("client_route_id") or "")
@@ -2411,6 +2422,10 @@ def _route_evolution_payload(mqttc, paired_client: dict, payload: dict) -> bool:
     message_type = str(payload.get("type") or "")
     if message_type not in EVOLUTION_COMMAND_TYPES:
         return False
+    del mqttc, paired_client
+    log.warning("Blocked private evolution command from MQTT transport type=%s", message_type)
+    return True
+
     route_id = str(paired_client.get("client_route_id") or "")
     wire_payload = {"scheme": "signal", "_client_route_id": route_id}
     if not has_full_executor(paired_client):
@@ -5567,6 +5582,14 @@ def _process_message(mqttc, userdata, msg):
                 accepted_delivery_ack_payload(payload, message_id, trace),
             )
 
+        if _local_only_transport_payload(payload):
+            log.warning(
+                "Ignored local-only payload received over MQTT type=%s client=%s",
+                payload.get("type"),
+                client_route_id[-8:],
+            )
+            return
+
         if _route_remote_whisper_payload(
             mqttc,
             wire_payload,
@@ -6334,6 +6357,12 @@ def _schedule_requested_connector_state(
 def _publish_to_registered_client(
     mqttc, paired_client: dict, payload: dict, channel: str = "down", durable: bool = True
 ):
+    if _local_only_transport_payload(payload):
+        log.warning(
+            "Blocked local-only payload from registered-client transport type=%s",
+            payload.get("type"),
+        )
+        return _DeferredPublishInfo()
     with phone_publish_lock:
         application_envelope = make_envelope(
             payload,
@@ -6387,6 +6416,13 @@ def flush_outbound_messages(
         return {}
     published: dict[tuple[str, str], object] = {}
     with durable_outbound_lock:
+        for exhausted in fail_exhausted_outbound():
+            log.error(
+                "MQTT durable delivery exhausted client=%s message=%s attempts=%s",
+                str(exhausted["client_route_id"])[-8:],
+                str(exhausted["message_id"])[:12],
+                exhausted["attempts"],
+            )
         available = max(
             0,
             MAX_DURABLE_OUTBOUND_INFLIGHT - outbound_inflight_count(),
@@ -6434,9 +6470,15 @@ def flush_outbound_messages(
                     pending["topic"],
                     pending["wire_payload"],
                 )
-            except Exception:
+            except Exception as exc:
                 mark_outbound_retryable(client_route_id, message_id)
-                raise
+                log.warning(
+                    "MQTT durable publish failed client=%s message=%s error=%s",
+                    client_route_id[-8:],
+                    message_id[:12],
+                    exc,
+                )
+                continue
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 mark_outbound_retryable(client_route_id, message_id)
                 log.warning(
@@ -6445,7 +6487,7 @@ def flush_outbound_messages(
                     client_route_id[-8:],
                     message_id[:12],
                 )
-                break
+                continue
             track_outbound_publish(info, client_route_id, message_id)
             published[(client_route_id, message_id)] = info
     return published

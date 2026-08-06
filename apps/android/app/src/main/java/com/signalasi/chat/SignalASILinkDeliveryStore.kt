@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.ArrayDeque
 import java.util.UUID
 
 object SignalASILinkDeliveryStore {
@@ -44,6 +45,13 @@ object SignalASILinkDeliveryStore {
         val requiresValidatedNetwork: Boolean
     )
 
+    data class ExhaustedMessage(
+        val messageId: String,
+        val clientSourceMessageId: Long,
+        val contactId: String,
+        val attempts: Int
+    )
+
     data class PendingIncoming(
         val messageId: String,
         val payload: String,
@@ -73,7 +81,9 @@ object SignalASILinkDeliveryStore {
         topic: String,
         wirePayload: String,
         requiresValidatedNetwork: Boolean = false,
-        blockedByAttachmentTransferIds: Collection<String> = emptyList()
+        blockedByAttachmentTransferIds: Collection<String> = emptyList(),
+        clientSourceMessageId: Long = 0L,
+        contactId: String = ""
     ) {
         val values = outboxArray(context)
         for (index in 0 until values.length()) {
@@ -85,6 +95,8 @@ object SignalASILinkDeliveryStore {
             .put("status", "queued")
             .put("attempts", 0)
             .put("requires_validated_network", requiresValidatedNetwork)
+            .put("client_source_message_id", clientSourceMessageId)
+            .put("contact_id", contactId)
             .put("next_attempt_at", System.currentTimeMillis())
             .put("created_at", System.currentTimeMillis())
             .put("updated_at", System.currentTimeMillis())
@@ -218,6 +230,34 @@ object SignalASILinkDeliveryStore {
     }
 
     @Synchronized
+    fun discardExhausted(context: Context, maxAttempts: Int): List<ExhaustedMessage> {
+        require(maxAttempts > 0) { "Maximum delivery attempts must be positive" }
+        val source = outboxArray(context)
+        val kept = JSONArray()
+        val exhausted = buildList {
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val attempts = item.optInt("attempts")
+                if (attempts < maxAttempts) {
+                    kept.put(item)
+                    continue
+                }
+                deleteWirePayload(context, item)
+                add(
+                    ExhaustedMessage(
+                        messageId = item.optString("message_id"),
+                        clientSourceMessageId = item.optLong("client_source_message_id"),
+                        contactId = item.optString("contact_id"),
+                        attempts = attempts
+                    )
+                )
+            }
+        }
+        if (exhausted.isNotEmpty()) writeArray(context, KEY_OUTBOX, kept)
+        return exhausted
+    }
+
+    @Synchronized
     fun discardRoutes(context: Context, routes: SignalASILinkProtocol.Routes): Int {
         val source = outboxArray(context)
         val discardedTopics = setOf(routes.up, routes.down, routes.control, routes.pairing)
@@ -234,11 +274,13 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun pending(
         context: Context,
-        allowValidatedNetworkMessages: Boolean = true
+        allowValidatedNetworkMessages: Boolean = true,
+        maxAttempts: Int = Int.MAX_VALUE
     ): List<PendingMessage> = pendingFromArray(
         outboxArray(context),
         System.currentTimeMillis(),
-        allowValidatedNetworkMessages
+        allowValidatedNetworkMessages,
+        maxAttempts
     ) { item ->
         item.optString("wire_payload").ifBlank {
             readWirePayload(context, item.optString(WIRE_PAYLOAD_FILE))
@@ -298,29 +340,48 @@ object SignalASILinkDeliveryStore {
         values: JSONArray,
         nowMillis: Long,
         allowValidatedNetworkMessages: Boolean = true,
+        maxAttempts: Int = Int.MAX_VALUE,
         wirePayload: (JSONObject) -> String = { it.optString("wire_payload") }
-    ): List<PendingMessage> =
-        buildList {
-            for (index in 0 until values.length()) {
-                val item = values.optJSONObject(index) ?: continue
-                if (hasAttachmentDependencies(item)) continue
-                if (
-                    item.optBoolean("requires_validated_network", false) &&
-                    !allowValidatedNetworkMessages
-                ) continue
-                if (item.optLong("next_attempt_at") > nowMillis) continue
-                add(
-                    PendingMessage(
-                        item.optString("message_id"),
-                        item.optString("topic"),
-                        wirePayload(item),
-                        item.optInt("attempts"),
-                        item.optLong("created_at"),
-                        item.optBoolean("requires_validated_network", false)
-                    )
-                )
+    ): List<PendingMessage> {
+        val byRoute = linkedMapOf<String, ArrayDeque<PendingMessage>>()
+        for (index in 0 until values.length()) {
+            val item = values.optJSONObject(index) ?: continue
+            if (hasAttachmentDependencies(item)) continue
+            if (
+                item.optBoolean("requires_validated_network", false) &&
+                !allowValidatedNetworkMessages
+            ) continue
+            if (item.optInt("attempts") >= maxAttempts) continue
+            if (item.optLong("next_attempt_at") > nowMillis) continue
+            val topic = item.optString("topic")
+            val pending = PendingMessage(
+                item.optString("message_id"),
+                topic,
+                wirePayload(item),
+                item.optInt("attempts"),
+                item.optLong("created_at"),
+                item.optBoolean("requires_validated_network", false)
+            )
+            byRoute.getOrPut(routeScope(topic)) { ArrayDeque() }.addLast(pending)
+        }
+        return buildList {
+            val activeRoutes = ArrayDeque(byRoute.values)
+            while (activeRoutes.isNotEmpty()) {
+                val route = activeRoutes.removeFirst()
+                add(route.removeFirst())
+                if (route.isNotEmpty()) activeRoutes.addLast(route)
             }
         }
+    }
+
+    private fun routeScope(topic: String): String {
+        val segments = topic.split('/')
+        return if (segments.size >= 5 && segments[0] == "signalasichat") {
+            "${segments[2]}/${segments[3]}"
+        } else {
+            topic
+        }
+    }
 
     fun claimIncoming(context: Context, messageId: String): Boolean = synchronized(INBOUND_LOCK) {
         if (messageId.isBlank()) return@synchronized false

@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -10,6 +11,41 @@ import org.junit.Test
 import java.util.UUID
 
 class SignalASILinkProtocolTest {
+    @Test
+    fun privateGlobalStateNeverEntersTheTransport() {
+        assertTrue(
+            SignalASITransportPrivacyPolicy.isLocalOnly(
+                JSONObject().put("type", "text").put("conversation_id", "global-cognition:task")
+            )
+        )
+        assertTrue(
+            SignalASITransportPrivacyPolicy.isLocalOnly(
+                JSONObject().put("type", "evolution_task_event")
+            )
+        )
+        assertFalse(
+            SignalASITransportPrivacyPolicy.isLocalOnly(
+                JSONObject().put("type", "text").put("conversation_id", "user-session")
+            )
+        )
+    }
+
+    @Test
+    fun mqttInboundWorkIsScopedPerSignalRelationship() {
+        assertEquals(
+            "server-a/client-a",
+            mqttInboundRouteScope("signalasichat/v1/server-a/client-a/down")
+        )
+        assertEquals(
+            "server-a/client-a",
+            mqttInboundRouteScope("signalasichat/v1/server-a/client-a/control")
+        )
+        assertEquals(
+            "server-b/client-b",
+            mqttInboundRouteScope("signalasichat/v1/server-b/client-b/down")
+        )
+    }
+
     @Test
     fun routeIdsAreOpaque128BitBase64UrlValues() {
         val first = SignalASILinkProtocol.newRouteId()
@@ -78,7 +114,7 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
-    fun deliveryRetriesRemainEligibleAfterManyAttempts() {
+    fun deliveryRetriesStopAfterTheBoundedBudget() {
         assertEquals(2_000L, SignalASILinkRetryPolicy.delayMillis(1))
         assertEquals(256_000L, SignalASILinkRetryPolicy.delayMillis(8))
         assertEquals(300_000L, SignalASILinkRetryPolicy.delayMillis(9))
@@ -98,9 +134,28 @@ class SignalASILinkProtocolTest {
                     .put("next_attempt_at", now + 1L)
                     .put("created_at", 2L)
             )
+        val pending = SignalASILinkDeliveryStore.pendingFromArray(
+            values,
+            now,
+            maxAttempts = 6
+        )
+        assertEquals(emptyList<String>(), pending.map { it.messageId })
+    }
+
+    @Test
+    fun pendingOutboxRoundRobinsIndependentRoutes() {
+        val now = 1_000_000L
+        val firstRoute = "signalasichat/v1/server-a/client-a/up"
+        val secondRoute = "signalasichat/v1/server-b/client-b/up"
+        val values = JSONArray()
+            .put(outboxMessage("a-1", firstRoute).put("next_attempt_at", now))
+            .put(outboxMessage("a-2", firstRoute).put("next_attempt_at", now))
+            .put(outboxMessage("b-1", secondRoute).put("next_attempt_at", now))
+            .put(outboxMessage("b-2", secondRoute).put("next_attempt_at", now))
+
         val pending = SignalASILinkDeliveryStore.pendingFromArray(values, now)
-        assertEquals(1, pending.size)
-        assertEquals("many-attempts", pending.single().messageId)
+
+        assertEquals(listOf("a-1", "b-1", "a-2", "b-2"), pending.map { it.messageId })
     }
 
     @Test

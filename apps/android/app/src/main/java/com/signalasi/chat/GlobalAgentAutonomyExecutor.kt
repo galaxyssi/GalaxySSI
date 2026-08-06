@@ -44,6 +44,43 @@ class GlobalCognitionExecutor(context: Context) {
         val resourceId = candidates.firstOrNull().orEmpty()
         if (resourceId.isBlank()) return waitForResource(task, "No trusted reasoning resource is currently available")
         val prompt = buildPrompt(task, toolCatalogBlock)
+        if (resourceId == LOCAL_PRIVATE_MODEL_RESOURCE) {
+            val ownerKey = cognitionBudgetOwner(task)
+            val permit = modelCallBudget.acquire(
+                GlobalModelCallKind.COGNITION,
+                ownerKey,
+                GlobalCognitionTaskPolicy.LEASE_MILLIS,
+                settings,
+                resourceId,
+                GlobalModelUsageEstimator.estimateTokens(COGNITION_SYSTEM_PROMPT, prompt)
+            )
+            if (!permit.granted) return waitForModelBudget(task, permit)
+            val running = markRunning(task, resourceId, 0L)
+            val startedAt = System.currentTimeMillis()
+            val response = runPrivateGlobalInference(
+                appContext,
+                COGNITION_SYSTEM_PROMPT,
+                buildPrompt(running, toolCatalogBlock)
+            )
+            val inference = response.getOrNull()
+            if (inference != null) {
+                modelCallBudget.complete(
+                    GlobalModelCallKind.COGNITION,
+                    ownerKey,
+                    GlobalModelUsageEstimator.estimateTokens(COGNITION_SYSTEM_PROMPT, prompt),
+                    GlobalModelUsageEstimator.estimateTokens(inference.text),
+                    0L,
+                    inference.text
+                )
+            } else modelCallBudget.release(GlobalModelCallKind.COGNITION, ownerKey)
+            AgentResourceHealthStore(appContext).record(
+                "target:$resourceId",
+                inference != null,
+                System.currentTimeMillis() - startedAt
+            )
+            return if (inference != null) complete(running, inference.text, resourceId)
+            else retryOrFail(running, naturalFailure(response.exceptionOrNull()))
+        }
         val cloud = resources.cloudContact(resourceId)
         if (cloud != null) {
             val ownerKey = cognitionBudgetOwner(task)
@@ -805,6 +842,35 @@ class GlobalAutonomousRunExecutor(context: Context) {
         if (resourceId.isBlank()) return failOrRetryAction(run, action, "No trusted execution resource is available")
         val assignment = GlobalSpecialistAssignmentPolicy.create(run, action, resourceId)
         val prompt = buildActionPrompt(run, action, assignment)
+        if (resourceId == LOCAL_PRIVATE_MODEL_RESOURCE) {
+            val ownerKey = actionBudgetOwner(run, action)
+            val permit = modelCallBudget.acquire(
+                GlobalModelCallKind.AUTONOMOUS_ACTION,
+                ownerKey,
+                GlobalAutonomousRunPolicy.LEASE_MILLIS,
+                repository.settings(),
+                resourceId,
+                GlobalModelUsageEstimator.estimateTokens(AUTONOMY_SYSTEM_PROMPT, prompt)
+            )
+            if (!permit.granted) return waitForActionModelBudget(run, action, permit)
+            val running = markActionRunning(run, action, resourceId, 0L)
+            val runningAction = running.actions.first { it.id == action.id }
+            val response = runPrivateGlobalInference(appContext, AUTONOMY_SYSTEM_PROMPT, prompt)
+            val inference = response.getOrNull()
+            if (inference != null) {
+                modelCallBudget.complete(
+                    GlobalModelCallKind.AUTONOMOUS_ACTION,
+                    ownerKey,
+                    GlobalModelUsageEstimator.estimateTokens(AUTONOMY_SYSTEM_PROMPT, prompt),
+                    GlobalModelUsageEstimator.estimateTokens(inference.text),
+                    0L,
+                    inference.text
+                )
+            } else modelCallBudget.release(GlobalModelCallKind.AUTONOMOUS_ACTION, ownerKey)
+            return if (inference != null) {
+                completeDelegatedResponse(running, runningAction, inference.text, assignment)
+            } else failOrRetryAction(running, runningAction, naturalFailure(response.exceptionOrNull()))
+        }
         val cloud = resources.cloudContact(resourceId)
         if (cloud != null) {
             val ownerKey = actionBudgetOwner(run, action)
@@ -1266,6 +1332,33 @@ class GlobalAutonomousRunExecutor(context: Context) {
             return failOrRetryPlanReview(run, "No trusted resource is available to revise the plan")
         }
         val prompt = buildPlanReviewPrompt(run)
+        if (resourceId == LOCAL_PRIVATE_MODEL_RESOURCE) {
+            val ownerKey = reviewBudgetOwner(run)
+            val permit = modelCallBudget.acquire(
+                GlobalModelCallKind.PLAN_REVIEW,
+                ownerKey,
+                GlobalAutonomousReplanPolicy.LEASE_MILLIS,
+                repository.settings(),
+                resourceId,
+                GlobalModelUsageEstimator.estimateTokens(REPLAN_SYSTEM_PROMPT, prompt)
+            )
+            if (!permit.granted) return waitForPlanReviewModelBudget(run, permit)
+            val running = markPlanReviewRunning(run, resourceId, 0L)
+            val response = runPrivateGlobalInference(appContext, REPLAN_SYSTEM_PROMPT, prompt)
+            val inference = response.getOrNull()
+            if (inference != null) {
+                modelCallBudget.complete(
+                    GlobalModelCallKind.PLAN_REVIEW,
+                    ownerKey,
+                    GlobalModelUsageEstimator.estimateTokens(REPLAN_SYSTEM_PROMPT, prompt),
+                    GlobalModelUsageEstimator.estimateTokens(inference.text),
+                    0L,
+                    inference.text
+                )
+            } else modelCallBudget.release(GlobalModelCallKind.PLAN_REVIEW, ownerKey)
+            return if (inference != null) completePlanReview(running, inference.text)
+            else failOrRetryPlanReview(running, naturalFailure(response.exceptionOrNull()))
+        }
         val cloud = resources.cloudContact(resourceId)
         if (cloud != null) {
             val ownerKey = reviewBudgetOwner(run)
@@ -1735,18 +1828,14 @@ You are the plan review layer of a persistent Personal ASI. Review actual step o
 
 private class GlobalAgentResourceResolver(context: Context) {
     private val appContext = context.applicationContext
-    private val registry = AppStoreAgentConnectorRegistry(appContext)
-    private val router = AgentResourceRouter(appContext)
 
-    fun route(goal: String, allowCloud: Boolean): List<String> {
-        val decision = router.route(goal, registry.availableTargets(), emptyList())
-        return (listOfNotNull(decision.primary) + decision.fallbacks)
-            .map(AgentResourceCandidate::resource)
-            .filter { it.status == AgentConnectorStatus.AVAILABLE }
-            .filter { allowCloud || it.location != AgentResourceLocation.CLOUD }
-            .map(AgentResourceDescriptor::targetId)
-            .filter(String::isNotBlank)
-            .distinct()
+    fun route(
+        @Suppress("UNUSED_PARAMETER") goal: String,
+        @Suppress("UNUSED_PARAMETER") allowCloud: Boolean
+    ): List<String> {
+        return if (LocalModelInferenceRuntime.ready(appContext)) {
+            listOf(LOCAL_PRIVATE_MODEL_RESOURCE)
+        } else emptyList()
     }
 
     fun cloudContact(resourceId: String): JSONObject? {
@@ -1814,5 +1903,25 @@ private fun naturalFailure(error: Throwable?): String {
     val message = error?.message.orEmpty().replace(Regex("\\s+"), " ").trim()
     return message.take(500).ifBlank { "The reasoning resource could not complete the task" }
 }
+
+private fun runPrivateGlobalInference(
+    context: Context,
+    systemPrompt: String,
+    userPrompt: String
+): Result<LocalModelInferenceResult> {
+    if (!LocalModelInferenceRuntime.ready(context)) {
+        return Result.failure(IllegalStateException("No private local model is ready"))
+    }
+    return runCatching {
+        LocalModelInferenceRuntime.generate(
+            context = context,
+            profile = LocalModelRuntimeSettings.selectedProfile(context),
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt
+        )
+    }
+}
+
+private const val LOCAL_PRIVATE_MODEL_RESOURCE = "local-llm"
 
 private val GLOBAL_CORRELATION_COUNTER = AtomicLong(System.currentTimeMillis() * 1_024L)

@@ -20,6 +20,7 @@ _lock = threading.RLock()
 OUTBOUND_RETENTION_SECONDS = 7 * 24 * 60 * 60
 OUTBOUND_RETRY_BASE_SECONDS = 5.0
 OUTBOUND_RETRY_MAX_SECONDS = 300.0
+OUTBOUND_MAX_ATTEMPTS = 6
 SECURE_STORAGE_VERSION = "1"
 ROUTE_PURPOSE = "link-delivery-route"
 
@@ -313,6 +314,38 @@ def mark_outbound_retryable(client_route_id: str, message_id: str) -> None:
             db.close()
 
 
+def fail_exhausted_outbound(max_attempts: int = OUTBOUND_MAX_ATTEMPTS) -> list[dict]:
+    """Quarantine exhausted ciphertexts without affecting other routes."""
+    normalized_max = max(1, int(max_attempts))
+    with _lock:
+        db = _connect()
+        try:
+            rows = db.execute(
+                """SELECT client_route_id,message_id,attempts
+                   FROM outbound_messages
+                   WHERE attempts>=? AND status IN ('queued','sending','published')
+                   ORDER BY created_at""",
+                (normalized_max,),
+            ).fetchall()
+            if rows:
+                db.execute(
+                    """UPDATE outbound_messages SET status='failed', updated_at=?
+                       WHERE attempts>=? AND status IN ('queued','sending','published')""",
+                    (time.time(), normalized_max),
+                )
+                db.commit()
+        finally:
+            db.close()
+    return [
+        {
+            "client_route_id": _unroute(row[0]),
+            "message_id": str(row[1]),
+            "attempts": int(row[2]),
+        }
+        for row in rows
+    ]
+
+
 def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
     with _lock:
         db = _connect()
@@ -468,7 +501,7 @@ def pending_outbound(
     now: float | None = None,
     client_route_id: str = "",
 ) -> list[dict]:
-    del max_attempts
+    retry_limit = OUTBOUND_MAX_ATTEMPTS if max_attempts is None else max(1, int(max_attempts))
     observed_at = time.time() if now is None else float(now)
     normalized_route_id = str(client_route_id or "").strip()
     with _lock:
@@ -508,7 +541,10 @@ def pending_outbound(
             "created_at": row[5],
             "updated_at": row[6],
             "status": row[7],
-        }, _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at))
+        }, (
+            int(row[4]) < retry_limit and
+            _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at)
+        ))
         for row in rows
     ]
     if normalized_route_id:

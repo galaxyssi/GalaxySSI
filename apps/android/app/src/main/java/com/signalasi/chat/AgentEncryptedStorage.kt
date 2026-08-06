@@ -63,39 +63,18 @@ class AgentEncryptedDatabase(
     private val database = sharedDatabase(context.applicationContext, databaseName)
 
     fun readString(key: String, defaultValue: String): String = synchronized(database) {
-        database.readableDatabase.query(
-            TABLE_VALUES, arrayOf("encrypted_value"), "storage_key = ?", arrayOf(key),
-            null, null, null, "1"
-        ).use { cursor ->
-            if (!cursor.moveToFirst()) {
-                defaultValue
-            } else {
-                AgentStorageCipher.decrypt(cursor.getString(0), associatedData(key)) ?: defaultValue
-            }
-        }
+        val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@synchronized defaultValue
+        AgentStorageCipher.decrypt(encrypted, associatedData(key)) ?: defaultValue
     }
 
     fun readStrings(keys: Collection<String>): Map<String, String> = synchronized(database) {
         val requested = keys.distinct()
         if (requested.isEmpty()) return@synchronized emptyMap()
         buildMap {
-            requested.chunked(MAX_QUERY_KEYS).forEach { chunk ->
-                val placeholders = List(chunk.size) { "?" }.joinToString(",")
-                database.readableDatabase.query(
-                    TABLE_VALUES,
-                    arrayOf("storage_key", "encrypted_value"),
-                    "storage_key IN ($placeholders)",
-                    chunk.toTypedArray(),
-                    null,
-                    null,
-                    null
-                ).use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val key = cursor.getString(0)
-                        AgentStorageCipher.decrypt(cursor.getString(1), associatedData(key))
-                            ?.let { value -> put(key, value) }
-                    }
-                }
+            requested.forEach { key ->
+                readEncryptedValue(database.readableDatabase, key)
+                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { value -> put(key, value) }
             }
         }
     }
@@ -192,23 +171,11 @@ class AgentEncryptedDatabase(
     }
 
     fun entries(prefix: String = ""): List<Pair<String, String>> = synchronized(database) {
-        val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
-        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
-        database.readableDatabase.query(
-            TABLE_VALUES,
-            arrayOf("storage_key", "encrypted_value"),
-            selection,
-            selectionArgs,
-            null,
-            null,
-            "storage_key ASC"
-        ).use { cursor ->
-            buildList {
-                while (cursor.moveToNext()) {
-                    val key = cursor.getString(0)
-                    AgentStorageCipher.decrypt(cursor.getString(1), associatedData(key))
-                        ?.let { value -> add(key to value) }
-                }
+        buildList {
+            keys(prefix).forEach { key ->
+                readEncryptedValue(database.readableDatabase, key)
+                    ?.let { encrypted -> AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+                    ?.let { value -> add(key to value) }
             }
         }
     }
@@ -221,6 +188,35 @@ class AgentEncryptedDatabase(
 
     private fun associatedData(key: String): ByteArray =
         "database:$databaseName:$key".toByteArray(Charsets.UTF_8)
+
+    private fun readEncryptedValue(database: SQLiteDatabase, key: String): String? {
+        val length = database.rawQuery(
+            "SELECT length(encrypted_value) FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1",
+            arrayOf(key)
+        ).use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getInt(0) else return null
+        }
+        if (length <= CURSOR_TEXT_CHUNK_CHARS) {
+            return database.rawQuery(
+                "SELECT encrypted_value FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1",
+                arrayOf(key)
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }
+        val value = StringBuilder(length)
+        var offset = 1
+        while (offset <= length) {
+            val chunk = database.rawQuery(
+                "SELECT substr(encrypted_value, ?, ?) FROM $TABLE_VALUES " +
+                    "WHERE storage_key = ? LIMIT 1",
+                arrayOf(offset.toString(), CURSOR_TEXT_CHUNK_CHARS.toString(), key)
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                ?: return null
+            value.append(chunk)
+            offset += chunk.length
+            if (chunk.isEmpty()) return null
+        }
+        return value.toString()
+    }
 
     private class SharedEncryptedDatabase(
         context: Context,
@@ -239,7 +235,7 @@ class AgentEncryptedDatabase(
 
     private companion object {
         const val TABLE_VALUES = "encrypted_values"
-        const val MAX_QUERY_KEYS = 500
+        const val CURSOR_TEXT_CHUNK_CHARS = 256 * 1024
         val DATABASES = ConcurrentHashMap<String, SharedEncryptedDatabase>()
 
         fun sharedDatabase(context: Context, databaseName: String): SharedEncryptedDatabase =

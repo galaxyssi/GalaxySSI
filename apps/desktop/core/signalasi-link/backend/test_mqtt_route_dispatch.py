@@ -152,6 +152,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
                 return_value=[{"client_route_id": "client", "last_seen_at": 1}],
             ),
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending[:1]) as select,
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
             patch.object(mqtt_bridge, "mark_outbound_sending") as mark_sending,
             patch.object(mqtt_bridge, "track_outbound_publish") as track,
