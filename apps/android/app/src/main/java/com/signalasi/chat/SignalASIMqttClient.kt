@@ -634,6 +634,17 @@ object SignalASIMqttClient {
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         runId: String = ""
     ): MqttPublishResult {
+        val publishStartedAt = SystemClock.elapsedRealtime()
+        var previousStageAt = publishStartedAt
+        fun recordPublishStage(stage: String, details: String = "") {
+            val now = SystemClock.elapsedRealtime()
+            Log.i(
+                "SignalASILatency",
+                "mqtt_publish stage=$stage delta_ms=${now - previousStageAt} " +
+                    "total_ms=${now - publishStartedAt}${details.takeIf(String::isNotBlank)?.let { " $it" }.orEmpty()}"
+            )
+            previousStageAt = now
+        }
         val context = appContext
         val resolvedConversationId = AgentTaskIdentityPolicy.conversationId(
             contactId,
@@ -671,6 +682,7 @@ object SignalASIMqttClient {
             .put("execution_mode", resolvedExecutionMode.wireValue)
             .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("time", System.currentTimeMillis())
+        recordPublishStage("payload_ready", "chars=${content.length}")
         runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }
         val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
             .orEmpty()
@@ -705,6 +717,7 @@ object SignalASIMqttClient {
                 turnId = resolvedTurnId
             )
         }
+        recordPublishStage("disclosure_ready", "attachments=${sourceAttachments.size}")
         if (disclosure?.allowed == false) return MqttPublishResult.FAILED
         fun disclosureFailed(reason: String): MqttPublishResult {
             if (context != null && disclosure != null) {
@@ -780,6 +793,7 @@ object SignalASIMqttClient {
                     .put("defer_media_upload", mediaProfile.deferMediaUpload)
             }
         }
+        recordPublishStage("metadata_ready")
         deliveryTrace?.let { payload.put("delivery_trace", it) }
         if (context != null) {
             AppStore.contactById(context, contactId)?.let { contact ->
@@ -817,9 +831,15 @@ object SignalASIMqttClient {
                     ) return disclosureFailed("Attachment chunk could not be queued")
                 }
             }
-            return disclosureCompleted(queuedTask)
+            return disclosureCompleted(queuedTask).also {
+                recordPublishStage("queued_with_attachments", "result=${it.name}")
+            }
         }
-        return disclosureCompleted(publishJsonResult(payload, topic, contactId))
+        val publishResult = publishJsonResult(payload, topic, contactId)
+        recordPublishStage("transport_accepted", "result=${publishResult.name}")
+        return disclosureCompleted(publishResult).also {
+            recordPublishStage("audit_completed", "result=${it.name}")
+        }
     }
 
     private fun inlineTurnAttachments(
