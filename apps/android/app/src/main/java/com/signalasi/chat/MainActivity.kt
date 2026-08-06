@@ -2322,6 +2322,41 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
+        if (sourceMessageId <= 0L) return
+        runOnUiThread {
+            updateMessageStatus(
+                sourceMessageId,
+                contactId,
+                getString(R.string.delivery_status_failed)
+            )
+        }
+        val runtime = runtimeForConnectorResponse(
+            sourceMessageId,
+            contactId,
+            allowTransportOnly = true
+        ) ?: return
+        cancelConnectorTimeouts(sourceMessageId)
+        val conversationId = agentRuntimeConversationIds[runtime].orEmpty()
+        val turnId = agentRuntimeTurnIds[runtime].orEmpty()
+        thread(name = "signalasi-delivery-failed-$sourceMessageId") {
+            bindAgentExecutionLoop(runtime, turnId)
+            var state = runtime.handleConnectorTimeout(
+                sourceMessageId,
+                AgentConnectorTimeoutStage.NOT_ACCEPTED
+            ) ?: return@thread
+            if (turnId.isNotBlank()) {
+                state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                persistAgentWorkspaceSnapshot(turnId, state, runtime)
+            }
+            runOnUiThread { renderAgentState(state, conversationId, turnId) }
+        }
+        Log.e(
+            "SignalASILink",
+            "Delivery failed source=$sourceMessageId contact=$contactId reason=$reason"
+        )
+    }
+
     override fun onMessage(payload: String) {
         runOnUiThread {
             var handled = true

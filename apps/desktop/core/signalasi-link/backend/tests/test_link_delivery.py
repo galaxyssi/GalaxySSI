@@ -29,7 +29,7 @@ class LinkDeliveryTest(unittest.TestCase):
                 self.assertTrue(link_delivery.acknowledge_outbound("client", "message"))
                 self.assertIsNone(link_delivery.outbound_status("client", "message"))
 
-    def test_retry_budget_never_discards_unacknowledged_message(self) -> None:
+    def test_retry_budget_quarantines_exhausted_message(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "delivery.db"
             with (
@@ -42,8 +42,29 @@ class LinkDeliveryTest(unittest.TestCase):
                     link_delivery.mark_outbound_retryable("client", "persistent")
 
                 pending = link_delivery.pending_outbound(max_attempts=8, now=10_000.0)
-                self.assertEqual("persistent", pending[0]["message_id"])
-                self.assertEqual(12, pending[0]["attempts"])
+                self.assertEqual([], pending)
+                failed = link_delivery.fail_exhausted_outbound(max_attempts=8)
+                self.assertEqual("persistent", failed[0]["message_id"])
+                self.assertEqual(12, failed[0]["attempts"])
+                self.assertEqual("failed", link_delivery.outbound_status("client", "persistent"))
+
+    def test_exhausted_route_does_not_block_another_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "delivery.db"
+            with (
+                patch.object(link_delivery, "DB_PATH", database),
+                patch.object(link_delivery.time, "time", return_value=100.0),
+            ):
+                link_delivery.queue_outbound("poisoned", "old", "old/topic", "bad-wire")
+                link_delivery.queue_outbound("healthy", "new", "new/topic", "good-wire")
+                for _ in range(link_delivery.OUTBOUND_MAX_ATTEMPTS):
+                    link_delivery.mark_outbound_sending("poisoned", "old")
+                    link_delivery.mark_outbound_retryable("poisoned", "old")
+
+                link_delivery.fail_exhausted_outbound()
+                pending = link_delivery.pending_outbound(now=10_000.0)
+
+                self.assertEqual(["new"], [item["message_id"] for item in pending])
 
     def test_inflight_count_and_batch_limit_apply_backpressure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

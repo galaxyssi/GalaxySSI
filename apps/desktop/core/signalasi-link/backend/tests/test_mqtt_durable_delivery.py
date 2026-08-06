@@ -79,6 +79,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         with (
             patch.object(mqtt_bridge, "list_clients", return_value=clients),
             patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", side_effect=pending),
             patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
             patch.object(mqtt_bridge, "mark_outbound_sending"),
@@ -94,8 +95,6 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             [
                 "current/0", "offline/0",
                 "current/1", "offline/1",
-                "current/2", "offline/2",
-                "current/3", "offline/3",
             ],
             published_topics,
         )

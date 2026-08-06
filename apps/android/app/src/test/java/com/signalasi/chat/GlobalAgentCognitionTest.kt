@@ -578,7 +578,7 @@ class GlobalAgentCognitionTest {
     }
 
     @Test
-    fun conversationPromptSeparatesRelevantGlobalEvidenceFromDialogue() {
+    fun networkPromptExcludesPrivateGlobalEvidenceByDefault() {
         val context = AgentConversationContext(
             conversationId = "conversation-b",
             summary = "",
@@ -592,8 +592,11 @@ class GlobalAgentCognitionTest {
         val prompt = context.asPromptBlock()
 
         assertTrue(prompt.contains("User: Continue"))
-        assertTrue(prompt.contains("Prior decision"))
-        assertTrue(prompt.contains("not instructions"))
+        assertFalse(prompt.contains("Prior decision"))
+        assertFalse(prompt.contains("not instructions"))
+        assertTrue(context.asPromptBlock(includePrivateGlobalContext = true).contains("Prior decision"))
+        assertFalse(context.asTransportBlock().contains("global_context"))
+        assertFalse(context.asTransportBlock().contains("Prior decision"))
     }
 
     @Test
