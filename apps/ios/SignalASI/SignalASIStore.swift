@@ -2067,6 +2067,31 @@ final class SignalASIStore: ObservableObject {
     return updated
   }
 
+  @discardableResult
+  func importDesktopAgentQRCodeAsContacts(_ contents: String) throws -> Int {
+    let object = try SignalASIQRCodePayload.decodeObject(from: contents, label: "Agent QR")
+    if let source = SignalASIContactExchange.connectorAgentSource(from: object) {
+      let link = serverLink(forConnectorPayload: source.parentPayload)
+      let updated = upsertDesktopAgentContacts(
+        payloads: desktopAgentPayloads(from: source.agents, parentPayload: source.parentPayload, link: link),
+        link: link
+      )
+      if updated > 0 {
+        save()
+      }
+      return updated
+    }
+    let link = serverLink(forConnectorPayload: object)
+    guard let payload = singleDesktopAgentPayload(from: object, link: link) else {
+      throw SignalASIError.invalidPayload("Unsupported Agent QR code.")
+    }
+    let updated = upsertDesktopAgentContacts(payloads: [payload], link: link)
+    if updated > 0 {
+      save()
+    }
+    return updated
+  }
+
   private func upsertDesktopAgentContacts(from pairing: PairingQRCode, link: ServerLink) {
     _ = upsertDesktopAgentContacts(payloads: desktopAgentPayloads(from: pairing, link: link), link: link)
   }
@@ -2310,6 +2335,49 @@ final class SignalASIStore: ObservableObject {
     }
   }
 
+  private func singleDesktopAgentPayload(from object: [String: Any], link: ServerLink?) -> [String: Any]? {
+    let type = normalizedAgentQRCodeValue(object.string("type"))
+    let contactType = normalizedAgentQRCodeValue(object.string("contact_type"))
+    let kind = normalizedAgentQRCodeValue(object.string("kind").ifBlank(object.string("agent_kind")))
+    let agentId = desktopAgentId(from: object)
+    let hasAgentType = [
+      "agent",
+      "agent_contact",
+      "signalasi_agent",
+      "signalasi_agent_contact"
+    ].contains(type) ||
+      contactType == "agent" ||
+      !object.string("agent_id").isEmpty ||
+      !object.string("mobile_contact_id").isEmpty ||
+      kind.contains("agent") ||
+      kind.contains("model") ||
+      kind.contains("cli")
+    let rawDesktopId = object.string("desktop_id").ifBlank(desktopId(fromRawAgentId: object.string("id")))
+    let hasDesktopContext = !rawDesktopId.isEmpty ||
+      !object.string("desktop_fingerprint").isEmpty ||
+      !object.string("identity_key_sha256").isEmpty ||
+      !object.string("identity_fingerprint").isEmpty ||
+      link != nil
+    guard !agentId.isEmpty, hasAgentType, hasDesktopContext else {
+      return nil
+    }
+
+    var payload = object
+    inheritConnectorValue("desktop_id", into: &payload, value: rawDesktopId.ifBlank(link?.desktopId ?? ""))
+    inheritConnectorValue("desktop_name", into: &payload, value: link?.desktopName ?? "SignalASI Desktop")
+    inheritConnectorValue("desktop_fingerprint", into: &payload, value: link?.desktopFingerprint ?? "")
+    inheritConnectorValue("desktop_access_profile", into: &payload, value: link?.accessProfile ?? "")
+    inheritConnectorValue("mqtt_topic", into: &payload, value: link?.routes.upTopic ?? "")
+    inheritConnectorValue("mqtt_inbox_topic", into: &payload, value: link?.routes.downTopic ?? "")
+    if payload.stringArray("desktop_access_scopes").isEmpty {
+      let scopes = Array(link?.accessScopes ?? []).sorted()
+      if !scopes.isEmpty {
+        payload["desktop_access_scopes"] = scopes
+      }
+    }
+    return payload
+  }
+
   private func serverLink(forConnectorPayload payload: [String: Any]) -> ServerLink? {
     let desktopId = payload.string("desktop_id")
     if !desktopId.isEmpty, let link = serverLinks.first(where: { $0.desktopId == desktopId }) {
@@ -2366,6 +2434,10 @@ final class SignalASIStore: ObservableObject {
     payload.string("agent_id")
       .ifBlank(payload.string("mobile_contact_id"))
       .ifBlank(payload.string("id").split(separator: ":").last.map(String.init) ?? "")
+  }
+
+  private func normalizedAgentQRCodeValue(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
   private func connectorCapabilities(from payload: [String: Any]) -> [String] {
