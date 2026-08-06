@@ -16936,15 +16936,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             staleApproval
         }
         renderedAgentTranscriptSourceEntries = filteredEntries
+        val collapsedEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
+            filteredEntries
+        )
         val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
-            entries = filteredEntries,
+            entries = collapsedEntries,
             pending = pendingAgentReplyIndicators.values,
             conversationId = activeConversationId
         )
         waitingResult.resolvedTurnIds.forEach(pendingAgentReplyIndicators::remove)
-        val visibleEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
-            waitingResult.entries
-        )
+        val visibleEntries = waitingResult.entries
         val incomingIds = visibleEntries.map(AgentTranscriptRenderPolicy::identity)
         val renderedIds = renderedAgentTranscriptIds.toList()
         val diff = AgentTranscriptRenderPolicy.diff(
