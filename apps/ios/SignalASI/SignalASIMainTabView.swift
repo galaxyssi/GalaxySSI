@@ -25,6 +25,8 @@ struct SignalASIMainTabView: View {
   @ViewBuilder
   private var activeContent: some View {
     switch selection {
+    case .voice:
+      SignalASIVoiceTabView()
     case .agent:
       AgentHomeView()
     case .messages:
@@ -65,7 +67,7 @@ struct SignalASIMainTabView: View {
       return unreadTotal
     case .contacts:
       return store.pendingFriendRequests.count
-    case .agent, .discover, .settings:
+    case .voice, .agent, .discover, .settings:
       return 0
     }
   }
@@ -76,6 +78,7 @@ struct SignalASIMainTabView: View {
 }
 
 private enum SignalASIMainTab: String, CaseIterable, Identifiable {
+  case voice
   case agent
   case messages
   case contacts
@@ -86,6 +89,8 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var titleKey: String {
     switch self {
+    case .voice:
+      return "signalasi.tab.voice"
     case .agent:
       return "signalasi.tab.agent"
     case .messages:
@@ -101,6 +106,8 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
 
   var fallbackTitle: String {
     switch self {
+    case .voice:
+      return "Voice"
     case .agent:
       return "Agent"
     case .messages:
@@ -114,8 +121,10 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
     }
   }
 
-  var iconAssetName: String {
+  var iconAssetName: String? {
     switch self {
+    case .voice:
+      return nil
     case .agent:
       return "TabAgent"
     case .messages:
@@ -129,8 +138,10 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
     }
   }
 
-  var selectedIconAssetName: String {
+  var selectedIconAssetName: String? {
     switch self {
+    case .voice:
+      return nil
     case .agent:
       return "TabAgentSelected"
     case .messages:
@@ -141,6 +152,40 @@ private enum SignalASIMainTab: String, CaseIterable, Identifiable {
       return "TabDiscoverSelected"
     case .settings:
       return "TabSettingsSelected"
+    }
+  }
+
+  var systemIconName: String {
+    switch self {
+    case .voice:
+      return "mic.circle"
+    case .agent:
+      return "sparkles"
+    case .messages:
+      return "message"
+    case .contacts:
+      return "person.2"
+    case .discover:
+      return "safari"
+    case .settings:
+      return "gearshape"
+    }
+  }
+
+  var selectedSystemIconName: String {
+    switch self {
+    case .voice:
+      return "mic.circle.fill"
+    case .agent:
+      return "sparkles"
+    case .messages:
+      return "message.fill"
+    case .contacts:
+      return "person.2.fill"
+    case .discover:
+      return "safari.fill"
+    case .settings:
+      return "gearshape.fill"
     }
   }
 }
@@ -156,11 +201,7 @@ private struct SignalASIMainTabButton: View {
     Button(action: action) {
       VStack(spacing: 4) {
         ZStack(alignment: .topTrailing) {
-          Image(isSelected ? tab.selectedIconAssetName : tab.iconAssetName)
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
-            .frame(width: 24, height: 24)
+          tabIcon
           if badgeCount > 0 {
             Text(badgeCount > 99 ? "99+" : "\(badgeCount)")
               .font(.system(size: 9, weight: .bold))
@@ -183,5 +224,20 @@ private struct SignalASIMainTabButton: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
+  }
+
+  @ViewBuilder
+  private var tabIcon: some View {
+    if let assetName = isSelected ? tab.selectedIconAssetName : tab.iconAssetName {
+      Image(assetName)
+        .resizable()
+        .renderingMode(.original)
+        .scaledToFit()
+        .frame(width: 24, height: 24)
+    } else {
+      Image(systemName: isSelected ? tab.selectedSystemIconName : tab.systemIconName)
+        .font(.system(size: 24, weight: .semibold))
+        .frame(width: 24, height: 24)
+    }
   }
 }
