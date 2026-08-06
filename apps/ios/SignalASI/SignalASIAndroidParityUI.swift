@@ -773,6 +773,19 @@ struct DiscoverView: View {
               }
               SignalASIAndroidMenuDivider()
               SignalASIAndroidGroupedMenuLink(
+                title: t("signalasi.discover.add_cloud_model", "Add Cloud Model"),
+                subtitle: t(
+                  "signalasi.discover.add_cloud_model_subtitle",
+                  "Call OpenAI, Claude, Gemini, DeepSeek, Qwen, and other APIs directly on the phone"
+                ),
+                systemImage: "cloud.fill",
+                assetImageName: "DiscoverAiAgent",
+                tint: .signalASIInsightText
+              ) {
+                CloudModelProviderSelectionView()
+              }
+              SignalASIAndroidMenuDivider()
+              SignalASIAndroidGroupedMenuLink(
                 title: t("signalasi.discover.device_center", "Device Center"),
                 subtitle: t("signalasi.discover.device.subtitle", "Manage and control your devices"),
                 systemImage: "antenna.radiowaves.left.and.right",
