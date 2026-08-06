@@ -827,6 +827,22 @@ struct ContactsView: View {
     allContacts.filter { !isAgentContact($0) && !isDeviceContact($0) }.count
   }
 
+  private var contactSections: [ContactDirectorySection] {
+    let grouped = Dictionary(grouping: filteredContacts, by: contactDirectorySectionKey)
+    return grouped.keys.sorted(by: contactSectionSort).map { key in
+      ContactDirectorySection(
+        id: key,
+        contacts: (grouped[key] ?? []).sorted {
+          $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+      )
+    }
+  }
+
+  private var activeContactIndexLetters: Set<String> {
+    Set(contactSections.map(\.id))
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
@@ -871,46 +887,74 @@ struct ContactsView: View {
             t: t
           )
           SignalASIContactDirectoryActionsView()
-          ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-              if !filteredFriendRequests.isEmpty {
-                sectionTitle(t("signalasi.new_friends", "New Friends"))
-                VStack(spacing: 0) {
-                  ForEach(filteredFriendRequests) { request in
-                    NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
-                      FriendRequestRow(request: request)
+          ScrollViewReader { proxy in
+            ZStack(alignment: .trailing) {
+              ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                  if !filteredFriendRequests.isEmpty {
+                    sectionTitle(t("signalasi.new_friends", "New Friends"))
+                    VStack(spacing: 0) {
+                      ForEach(filteredFriendRequests) { request in
+                        NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
+                          FriendRequestRow(request: request)
+                        }
+                        .buttonStyle(.plain)
+                        if request.id != filteredFriendRequests.last?.id {
+                          Divider()
+                            .background(Color.signalASISeparator)
+                            .padding(.leading, 66)
+                        }
+                      }
                     }
-                    .buttonStyle(.plain)
+                    .background(Color.signalASISurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                  }
+                  sectionTitle(t("signalasi.tab.contacts", "Contacts"))
+                  if contactSections.isEmpty {
+                    Text(t("signalasi.empty.contacts", "No matching contacts"))
+                      .font(.system(size: 15))
+                      .foregroundColor(.signalASITextSecondary)
+                      .frame(maxWidth: .infinity, minHeight: 90)
+                      .background(Color.signalASISurface)
+                      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                  } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                      ForEach(contactSections) { section in
+                        VStack(alignment: .leading, spacing: 0) {
+                          ContactDirectorySectionHeader(title: section.id)
+                            .id(contactSectionAnchor(section.id))
+                          ForEach(section.contacts) { contact in
+                            NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+                              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+                            }
+                            .buttonStyle(.plain)
+                            if contact.id != section.contacts.last?.id {
+                              Divider()
+                                .background(Color.signalASISeparator)
+                                .padding(.leading, 66)
+                            }
+                          }
+                        }
+                        .background(Color.signalASISurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                      }
+                    }
                   }
                 }
-                .background(Color.signalASISurface)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.trailing, contactSections.count > 1 ? 18 : 0)
+                .padding(.bottom, 18)
               }
-              sectionTitle(t("signalasi.tab.contacts", "Contacts"))
-              VStack(spacing: 0) {
-                if filteredContacts.isEmpty {
-                  Text(t("signalasi.empty.contacts", "No matching contacts"))
-                    .font(.system(size: 15))
-                    .foregroundColor(.signalASITextSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 90)
-                } else {
-                  ForEach(filteredContacts) { contact in
-                    NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-                      ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
-                    }
-                    .buttonStyle(.plain)
-                    if contact.id != filteredContacts.last?.id {
-                      Divider()
-                        .background(Color.signalASISeparator)
-                        .padding(.leading, 66)
-                    }
+              if contactSections.count > 1 {
+                ContactDirectoryIndexView(
+                  activeLetters: activeContactIndexLetters
+                ) { letter in
+                  withAnimation(.easeOut(duration: 0.16)) {
+                    proxy.scrollTo(contactSectionAnchor(letter), anchor: .top)
                   }
                 }
+                .padding(.trailing, 1)
               }
-              .background(Color.signalASISurface)
-              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .padding(.bottom, 18)
           }
         }
         .padding(.horizontal, 12)
@@ -932,6 +976,27 @@ struct ContactsView: View {
       .foregroundColor(.signalASITextSecondary)
       .padding(.horizontal, 4)
       .padding(.top, 2)
+  }
+
+  private func contactSectionAnchor(_ section: String) -> String {
+    "contact-section-\(section)"
+  }
+
+  private func contactDirectorySectionKey(_ contact: SignalASIContact) -> String {
+    let name = contact.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let latin = name
+      .applyingTransform(.toLatin, reverse: false)?
+      .applyingTransform(.stripDiacritics, reverse: false) ?? name
+    guard let first = latin.trimmingCharacters(in: .whitespacesAndNewlines).first else { return "#" }
+    let letter = String(first).uppercased()
+    return letter.range(of: "^[A-Z]$", options: .regularExpression) == nil ? "#" : letter
+  }
+
+  private func contactSectionSort(_ left: String, _ right: String) -> Bool {
+    if left == right { return false }
+    if left == "#" { return true }
+    if right == "#" { return false }
+    return left < right
   }
 
   private func searchMatches(_ fields: [String], query: String) -> Bool {
@@ -1023,6 +1088,65 @@ private struct ContactDirectoryCountPill: View {
     .frame(maxWidth: .infinity, minHeight: 30)
     .background(tint.opacity(0.12))
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
+private struct ContactDirectorySection: Identifiable {
+  var id: String
+  var contacts: [SignalASIContact]
+}
+
+private struct ContactDirectorySectionHeader: View {
+  var title: String
+
+  var body: some View {
+    Text(title)
+      .font(.system(size: 13, weight: .semibold))
+      .foregroundColor(.signalASITextSecondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 7)
+      .background(Color.signalASIBarBackground)
+  }
+}
+
+private struct ContactDirectoryIndexView: View {
+  var activeLetters: Set<String>
+  var onSelect: (String) -> Void
+
+  private let letters = [
+    "#", "A", "B", "C", "D", "E", "F", "G", "H", "I",
+    "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z"
+  ]
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(letters, id: \.self) { letter in
+        if activeLetters.contains(letter) {
+          Button {
+            onSelect(letter)
+          } label: {
+            indexText(letter, active: true)
+          }
+          .buttonStyle(.plain)
+        } else {
+          indexText(letter, active: false)
+        }
+      }
+    }
+    .frame(width: 18)
+    .padding(.vertical, 4)
+    .background(Color.signalASIPageBackground.opacity(0.86))
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func indexText(_ letter: String, active: Bool) -> some View {
+    Text(letter)
+      .font(.system(size: 9, weight: active ? .semibold : .regular))
+      .foregroundColor(active ? .signalASIAccent : .signalASITextSecondary.opacity(0.45))
+      .frame(width: 18, height: 11)
+      .contentShape(Rectangle())
   }
 }
 
