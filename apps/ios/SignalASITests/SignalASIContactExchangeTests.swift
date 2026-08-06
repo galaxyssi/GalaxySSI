@@ -141,6 +141,23 @@ final class SignalASIContactExchangeTests: XCTestCase {
     XCTAssertEqual(research.setupDetail, "Ready for deep work")
   }
 
+  func testStoreImportsSingleDesktopAgentQRUsingPairedLinkIdentity() throws {
+    let store = makeStore()
+    let pairing = try SignalASILinkProtocol.decodePairingQRCode(from: pairingQR(createdAt: Date()))
+    let link = try store.addServerLink(from: pairing, rotateClientRoute: false)
+    store.markServerPaired(desktopId: link.desktopId, access: pairing.access)
+
+    XCTAssertEqual(try store.importDesktopAgentQRCodeAsContacts(singleDesktopAgentQRWithoutIdentity()), 1)
+
+    let codex = try XCTUnwrap(store.contact(id: "desktop-test:codex"))
+    XCTAssertEqual(codex.displayName, "Codex Agent · Test Mac")
+    XCTAssertEqual(codex.type, "agent")
+    XCTAssertEqual(codex.agentKind, "local-cli")
+    XCTAssertEqual(codex.desktopId, "desktop-test")
+    XCTAssertEqual(codex.identityFingerprint, String(repeating: "a", count: 64))
+    XCTAssertEqual(codex.trustState, .verified)
+  }
+
   func testImportContactQRReplacesExistingPendingRequest() throws {
     let store = makeStore()
 
@@ -237,6 +254,20 @@ final class SignalASIContactExchangeTests: XCTestCase {
       "desktop_name": "Office PC",
       "desktop_fingerprint": String(repeating: "e", count: 64),
       "mqtt_topic": "signalasichat/v1/desktop/up"
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+  }
+
+  private func singleDesktopAgentQRWithoutIdentity() -> String {
+    let object: [String: Any] = [
+      "type": "agent",
+      "id": "codex",
+      "name": "Codex Agent",
+      "kind": "local-cli",
+      "desktop_id": "desktop-test",
+      "status": "ready",
+      "detail": "Ready for live coding"
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!

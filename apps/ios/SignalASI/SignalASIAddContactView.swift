@@ -275,9 +275,28 @@ struct AddContactView: View {
         setImportStatus(requestsReceivedStatus(stored), isError: false)
       }
     } catch {
+      importDesktopAgentQRCodeFallback(cleaned, fallbackError: error)
+    }
+  }
+
+  private func importDesktopAgentQRCodeFallback(_ value: String, fallbackError: Error) {
+    do {
+      let importedCount = try store.importDesktopAgentQRCodeAsContacts(value)
+      guard importedCount > 0 else {
+        throw fallbackError
+      }
+      clearPendingScanResult()
+      let message = importedCount == 1
+        ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
+        : String(
+            format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
+            importedCount
+          )
+      setImportStatus(message, isError: false)
+    } catch {
       clearPendingScanResult()
       setImportStatus(
-        String(format: t("signalasi.pairing.scan_failed", "Scan failed: %@"), error.localizedDescription),
+        String(format: t("signalasi.pairing.scan_failed", "Scan failed: %@"), fallbackError.localizedDescription),
         isError: true
       )
     }
