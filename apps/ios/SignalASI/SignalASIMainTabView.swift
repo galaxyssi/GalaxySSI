@@ -36,7 +36,11 @@ struct SignalASIMainTabView: View {
     case .discover:
       DiscoverView()
     case .settings:
-      SettingsView()
+      SettingsView(navigateToMainTab: { tab in
+        withAnimation(.easeOut(duration: 0.14)) {
+          selection = tab
+        }
+      })
     }
   }
 
@@ -77,7 +81,7 @@ struct SignalASIMainTabView: View {
   }
 }
 
-private enum SignalASIMainTab: String, CaseIterable, Identifiable {
+enum SignalASIMainTab: String, CaseIterable, Identifiable {
   case voice
   case agent
   case messages

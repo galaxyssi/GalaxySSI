@@ -8,6 +8,7 @@ struct SettingsView: View {
   @State private var statusText = ""
   @State private var statusIsError = false
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
+  var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
 
   var body: some View {
     NavigationView {
@@ -652,30 +653,53 @@ struct SettingsView: View {
   private var pagesSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SettingsSectionTitle(title: t("settings_control_pages", "App Pages"))
-      SettingsNavigationRow(
+      mainPageRow(
+        title: t("signalasi.tab.agent", "Agent"),
+        subtitle: t("signalasi.settings.page_agent_subtitle", "Primary Agent workspace, sessions, attachments, and action tray"),
+        systemImage: "sparkles",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.open", "Open"),
+        tab: .agent
+      ) {
+        SignalASIAgentSessionsView()
+      }
+      mainPageRow(
+        title: t("signalasi.tab.voice", "Voice"),
+        subtitle: t("signalasi.settings.page_voice_subtitle", "Wake page, hold-to-talk, ASR/TTS, and voice routing"),
+        systemImage: "mic",
+        tint: .signalASIInsightText,
+        badge: t("signalasi.common.open", "Open"),
+        tab: .voice
+      ) {
+        SignalASIVoiceControlCenterView()
+      }
+      mainPageRow(
         title: t("signalasi.tab.messages", "Messages"),
         subtitle: t("signalasi.settings.page_messages_subtitle", "Conversations with people, Agents, and devices"),
         systemImage: "bubble.left.and.bubble.right",
         tint: .signalASIAccent,
-        badge: t("signalasi.common.open", "Open")
+        badge: t("signalasi.common.open", "Open"),
+        tab: .messages
       ) {
         ChatListView()
       }
-      SettingsNavigationRow(
+      mainPageRow(
         title: t("signalasi.tab.contacts", "Contacts"),
         subtitle: t("signalasi.settings.page_contacts_subtitle", "People, friend requests, and trusted Agent contacts"),
         systemImage: "person.2",
         tint: .signalASIInsightText,
-        badge: t("signalasi.common.open", "Open")
+        badge: t("signalasi.common.open", "Open"),
+        tab: .contacts
       ) {
         ContactsView()
       }
-      SettingsNavigationRow(
+      mainPageRow(
         title: t("signalasi.tab.discover", "Discover"),
         subtitle: t("discover_mesh_subtitle", "End-to-end encrypted network for people, agents, and devices"),
         systemImage: "safari",
         tint: .blue,
-        badge: t("signalasi.common.open", "Open")
+        badge: t("signalasi.common.open", "Open"),
+        tab: .discover
       ) {
         DiscoverView()
       }
@@ -696,6 +720,75 @@ struct SettingsView: View {
         badge: t("signalasi.common.open", "Open")
       ) {
         SignalASIAppServicesView()
+      }
+      SettingsNavigationRow(
+        title: t("cc_smart_spaces_title", "Smart Spaces"),
+        subtitle: t("cc_spaces_subtitle", "Home Assistant and custom devices"),
+        systemImage: "house",
+        tint: .purple,
+        badge: t("signalasi.common.open", "Open")
+      ) {
+        SignalASISmartSpacesView()
+      }
+      SettingsNavigationRow(
+        title: t("cc_runtime_title", "On-device Linux Runtime"),
+        subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
+        systemImage: "terminal",
+        tint: .teal,
+        badge: t("signalasi.common.open", "Open")
+      ) {
+        SignalASIOnDeviceRuntimeView()
+      }
+      SettingsNavigationRow(
+        title: t("cc_runtime_software_center_title", "Software Center"),
+        subtitle: t("cc_runtime_software_center_subtitle", "Find and install verified language, browser, and media tools"),
+        systemImage: "shippingbox",
+        tint: .blue,
+        badge: t("signalasi.common.open", "Open")
+      ) {
+        SignalASIRuntimeSoftwareCenterView()
+      }
+      SettingsNavigationRow(
+        title: t("signalasi.discover.pairing", "Pairing"),
+        subtitle: t("signalasi.discover.pairing.subtitle", "Scan QR codes and connect SignalASI Desktop"),
+        systemImage: "qrcode.viewfinder",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.connect", "Connect")
+      ) {
+        PairingView()
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func mainPageRow<Destination: View>(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    tint: Color,
+    badge: String,
+    tab: SignalASIMainTab,
+    @ViewBuilder fallbackDestination: () -> Destination
+  ) -> some View {
+    if let navigateToMainTab {
+      SettingsActionRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge
+      ) {
+        navigateToMainTab(tab)
+      }
+    } else {
+      SettingsNavigationRow(
+        title: title,
+        subtitle: subtitle,
+        systemImage: systemImage,
+        tint: tint,
+        badge: badge
+      ) {
+        fallbackDestination()
       }
     }
   }
