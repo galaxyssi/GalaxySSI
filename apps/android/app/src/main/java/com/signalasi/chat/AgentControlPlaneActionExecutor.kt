@@ -18,30 +18,7 @@ class AgentControlPlaneActionExecutor private constructor(
     private val directory: AgentAdapterDirectory
 ) : AgentActionExecutor {
     constructor(context: Context, delegate: AgentActionExecutor) : this(
-        provider = ActionExecutorAgentProvider(
-            registrationSource = { AppStoreAgentConnectorRegistry(context).registrations() },
-            delegate = delegate,
-            runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
-            healthLedger = EncryptedAgentProviderHealthLedger(context),
-            managedResponses = EncryptedAgentManagedResponseLedger(context),
-            recoverableSource = {
-                EncryptedAgentHandoffStore(context).active().map { handoff ->
-                    AgentRecoverableRun(
-                        handle = AgentRunHandle(
-                            runId = handoff.request.runId,
-                            taskId = handoff.request.taskId,
-                            agentId = handoff.request.toAgentId,
-                            remoteRunId = handoff.sourceMessageId.takeIf { it > 0L }?.toString()
-                                ?: handoff.request.runId,
-                            acceptedAtMillis = handoff.request.createdAtMillis
-                        ),
-                        lastEventSequence = handoff.request.checkpoint["last_event_sequence"]
-                            ?.toString()?.toLongOrNull() ?: 0L,
-                        checkpoint = handoff.request.checkpoint
-                    )
-                }
-            }
-        )
+        provider = createProvider(context.applicationContext, delegate)
     )
 
     internal constructor(provider: ActionExecutorAgentProvider) : this(
@@ -163,6 +140,35 @@ class AgentControlPlaneActionExecutor private constructor(
     companion object {
         private const val CONVERSATION_ID_KEY = "_signalasi_conversation_id"
         private const val TURN_ID_KEY = "_signalasi_turn_id"
+
+        private fun createProvider(context: Context, delegate: AgentActionExecutor): ActionExecutorAgentProvider {
+            val connectorRegistry = AppStoreAgentConnectorRegistry(context)
+            val handoffStore = EncryptedAgentHandoffStore(context)
+            return ActionExecutorAgentProvider(
+                registrationSource = connectorRegistry::registrations,
+                delegate = delegate,
+                runStartReceipts = EncryptedAgentRunStartReceiptStore(context),
+                healthLedger = EncryptedAgentProviderHealthLedger(context),
+                managedResponses = EncryptedAgentManagedResponseLedger(context),
+                recoverableSource = {
+                    handoffStore.active().map { handoff ->
+                        AgentRecoverableRun(
+                            handle = AgentRunHandle(
+                                runId = handoff.request.runId,
+                                taskId = handoff.request.taskId,
+                                agentId = handoff.request.toAgentId,
+                                remoteRunId = handoff.sourceMessageId.takeIf { it > 0L }?.toString()
+                                    ?: handoff.request.runId,
+                                acceptedAtMillis = handoff.request.createdAtMillis
+                            ),
+                            lastEventSequence = handoff.request.checkpoint["last_event_sequence"]
+                                ?.toString()?.toLongOrNull() ?: 0L,
+                            checkpoint = handoff.request.checkpoint
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -192,6 +198,9 @@ internal class ActionExecutorAgentProvider(
 ) : AgentProvider {
     private val transports = ConcurrentHashMap<String, ActionExecutorAgentTransport>()
     private val adapters = ConcurrentHashMap<String, AgentAdapter>()
+    private val registrationLock = Any()
+    @Volatile private var cachedRegistrations: List<AgentRegistration>? = null
+    @Volatile private var registrationsCachedAtNanos: Long = 0L
 
     override suspend fun connect(): AgentProtocolAgreement = AgentProtocolAgreement(
         version = protocol.preferred,
@@ -204,14 +213,14 @@ internal class ActionExecutorAgentProvider(
         transports.clear()
     }
 
-    override suspend fun registrations(): List<AgentRegistration> = registrationSource()
+    override suspend fun registrations(): List<AgentRegistration> = registrationSnapshot()
 
     override suspend fun adapter(agentId: String): AgentAdapter? {
         adapters[agentId]?.let { return it }
         val registration = registration(agentId) ?: return null
         val transport = transports.computeIfAbsent(agentId) {
             ActionExecutorAgentTransport(
-                registrationSource,
+                ::registrationSnapshot,
                 delegate,
                 recoverableSource,
                 managedResponses,
@@ -230,14 +239,14 @@ internal class ActionExecutorAgentProvider(
 
     override suspend fun recoverRuns(): List<AgentRecoverableRun> = recoverableSource()
 
-    fun registration(agentId: String): AgentRegistration? = registrationSource().firstOrNull {
+    fun registration(agentId: String): AgentRegistration? = registrationSnapshot().firstOrNull {
         it.agentId == agentId
     }
 
     fun resolveAgentId(requested: String): String? {
         val clean = requested.trim()
         if (clean.isBlank()) return null
-        val registrations = registrationSource()
+        val registrations = registrationSnapshot()
         return registrations.firstOrNull { it.agentId == clean }?.agentId
             ?: registrations.firstOrNull { it.agentId.endsWith(":$clean") || clean.endsWith(":${it.agentId}") }?.agentId
             ?: registrations.firstOrNull { it.displayName.equals(clean, ignoreCase = true) }?.agentId
@@ -252,7 +261,7 @@ internal class ActionExecutorAgentProvider(
         val registration = registration(agentId) ?: return
         transports.computeIfAbsent(agentId) {
             ActionExecutorAgentTransport(
-                registrationSource,
+                ::registrationSnapshot,
                 delegate,
                 recoverableSource,
                 managedResponses,
@@ -286,6 +295,25 @@ internal class ActionExecutorAgentProvider(
     fun discardPrepared(agentId: String, runId: String) = transports[agentId]?.discardPrepared(runId)
 
     fun executeDelegate(action: AgentAction, screen: ScreenContext): AgentActionResult = delegate.execute(action, screen)
+
+    private fun registrationSnapshot(): List<AgentRegistration> {
+        val now = System.nanoTime()
+        cachedRegistrations?.takeIf { now - registrationsCachedAtNanos <= REGISTRATION_CACHE_TTL_NANOS }
+            ?.let { return it }
+        return synchronized(registrationLock) {
+            val lockedNow = System.nanoTime()
+            cachedRegistrations
+                ?.takeIf { lockedNow - registrationsCachedAtNanos <= REGISTRATION_CACHE_TTL_NANOS }
+                ?: registrationSource().also { registrations ->
+                    cachedRegistrations = registrations
+                    registrationsCachedAtNanos = lockedNow
+                }
+        }
+    }
+
+    private companion object {
+        const val REGISTRATION_CACHE_TTL_NANOS = 1_000_000_000L
+    }
 }
 
 private class ActionExecutorAgentTransport(

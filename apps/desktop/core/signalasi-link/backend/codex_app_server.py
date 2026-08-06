@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 from agent_execution_harness import (
     AgentExecutionHarness,
@@ -26,12 +26,18 @@ from agent_execution_harness import (
     replan_instruction,
 )
 from latency_feature_flags import agent_output_delta_enabled
+from model_directed_search import (
+    CODEX_DYNAMIC_SEARCH_TOOL,
+    codex_dynamic_search_tool_spec,
+    execute_codex_dynamic_search,
+)
 
 
 log = logging.getLogger("signalasi.codex")
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".signalasi" / "codex_conversation_threads.json"
-CONVERSATION_THREAD_VERSION = "v2"
+CONVERSATION_THREAD_VERSION = "v6"
+CODEX_THREAD_CONFIG = {"web_search": "disabled"}
 CODEX_TASK_POLICY = """
 SignalASI execution policy:
 - Do not inspect or invoke personal Codex Skills. Execute the request with the model and available tools directly.
@@ -39,6 +45,9 @@ SignalASI execution policy:
 - When only one component of a webpage is requested, never return the parent page URL. Extract the original media URL or return minimal HTML containing only the original component.
 - If a required source or tool is unavailable, report that failure. Do not synthesize replacement media or data.
 - For current information, verify the date and requested location, prefer primary or authoritative sources, and cite the source concisely.
+- Decide for yourself whether current external information is needed.
+- After deciding it is needed, you must call `signalasi_parallel_web_search` exactly once. Resolve follow-up wording from the full conversation into one concise, self-contained query, select the relevant content verticals yourself, and set read_pages=true when facts from source pages are needed. The tool races specialist and general sources and reads independent pages concurrently. Treat an empty result as a completed search, not a tool failure: do not retry equivalent searches through shell commands, MCP, or another browser path.
+- Do not use native web search after a successful SignalASI tool response. Native web search is allowed only when that response reports failure or when its cited evidence is explicitly insufficient for the user's requested depth.
 - Never expose internal task workspace or attachment download paths. Refer to uploaded inputs by their original filename only.
 - For image review or homework grading, inspect the supplied image and return the findings before offering optional edits.
 - Camera photos may be sideways even when EXIF says normal; orient the content for reading before OCR or grading.
@@ -153,6 +162,8 @@ class CodexAppServer:
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
         self._loaded_thread_ids: set[str] = set()
         self._initialized_process_pid = 0
+        self._dynamic_tools = [codex_dynamic_search_tool_spec()]
+        self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
         """Start and initialize the official Codex App Server without creating a task."""
@@ -167,8 +178,12 @@ class CodexAppServer:
     def prewarm_recent_threads(self, limit: int = 3) -> dict[str, object]:
         """Load recent persisted conversations into the current App Server process."""
         self._ensure_started()
+        current_prefix = f"{CONVERSATION_THREAD_VERSION}:"
         with self._lock:
-            candidates = list(self._conversation_threads.items())[-max(0, int(limit)):]
+            candidates = [
+                item for item in self._conversation_threads.items()
+                if item[0].startswith(current_prefix)
+            ][-max(0, int(limit)):]
         resumed: list[str] = []
         removed: list[str] = []
         for conversation_key, thread_id in reversed(candidates):
@@ -306,7 +321,7 @@ class CodexAppServer:
                     turn_images,
                     cwd=cwd,
                     reasoning_effort=run.execution_policy.reasoning_effort.value,
-                    include_task_policy=not fast_chat,
+                    include_task_policy=False,
                 )
             except RuntimeError as exc:
                 if not run.thread_id or not self._is_thread_not_found_error(exc):
@@ -335,7 +350,7 @@ class CodexAppServer:
                     restored_images,
                     cwd=cwd,
                     reasoning_effort=run.execution_policy.reasoning_effort.value,
-                    include_task_policy=not fast_chat,
+                    include_task_policy=False,
                 )
         except Exception:
             self._discard_run(run)
@@ -423,6 +438,7 @@ class CodexAppServer:
                 "threadId": clean_thread_id,
                 "approvalPolicy": approval_policy,
                 "sandbox": sandbox,
+                "config": CODEX_THREAD_CONFIG,
             }, timeout=30)
             with self._lock:
                 self._loaded_thread_ids.add(clean_thread_id)
@@ -688,6 +704,11 @@ class CodexAppServer:
         if "fail" not in raw_status and raw_status != "declined":
             return
         item_type = str(item.get("type") or "tool")
+        if item_type == "dynamicToolCall":
+            # The model receives the structured failure result and can choose a
+            # fallback in the same turn. Steering an additional replan here
+            # duplicates context and delays the model's native recovery path.
+            return
         detail = self._item_detail(item, item_type) or raw_status or item_type
         signature = failure_fingerprint(item_type, detail)
         count = run.failure_counts.get(signature, 0) + 1
@@ -778,6 +799,9 @@ class CodexAppServer:
         response = self._request("thread/start", {
             "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
             "approvalPolicy": approval_policy, "sandbox": sandbox,
+            "config": CODEX_THREAD_CONFIG,
+            "developerInstructions": CODEX_TASK_POLICY.strip(),
+            "dynamicTools": self._dynamic_tools,
         }, timeout=30)
         thread_id = str((response.get("thread") or {}).get("id") or "")
         if thread_id:
@@ -804,6 +828,7 @@ class CodexAppServer:
             "threadId": clean_thread_id,
             "approvalPolicy": approval_policy,
             "sandbox": sandbox,
+            "config": CODEX_THREAD_CONFIG,
         }, timeout=30)
         with self._lock:
             self._loaded_thread_ids.add(clean_thread_id)
@@ -1187,8 +1212,9 @@ class CodexAppServer:
         process = self.process
         if process is None or process.stdin is None or process.poll() is not None:
             raise RuntimeError("Codex App Server is not running")
-        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-        process.stdin.flush()
+        with self._write_lock:
+            process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+            process.stdin.flush()
 
     def _read_stdout(self) -> None:
         process = self.process
@@ -1237,7 +1263,9 @@ class CodexAppServer:
                 app_server_event=method,
             )
         common = {"thread_id": run.thread_id, "turn_id": turn_id or run.turn_id}
-        if "id" in message:
+        if "id" in message and method == "item/tool/call":
+            self._handle_dynamic_tool_call(task_id, message, params, common)
+        elif "id" in message:
             approval = self._pending_approval(task_id, message)
             if approval is not None:
                 run.pending_requests[approval.approval_id] = approval
@@ -1454,6 +1482,80 @@ class CodexAppServer:
             "progress_event": progress,
         })
 
+    def _handle_dynamic_tool_call(
+        self,
+        task_id: str,
+        message: Mapping[str, Any],
+        params: Mapping[str, Any],
+        common: Mapping[str, Any],
+    ) -> None:
+        threading.Thread(
+            target=self._execute_dynamic_tool_call,
+            args=(task_id, dict(message), dict(params), dict(common)),
+            daemon=True,
+            name=f"codex-dynamic-tool-{task_id[:8]}",
+        ).start()
+
+    def _execute_dynamic_tool_call(
+        self,
+        task_id: str,
+        message: Mapping[str, Any],
+        params: Mapping[str, Any],
+        common: Mapping[str, Any],
+    ) -> None:
+        tool_name = str(params.get("tool") or "").strip()
+        arguments = params.get("arguments")
+        query = (
+            str(arguments.get("query") or "").strip()
+            if isinstance(arguments, Mapping)
+            else ""
+        )
+        verticals = (
+            ",".join(str(value) for value in (arguments.get("verticals") or [])[:3])
+            if isinstance(arguments, Mapping) and isinstance(arguments.get("verticals"), list)
+            else ""
+        )
+        read_pages = (
+            bool(arguments.get("read_pages", True))
+            if isinstance(arguments, Mapping)
+            else True
+        )
+        try:
+            if tool_name != CODEX_DYNAMIC_SEARCH_TOOL:
+                result = {
+                    "success": False,
+                    "contentItems": [{
+                        "type": "inputText",
+                        "text": f"Unsupported SignalASI dynamic tool: {tool_name or 'unknown'}",
+                    }],
+                }
+            else:
+                result = execute_codex_dynamic_search(
+                    arguments if isinstance(arguments, Mapping) else {},
+                    task_id,
+                )
+        except Exception as exc:
+            log.exception("SignalASI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
+            result = {
+                "success": False,
+                "contentItems": [{
+                    "type": "inputText",
+                    "text": f"SignalASI dynamic tool failed: {str(exc)[:500]}",
+                }],
+            }
+        self._write_server_response(message.get("id"), result)
+        self.on_event(task_id, {
+            **dict(common),
+            "status": "running",
+            "current_step": "Searched sources" if result.get("success") else "Search fallback available",
+            "trace_stage": "model_directed_search_completed",
+            "trace_detail": (
+                f"{tool_name}: {query}; verticals={verticals or 'general'}; "
+                f"read_pages={str(read_pages).lower()}; success={str(bool(result.get('success'))).lower()}"
+            )[:1_200],
+            "telemetry_only": True,
+        })
+
     def _emit_first_output(
         self,
         task_id: str,
@@ -1621,7 +1723,13 @@ class CodexAppServer:
             tool = str(item.get("tool") or item.get("toolName") or item.get("name") or "").strip()
             return " / ".join(value for value in (server, tool) if value)[:1_000]
         if item_type == "webSearch":
-            return str(item.get("query") or "").strip()[:1_000]
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            queries = action.get("queries") if isinstance(action.get("queries"), list) else []
+            return str(
+                item.get("query")
+                or action.get("query")
+                or (queries[0] if queries else "")
+            ).strip()[:1_000]
         if item_type == "fileChange":
             changes = item.get("changes") or []
             if isinstance(changes, list):

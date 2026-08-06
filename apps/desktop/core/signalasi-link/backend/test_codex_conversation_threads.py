@@ -71,6 +71,37 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("", reasoning["event_detail"])
         self.assertNotIn("private internal reasoning", str(reasoning))
 
+    def test_web_search_event_exposes_the_model_selected_query(self):
+        events = []
+        server = codex_app_server.CodexAppServer(
+            "codex",
+            {},
+            lambda task_id, event: events.append((task_id, event)),
+        )
+        server._runs["task-search"] = codex_app_server.CodexRun(
+            task_id="task-search",
+            thread_id="thread-search",
+            turn_id="turn-search",
+        )
+        server._turn_tasks["turn-search"] = "task-search"
+
+        server._handle_event({
+            "method": "item/started",
+            "params": {
+                "turnId": "turn-search",
+                "item": {
+                    "id": "search-1",
+                    "type": "webSearch",
+                    "action": {"queries": ["Zhuhai current weather"]},
+                },
+            },
+        })
+
+        event = events[-1][1]
+        self.assertEqual("network", event["event_kind"])
+        self.assertEqual("Zhuhai current weather", event["event_detail"])
+        self.assertEqual("webSearch", event["event_metadata"]["item_type"])
+
     def test_file_change_event_does_not_start_file_tree_audit(self):
         server, run, events = self._event_server()
         server._handle_event({
@@ -439,6 +470,19 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual([method for method, _, _ in calls].count("turn/start"), 2)
             thread_start = next(params for method, params, _ in calls if method == "thread/start")
             self.assertEqual("on-request", thread_start["approvalPolicy"])
+            self.assertEqual({"web_search": "disabled"}, thread_start["config"])
+            self.assertEqual(
+                codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
+                thread_start["dynamicTools"][0]["name"],
+            )
+            self.assertIn(
+                "Decide for yourself whether current external information is needed",
+                thread_start["developerInstructions"],
+            )
+            self.assertIn(
+                "must call `signalasi_parallel_web_search` exactly once",
+                thread_start["developerInstructions"],
+            )
             turn_inputs = [params["input"][0]["text"] for method, params, _ in calls if method == "turn/start"]
             self.assertIn("first", turn_inputs[0])
             self.assertNotIn("Do not synthesize replacement media or data.", turn_inputs[0])
@@ -514,6 +558,19 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual(server._attempt_replan, started[0][0])
         self.assertEqual("tool_failure", started[0][2]["source"])
         self.assertEqual(server._stop_repeated_failure, started[1][0])
+
+    def test_dynamic_search_failure_stays_in_the_current_model_turn(self):
+        server, run, _events = self._event_server()
+        with patch.object(server, "_attempt_replan") as replan:
+            server._record_failed_item(run, {
+                "id": "dynamic-search-failure",
+                "type": "dynamicToolCall",
+                "status": "failed",
+                "tool": "signalasi_parallel_web_search",
+            })
+
+        replan.assert_not_called()
+        self.assertEqual({}, run.failure_counts)
 
     def test_outer_supervisor_can_request_a_guarded_replan(self):
         server, run, _events = self._event_server()
@@ -613,6 +670,47 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertIn("be exact", steer["input"][0]["text"])
             self.assertNotIn(codex_app_server.CODEX_TASK_POLICY, steer["input"][0]["text"])
 
+    def test_dynamic_search_request_is_answered_without_waiting_for_user_input(self):
+        server, run, events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append((request_id, result))
+        request = {
+            "id": "dynamic-search-1",
+            "method": "item/tool/call",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "callId": "call-search-1",
+                "tool": codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
+                "arguments": {"query": "Zhuhai current weather"},
+            },
+        }
+        result = {
+            "success": True,
+            "contentItems": [{"type": "inputText", "text": "cited evidence"}],
+        }
+
+        class ImmediateThread:
+            def __init__(self, target, args=(), **_kwargs):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                self.target(*self.args)
+
+        with patch.object(
+            codex_app_server,
+            "execute_codex_dynamic_search",
+            return_value=result,
+        ), patch.object(codex_app_server.threading, "Thread", ImmediateThread):
+            server._handle_event(request)
+
+        self.assertEqual([("dynamic-search-1", result)], responses)
+        event_payloads = [event for _task_id, event in events]
+        self.assertFalse(any(event.get("status") == "waiting_input" for event in event_payloads))
+        self.assertEqual("model_directed_search_completed", event_payloads[-1]["trace_stage"])
+        self.assertIn("Zhuhai current weather", event_payloads[-1]["trace_detail"])
+
     def test_missing_persisted_thread_is_recreated(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,
@@ -650,9 +748,10 @@ class CodexConversationThreadTests(unittest.TestCase):
             server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
             server._ensure_started = lambda: None
             server._conversation_threads = {
-                "v2:conversation-1": "thread-1",
-                "v2:conversation-2": "thread-2",
-                "v2:conversation-3": "thread-3",
+                "v2:legacy": "thread-legacy",
+                f"{codex_app_server.CONVERSATION_THREAD_VERSION}:conversation-1": "thread-1",
+                f"{codex_app_server.CONVERSATION_THREAD_VERSION}:conversation-2": "thread-2",
+                f"{codex_app_server.CONVERSATION_THREAD_VERSION}:conversation-3": "thread-3",
             }
             calls = []
 
@@ -784,6 +883,7 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertTrue(run.finished)
             self.assertEqual("Recovered final answer", run.final_text)
             self.assertEqual(["thread/resume"], [method for method, _, _ in calls])
+            self.assertEqual({"web_search": "disabled"}, calls[0][1]["config"])
             self.assertEqual("completed", events[-1][1]["status"])
             self.assertEqual("Recovered final answer", events[-1][1]["result"])
 

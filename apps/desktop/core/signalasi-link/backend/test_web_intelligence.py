@@ -25,6 +25,7 @@ from web_intelligence import (
     FusedSearchResult,
     HttpResponse,
     PublicWebTransport,
+    RawSearchResult,
     WebIntelligenceError,
     WebIntelligenceService,
     WebIntelligenceStore,
@@ -66,21 +67,29 @@ class FakeTransport:
         self.requests.append({"url": url, "headers": dict(headers or {})})
         started = time.monotonic()
         if "site%3Atripadvisor.com" in url:
-            body = """
-                <html><body>
-                <a href="https://www.tripadvisor.com/Hotel_Review-test">Trusted result</a>
-                <a href="https://attacker.example/fake">Injected result</a>
-                </body></html>
+            body = """<?xml version="1.0" encoding="utf-8"?>
+                <rss version="2.0"><channel>
+                <item><title>Trusted result</title>
+                <link>https://www.tripadvisor.com/Hotel_Review-test</link>
+                <description>Trusted hotel evidence.</description></item>
+                <item><title>Injected result</title>
+                <link>https://attacker.example/fake</link>
+                <description>Must be filtered.</description></item>
+                </channel></rss>
             """
-            content_type = "text/html; charset=utf-8"
+            content_type = "application/rss+xml; charset=utf-8"
         elif "bing.com/search" in url:
-            body = """
-                <html><body>
-                <a href="https://docs.example.com/root?utm_source=bing">SignalASI documentation</a>
-                <a href="https://news.example.com/report">Independent report</a>
-                </body></html>
+            body = """<?xml version="1.0" encoding="utf-8"?>
+                <rss version="2.0"><channel>
+                <item><title>SignalASI documentation</title>
+                <link>https://docs.example.com/root?utm_source=bing</link>
+                <description>SignalASI web intelligence documentation.</description></item>
+                <item><title>Independent report</title>
+                <link>https://news.example.com/report</link>
+                <description>Independent SignalASI report.</description></item>
+                </channel></rss>
             """
-            content_type = "text/html; charset=utf-8"
+            content_type = "application/rss+xml; charset=utf-8"
         elif "duckduckgo.com/html" in url:
             body = """
                 <html><body>
@@ -205,6 +214,60 @@ class WebIntelligenceServiceTests(unittest.TestCase):
             "ebe2e39787edab5166db322b0322e1440ccc733a150db5375443e6bd721f56a9",
             digest,
         )
+
+    def test_bing_rss_adapter_parses_fast_search_evidence(self):
+        spec = next(item for item in ENGINE_SPECS if item.engine_id == "bing")
+        self.assertEqual("rss", spec.parser)
+        self.assertIn("format=rss", spec.endpoint)
+        feed = """<?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0"><channel><item>
+          <title>Beijing weather today</title>
+          <link>https://weather.example/beijing</link>
+          <description>Sunny, 25 to 35 C.</description>
+          <pubDate>Thu, 06 Aug 2026 02:00:00 GMT</pubDate>
+        </item></channel></rss>"""
+
+        results = self.service.engines["bing"]._parse_rss(feed, 5)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("https://weather.example/beijing", results[0].url)
+        self.assertIn("25 to 35 C", results[0].excerpt)
+
+    def test_indexed_sources_use_rss_and_reject_results_from_other_hosts(self):
+        spec = next(item for item in ENGINE_SPECS if item.engine_id == "china_weather")
+        self.assertEqual("site_rss", spec.parser)
+        self.assertIn("format=rss", spec.endpoint)
+        feed = """<?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0"><channel>
+          <item><title>Beijing weather</title>
+            <link>https://bj.weather.com.cn/index.shtml</link>
+            <description>Beijing 35 C / 26 C.</description></item>
+          <item><title>Unrelated result</title>
+            <link>https://example.com/weather</link>
+            <description>Must not escape the indexed source.</description></item>
+        </channel></rss>"""
+
+        results = self.service.engines["china_weather"]._parse_site_rss(feed, 5)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("https://bj.weather.com.cn/index.shtml", results[0].url)
+
+    def test_vertical_search_reserves_a_general_fallback_source(self):
+        selection = self.service._select_engines(
+            "Beijing conditions",
+            6,
+            (),
+            ("weather", "regional"),
+            (),
+        )
+
+        selected_verticals = {
+            self.service.specs[source_id].vertical for source_id in selection.selected
+        }
+        self.assertIn("weather", selected_verticals)
+        self.assertIn("regional", selected_verticals)
+        self.assertIn("general", selected_verticals)
+        self.assertIn("bing", selection.selected)
 
     def test_repeated_independent_evidence_promotes_restricted_learned_source(self):
         result = FusedSearchResult(
@@ -444,6 +507,71 @@ class WebIntelligenceServiceTests(unittest.TestCase):
             set(first["score"]),
         )
         self.assertEqual(2, len(result["receipts"]))
+
+    def test_parallel_search_returns_at_shared_deadline_without_waiting_for_slow_source(self):
+        class SlowAdapter:
+            def search(self, _query, _limit, _timeout_seconds):
+                time.sleep(1.6)
+                return []
+
+        self.service.engines["duckduckgo"] = SlowAdapter()
+        started = time.monotonic()
+
+        result = self.service.search({
+            "query": "SignalASI deadline",
+            "engines": ["bing", "duckduckgo"],
+            "engine_fanout": 2,
+            "limit": 5,
+            "timeout_seconds": 1,
+            "use_cache": False,
+        })
+
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.35)
+        self.assertTrue(result["results"])
+        receipts = {item["source_id"]: item for item in result["receipts"]}
+        self.assertEqual("completed", receipts["bing"]["status"])
+        self.assertEqual("timeout", receipts["duckduckgo"]["status"])
+
+    def test_fast_search_returns_when_relevant_evidence_is_already_sufficient(self):
+        class FastAdapter:
+            def search(self, query, limit, _timeout_seconds):
+                return [
+                    RawSearchResult(
+                        "bing",
+                        index,
+                        f"Beijing weather today forecast {index}",
+                        f"https://weather.example/{index}",
+                        "Beijing weather today includes temperature and rain.",
+                    )
+                    for index in range(1, min(limit, 5) + 1)
+                ]
+
+        class SlowAdapter:
+            def search(self, _query, _limit, _timeout_seconds):
+                time.sleep(1.6)
+                return []
+
+        self.service.engines["bing"] = FastAdapter()
+        self.service.engines["duckduckgo"] = SlowAdapter()
+        started = time.monotonic()
+
+        result = self.service.search({
+            "query": "Beijing weather today",
+            "profile": "fast",
+            "engines": ["bing", "duckduckgo"],
+            "engine_fanout": 2,
+            "limit": 5,
+            "timeout_seconds": 3,
+            "use_cache": False,
+        })
+
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.0)
+        self.assertTrue(result["metadata"]["fast_path_satisfied"])
+        receipts = {item["source_id"]: item for item in result["receipts"]}
+        self.assertEqual("completed", receipts["bing"]["status"])
+        self.assertEqual("cancelled", receipts["duckduckgo"]["status"])
 
     def test_search_response_is_persistently_cached(self):
         first = self.service.search({

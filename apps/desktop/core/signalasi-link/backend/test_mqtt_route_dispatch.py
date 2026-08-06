@@ -7,6 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+import link_protocol
 import mqtt_bridge
 import mqtt_wire_chunking
 
@@ -136,7 +137,20 @@ class MqttRouteDispatchTests(unittest.TestCase):
             for index in range(4)
         ]
         with (
-            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=7),
+            patch.object(
+                mqtt_bridge,
+                "outbound_inflight_count",
+                side_effect=lambda client_route_id="": (
+                    0
+                    if client_route_id
+                    else mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT - 1
+                ),
+            ),
+            patch.object(
+                mqtt_bridge,
+                "list_clients",
+                return_value=[{"client_route_id": "client", "last_seen_at": 1}],
+            ),
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending[:1]) as select,
             patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
             patch.object(mqtt_bridge, "mark_outbound_sending") as mark_sending,
@@ -144,7 +158,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
         ):
             published = mqtt_bridge.flush_outbound_messages(mqttc)
 
-        select.assert_called_once_with(limit=1)
+        select.assert_called_once_with(limit=1, client_route_id="client")
         mark_sending.assert_called_once_with("client", "message-0")
         track.assert_called_once()
         self.assertEqual({("client", "message-0")}, set(published))
@@ -236,8 +250,18 @@ class MqttRouteDispatchTests(unittest.TestCase):
             separators=(",", ":"),
         )
         packets = mqtt_wire_chunking.encode_wire_payload(encrypted_wire)
-        paired_client = {"signal_name": "phone-signal-id"}
+        paired_client = {
+            "client_route_id": "client-route",
+            "signal_name": "phone-signal-id",
+            "topics": {"control": "control-topic", "down": "down-topic"},
+        }
         mqttc = RecordingMqtt()
+        decrypted = link_protocol.make_envelope(
+            {"type": "text", "content": "hello"},
+            source_id="phone-signal-id",
+            target_id="desktop-signal-id",
+            conversation_id="conversation-fragment",
+        )
 
         with (
             patch.object(
@@ -248,7 +272,14 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
             patch.object(mqtt_bridge, "get_client", return_value=paired_client),
-            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=""),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope", return_value=decrypted) as decrypt,
+            patch.object(mqtt_bridge, "bind_ciphertext"),
+            patch.object(mqtt_bridge, "claim_message", return_value=True),
+            patch.object(mqtt_bridge, "touch_client"),
+            patch.object(mqtt_bridge, "complete_message"),
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True),
+            patch.object(mqtt_bridge, "_start_remote_agent_task"),
         ):
             for packet in packets[:-1]:
                 mqtt_bridge._process_message(

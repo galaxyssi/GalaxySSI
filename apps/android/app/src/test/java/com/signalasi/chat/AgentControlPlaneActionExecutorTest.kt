@@ -53,6 +53,7 @@ class AgentControlPlaneActionExecutorTest {
     @Test
     fun productionConnectorActionRunsThroughAdapterOnlyOnce() {
         val executions = AtomicInteger()
+        val registrationReads = AtomicInteger()
         val delegate = object : AgentActionExecutor {
             override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
                 executions.incrementAndGet()
@@ -64,7 +65,10 @@ class AgentControlPlaneActionExecutorTest {
                 )
             }
         }
-        val provider = ActionExecutorAgentProvider({ listOf(registration()) }, delegate)
+        val provider = ActionExecutorAgentProvider({
+            registrationReads.incrementAndGet()
+            listOf(registration())
+        }, delegate)
         val executor = AgentControlPlaneActionExecutor(provider)
         val action = connectorAction()
 
@@ -77,6 +81,7 @@ class AgentControlPlaneActionExecutorTest {
         assertEquals(first.metadata["control_plane_run_id"], replay.metadata["control_plane_run_id"])
         assertEquals("codex", first.metadata["control_plane_agent_id"])
         assertEquals("codex", first.metadata["control_plane_adapter_family"])
+        assertEquals(1, registrationReads.get())
     }
 
     @Test

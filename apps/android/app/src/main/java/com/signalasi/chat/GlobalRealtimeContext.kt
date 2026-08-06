@@ -2,6 +2,8 @@ package com.signalasi.chat
 
 import android.content.Context
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class GlobalRealtimeContextKind {
     COGNITION,
@@ -392,29 +394,126 @@ class GlobalRealtimeContextProvider(context: Context) {
         maximumItems: Int = GlobalRealtimeContextPolicy.DEFAULT_MAXIMUM_ITEMS,
         maximumCharacters: Int = GlobalRealtimeContextPolicy.DEFAULT_MAXIMUM_CHARACTERS
     ): String {
+        return renderSnapshot(
+            snapshot = loadSnapshot(),
+            query = query,
+            currentConversationId = currentConversationId,
+            excludedKeys = excludedKeys,
+            maximumItems = maximumItems,
+            maximumCharacters = maximumCharacters
+        )
+    }
+
+    /**
+     * Returns the latest complete state immediately and refreshes it off the message path.
+     * Realtime state enriches a prompt, so an unavailable first snapshot must never delay send.
+     */
+    fun buildNonBlocking(
+        query: String,
+        currentConversationId: String,
+        excludedKeys: Set<String> = emptySet(),
+        maximumItems: Int = GlobalRealtimeContextPolicy.DEFAULT_MAXIMUM_ITEMS,
+        maximumCharacters: Int = GlobalRealtimeContextPolicy.DEFAULT_MAXIMUM_CHARACTERS
+    ): String {
+        val nowMillis = System.currentTimeMillis()
+        val snapshot = cachedSnapshot
+        if (snapshot == null || nowMillis - snapshot.capturedAtMillis >= SNAPSHOT_TTL_MILLIS) {
+            refreshAsync()
+        }
+        return snapshot?.let {
+            renderSnapshot(
+                snapshot = it,
+                query = query,
+                currentConversationId = currentConversationId,
+                excludedKeys = excludedKeys,
+                maximumItems = maximumItems,
+                maximumCharacters = maximumCharacters,
+                nowMillis = nowMillis
+            )
+        }.orEmpty()
+    }
+
+    fun prewarm() {
+        refreshNow()
+    }
+
+    private fun renderSnapshot(
+        snapshot: Snapshot,
+        query: String,
+        currentConversationId: String,
+        excludedKeys: Set<String>,
+        maximumItems: Int,
+        maximumCharacters: Int,
+        nowMillis: Long = System.currentTimeMillis()
+    ): String = GlobalRealtimeContextPolicy.render(
+        GlobalRealtimeContextPolicy.select(
+            items = snapshot.items,
+            query = query,
+            currentConversationId = currentConversationId,
+            excludedKeys = excludedKeys,
+            nowMillis = nowMillis,
+            maximumItems = maximumItems
+        ),
+        maximumCharacters = maximumCharacters
+    )
+
+    private fun loadSnapshot(nowMillis: Long = System.currentTimeMillis()): Snapshot {
         val locallyExcluded = AgentTranscriptStore(appContext)
             .conversations(includeArchived = true)
             .asSequence()
             .filter { it.privateMode || it.trackingPaused }
             .map(AgentConversation::id)
             .toSet()
-        return GlobalRealtimeContextPolicy.build(
-            cognitionTasks = deliberationStore.cognitionTasks(),
-            researchTasks = repository.researchTasks(),
-            autonomousRuns = deliberationStore.autonomousRuns(),
-            longHorizonGoals = longHorizonStore.goals(),
-            query = query,
-            currentConversationId = currentConversationId,
-            excludedConversationIds = repository.excludedConversationIds() + locallyExcluded,
-            excludedKeys = excludedKeys,
-            maximumItems = maximumItems,
-            maximumCharacters = maximumCharacters,
-            continuitySnapshot = GlobalAgentContinuitySnapshot(
-                pendingEventCount = repository.pendingEventCount(),
-                retryingEvents = repository.eventFailures(),
-                quarantinedEvents = repository.deadLetters(),
-                nextRetryAtMillis = repository.nextPendingEventAttemptAt()
-            )
+        return Snapshot(
+            items = GlobalRealtimeContextPolicy.project(
+                cognitionTasks = deliberationStore.cognitionTasks(),
+                researchTasks = repository.researchTasks(),
+                autonomousRuns = deliberationStore.autonomousRuns(),
+                longHorizonGoals = longHorizonStore.goals(),
+                excludedConversationIds = repository.excludedConversationIds() + locallyExcluded,
+                nowMillis = nowMillis,
+                continuitySnapshot = GlobalAgentContinuitySnapshot(
+                    pendingEventCount = repository.pendingEventCount(),
+                    retryingEvents = repository.eventFailures(),
+                    quarantinedEvents = repository.deadLetters(),
+                    nextRetryAtMillis = repository.nextPendingEventAttemptAt(nowMillis)
+                )
+            ),
+            capturedAtMillis = nowMillis
         )
+    }
+
+    private fun refreshAsync() {
+        if (!refreshing.compareAndSet(false, true)) return
+        refreshExecutor.execute {
+            try {
+                cachedSnapshot = loadSnapshot()
+            } finally {
+                refreshing.set(false)
+            }
+        }
+    }
+
+    private fun refreshNow() {
+        if (!refreshing.compareAndSet(false, true)) return
+        try {
+            cachedSnapshot = loadSnapshot()
+        } finally {
+            refreshing.set(false)
+        }
+    }
+
+    private data class Snapshot(
+        val items: List<GlobalRealtimeContextItem>,
+        val capturedAtMillis: Long
+    )
+
+    private companion object {
+        private const val SNAPSHOT_TTL_MILLIS = 15_000L
+        @Volatile private var cachedSnapshot: Snapshot? = null
+        private val refreshing = AtomicBoolean(false)
+        private val refreshExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "signalasi-realtime-context").apply { isDaemon = true }
+        }
     }
 }

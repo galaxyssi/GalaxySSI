@@ -190,6 +190,26 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             type(policy).from_public(policy.public()),
         )
 
+    def test_volatile_information_words_do_not_force_research_policy(self):
+        for prompt in (
+            "What is the weather today?",
+            "What is the latest version?",
+            "\u4eca\u5929\u5929\u6c14\u600e\u4e48\u6837？",
+            "\u6700\u65b0\u7248\u672c\u662f\u4ec0\u4e48？",
+        ):
+            with self.subTest(prompt=prompt):
+                policy = execution_policy_for(prompt)
+                self.assertEqual(AgentTaskKind.CHAT, policy.task_kind)
+                self.assertEqual(AgentTaskIntent.CHAT, policy.task_intent)
+                self.assertEqual(AgentReasoningEffort.LOW, policy.reasoning_effort)
+
+        explicit = execution_policy_for(
+            "Research the current weather and compare authoritative sources"
+        )
+        self.assertEqual(AgentTaskKind.RESEARCH, explicit.task_kind)
+        self.assertEqual(AgentTaskIntent.RESEARCH, explicit.task_intent)
+        self.assertEqual(AgentReasoningEffort.MEDIUM, explicit.reasoning_effort)
+
     def test_plan_only_mode_can_be_selected_by_prompt_or_request(self):
         explicit = execution_policy_for(
             "Build an Android app, but first give me a plan without executing"

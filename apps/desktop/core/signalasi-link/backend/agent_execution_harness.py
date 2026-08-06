@@ -624,10 +624,8 @@ _INTENT_RULES = (
         "\u7535\u8111\u5c4f\u5e55", "\u9f20\u6807", "\u952e\u76d8\u5feb\u6377\u952e",
     )),
     (AgentTaskIntent.RESEARCH, 2, (
-        "research", "search the web", "look up", "latest", "today's news",
-        "current news", "weather", "find sources", "compare sources",
-        "\u8c03\u67e5", "\u641c\u7d22", "\u67e5\u8d44\u6599", "\u6700\u65b0",
-        "\u4eca\u5929\u7684\u65b0\u95fb", "\u65b0\u95fb", "\u5929\u6c14",
+        "research", "search the web", "look up", "find sources",
+        "compare sources", "\u8c03\u67e5", "\u641c\u7d22", "\u67e5\u8d44\u6599",
         "\u67e5\u627e\u6765\u6e90",
     )),
     (AgentTaskIntent.FILE, 2, (
@@ -845,9 +843,8 @@ _ARTIFACT_TERMS = (
     "\u751f\u6210\u56fe\u7247", "\u6253\u5305", "\u538b\u7f29\u5305",
 )
 _RESEARCH_TERMS = (
-    "latest", "today", "news", "weather", "research", "search the web",
-    "\u6700\u65b0", "\u4eca\u5929", "\u65b0\u95fb", "\u5929\u6c14",
-    "\u8c03\u67e5", "\u641c\u7d22", "\u8054\u7f51",
+    "research", "search the web", "find sources", "compare sources",
+    "\u8c03\u67e5", "\u641c\u7d22", "\u67e5\u627e\u6765\u6e90", "\u8054\u7f51",
 )
 _DEVICE_TERMS = (
     "battery", "flashlight", "camera", "alarm", "timer", "phone setting",

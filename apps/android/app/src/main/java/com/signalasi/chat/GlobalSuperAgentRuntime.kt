@@ -2133,7 +2133,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             currentConversationId = context.conversationId,
             maximumCharacters = 5_500
         )
-        val realtimeState = realtimeContext.build(
+        val realtimeState = realtimeContext.buildNonBlocking(
             query = query,
             currentConversationId = context.conversationId,
             maximumItems = 10,
@@ -2148,6 +2148,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun prewarmContextSnapshot() {
         repository.promptContextSnapshot()
+        realtimeContext.prewarm()
     }
 
     fun worldSnapshot(): PersonalWorldModel = repository.loadWorld()
