@@ -12,13 +12,29 @@ class AgentReplyWaitingIndicatorPolicyTest {
 
         val result = AgentReplyWaitingIndicatorPolicy.apply(
             entries = listOf(user),
-            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 101L)),
+            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 50L)),
             conversationId = "conversation"
         )
 
         assertEquals(2, result.entries.size)
         assertTrue(AgentReplyWaitingIndicatorPolicy.isIndicator(result.entries.last()))
         assertTrue(result.resolvedTurnIds.isEmpty())
+    }
+
+    @Test
+    fun indicatorIsAlwaysImmediatelyBelowItsUserMessage() {
+        val user = entry("user", AgentTranscriptRole.USER, "turn-1", 100L)
+        val process = entry("process", AgentTranscriptRole.PROCESS, "turn-1", 120L)
+
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = listOf(user, process),
+            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 50L)),
+            conversationId = "conversation"
+        )
+
+        assertEquals("user", result.entries[0].id)
+        assertTrue(AgentReplyWaitingIndicatorPolicy.isIndicator(result.entries[1]))
+        assertEquals("process", result.entries[2].id)
     }
 
     @Test
