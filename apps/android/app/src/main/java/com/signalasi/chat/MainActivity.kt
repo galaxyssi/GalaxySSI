@@ -299,6 +299,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val AGENT_TRANSCRIPT_PAGE_ITEMS = 24
         private const val MAX_EXPANDED_AGENT_TRANSCRIPT_ENTRIES = 8
         private const val MAX_AGENT_RESPONSE_SECTION_STATES = 512
+        private const val MAX_PENDING_AGENT_REPLY_INDICATORS = 256
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
@@ -399,6 +400,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val pendingDirectConnectorActions = ConcurrentHashMap<String, AgentAction>()
     private val pendingDirectConnectorRuns = ConcurrentHashMap<Long, PendingDirectConnectorRun>()
+    private val pendingAgentReplyIndicators =
+        ConcurrentHashMap<String, PendingAgentReplyIndicator>()
     private val directControlPlaneExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AgentControlPlaneActionExecutor(this, AndroidAgentActionExecutor(this))
     }
@@ -5341,6 +5344,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             voiceCoordinatorIdsByTurn[turnId] = sessionId
         }
         agentTranscriptAutoFollow = true
+        pendingAgentReplyIndicators[turnId] = PendingAgentReplyIndicator(
+            conversationId = conversation.id,
+            turnId = turnId,
+            startedAtMillis = System.currentTimeMillis()
+        )
+        if (pendingAgentReplyIndicators.size > MAX_PENDING_AGENT_REPLY_INDICATORS) {
+            pendingAgentReplyIndicators.values
+                .sortedBy(PendingAgentReplyIndicator::startedAtMillis)
+                .take(pendingAgentReplyIndicators.size - MAX_PENDING_AGENT_REPLY_INDICATORS)
+                .forEach { pendingAgentReplyIndicators.remove(it.turnId, it) }
+        }
         val attachmentLabel = when (attachments.size) {
             0 -> ""
             1 -> "[${attachments.first().displayName}]"
@@ -16379,6 +16393,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ) {
         if (turnId.isNotBlank()) recordRunControlProgress(state, turnId)
         val currentConversationId = activeConversationId ?: agentTranscriptStore.activeConversation().id
+        val transcriptTurnId = AgentFinalResponseIdentity.resolveTurnId(
+            explicitTurnId = turnId,
+            taskId = state.sessionId,
+            turnIdForTask = agentTranscriptStore::turnIdForTask
+        )
+        val replyIndicatorRemoved = transcriptTurnId.isNotBlank() &&
+            AgentReplyWaitingIndicatorPolicy.stopsFor(state.phase) &&
+            pendingAgentReplyIndicators.remove(transcriptTurnId) != null
         if (conversationId != currentConversationId) {
             if (syncTranscript) syncAgentTranscript(state, conversationId, turnId)
             return
@@ -16388,6 +16410,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             updateAgentSubmitButtonAppearance(
                 agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
             )
+            if (replyIndicatorRemoved) refreshAgentTranscriptWindow(conversationId)
             return
         }
         lastRenderedAgentState = state
@@ -16913,7 +16936,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             staleApproval
         }
         renderedAgentTranscriptSourceEntries = filteredEntries
-        val visibleEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
+        val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = filteredEntries,
+            pending = pendingAgentReplyIndicators.values,
+            conversationId = activeConversationId
+        )
+        waitingResult.resolvedTurnIds.forEach(pendingAgentReplyIndicators::remove)
+        val visibleEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
+            waitingResult.entries
+        )
         val incomingIds = visibleEntries.map(AgentTranscriptRenderPolicy::identity)
         val renderedIds = renderedAgentTranscriptIds.toList()
         val diff = AgentTranscriptRenderPolicy.diff(
@@ -17248,6 +17279,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun agentTranscriptRow(entry: AgentTranscriptEntry): View {
+        if (AgentReplyWaitingIndicatorPolicy.isIndicator(entry)) {
+            return agentReplyWaitingTranscriptRow()
+        }
         val content = when (entry.role) {
             AgentTranscriptRole.USER -> agentUserTranscriptRow(entry)
             AgentTranscriptRole.ASSISTANT -> agentAssistantTranscriptRow(entry)
@@ -17273,6 +17307,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             })
             addView(content)
         }
+    }
+
+    private fun agentReplyWaitingTranscriptRow(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.START
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(10) }
+        addView(
+            AgentVoiceTranscriptionPendingView(
+                context = this@MainActivity,
+                bubbleBackground = false,
+                accessibilityText = getString(R.string.agent_status_waiting_response)
+            ),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
     }
 
     private fun agentAssistantTranscriptRow(entry: AgentTranscriptEntry): View {

@@ -1,0 +1,87 @@
+package com.signalasi.chat
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentReplyWaitingIndicatorPolicyTest {
+    @Test
+    fun pendingTurnAddsTransientAssistantIndicator() {
+        val user = entry("user", AgentTranscriptRole.USER, "turn-1", 100L)
+
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = listOf(user),
+            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 101L)),
+            conversationId = "conversation"
+        )
+
+        assertEquals(2, result.entries.size)
+        assertTrue(AgentReplyWaitingIndicatorPolicy.isIndicator(result.entries.last()))
+        assertTrue(result.resolvedTurnIds.isEmpty())
+    }
+
+    @Test
+    fun firstAssistantOutputResolvesIndicator() {
+        val entries = listOf(
+            entry("user", AgentTranscriptRole.USER, "turn-1", 100L),
+            entry("assistant", AgentTranscriptRole.ASSISTANT, "turn-1", 120L)
+        )
+
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = entries,
+            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 101L)),
+            conversationId = "conversation"
+        )
+
+        assertEquals(entries, result.entries)
+        assertEquals(setOf("turn-1"), result.resolvedTurnIds)
+        assertFalse(result.entries.any(AgentReplyWaitingIndicatorPolicy::isIndicator))
+    }
+
+    @Test
+    fun pendingIndicatorsStayInsideTheirConversationAndTurn() {
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = listOf(entry("user", AgentTranscriptRole.USER, "turn-1", 100L)),
+            pending = listOf(
+                PendingAgentReplyIndicator("conversation", "turn-1", 101L),
+                PendingAgentReplyIndicator("other", "turn-2", 102L)
+            ),
+            conversationId = "conversation"
+        )
+
+        assertEquals(1, result.entries.count(AgentReplyWaitingIndicatorPolicy::isIndicator))
+        assertEquals("turn-1", result.entries.last().turnId)
+    }
+
+    @Test
+    fun terminalAndUserControlledPhasesStopWaiting() {
+        listOf(
+            AgentPhase.WAITING_CONFIRMATION,
+            AgentPhase.PAUSED,
+            AgentPhase.BLOCKED,
+            AgentPhase.COMPLETED,
+            AgentPhase.FAILED,
+            AgentPhase.CANCELLED
+        ).forEach { phase ->
+            assertTrue("$phase should stop waiting", AgentReplyWaitingIndicatorPolicy.stopsFor(phase))
+        }
+        assertFalse(AgentReplyWaitingIndicatorPolicy.stopsFor(AgentPhase.EXECUTING))
+        assertFalse(AgentReplyWaitingIndicatorPolicy.stopsFor(AgentPhase.WAITING_RESPONSE))
+    }
+
+    private fun entry(
+        id: String,
+        role: AgentTranscriptRole,
+        turnId: String,
+        timestampMillis: Long
+    ) = AgentTranscriptEntry(
+        id = id,
+        role = role,
+        text = id,
+        timestampMillis = timestampMillis,
+        conversationId = "conversation",
+        turnId = turnId,
+        taskId = turnId
+    )
+}
