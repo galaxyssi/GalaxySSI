@@ -58,7 +58,7 @@ enum VoiceTranscriptRoutePolicy {
       return .localAction
     case .cloudAPI:
       return .cloudModel
-    case .link:
+    case .link, .pcConnector:
       return .remoteAgent
     }
   }

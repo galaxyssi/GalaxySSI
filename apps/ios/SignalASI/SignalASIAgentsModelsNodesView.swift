@@ -185,7 +185,7 @@ struct SignalASIAgentsModelsNodesView: View {
     store.contacts.filter { contact in
       !contact.deleted &&
         contact.desktopId == link.desktopId &&
-        (contact.type == "agent" || contact.id == "hermes" || contact.deliveryMode == .link)
+        (contact.type == "agent" || contact.id == "hermes" || contact.deliveryMode.isSignalASILinkFamily)
     }.count
   }
 

@@ -248,7 +248,7 @@ struct ConversationView: View {
     switch contact.deliveryMode {
     case .cloudAPI:
       return contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud model"))
-    case .link:
+    case .link, .pcConnector:
       return contact.isCommunicable ? "SignalASI Link" : setupDetail.ifBlank(t("signalasi.status.waiting_pairing", "Waiting for Desktop pairing"))
     case .local:
       return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
@@ -710,7 +710,7 @@ struct MessageDetailView: View {
 
   private var securityStatusText: String {
     switch contact.deliveryMode {
-    case .link:
+    case .link, .pcConnector:
       return t("signalasi.security.link", "Protected by the SignalASI Link end-to-end session")
     case .cloudAPI:
       return t("signalasi.security.cloud", "Protected locally; cloud model requests use the configured provider endpoint")
@@ -1875,7 +1875,7 @@ struct AvatarView: View {
     }
 
     let identity = identityFields.joined(separator: " ").lowercased()
-    if contact.deliveryMode == .link || identity.contains("signalasi") {
+    if contact.deliveryMode.isSignalASILinkFamily || identity.contains("signalasi") {
       return "SignalASILogo"
     }
     return nil
@@ -1884,7 +1884,7 @@ struct AvatarView: View {
   private var iconName: String {
     switch contact.deliveryMode {
     case .cloudAPI: return "cloud"
-    case .link: return "desktopcomputer"
+    case .link, .pcConnector: return "desktopcomputer"
     case .local: return "gearshape"
     }
   }
@@ -1892,7 +1892,7 @@ struct AvatarView: View {
   private var color: Color {
     switch contact.deliveryMode {
     case .cloudAPI: return .purple
-    case .link: return .green
+    case .link, .pcConnector: return .green
     case .local: return .gray
     }
   }

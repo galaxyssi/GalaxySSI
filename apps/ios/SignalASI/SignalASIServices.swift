@@ -713,7 +713,7 @@ final class MessageCoordinator: ObservableObject {
           outgoing: outgoing,
           modelDetail: modelDetail
         )
-      case .link:
+      case .link, .pcConnector:
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
           contactId: contact.id,
@@ -761,7 +761,7 @@ final class MessageCoordinator: ObservableObject {
       switch contact.deliveryMode {
       case .cloudAPI:
         stage = "cloud_error"
-      case .link:
+      case .link, .pcConnector:
         stage = "publish_failed"
       case .local:
         stage = "failed"
