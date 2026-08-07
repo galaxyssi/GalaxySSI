@@ -22,6 +22,8 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
@@ -241,6 +243,7 @@ object SignalASIMqttClient {
     private val pairingClaimRetryRunnable = Runnable { flushPendingPairingClaim() }
     private val listeners = CopyOnWriteArraySet<Listener>()
     private val deliveryMessageIds = ConcurrentHashMap<Int, String>()
+    private val pendingArtifactDownloads = ConcurrentHashMap.newKeySet<String>()
     private val fragmentTransferLock = Any()
     private val fragmentTransfers = LinkedHashMap<String, OutboundFragmentTransfer>()
     private val fragmentTransferKeysByMid = HashMap<Int, String>()
@@ -425,6 +428,7 @@ object SignalASIMqttClient {
 
     private fun publishArtifactReceipt(
         desktopId: String,
+        clientRouteId: String,
         result: AgentDesktopArtifactIngestResult
     ): Boolean = publishDesktopControlPayload(
         desktopId,
@@ -435,16 +439,58 @@ object SignalASIMqttClient {
             .put("task_id", result.taskId)
             .put("sha256", result.sha256)
             .put("status", "stored")
-            .put("time", System.currentTimeMillis())
+            .put("time", System.currentTimeMillis()),
+        clientRouteId = clientRouteId
     )
+
+    fun requestDesktopArtifactDownload(block: AgentRichBlock): Boolean {
+        val context = appContext ?: return false
+        val artifactUri = block.metadata["artifact_source_uri"].orEmpty().ifBlank { block.uri }
+        val digest = block.metadata["sha256"].orEmpty().trim().lowercase()
+        if (artifactUri.isBlank() || digest.length != 64) return false
+        val pairedLinks = SignalASILinkProtocol.allServerLinks(context).filter { it.paired }
+        val desktopId = block.metadata["desktop_id"].orEmpty()
+        val clientRouteId = block.metadata["client_route_id"].orEmpty()
+        val link = when {
+            desktopId.isNotBlank() && clientRouteId.isNotBlank() ->
+                SignalASILinkProtocol.serverLink(context, desktopId, clientRouteId)
+            desktopId.isNotBlank() -> SignalASILinkProtocol.serverLink(context, desktopId)
+            pairedLinks.size == 1 -> pairedLinks.single()
+            else -> null
+        } ?: return false
+        val artifactId = block.metadata["artifact_id"].orEmpty().ifBlank {
+            MessageDigest.getInstance("SHA-256")
+                .digest("$artifactUri\u0000$digest".toByteArray(StandardCharsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+        }
+        if (!pendingArtifactDownloads.add(artifactUri)) return true
+        val accepted = publishDesktopControlPayload(
+            link.desktopId,
+            JSONObject()
+                .put("type", "artifact_redelivery_request")
+                .put("artifact_id", artifactId)
+                .put("artifact_uri", artifactUri)
+                .put("task_id", block.metadata["task_id"].orEmpty())
+                .put("sha256", digest)
+                .put("time", System.currentTimeMillis()),
+            clientRouteId = link.routes.clientRouteId
+        )
+        if (!accepted) pendingArtifactDownloads.remove(artifactUri)
+        return accepted
+    }
 
     private fun publishDesktopControlPayload(
         desktopId: String,
         payload: JSONObject,
-        durable: Boolean = true
+        durable: Boolean = true,
+        clientRouteId: String = ""
     ): Boolean {
         val context = appContext ?: return false
-        val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
+        val link = if (clientRouteId.isBlank()) {
+            SignalASILinkProtocol.serverLink(context, desktopId)
+        } else {
+            SignalASILinkProtocol.serverLink(context, desktopId, clientRouteId)
+        } ?: return false
         val mqtt = client ?: return false
         if (!mqtt.isConnected || !link.paired || !SignalASICrypto.hasDesktopSession(context, desktopId)) return false
         payload.put("desktop_id", desktopId)
@@ -1890,13 +1936,35 @@ object SignalASIMqttClient {
                 .onFailure { Log.w(TAG, "Rejected Desktop artifact chunk", it) }
                 .getOrNull()
             if (result?.completed == true) {
-                publishArtifactReceipt(sourceDesktopId, result)
+                val clientRouteId = payload.optString("client_route_id")
+                publishArtifactReceipt(sourceDesktopId, clientRouteId, result)
+                val requestedDownload = pendingArtifactDownloads.remove(result.artifactUri)
+                val savedPath = if (requestedDownload) {
+                    AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
+                        .getOrNull()
+                } else null
                 notifyMessageListeners(
                     JSONObject()
                         .put("type", "artifact_available")
                         .put("artifact_id", result.artifactId)
                         .put("artifact_uri", result.artifactUri)
                         .put("task_id", result.taskId)
+                        .put("saved_path", savedPath.orEmpty())
+                        .put("save_requested", requestedDownload)
+                )
+            }
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
+        if (payload.optString("type") == "artifact_redelivery_result") {
+            val artifactUri = payload.optString("artifact_uri")
+            if (payload.optString("status") != "stored") {
+                pendingArtifactDownloads.remove(artifactUri)
+                notifyMessageListeners(
+                    JSONObject()
+                        .put("type", "artifact_download_failed")
+                        .put("artifact_id", payload.optString("artifact_id"))
+                        .put("artifact_uri", artifactUri)
                 )
             }
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
