@@ -172,11 +172,18 @@ internal object AgentDesktopArtifactStore {
     }
 
     fun saveToDownloads(context: Context, block: AgentRichBlock): Result<String> = runCatching {
+        val resolved = resolveBlock(context, block)
+        saveArtifactUriToDownloads(
+            context,
+            resolved.metadata["artifact_source_uri"].orEmpty()
+        ).getOrThrow()
+    }
+
+    fun saveArtifactUriToDownloads(context: Context, artifactUri: String): Result<String> = runCatching {
         require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             "System Downloads requires Android 10 or newer"
         }
-        val resolved = resolveBlock(context, block)
-        val sourceUri = resolved.metadata["artifact_source_uri"].orEmpty()
+        val sourceUri = artifactUri.trim()
         val record = existingRecord(context, sourceUri) ?: error("Artifact is not available")
         val source = artifactFile(context, record)?.takeIf(File::isFile)
             ?: error("Artifact file is missing")

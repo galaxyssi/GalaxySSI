@@ -2385,6 +2385,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         agentTranscriptAdapter.notifyDataSetChanged()
                     }
                     messageAdapter?.notifyDataSetChanged()
+                    val savedPath = envelope.optString("saved_path")
+                    if (savedPath.isNotBlank()) {
+                        Toast.makeText(
+                            this,
+                            getString(R.string.rich_output_downloaded, savedPath),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else if (envelope.optBoolean("save_requested")) {
+                        Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+                    }
+                    return@runOnUiThread
+                }
+                if (envelope?.optString("type") == "artifact_download_failed") {
+                    Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
                 if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread

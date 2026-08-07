@@ -1053,9 +1053,26 @@ class AgentRichContentView(
                 )
                 background = ColorDrawable(Color.TRANSPARENT)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
-                isEnabled = canOpen && !savedToDownloads
-                alpha = if (isEnabled || savedToDownloads) 1f else 0.35f
-                setOnClickListener { saveDesktopArtifact(block, this) }
+                isEnabled = !savedToDownloads
+                alpha = 1f
+                setOnClickListener {
+                    if (canOpen) {
+                        saveDesktopArtifact(block, this)
+                    } else if (SignalASIMqttClient.requestDesktopArtifactDownload(block)) {
+                        alpha = 0.55f
+                        Toast.makeText(
+                            activity,
+                            R.string.rich_output_download_preparing,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            activity,
+                            R.string.rich_output_download_failed,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
             }, LinearLayout.LayoutParams(dp(40), dp(40)))
             saveAction?.let { action ->
                 addView(Button(activity).apply {

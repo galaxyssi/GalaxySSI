@@ -193,6 +193,14 @@ object SignalASILinkProtocol {
     fun serverLink(context: Context, desktopId: String): ServerLink? =
         allServerLinks(context).firstOrNull { it.desktopId == desktopId }
 
+    fun serverLink(
+        context: Context,
+        desktopId: String,
+        clientRouteId: String
+    ): ServerLink? = allServerLinks(context).firstOrNull {
+        it.desktopId == desktopId && it.routes.clientRouteId == clientRouteId
+    }
+
     fun allServerLinks(context: Context): List<ServerLink> {
         val raw = storage(context).readString(KEY_SERVERS, "[]")
         val array = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())

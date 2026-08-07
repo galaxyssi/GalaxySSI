@@ -194,6 +194,7 @@ DESKTOP_CONTROL_REQUEST_SLOTS = threading.BoundedSemaphore(4)
 CONNECTOR_STATUS_SYNC_SLOTS = threading.BoundedSemaphore(4)
 ARTIFACT_CHUNK_TYPE = "artifact_chunk"
 ARTIFACT_RECEIPT_TYPE = "artifact_receipt"
+ARTIFACT_REDELIVERY_REQUEST_TYPE = "artifact_redelivery_request"
 INPUT_ATTACHMENT_MANIFEST_TYPE = "input_attachment_manifest"
 INPUT_ATTACHMENT_CHUNK_TYPE = "input_attachment_chunk"
 INPUT_ATTACHMENT_RECEIPT_TYPE = "input_attachment_receipt"
@@ -1936,6 +1937,7 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
         flush_outbound_messages(mqttc)
         flush_pending_task_events(mqttc)
         flush_pending_task_results(mqttc)
+        replay_pending_task_artifacts(mqttc)
         status = publish_connector_status(mqttc, reason="mqtt_connected")
         if not status.get("ok"):
             log.warning("Desktop recovery presence publish skipped: %s", status)
@@ -3180,6 +3182,36 @@ def _publish_task_artifacts(
     return all_published
 
 
+def replay_pending_task_artifacts(mqttc) -> int:
+    from artifact_delivery import pending_artifacts_for_redelivery
+
+    replayed = 0
+    for client_route_id, artifact in pending_artifacts_for_redelivery():
+        if get_client(client_route_id) is None:
+            continue
+        task = agent_task_manager.get(artifact.task_id)
+        if task is None or task.client_route_id != client_route_id:
+            continue
+        if _publish_task_artifacts(
+            mqttc,
+            {"scheme": "signal", "_client_route_id": client_route_id},
+            [artifact],
+            common={
+                "source_message_id": task.source_message_id,
+                "conversation_id": task.client_conversation_id,
+                "turn_id": task.client_turn_id,
+                "contact_id": task.contact_id,
+                "agent_id": task.agent_id,
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+            },
+        ):
+            replayed += 1
+    if replayed:
+        log.info("Replayed pending phone-owned artifacts count=%s", replayed)
+    return replayed
+
+
 def _requests_desktop_artifact_retention(prompt: str) -> bool:
     value = re.sub(r"\s+", " ", str(prompt or "").strip()).lower()
     if not value:
@@ -4080,6 +4112,20 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "time": time.time(),
         }
         if rich_output:
+            artifact_by_uri = {artifact.artifact_uri: artifact for artifact in artifacts}
+            for block in rich_output.get("blocks", []):
+                artifact = artifact_by_uri.get(str(block.get("uri") or ""))
+                if artifact is None:
+                    continue
+                metadata = dict(block.get("metadata") or {})
+                metadata.update({
+                    "artifact_id": artifact.artifact_id,
+                    "artifact_source_uri": artifact.artifact_uri,
+                    "task_id": artifact.task_id,
+                    "desktop_id": desktop_id(),
+                    "client_route_id": client_route_id,
+                })
+                block["metadata"] = metadata
             reply_payload["rich_output"] = rich_output
         reply_payload["artifact_verification"] = finalization.verification
         receipt, reputation_snapshot = _task_reputation_evidence(task)
@@ -4090,7 +4136,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             reply_payload["exact_content_encoding"] = "base64-utf8"
             reply_payload["exact_content_b64"] = base64.b64encode(raw_result.encode("utf-8")).decode("ascii")
         reply_payload["latency"] = _trace_metrics(reply_payload["delivery_trace"])
-        _publish_or_queue_task_result(mqttc, wire_payload, reply_payload)
+        # Queue artifact bytes before the card that references them. This keeps
+        # a slow broker from exposing a disabled download action to the phone.
         _publish_task_artifacts(
             mqttc,
             wire_payload,
@@ -4105,6 +4152,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 "desktop_name": desktop_name(),
             },
         )
+        _publish_or_queue_task_result(mqttc, wire_payload, reply_payload)
         if not output_files:
             discard_task_workspace_if_no_artifacts(
                 task_id,
@@ -5630,6 +5678,57 @@ def _process_message(mqttc, userdata, msg):
                     str(payload.get("artifact_id") or "")[:12],
                     client_route_id[-8:],
                 )
+            return
+
+        if payload.get("type") == ARTIFACT_REDELIVERY_REQUEST_TYPE:
+            from artifact_delivery import artifact_for_redelivery
+
+            artifact = artifact_for_redelivery(
+                payload,
+                client_route_id=client_route_id,
+            )
+            if artifact is None:
+                log.warning(
+                    "Rejected artifact redelivery request artifact_id=%s client=%s",
+                    str(payload.get("artifact_id") or "")[:12],
+                    client_route_id[-8:],
+                )
+                _publish_phone_payload(
+                    mqttc,
+                    wire_payload,
+                    {
+                        "type": "artifact_redelivery_result",
+                        "artifact_id": payload.get("artifact_id", ""),
+                        "artifact_uri": payload.get("artifact_uri", ""),
+                        "task_id": payload.get("task_id", ""),
+                        "status": "unavailable",
+                        "sender": "system",
+                        "time": time.time(),
+                    },
+                )
+                return
+            original_task = agent_task_manager.get(artifact.task_id)
+            if original_task is None or original_task.client_route_id != client_route_id:
+                log.warning(
+                    "Artifact redelivery lost task identity task_id=%s client=%s",
+                    artifact.task_id,
+                    client_route_id[-8:],
+                )
+                return
+            _publish_task_artifacts(
+                mqttc,
+                wire_payload,
+                [artifact],
+                common={
+                    "source_message_id": original_task.source_message_id,
+                    "conversation_id": original_task.client_conversation_id,
+                    "turn_id": original_task.client_turn_id,
+                    "contact_id": original_task.contact_id,
+                    "agent_id": original_task.agent_id,
+                    "desktop_id": desktop_id(),
+                    "desktop_name": desktop_name(),
+                },
+            )
             return
 
         if payload.get("type") == INPUT_ATTACHMENT_REQUEST_RESULT_TYPE:

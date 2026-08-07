@@ -2007,6 +2007,7 @@
     <string name="rich_output_copied">已复制</string>
     <string name="rich_output_open">打开</string>
     <string name="rich_output_download">保存到下载目录</string>
+    <string name="rich_output_download_preparing">正在获取文件…</string>
     <string name="rich_output_downloaded">已保存到 %1$s</string>
     <string name="rich_output_download_failed">文件保存失败</string>
     <string name="rich_output_saved">已保存</string>
