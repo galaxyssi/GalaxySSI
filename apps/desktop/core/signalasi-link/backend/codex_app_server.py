@@ -37,7 +37,7 @@ log = logging.getLogger("signalasi.codex")
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".signalasi" / "codex_conversation_threads.json"
 CONVERSATION_THREAD_VERSION = "v6"
-CODEX_THREAD_CONFIG = {"web_search": "disabled"}
+CODEX_THREAD_CONFIG = {"web_search": "live"}
 CODEX_TASK_POLICY = """
 SignalASI execution policy:
 - Do not inspect or invoke personal Codex Skills. Execute the request with the model and available tools directly.
@@ -46,8 +46,8 @@ SignalASI execution policy:
 - If a required source or tool is unavailable, report that failure. Do not synthesize replacement media or data.
 - For current information, verify the date and requested location, prefer primary or authoritative sources, and cite the source concisely.
 - Decide for yourself whether current external information is needed.
-- After deciding it is needed, you must call `signalasi_parallel_web_search` exactly once. Resolve follow-up wording from the full conversation into one concise, self-contained query, select the relevant content verticals yourself, and set read_pages=true when facts from source pages are needed. The tool races specialist and general sources and reads independent pages concurrently. Treat an empty result as a completed search, not a tool failure: do not retry equivalent searches through shell commands, MCP, or another browser path.
-- Do not use native web search after a successful SignalASI tool response. Native web search is allowed only when that response reports failure or when its cited evidence is explicitly insufficient for the user's requested depth.
+- Prefer Codex native live web search when current external information is needed. Choose the query, search, open the best pages, and inspect relevant passages until the evidence is sufficient for the requested depth.
+- If native web search is unavailable or its evidence remains insufficient, call `signalasi_parallel_web_search` once as a bounded multi-source fallback. Resolve follow-up wording from the full conversation into one concise, self-contained query, select the relevant content verticals yourself, and set read_pages=true when source-page facts are needed. Do not repeat equivalent searches through shell commands or MCP after either search path has returned sufficient evidence.
 - Never expose internal task workspace or attachment download paths. Refer to uploaded inputs by their original filename only.
 - For image review or homework grading, inspect the supplied image and return the findings before offering optional edits.
 - Camera photos may be sideways even when EXIF says normal; orient the content for reading before OCR or grading.

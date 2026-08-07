@@ -215,7 +215,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         timeout=60,
         note="Hermes CLI",
         output_cleaner="hermes",
-        capabilities=("conversation", "research", "tools", "code", "terminal", "files"),
+        capabilities=("conversation", "research", "tools", "code", "terminal", "files", "web"),
     ),
     "codex": AgentSpec(
         id="codex",
@@ -238,7 +238,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         timeout=120,
         env_key="SIGNALASI_CLAUDE_CMD",
         note="Claude Code CLI wrapped by SignalASI Desktop",
-        capabilities=("conversation", "code", "terminal", "files", "tasks"),
+        capabilities=("conversation", "research", "tools", "code", "terminal", "files", "web", "tasks"),
     ),
     "gemini": AgentSpec(
         id="gemini",
@@ -259,7 +259,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         env_key="SIGNALASI_OPENCLAW_CMD",
         note="OpenClaw CLI wrapped by SignalASI Desktop",
         output_cleaner="openclaw",
-        capabilities=("conversation", "research", "tools", "code", "terminal", "files", "automation", "tasks"),
+        capabilities=("conversation", "research", "tools", "code", "terminal", "files", "web", "automation", "tasks"),
     ),
     "local-llm": AgentSpec(
         id="local-llm",
@@ -268,7 +268,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         command=None,
         timeout=120,
         note="Ollama or local OpenAI-compatible endpoint",
-        capabilities=("conversation", "local_inference"),
+        capabilities=("conversation", "research", "tools", "web", "local_inference"),
     ),
     "cloud-model": AgentSpec(
         id="cloud-model",
@@ -704,6 +704,11 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                     current_prompt,
                     timeout=attempt_spec.timeout,
                     messages=messages,
+                    audit_context={
+                        "task_id": request.run_id,
+                        "conversation_id": request.conversation_id,
+                        "agent_id": spec.id,
+                    },
                 )
         elif spec is not None and spec.id == "cloud-model":
             with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
@@ -2288,7 +2293,7 @@ def _ask_cli_agent_locked(
                 summary_digest=binding.summary_digest,
                 response_language=response_language,
             )
-            or _styled_turn_prompt(text, response_language)
+            or _styled_turn_prompt(spec, text, response_language)
         )
     invocation_text = protect_agent_prompt(invocation_text)
     session_command = (
@@ -2687,11 +2692,30 @@ def _is_stale_native_session_error(spec: AgentSpec, value: str) -> bool:
     return any(marker in normalized for marker in stale_markers)
 
 
-def _styled_turn_prompt(text: str, preferred_language: str = "") -> str:
+def _native_tool_policy(spec: AgentSpec) -> str:
+    if "web" not in spec.capabilities:
+        return ""
+    return (
+        "Decide for yourself whether current external information is needed. "
+        "When it is, prefer your own built-in web search, browser, WebSearch/WebFetch, "
+        "or configured MCP tools. Choose and refine queries, inspect the strongest source "
+        "pages, and synthesize cited evidence. Do not ask SignalASI to guess the query or "
+        "pre-fetch pages for you. Use an external SignalASI search fallback only when your "
+        "native tools are unavailable or return insufficient evidence."
+    )
+
+
+def _styled_turn_prompt(
+    spec: AgentSpec,
+    text: str,
+    preferred_language: str = "",
+) -> str:
     from conversation_context import current_request
     from response_policy import apply_response_policy
 
-    return apply_response_policy(current_request(text), preferred_language)
+    styled = apply_response_policy(current_request(text), preferred_language)
+    native_policy = _native_tool_policy(spec)
+    return f"{native_policy}\n\n{styled}" if native_policy else styled
 
 
 def _compiled_cli_prompt(
@@ -2714,7 +2738,14 @@ def _compiled_cli_prompt(
     )
     from response_policy import response_policy_prompt
 
-    fixed_prompt = response_policy_prompt(text, response_language)
+    fixed_prompt = "\n".join(
+        value
+        for value in (
+            response_policy_prompt(text, response_language),
+            _native_tool_policy(spec),
+        )
+        if value
+    )
 
     context_window = _cli_context_window(spec)
     summary_key = f"cli:{spec.id}:{conversation_id}"
@@ -2810,7 +2841,14 @@ def _native_incremental_cli_prompt(
     if not missed and not mobile_delta and not changed_summary:
         return ""
     context_window = _cli_context_window(spec)
-    fixed_prompt = response_policy_prompt(text, response_language)
+    fixed_prompt = "\n".join(
+        value
+        for value in (
+            response_policy_prompt(text, response_language),
+            _native_tool_policy(spec),
+        )
+        if value
+    )
     history_messages = task_history_messages(
         missed,
         text,
@@ -2914,6 +2952,7 @@ def ask_local_model(
     text: str,
     timeout: int = 120,
     messages: list[dict[str, str]] | None = None,
+    audit_context: Mapping[str, object] | None = None,
 ) -> str:
     cfg = local_model_config()
     provider = cfg["provider"].lower()
@@ -2925,6 +2964,21 @@ def ask_local_model(
     ollama_url = configured_url or "http://127.0.0.1:11434/api/generate"
     model = cfg["model"] or os.environ.get("SIGNALASI_OLLAMA_MODEL", "qwen2.5:7b")
     try:
+        tool_url = _local_tool_chat_url(ollama_url)
+        try:
+            return _ask_local_model_with_web_tools(
+                tool_url,
+                model,
+                messages or [{"role": "user", "content": text}],
+                timeout=min(timeout, 30),
+                api_key=cfg["api_key"],
+                audit_context=audit_context,
+            )
+        except Exception as exc:
+            log.debug(
+                "Local model native tool loop unavailable; using plain inference: %s",
+                str(exc)[:200],
+            )
         if provider == "openai" or (provider == "auto" and "chat/completions" in ollama_url):
             payload = {
                 "model": model or "local-model",
@@ -2942,6 +2996,117 @@ def ask_local_model(
         return str(data.get("response") or data.get("message") or "[Local LLM] \u65e0\u54cd\u5e94")
     except Exception as exc:
         return f"[Local LLM] \u672a\u8fde\u63a5\u672c\u5730\u6a21\u578b\u3002\u8bf7\u5b89\u88c5 Ollama\uff0c\u6216\u914d\u7f6e SIGNALASI_OLLAMA_URL / SIGNALASI_OLLAMA_MODEL\u3002\u8be6\u60c5\uff1a{str(exc)[:160]}"
+
+
+def _local_tool_chat_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return str(url or "").strip()
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/generate") or path.endswith("/api/chat"):
+        path = f"{path.rsplit('/api/', 1)[0]}/v1/chat/completions"
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _structured_tool_arguments(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    try:
+        decoded = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return dict(decoded) if isinstance(decoded, Mapping) else {}
+
+
+def _ask_local_model_with_web_tools(
+    url: str,
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    timeout: int,
+    api_key: str = "",
+    audit_context: Mapping[str, object] | None = None,
+) -> str:
+    conversation = [dict(item) for item in messages]
+    conversation.insert(0, {"role": "system", "content": enforce_evidence_system_prompt("")})
+    conversation.insert(0, {"role": "system", "content": cloud_current_time_prompt()})
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+    tool_calls_used = 0
+    for round_index in range(4):
+        payload: dict[str, Any] = {
+            "model": model or "local-model",
+            "messages": conversation,
+        }
+        if round_index < 3:
+            payload["tools"] = cloud_openai_tools()
+            payload["tool_choice"] = "auto"
+        else:
+            conversation.append({"role": "user", "content": FINALIZE_WEB_RESEARCH_PROMPT})
+        data = _post_json(url, payload, timeout=timeout, headers=headers)
+        choices = data.get("choices") or []
+        if not choices:
+            answer = strip_internal_tool_protocol(_extract_chat_completion(data, "Local LLM"))
+            if answer:
+                return answer
+            raise RuntimeError("Local model returned no user-facing answer")
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+        content = _cloud_message_content(message.get("content"))
+        structured_calls = message.get("tool_calls")
+        if not isinstance(structured_calls, list):
+            structured_calls = []
+        inline_calls = parse_inline_tool_calls(content)
+        if not structured_calls and not inline_calls:
+            answer = strip_internal_tool_protocol(
+                content or str(choice.get("text") or data.get("output_text") or "")
+            )
+            if answer:
+                return answer
+            raise RuntimeError("Local model returned no user-facing answer")
+        if round_index == 3 or tool_calls_used >= MAX_CLOUD_TOOL_CALLS:
+            break
+        remaining = MAX_CLOUD_TOOL_CALLS - tool_calls_used
+        if structured_calls:
+            conversation.append(dict(message))
+            for call in structured_calls[:remaining]:
+                call_value = call if isinstance(call, dict) else {}
+                function = call_value.get("function")
+                function = function if isinstance(function, dict) else {}
+                name = str(function.get("name") or "")
+                arguments = _structured_tool_arguments(function.get("arguments"))
+                result = _execute_audited_cloud_web_tool(
+                    _desktop_cloud_web_service(),
+                    name,
+                    arguments,
+                    audit_context={"provider": "local-llm", **dict(audit_context or {})},
+                    audit_namespace="local",
+                )
+                conversation.append({
+                    "role": "tool",
+                    "tool_call_id": str(call_value.get("id") or f"signalasi-{tool_calls_used + 1}"),
+                    "content": wrap_untrusted_evidence("web_tool_result", name, result),
+                })
+                tool_calls_used += 1
+        else:
+            executed = []
+            for call in inline_calls[:remaining]:
+                result = _execute_audited_cloud_web_tool(
+                    _desktop_cloud_web_service(),
+                    call.name,
+                    call.arguments,
+                    audit_context={"provider": "local-llm", **dict(audit_context or {})},
+                    audit_namespace="local",
+                )
+                executed.append((call, result))
+                tool_calls_used += 1
+            conversation.extend((
+                {
+                    "role": "assistant",
+                    "content": strip_internal_tool_protocol(content) or "I need current public evidence to answer.",
+                },
+                {"role": "user", "content": cloud_inline_evidence_message(executed)},
+            ))
+    raise RuntimeError("Local model did not finalize after web tool execution")
 
 
 def ask_cloud_model(
@@ -3143,6 +3308,7 @@ def _execute_audited_cloud_web_tool(
     *,
     audit_context: Mapping[str, object] | None = None,
     audit_store: ToolCallAuditStore | None = None,
+    audit_namespace: str = "cloud",
 ) -> str:
     started_at = int(time.time() * 1_000)
     invocation_id = uuid.uuid4().hex
@@ -3153,7 +3319,7 @@ def _execute_audited_cloud_web_tool(
     except Exception as exc:
         finished_at = int(time.time() * 1_000)
         store.append(
-            tool_id=f"signalasi.cloud.{str(name or 'unknown').casefold()}",
+            tool_id=f"signalasi.{audit_namespace}.{str(name or 'unknown').casefold()}",
             tool_version="1.0.0",
             location="desktop",
             risk="low",
@@ -3170,7 +3336,7 @@ def _execute_audited_cloud_web_tool(
         raise
     finished_at = int(time.time() * 1_000)
     store.append(
-        tool_id=f"signalasi.cloud.{str(name or 'unknown').casefold()}",
+        tool_id=f"signalasi.{audit_namespace}.{str(name or 'unknown').casefold()}",
         tool_version="1.0.0",
         location="desktop",
         risk="low",
