@@ -8,7 +8,9 @@ from unittest.mock import patch
 from artifact_delivery import (
     APK_MIME_TYPE,
     acknowledge_artifact,
+    artifact_for_redelivery,
     artifact_chunk_payloads,
+    pending_artifacts_for_redelivery,
     prepare_artifacts,
     register_artifact_batch,
     should_deliver_task_artifacts,
@@ -125,6 +127,45 @@ class ArtifactDeliveryTests(unittest.TestCase):
             )
             self.assertTrue(accepted)
             self.assertTrue(source.is_file())
+
+    def test_pending_artifact_can_only_be_redelivered_to_its_owning_phone(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            root = task_workspace("redelivery-task", "codex")
+            source = root / "outputs" / "game.html"
+            source.write_text("<canvas>SignalASI</canvas>", encoding="utf-8")
+            artifact = prepare_artifacts(
+                "redelivery-task",
+                [{"name": source.name, "relative_path": "outputs/game.html"}],
+            )[0]
+            register_artifact_batch(
+                [artifact],
+                client_route_id="owner-route",
+                retain_on_desktop=False,
+            )
+            request = {
+                "artifact_id": artifact.artifact_id,
+                "artifact_uri": artifact.artifact_uri,
+                "sha256": artifact.sha256,
+            }
+            rejected = artifact_for_redelivery(
+                request,
+                client_route_id="different-route",
+            )
+            restored = artifact_for_redelivery(
+                request,
+                client_route_id="owner-route",
+            )
+            pending = pending_artifacts_for_redelivery()
+
+        self.assertIsNone(rejected)
+        self.assertIsNotNone(restored)
+        self.assertEqual(artifact.artifact_id, restored.artifact_id)
+        self.assertEqual(artifact.sha256, restored.sha256)
+        self.assertEqual([("owner-route", artifact.artifact_id)], [
+            (route_id, candidate.artifact_id) for route_id, candidate in pending
+        ])
 
 
 if __name__ == "__main__":

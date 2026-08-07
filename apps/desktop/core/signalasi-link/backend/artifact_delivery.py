@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_image_file
-from task_workspace import cleanup_task_workspace, task_artifact_path, workspace_root
+from task_workspace import cleanup_task_workspace, task_artifact_path, task_workspace, workspace_root
 
 
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
@@ -204,6 +204,100 @@ def acknowledge_artifact(payload: dict, *, client_route_id: str) -> bool:
                 cleanup_task_workspace(task_id)
         _write_ledger(ledger)
         return True
+
+
+def artifact_for_redelivery(
+    payload: dict,
+    *,
+    client_route_id: str,
+) -> PreparedArtifact | None:
+    """Restore a pending artifact only for the phone route that owns it."""
+    artifact_id = str(payload.get("artifact_id") or "").strip().lower()
+    artifact_uri = str(payload.get("artifact_uri") or "").strip()
+    digest = str(payload.get("sha256") or "").strip().lower()
+    if len(artifact_id) != 64 or len(digest) != 64 or not artifact_uri:
+        return None
+    with _ledger_lock:
+        ledger = _read_ledger()
+        _prune_ledger(ledger)
+        entry = ledger.get(artifact_id)
+        if not isinstance(entry, dict):
+            _write_ledger(ledger)
+            return None
+        if (
+            str(entry.get("client_route_id") or "") != str(client_route_id or "")
+            or str(entry.get("sha256") or "").lower() != digest
+        ):
+            return None
+        task_id = str(entry.get("task_id") or "").strip()
+        source_relative = str(entry.get("source_path") or "").replace("\\", "/").strip("/")
+        source = (workspace_root() / source_relative).resolve()
+        try:
+            source.relative_to(workspace_root().resolve())
+            relative_path = source.relative_to(task_workspace(task_id).resolve()).as_posix()
+        except (OSError, ValueError):
+            return None
+        if not source.is_file() or source.is_symlink():
+            return None
+        restored = _prepare_artifact(
+            task_id,
+            source,
+            relative_path,
+            {"name": source.name, "relative_path": relative_path},
+        )
+        if (
+            restored is None
+            or restored.artifact_id != artifact_id
+            or restored.artifact_uri != artifact_uri
+            or restored.sha256 != digest
+        ):
+            return None
+        entry["last_redelivery_at"] = int(time.time())
+        entry["redelivery_count"] = int(entry.get("redelivery_count") or 0) + 1
+        _write_ledger(ledger)
+        return restored
+
+
+def pending_artifacts_for_redelivery(
+    *,
+    limit: int = 32,
+) -> list[tuple[str, PreparedArtifact]]:
+    """Rebuild unacknowledged phone-owned artifacts after transport recovery."""
+    with _ledger_lock:
+        ledger = _read_ledger()
+        _prune_ledger(ledger)
+        candidates = [
+            (artifact_id, dict(entry))
+            for artifact_id, entry in ledger.items()
+            if isinstance(entry, dict) and str(entry.get("state") or "pending") == "pending"
+        ][:max(1, int(limit))]
+        _write_ledger(ledger)
+    restored: list[tuple[str, PreparedArtifact]] = []
+    for artifact_id, entry in candidates:
+        client_route_id = str(entry.get("client_route_id") or "")
+        task_id = str(entry.get("task_id") or "")
+        source_relative = str(entry.get("source_path") or "").replace("\\", "/").strip("/")
+        source = (workspace_root() / source_relative).resolve()
+        try:
+            source.relative_to(workspace_root().resolve())
+            relative_path = source.relative_to(task_workspace(task_id).resolve()).as_posix()
+        except (OSError, ValueError):
+            continue
+        if not client_route_id or not source.is_file() or source.is_symlink():
+            continue
+        artifact = _prepare_artifact(
+            task_id,
+            source,
+            relative_path,
+            {"name": source.name, "relative_path": relative_path},
+        )
+        if (
+            artifact is not None
+            and artifact.artifact_id == artifact_id
+            and artifact.sha256 == str(entry.get("sha256") or "").lower()
+        ):
+            restored.append((client_route_id, artifact))
+    return restored
 
 
 def discard_task_workspace_if_no_artifacts(
