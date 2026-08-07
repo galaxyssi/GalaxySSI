@@ -35,6 +35,23 @@ INTERNAL_SUFFIXES = (".idsig", ".sig", ".sha256", ".sha512")
 _ledger_lock = threading.RLock()
 
 
+def should_deliver_task_artifacts(
+    *,
+    fast_chat_delivery: bool,
+    plan_only: bool,
+    generated_output_files: list[dict] | tuple[dict, ...] = (),
+    referenced_output_paths: list[Path] | tuple[Path, ...] = (),
+) -> bool:
+    """Keep the chat fast path unless a run actually produced a deliverable."""
+    if plan_only:
+        return False
+    return bool(
+        not fast_chat_delivery
+        or generated_output_files
+        or referenced_output_paths
+    )
+
+
 @dataclass(frozen=True)
 class PreparedArtifact:
     artifact_id: str

@@ -11,11 +11,33 @@ from artifact_delivery import (
     artifact_chunk_payloads,
     prepare_artifacts,
     register_artifact_batch,
+    should_deliver_task_artifacts,
 )
 from task_workspace import task_workspace
 
 
 class ArtifactDeliveryTests(unittest.TestCase):
+    def test_fast_chat_delivers_an_unexpected_generated_artifact(self):
+        self.assertTrue(should_deliver_task_artifacts(
+            fast_chat_delivery=True,
+            plan_only=False,
+            generated_output_files=[{"relative_path": "outputs/game.html"}],
+        ))
+        self.assertTrue(should_deliver_task_artifacts(
+            fast_chat_delivery=True,
+            plan_only=False,
+            referenced_output_paths=[Path("outputs/game.html")],
+        ))
+        self.assertFalse(should_deliver_task_artifacts(
+            fast_chat_delivery=True,
+            plan_only=False,
+        ))
+        self.assertFalse(should_deliver_task_artifacts(
+            fast_chat_delivery=True,
+            plan_only=True,
+            generated_output_files=[{"relative_path": "outputs/game.html"}],
+        ))
+
     def test_apk_is_chunked_with_installable_mime_and_integrity(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}

@@ -830,6 +830,9 @@ _BUILD_TERMS = (
     "\u7f16\u8bd1", "\u6784\u5efa", "\u5f00\u53d1", "\u5b9e\u73b0",
     "\u5199\u4e00\u4e2a\u7a0b\u5e8f", "\u505a\u4e00\u4e2a\u6e38\u620f",
     "\u751f\u6210\u7a0b\u5e8f", "\u4fee\u590d bug", "\u8fd0\u884c\u6d4b\u8bd5",
+    "\u7de8\u8b6f", "\u69cb\u5efa", "\u958b\u767c", "\u5be6\u73fe",
+    "\u5beb\u4e00\u500b\u7a0b\u5f0f", "\u505a\u4e00\u500b\u904a\u6232",
+    "\u751f\u6210\u7a0b\u5f0f", "\u4fee\u5fa9 bug", "\u904b\u884c\u6e2c\u8a66",
 )
 _INSTALL_TERMS = (
     "install", "install and open", "install apk", "deploy to phone", "launch the app",
@@ -841,6 +844,9 @@ _ARTIFACT_TERMS = (
     "downloadable", "zip project", "apk",
     "\u53d1\u56de\u6587\u4ef6", "\u8fd4\u56de\u6587\u4ef6", "\u5bfc\u51fa",
     "\u751f\u6210\u56fe\u7247", "\u6253\u5305", "\u538b\u7f29\u5305",
+    "\u767c\u56de\u6a94\u6848", "\u8fd4\u56de\u6a94\u6848", "\u532f\u51fa",
+    "\u751f\u6210\u5716\u7247", "\u6253\u5305", "\u58d3\u7e2e\u5305",
+    "\u53d1\u5230\u624b\u673a", "\u767c\u5230\u624b\u6a5f",
 )
 _RESEARCH_TERMS = (
     "research", "search the web", "find sources", "compare sources",
@@ -854,7 +860,9 @@ _DEVICE_TERMS = (
 _ANDROID_TERMS = (
     "android", "apk", "mobile app", "phone game", "on the phone",
     "\u5b89\u5353", "\u624b\u673a app", "\u624b\u673a\u4e0a\u73a9",
-    "\u624b\u673a\u6e38\u620f", "\u5b89\u88c5\u5230\u624b\u673a",
+    "\u624b\u673a\u6e38\u620f", "\u5b89\u88c5\u5230\u624b\u673a", "\u53d1\u5230\u624b\u673a",
+    "\u5b89\u5353", "\u624b\u6a5f app", "\u624b\u6a5f\u4e0a\u73a9",
+    "\u624b\u6a5f\u904a\u6232", "\u5b89\u88dd\u5230\u624b\u6a5f", "\u767c\u5230\u624b\u6a5f",
 )
 _PLAN_ONLY_SIGNALS = (
     "\u5148\u7ed9\u65b9\u6848", "\u5148\u7ed9\u6211\u65b9\u6848",
