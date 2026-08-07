@@ -51,8 +51,9 @@ def codex_dynamic_search_tool_spec() -> dict[str, Any]:
         "type": "function",
         "name": CODEX_DYNAMIC_SEARCH_TOOL,
         "description": (
-            "Search the public web through SignalASI's bounded parallel multi-source "
-            "retrieval engine. Call this only when external information is needed. "
+            "Fallback search for the public web through SignalASI's bounded parallel "
+            "multi-source retrieval engine. Call this when native model web search is "
+            "unavailable or has insufficient evidence. "
             "Resolve follow-ups from the full conversation into a self-contained query. "
             "Choose relevant verticals yourself. Use read_pages=true when the answer needs "
             "facts from source pages. One call searches several independent sources, reads "

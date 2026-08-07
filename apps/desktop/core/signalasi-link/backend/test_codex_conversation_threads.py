@@ -470,7 +470,7 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual([method for method, _, _ in calls].count("turn/start"), 2)
             thread_start = next(params for method, params, _ in calls if method == "thread/start")
             self.assertEqual("on-request", thread_start["approvalPolicy"])
-            self.assertEqual({"web_search": "disabled"}, thread_start["config"])
+            self.assertEqual({"web_search": "live"}, thread_start["config"])
             self.assertEqual(
                 codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
                 thread_start["dynamicTools"][0]["name"],
@@ -480,7 +480,11 @@ class CodexConversationThreadTests(unittest.TestCase):
                 thread_start["developerInstructions"],
             )
             self.assertIn(
-                "must call `signalasi_parallel_web_search` exactly once",
+                "Prefer Codex native live web search",
+                thread_start["developerInstructions"],
+            )
+            self.assertIn(
+                "call `signalasi_parallel_web_search` once",
                 thread_start["developerInstructions"],
             )
             turn_inputs = [params["input"][0]["text"] for method, params, _ in calls if method == "turn/start"]
@@ -883,7 +887,7 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertTrue(run.finished)
             self.assertEqual("Recovered final answer", run.final_text)
             self.assertEqual(["thread/resume"], [method for method, _, _ in calls])
-            self.assertEqual({"web_search": "disabled"}, calls[0][1]["config"])
+            self.assertEqual({"web_search": "live"}, calls[0][1]["config"])
             self.assertEqual("completed", events[-1][1]["status"])
             self.assertEqual("Recovered final answer", events[-1][1]["result"])
 

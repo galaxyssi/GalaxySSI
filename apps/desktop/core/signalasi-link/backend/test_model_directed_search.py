@@ -47,6 +47,7 @@ class ModelDirectedSearchTests(unittest.TestCase):
         self.assertEqual("function", spec["type"])
         self.assertEqual(["query"], spec["inputSchema"]["required"])
         self.assertIn("full conversation", spec["description"])
+        self.assertIn("native model web search", spec["description"])
 
         response = execute_codex_dynamic_search({}, "task-empty")
         self.assertFalse(response["success"])

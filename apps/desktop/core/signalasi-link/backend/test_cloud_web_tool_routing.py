@@ -28,6 +28,97 @@ class FakeWebIntelligence:
 
 
 class CloudWebToolRoutingTests(unittest.TestCase):
+    def test_local_openai_model_selects_web_tool_and_synthesizes_result(self):
+        service = FakeWebIntelligence()
+        audit_store = ToolCallAuditStore(None)
+        payloads = []
+        responses = [
+            {
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "local-search-1",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": {"query": "current local weather", "max_results": 5},
+                            },
+                        }],
+                    }
+                }]
+            },
+            {
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "The current result is available [https://news.example/current].",
+                    }
+                }]
+            },
+        ]
+
+        def fake_post(_url, payload, timeout, headers=None):
+            payloads.append(payload)
+            return responses.pop(0)
+
+        with (
+            patch.object(
+                agent_gateway,
+                "local_model_config",
+                return_value={
+                    "provider": "openai",
+                    "url": "http://127.0.0.1:11434/v1/chat/completions",
+                    "api_key": "",
+                    "model": "local-tool-model",
+                },
+            ),
+            patch.object(agent_gateway, "_post_json", side_effect=fake_post),
+            patch.object(agent_gateway, "_desktop_cloud_web_service", return_value=service),
+            patch.object(agent_gateway, "desktop_tool_call_audit_store", return_value=audit_store),
+        ):
+            answer = agent_gateway.ask_local_model("What is the current local weather?")
+
+        self.assertIn("current result", answer)
+        self.assertEqual(2, len(payloads))
+        self.assertEqual("auto", payloads[0]["tool_choice"])
+        self.assertEqual(10, len(payloads[0]["tools"]))
+        self.assertEqual(
+            [("search", {"query": "current local weather", "limit": 5, "profile": "balanced"})],
+            service.calls,
+        )
+        self.assertEqual("signalasi.local.web_search", audit_store.list()[0]["tool_id"])
+
+    def test_local_model_without_tool_support_falls_back_to_plain_inference(self):
+        payloads = []
+
+        def fake_post(_url, payload, timeout, headers=None):
+            payloads.append(payload)
+            if len(payloads) == 1:
+                raise agent_gateway.ModelHttpError(400, "tools are not supported")
+            return {"choices": [{"message": {"content": "Plain local answer."}}]}
+
+        with (
+            patch.object(
+                agent_gateway,
+                "local_model_config",
+                return_value={
+                    "provider": "openai",
+                    "url": "http://127.0.0.1:11434/v1/chat/completions",
+                    "api_key": "",
+                    "model": "plain-local-model",
+                },
+            ),
+            patch.object(agent_gateway, "_post_json", side_effect=fake_post),
+        ):
+            answer = agent_gateway.ask_local_model("Hello")
+
+        self.assertEqual("Plain local answer.", answer)
+        self.assertEqual(2, len(payloads))
+        self.assertIn("tools", payloads[0])
+        self.assertNotIn("tools", payloads[1])
+
     def test_deepseek_inline_tool_call_is_executed_then_synthesized(self):
         service = FakeWebIntelligence()
         audit_store = ToolCallAuditStore(None)
