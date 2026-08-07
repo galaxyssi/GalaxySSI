@@ -1704,6 +1704,9 @@ class _TaskProgressEventGate:
         step = str(task.get("current_step") or "").strip()
         task_disposition = str(task.get("task_disposition") or "").strip().lower()
         events = task.get("events") if isinstance(task.get("events"), list) else []
+        completed_with_readable_progress = (
+            status == "completed" and bool(_readable_progress_replay(events))
+        )
         latest_event = events[-1] if events and isinstance(events[-1], dict) else {}
         trace = (
             task.get("delivery_trace")
@@ -1733,7 +1736,11 @@ class _TaskProgressEventGate:
                 status == "completed"
                 and task_disposition in {"steered", "interrupted"}
             )
-            if not visible_intervention_completion and not _should_publish_task_status(status):
+            if (
+                not visible_intervention_completion
+                and not completed_with_readable_progress
+                and not _should_publish_task_status(status)
+            ):
                 self._last_status = status
                 self._last_step = step
                 self._last_progress_signature = progress_signature
@@ -1856,6 +1863,30 @@ def _task_event_is_coalescible(task: dict) -> bool:
         and isinstance(task.get("partial_result"), dict)
         and bool(str(task.get("partial_result", {}).get("text") or "").strip())
     )
+
+
+def _task_event_requires_reliable_delivery(task: dict) -> bool:
+    """Persist meaningful progress without turning status heartbeats into backlog."""
+    events = task.get("events") if isinstance(task.get("events"), list) else []
+    if not events:
+        return False
+    latest = events[-1] if isinstance(events[-1], dict) else {}
+    event_id = str(latest.get("event_id") or "").strip()
+    kind = str(latest.get("kind") or "").strip().lower()
+    title = str(latest.get("title") or "").strip()
+    detail = str(latest.get("detail") or "").strip()
+    if not event_id or not (title or detail):
+        return False
+    return kind in {
+        "narration",
+        "reasoning",
+        "plan",
+        "command",
+        "file",
+        "network",
+        "mcp",
+        "tool",
+    }
 
 
 def _schedule_task_event_locked(task_id: str, delay_seconds: float) -> None:
@@ -2974,7 +3005,7 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
     status = str(pending.task.get("status") or "").strip().lower()
     durable = status in TERMINAL_STATES or status in {
         "waiting_approval", "waiting_input", "paused", "interrupted",
-    }
+    } or _task_event_requires_reliable_delivery(pending.task)
     return bool(
         _publish_phone_payload(
             mqttc,
