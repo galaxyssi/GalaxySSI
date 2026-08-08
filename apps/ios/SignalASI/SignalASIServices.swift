@@ -30,13 +30,21 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   @Published private(set) var isConnected = false
   var onMessage: ((String, Data) -> Void)?
   var onConnectionChanged: ((Bool) -> Void)?
+  var onTransportRecovery: (() -> Void)?
 
+  private static let brokerAckTimeoutSeconds: TimeInterval = 12
+  private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
   private let host = NWEndpoint.Host("broker.emqx.io")
   private let port = NWEndpoint.Port(rawValue: 8883)!
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
+  private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: Self.brokerAckTimeoutSeconds)
   private var connection: NWConnection?
+  private var brokerAckWorkItem: DispatchWorkItem?
+  private var reconnectWorkItem: DispatchWorkItem?
+  private var reconnectAttempt = 0
+  private var transportRecoveryInProgress = false
   private var clientId = ""
   private var subscriptions: [String] = []
   private var receiveBuffer = Data()
@@ -56,6 +64,8 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         self.subscribeToCurrentTopics()
         return
       }
+      self.reconnectWorkItem?.cancel()
+      self.reconnectWorkItem = nil
       self.start()
     }
   }
@@ -74,24 +84,26 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 
   private func start() {
+    guard connection == nil else { return }
     let parameters = NWParameters.tls
-    let connection = NWConnection(host: host, port: port, using: parameters)
-    self.connection = connection
-    connection.stateUpdateHandler = { [weak self] state in
-      guard let self else { return }
+    let mqttConnection = NWConnection(host: host, port: port, using: parameters)
+    connection = mqttConnection
+    mqttConnection.stateUpdateHandler = { [weak self, weak mqttConnection] state in
+      guard let self, let mqttConnection, self.connection === mqttConnection else { return }
       switch state {
       case .ready:
+        self.reconnectAttempt = 0
+        self.reconnectWorkItem?.cancel()
+        self.reconnectWorkItem = nil
         self.sendConnect()
-        self.receiveLoop()
+        self.receiveLoop(for: mqttConnection)
       case .failed, .cancelled:
-        self.inboundChunkAssembler.clear()
-        self.setConnected(false)
-        self.connection = nil
+        self.handleTransportFailure(for: mqttConnection)
       default:
         break
       }
     }
-    connection.start(queue: queue)
+    mqttConnection.start(queue: queue)
   }
 
   private func sendConnect() {
@@ -118,13 +130,14 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     sendFrame(typeAndFlags: 0x82, payload)
   }
 
-  private func sendPublish(topic: String, payload: Data) {
+  private func sendPublish(topic: String, payload: Data) -> UInt16 {
     let packetId = nextPacketIdentifier()
     var body = Data()
     body.appendUTF8(topic)
     body.appendUInt16(packetId)
     body.append(payload)
     sendFrame(typeAndFlags: 0x32, body)
+    return packetId
   }
 
   private func sendWirePayload(topic: String, payload: Data) -> Bool {
@@ -133,8 +146,10 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       return false
     }
     packets.forEach { packet in
-      sendPublish(topic: topic, payload: Data(packet.utf8))
+      let packetId = sendPublish(topic: topic, payload: Data(packet.utf8))
+      brokerAckWatchdog.onPublished(packetId: packetId)
     }
+    scheduleBrokerAckWatchdog()
     return true
   }
 
@@ -148,21 +163,28 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     var frame = Data([typeAndFlags])
     frame.appendEncodedRemainingLength(payload.count)
     frame.append(payload)
-    connection?.send(content: frame, completion: .contentProcessed { _ in })
+    guard let connection else { return }
+    connection.send(content: frame, completion: .contentProcessed { [weak self, weak connection] error in
+      guard let self, let connection, error != nil else { return }
+      self.queue.async {
+        guard self.connection === connection else { return }
+        self.handleTransportFailure(for: connection)
+      }
+    })
   }
 
-  private func receiveLoop() {
-    connection?.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, _ in
-      guard let self else { return }
+  private func receiveLoop(for connection: NWConnection) {
+    guard self.connection === connection else { return }
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak connection] data, _, isComplete, _ in
+      guard let self, let connection, self.connection === connection else { return }
       if let data, !data.isEmpty {
         self.receiveBuffer.append(data)
         self.consumePackets()
       }
       if isComplete {
-        self.setConnected(false)
-        self.connection = nil
+        self.handleTransportFailure(for: connection)
       } else {
-        self.receiveLoop()
+        self.receiveLoop(for: connection)
       }
     }
   }
@@ -177,12 +199,19 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     let packetType = packet.header >> 4
     switch packetType {
     case 2:
+      reconnectAttempt = 0
       setConnected(true)
       subscribeToCurrentTopics()
       flushQueuedPublishes()
     case 3:
       handlePublish(packet)
-    case 9, 4, 13:
+    case 4:
+      var index = 0
+      if let packetId = packet.payload.readUInt16(at: &index) {
+        brokerAckWatchdog.onAcknowledged(packetId: packetId)
+        scheduleBrokerAckWatchdog()
+      }
+    case 9, 13:
       break
     default:
       break
@@ -240,6 +269,77 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       self.isConnected = value
       self.onConnectionChanged?(value)
     }
+  }
+
+  private func scheduleBrokerAckWatchdog() {
+    brokerAckWorkItem?.cancel()
+    guard connected, let delay = brokerAckWatchdog.nextCheckDelay() else {
+      brokerAckWorkItem = nil
+      return
+    }
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.brokerAckWorkItem = nil
+      self.checkBrokerAckWatchdog()
+    }
+    brokerAckWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + max(0.1, delay), execute: workItem)
+  }
+
+  private func checkBrokerAckWatchdog() {
+    guard connected else { return }
+    if let age = brokerAckWatchdog.oldestPendingAge(),
+       age >= Self.brokerAckTimeoutSeconds {
+      recoverStalledTransport()
+    } else {
+      scheduleBrokerAckWatchdog()
+    }
+  }
+
+  private func recoverStalledTransport() {
+    guard !transportRecoveryInProgress else { return }
+    transportRecoveryInProgress = true
+    let stalledConnection = connection
+    connection = nil
+    brokerAckWorkItem?.cancel()
+    brokerAckWorkItem = nil
+    brokerAckWatchdog.clear()
+    receiveBuffer.removeAll()
+    inboundChunkAssembler.clear()
+    setConnected(false)
+    stalledConnection?.cancel()
+    onTransportRecovery?()
+    queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+      guard let self else { return }
+      self.transportRecoveryInProgress = false
+      self.scheduleReconnect()
+    }
+  }
+
+  private func handleTransportFailure(for failedConnection: NWConnection) {
+    guard connection === failedConnection else { return }
+    connection = nil
+    inboundChunkAssembler.clear()
+    receiveBuffer.removeAll()
+    brokerAckWorkItem?.cancel()
+    brokerAckWorkItem = nil
+    brokerAckWatchdog.clear()
+    setConnected(false)
+    scheduleReconnect()
+  }
+
+  private func scheduleReconnect() {
+    guard connection == nil, !transportRecoveryInProgress, reconnectWorkItem == nil else { return }
+    let index = min(reconnectAttempt, Self.reconnectDelays.count - 1)
+    let delay = Self.reconnectDelays[index]
+    reconnectAttempt += 1
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.reconnectWorkItem = nil
+      self.start()
+    }
+    reconnectWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 }
 
@@ -638,6 +738,13 @@ final class MessageCoordinator: ObservableObject {
       Task { @MainActor in
         self?.scheduleOutboxFlush(after: 0)
         self?.requestConnectorStatuses()
+      }
+    }
+    self.mqttClient.onTransportRecovery = { [weak self] in
+      Task { @MainActor in
+        guard let self else { return }
+        self.deliveryStore.makePendingImmediatelyRetryable()
+        self.scheduleOutboxFlush(after: 0)
       }
     }
   }
