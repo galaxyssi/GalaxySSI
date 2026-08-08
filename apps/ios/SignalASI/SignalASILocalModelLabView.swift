@@ -3,7 +3,6 @@ import CoreLocation
 import Foundation
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import UserNotifications
 
 struct SignalASILocalModelLabView: View {
@@ -13,36 +12,43 @@ struct SignalASILocalModelLabView: View {
   @State private var contextTokens = LocalModelRuntimeSettings.contextTokens()
   @State private var deviceSnapshot = LocalModelDeviceSnapshotDetector.capture()
   @State private var acceleratorSnapshot = LocalModelAcceleratorDetector.detect()
+  @State private var inferenceSnapshot = LocalModelInferenceRuntime.shared.snapshot()
   @State private var showingContextChoices = false
   @State private var cameraStatus = ""
   @State private var microphoneStatus = ""
   @State private var locationStatus = ""
   @State private var notificationStatus = ""
   @State private var statusMessage = ""
-  @State private var modelImporterPresented = false
-  @State private var modelImportProfile: LocalModelRuntimeProfile?
+  @State private var catalogRevision = 0
+  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
 
   private let whisperModelManager = VoiceWhisperModelManager()
+  private let localModelStorage = LocalModelRuntimeStorage()
+
+  private var localModelProfiles: [LocalModelRuntimeProfile] {
+    _ = catalogRevision
+    return LocalModelRuntimeCatalog.profiles()
+  }
 
   private var estimate: LocalModelRuntimeEstimate {
-    let storedFile = LocalModelRuntimeStorage.file(for: selectedProfile)
     LocalModelRuntimeEstimator.estimate(
       LocalModelRuntimeRequest(
         profile: selectedProfile,
         requestedContextTokens: contextTokens,
-        modelFileBytes: storedFile?.bytes ?? selectedProfile.expectedModelFileBytes,
-        modelFilePresent: storedFile?.present == true,
-        requireModelFile: true
+        modelFileBytes: selectedModelStorage?.installed == true
+          ? selectedProfile.expectedModelFileBytes
+          : (selectedProfile.downloadable ? 0 : selectedProfile.expectedModelFileBytes),
+        modelFilePresent: selectedProfile.downloadable
+          ? selectedModelStorage?.installed == true
+          : true,
+        requireModelFile: selectedProfile.downloadable
       ),
       device: deviceSnapshot
     )
   }
 
   private var runtimeAvailable: Bool {
-    acceleratorSnapshot.readyKinds.contains(.cpu) ||
-      acceleratorSnapshot.readyKinds.contains(.gpu) ||
-      acceleratorSnapshot.readyKinds.contains(.coreMLNeuralEngine) ||
-      acceleratorSnapshot.readyKinds.contains(.vendorSDK)
+    inferenceSnapshot.available
   }
 
   private var localModelConnectorCount: Int {
@@ -59,6 +65,15 @@ struct SignalASILocalModelLabView: View {
     VoiceWhisperModelCatalog.models.filter { model in
       model.bundled || whisperModelManager.isAvailable(model)
     }.count
+  }
+
+  private var installedLocalModelCount: Int {
+    localModelProfiles.filter { localModelStorage.inspect($0).installed }.count
+  }
+
+  private var selectedModelStorage: LocalModelStorageSnapshot? {
+    guard selectedProfile.downloadable else { return nil }
+    return localModelStorage.inspect(selectedProfile)
   }
 
   var body: some View {
@@ -115,38 +130,6 @@ struct SignalASILocalModelLabView: View {
       }
       Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
     }
-    .fileImporter(
-      isPresented: $modelImporterPresented,
-      allowedContentTypes: [.data],
-      allowsMultipleSelection: false
-    ) { result in
-      guard let profile = modelImportProfile else { return }
-      switch result {
-      case .success(let urls):
-        guard let source = urls.first else { return }
-        do {
-          _ = try LocalModelRuntimeStorage.importFile(from: source, for: profile)
-          statusMessage = String(
-            format: t("signalasi.local_model.imported", "%@ imported"),
-            profile.displayName
-          )
-          if selectedProfile.id == profile.id {
-            refreshSnapshots()
-          }
-        } catch {
-          statusMessage = String(
-            format: t("signalasi.local_model.import_error", "Model import failed: %@"),
-            error.localizedDescription
-          )
-        }
-      case .failure(let error):
-        statusMessage = String(
-          format: t("signalasi.local_model.import_error", "Model import failed: %@"),
-          error.localizedDescription
-        )
-      }
-      modelImportProfile = nil
-    }
     .onAppear(perform: refreshSnapshots)
   }
 
@@ -162,24 +145,43 @@ struct SignalASILocalModelLabView: View {
       ) {
         SignalASILocalModelSearchView()
       }
-      ForEach(LocalModelRuntimeProfiles.all) { profile in
-        let storedFile = LocalModelRuntimeStorage.file(for: profile)
-        let isSelected = profile.id == selectedProfile.id
+      ForEach(localModelProfiles) { profile in
+        let artifact = LocalModelRuntimeCatalog.artifact(for: profile)
+        let downloadState = artifact.map { downloads.state(for: $0) } ?? .notInstalled
+        let installed = artifact != nil
+          ? downloadState == .ready
+          : localModelStorage.inspect(profile).installed
         SignalASILocalModelLabActionRow(
           title: profile.displayName,
-          subtitle: profileSubtitle(profile) + "\n" + modelFileStatus(storedFile: storedFile),
+          subtitle: profileSubtitle(profile),
           systemImage: "cpu",
-          tint: isSelected ? .signalASIAccent : .blue,
-          badge: storedFile == nil
-            ? t("signalasi.local_model.import_action", "Import")
-            : isSelected
-            ? t("signalasi.local_model.selected", "Current")
-            : t("signalasi.local_model.use_action", "Use")
+          tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
+          badge: modelDownloadBadge(
+            profile: profile,
+            artifact: artifact,
+            state: downloadState,
+            installed: installed
+          )
         ) {
-          if storedFile == nil {
-            modelImportProfile = profile
-            modelImporterPresented = true
-          } else {
+          guard let artifact else {
+            selectProfile(profile)
+            return
+          }
+          switch downloadState {
+          case .notInstalled, .failed:
+            downloads.start(artifact)
+            statusMessage = downloads.state(for: artifact) == .failed
+              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+              : t("signalasi.local_model.download_started", "Download started")
+          case .paused:
+            downloads.start(artifact)
+            statusMessage = downloads.state(for: artifact) == .failed
+              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+              : t("signalasi.local_model.download_resumed", "Download resumed")
+          case .downloading:
+            downloads.cancel(artifact)
+            statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
+          case .ready:
             selectProfile(profile)
           }
         }
@@ -205,6 +207,35 @@ struct SignalASILocalModelLabView: View {
     }
   }
 
+  private func modelDownloadBadge(
+    profile: LocalModelRuntimeProfile,
+    artifact: LocalModelHubArtifact?,
+    state: LocalModelArtifactInstallState,
+    installed: Bool
+  ) -> String {
+    guard artifact != nil else {
+      return profile.id == selectedProfile.id
+        ? t("signalasi.local_model.selected", "Current")
+        : installed
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("signalasi.local_model.use_action", "Use")
+    }
+    switch state {
+    case .downloading:
+      return t("signalasi.local_model.download_active", "Downloading")
+    case .paused:
+      return t("signalasi.local_model.download_resume", "Resume")
+    case .notInstalled:
+      return t("signalasi.local_model.download_action", "Download")
+    case .failed:
+      return t("signalasi.common.retry", "Retry")
+    case .ready:
+      return profile.id == selectedProfile.id
+        ? t("signalasi.local_model.selected", "Current")
+        : t("signalasi.local_model.download_ready", "Ready")
+    }
+  }
+
   private var preflightSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASILocalModelLabSectionTitle(title: t("signalasi.local_model.preflight_section", "Runtime Preflight"))
@@ -214,6 +245,17 @@ struct SignalASILocalModelLabView: View {
         systemImage: "doc",
         tint: .blue,
         badge: formatBytes(estimate.modelFileBytes)
+      )
+      SignalASILocalModelLabStatusRow(
+        title: t("signalasi.local_model.native_runtime", "Native Inference Runtime"),
+        subtitle: runtimeAvailable
+          ? String(format: t("signalasi.local_model.native_runtime_ready_detail", "%@ backend is available"), inferenceSnapshot.backend)
+          : t("signalasi.local_model.native_runtime_unavailable_detail", "A bundled GGUF backend is required before local inference can start"),
+        systemImage: "bolt.horizontal.circle",
+        tint: runtimeAvailable ? .signalASIAccent : .orange,
+        badge: runtimeAvailable
+          ? t("signalasi.local_model.runtime_ready", "Ready")
+          : t("signalasi.local_model.runtime_unavailable", "Unavailable")
       )
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.kv_cache", "KV cache"),
@@ -353,8 +395,9 @@ struct SignalASILocalModelLabView: View {
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.storage_usage", "Storage Usage"),
         subtitle: String(
-          format: t("signalasi.local_model.storage_usage_subtitle", "%d Whisper models / %d Desktop local model connectors"),
+          format: t("signalasi.local_model.storage_usage_subtitle", "%d Whisper models / %d downloaded local models / %d Desktop local model connectors"),
           installedWhisperCount,
+          installedLocalModelCount,
           localModelConnectorCount
         ),
         systemImage: "internaldrive",
@@ -459,26 +502,26 @@ struct SignalASILocalModelLabView: View {
     contextTokens = min(LocalModelRuntimeSettings.contextTokens(), selectedProfile.maximumContextTokens)
     deviceSnapshot = LocalModelDeviceSnapshotDetector.capture()
     acceleratorSnapshot = LocalModelAcceleratorDetector.detect()
+    inferenceSnapshot = LocalModelInferenceRuntime.shared.snapshot()
+    catalogRevision += 1
     refreshPermissionStatuses()
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
-    String(
-      format: t("signalasi.local_model.size_and_quantization", "%@ - %@ - %d tokens"),
+    var detail = String(
+      format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
       profile.quantizationLabel,
-      profile.defaultContextTokens
+      parameterLabel(profile.parameterCountBillions)
     )
+    if profile.defaultNoThink {
+      detail += "\n" + t("signalasi.local_model.default_no_think", "Default no-think mode")
+    }
+    return detail
   }
 
-  private func modelFileStatus(storedFile: LocalModelStoredFile?) -> String {
-    guard let storedFile else {
-      return t("signalasi.local_model.file_missing", "No GGUF file imported")
-    }
-    return String(
-      format: t("signalasi.local_model.file_ready", "GGUF ready · %@"),
-      formatBytes(storedFile.bytes)
-    )
+  private func parameterLabel(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
   }
 
   private func contextLabel(_ tokens: Int) -> String {
@@ -688,9 +731,10 @@ struct SignalASILocalModelSearchView: View {
 
   private var profileResults: [LocalModelRuntimeProfile] {
     let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty else { return LocalModelRuntimeProfiles.all }
+    let profiles = LocalModelRuntimeCatalog.profiles()
+    guard !clean.isEmpty else { return profiles }
     let normalized = clean.lowercased()
-    return LocalModelRuntimeProfiles.all.filter { profile in
+    return profiles.filter { profile in
       profile.id.lowercased().contains(normalized) ||
         profile.displayName.lowercased().contains(normalized) ||
         profile.quantizationLabel.lowercased().contains(normalized)
@@ -757,14 +801,14 @@ struct SignalASILocalModelSearchView: View {
             if !hubResults.isEmpty {
               SignalASILocalModelLabSectionTitle(title: t("signalasi.local_model.hub_results_section", "Model Hub Results"))
               ForEach(hubResults) { result in
-                SignalASILocalModelLabActionRow(
+                SignalASILocalModelLabNavigationRow(
                   title: result.displayName,
                   subtitle: hubResultSubtitle(result),
                   systemImage: "globe",
                   tint: .blue,
                   badge: t("signalasi.local_model.open_repository", "Open")
                 ) {
-                  openHubResult(result)
+                  SignalASILocalModelHubArtifactView(model: result)
                 }
               }
             }
@@ -840,27 +884,40 @@ struct SignalASILocalModelSearchView: View {
     }
   }
 
-  private func openHubResult(_ result: LocalModelHubSearchResult) {
-    guard let url = result.repositoryURL else { return }
-    UIApplication.shared.open(url)
-  }
-
   private func hubResultSubtitle(_ result: LocalModelHubSearchResult) -> String {
     let owner = result.author.ifBlank(result.namespace).ifBlank(t("signalasi.local_model.hub_source", "Hugging Face model"))
     return String(
-      format: t("signalasi.local_model.repository_downloads", "%@ - %@ downloads"),
+      format: t("signalasi.local_model.repository_downloads", "%@ - %@ - %@ downloads"),
       owner,
+      hubSourceLabel(result.source),
       compactCount(result.downloads)
     )
   }
 
+  private func hubSourceLabel(_ source: LocalModelHubSource) -> String {
+    switch source {
+    case .huggingFace:
+      return t("signalasi.local_model.source_huggingface", "Hugging Face")
+    case .modelScope:
+      return t("signalasi.local_model.source_modelscope", "ModelScope")
+    }
+  }
+
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
-    String(
-      format: t("signalasi.local_model.size_and_quantization", "%@ - %@ - %d tokens"),
+    var detail = String(
+      format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
       profile.quantizationLabel,
-      profile.defaultContextTokens
+      parameterLabel(profile.parameterCountBillions)
     )
+    if profile.defaultNoThink {
+      detail += "\n" + t("signalasi.local_model.default_no_think", "Default no-think mode")
+    }
+    return detail
+  }
+
+  private func parameterLabel(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
   }
 
   private func formatBytes(_ bytes: Int64) -> String {
@@ -888,16 +945,24 @@ struct SignalASILocalModelSearchView: View {
   }
 }
 
-private struct LocalModelHubSearchResult: Identifiable, Decodable {
+struct LocalModelHubSearchResult: Identifiable, Decodable {
   var id: String
   var author: String
   var downloads: Int
+  var source: LocalModelHubSource = .huggingFace
 
   enum CodingKeys: String, CodingKey {
     case id
     case modelId
     case author
     case downloads
+  }
+
+  init(id: String, author: String, downloads: Int, source: LocalModelHubSource = .huggingFace) {
+    self.id = id
+    self.author = author
+    self.downloads = max(0, downloads)
+    self.source = source
   }
 
   init(from decoder: Decoder) throws {
@@ -922,7 +987,12 @@ private struct LocalModelHubSearchResult: Identifiable, Decodable {
           let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
       return nil
     }
-    return URL(string: "https://huggingface.co/\(escaped)")
+    switch source {
+    case .huggingFace:
+      return URL(string: "https://huggingface.co/\(escaped)")
+    case .modelScope:
+      return URL(string: "https://modelscope.cn/models/\(escaped)")
+    }
   }
 
   private static func decodeLossyInt(
@@ -941,23 +1011,102 @@ private struct LocalModelHubSearchResult: Identifiable, Decodable {
 
 private enum LocalModelHubSearchClient {
   static func search(query: String) async throws -> [LocalModelHubSearchResult] {
-    guard var components = URLComponents(string: "https://huggingface.co/api/models") else {
-      return []
+    var receivedEmptyResponse = false
+    var lastError: Error?
+    for source in sourceOrder() {
+      do {
+        let results = try await search(query: query, source: source)
+        if !results.isEmpty { return results }
+        receivedEmptyResponse = true
+      } catch {
+        lastError = error
+      }
     }
-    components.queryItems = [
-      URLQueryItem(name: "search", value: query),
-      URLQueryItem(name: "filter", value: "gguf"),
-      URLQueryItem(name: "sort", value: "downloads"),
-      URLQueryItem(name: "direction", value: "-1"),
-      URLQueryItem(name: "limit", value: "20")
-    ]
-    guard let url = components.url else { return [] }
-    let (data, response) = try await URLSession.shared.data(from: url)
-    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+    if receivedEmptyResponse { return [] }
+    throw lastError ?? URLError(.badServerResponse)
+  }
+
+  private static func search(query: String, source: LocalModelHubSource) async throws -> [LocalModelHubSearchResult] {
+    switch source {
+    case .huggingFace:
+      guard var components = URLComponents(string: "https://huggingface.co/api/models") else {
+        throw URLError(.badURL)
+      }
+      components.queryItems = [
+        URLQueryItem(name: "search", value: query),
+        URLQueryItem(name: "filter", value: "gguf"),
+        URLQueryItem(name: "sort", value: "downloads"),
+        URLQueryItem(name: "direction", value: "-1"),
+        URLQueryItem(name: "limit", value: "20")
+      ]
+      guard let url = components.url else { throw URLError(.badURL) }
+      let data = try await requestData(url: url)
+      return try JSONDecoder()
+        .decode([LocalModelHubSearchResult].self, from: data)
+        .filter { !$0.id.isEmpty }
+    case .modelScope:
+      let modelScopeQuery = query.localizedCaseInsensitiveContains("gguf") ? query : "\(query) GGUF"
+      guard var components = URLComponents(string: "https://modelscope.cn/openapi/v1/models") else {
+        throw URLError(.badURL)
+      }
+      components.queryItems = [
+        URLQueryItem(name: "search", value: modelScopeQuery),
+        URLQueryItem(name: "sort", value: "downloads"),
+        URLQueryItem(name: "page_number", value: "1"),
+        URLQueryItem(name: "page_size", value: "20")
+      ]
+      guard let url = components.url else { throw URLError(.badURL) }
+      let data = try await requestData(url: url)
+      return parseModelScopeSearchResults(data)
+    }
+  }
+
+  private static func requestData(url: URL) async throws -> Data {
+    var request = URLRequest(url: url)
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       throw URLError(.badServerResponse)
     }
-    return try JSONDecoder()
-      .decode([LocalModelHubSearchResult].self, from: data)
-      .filter { !$0.id.isEmpty }
+    return data
+  }
+
+  private static func parseModelScopeSearchResults(_ data: Data) -> [LocalModelHubSearchResult] {
+    guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let dataObject = (root["data"] as? [String: Any]) ?? (root["Data"] as? [String: Any]),
+          let models = (dataObject["models"] as? [[String: Any]]) ?? (dataObject["Models"] as? [[String: Any]]) else {
+      return []
+    }
+    return models.compactMap { value in
+      guard let id = value["id"] as? String, id.contains("/") else { return nil }
+      let tags = stringArray(value["tags"])
+      guard tags.contains(where: { ["gguf", "library:gguf", "custom_tag:gguf"].contains($0.lowercased()) }) else {
+        return nil
+      }
+      return LocalModelHubSearchResult(
+        id: id,
+        author: id.split(separator: "/").first.map(String.init) ?? "",
+        downloads: intValue(value["downloads"]),
+        source: .modelScope
+      )
+    }
+  }
+
+  private static func sourceOrder() -> [LocalModelHubSource] {
+    Locale.current.languageCode?.lowercased() == "zh"
+      ? [.modelScope, .huggingFace]
+      : [.huggingFace, .modelScope]
+  }
+
+  private static func stringArray(_ value: Any?) -> [String] {
+    if let values = value as? [String] { return values }
+    return (value as? [Any])?.compactMap { $0 as? String } ?? []
+  }
+
+  private static func intValue(_ value: Any?) -> Int {
+    if let number = value as? NSNumber { return max(0, number.intValue) }
+    if let string = value as? String { return max(0, Int(Double(string) ?? 0)) }
+    return 0
   }
 }

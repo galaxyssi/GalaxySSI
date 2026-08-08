@@ -244,8 +244,15 @@ enum LocalModelAcceleratorDetector {
     processInfo: ProcessInfo = .processInfo,
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> LocalModelAcceleratorSnapshot {
-    let runtimeNames = bundledRuntimeNames(bundle: bundle, fileManager: fileManager)
     let metal = metalHardware()
+    var runtimeNames = bundledRuntimeNames(bundle: bundle, fileManager: fileManager)
+    if LocalModelInferenceRuntime.shared.available {
+      runtimeNames.insert("signalasi-llama")
+      runtimeNames.insert("ggml")
+      if metal.available {
+        runtimeNames.insert("ggml-metal")
+      }
+    }
     let machine = machineIdentifier()
     let neural = neuralEngineHardware(machineIdentifier: machine)
     return LocalModelAcceleratorPolicy.evaluate(

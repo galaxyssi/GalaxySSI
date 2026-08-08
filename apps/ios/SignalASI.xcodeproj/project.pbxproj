@@ -35,6 +35,13 @@
     A10000000000000000001241 /* SignalASIMemoryControlDetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */; };
     A10000000000000000000996 /* SignalASIAgentKnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */; };
     A10000000000000000000997 /* SignalASIAgentRecentTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */; };
+    A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */; };
+    A10000000000000000001520 /* LocalModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001520 /* LocalModelCatalog.swift */; };
+    A10000000000000000001521 /* LocalModelRuntimeStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001521 /* LocalModelRuntimeStorage.swift */; };
+    A10000000000000000001522 /* LocalModelInferenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001522 /* LocalModelInferenceModels.swift */; };
+    A10000000000000000001523 /* LocalModelInferenceRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001523 /* LocalModelInferenceRuntime.swift */; };
+    A10000000000000000001524 /* SignalASILlamaNativeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */; };
+    A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */; };
     A10000000000000000001500 /* SignalASIAgentAuditOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */; };
     A10000000000000000000998 /* SignalASIAgentSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000998 /* SignalASIAgentSessionsView.swift */; };
     A10000000000000000000999 /* SignalASINativeToolCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */; };
@@ -700,6 +707,13 @@
     A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlDetailViews.swift; sourceTree = "<group>"; };
     A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentKnowledgeView.swift; sourceTree = "<group>"; };
     A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRecentTasksView.swift; sourceTree = "<group>"; };
+    A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelArtifactView.swift; sourceTree = "<group>"; };
+    A20000000000000000001520 /* LocalModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelCatalog.swift; sourceTree = "<group>"; };
+    A20000000000000000001521 /* LocalModelRuntimeStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRuntimeStorage.swift; sourceTree = "<group>"; };
+    A20000000000000000001522 /* LocalModelInferenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelInferenceModels.swift; sourceTree = "<group>"; };
+    A20000000000000000001523 /* LocalModelInferenceRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelInferenceRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILlamaNativeBackend.swift; sourceTree = "<group>"; };
+    A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentAuditOperationsView.swift; sourceTree = "<group>"; };
     A20000000000000000000998 /* SignalASIAgentSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentSessionsView.swift; sourceTree = "<group>"; };
     A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASINativeToolCatalogView.swift; sourceTree = "<group>"; };
@@ -1768,6 +1782,13 @@
         A20000000000000000001150 /* SignalASIAgentCoreView.swift */,
         A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */,
         A20000000000000000001041 /* SignalASILocalModelLabView.swift */,
+        A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */,
+        A20000000000000000001520 /* LocalModelCatalog.swift */,
+        A20000000000000000001521 /* LocalModelRuntimeStorage.swift */,
+        A20000000000000000001522 /* LocalModelInferenceModels.swift */,
+        A20000000000000000001523 /* LocalModelInferenceRuntime.swift */,
+        A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */,
+        A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */,
         A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */,
         A20000000000000000001051 /* SignalASIAppAdaptersView.swift */,
         A20000000000000000001060 /* SignalASIProtocolQualityView.swift */,
@@ -2056,6 +2077,7 @@
       isa = PBXNativeTarget;
       buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "SignalASI" */;
       buildPhases = (
+        A60000000000000000000003 /* Build iOS native llama runtime */,
         A60000000000000000000001 /* Sources */,
         A30000000000000000000001 /* Frameworks */,
         A70000000000000000000001 /* Resources */,
@@ -2127,6 +2149,20 @@
     A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+    A60000000000000000000003 /* Build iOS native llama runtime */ = {
+      isa = PBXShellScriptBuildPhase;
+      buildActionMask = 2147483647;
+      files = ();
+      inputPaths = ();
+      name = "Build iOS native llama runtime";
+      outputPaths = ("$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",);
+      runOnlyForDeploymentPostprocessing = 0;
+      shellPath = /bin/bash;
+      shellScript = "bash \"${SRCROOT}/apps/ios/build-signalasi-llama.sh\"\n";
+    };
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
     A60000000000000000000001 /* Sources */ = {
@@ -2542,6 +2578,13 @@
         A10000000000000000001150 /* SignalASIAgentCoreView.swift in Sources */,
         A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */,
         A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */,
+        A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */,
+        A10000000000000000001520 /* LocalModelCatalog.swift in Sources */,
+        A10000000000000000001521 /* LocalModelRuntimeStorage.swift in Sources */,
+        A10000000000000000001522 /* LocalModelInferenceModels.swift in Sources */,
+        A10000000000000000001523 /* LocalModelInferenceRuntime.swift in Sources */,
+        A10000000000000000001524 /* SignalASILlamaNativeBackend.swift in Sources */,
+        A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */,
         A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */,
         A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */,
         A10000000000000000001060 /* SignalASIProtocolQualityView.swift in Sources */,
@@ -2958,7 +3001,23 @@
         MARKETING_VERSION = 0.1.0;
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
+        SIGNALASI_NATIVE_LLAMA = 1;
         SWIFT_EMIT_LOC_STRINGS = YES;
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SIGNALASI_NATIVE_LLAMA";
+        LIBRARY_SEARCH_PATHS = (
+          "$(inherited)",
+          "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime",
+        );
+        OTHER_LDFLAGS = (
+          "$(inherited)",
+          "-force_load",
+          "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
+          "-framework",
+          Accelerate,
+          "-framework",
+          Metal,
+          "-lc++",
+        );
         SWIFT_VERSION = 5.0;
         TARGETED_DEVICE_FAMILY = "1,2";
       };
@@ -2994,7 +3053,23 @@
         MARKETING_VERSION = 0.1.0;
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
+        SIGNALASI_NATIVE_LLAMA = 1;
         SWIFT_EMIT_LOC_STRINGS = YES;
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = SIGNALASI_NATIVE_LLAMA;
+        LIBRARY_SEARCH_PATHS = (
+          "$(inherited)",
+          "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime",
+        );
+        OTHER_LDFLAGS = (
+          "$(inherited)",
+          "-force_load",
+          "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
+          "-framework",
+          Accelerate,
+          "-framework",
+          Metal,
+          "-lc++",
+        );
         SWIFT_VERSION = 5.0;
         TARGETED_DEVICE_FAMILY = "1,2";
       };

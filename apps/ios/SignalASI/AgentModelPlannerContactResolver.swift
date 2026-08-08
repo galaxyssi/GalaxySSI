@@ -58,6 +58,12 @@ struct AgentModelPlannerContactResolver {
     settings: AgentModelPlannerSettings,
     sender: CloudModelStructuredSending = CloudModelClient()
   ) -> GuardedModelAgentPlanner? {
+    if let localProfile = localProfile(for: settings) {
+      return GuardedModelAgentPlanner(
+        provider: LocalModelAgentPlanningProvider(profile: localProfile),
+        modelProfile: localProfile.id
+      )
+    }
     guard let resolution = resolve(settings: settings) else {
       return nil
     }
@@ -72,6 +78,12 @@ struct AgentModelPlannerContactResolver {
     structuredSender: CloudModelStructuredSending = CloudModelClient(),
     nativeToolSender: CloudModelNativeToolSending = CloudModelClient()
   ) -> GuardedModelAgentPlanner? {
+    if let localProfile = localProfile(for: settings) {
+      return GuardedModelAgentPlanner(
+        provider: LocalModelAgentPlanningProvider(profile: localProfile),
+        modelProfile: localProfile.id
+      )
+    }
     guard let resolution = resolve(settings: settings) else {
       return nil
     }
@@ -83,6 +95,19 @@ struct AgentModelPlannerContactResolver {
       nativeToolSender: nativeToolSender
     )
     return GuardedModelAgentPlanner(provider: provider, modelProfile: resolution.modelProfile)
+  }
+
+  @MainActor
+  private func makeLocalPlanningProvider(
+    settings: AgentModelPlannerSettings
+  ) -> LocalModelAgentPlanningProvider? {
+    guard let profile = localProfile(for: settings) else { return nil }
+    return LocalModelAgentPlanningProvider(profile: profile)
+  }
+
+  private func localProfile(for settings: AgentModelPlannerSettings) -> LocalModelRuntimeProfile? {
+    guard settings.normalized.cloudContactId == "local-llm" else { return nil }
+    return LocalModelRuntimeSettings.selectedProfile()
   }
 
   static func resolve(
