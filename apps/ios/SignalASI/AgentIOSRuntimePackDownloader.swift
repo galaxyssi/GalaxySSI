@@ -50,6 +50,9 @@ final class AgentIOSRuntimePackDownloader {
     try fileManager.createDirectory(at: downloadsRootURL, withIntermediateDirectories: true)
     let baseName = "\(entry.packId)-\(entry.version)-\(entry.architecture)-\(entry.archiveSha256.prefix(12))"
     let completed = downloadsRootURL.appendingPathComponent("\(baseName).sarpack", isDirectory: false)
+    let partial = downloadsRootURL.appendingPathComponent("\(baseName).partial", isDirectory: false)
+    let metadata = downloadsRootURL.appendingPathComponent("\(baseName).partial.json", isDirectory: false)
+
     if try isValidArchive(completed, expectedSize: entry.archiveSizeBytes, expectedSha256: entry.archiveSha256) {
       onProgress(AgentIOSRuntimePackDownloadProgress(
         downloadedBytes: entry.archiveSizeBytes,
@@ -59,52 +62,173 @@ final class AgentIOSRuntimePackDownloader {
       return completed
     }
     try? fileManager.removeItem(at: completed)
-    guard !isCancelled() else {
-      throw AgentIOSRuntimePackDownloadError("Runtime pack download was cancelled")
+
+    let saved = readResumeMetadata(metadata)
+    if saved == nil || saved?.url != url.absoluteString ||
+      saved?.sha256.caseInsensitiveCompare(entry.archiveSha256) != .orderedSame ||
+      saved?.totalBytes != entry.archiveSizeBytes {
+      resetPartial(partial, metadata: metadata)
+    }
+    var offset = (try? fileSize(partial)) ?? 0
+    if offset > entry.archiveSizeBytes {
+      resetPartial(partial, metadata: metadata)
+      offset = 0
+    }
+    if offset == entry.archiveSizeBytes,
+       try isValidArchive(partial, expectedSize: entry.archiveSizeBytes, expectedSha256: entry.archiveSha256) {
+      try finalize(partial: partial, completed: completed, metadata: metadata)
+      onProgress(AgentIOSRuntimePackDownloadProgress(
+        downloadedBytes: entry.archiveSizeBytes,
+        totalBytes: entry.archiveSizeBytes,
+        resumed: true
+      ))
+      return completed
+    }
+    try ensureFreeSpace(requiredBytes: entry.archiveSizeBytes - offset)
+    var resumed = offset > 0
+    var restartAllowed = true
+    var etag = readResumeMetadata(metadata)?.etag ?? ""
+    onProgress(AgentIOSRuntimePackDownloadProgress(
+      downloadedBytes: offset,
+      totalBytes: entry.archiveSizeBytes,
+      resumed: resumed
+    ))
+
+    while true {
+      guard !isCancelled() else {
+        throw AgentIOSRuntimePackDownloadError("Runtime pack download was cancelled")
+      }
+      writeResumeMetadata(
+        metadata,
+        value: ResumeMetadata(
+          url: url.absoluteString,
+          sha256: entry.archiveSha256,
+          totalBytes: entry.archiveSizeBytes,
+          etag: etag
+        )
+      )
+      let response = try request(
+        url: url,
+        offset: offset,
+        etag: etag,
+        expectedBytes: entry.archiveSizeBytes,
+        isCancelled: isCancelled,
+        resumed: resumed,
+        partial: partial,
+        onProgress: { downloaded, wasResumed in
+          onProgress(AgentIOSRuntimePackDownloadProgress(
+            downloadedBytes: downloaded,
+            totalBytes: entry.archiveSizeBytes,
+            resumed: wasResumed
+          ))
+        }
+      )
+
+      if response.statusCode == 416 {
+        if offset == entry.archiveSizeBytes,
+           try isValidArchive(partial, expectedSize: entry.archiveSizeBytes, expectedSha256: entry.archiveSha256) {
+          try finalize(partial: partial, completed: completed, metadata: metadata)
+          return completed
+        }
+        guard restartAllowed else {
+          throw AgentIOSRuntimePackDownloadError("Runtime pack server rejected a fresh download")
+        }
+        resetPartial(partial, metadata: metadata)
+        offset = 0
+        resumed = false
+        etag = ""
+        restartAllowed = false
+        continue
+      }
+
+      if response.statusCode == 206 {
+        guard let range = parseContentRange(response.contentRange),
+              range.first == offset,
+              range.total == entry.archiveSizeBytes else {
+          guard restartAllowed else {
+            throw AgentIOSRuntimePackDownloadError("Runtime pack server returned an invalid resume range")
+          }
+          resetPartial(partial, metadata: metadata)
+          offset = 0
+          resumed = false
+          etag = ""
+          restartAllowed = false
+          continue
+        }
+      } else if response.statusCode == 200, offset > 0 {
+        guard restartAllowed else {
+          throw AgentIOSRuntimePackDownloadError("Runtime pack server ignored a fresh download request")
+        }
+        resetPartial(partial, metadata: metadata)
+        offset = 0
+        resumed = false
+        etag = ""
+        restartAllowed = false
+        continue
+      } else if response.statusCode < 200 || response.statusCode >= 300 {
+        throw AgentIOSRuntimePackDownloadError("Runtime pack download returned HTTP \(response.statusCode)")
+      }
+
+      if offset > 0, !etag.isEmpty, !response.etag.isEmpty, etag != response.etag {
+        guard restartAllowed else {
+          throw AgentIOSRuntimePackDownloadError("Runtime pack changed while resuming")
+        }
+        resetPartial(partial, metadata: metadata)
+        offset = 0
+        resumed = false
+        etag = ""
+        restartAllowed = false
+        continue
+      }
+      etag = response.etag
+      writeResumeMetadata(
+        metadata,
+        value: ResumeMetadata(
+          url: url.absoluteString,
+          sha256: entry.archiveSha256,
+          totalBytes: entry.archiveSizeBytes,
+          etag: etag
+        )
+      )
+      offset = (try? fileSize(partial)) ?? 0
+      if offset == entry.archiveSizeBytes { break }
+      guard offset > 0, offset < entry.archiveSizeBytes else {
+        throw AgentIOSRuntimePackDownloadError("Runtime pack download ended without data")
+      }
+      resumed = true
     }
 
-    onProgress(AgentIOSRuntimePackDownloadProgress(
-      downloadedBytes: 0,
-      totalBytes: entry.archiveSizeBytes,
-      resumed: false
-    ))
-    let temporary = try downloadToTemporaryFile(
-      url: url,
-      expectedBytes: entry.archiveSizeBytes,
-      isCancelled: isCancelled,
-      onProgress: { downloaded in
-        onProgress(AgentIOSRuntimePackDownloadProgress(
-          downloadedBytes: downloaded,
-          totalBytes: entry.archiveSizeBytes,
-          resumed: false
-        ))
-      }
-    )
-    defer { try? fileManager.removeItem(at: temporary) }
-    guard try fileSize(temporary) == entry.archiveSizeBytes else {
+    guard try fileSize(partial) == entry.archiveSizeBytes else {
       throw AgentIOSRuntimePackDownloadError("Runtime pack download size does not match the signed catalog")
     }
-    let digest = try sha256(file: temporary)
+    let digest = try sha256(file: partial)
     guard digest.caseInsensitiveCompare(entry.archiveSha256) == .orderedSame else {
+      resetPartial(partial, metadata: metadata)
       throw AgentIOSRuntimePackDownloadError("Runtime pack download integrity check failed")
     }
-    if fileManager.fileExists(atPath: completed.path) {
-      try fileManager.removeItem(at: completed)
-    }
-    try fileManager.moveItem(at: temporary, to: completed)
+    try finalize(partial: partial, completed: completed, metadata: metadata)
     return completed
   }
 
-  private func downloadToTemporaryFile(
+  private func request(
     url: URL,
+    offset: Int64,
+    etag: String,
     expectedBytes: Int64,
     isCancelled: @escaping () -> Bool,
-    onProgress: @escaping (Int64) -> Void
-  ) throws -> URL {
-    let delegate = AgentIOSRuntimePackDownloadDelegate(
+    resumed: Bool,
+    partial: URL,
+    onProgress: @escaping (Int64, Bool) -> Void
+  ) throws -> DownloadResponse {
+    if !fileManager.fileExists(atPath: partial.path) {
+      fileManager.createFile(atPath: partial.path, contents: nil)
+    }
+    let delegate = AgentIOSRuntimePackRangeDelegate(
       expectedBytes: expectedBytes,
+      initialOffset: offset,
+      partialURL: partial,
       isCancelled: isCancelled,
-      onProgress: onProgress
+      onProgress: { downloaded in onProgress(downloaded, resumed) }
     )
     let session = URLSession(
       configuration: sessionConfiguration,
@@ -114,34 +238,72 @@ final class AgentIOSRuntimePackDownloader {
     var request = URLRequest(url: url)
     request.setValue("application/vnd.signalasi.runtime-pack+zip", forHTTPHeaderField: "Accept")
     request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-    let task = session.downloadTask(with: request)
+    if offset > 0 {
+      request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
+      if !etag.isEmpty {
+        request.setValue(etag, forHTTPHeaderField: "If-Range")
+      }
+    }
+    let task = session.dataTask(with: request)
     task.resume()
     delegate.wait()
     session.invalidateAndCancel()
-    func cleanupTemporaryFile() {
-      if let temporaryURL = delegate.temporaryURL {
-        try? FileManager.default.removeItem(at: temporaryURL)
-      }
-    }
     if isCancelled() {
-      cleanupTemporaryFile()
       throw AgentIOSRuntimePackDownloadError("Runtime pack download was cancelled")
     }
     if let error = delegate.error {
-      cleanupTemporaryFile()
       throw error
     }
-    guard let response = delegate.response as? HTTPURLResponse,
-          (200..<300).contains(response.statusCode),
-          let finalURL = response.url,
-          (try? AgentRuntimePackCatalogPolicy.validateHTTPSURL(finalURL.absoluteString)) != nil else {
-      cleanupTemporaryFile()
-      throw AgentIOSRuntimePackDownloadError("Runtime pack download returned an invalid HTTPS response")
+    guard let response = delegate.response else {
+      throw AgentIOSRuntimePackDownloadError("Runtime pack download returned no response")
     }
-    guard let temporaryURL = delegate.temporaryURL else {
-      throw AgentIOSRuntimePackDownloadError("Runtime pack download did not produce a file")
+    return DownloadResponse(
+      statusCode: response.statusCode,
+      etag: response.value(forHTTPHeaderField: "ETag")?.prefix(512).description ?? "",
+      contentRange: response.value(forHTTPHeaderField: "Content-Range")
+    )
+  }
+
+  private func finalize(partial: URL, completed: URL, metadata: URL) throws {
+    if fileManager.fileExists(atPath: completed.path) {
+      try fileManager.removeItem(at: completed)
     }
-    return temporaryURL
+    try fileManager.moveItem(at: partial, to: completed)
+    try? fileManager.removeItem(at: metadata)
+  }
+
+  private func resetPartial(_ partial: URL, metadata: URL) {
+    try? fileManager.removeItem(at: partial)
+    try? fileManager.removeItem(at: metadata)
+  }
+
+  private func readResumeMetadata(_ url: URL) -> ResumeMetadata? {
+    guard let data = try? Data(contentsOf: url),
+          data.count <= 64 * 1_024 else { return nil }
+    return try? JSONDecoder().decode(ResumeMetadata.self, from: data)
+  }
+
+  private func writeResumeMetadata(_ url: URL, value: ResumeMetadata) {
+    guard let data = try? JSONEncoder().encode(value) else { return }
+    let temporary = url.appendingPathExtension("tmp-\(UUID().uuidString)")
+    do {
+      try data.write(to: temporary, options: [.atomic])
+      if fileManager.fileExists(atPath: url.path) {
+        try fileManager.removeItem(at: url)
+      }
+      try fileManager.moveItem(at: temporary, to: url)
+    } catch {
+      try? fileManager.removeItem(at: temporary)
+    }
+  }
+
+  private func ensureFreeSpace(requiredBytes: Int64) throws {
+    let attributes = try fileManager.attributesOfFileSystem(forPath: downloadsRootURL.path)
+    let available = (attributes[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+    let minimumFreeBytes: Int64 = 256 * 1_024 * 1_024
+    guard available >= requiredBytes + minimumFreeBytes else {
+      throw AgentIOSRuntimePackDownloadError("Not enough storage to download the runtime pack")
+    }
   }
 
   private func isValidArchive(
@@ -181,59 +343,134 @@ final class AgentIOSRuntimePackDownloader {
     }
     return digest.finalize().map { String(format: "%02x", $0) }.joined()
   }
+
+  private func parseContentRange(_ value: String?) -> ContentRange? {
+    guard let value,
+          let match = value.range(of: #"^bytes ([0-9]+)-([0-9]+)/([0-9]+)$"#, options: .regularExpression) else {
+      return nil
+    }
+    let numbers = value[match].split { $0 == " " || $0 == "-" || $0 == "/" }
+      .dropFirst()
+      .compactMap { Int64(String($0)) }
+    guard numbers.count == 3,
+          numbers[0] >= 0,
+          numbers[1] >= numbers[0],
+          numbers[2] > numbers[1] else { return nil }
+    return ContentRange(first: numbers[0], last: numbers[1], total: numbers[2])
+  }
+
+  private struct ResumeMetadata: Codable {
+    var url: String
+    var sha256: String
+    var totalBytes: Int64
+    var etag: String
+  }
+
+  private struct ContentRange {
+    var first: Int64
+    var last: Int64
+    var total: Int64
+  }
+
+  private struct DownloadResponse {
+    var statusCode: Int
+    var etag: String
+    var contentRange: String?
+  }
 }
 
-private final class AgentIOSRuntimePackDownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
+private final class AgentIOSRuntimePackRangeDelegate: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate {
   let expectedBytes: Int64
+  let initialOffset: Int64
+  let partialURL: URL
   let isCancelled: () -> Bool
   let onProgress: (Int64) -> Void
   let semaphore = DispatchSemaphore(value: 0)
-  var temporaryURL: URL?
-  var response: URLResponse?
+  var response: HTTPURLResponse?
   var error: Error?
+  private var fileHandle: FileHandle?
+  private var downloadedBytes: Int64
 
   init(
     expectedBytes: Int64,
+    initialOffset: Int64,
+    partialURL: URL,
     isCancelled: @escaping () -> Bool,
     onProgress: @escaping (Int64) -> Void
   ) {
     self.expectedBytes = expectedBytes
+    self.initialOffset = initialOffset
+    self.partialURL = partialURL
     self.isCancelled = isCancelled
     self.onProgress = onProgress
+    self.downloadedBytes = initialOffset
   }
 
-  func wait() {
-    semaphore.wait()
-  }
+  func wait() { semaphore.wait() }
 
   func urlSession(
     _ session: URLSession,
-    downloadTask: URLSessionDownloadTask,
-    didWriteData bytesWritten: Int64,
-    totalBytesWritten: Int64,
-    totalBytesExpectedToWrite: Int64
+    dataTask: URLSessionDataTask,
+    didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
-    if isCancelled() || totalBytesWritten > expectedBytes {
-      downloadTask.cancel()
+    guard let http = response as? HTTPURLResponse,
+          let finalURL = http.url,
+          (try? AgentRuntimePackCatalogPolicy.validateHTTPSURL(finalURL.absoluteString)) != nil else {
+      error = AgentIOSRuntimePackDownloadError("Runtime pack download returned an invalid HTTPS response")
+      dataTask.cancel()
+      completionHandler(.cancel)
       return
     }
-    onProgress(totalBytesWritten)
+    self.response = http
+    guard http.statusCode == 416 else {
+      guard (200..<300).contains(http.statusCode) else {
+        error = AgentIOSRuntimePackDownloadError("Runtime pack download returned HTTP \(http.statusCode)")
+        dataTask.cancel()
+        completionHandler(.cancel)
+        return
+      }
+      let expectedBodyBytes = http.statusCode == 206 ? expectedBytes - initialOffset : expectedBytes
+      if http.expectedContentLength > expectedBodyBytes && http.expectedContentLength >= 0 {
+        error = AgentIOSRuntimePackDownloadError("Runtime pack download exceeds its signed size")
+        dataTask.cancel()
+        completionHandler(.cancel)
+        return
+      }
+      do {
+        fileHandle = try FileHandle(forWritingTo: partialURL)
+        if http.statusCode == 206 && initialOffset > 0 {
+          try fileHandle?.seekToEnd()
+        } else {
+          try fileHandle?.truncate(atOffset: 0)
+          downloadedBytes = 0
+        }
+      } catch {
+        self.error = error
+        dataTask.cancel()
+        completionHandler(.cancel)
+        return
+      }
+      completionHandler(.allow)
+      return
+    }
+    completionHandler(.allow)
   }
 
-  func urlSession(
-    _ session: URLSession,
-    downloadTask: URLSessionDownloadTask,
-    didFinishDownloadingTo location: URL
-  ) {
-    let destination = FileManager.default.temporaryDirectory
-      .appendingPathComponent("signalasi-runtime-\(UUID().uuidString).sarpack")
-    do {
-      try? FileManager.default.removeItem(at: destination)
-      try FileManager.default.moveItem(at: location, to: destination)
-      temporaryURL = destination
-    } catch {
-      self.error = error
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    guard !isCancelled() else {
+      dataTask.cancel()
+      return
     }
+    let next = downloadedBytes + Int64(data.count)
+    guard next <= expectedBytes else {
+      error = AgentIOSRuntimePackDownloadError("Runtime pack download exceeds its signed size")
+      dataTask.cancel()
+      return
+    }
+    fileHandle?.write(data)
+    downloadedBytes = next
+    onProgress(downloadedBytes)
   }
 
   func urlSession(
@@ -252,8 +489,10 @@ private final class AgentIOSRuntimePackDownloadDelegate: NSObject, URLSessionDow
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    response = task.response
-    self.error = error
+    try? fileHandle?.close()
+    if self.error == nil {
+      self.error = error
+    }
     semaphore.signal()
   }
 }
