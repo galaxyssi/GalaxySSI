@@ -9,6 +9,7 @@ struct SignalASIAgentComposerView: View {
   var attachments: [SignalASIDraftAttachment]
   var attachmentError: String
   var canSend: Bool
+  var hasPendingPrimaryAction: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -17,11 +18,21 @@ struct SignalASIAgentComposerView: View {
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
   var onSend: () -> Void
+  var onPendingPrimaryAction: () -> Void
   var onVoiceTranscript: (String) -> Void
   var t: (String, String) -> String
 
+  private var uiState: SignalASIAgentComposerUiState {
+    SignalASIAgentComposerUiPolicy.resolve(
+      hasInput: canSend,
+      hasPendingPrimaryAction: hasPendingPrimaryAction,
+      textModeActive: inputFocused,
+      actionTrayRequested: actionTrayPresented
+    )
+  }
+
   private var trayVisible: Bool {
-    actionTrayPresented && !canSend && !holdToTalk.isRecording
+    uiState.showActionTray && !holdToTalk.isRecording
   }
 
   private var minimumTouchSize: CGFloat {
@@ -192,14 +203,18 @@ struct SignalASIAgentComposerView: View {
 
   @ViewBuilder
   private var primaryActionButton: some View {
-    if canSend {
+    if uiState.showSendButton {
       Button {
         actionTrayPresented = false
-        onSend()
+        if canSend {
+          onSend()
+        } else {
+          onPendingPrimaryAction()
+        }
       } label: {
-        Image(systemName: "arrow.up")
+        Image(systemName: canSend ? "arrow.up" : "xmark")
           .font(.system(size: 20, weight: .bold))
-          .foregroundColor(.signalASIAccent)
+          .foregroundColor(canSend ? .signalASIAccent : .signalASIAgentVoiceCancel)
           .frame(width: 54, height: 54)
           .background(Color.white)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -207,7 +222,9 @@ struct SignalASIAgentComposerView: View {
       .buttonStyle(.plain)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
       .contentShape(Rectangle())
-      .accessibilityLabel(Text(t("signalasi.common.send", "Send")))
+      .accessibilityLabel(Text(canSend
+        ? t("signalasi.common.send", "Send")
+        : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
         actionTrayPresented.toggle()
@@ -223,7 +240,7 @@ struct SignalASIAgentComposerView: View {
       .buttonStyle(.plain)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
       .contentShape(Rectangle())
-      .accessibilityLabel(Text(trayVisible
+      .accessibilityLabel(Text(uiState.showActionTray
         ? t("agent_attachment_close_menu", "Close actions")
         : t("agent_attachment_open_menu", "More actions")))
     }

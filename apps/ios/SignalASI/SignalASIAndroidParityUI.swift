@@ -188,6 +188,10 @@ struct AgentHomeView: View {
     }
   }
 
+  private var cancellableAgentTask: AgentTaskRecord? {
+    activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
+  }
+
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
@@ -412,6 +416,7 @@ struct AgentHomeView: View {
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,
+      hasPendingPrimaryAction: cancellableAgentTask != nil,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -424,9 +429,15 @@ struct AgentHomeView: View {
         fileImporterPresented = true
       },
       onSend: sendAgentMessage,
+      onPendingPrimaryAction: cancelPendingAgentTask,
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
+  }
+
+  private func cancelPendingAgentTask() {
+    guard let task = cancellableAgentTask else { return }
+    coordinator.cancelLocalNativeAction(taskId: task.taskId)
   }
 
   private var agentRuntimePanel: some View {

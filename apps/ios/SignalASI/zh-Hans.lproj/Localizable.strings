@@ -3515,3 +3515,4 @@
 "signalasi.local_model.enabled_toggle" = "启用本机模型";
 "signalasi.local_model.enabled_message" = "已启用 %@";
 "signalasi.local_model.disabled_message" = "已停用 %@";
+"signalasi.agent.cancel_task" = "取消任务";
