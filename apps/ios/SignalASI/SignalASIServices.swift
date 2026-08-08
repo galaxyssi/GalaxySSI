@@ -581,7 +581,7 @@ final class MessageCoordinator: ObservableObject {
   private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
-      actionExecutor: LocalAgentUnsupportedActionExecutor(),
+      actionExecutor: AgentIOSNativeActionExecutor(),
       screenProvider: { _ in
         AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
       },
@@ -2651,15 +2651,5 @@ private extension Data {
     let value = (UInt16(self[index]) << 8) | UInt16(self[index + 1])
     index += 2
     return value
-  }
-}
-
-private struct LocalAgentUnsupportedActionExecutor: AgentActionExecutor {
-  func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
-    AgentActionResult(
-      actionId: action.id,
-      success: false,
-      message: "The local Agent route only executes registered phone-native tools."
-    )
   }
 }
