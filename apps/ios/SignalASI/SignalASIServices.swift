@@ -1119,8 +1119,17 @@ final class MessageCoordinator: ObservableObject {
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
 
+    var executionAction = action
+    executionAction.parameters["_signalasi_task_id"] = task.taskId
+    executionAction.parameters["_signalasi_session_id"] = task.sessionId
+    executionAction.parameters["_signalasi_conversation_id"] = outgoing.conversationId
+    executionAction.parameters["_signalasi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    executionAction.parameters["_signalasi_workspace_id"] = AgentWorkspaceScope.id(
+      conversationId: outgoing.conversationId,
+      sessionId: task.sessionId
+    )
     let result = runtime.actionExecutor.execute(
-      action: action,
+      action: executionAction,
       screen: screen
     )
     let reply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
