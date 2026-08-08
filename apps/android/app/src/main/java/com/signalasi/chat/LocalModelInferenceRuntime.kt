@@ -75,6 +75,9 @@ object LocalModelInferenceRuntime {
         thinkingMode: LocalModelThinkingMode = LocalModelThinkingMode.AUTOMATIC,
         workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE
     ): LocalModelInferenceResult {
+        check(LocalModelRuntimeSettings.isProfileEnabled(context, profile)) {
+            "The selected local model is installed but disabled"
+        }
         if (workClass == LocalModelWorkClass.BACKGROUND && !backgroundSafe(profile)) {
             throw LocalModelBackgroundDeferredException()
         }

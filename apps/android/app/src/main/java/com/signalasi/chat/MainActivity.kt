@@ -512,6 +512,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val profile: LocalModelRuntimeProfile,
         val subtitle: TextView,
         val action: TextView,
+        val enabledSwitch: Switch,
         val progress: ProgressBar
     )
     private val localModelRowBindings = linkedMapOf<String, LocalModelRowBinding>()
@@ -27077,8 +27078,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val actionView = TextView(this).apply {
             setTextColor(getColorCompat(R.color.signalasi_green))
             textSize = 12.5f
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
             maxLines = 1
+        }
+        val enabledSwitch = Switch(this).apply {
+            showText = false
+            visibility = View.GONE
+            contentDescription = getString(R.string.local_model_enable_action)
         }
         val progressView = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
@@ -27086,7 +27092,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E5E7EB"))
             visibility = View.GONE
         }
-        val binding = LocalModelRowBinding(profile, subtitleView, actionView, progressView)
+        val binding = LocalModelRowBinding(
+            profile,
+            subtitleView,
+            actionView,
+            enabledSwitch,
+            progressView
+        )
         localModelRowBindings[profile.id] = binding
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -27111,7 +27123,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     })
                     addView(subtitleView)
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(actionView, LinearLayout.LayoutParams(dp(76), dp(36)))
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    addView(actionView, LinearLayout.LayoutParams(0, dp(36), 1f))
+                    addView(enabledSwitch, LinearLayout.LayoutParams(dp(52), dp(40)).apply {
+                        leftMargin = dp(4)
+                    })
+                }, LinearLayout.LayoutParams(dp(126), dp(40)))
             })
             addView(progressView, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -27167,15 +27186,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         binding.action.text = localModelActionLabel(profile, state)
+        val installed = state.state == LocalModelInstallState.READY
+        val enabled = installed && LocalModelRuntimeSettings.isProfileEnabled(this, profile)
         binding.action.setTextColor(getColorCompat(
-            if (state.state == LocalModelInstallState.READY &&
-                LocalModelRuntimeSettings.isProfileEnabled(this, profile)
-            ) {
+            if (installed) {
                 R.color.text_secondary
             } else {
                 R.color.signalasi_green
             }
         ))
+        binding.enabledSwitch.setOnCheckedChangeListener(null)
+        binding.enabledSwitch.visibility = if (installed) View.VISIBLE else View.GONE
+        binding.enabledSwitch.isEnabled = installed
+        binding.enabledSwitch.isChecked = enabled
+        binding.enabledSwitch.contentDescription = getString(
+            if (enabled) R.string.local_model_disable_action else R.string.local_model_enable_action
+        )
+        binding.enabledSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != LocalModelRuntimeSettings.isProfileEnabled(this, profile)) {
+                setLocalModelProfileEnabled(profile, checked)
+            }
+        }
         val showProgress = state.state in setOf(
             LocalModelInstallState.QUEUED,
             LocalModelInstallState.DOWNLOADING,
@@ -27204,17 +27235,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         LocalModelInstallState.INSTALLING -> getString(R.string.local_model_download_installing)
         LocalModelInstallState.READY -> getString(
             if (LocalModelRuntimeSettings.isProfileEnabled(this, profile)) {
-                if (profile.supportsQnnCooperation) {
-                    R.string.local_model_enabled
-                } else {
-                    R.string.local_model_selected
-                }
+                R.string.local_model_enabled
             } else {
-                if (profile.supportsQnnCooperation) {
-                    R.string.local_model_enable_action
-                } else {
-                    R.string.local_model_use_action
-                }
+                R.string.local_model_download_ready
             }
         )
         LocalModelInstallState.FAILED -> getString(R.string.common_retry)
@@ -27233,18 +27256,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LocalModelInstallState.VERIFYING,
             LocalModelInstallState.INSTALLING -> Unit
             LocalModelInstallState.READY -> {
-                if (profile.supportsQnnCooperation) {
-                    LocalModelRuntimeSettings.setProfileEnabled(
-                        this,
-                        profile,
-                        enabled = !LocalModelRuntimeSettings.isProfileEnabled(this, profile)
-                    )
-                } else {
-                    LocalModelRuntimeSettings.setProfileEnabled(this, profile, enabled = true)
-                }
-                showLocalModelFeaturePage()
+                setLocalModelProfileEnabled(
+                    profile,
+                    enabled = !LocalModelRuntimeSettings.isProfileEnabled(this, profile)
+                )
             }
         }
+    }
+
+    private fun setLocalModelProfileEnabled(
+        profile: LocalModelRuntimeProfile,
+        enabled: Boolean
+    ) {
+        LocalModelRuntimeSettings.setProfileEnabled(this, profile, enabled)
+        if (!enabled) {
+            cloudExecutor.execute {
+                LocalModelInferenceRuntime.unloadIfSelected(profile.id)
+            }
+        }
+        showLocalModelFeaturePage()
     }
 
     private fun requestLocalModelDownload(profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {

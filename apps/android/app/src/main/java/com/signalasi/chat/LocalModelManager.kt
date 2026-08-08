@@ -23,9 +23,15 @@ internal object LocalModelPostInstallSelection {
     fun enabledQnnProfiles(
         currentProfileIds: Set<String>,
         installedProfileId: String
+    ): Set<String> = updatedProfiles(currentProfileIds, installedProfileId, enabled = true)
+
+    fun updatedProfiles(
+        currentProfileIds: Set<String>,
+        profileId: String,
+        enabled: Boolean
     ): Set<String> {
-        require(installedProfileId.isNotBlank()) { "Installed local-model profile ID is required" }
-        return currentProfileIds + installedProfileId
+        require(profileId.isNotBlank()) { "Local-model profile ID is required" }
+        return if (enabled) currentProfileIds + profileId else currentProfileIds - profileId
     }
 }
 

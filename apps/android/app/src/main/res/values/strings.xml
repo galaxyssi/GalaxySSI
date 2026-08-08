@@ -268,6 +268,7 @@
     <string name="local_model_use_action">Use</string>
     <string name="local_model_selected">Current</string>
     <string name="local_model_enable_action">Enable</string>
+    <string name="local_model_disable_action">Disable</string>
     <string name="local_model_enabled">Enabled</string>
     <string name="local_model_size_and_quantization">%1$s · %2$s · %3$sB</string>
     <string name="local_model_download_storage_error">This model needs %1$s of free app storage; %2$s is available.</string>
