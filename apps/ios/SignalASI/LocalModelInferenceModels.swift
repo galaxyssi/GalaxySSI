@@ -8,6 +8,12 @@ struct LocalModelInferenceResult: Equatable {
   var elapsedMillis: Int64
 }
 
+enum LocalModelThinkingMode: String, Codable, CaseIterable {
+  case automatic = "AUTOMATIC"
+  case think = "THINK"
+  case noThink = "NO_THINK"
+}
+
 struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backend: String
   var available: Bool
