@@ -14,6 +14,17 @@ enum LocalModelThinkingMode: String, Codable, CaseIterable {
   case noThink = "NO_THINK"
 }
 
+enum LocalModelWorkClass: String, Codable, CaseIterable {
+  case interactive = "INTERACTIVE"
+  case background = "BACKGROUND"
+}
+
+struct LocalModelBackgroundDeferredError: LocalizedError, Equatable {
+  var reason: String = "The private local model is reserved for an interactive request"
+
+  var errorDescription: String? { reason }
+}
+
 struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backend: String
   var available: Bool
