@@ -20,9 +20,7 @@ object AgentModelSelectionPolicy {
         targets: List<AgentCallableTarget>
     ): String {
         if (selection.mode != AgentModelSelectionMode.MANUAL) return ""
-        return targets.firstOrNull { target ->
-            target.id == selection.targetId && AgentConnectorRouteSelector.isDeliverable(target)
-        }?.id.orEmpty()
+        return selection.targetId.trim()
     }
 
     fun selectedTarget(
@@ -31,6 +29,44 @@ object AgentModelSelectionPolicy {
     ): AgentCallableTarget? = preferredTargetId(selection, targets)
         .takeIf(String::isNotBlank)
         ?.let { preferredId -> targets.firstOrNull { it.id == preferredId } }
+
+    fun selectableAgentTargets(targets: List<AgentCallableTarget>): List<AgentCallableTarget> {
+        val availableAgents = targets.filter { target ->
+            target.kind == AgentConnectorKind.AGENT &&
+                AgentConnectorRouteSelector.isDeliverable(target)
+        }
+        val concreteAgentIds = availableAgents
+            .asSequence()
+            .filter { ':' in it.id }
+            .map { it.id.substringAfterLast(':') }
+            .toSet()
+        return availableAgents
+            .filter { target ->
+                ':' in target.id || target.id.substringAfterLast(':') !in concreteAgentIds
+            }
+            .distinctBy(AgentCallableTarget::id)
+    }
+}
+
+object AgentExecutionTargetStatusPolicy {
+    fun resolveTarget(
+        connectorId: String,
+        contactId: String,
+        targets: List<AgentCallableTarget>
+    ): AgentCallableTarget? {
+        val identities = listOf(contactId, connectorId)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+        identities.forEach { identity ->
+            targets.firstOrNull { it.id == identity }?.let { return it }
+        }
+        identities.forEach { identity ->
+            targets.firstOrNull { target ->
+                target.id.endsWith(":$identity") || identity.endsWith(":${target.id}")
+            }?.let { return it }
+        }
+        return null
+    }
 }
 
 object AgentModelSelectionSettings {

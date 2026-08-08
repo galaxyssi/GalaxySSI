@@ -7199,8 +7199,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     private fun actionsFor(request: AgentRequest): List<AgentAction> {
-        phoneDevelopmentActions(request)?.let { return it }
+        notificationReplyAction(request)?.let { return listOf(it) }
         genericWebResearchActions(request)?.let { return it }
+        deterministicLocalAction(request)?.let { return listOf(it) }
+        manualSelectedConnectorAction(request)?.let { return listOf(it) }
+        phoneDevelopmentActions(request)?.let { return it }
         val segments = splitGoalSegments(request.goal)
         if (segments.size <= 1) return listOf(actionFor(request))
         return segments.mapIndexed { index, segment ->
@@ -7729,6 +7732,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     private fun informationQueryAction(request: AgentRequest): AgentAction? {
+        manualSelectedConnectorAction(request)?.let { return it }
         val routing = context?.let { appContext ->
             AgentResourceRouter(appContext).route(
                 goal = request.goal,
@@ -7737,13 +7741,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 nativeTools = request.runtimeContext.nativeTools
             )
         }
-        val preferredTargetId = context?.let { appContext ->
-            AgentModelSelectionSettings.preferredTargetId(appContext, request.targets)
-        }.orEmpty()
         val selection = AgentConnectorRouteSelector.select(
             targets = request.targets,
-            decision = routing,
-            preferredTargetId = preferredTargetId
+            decision = routing
         ) ?: return null
         val currentInformation = selection.decision?.requirements?.liveDataRequired == true
         return connectorAction(
@@ -7755,6 +7755,28 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 "Ask ${selection.target.title}"
             },
             selection.decision
+        )
+    }
+
+    private fun manualSelectedConnectorAction(request: AgentRequest): AgentAction? {
+        val appContext = context ?: return null
+        val selection = AgentModelSelectionSettings.selection(appContext)
+        if (selection.mode != AgentModelSelectionMode.MANUAL || selection.targetId.isBlank()) return null
+        val target = request.targets.firstOrNull { it.id == selection.targetId }
+        val displayName = selection.displayName
+            .ifBlank { target?.title.orEmpty() }
+            .ifBlank { selection.targetId }
+        val action = connectorAction(
+            request = request,
+            connectorId = selection.targetId,
+            description = "Ask $displayName"
+        )
+        return action.copy(
+            target = displayName,
+            parameters = action.parameters + mapOf(
+                "manual_target_locked" to "true",
+                "manual_model_id" to selection.modelId
+            )
         )
     }
 

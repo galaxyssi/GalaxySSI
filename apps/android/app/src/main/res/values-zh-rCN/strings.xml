@@ -2457,5 +2457,7 @@
     <string name="agent_model_selection_automatic_subtitle">根据任务、速度、隐私与可用性自动选择</string>
     <string name="agent_model_selection_local_section">本机模型</string>
     <string name="agent_model_selection_local_subtitle">已启用 · 本机</string>
+    <string name="agent_model_selection_agent_section">桌面 Agent</string>
+    <string name="agent_model_selection_agent_subtitle">可用 · 已配对电脑</string>
     <string name="agent_model_selection_cloud_section">云端模型</string>
 </resources>
