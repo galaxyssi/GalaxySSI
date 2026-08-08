@@ -10,11 +10,19 @@ struct AgentModelPlannerSettingsView: View {
   }
 
   private var plannerReady: Bool {
-    !settings.enabled || !plannerSources.isEmpty
+    guard settings.enabled else { return true }
+    if settings.cloudContactId == "local-llm" {
+      return LocalModelInferenceRuntime.shared.ready()
+    }
+    return !plannerSources.isEmpty
   }
 
   private var plannerSources: [PlannerModelSource] {
-    store.cloudModelContacts.map { contact in
+    let local = PlannerModelSource(
+      id: "local-llm",
+      title: t("signalasi.local_model.planner_source", "On-device model")
+    )
+    return [local] + store.cloudModelContacts.map { contact in
       PlannerModelSource(id: contact.id, title: contact.displayName)
     }
   }
@@ -61,7 +69,7 @@ struct AgentModelPlannerSettingsView: View {
       SignalASISecuritySectionTitle(title: t("on_device_agent_section_intelligence", "Planning Intelligence"))
       PlannerSwitchRow(
         title: t("on_device_agent_model_planner", "Model-driven Planning"),
-        subtitle: t("on_device_agent_model_planner_subtitle", "Let a configured cloud model propose ActionPlans; iOS validates every action locally"),
+        subtitle: t("on_device_agent_model_planner_subtitle", "Let an on-device or configured cloud model propose ActionPlans; iOS validates every action locally"),
         systemImage: "cpu",
         tint: .blue,
         isOn: boolBinding(\.enabled)
@@ -98,8 +106,8 @@ struct AgentModelPlannerSettingsView: View {
     if plannerSources.isEmpty {
       SignalASISecurityNavigationRow(
         title: t("on_device_agent_model_source", "Planning Model"),
-        subtitle: t("on_device_agent_model_source_subtitle", "Choose the configured cloud model that proposes ActionPlans"),
-        systemImage: "cloud.fill",
+        subtitle: t("on_device_agent_model_source_subtitle", "Choose an on-device or configured cloud model that proposes ActionPlans"),
+        systemImage: "cpu",
         tint: .orange,
         badge: t("status_needs_setup", "Needs setup")
       ) {
@@ -108,8 +116,8 @@ struct AgentModelPlannerSettingsView: View {
     } else {
       SignalASISecurityActionRow(
         title: t("on_device_agent_model_source", "Planning Model"),
-        subtitle: t("on_device_agent_model_source_subtitle", "Choose the configured cloud model that proposes ActionPlans"),
-        systemImage: "cloud.fill",
+        subtitle: t("on_device_agent_model_source_subtitle", "Choose an on-device or configured cloud model that proposes ActionPlans"),
+        systemImage: "cpu",
         tint: .blue,
         badge: plannerSourceLabel
       ) {
@@ -203,7 +211,7 @@ struct AgentModelPlannerSettingsView: View {
       return t("cc_planner_local_subtitle", "Fast local rules remain active; model planning is disabled.")
     }
     if plannerSources.isEmpty {
-      return t("cc_planner_needs_model_subtitle", "Model planning is enabled, but no ready cloud model is configured. Local fallback remains active.")
+      return t("cc_planner_needs_model_subtitle", "Model planning is enabled, but no ready model is configured. Local fallback remains active.")
     }
     return t("cc_planner_ready_subtitle", "A configured model can propose plans; iOS validates every action locally.")
   }
@@ -257,7 +265,12 @@ private struct PlannerSourcePickerSheet: View {
   @EnvironmentObject private var store: SignalASIStore
 
   private var sources: [PlannerModelSource] {
-    store.cloudModelContacts.map { PlannerModelSource(id: $0.id, title: $0.displayName) }
+    [
+      PlannerModelSource(
+        id: "local-llm",
+        title: t("signalasi.local_model.planner_source", "On-device model")
+      )
+    ] + store.cloudModelContacts.map { PlannerModelSource(id: $0.id, title: $0.displayName) }
   }
 
   var body: some View {
@@ -281,7 +294,7 @@ private struct PlannerSourcePickerSheet: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 8) {
-          SignalASISecuritySectionTitle(title: t("on_device_agent_model_source_subtitle", "Choose the configured cloud model that proposes ActionPlans"))
+          SignalASISecuritySectionTitle(title: t("on_device_agent_model_source_subtitle", "Choose an on-device or configured cloud model that proposes ActionPlans"))
           sourceRow(
             id: "",
             title: t("on_device_agent_model_source_automatic", "Automatic"),
@@ -317,7 +330,7 @@ private struct PlannerSourcePickerSheet: View {
     return SignalASISecurityActionRow(
       title: title,
       subtitle: subtitle,
-      systemImage: selected ? "checkmark.circle.fill" : "cloud.fill",
+      systemImage: selected ? "checkmark.circle.fill" : (id == "local-llm" ? "cpu" : "cloud.fill"),
       tint: selected ? .signalASIAccent : .blue,
       badge: selected ? t("settings_language_selected", "Selected") : t("signalasi.common.select", "Select"),
       monospacedSubtitle: !id.isEmpty

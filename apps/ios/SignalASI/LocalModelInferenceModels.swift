@@ -80,11 +80,10 @@ final class UnavailableLocalModelInferenceBackend: LocalModelInferenceBackend {
   func unload() {}
 }
 
-/// A small registration point for the native Xcode target.
+/// A small registration point for native backends and test doubles.
 ///
-/// A future llama.cpp adapter can register once during app startup. Until then the
-/// default backend stays unavailable, which is safer than treating Metal hardware as
-/// proof that GGUF inference is executable.
+/// Release builds with the native llama flag use the linked backend by default. Metal
+/// hardware alone still never implies that GGUF inference is executable.
 enum LocalModelInferenceBackendRegistry {
   private static let lock = NSLock()
   private static let unavailableBackend = UnavailableLocalModelInferenceBackend()
@@ -106,6 +105,11 @@ enum LocalModelInferenceBackendRegistry {
   static func current() -> LocalModelInferenceBackend {
     lock.lock()
     defer { lock.unlock() }
-    return registeredBackend ?? unavailableBackend
+    if let registeredBackend { return registeredBackend }
+#if SIGNALASI_NATIVE_LLAMA
+    return SignalASILlamaNativeBackend.shared
+#else
+    return unavailableBackend
+#endif
   }
 }

@@ -1,0 +1,35 @@
+import Foundation
+
+struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
+  var runtime: LocalModelInferenceRuntime
+  var profile: LocalModelRuntimeProfile
+
+  init(
+    runtime: LocalModelInferenceRuntime = .shared,
+    profile: LocalModelRuntimeProfile = LocalModelRuntimeSettings.selectedProfile()
+  ) {
+    self.runtime = runtime
+    self.profile = profile
+  }
+
+  func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    guard runtime.ready(profile: profile) else {
+      throw AgentModelPlanningProviderError.unavailable(
+        "The selected local model is not installed or failed verification"
+      )
+    }
+
+    do {
+      let result = try runtime.generate(
+        profile: profile,
+        systemPrompt: invocation.systemPrompt,
+        userPrompt: invocation.prompt,
+        maximumTokens: 4_096,
+        temperature: 0.2
+      )
+      return result.text
+    } catch {
+      throw AgentModelPlanningProviderError.unavailable(error.localizedDescription)
+    }
+  }
+}

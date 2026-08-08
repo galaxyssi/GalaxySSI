@@ -1920,14 +1920,14 @@
 "cc_planner_local_title" = "本地确定性规划器";
 "cc_planner_local_subtitle" = "快速本地规则保持可用；模型规划当前关闭。";
 "cc_planner_ready_subtitle" = "已配置模型可以提出计划；iOS 会在本地验证每个动作。";
-"cc_planner_needs_model_subtitle" = "模型规划已开启，但没有可用的云模型；本地回退仍然可用。";
+"cc_planner_needs_model_subtitle" = "模型规划已开启，但没有可用的模型；本地回退仍然可用。";
 "on_device_agent_section_intelligence" = "规划智能";
 "on_device_agent_model_planner" = "模型驱动规划";
-"on_device_agent_model_planner_subtitle" = "由已配置的云模型提出动作计划，iOS 在本地验证每个动作";
+"on_device_agent_model_planner_subtitle" = "由端侧或已配置的云模型提出动作计划，iOS 在本地验证每个动作";
 "on_device_agent_model_screen_text" = "共享屏幕文字用于规划";
 "on_device_agent_model_screen_text_subtitle" = "在模型规划请求中包含非敏感的可见文字和控件标签";
 "on_device_agent_model_source" = "规划模型";
-"on_device_agent_model_source_subtitle" = "选择用于提出动作计划的已配置云模型";
+"on_device_agent_model_source_subtitle" = "选择用于提出动作计划的端侧或已配置云模型";
 "on_device_agent_model_source_automatic" = "自动选择";
 "on_device_agent_dynamic_replanning" = "动态重规划";
 "on_device_agent_dynamic_replanning_subtitle" = "每个动作后重新观察，屏幕变化或执行失败时重建后续步骤";
@@ -2034,6 +2034,7 @@
 "settings_on_device_agent" = "手机端 Agent 与权限";
 "settings_on_device_agent_subtitle" = "管理感知、语音、自动化权限和本机动作边界";
 "signalasi.local_model.title" = "本地模型";
+"signalasi.local_model.planner_source" = "端侧模型";
 "signalasi.local_model.status_title" = "本地模型状态";
 "signalasi.local_model.status" = "状态";
 "signalasi.local_model.runtime_unavailable" = "此版本未提供本地推理运行时";
