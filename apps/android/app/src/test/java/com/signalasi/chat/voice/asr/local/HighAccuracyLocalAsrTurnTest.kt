@@ -1,5 +1,6 @@
 package com.signalasi.chat.voice.asr.local
 
+import com.signalasi.chat.QnnRuntimeResourceArbiter
 import com.signalasi.chat.voice.audio.DirectPcmFramePacket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,27 @@ import java.nio.ByteOrder
 import kotlin.io.path.createTempDirectory
 
 class HighAccuracyLocalAsrTurnTest {
+    @Test
+    fun localModelLeaseReleasesQnnAsrAndAllowsLazyPreparationAgain() = runBlocking {
+        val engine = FakeEngine()
+        val arbiter = QnnRuntimeResourceArbiter()
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine },
+            resourceArbiter = arbiter
+        )
+
+        assertTrue(controller.prepareNow())
+        arbiter.releaseAsrForLocalModel()
+
+        assertFalse(controller.isReady())
+        assertEquals(1, engine.releasePreparedModelCalls)
+        assertTrue(controller.prepareNow())
+        assertEquals(2, engine.prepareCalls)
+        controller.close()
+    }
+
     @Test
     fun controllerPreparesOnceAndStreamsStartupAudioToFinalResult() = runBlocking {
         val directory = temporaryModelDirectory()
@@ -211,6 +233,7 @@ class HighAccuracyLocalAsrTurnTest {
         private val mutableState = MutableStateFlow<LocalAsrState>(LocalAsrState.Unprepared)
         private val mutableEvents = MutableSharedFlow<AsrEvent>(extraBufferCapacity = 32)
         var prepareCalls = 0
+        var releasePreparedModelCalls = 0
         var startCalls = 0
         var stopText = "hello world"
         var stopTermination = AsrTranscriptTermination.END_OF_TEXT
@@ -225,6 +248,11 @@ class HighAccuracyLocalAsrTurnTest {
         override suspend fun prepare(modelDirectory: String) {
             prepareCalls += 1
             transition(LocalAsrState.Ready(modelDirectory, 1L))
+        }
+
+        override suspend fun releasePreparedModel() {
+            releasePreparedModelCalls += 1
+            transition(LocalAsrState.Unprepared)
         }
 
         override fun start(config: AsrConfig) {

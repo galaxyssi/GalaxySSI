@@ -348,6 +348,27 @@ class WhisperLargeTurboAsrEngine(
         }
     }
 
+    override suspend fun releasePreparedModel() {
+        if (closed.get()) return
+        withContext(dispatcher) {
+            lifecycleMutex.withLock {
+                val command = synchronized(stateLock) {
+                    val value = handle to activeSessionToken
+                    handle = 0L
+                    modelDirectory = ""
+                    preparedAtMillis = 0L
+                    clearActiveSessionLocked()
+                    value
+                }
+                if (command.first != 0L) {
+                    if (command.second != 0L) runCatching { native.cancel(command.first, command.second) }
+                    runCatching { native.destroy(command.first) }
+                }
+                transition(LocalAsrState.Unprepared)
+            }
+        }
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         runBlocking {

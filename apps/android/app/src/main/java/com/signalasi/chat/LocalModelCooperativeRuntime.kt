@@ -14,6 +14,18 @@ data class LocalModelCooperationPlan(
 }
 
 object LocalModelCooperationPolicy {
+    fun eligibleProfiles(
+        availableProfiles: List<LocalModelRuntimeProfile>,
+        preferredProfileId: String
+    ): List<LocalModelRuntimeProfile> {
+        val preferredId = preferredProfileId.trim()
+        return if (preferredId.isBlank()) {
+            availableProfiles
+        } else {
+            availableProfiles.filter { it.id == preferredId }
+        }
+    }
+
     fun plan(
         executionProfile: AgentExecutionProfile,
         availableProfiles: List<LocalModelRuntimeProfile>,
@@ -127,12 +139,16 @@ object LocalModelCooperativeRuntime {
         temperature: Float = 0.3f,
         hasAttachments: Boolean = false,
         workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE,
+        preferredProfileId: String = "",
         executionProfile: AgentExecutionProfile = AgentExecutionProfile.forGoal(
             userPrompt,
             hasAttachments
         )
     ): LocalModelInferenceResult {
-        val availableProfiles = readyProfiles(context, workClass)
+        val availableProfiles = LocalModelCooperationPolicy.eligibleProfiles(
+            readyProfiles(context, workClass),
+            preferredProfileId
+        )
         val selectedProfile = LocalModelRuntimeSettings.selectedProfile(context)
         val fallback = availableProfiles.firstOrNull { it.id == selectedProfile.id }
             ?: availableProfiles.firstOrNull()

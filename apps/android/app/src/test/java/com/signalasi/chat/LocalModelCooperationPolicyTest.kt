@@ -7,6 +7,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalModelCooperationPolicyTest {
+    @Test
+    fun `manual local selection locks execution to the requested profile`() {
+        val profiles = listOf(
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT,
+            LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN
+        )
+
+        val eligible = LocalModelCooperationPolicy.eligibleProfiles(
+            profiles,
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT.id
+        )
+
+        assertEquals(listOf(LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT), eligible)
+    }
+
+    @Test
+    fun `automatic local selection keeps all available profiles`() {
+        val profiles = listOf(
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT,
+            LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN
+        )
+
+        assertEquals(profiles, LocalModelCooperationPolicy.eligibleProfiles(profiles, ""))
+    }
+
     private val qwen = LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN
     private val qwenQairt = LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT
     private val gemma = LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN

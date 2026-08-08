@@ -20,6 +20,26 @@ import java.util.concurrent.TimeUnit
 
 class WhisperLargeTurboAsrEngineTest {
     @Test
+    fun `prepared QNN contexts can be released and loaded again without closing the engine`() = runBlocking {
+        val native = FakeNativeApi()
+        val engine = engine(native)
+        try {
+            engine.prepare("model-a")
+            engine.releasePreparedModel()
+
+            assertTrue(engine.state.value is LocalAsrState.Unprepared)
+            assertEquals(1, native.destroyCount.get())
+
+            engine.prepare("model-a")
+            assertTrue(engine.state.value is LocalAsrState.Ready)
+            assertEquals(2, native.createCount.get())
+        } finally {
+            engine.close()
+        }
+        assertEquals(2, native.destroyCount.get())
+    }
+
+    @Test
     fun `engine keeps one prepared context and streams partial then final events`() = runBlocking {
         val native = FakeNativeApi()
         val engine = engine(native)

@@ -81,11 +81,35 @@ object LocalModelInferenceRuntime {
         if (workClass == LocalModelWorkClass.BACKGROUND && !backgroundSafe(profile)) {
             throw LocalModelBackgroundDeferredException()
         }
+        if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
+            !LocalModelInferenceProcess.isRuntimeProcess()
+        ) {
+            SharedQnnRuntimeResources.arbiter.releaseAsrForLocalModel()
+        }
         if (workClass == LocalModelWorkClass.INTERACTIVE) foregroundWaiters.incrementAndGet()
         return try {
             synchronized(lock) {
                 if (workClass == LocalModelWorkClass.BACKGROUND && !canRunBackground()) {
                     throw LocalModelBackgroundDeferredException()
+                }
+                if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
+                    !LocalModelInferenceProcess.isRuntimeProcess()
+                ) {
+                    runBlocking { LocalWhisperAsr.release() }
+                    SignalASILlamaRuntime.unload()
+                    GenieXLocalModelRuntime.release()
+                    loadedProfile = ""
+                    loadedContextTokens = 0
+                    return@synchronized LocalModelInferenceProcessClient.generate(
+                        context = context.applicationContext,
+                        profile = profile,
+                        systemPrompt = systemPrompt,
+                        userPrompt = userPrompt,
+                        maximumTokens = maximumTokens,
+                        temperature = temperature,
+                        thinkingMode = thinkingMode,
+                        workClass = workClass
+                    )
                 }
                 generateLocked(
                     context = context.applicationContext,
@@ -199,6 +223,9 @@ object LocalModelInferenceRuntime {
         profile.artifactFormat != LocalModelArtifactFormat.QAIRT
 
     fun releaseForAsr() = synchronized(lock) {
+        if (!LocalModelInferenceProcess.isRuntimeProcess()) {
+            LocalModelInferenceProcessClient.release()
+        }
         SignalASILlamaRuntime.unload()
         GenieXLocalModelRuntime.release()
         loadedProfile = ""
@@ -211,7 +238,9 @@ object LocalModelInferenceRuntime {
         }
     }
 
-    fun loadedProfileId(): String = loadedProfile.ifBlank(GenieXLocalModelRuntime::loadedProfileId)
+    fun loadedProfileId(): String = loadedProfile
+        .ifBlank(GenieXLocalModelRuntime::loadedProfileId)
+        .ifBlank(LocalModelInferenceProcessClient::loadedProfileId)
 
     fun backendInfo(context: Context): String = runCatching {
         SignalASILlamaRuntime.initialize(context.applicationContext)
