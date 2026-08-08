@@ -2198,11 +2198,18 @@ enum NotificationService {
   }
 
   static func notify(title: String, body: String) {
+    let identifier = UUID().uuidString
+    AgentIOSOwnedNotificationStore.shared.record(
+      identifier: identifier,
+      title: title,
+      body: body,
+      postedAtMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    )
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = String(body.prefix(160))
     content.sound = .default
-    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+    let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
   }
 }

@@ -152,7 +152,7 @@ enum AgentPhoneNativeToolCatalog {
     auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSConfiguredHomeAssistantToolProvider(),
-    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider(),
+    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSOwnedNotificationToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),
@@ -395,7 +395,7 @@ enum AgentPhoneNativeToolCatalog {
     guard provider is AgentIOSUnavailableNotificationToolProvider else {
       return provider
     }
-    return AgentIOSNotificationBoundaryToolProvider()
+    return AgentIOSOwnedNotificationToolProvider()
   }
 
   static func selfEvolutionExecutableDefinitions(
