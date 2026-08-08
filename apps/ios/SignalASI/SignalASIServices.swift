@@ -878,6 +878,49 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
+  func cancelLocalNativeAction(taskId: String) {
+    guard var task = store.agentTask(id: taskId),
+          [.waitingConfirmation, .executing, .verifying, .paused].contains(task.phase),
+          task.pendingAction != nil || !task.pendingActions.isEmpty else {
+      return
+    }
+    let action = task.pendingAction
+    task.phase = .cancelled
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.result = recordLocalNativeActionResult(
+      localReply(
+        english: "The local Agent task was cancelled.",
+        chinese: "本地 Agent 任务已取消。"
+      ),
+      task: &task
+    )
+    task.verification = "User cancelled pending native tool execution"
+    let toolId = action?.parameters["tool_id"] ?? action?.target ?? "queued native actions"
+    task.executionLog.append("Native tool task: cancelled")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_cancelled",
+      detail: toolId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_cancelled_received",
+      detail: toolId,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
   private func receiveLocalModelReply(
     requestText: String,
     attachments: [SignalASIDraftAttachment],
