@@ -31,6 +31,11 @@ enum class LocalModelRuntimeIssue {
     POWER_SAVE_MODE
 }
 
+enum class LocalModelArtifactFormat {
+    GGUF,
+    QAIRT
+}
+
 data class LocalModelRuntimeProfile(
     val id: String,
     val displayName: String,
@@ -49,14 +54,19 @@ data class LocalModelRuntimeProfile(
     val visionCapable: Boolean = false,
     val preferredAccelerator: LocalModelAcceleratorKind = LocalModelAcceleratorKind.CPU,
     val sourceTrust: LocalModelSourceTrust = LocalModelSourceTrust.CURATED,
-    val sourceHub: LocalModelHubSource = LocalModelHubSource.HUGGING_FACE
+    val sourceHub: LocalModelHubSource = LocalModelHubSource.HUGGING_FACE,
+    val artifactFormat: LocalModelArtifactFormat = LocalModelArtifactFormat.GGUF,
+    val targetChipset: String = ""
 ) {
     val downloadable: Boolean
-        get() = repositoryId.matches(REPOSITORY_PATTERN) && validArtifactPath(fileName) &&
-            expectedModelFileBytes > 0L && sha256.matches(Regex("[a-f0-9]{64}"))
+        get() = repositoryId.matches(REPOSITORY_PATTERN) && expectedModelFileBytes > 0L && when (artifactFormat) {
+            LocalModelArtifactFormat.GGUF -> validArtifactPath(fileName) &&
+                sha256.matches(Regex("[a-f0-9]{64}"))
+            LocalModelArtifactFormat.QAIRT -> targetChipset.matches(Regex("SM[0-9]{4}"))
+        }
 
     fun sourceUrls(preferChinaMirror: Boolean): List<String> {
-        if (!downloadable) return emptyList()
+        if (!downloadable || artifactFormat != LocalModelArtifactFormat.GGUF) return emptyList()
         val primary = modelUrl("https://huggingface.co/")
         val mirror = modelUrl("https://hf-mirror.com/")
         val modelScope = modelScopeUrl()
@@ -150,7 +160,7 @@ data class LocalModelRuntimeEstimate(
 object LocalModelRuntimeProfiles {
     val QWEN_3_1_7B_QNN = profile(
         id = "qwen3-1-7b-qnn",
-        displayName = "Qwen3 1.7B QNN",
+        displayName = "Qwen3 1.7B QNN (Hybrid)",
         repositoryId = "unsloth/Qwen3-1.7B-GGUF",
         fileName = "Qwen3-1.7B-Q4_0.gguf",
         expectedModelFileBytes = 1_056_782_912L,
@@ -165,9 +175,28 @@ object LocalModelRuntimeProfiles {
         defaultNoThink = true,
         preferredAccelerator = LocalModelAcceleratorKind.VENDOR_SDK
     )
+    val QWEN_3_1_7B_QAIRT = profile(
+        id = "qwen3-1-7b-qairt",
+        displayName = "Qwen3 1.7B QNN (NPU)",
+        repositoryId = "qualcomm/Qwen3-1.7B",
+        fileName = "",
+        expectedModelFileBytes = 1_761_061_334L,
+        sha256 = "",
+        parameterCountBillions = 1.7,
+        layerCount = 36,
+        keyValueHeadCount = 8,
+        headDimension = 128,
+        defaultContextTokens = 4_096,
+        maximumContextTokens = 4_096,
+        quantizationLabel = "W4A16",
+        defaultNoThink = true,
+        preferredAccelerator = LocalModelAcceleratorKind.VENDOR_SDK,
+        artifactFormat = LocalModelArtifactFormat.QAIRT,
+        targetChipset = "SM8850"
+    )
     val GEMMA_4_E4B_QNN = profile(
         id = "gemma-4-e4b-qnn",
-        displayName = "Gemma 4 E4B QNN",
+        displayName = "Gemma 4 E4B QNN (Hybrid)",
         repositoryId = "unsloth/gemma-4-E4B-it-GGUF",
         fileName = "gemma-4-E4B-it-Q4_0.gguf",
         expectedModelFileBytes = 4_836_002_944L,
@@ -298,6 +327,7 @@ object LocalModelRuntimeProfiles {
     val all: List<LocalModelRuntimeProfile> = listOf(
         GEMMA_3_1B_Q4,
         GEMMA_3_4B_Q4,
+        QWEN_3_1_7B_QAIRT,
         QWEN_3_1_7B_QNN,
         QWEN_3_4B_Q4_K_M,
         QWEN_3_8B_Q4_K_M,
@@ -327,7 +357,9 @@ object LocalModelRuntimeProfiles {
         quantizationLabel: String = "Q4_K_M",
         defaultNoThink: Boolean = false,
         visionCapable: Boolean = false,
-        preferredAccelerator: LocalModelAcceleratorKind = LocalModelAcceleratorKind.CPU
+        preferredAccelerator: LocalModelAcceleratorKind = LocalModelAcceleratorKind.CPU,
+        artifactFormat: LocalModelArtifactFormat = LocalModelArtifactFormat.GGUF,
+        targetChipset: String = ""
     ) = LocalModelRuntimeProfile(
         id = id,
         displayName = displayName,
@@ -344,7 +376,9 @@ object LocalModelRuntimeProfiles {
         parameterCountBillions = parameterCountBillions,
         defaultNoThink = defaultNoThink,
         visionCapable = visionCapable,
-        preferredAccelerator = preferredAccelerator
+        preferredAccelerator = preferredAccelerator,
+        artifactFormat = artifactFormat,
+        targetChipset = targetChipset
     )
 }
 
@@ -428,16 +462,19 @@ object LocalModelRuntimeEstimator {
             issues += LocalModelRuntimeIssue.POWER_SAVE_MODE
         }
 
-        val blocking = issues.any {
-            it in setOf(
-                LocalModelRuntimeIssue.MODEL_FILE_MISSING,
-                LocalModelRuntimeIssue.MODEL_FILE_INVALID,
-                LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE,
-                LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
-                LocalModelRuntimeIssue.INSUFFICIENT_MEMORY,
-                LocalModelRuntimeIssue.DEVICE_TOO_HOT,
-                LocalModelRuntimeIssue.CRITICAL_BATTERY
-            )
+        val blocking = issues.any { issue ->
+            when (issue) {
+                LocalModelRuntimeIssue.INSUFFICIENT_MEMORY ->
+                    profile.preferredAccelerator != LocalModelAcceleratorKind.VENDOR_SDK
+                else -> issue in setOf(
+                    LocalModelRuntimeIssue.MODEL_FILE_MISSING,
+                    LocalModelRuntimeIssue.MODEL_FILE_INVALID,
+                    LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE,
+                    LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
+                    LocalModelRuntimeIssue.DEVICE_TOO_HOT,
+                    LocalModelRuntimeIssue.CRITICAL_BATTERY
+                )
+            }
         }
         val readiness = when {
             blocking -> LocalModelRuntimeReadiness.BLOCKED
@@ -618,6 +655,26 @@ object LocalModelRuntimePreflight {
         )
     )
 
+    fun beforeLaunchManagedArtifact(
+        context: Context,
+        profile: LocalModelRuntimeProfile,
+        contextTokens: Int,
+        preferredThreads: Int = 0
+    ): LocalModelRuntimeEstimate = LocalModelRuntimeEstimator.requireLaunchable(
+        LocalModelRuntimeEstimator.estimate(
+            LocalModelRuntimeRequest(
+                profile = profile,
+                requestedContextTokens = contextTokens,
+                preferredThreads = preferredThreads,
+                modelFileBytes = profile.expectedModelFileBytes,
+                modelFilePresent = LocalModelManager.isInstalled(context, profile),
+                requireModelFile = true,
+                acceleratorReady = acceleratorReady(context, profile)
+            ),
+            LocalModelDeviceSnapshotDetector.capture(context)
+        )
+    )
+
     private fun acceleratorReady(context: Context, profile: LocalModelRuntimeProfile): Boolean {
         if (profile.preferredAccelerator == LocalModelAcceleratorKind.CPU) return true
         if (profile.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK &&
@@ -749,3 +806,7 @@ object LocalModelRuntimeSettings {
 
 internal val LocalModelRuntimeProfile.supportsQnnCooperation: Boolean
     get() = preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK
+
+internal val LocalModelRuntimeProfile.isQwen17Qnn: Boolean
+    get() = id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT.id ||
+        id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id

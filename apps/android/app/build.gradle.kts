@@ -121,8 +121,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 411
-        versionName = "0.4.11"
+        versionCode = 412
+        versionName = "0.4.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -243,7 +243,7 @@ dependencies {
     implementation("com.qualcomm.qti:qnn-runtime:2.47.0")
     implementation("com.qualcomm.qti:onnxruntime-android-qnn:2.3.0")
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.47.0")
-    implementation("com.qualcomm.qti:geniex-android:0.3.5")
+    implementation("com.qualcomm.qti:geniex-android:0.3.18")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")

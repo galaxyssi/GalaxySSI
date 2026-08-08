@@ -1833,7 +1833,9 @@ private class GlobalAgentResourceResolver(context: Context) {
         @Suppress("UNUSED_PARAMETER") goal: String,
         @Suppress("UNUSED_PARAMETER") allowCloud: Boolean
     ): List<String> {
-        return if (LocalModelInferenceRuntime.ready(appContext)) {
+        return if (LocalModelInferenceRuntime.ready(appContext) &&
+            LocalModelInferenceRuntime.canRunBackground()
+        ) {
             listOf(LOCAL_PRIVATE_MODEL_RESOURCE)
         } else emptyList()
     }
@@ -1916,7 +1918,8 @@ private fun runPrivateGlobalInference(
         LocalModelCooperativeRuntime.generate(
             context = context,
             systemPrompt = systemPrompt,
-            userPrompt = userPrompt
+            userPrompt = userPrompt,
+            workClass = LocalModelWorkClass.BACKGROUND
         )
     }
 }

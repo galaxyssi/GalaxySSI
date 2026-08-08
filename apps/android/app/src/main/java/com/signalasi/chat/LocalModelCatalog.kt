@@ -77,6 +77,8 @@ private fun LocalModelRuntimeProfile.toJson(): JSONObject = JSONObject()
     .put("preferred_accelerator", preferredAccelerator.name)
     .put("source_trust", sourceTrust.name)
     .put("source_hub", sourceHub.name)
+    .put("artifact_format", artifactFormat.name)
+    .put("target_chipset", targetChipset)
 
 private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
     val trust = enumValueOf<LocalModelSourceTrust>(getString("source_trust"))
@@ -101,7 +103,13 @@ private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
         sourceTrust = trust,
         sourceHub = runCatching {
             enumValueOf<LocalModelHubSource>(optString("source_hub", LocalModelHubSource.HUGGING_FACE.name))
-        }.getOrDefault(LocalModelHubSource.HUGGING_FACE)
+        }.getOrDefault(LocalModelHubSource.HUGGING_FACE),
+        artifactFormat = runCatching {
+            enumValueOf<LocalModelArtifactFormat>(
+                optString("artifact_format", LocalModelArtifactFormat.GGUF.name)
+            )
+        }.getOrDefault(LocalModelArtifactFormat.GGUF),
+        targetChipset = optString("target_chipset")
     ).also { require(it.downloadable) }
 }.getOrNull()
 

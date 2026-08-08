@@ -911,7 +911,9 @@ class GlobalResearchExecutor(context: Context) {
     }
 
     private fun routeResources(): List<String> {
-        return if (LocalModelInferenceRuntime.ready(appContext)) {
+        return if (LocalModelInferenceRuntime.ready(appContext) &&
+            LocalModelInferenceRuntime.canRunBackground()
+        ) {
             listOf(LOCAL_RESEARCH_MODEL_RESOURCE)
         } else emptyList()
     }
@@ -1196,6 +1198,7 @@ private fun runPrivateResearchInference(
             context = context,
             systemPrompt = systemPrompt,
             userPrompt = userPrompt,
+            workClass = LocalModelWorkClass.BACKGROUND,
             executionProfile = AgentExecutionProfile.forGoal("research $userPrompt")
         )
     }

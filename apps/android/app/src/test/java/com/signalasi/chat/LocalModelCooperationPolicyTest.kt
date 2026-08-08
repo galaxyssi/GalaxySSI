@@ -8,6 +8,7 @@ import org.junit.Test
 
 class LocalModelCooperationPolicyTest {
     private val qwen = LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN
+    private val qwenQairt = LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT
     private val gemma = LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN
     private val fallback = LocalModelRuntimeProfiles.GEMMA_3_1B_Q4
 
@@ -23,6 +24,35 @@ class LocalModelCooperationPolicyTest {
         assertEquals(qwen.id, plan.answerProfile.id)
         assertEquals(LocalModelThinkingMode.NO_THINK, plan.answerThinkingMode)
         assertFalse(plan.cooperative)
+    }
+
+    @Test
+    fun qairtQwenIsPreferredOverGgufQwen() {
+        val plan = LocalModelCooperationPolicy.plan(
+            executionProfile = executionProfile(AgentExecutionReasoningEffort.LOW),
+            availableProfiles = listOf(qwen, qwenQairt, gemma),
+            fallbackProfile = fallback
+        )
+
+        assertEquals(qwenQairt.id, plan.answerProfile.id)
+        assertEquals(LocalModelThinkingMode.NO_THINK, plan.answerThinkingMode)
+    }
+
+    @Test
+    fun qairtFailureFallsBackToGgufBeforeGemma() {
+        val plan = LocalModelCooperationPolicy.plan(
+            executionProfile = executionProfile(AgentExecutionReasoningEffort.LOW),
+            availableProfiles = listOf(qwenQairt, qwen, gemma),
+            fallbackProfile = fallback
+        )
+
+        assertEquals(
+            listOf(qwen.id, gemma.id),
+            LocalModelCooperationPolicy.fallbackProfiles(
+                plan,
+                listOf(qwenQairt, qwen, gemma)
+            ).map(LocalModelRuntimeProfile::id)
+        )
     }
 
     @Test

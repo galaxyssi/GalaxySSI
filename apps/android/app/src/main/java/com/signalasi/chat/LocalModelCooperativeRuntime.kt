@@ -22,8 +22,8 @@ object LocalModelCooperationPolicy {
         hasAttachments: Boolean = false
     ): LocalModelCooperationPlan {
         val qwen = availableProfiles.firstOrNull {
-            it.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id
-        }
+            it.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT.id
+        } ?: availableProfiles.firstOrNull(LocalModelRuntimeProfile::isQwen17Qnn)
         val gemma = availableProfiles.firstOrNull {
             it.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id
         }
@@ -80,8 +80,9 @@ object LocalModelCooperationPolicy {
         availableProfiles: List<LocalModelRuntimeProfile>
     ): List<LocalModelRuntimeProfile> = availableProfiles.filterNot {
         it.id == plan.answerProfile.id
-    }.sortedByDescending { candidate ->
-        when {
+        }.sortedByDescending { candidate ->
+            when {
+            candidate.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT.id -> 3
             candidate.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id -> 2
             candidate.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id -> 1
             else -> 0
@@ -122,6 +123,7 @@ object LocalModelCooperativeRuntime {
         maximumTokens: Int = 768,
         temperature: Float = 0.3f,
         hasAttachments: Boolean = false,
+        workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE,
         executionProfile: AgentExecutionProfile = AgentExecutionProfile.forGoal(
             userPrompt,
             hasAttachments
@@ -149,7 +151,8 @@ object LocalModelCooperativeRuntime {
                     userPrompt = userPrompt.take(MAX_PLANNER_INPUT_CHARACTERS),
                     maximumTokens = PLANNER_MAXIMUM_TOKENS,
                     temperature = 0.1f,
-                    thinkingMode = plan.plannerThinkingMode
+                    thinkingMode = plan.plannerThinkingMode,
+                    workClass = workClass
                 ).text.toPlanningBrief()
             }.getOrNull()?.takeIf(String::isNotBlank)
         }
@@ -171,7 +174,7 @@ object LocalModelCooperativeRuntime {
             try {
                 val mode = if (index == 0) {
                     plan.answerThinkingMode
-                } else if (candidate.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id &&
+                } else if (candidate.isQwen17Qnn &&
                     LocalModelTaskComplexity.isComplex(executionProfile, userPrompt, hasAttachments)
                 ) {
                     LocalModelThinkingMode.THINK
@@ -185,7 +188,8 @@ object LocalModelCooperativeRuntime {
                     userPrompt = if (index == 0) answerPrompt else userPrompt,
                     maximumTokens = maximumTokens,
                     temperature = temperature,
-                    thinkingMode = mode
+                    thinkingMode = mode,
+                    workClass = workClass
                 )
                 return result.copy(
                     elapsedMillis = (System.currentTimeMillis() - startedAt)

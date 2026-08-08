@@ -124,6 +124,30 @@ class LocalModelRuntimeEstimatorTest {
         assertTrue(LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.fileName.endsWith("Q4_0.gguf"))
     }
 
+    @Test
+    fun qairtProfileUsesQualcommManagedArtifactInsteadOfGgufDownload() {
+        val profile = LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT
+
+        assertEquals(LocalModelArtifactFormat.QAIRT, profile.artifactFormat)
+        assertEquals(LocalModelAcceleratorKind.VENDOR_SDK, profile.preferredAccelerator)
+        assertEquals("SM8850", profile.targetChipset)
+        assertEquals("W4A16", profile.quantizationLabel)
+        assertTrue(profile.downloadable)
+        assertTrue(profile.sourceUrls(preferChinaMirror = false).isEmpty())
+    }
+
+    @Test
+    fun qnnMemoryEstimateWarnsButLetsRuntimeAttemptLaunch() {
+        val estimate = estimate(
+            profile = LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN,
+            device = device(totalGib = 12, availableGib = 5)
+        )
+
+        assertEquals(LocalModelRuntimeReadiness.CAUTION, estimate.readiness)
+        assertTrue(LocalModelRuntimeIssue.INSUFFICIENT_MEMORY in estimate.issues)
+        assertTrue(estimate.launchAllowed)
+    }
+
     @Test(expected = IllegalStateException::class)
     fun launchGateRejectsBlockedAssessment() {
         LocalModelRuntimeEstimator.requireLaunchable(

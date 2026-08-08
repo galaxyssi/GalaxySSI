@@ -26906,13 +26906,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val otherProfiles = profiles.filterNot { it in qnnProfiles }
         val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
-        val storageSnapshot = LocalModelManager.storage(this).inspect(profile)
+        val modelInstalled = LocalModelManager.isInstalled(this, profile)
         val estimate = LocalModelRuntimeEstimator.estimate(
             LocalModelRuntimeRequest(
                 profile = profile,
                 requestedContextTokens = contextTokens,
                 modelFileBytes = profile.expectedModelFileBytes,
-                modelFilePresent = storageSnapshot.installed,
+                modelFilePresent = modelInstalled,
                 requireModelFile = true
             ),
             LocalModelDeviceSnapshotDetector.capture(this)
@@ -27152,7 +27152,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 profile.quantizationLabel,
                 parameterLabel
             ))
-            if (profile.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id) {
+            if (profile.isQwen17Qnn) {
                 append("\n")
                 append(getString(R.string.local_model_qwen_automatic_thinking))
             } else if (profile.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id) {

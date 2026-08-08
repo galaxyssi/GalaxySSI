@@ -41,12 +41,9 @@ endif()
 
 add_subdirectory("${LLAMA_SOURCE_DIR}" llama-build)
 
-# GenieX ships its own llama.cpp/ggml runtime for Hexagon NPU execution. Keep
-# SignalASI's established CPU runtime in the same APK under private SONAMEs so
-# neither implementation can satisfy the other's ABI dependencies by accident.
-set_target_properties(ggml PROPERTIES OUTPUT_NAME "signalasi-ggml")
-set_target_properties(ggml-base PROPERTIES OUTPUT_NAME "signalasi-ggml-base")
-set_target_properties(llama PROPERTIES OUTPUT_NAME "signalasi-llama-core")
+# GenieX ships a newer llama.cpp/GGML ABI for Hexagon and QAIRT execution.
+# This module is statically linked into libsignalasi-llama so it cannot publish
+# generic libggml*.so SONAMEs or satisfy GenieX dependencies by accident.
 
 add_library(signalasi-llama SHARED signalasi_llama.cpp)
 target_include_directories(signalasi-llama PRIVATE
