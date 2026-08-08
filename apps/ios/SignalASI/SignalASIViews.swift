@@ -90,7 +90,7 @@ struct ChatListView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: "SignalASI",
-          leading: { Color.clear },
+          leading: { SignalASIBackButton() },
           trailing: { Color.clear }
         )
         VStack(spacing: 10) {
@@ -789,7 +789,6 @@ struct MessageBubble: View {
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @State private var myQRCodePresented = false
   @State private var contactSearchText = ""
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
@@ -848,16 +847,7 @@ struct ContactsView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.tab.contacts", "Contacts"),
-          leading: {
-            Button {
-              myQRCodePresented = true
-            } label: {
-              Image(systemName: "qrcode")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundColor(.signalASITextPrimary)
-            }
-            .buttonStyle(.plain)
-          },
+          leading: { SignalASIBackButton() },
           trailing: {
             NavigationLink(destination: AddContactView()) {
               Image(systemName: "plus")
@@ -963,9 +953,6 @@ struct ContactsView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .sheet(isPresented: $myQRCodePresented) {
-        MyContactQRCodeView()
-      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }

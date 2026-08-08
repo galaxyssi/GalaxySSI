@@ -17,6 +17,16 @@ struct SignalASIContactDirectoryActionsView: View {
       }
       SignalASIDirectoryDivider()
       SignalASIDirectoryMenuLink(
+        title: t("signalasi.discover.my_qr_title", "My QR Code"),
+        subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
+        systemImage: "qrcode",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.view", "View")
+      ) {
+        MyContactQRCodeView()
+      }
+      SignalASIDirectoryDivider()
+      SignalASIDirectoryMenuLink(
         title: t("signalasi.group_chats", "Group Chats"),
         subtitle: t("signalasi.group_feature_subtitle", "Secure multi-person communication, coming later"),
         systemImage: "person.3.fill",
