@@ -1,3 +1,4 @@
+import AVKit
 import AVFoundation
 import SwiftUI
 import UIKit
@@ -197,6 +198,8 @@ private struct SignalASIRichBlockView: View {
       tableBlock
     case .image:
       imageBlock
+    case .video:
+      videoBlock
     case .audio:
       audioBlock
     case .gallery:
@@ -221,7 +224,7 @@ private struct SignalASIRichBlockView: View {
       approvalBlock
     case .form:
       formBlock
-    case .video, .audio, .file, .link, .citation, .webpage, .unknown:
+    case .file, .link, .citation, .webpage, .unknown:
       resourceBlock
     }
   }
@@ -435,10 +438,21 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var audioBlock: some View {
-    if let url = localURL {
+    if let url = mediaURL {
       SignalASIAudioArtifactView(
         url: url,
         title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title
+      )
+    } else {
+      resourceBlock
+    }
+  }
+
+  private var videoBlock: some View {
+    if let url = mediaURL {
+      SignalASIVideoArtifactView(
+        url: url,
+        title: block.title.isEmpty ? t("rich_output_type_video", "Video") : block.title
       )
     } else {
       resourceBlock
@@ -849,6 +863,14 @@ private struct SignalASIRichBlockView: View {
     return url
   }
 
+  private var mediaURL: URL? {
+    guard let url = URL(string: block.uri),
+          ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
+      return nil
+    }
+    return url
+  }
+
   private var remoteURL: URL? {
     guard block.type == .image || block.type == .gallery,
           let url = SignalASIRichContentLink.safeURL(block.uri),
@@ -1191,14 +1213,15 @@ private struct SignalASIAudioArtifactView: View {
   }
 }
 
-private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   @Published private(set) var isPlaying = false
   @Published private(set) var currentTime: TimeInterval = 0
   @Published private(set) var duration: TimeInterval = 0
 
   private let url: URL
-  private var player: AVAudioPlayer?
-  private var timer: Timer?
+  private var player: AVPlayer?
+  private var timeObserver: Any?
+  private var endObserver: NSObjectProtocol?
 
   init(url: URL) {
     self.url = url
@@ -1216,15 +1239,12 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject, AV
       if player == nil {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try AVAudioSession.sharedInstance().setActive(true)
-        let audioPlayer = try AVAudioPlayer(contentsOf: url)
-        audioPlayer.delegate = self
-        audioPlayer.prepareToPlay()
+        let audioPlayer = AVPlayer(url: url)
         player = audioPlayer
-        duration = audioPlayer.duration
+        installObservers(for: audioPlayer)
       }
-      guard player?.play() == true else { return }
+      player?.play()
       isPlaying = true
-      startTimer()
     } catch {
       player = nil
       duration = 0
@@ -1234,40 +1254,103 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject, AV
 
   func seek(to value: TimeInterval) {
     let resolved = min(max(0, value), max(duration, 0))
-    player?.currentTime = resolved
+    player?.seek(to: CMTime(seconds: resolved, preferredTimescale: 600))
     currentTime = resolved
   }
 
   func stop() {
-    player?.stop()
-    player?.currentTime = 0
+    player?.pause()
+    player?.seek(to: .zero)
     currentTime = 0
     isPlaying = false
-    stopTimer()
+    removeObservers()
+    player = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
-  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-    currentTime = 0
-    isPlaying = false
-    stopTimer()
-  }
-
   deinit {
-    stopTimer()
+    removeObservers()
   }
 
-  private func startTimer() {
-    stopTimer()
-    timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-      guard let self, let player = self.player else { return }
-      self.currentTime = player.currentTime
+  private func installObservers(for player: AVPlayer) {
+    let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
+    timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+      guard let self else { return }
+      self.currentTime = max(0, time.seconds.isFinite ? time.seconds : 0)
+      if let seconds = player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 {
+        self.duration = seconds
+      }
+    }
+    if let item = player.currentItem {
+      endObserver = NotificationCenter.default.addObserver(
+        forName: .AVPlayerItemDidPlayToEndTime,
+        object: item,
+        queue: .main
+      ) { [weak self] _ in
+        self?.finishPlayback()
+      }
     }
   }
 
-  private func stopTimer() {
-    timer?.invalidate()
-    timer = nil
+  private func finishPlayback() {
+    currentTime = 0
+    isPlaying = false
+    player?.seek(to: .zero)
+  }
+
+  private func removeObservers() {
+    if let timeObserver {
+      player?.removeTimeObserver(timeObserver)
+      self.timeObserver = nil
+    }
+    if let endObserver {
+      NotificationCenter.default.removeObserver(endObserver)
+      self.endObserver = nil
+    }
+  }
+}
+
+private struct SignalASIVideoArtifactView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @StateObject private var player: SignalASIVideoArtifactPlayer
+  let title: String
+
+  init(url: URL, title: String) {
+    self.title = title
+    _player = StateObject(wrappedValue: SignalASIVideoArtifactPlayer(url: url))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !title.isEmpty {
+        Text(title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundColor(.signalASITextPrimary)
+      }
+      VideoPlayer(player: player.player)
+        .frame(maxWidth: .infinity)
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityLabel(title.isEmpty
+          ? SignalASILocalization.string("rich_output_type_video", fallback: "Video", language: interfaceLanguage)
+          : title)
+    }
+    .onDisappear {
+      player.stop()
+    }
+  }
+}
+
+private final class SignalASIVideoArtifactPlayer: ObservableObject {
+  let player: AVPlayer
+
+  init(url: URL) {
+    player = AVPlayer(url: url)
+  }
+
+  func stop() {
+    player.pause()
+    player.seek(to: .zero)
   }
 }
 
