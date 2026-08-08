@@ -1207,6 +1207,9 @@ final class MessageCoordinator: ObservableObject {
     let toolId = action.parameters["tool_id"] ?? "unknown"
     let outcome = result.success ? "completed" : "failed"
     task.executionLog.append("Native tool \(toolId): \(outcome)")
+    if let retryCount = Int(result.metadata["native_retry_count"] ?? ""), retryCount > 0 {
+      task.executionLog.append("Native tool \(toolId): retried \(retryCount) time(s)")
+    }
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     store.appendDeliveryTrace(
