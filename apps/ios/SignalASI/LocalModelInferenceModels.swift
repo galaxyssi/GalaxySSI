@@ -28,6 +28,7 @@ struct LocalModelBackgroundDeferredError: LocalizedError, Equatable {
 struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backend: String
   var available: Bool
+  var backgroundReady: Bool
   var loadedProfileId: String
   var loadedContextTokens: Int
 

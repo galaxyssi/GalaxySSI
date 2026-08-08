@@ -2064,6 +2064,11 @@
 "signalasi.local_model.native_runtime" = "原生推理运行时";
 "signalasi.local_model.native_runtime_ready_detail" = "%@ 后端可用";
 "signalasi.local_model.native_runtime_unavailable_detail" = "需要内置 GGUF 后端后才能启动本地推理";
+"signalasi.local_model.background_runtime" = "后台推理";
+"signalasi.local_model.background_runtime_ready_detail" = "没有交互式推理运行时，所选模型可以执行后台任务";
+"signalasi.local_model.background_runtime_deferred_detail" = "运行时不可用或前台任务活跃，后台推理会延后";
+"signalasi.local_model.background_runtime_ready" = "可执行";
+"signalasi.local_model.background_runtime_deferred" = "已延后";
 "signalasi.local_model.section_manage" = "模型管理";
 "signalasi.local_model.search_title" = "搜索模型";
 "signalasi.local_model.search_subtitle" = "从可信模型平台查找可下载的 GGUF 模型";
