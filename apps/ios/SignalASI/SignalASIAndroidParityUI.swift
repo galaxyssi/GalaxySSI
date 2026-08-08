@@ -388,7 +388,9 @@ struct AgentHomeView: View {
     }
     if modelSelection.targetId == "local-llm" {
       let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
-      return LocalModelInferenceRuntime.shared.ready(profile: profile)
+      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+        LocalModelInferenceRuntime.shared.ready(profile: profile)
+      return ready
         ? profile.displayName
         : t("signalasi.agent.model_selection.automatic", "Automatic")
     }

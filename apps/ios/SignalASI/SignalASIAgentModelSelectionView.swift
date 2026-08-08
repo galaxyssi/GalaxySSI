@@ -69,7 +69,8 @@ struct SignalASIAgentModelSelectionView: View {
 
   private var localProfiles: [LocalModelRuntimeProfile] {
     LocalModelRuntimeCatalog.profiles().filter {
-      LocalModelInferenceRuntime.shared.ready(profile: $0)
+      LocalModelRuntimeSettings.isProfileEnabled($0) &&
+        LocalModelInferenceRuntime.shared.ready(profile: $0)
     }
   }
 

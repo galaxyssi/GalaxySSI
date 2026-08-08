@@ -3510,3 +3510,8 @@
 "signalasi.agent.model_selection.current" = "当前";
 "signalasi.agent.model_selection.no_models" = "没有就绪模型";
 "signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型或安装本机模型。";
+"signalasi.local_model.enabled" = "已启用";
+"signalasi.local_model.disabled" = "已停用";
+"signalasi.local_model.enabled_toggle" = "启用本机模型";
+"signalasi.local_model.enabled_message" = "已启用 %@";
+"signalasi.local_model.disabled_message" = "已停用 %@";

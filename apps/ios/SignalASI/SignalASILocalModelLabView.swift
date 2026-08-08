@@ -151,38 +151,60 @@ struct SignalASILocalModelLabView: View {
         let installed = artifact != nil
           ? downloadState == .ready
           : localModelStorage.inspect(profile).installed
-        SignalASILocalModelLabActionRow(
-          title: profile.displayName,
-          subtitle: profileSubtitle(profile),
-          systemImage: "cpu",
-          tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
-          badge: modelDownloadBadge(
-            profile: profile,
-            artifact: artifact,
-            state: downloadState,
-            installed: installed
-          )
-        ) {
-          guard let artifact else {
-            selectProfile(profile)
-            return
+        HStack(alignment: .center, spacing: 6) {
+          SignalASILocalModelLabActionRow(
+            title: profile.displayName,
+            subtitle: profileSubtitle(profile),
+            systemImage: "cpu",
+            tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
+            badge: modelDownloadBadge(
+              profile: profile,
+              artifact: artifact,
+              state: downloadState,
+              installed: installed
+            )
+          ) {
+            guard let artifact else {
+              selectProfile(profile)
+              return
+            }
+            switch downloadState {
+            case .notInstalled, .failed:
+              downloads.start(artifact)
+              statusMessage = downloads.state(for: artifact) == .failed
+                ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+                : t("signalasi.local_model.download_started", "Download started")
+            case .paused:
+              downloads.start(artifact)
+              statusMessage = downloads.state(for: artifact) == .failed
+                ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+                : t("signalasi.local_model.download_resumed", "Download resumed")
+            case .downloading:
+              downloads.cancel(artifact)
+              statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
+            case .ready:
+              if LocalModelRuntimeSettings.isProfileEnabled(profile) {
+                selectProfile(profile)
+              } else {
+                setProfileEnabled(profile, enabled: true)
+              }
+            }
           }
-          switch downloadState {
-          case .notInstalled, .failed:
-            downloads.start(artifact)
-            statusMessage = downloads.state(for: artifact) == .failed
-              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
-              : t("signalasi.local_model.download_started", "Download started")
-          case .paused:
-            downloads.start(artifact)
-            statusMessage = downloads.state(for: artifact) == .failed
-              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
-              : t("signalasi.local_model.download_resumed", "Download resumed")
-          case .downloading:
-            downloads.cancel(artifact)
-            statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
-          case .ready:
-            selectProfile(profile)
+          .frame(maxWidth: .infinity)
+          if installed {
+            Toggle(
+              "",
+              isOn: Binding(
+                get: { LocalModelRuntimeSettings.isProfileEnabled(profile) },
+                set: { setProfileEnabled(profile, enabled: $0) }
+              )
+            )
+            .labelsHidden()
+            .tint(.signalASIAccent)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel(
+              Text(t("signalasi.local_model.enabled_toggle", "Enable local model"))
+            )
           }
         }
       }
@@ -214,11 +236,14 @@ struct SignalASILocalModelLabView: View {
     installed: Bool
   ) -> String {
     guard artifact != nil else {
-      return profile.id == selectedProfile.id
-        ? t("signalasi.local_model.selected", "Current")
-        : installed
-          ? t("signalasi.local_model.download_ready", "Ready")
-          : t("signalasi.local_model.use_action", "Use")
+      if installed && LocalModelRuntimeSettings.isProfileEnabled(profile) {
+        return profile.id == selectedProfile.id
+          ? t("signalasi.local_model.selected", "Current")
+          : t("signalasi.local_model.enabled", "Enabled")
+      }
+      return installed
+        ? t("signalasi.local_model.disabled", "Disabled")
+        : t("signalasi.local_model.use_action", "Use")
     }
     switch state {
     case .downloading:
@@ -230,9 +255,12 @@ struct SignalASILocalModelLabView: View {
     case .failed:
       return t("signalasi.common.retry", "Retry")
     case .ready:
-      return profile.id == selectedProfile.id
-        ? t("signalasi.local_model.selected", "Current")
-        : t("signalasi.local_model.download_ready", "Ready")
+      if LocalModelRuntimeSettings.isProfileEnabled(profile) {
+        return profile.id == selectedProfile.id
+          ? t("signalasi.local_model.selected", "Current")
+          : t("signalasi.local_model.enabled", "Enabled")
+      }
+      return t("signalasi.local_model.disabled", "Disabled")
     }
   }
 
@@ -488,6 +516,21 @@ struct SignalASILocalModelLabView: View {
     }
     statusMessage = String(format: t("signalasi.local_model.profile_selected", "%@ selected"), profile.displayName)
     refreshSnapshots()
+  }
+
+  private func setProfileEnabled(_ profile: LocalModelRuntimeProfile, enabled: Bool) {
+    LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: enabled)
+    if enabled {
+      selectProfile(profile)
+    } else if selectedProfile.id == profile.id,
+              let fallback = LocalModelRuntimeSettings.activeProfiles().first {
+      selectProfile(fallback)
+    } else {
+      refreshSnapshots()
+    }
+    statusMessage = enabled
+      ? String(format: t("signalasi.local_model.enabled_message", "%@ enabled"), profile.displayName)
+      : String(format: t("signalasi.local_model.disabled_message", "%@ disabled"), profile.displayName)
   }
 
   private func setContextTokens(_ tokens: Int) {
