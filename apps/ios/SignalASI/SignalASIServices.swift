@@ -677,6 +677,26 @@ final class MessageCoordinator: ObservableObject {
     pendingAgentReplyTurnIds.remove(clean)
   }
 
+  private func updateAgentExecutionTarget(
+    conversationId: String,
+    connectorId: String = "",
+    contactId: String = "",
+    runtimeTarget: String = "",
+    fallbackTarget: String = ""
+  ) {
+    let conversation = conversationId.ifBlank(store.activeAgentConversationId)
+    guard !conversation.isBlank else { return }
+    let label = AgentExecutionTargetStatusPolicy.resolveLabel(
+      connectorId: connectorId,
+      contactId: contactId,
+      runtimeTarget: runtimeTarget,
+      fallbackTarget: fallbackTarget,
+      contacts: store.contacts
+    )
+    guard !label.isBlank else { return }
+    store.setAgentSessionSelectedModelOrAgent(id: conversation, label: label)
+  }
+
   private func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
     var handled = Set<String>()
     for failure in failures {
@@ -2178,6 +2198,13 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(appPayload.string("source_message_id"))
       .ifBlank(appPayload.string("message_id"))
     let displayContactId = agentHomeDisplayContactIdsByTurnId[responseTurnId] ?? contactId
+    updateAgentExecutionTarget(
+      conversationId: appPayload.string("conversation_id"),
+      connectorId: appPayload.string("connector_id").ifBlank(appPayload.string("agent_id")),
+      contactId: contactId,
+      runtimeTarget: appPayload.string("runtime_target").ifBlank(appPayload.string("target")),
+      fallbackTarget: appPayload.string("agent_name").ifBlank(appPayload.string("provider"))
+    )
     let richOutputJson = AgentRichContentCodec.normalize(
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
