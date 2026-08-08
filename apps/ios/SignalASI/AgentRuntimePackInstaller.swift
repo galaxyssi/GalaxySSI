@@ -65,6 +65,17 @@ final class AgentIOSRuntimePackInstaller {
     return true
   }
 
+  func installedManifest(packId: String) -> AgentRuntimePackManifest? {
+    guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(packId) else { return nil }
+    do {
+      let manifest = try validatePack(at: packsRootURL.appendingPathComponent(packId, isDirectory: true))
+      try validateInstalledDependencies(for: manifest)
+      return manifest
+    } catch {
+      return nil
+    }
+  }
+
   private func installArchive(
     _ archive: URL,
     onProgress: (AgentRuntimePackInstallProgress) -> Void

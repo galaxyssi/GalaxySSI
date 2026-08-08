@@ -301,8 +301,11 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   @State private var searchText = ""
   @State private var packs = SignalASIOnDeviceRuntimeView.packStatuses()
     .filter { !["linux-base", "python-uv"].contains($0.id) }
+  @State private var catalogEntries: [AgentRuntimePackCatalogEntry] = []
   @State private var fileImporterPresented = false
   @State private var isInstalling = false
+  @State private var isRefreshingCatalog = false
+  @State private var installingPackID: String?
   @State private var installMessage = ""
 
   private var filteredPacks: [AgentRuntimePackStatus] {
@@ -378,6 +381,9 @@ struct SignalASIRuntimeSoftwareCenterView: View {
     ) { result in
       handleImport(result)
     }
+    .task {
+      loadCachedCatalog()
+    }
   }
 
   private var searchSection: some View {
@@ -409,24 +415,59 @@ struct SignalASIRuntimeSoftwareCenterView: View {
 
   private var catalogSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_catalog", "Compatible Software"))
-      if filteredPacks.isEmpty {
+      HStack {
+        SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_catalog", "Compatible Software"))
+        Spacer()
+      }
+      SignalASISecurityActionRow(
+        title: t("cc_runtime_catalog_refresh_action", "Refresh signed catalog"),
+        subtitle: catalogMessage.ifBlank(t(
+          "cc_runtime_catalog_refresh_action_subtitle",
+          "Load compatible packs from the verified SignalASI release catalog"
+        )),
+        systemImage: isRefreshingCatalog ? "arrow.triangle.2.circlepath" : "arrow.clockwise",
+        tint: isRefreshingCatalog ? .blue : .signalASIAccent,
+        badge: isRefreshingCatalog
+          ? t("cc_runtime_catalog_refreshing", "Refreshing")
+          : t("cc_runtime_catalog_refresh_badge", "Refresh")
+      ) {
+        guard !isRefreshingCatalog && !isInstalling else { return }
+        refreshCatalog()
+      }
+      if catalogEntries.isEmpty && filteredPacks.isEmpty {
         SignalASISecurityStatusRow(
           title: t("cc_runtime_software_no_results_title", "No compatible software found"),
-          subtitle: String(format: t("cc_runtime_software_no_results_subtitle", "No verified software pack matches \"%@\""), searchText),
+          subtitle: t("cc_runtime_catalog_empty_subtitle", "Refresh the signed catalog to see installable runtime packs"),
+          systemImage: "magnifyingglass",
+          tint: .orange,
+          badge: ""
+        )
+      } else if !catalogEntries.isEmpty && filteredCatalogEntries.isEmpty {
+        SignalASISecurityStatusRow(
+          title: t("cc_runtime_software_no_results_title", "No compatible software found"),
+          subtitle: String(format: t(
+            "cc_runtime_software_no_results_subtitle",
+            "No verified software pack matches \"%@\""
+          ), searchText),
           systemImage: "magnifyingglass",
           tint: .orange,
           badge: ""
         )
       } else {
-        ForEach(filteredPacks) { pack in
-          SignalASISecurityStatusRow(
-            title: SignalASIOnDeviceRuntimeView.packTitle(pack.id, language: interfaceLanguage),
-            subtitle: SignalASIOnDeviceRuntimeView.packSubtitle(pack, language: interfaceLanguage),
-            systemImage: pack.id == "ffmpeg" ? "film" : "shippingbox",
-            tint: SignalASIOnDeviceRuntimeView.packTint(pack),
-            badge: SignalASIOnDeviceRuntimeView.packBadge(pack, language: interfaceLanguage)
-          )
+        if catalogEntries.isEmpty {
+          ForEach(filteredPacks) { pack in
+            SignalASISecurityStatusRow(
+              title: SignalASIOnDeviceRuntimeView.packTitle(pack.id, language: interfaceLanguage),
+              subtitle: SignalASIOnDeviceRuntimeView.packSubtitle(pack, language: interfaceLanguage),
+              systemImage: pack.id == "ffmpeg" ? "film" : "shippingbox",
+              tint: SignalASIOnDeviceRuntimeView.packTint(pack),
+              badge: SignalASIOnDeviceRuntimeView.packBadge(pack, language: interfaceLanguage)
+            )
+          }
+        } else {
+          ForEach(filteredCatalogEntries) { entry in
+            catalogEntryRow(entry)
+          }
         }
       }
     }
@@ -446,6 +487,134 @@ struct SignalASIRuntimeSoftwareCenterView: View {
       ) {
         guard !isInstalling else { return }
         fileImporterPresented = true
+      }
+    }
+  }
+
+  private var filteredCatalogEntries: [AgentRuntimePackCatalogEntry] {
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !query.isEmpty else { return catalogEntries }
+    return catalogEntries.filter { entry in
+      entry.packId.lowercased().contains(query) ||
+        SignalASIOnDeviceRuntimeView.packTitle(entry.packId, language: interfaceLanguage)
+          .lowercased()
+          .contains(query)
+    }
+  }
+
+  @ViewBuilder
+  private func catalogEntryRow(_ entry: AgentRuntimePackCatalogEntry) -> some View {
+    let installed = SignalASIOnDeviceRuntimeView.packStatus(entry.packId)
+    let ready = installed?.state == .ready && installed?.manifest?.version == entry.version
+    let installing = installingPackID == entry.packId
+    SignalASISecurityActionRow(
+      title: SignalASIOnDeviceRuntimeView.packTitle(entry.packId, language: interfaceLanguage),
+      subtitle: catalogEntrySubtitle(entry),
+      systemImage: entry.packId == "ffmpeg" ? "film" : "shippingbox",
+      tint: ready ? .signalASIAccent : (installing ? .blue : .orange),
+      badge: ready
+        ? t("cc_status_ready", "Ready")
+        : (installing ? t("cc_runtime_catalog_installing", "Installing") : t("cc_runtime_catalog_install", "Install"))
+    ) {
+      guard !ready && !installing && !isInstalling && !isRefreshingCatalog else { return }
+      install(entry)
+    }
+  }
+
+  private func catalogEntrySubtitle(_ entry: AgentRuntimePackCatalogEntry) -> String {
+    let base = "\(entry.version) / \(SignalASIOnDeviceRuntimeView.formatBytes(entry.installedSizeBytes)) / \(entry.license)"
+    return entry.releaseNotes.isEmpty ? base : "\(base) / \(entry.releaseNotes)"
+  }
+
+  private func loadCachedCatalog() {
+    let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
+    catalogEntries = manager.cachedCompatible()
+  }
+
+  private func refreshCatalog() {
+    isRefreshingCatalog = true
+    catalogMessage = t("cc_runtime_catalog_refreshing_message", "Refreshing signed catalog...")
+    DispatchQueue.global(qos: .userInitiated).async {
+      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
+      let outcome: Result<[AgentRuntimePackCatalogEntry], Error>
+      do {
+        _ = try manager.refresh()
+        outcome = .success(manager.cachedCompatible())
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        isRefreshingCatalog = false
+        switch outcome {
+        case .success(let entries):
+          catalogEntries = entries
+          catalogMessage = String(
+            format: t("cc_runtime_catalog_refresh_success", "Loaded %d compatible packs"),
+            entries.count
+          )
+        case .failure(let error):
+          catalogMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_catalog_refresh_failed", "Signed catalog refresh failed")
+          )
+        }
+      }
+    }
+  }
+
+  private func install(_ entry: AgentRuntimePackCatalogEntry) {
+    isInstalling = true
+    installingPackID = entry.packId
+    installMessage = String(
+      format: t("cc_runtime_catalog_installing_message", "Downloading %@..."),
+      entry.packId
+    )
+    DispatchQueue.global(qos: .userInitiated).async {
+      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
+      let outcome: Result<[AgentRuntimePackInstallResult], Error>
+      do {
+        outcome = .success(try manager.downloadAndInstall(
+          entry: entry,
+          onDownloadProgress: { progress in
+            guard progress.totalBytes > 0 else { return }
+            let percent = min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
+            DispatchQueue.main.async {
+              installMessage = String(
+                format: t("cc_runtime_catalog_downloading_progress", "Downloading %@ (%d%%)"),
+                entry.packId,
+                percent
+              )
+            }
+          },
+          onInstallProgress: { progress in
+            DispatchQueue.main.async {
+              installMessage = String(
+                format: t("cc_runtime_catalog_installing_progress", "Installing %@: %@"),
+                entry.packId,
+                progress.stage.rawValue.lowercased()
+              )
+            }
+          }
+        ))
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        isInstalling = false
+        installingPackID = nil
+        switch outcome {
+        case .success(let results):
+          packs = SignalASIOnDeviceRuntimeView.packStatuses()
+            .filter { !["linux-base", "python-uv"].contains($0.id) }
+          installMessage = String(
+            format: t("cc_runtime_catalog_install_success", "Installed %@ (%d pack(s))"),
+            entry.packId,
+            results.count
+          )
+        case .failure(let error):
+          installMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_catalog_install_failed", "Runtime pack installation failed")
+          )
+        }
       }
     }
   }
