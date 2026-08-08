@@ -113,6 +113,9 @@ internal object LocalModelTaskComplexity {
 object LocalModelCooperativeRuntime {
     fun ready(context: Context): Boolean = readyProfiles(context).isNotEmpty()
 
+    fun readyForBackground(context: Context): Boolean =
+        readyProfiles(context, LocalModelWorkClass.BACKGROUND).isNotEmpty()
+
     fun displayProfile(context: Context): LocalModelRuntimeProfile =
         LocalModelRuntimeSettings.displayProfile(context)
 
@@ -129,8 +132,11 @@ object LocalModelCooperativeRuntime {
             hasAttachments
         )
     ): LocalModelInferenceResult {
-        val fallback = LocalModelRuntimeSettings.selectedProfile(context)
-        val availableProfiles = readyProfiles(context)
+        val availableProfiles = readyProfiles(context, workClass)
+        val selectedProfile = LocalModelRuntimeSettings.selectedProfile(context)
+        val fallback = availableProfiles.firstOrNull { it.id == selectedProfile.id }
+            ?: availableProfiles.firstOrNull()
+            ?: throw LocalModelBackgroundDeferredException()
         val plan = LocalModelCooperationPolicy.plan(
             executionProfile = executionProfile,
             availableProfiles = availableProfiles,
@@ -202,9 +208,13 @@ object LocalModelCooperativeRuntime {
         throw IllegalStateException("No enabled local model could complete the task", primaryFailure)
     }
 
-    internal fun readyProfiles(context: Context): List<LocalModelRuntimeProfile> =
+    internal fun readyProfiles(
+        context: Context,
+        workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE
+    ): List<LocalModelRuntimeProfile> =
         LocalModelRuntimeSettings.activeProfiles(context)
             .filter { LocalModelInferenceRuntime.ready(context, it) }
+            .filter { workClass != LocalModelWorkClass.BACKGROUND || LocalModelInferenceRuntime.backgroundSafe(it) }
 
     internal fun String.toPlanningBrief(): String {
         val afterThinking = if (contains("</think>", ignoreCase = true)) {

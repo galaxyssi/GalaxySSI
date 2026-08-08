@@ -7,6 +7,13 @@ import org.junit.Test
 
 class LocalModelInferenceRuntimeTest {
     @Test
+    fun qairtIsReservedForInteractiveRequests() {
+        assertFalse(LocalModelInferenceRuntime.backgroundSafe(LocalModelRuntimeProfiles.QWEN_3_1_7B_QAIRT))
+        assertTrue(LocalModelInferenceRuntime.backgroundSafe(LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN))
+        assertTrue(LocalModelInferenceRuntime.backgroundSafe(LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN))
+    }
+
+    @Test
     fun qnnProfilesUseGenieXNpuAndCpuProfilesKeepLegacyRuntime() {
         assertEquals(
             LocalModelInferenceEngine.GENIEX_NPU,

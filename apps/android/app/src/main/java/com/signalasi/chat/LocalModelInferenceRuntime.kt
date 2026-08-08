@@ -75,6 +75,9 @@ object LocalModelInferenceRuntime {
         thinkingMode: LocalModelThinkingMode = LocalModelThinkingMode.AUTOMATIC,
         workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE
     ): LocalModelInferenceResult {
+        if (workClass == LocalModelWorkClass.BACKGROUND && !backgroundSafe(profile)) {
+            throw LocalModelBackgroundDeferredException()
+        }
         if (workClass == LocalModelWorkClass.INTERACTIVE) foregroundWaiters.incrementAndGet()
         return try {
             synchronized(lock) {
@@ -188,6 +191,9 @@ object LocalModelInferenceRuntime {
 
     fun canRunBackground(): Boolean =
         foregroundWaiters.get() == 0 && monotonicMillis() >= foregroundLeaseUntilElapsed
+
+    internal fun backgroundSafe(profile: LocalModelRuntimeProfile): Boolean =
+        profile.artifactFormat != LocalModelArtifactFormat.QAIRT
 
     fun releaseForAsr() = synchronized(lock) {
         SignalASILlamaRuntime.unload()

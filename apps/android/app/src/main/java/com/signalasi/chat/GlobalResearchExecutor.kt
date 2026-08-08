@@ -911,7 +911,7 @@ class GlobalResearchExecutor(context: Context) {
     }
 
     private fun routeResources(): List<String> {
-        return if (LocalModelInferenceRuntime.ready(appContext) &&
+        return if (LocalModelCooperativeRuntime.readyForBackground(appContext) &&
             LocalModelInferenceRuntime.canRunBackground()
         ) {
             listOf(LOCAL_RESEARCH_MODEL_RESOURCE)
@@ -1190,7 +1190,7 @@ private fun runPrivateResearchInference(
     systemPrompt: String,
     userPrompt: String
 ): Result<LocalModelInferenceResult> {
-    if (!LocalModelInferenceRuntime.ready(context)) {
+    if (!LocalModelCooperativeRuntime.readyForBackground(context)) {
         return Result.failure(IllegalStateException("No private local model is ready"))
     }
     return runCatching {
