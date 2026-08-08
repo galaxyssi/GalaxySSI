@@ -1299,6 +1299,7 @@ final class MessageCoordinator: ObservableObject {
       status: result.success && hasRemainingActions ? .sent : (result.success ? .delivered : .failed)
     )
     if !result.success || !hasRemainingActions {
+      let richOutput = runtimeArtifactRichOutput(result: result, responseText: reply)
       _ = store.appendIncoming(
         reply,
         from: outgoing.contactId,
@@ -1307,7 +1308,8 @@ final class MessageCoordinator: ObservableObject {
         traceStage: result.success ? "local_native_tool_reply_received" : "local_native_tool_error",
         detail: action.parameters["tool_id"] ?? action.target,
         conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
+        turnId: outgoing.turnId,
+        richOutputJson: richOutput
       )
     }
     return true
@@ -1382,6 +1384,30 @@ final class MessageCoordinator: ObservableObject {
       "\(index + 1). \(value)"
     }
     return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
+  }
+
+  private func runtimeArtifactRichOutput(
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard result.success,
+          let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          let artifacts = output["artifacts"]?.arrayValue,
+          let preferredFileName = artifacts
+            .compactMap(\.objectValue)
+            .compactMap({ $0["relative_path"]?.stringValue })
+            .first(where: { !$0.isBlank }) else {
+      return ""
+    }
+    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+    return AgentRuntimeArtifactUi.richOutput(
+      output: output,
+      responseText: responseText,
+      preferredFileName: preferredFileName,
+      zh: zh
+    )
   }
 
   private func localModelPrompt(
