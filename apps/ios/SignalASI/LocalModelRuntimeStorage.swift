@@ -5,6 +5,7 @@ struct LocalModelInstallMetadata: Codable, Equatable {
   var profileId: String
   var repositoryId: String
   var fileName: String
+  var sourceHub: LocalModelHubSource
   var expectedSizeBytes: Int64
   var sha256: String
   var installedAtEpochMillis: Int64
@@ -31,7 +32,7 @@ final class LocalModelRuntimeStorage {
   }
 
   func finalFileURL(for profile: LocalModelRuntimeProfile) -> URL {
-    let key = safeComponent("\(profile.repositoryId)_\(profile.fileName)_\(profile.sha256.prefix(12))")
+    let key = safeComponent("\(profile.sourceHub.rawValue)_\(profile.repositoryId)_\(profile.fileName)_\(profile.sha256.prefix(12))")
     return rootURL
       .appendingPathComponent("Hub", isDirectory: true)
       .appendingPathComponent(key, isDirectory: false)
@@ -88,6 +89,7 @@ final class LocalModelRuntimeStorage {
       profileId: profile.id,
       repositoryId: profile.repositoryId,
       fileName: profile.fileName,
+      sourceHub: profile.sourceHub,
       expectedSizeBytes: profile.expectedModelFileBytes,
       sha256: profile.sha256,
       installedAtEpochMillis: Int64(Date().timeIntervalSince1970 * 1_000),
@@ -173,6 +175,7 @@ private extension LocalModelInstallMetadata {
     profileId == profile.id &&
       repositoryId == profile.repositoryId &&
       fileName == profile.fileName &&
+      sourceHub == profile.sourceHub &&
       expectedSizeBytes == profile.expectedModelFileBytes &&
       sha256 == profile.sha256.lowercased()
   }

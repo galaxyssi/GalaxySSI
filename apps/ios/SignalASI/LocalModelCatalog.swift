@@ -63,7 +63,7 @@ enum LocalModelRuntimeCatalog {
       .joined()
       .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     let profile = LocalModelRuntimeProfile(
-      id: "hub-\(String(repositoryKey.prefix(48)))-\(String(artifact.sha256.prefix(12)))",
+      id: "hub-\(artifact.source.rawValue.lowercased())-\(String(repositoryKey.prefix(40)))-\(String(artifact.sha256.prefix(12)))",
       displayName: artifact.displayName,
       expectedModelFileBytes: artifact.sizeBytes,
       layerCount: shape.layers,
@@ -79,7 +79,7 @@ enum LocalModelRuntimeCatalog {
       defaultNoThink: artifact.repositoryId.localizedCaseInsensitiveContains("qwen3") &&
         !artifact.repositoryId.localizedCaseInsensitiveContains("qwen3.5"),
       sourceTrust: .hubVerified,
-      sourceHub: .huggingFace
+      sourceHub: artifact.source
     )
   }
 

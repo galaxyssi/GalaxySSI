@@ -9,8 +9,9 @@ struct LocalModelHubArtifact: Identifiable, Equatable, Hashable {
   var quantization: String
   var parameterCountBillions: Double
   var downloadURL: URL
+  var source: LocalModelHubSource = .huggingFace
 
-  var id: String { "\(repositoryId)/\(fileName)" }
+  var id: String { "\(source.rawValue)/\(repositoryId)/\(fileName)" }
   var displayName: String { fileName.replacingOccurrences(of: ".gguf", with: "").replacingOccurrences(of: "_", with: " ") }
 }
 
@@ -146,17 +147,20 @@ enum LocalModelArtifactDownloadError: LocalizedError {
 
 enum LocalModelHubArtifactClient {
   static func artifacts(for model: LocalModelHubSearchResult) async throws -> [LocalModelHubArtifact] {
+    switch model.source {
+    case .huggingFace:
+      return try await huggingFaceArtifacts(for: model)
+    case .modelScope:
+      return try await modelScopeArtifacts(for: model)
+    }
+  }
+
+  private static func huggingFaceArtifacts(for model: LocalModelHubSearchResult) async throws -> [LocalModelHubArtifact] {
     guard let encodedRepository = model.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
           let url = URL(string: "https://huggingface.co/api/models/\(encodedRepository)?blobs=true") else {
       throw URLError(.badURL)
     }
-    var request = URLRequest(url: url)
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-      throw URLError(.badServerResponse)
-    }
+    let data = try await requestData(url: url)
     guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           let siblings = root["siblings"] as? [[String: Any]] else {
       return []
@@ -180,11 +184,81 @@ enum LocalModelHubArtifactClient {
         sha256: sha,
         quantization: quantization(fileName),
         parameterCountBillions: parameterCount("\(model.id)/\(fileName)"),
-        downloadURL: fileURL
+        downloadURL: fileURL,
+        source: .huggingFace
       )
     }
     .filter { !$0.quantization.isEmpty }
     .sorted { $0.sizeBytes < $1.sizeBytes }
+  }
+
+  private static func modelScopeArtifacts(for model: LocalModelHubSearchResult) async throws -> [LocalModelHubArtifact] {
+    guard let encodedRepository = model.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+          var components = URLComponents(string: "https://modelscope.cn/api/v1/models/\(encodedRepository)/repo") else {
+      throw URLError(.badURL)
+    }
+    components.queryItems = [
+      URLQueryItem(name: "Revision", value: "master"),
+      URLQueryItem(name: "Recursive", value: "True")
+    ]
+    guard let url = components.url else { throw URLError(.badURL) }
+    let data = try await requestData(url: url)
+    guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let dataObject = (root["Data"] as? [String: Any]) ?? (root["data"] as? [String: Any]),
+          let files = (dataObject["Files"] as? [[String: Any]]) ?? (dataObject["files"] as? [[String: Any]]) else {
+      return []
+    }
+    return files.compactMap { file in
+      let path = file["Path"] as? String
+      let name = file["Name"] as? String
+      guard let fileName = [path, name].compactMap({ value in
+        guard let value, !value.isEmpty else { return nil }
+        return value
+      }).first,
+            fileName.lowercased().hasSuffix(".gguf"),
+            fileName.range(of: #"-\d{5}-of-\d{5}\.gguf$"#, options: .regularExpression) == nil else {
+        return nil
+      }
+      let sha = ((file["Sha256"] as? String) ?? "").lowercased()
+      let size = int64(file["Size"])
+      guard size > 0,
+            sha.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+            !quantization(fileName).isEmpty else { return nil }
+      var downloadComponents = URLComponents(string: "https://modelscope.cn/api/v1/models/\(encodedRepository)/repo")
+      downloadComponents?.queryItems = [
+        URLQueryItem(name: "Revision", value: "master"),
+        URLQueryItem(name: "FilePath", value: fileName)
+      ]
+      guard let downloadURL = downloadComponents?.url else { return nil }
+      return LocalModelHubArtifact(
+        repositoryId: model.id,
+        fileName: fileName,
+        sizeBytes: size,
+        sha256: sha,
+        quantization: quantization(fileName),
+        parameterCountBillions: parameterCount("\(model.id)/\(fileName)"),
+        downloadURL: downloadURL,
+        source: .modelScope
+      )
+    }
+    .sorted { $0.sizeBytes < $1.sizeBytes }
+  }
+
+  private static func requestData(url: URL) async throws -> Data {
+    var request = URLRequest(url: url)
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+      throw URLError(.badServerResponse)
+    }
+    return data
+  }
+
+  private static func int64(_ value: Any?) -> Int64 {
+    if let number = value as? NSNumber { return number.int64Value }
+    if let string = value as? String { return Int64(string) ?? 0 }
+    return 0
   }
 
   private static func quantization(_ fileName: String) -> String {
@@ -221,7 +295,7 @@ struct SignalASILocalModelHubArtifactView: View {
             subtitle: t("signalasi.local_model.artifact_subtitle", "Choose a GGUF artifact with pinned size and SHA-256 metadata"),
             systemImage: "doc.badge.gearshape",
             tint: .signalASIAccent,
-            badge: model.author
+            badge: sourceLabel(model.source)
           )
           if loading {
             SignalASILocalModelLabStatusRow(title: t("signalasi.local_model.artifact_loading", "Loading artifacts"), subtitle: model.id, systemImage: "hourglass", tint: .blue, badge: "...")
@@ -266,7 +340,7 @@ struct SignalASILocalModelHubArtifactView: View {
     let state = downloads.state(for: artifact)
     return SignalASILocalModelLabActionRow(
       title: artifact.displayName,
-      subtitle: "\(formatBytes(artifact.sizeBytes)) - \(artifact.quantization) - SHA256 \(artifact.sha256.prefix(12))...",
+      subtitle: "\(formatBytes(artifact.sizeBytes)) - \(artifact.quantization) - \(sourceLabel(artifact.source)) - SHA256 \(artifact.sha256.prefix(12))...",
       systemImage: "arrow.down.circle",
       tint: state == .ready ? .signalASIAccent : .blue,
       badge: stateLabel(state)
@@ -313,6 +387,15 @@ struct SignalASILocalModelHubArtifactView: View {
     let value = Double(max(0, bytes))
     if value >= 1_073_741_824 { return String(format: "%.1f GiB", value / 1_073_741_824) }
     return String(format: "%.0f MiB", value / 1_048_576)
+  }
+
+  private func sourceLabel(_ source: LocalModelHubSource) -> String {
+    switch source {
+    case .huggingFace:
+      return t("signalasi.local_model.source_huggingface", "Hugging Face")
+    case .modelScope:
+      return t("signalasi.local_model.source_modelscope", "ModelScope")
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

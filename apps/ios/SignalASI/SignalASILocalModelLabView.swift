@@ -814,10 +814,20 @@ struct SignalASILocalModelSearchView: View {
   private func hubResultSubtitle(_ result: LocalModelHubSearchResult) -> String {
     let owner = result.author.ifBlank(result.namespace).ifBlank(t("signalasi.local_model.hub_source", "Hugging Face model"))
     return String(
-      format: t("signalasi.local_model.repository_downloads", "%@ - %@ downloads"),
+      format: t("signalasi.local_model.repository_downloads", "%@ - %@ - %@ downloads"),
       owner,
+      hubSourceLabel(result.source),
       compactCount(result.downloads)
     )
+  }
+
+  private func hubSourceLabel(_ source: LocalModelHubSource) -> String {
+    switch source {
+    case .huggingFace:
+      return t("signalasi.local_model.source_huggingface", "Hugging Face")
+    case .modelScope:
+      return t("signalasi.local_model.source_modelscope", "ModelScope")
+    }
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
@@ -858,12 +868,20 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
   var id: String
   var author: String
   var downloads: Int
+  var source: LocalModelHubSource = .huggingFace
 
   enum CodingKeys: String, CodingKey {
     case id
     case modelId
     case author
     case downloads
+  }
+
+  init(id: String, author: String, downloads: Int, source: LocalModelHubSource = .huggingFace) {
+    self.id = id
+    self.author = author
+    self.downloads = max(0, downloads)
+    self.source = source
   }
 
   init(from decoder: Decoder) throws {
@@ -888,7 +906,12 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
           let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
       return nil
     }
-    return URL(string: "https://huggingface.co/\(escaped)")
+    switch source {
+    case .huggingFace:
+      return URL(string: "https://huggingface.co/\(escaped)")
+    case .modelScope:
+      return URL(string: "https://modelscope.cn/models/\(escaped)")
+    }
   }
 
   private static func decodeLossyInt(
@@ -907,23 +930,102 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
 
 private enum LocalModelHubSearchClient {
   static func search(query: String) async throws -> [LocalModelHubSearchResult] {
-    guard var components = URLComponents(string: "https://huggingface.co/api/models") else {
-      return []
+    var receivedEmptyResponse = false
+    var lastError: Error?
+    for source in sourceOrder() {
+      do {
+        let results = try await search(query: query, source: source)
+        if !results.isEmpty { return results }
+        receivedEmptyResponse = true
+      } catch {
+        lastError = error
+      }
     }
-    components.queryItems = [
-      URLQueryItem(name: "search", value: query),
-      URLQueryItem(name: "filter", value: "gguf"),
-      URLQueryItem(name: "sort", value: "downloads"),
-      URLQueryItem(name: "direction", value: "-1"),
-      URLQueryItem(name: "limit", value: "20")
-    ]
-    guard let url = components.url else { return [] }
-    let (data, response) = try await URLSession.shared.data(from: url)
-    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+    if receivedEmptyResponse { return [] }
+    throw lastError ?? URLError(.badServerResponse)
+  }
+
+  private static func search(query: String, source: LocalModelHubSource) async throws -> [LocalModelHubSearchResult] {
+    switch source {
+    case .huggingFace:
+      guard var components = URLComponents(string: "https://huggingface.co/api/models") else {
+        throw URLError(.badURL)
+      }
+      components.queryItems = [
+        URLQueryItem(name: "search", value: query),
+        URLQueryItem(name: "filter", value: "gguf"),
+        URLQueryItem(name: "sort", value: "downloads"),
+        URLQueryItem(name: "direction", value: "-1"),
+        URLQueryItem(name: "limit", value: "20")
+      ]
+      guard let url = components.url else { throw URLError(.badURL) }
+      let data = try await requestData(url: url)
+      return try JSONDecoder()
+        .decode([LocalModelHubSearchResult].self, from: data)
+        .filter { !$0.id.isEmpty }
+    case .modelScope:
+      let modelScopeQuery = query.localizedCaseInsensitiveContains("gguf") ? query : "\(query) GGUF"
+      guard var components = URLComponents(string: "https://modelscope.cn/openapi/v1/models") else {
+        throw URLError(.badURL)
+      }
+      components.queryItems = [
+        URLQueryItem(name: "search", value: modelScopeQuery),
+        URLQueryItem(name: "sort", value: "downloads"),
+        URLQueryItem(name: "page_number", value: "1"),
+        URLQueryItem(name: "page_size", value: "20")
+      ]
+      guard let url = components.url else { throw URLError(.badURL) }
+      let data = try await requestData(url: url)
+      return parseModelScopeSearchResults(data)
+    }
+  }
+
+  private static func requestData(url: URL) async throws -> Data {
+    var request = URLRequest(url: url)
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       throw URLError(.badServerResponse)
     }
-    return try JSONDecoder()
-      .decode([LocalModelHubSearchResult].self, from: data)
-      .filter { !$0.id.isEmpty }
+    return data
+  }
+
+  private static func parseModelScopeSearchResults(_ data: Data) -> [LocalModelHubSearchResult] {
+    guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let dataObject = (root["data"] as? [String: Any]) ?? (root["Data"] as? [String: Any]),
+          let models = (dataObject["models"] as? [[String: Any]]) ?? (dataObject["Models"] as? [[String: Any]]) else {
+      return []
+    }
+    return models.compactMap { value in
+      guard let id = value["id"] as? String, id.contains("/") else { return nil }
+      let tags = stringArray(value["tags"])
+      guard tags.contains(where: { ["gguf", "library:gguf", "custom_tag:gguf"].contains($0.lowercased()) }) else {
+        return nil
+      }
+      return LocalModelHubSearchResult(
+        id: id,
+        author: id.split(separator: "/").first.map(String.init) ?? "",
+        downloads: intValue(value["downloads"]),
+        source: .modelScope
+      )
+    }
+  }
+
+  private static func sourceOrder() -> [LocalModelHubSource] {
+    Locale.current.languageCode?.lowercased() == "zh"
+      ? [.modelScope, .huggingFace]
+      : [.huggingFace, .modelScope]
+  }
+
+  private static func stringArray(_ value: Any?) -> [String] {
+    if let values = value as? [String] { return values }
+    return (value as? [Any])?.compactMap { $0 as? String } ?? []
+  }
+
+  private static func intValue(_ value: Any?) -> Int {
+    if let number = value as? NSNumber { return max(0, number.intValue) }
+    if let string = value as? String { return max(0, Int(Double(string) ?? 0)) }
+    return 0
   }
 }

@@ -2052,6 +2052,8 @@
 "signalasi.local_model.download_cancelled" = "下载已取消";
 "signalasi.local_model.download_deleted" = "已删除下载的模型";
 "signalasi.local_model.artifact_ready" = "模型文件已通过校验并准备就绪";
+"signalasi.local_model.source_huggingface" = "Hugging Face";
+"signalasi.local_model.source_modelscope" = "ModelScope";
 "signalasi.local_model.delete_title" = "删除已下载的模型？";
 "signalasi.local_model.delete_action" = "删除";
 "signalasi.local_model.searching" = "正在搜索模型平台...";
@@ -2061,7 +2063,7 @@
 "signalasi.local_model.search_minimum_query" = "请输入至少 2 个字符来搜索模型平台。";
 "signalasi.local_model.hub_results_section" = "模型平台结果";
 "signalasi.local_model.hub_result_count" = "%d 个模型平台结果";
-"signalasi.local_model.repository_downloads" = "%@ · %@ 次下载";
+"signalasi.local_model.repository_downloads" = "%@ · %@ · %@ 次下载";
 "signalasi.local_model.open_repository" = "打开";
 "signalasi.local_model.artifact_title" = "选择 GGUF 文件";
 "signalasi.local_model.artifact_subtitle" = "只显示具有文件大小和 SHA-256 的单文件模型";
