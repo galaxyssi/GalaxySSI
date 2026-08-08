@@ -2056,6 +2056,11 @@
 "signalasi.local_model.section_profiles" = "工作负载配置";
 "signalasi.local_model.selected" = "当前";
 "signalasi.local_model.use_action" = "使用";
+"signalasi.local_model.import_action" = "导入";
+"signalasi.local_model.imported" = "已导入 %@";
+"signalasi.local_model.import_error" = "模型导入失败：%@";
+"signalasi.local_model.file_missing" = "尚未导入 GGUF 文件";
+"signalasi.local_model.file_ready" = "GGUF 已就绪 · %@";
 "signalasi.local_model.profile_selected" = "已选择 %@";
 "signalasi.local_model.context_selected" = "已选择 %@";
 "signalasi.local_model.asr_model" = "Whisper 模型";
