@@ -7737,7 +7737,14 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 nativeTools = request.runtimeContext.nativeTools
             )
         }
-        val selection = AgentConnectorRouteSelector.select(request.targets, routing) ?: return null
+        val preferredTargetId = context?.let { appContext ->
+            AgentModelSelectionSettings.preferredTargetId(appContext, request.targets)
+        }.orEmpty()
+        val selection = AgentConnectorRouteSelector.select(
+            targets = request.targets,
+            decision = routing,
+            preferredTargetId = preferredTargetId
+        ) ?: return null
         val currentInformation = selection.decision?.requirements?.liveDataRequired == true
         return connectorAction(
             request,
