@@ -579,6 +579,7 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
@@ -762,6 +763,39 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return
       }
+      if let agentContact = selectedAgentContact(for: contact) {
+        let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
+          store: disclosureStore,
+          contactId: agentContact.id,
+          desktopId: agentContact.desktopId,
+          providerId: agentContact.signalASIId,
+          title: agentContact.displayName,
+          text: requestText,
+          attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+          conversationId: outgoing.conversationId,
+          taskId: outgoing.id.uuidString,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        guard disclosureTicket?.allowed == true else {
+          throw AgentDataDisclosureBlockedError(destination: agentContact.displayName)
+        }
+        agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
+        let disclosureStatus = try await publishLinkMessage(
+          requestText,
+          contact: agentContact,
+          outgoing: outgoing,
+          attachments: attachments
+        )
+        if let ticket = disclosureTicket {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
+        }
+        store.setAgentSessionSelectedModelOrAgent(
+          id: outgoing.conversationId,
+          label: agentContact.displayName.ifBlank(agentContact.name).ifBlank(agentContact.id)
+        )
+        return
+      }
       switch contact.deliveryMode {
       case .cloudAPI:
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
@@ -823,6 +857,9 @@ final class MessageCoordinator: ObservableObject {
       }
     } catch {
       finishPendingAgentReply(for: outgoing)
+      agentHomeDisplayContactIdsByTurnId.removeValue(
+        forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      )
       if let ticket = disclosureTicket, ticket.allowed {
         AgentDataDisclosureLedger.update(
           store: disclosureStore,
@@ -833,7 +870,9 @@ final class MessageCoordinator: ObservableObject {
       }
       lastError = error.localizedDescription
       let stage: String
-      if selectedCloudModelContact(for: contact) != nil {
+      if selectedAgentContact(for: contact) != nil {
+        stage = "publish_failed"
+      } else if selectedCloudModelContact(for: contact) != nil {
         stage = "cloud_error"
       } else {
         switch contact.deliveryMode {
@@ -890,6 +929,23 @@ final class MessageCoordinator: ObservableObject {
           ) else {
       return nil
     }
+    return selected
+  }
+
+  private func selectedAgentContact(for contact: SignalASIContact) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes",
+          selection.mode == .manual,
+          let selected = store.contact(id: selection.targetId),
+          selected.id != "hermes",
+          !selected.deleted,
+          selected.type == "agent",
+          selected.deliveryMode.isSignalASILinkFamily,
+          selected.trustState == .verified else {
+      return nil
+    }
+    let setup = selected.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard setup == "ready" || setup == "verified" else { return nil }
     return selected
   }
 
@@ -2061,6 +2117,10 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
+    let responseTurnId = appPayload.string("turn_id")
+      .ifBlank(appPayload.string("source_message_id"))
+      .ifBlank(appPayload.string("message_id"))
+    let displayContactId = agentHomeDisplayContactIdsByTurnId[responseTurnId] ?? contactId
     let richOutputJson = AgentRichContentCodec.normalize(
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
@@ -2089,7 +2149,7 @@ final class MessageCoordinator: ObservableObject {
     )
     let incoming = store.appendIncoming(
       content,
-      from: contactId,
+      from: displayContactId,
       remoteMessageId: appPayload.string("message_id"),
       conversationId: appPayload.string("conversation_id"),
       turnId: appPayload.string("turn_id"),
@@ -2099,8 +2159,11 @@ final class MessageCoordinator: ObservableObject {
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
+    if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) {
+      agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
+    }
     NotificationService.notify(
-      title: store.contact(id: contactId)?.displayName ?? "SignalASI",
+      title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
   }

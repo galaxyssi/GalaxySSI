@@ -3497,7 +3497,7 @@
 "cc_runtime_catalog_installing_progress" = "正在安装 %@：%@";
 "cc_runtime_catalog_install_success" = "已安装 %@（%d 个包）";
 "cc_runtime_catalog_install_failed" = "运行时包安装失败";
-"signalasi.agent.model_selection.title" = "选择模型";
+"signalasi.agent.model_selection.title" = "选择模型或 Agent";
 "signalasi.agent.model_selection.hero_title" = "Agent 模型";
 "signalasi.agent.model_selection.badge" = "路由";
 "signalasi.agent.model_selection.routing_section" = "路由方式";
@@ -3509,10 +3509,13 @@
 "signalasi.agent.model_selection.cloud_section" = "云模型";
 "signalasi.agent.model_selection.current" = "当前";
 "signalasi.agent.model_selection.no_models" = "没有就绪模型";
-"signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型或安装本机模型。";
+"signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型、安装本机模型或连接 Agent。";
 "signalasi.local_model.enabled" = "已启用";
 "signalasi.local_model.disabled" = "已停用";
 "signalasi.local_model.enabled_toggle" = "启用本机模型";
 "signalasi.local_model.enabled_message" = "已启用 %@";
 "signalasi.local_model.disabled_message" = "已停用 %@";
 "signalasi.agent.cancel_task" = "取消任务";
+"signalasi.agent.model_selection.agent_section" = "AGENT 连接器";
+"signalasi.agent.model_selection.agent_subtitle" = "已连接且可用的 Agent";
+"signalasi.agent.model_selection.on_agent" = "Agent";
