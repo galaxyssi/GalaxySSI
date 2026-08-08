@@ -220,7 +220,7 @@ extension SignalASIStoreTests {
     let searchDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })
     let cacheDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.cache })
     XCTAssertEqual(searchDefinition.descriptor.availability.status, .available)
-    XCTAssertEqual(cacheDefinition.descriptor.availability.status, .requiresSetup)
+    XCTAssertEqual(cacheDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(searchDefinition.provenanceMetadata["implementation"], "signalasi.ios.urlsession_web_intelligence")
     XCTAssertEqual(searchDefinition.provenanceMetadata["engine_catalog_size"], "3")
 
@@ -292,8 +292,8 @@ extension SignalASIStoreTests {
     XCTAssertEqual(crawl.output["page_count"], .int(2))
     let pages = try XCTUnwrap(crawl.output["pages"]?.arrayValue)
     XCTAssertEqual(pages.last?.objectValue?["title"], .string("Child"))
-    XCTAssertEqual(cacheStatus.status, .unavailable)
-    XCTAssertEqual(cacheStatus.error?.code, "tool_unavailable")
+    XCTAssertTrue(cacheStatus.isSuccess)
+    XCTAssertEqual(cacheStatus.output["cache"]?.objectValue?["encryption"], .string("ios_keychain_aes_gcm"))
     XCTAssertEqual(webMedia.invocations.map { $0.operation }, [.webSearch, .webOpen, .webFetch, .webFetch])
     XCTAssertEqual(webMedia.invocations.first?.input["max_results"], .int(2))
   }
