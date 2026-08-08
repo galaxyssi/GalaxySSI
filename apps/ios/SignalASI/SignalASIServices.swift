@@ -691,6 +691,14 @@ final class MessageCoordinator: ObservableObject {
     let outgoing = store.appendOutgoing(displayText, to: contact.id)
     var disclosureTicket: AgentDisclosureTicket?
     do {
+      if shouldUseSelectedLocalModel(for: contact) {
+        try await receiveLocalModelReply(
+          requestText: requestText,
+          attachments: attachments,
+          outgoing: outgoing
+        )
+        return
+      }
       switch contact.deliveryMode {
       case .cloudAPI:
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
@@ -776,6 +784,62 @@ final class MessageCoordinator: ObservableObject {
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
     }
   }
+
+  private func shouldUseSelectedLocalModel(for contact: SignalASIContact) -> Bool {
+    contact.id == "hermes" &&
+      store.modelPlannerSettings.enabled &&
+      store.modelPlannerSettings.cloudContactId == "local-llm"
+  }
+
+  private func receiveLocalModelReply(
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage
+  ) async throws {
+    let profile = LocalModelRuntimeSettings.selectedProfile()
+    let prompt = localModelPrompt(text: requestText, attachments: attachments)
+    let result = try await LocalModelInferenceRuntime.shared.generateAsync(
+      profile: profile,
+      systemPrompt: localModelSystemPrompt,
+      userPrompt: prompt,
+      maximumTokens: 768,
+      temperature: 0.3
+    )
+    let response = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !response.isEmpty else {
+      throw LocalModelInferenceError.emptyResponse
+    }
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_model_reply",
+      detail: "\(profile.id); \(result.backend)",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      response,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_model_reply_received",
+      detail: profile.displayName,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
+  private func localModelPrompt(
+    text: String,
+    attachments: [SignalASIDraftAttachment]
+  ) -> String {
+    guard !attachments.isEmpty else { return text }
+    let names = attachments.map { $0.displayName }.joined(separator: ", ")
+    return "User attachments (names only; contents are not available in this turn): \(names)\n\nUser request:\n\(text)"
+  }
+
+  private let localModelSystemPrompt =
+    "You are SignalASI's private on-device assistant. Answer the user directly and concisely in the user's language. " +
+    "Do not claim that you executed phone, desktop, network, or file actions. If an action requires a capability that is not available in this chat, explain the next safe step."
 
   private func receiveCloudStreamReply(
     contact: SignalASIContact,
