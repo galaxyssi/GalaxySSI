@@ -36,6 +36,8 @@
     A10000000000000000000996 /* SignalASIAgentKnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */; };
     A10000000000000000000997 /* SignalASIAgentRecentTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */; };
     A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */; };
+    A10000000000000000001520 /* LocalModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001520 /* LocalModelCatalog.swift */; };
+    A10000000000000000001521 /* LocalModelRuntimeStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001521 /* LocalModelRuntimeStorage.swift */; };
     A10000000000000000000998 /* SignalASIAgentSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000998 /* SignalASIAgentSessionsView.swift */; };
     A10000000000000000000999 /* SignalASINativeToolCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */; };
     A10000000000000000001340 /* SignalASIMcpControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001340 /* SignalASIMcpControlCenterView.swift */; };
@@ -701,6 +703,8 @@
     A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentKnowledgeView.swift; sourceTree = "<group>"; };
     A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRecentTasksView.swift; sourceTree = "<group>"; };
     A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelArtifactView.swift; sourceTree = "<group>"; };
+    A20000000000000000001520 /* LocalModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelCatalog.swift; sourceTree = "<group>"; };
+    A20000000000000000001521 /* LocalModelRuntimeStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRuntimeStorage.swift; sourceTree = "<group>"; };
     A20000000000000000000998 /* SignalASIAgentSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentSessionsView.swift; sourceTree = "<group>"; };
     A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASINativeToolCatalogView.swift; sourceTree = "<group>"; };
     A20000000000000000001340 /* SignalASIMcpControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMcpControlCenterView.swift; sourceTree = "<group>"; };
@@ -1768,6 +1772,8 @@
         A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */,
         A20000000000000000001041 /* SignalASILocalModelLabView.swift */,
         A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */,
+        A20000000000000000001520 /* LocalModelCatalog.swift */,
+        A20000000000000000001521 /* LocalModelRuntimeStorage.swift */,
         A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */,
         A20000000000000000001051 /* SignalASIAppAdaptersView.swift */,
         A20000000000000000001060 /* SignalASIProtocolQualityView.swift */,
@@ -2542,6 +2548,8 @@
         A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */,
         A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */,
         A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */,
+        A10000000000000000001520 /* LocalModelCatalog.swift in Sources */,
+        A10000000000000000001521 /* LocalModelRuntimeStorage.swift in Sources */,
         A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */,
         A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */,
         A10000000000000000001060 /* SignalASIProtocolQualityView.swift in Sources */,

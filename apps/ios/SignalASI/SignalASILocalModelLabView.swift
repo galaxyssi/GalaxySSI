@@ -18,17 +18,28 @@ struct SignalASILocalModelLabView: View {
   @State private var locationStatus = ""
   @State private var notificationStatus = ""
   @State private var statusMessage = ""
+  @State private var catalogRevision = 0
 
   private let whisperModelManager = VoiceWhisperModelManager()
+  private let localModelStorage = LocalModelRuntimeStorage()
+
+  private var localModelProfiles: [LocalModelRuntimeProfile] {
+    _ = catalogRevision
+    return LocalModelRuntimeCatalog.profiles()
+  }
 
   private var estimate: LocalModelRuntimeEstimate {
     LocalModelRuntimeEstimator.estimate(
       LocalModelRuntimeRequest(
         profile: selectedProfile,
         requestedContextTokens: contextTokens,
-        modelFileBytes: selectedProfile.expectedModelFileBytes,
-        modelFilePresent: true,
-        requireModelFile: false
+        modelFileBytes: selectedModelStorage?.installed == true
+          ? selectedProfile.expectedModelFileBytes
+          : (selectedProfile.downloadable ? 0 : selectedProfile.expectedModelFileBytes),
+        modelFilePresent: selectedProfile.downloadable
+          ? selectedModelStorage?.installed == true
+          : true,
+        requireModelFile: selectedProfile.downloadable
       ),
       device: deviceSnapshot
     )
@@ -55,6 +66,15 @@ struct SignalASILocalModelLabView: View {
     VoiceWhisperModelCatalog.models.filter { model in
       model.bundled || whisperModelManager.isAvailable(model)
     }.count
+  }
+
+  private var installedLocalModelCount: Int {
+    localModelProfiles.filter { localModelStorage.inspect($0).installed }.count
+  }
+
+  private var selectedModelStorage: LocalModelStorageSnapshot? {
+    guard selectedProfile.downloadable else { return nil }
+    return localModelStorage.inspect(selectedProfile)
   }
 
   var body: some View {
@@ -126,7 +146,8 @@ struct SignalASILocalModelLabView: View {
       ) {
         SignalASILocalModelSearchView()
       }
-      ForEach(LocalModelRuntimeProfiles.all) { profile in
+      ForEach(localModelProfiles) { profile in
+        let installed = localModelStorage.inspect(profile).installed
         SignalASILocalModelLabActionRow(
           title: profile.displayName,
           subtitle: profileSubtitle(profile),
@@ -134,7 +155,9 @@ struct SignalASILocalModelLabView: View {
           tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
           badge: profile.id == selectedProfile.id
             ? t("signalasi.local_model.selected", "Current")
-            : t("signalasi.local_model.use_action", "Use")
+            : installed
+              ? t("signalasi.local_model.download_ready", "Ready")
+              : t("signalasi.local_model.use_action", "Use")
         ) {
           selectProfile(profile)
         }
@@ -308,8 +331,9 @@ struct SignalASILocalModelLabView: View {
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.storage_usage", "Storage Usage"),
         subtitle: String(
-          format: t("signalasi.local_model.storage_usage_subtitle", "%d Whisper models / %d Desktop local model connectors"),
+          format: t("signalasi.local_model.storage_usage_subtitle", "%d Whisper models / %d downloaded local models / %d Desktop local model connectors"),
           installedWhisperCount,
+          installedLocalModelCount,
           localModelConnectorCount
         ),
         systemImage: "internaldrive",
@@ -414,6 +438,7 @@ struct SignalASILocalModelLabView: View {
     contextTokens = min(LocalModelRuntimeSettings.contextTokens(), selectedProfile.maximumContextTokens)
     deviceSnapshot = LocalModelDeviceSnapshotDetector.capture()
     acceleratorSnapshot = LocalModelAcceleratorDetector.detect()
+    catalogRevision += 1
     refreshPermissionStatuses()
   }
 
@@ -633,9 +658,10 @@ struct SignalASILocalModelSearchView: View {
 
   private var profileResults: [LocalModelRuntimeProfile] {
     let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty else { return LocalModelRuntimeProfiles.all }
+    let profiles = LocalModelRuntimeCatalog.profiles()
+    guard !clean.isEmpty else { return profiles }
     let normalized = clean.lowercased()
-    return LocalModelRuntimeProfiles.all.filter { profile in
+    return profiles.filter { profile in
       profile.id.lowercased().contains(normalized) ||
         profile.displayName.lowercased().contains(normalized) ||
         profile.quantizationLabel.lowercased().contains(normalized)

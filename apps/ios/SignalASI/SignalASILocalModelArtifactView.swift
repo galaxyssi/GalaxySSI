@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -29,14 +28,15 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
 
   private var tasks: [String: Task<Void, Never>] = [:]
   private let fileManager = FileManager.default
+  private let storage = LocalModelRuntimeStorage()
 
   init() {
     loadPersistedStates()
   }
 
   func state(for artifact: LocalModelHubArtifact) -> LocalModelArtifactInstallState {
-    let destination = destinationURL(for: artifact)
-    if fileManager.fileExists(atPath: destination.path) {
+    let profile = LocalModelRuntimeCatalog.hubProfile(for: artifact)
+    if storage.inspect(profile).installed {
       return .ready
     }
     return states[artifact.id] ?? .notInstalled
@@ -44,6 +44,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
 
   func start(_ artifact: LocalModelHubArtifact) {
     guard tasks[artifact.id] == nil else { return }
+    let profile = LocalModelRuntimeCatalog.addHubArtifact(artifact)
     errors[artifact.id] = nil
     states[artifact.id] = .downloading
     persistStates()
@@ -60,14 +61,15 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
         guard size?.int64Value == artifact.sizeBytes else {
           throw LocalModelArtifactDownloadError.sizeMismatch
         }
-        let actualHash = try Self.sha256(fileURL: temporaryURL)
+        let actualHash = try LocalModelRuntimeStorage.sha256(fileURL: temporaryURL)
         guard actualHash == artifact.sha256.lowercased() else {
           throw LocalModelArtifactDownloadError.sha256Mismatch
         }
-        let destination = self.destinationURL(for: artifact)
-        try self.fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? self.fileManager.removeItem(at: destination)
-        try self.fileManager.moveItem(at: temporaryURL, to: destination)
+        _ = try self.storage.installVerifiedFile(
+          temporaryURL,
+          profile: profile,
+          downloadURL: artifact.downloadURL
+        )
         await MainActor.run {
           self.states[artifact.id] = .ready
           self.errors[artifact.id] = nil
@@ -101,24 +103,16 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   func delete(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
     tasks.removeValue(forKey: artifact.id)
-    try? fileManager.removeItem(at: destinationURL(for: artifact))
+    let profile = LocalModelRuntimeCatalog.hubProfile(for: artifact)
+    try? storage.delete(profile)
+    LocalModelRuntimeCatalog.removeHubProfile(profile)
     states[artifact.id] = .notInstalled
     errors[artifact.id] = nil
     persistStates()
   }
 
   func destinationURL(for artifact: LocalModelHubArtifact) -> URL {
-    let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      ?? fileManager.temporaryDirectory
-    let safeId = artifact.id.unicodeScalars.map { scalar -> Character in
-      let value = scalar.value
-      let allowed = value == 46 || value == 45 || value == 95 ||
-        (48...57).contains(value) || (65...90).contains(value) || (97...122).contains(value)
-      return allowed ? Character(scalar) : "_"
-    }
-    return root
-      .appendingPathComponent("SignalASI/LocalModels/Hub", isDirectory: true)
-      .appendingPathComponent(String(safeId).replacingOccurrences(of: "/", with: "_") + ".gguf", isDirectory: false)
+    storage.finalFileURL(for: LocalModelRuntimeCatalog.hubProfile(for: artifact))
   }
 
   private func loadPersistedStates() {
@@ -134,15 +128,6 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     UserDefaults.standard.set(states.mapValues(\.rawValue), forKey: "signalasi.local_model.artifact_states")
   }
 
-  private static func sha256(fileURL: URL) throws -> String {
-    let handle = try FileHandle(forReadingFrom: fileURL)
-    defer { try? handle.close() }
-    var hasher = SHA256()
-    while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
-      hasher.update(data: chunk)
-    }
-    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-  }
 }
 
 enum LocalModelArtifactDownloadError: LocalizedError {
@@ -222,6 +207,8 @@ struct SignalASILocalModelHubArtifactView: View {
   @State private var artifacts: [LocalModelHubArtifact] = []
   @State private var loading = true
   @State private var statusMessage = ""
+  @State private var artifactToDelete: LocalModelHubArtifact?
+  @State private var showingDeleteConfirmation = false
   var model: LocalModelHubSearchResult
 
   var body: some View {
@@ -257,6 +244,21 @@ struct SignalASILocalModelHubArtifactView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .confirmationDialog(
+      t("signalasi.local_model.delete_title", "Delete downloaded model?"),
+      isPresented: $showingDeleteConfirmation,
+      titleVisibility: .visible
+    ) {
+      Button(t("signalasi.local_model.delete_action", "Delete"), role: .destructive) {
+        guard let artifact = artifactToDelete else { return }
+        downloads.delete(artifact)
+        statusMessage = t("signalasi.local_model.download_deleted", "Downloaded model deleted")
+        artifactToDelete = nil
+      }
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        artifactToDelete = nil
+      }
+    }
     .task { await loadArtifacts() }
   }
 
@@ -274,7 +276,8 @@ struct SignalASILocalModelHubArtifactView: View {
         downloads.cancel(artifact)
         statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
       case .ready:
-        statusMessage = t("signalasi.local_model.artifact_ready", "Verified artifact is ready")
+        artifactToDelete = artifact
+        showingDeleteConfirmation = true
       case .notInstalled, .failed:
         downloads.start(artifact)
         statusMessage = t("signalasi.local_model.download_started", "Download started")
@@ -301,7 +304,7 @@ struct SignalASILocalModelHubArtifactView: View {
     switch state {
     case .notInstalled: return t("signalasi.local_model.download_action", "Download")
     case .downloading: return t("signalasi.local_model.download_cancel", "Cancel")
-    case .ready: return t("signalasi.local_model.download_ready", "Ready")
+    case .ready: return t("signalasi.local_model.download_delete", "Delete")
     case .failed: return t("signalasi.common.retry", "Retry")
     }
   }

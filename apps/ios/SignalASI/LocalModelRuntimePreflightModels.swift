@@ -47,6 +47,16 @@ enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum LocalModelSourceTrust: String, Codable {
+  case curated = "CURATED"
+  case hubVerified = "HUB_VERIFIED"
+}
+
+enum LocalModelHubSource: String, Codable {
+  case huggingFace = "HUGGING_FACE"
+  case modelScope = "MODELSCOPE"
+}
+
 struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
   var id: String
   var displayName: String
@@ -57,6 +67,23 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
   var defaultContextTokens: Int
   var maximumContextTokens: Int
   var quantizationLabel: String
+  var repositoryId: String
+  var fileName: String
+  var sha256: String
+  var parameterCountBillions: Double
+  var defaultNoThink: Bool
+  var visionCapable: Bool
+  var sourceTrust: LocalModelSourceTrust
+  var sourceHub: LocalModelHubSource
+
+  var downloadable: Bool {
+    repositoryId.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil &&
+      fileName.lowercased().hasSuffix(".gguf") &&
+      !fileName.contains("\\") &&
+      !fileName.split(separator: "/").contains { $0.isEmpty || $0 == "." || $0 == ".." } &&
+      expectedModelFileBytes > 0 &&
+      sha256.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil
+  }
 
   init(
     id: String,
@@ -67,7 +94,15 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     headDimension: Int,
     defaultContextTokens: Int,
     maximumContextTokens: Int,
-    quantizationLabel: String
+    quantizationLabel: String,
+    repositoryId: String = "",
+    fileName: String = "",
+    sha256: String = "",
+    parameterCountBillions: Double = 0,
+    defaultNoThink: Bool = false,
+    visionCapable: Bool = false,
+    sourceTrust: LocalModelSourceTrust = .curated,
+    sourceHub: LocalModelHubSource = .huggingFace
   ) {
     self.id = id
     self.displayName = displayName
@@ -78,6 +113,14 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     self.defaultContextTokens = defaultContextTokens
     self.maximumContextTokens = maximumContextTokens
     self.quantizationLabel = quantizationLabel
+    self.repositoryId = repositoryId
+    self.fileName = fileName
+    self.sha256 = sha256.lowercased()
+    self.parameterCountBillions = max(0, parameterCountBillions)
+    self.defaultNoThink = defaultNoThink
+    self.visionCapable = visionCapable
+    self.sourceTrust = sourceTrust
+    self.sourceHub = sourceHub
   }
 
   enum CodingKeys: String, CodingKey {
@@ -90,6 +133,35 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     case defaultContextTokens = "default_context_tokens"
     case maximumContextTokens = "maximum_context_tokens"
     case quantizationLabel = "quantization_label"
+    case repositoryId = "repository_id"
+    case fileName = "file_name"
+    case sha256
+    case parameterCountBillions = "parameter_count_billions"
+    case defaultNoThink = "default_no_think"
+    case visionCapable = "vision_capable"
+    case sourceTrust = "source_trust"
+    case sourceHub = "source_hub"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    displayName = try container.decode(String.self, forKey: .displayName)
+    expectedModelFileBytes = try container.decode(Int64.self, forKey: .expectedModelFileBytes)
+    layerCount = try container.decode(Int.self, forKey: .layerCount)
+    keyValueHeadCount = try container.decode(Int.self, forKey: .keyValueHeadCount)
+    headDimension = try container.decode(Int.self, forKey: .headDimension)
+    defaultContextTokens = try container.decode(Int.self, forKey: .defaultContextTokens)
+    maximumContextTokens = try container.decode(Int.self, forKey: .maximumContextTokens)
+    quantizationLabel = try container.decode(String.self, forKey: .quantizationLabel)
+    repositoryId = try container.decodeIfPresent(String.self, forKey: .repositoryId) ?? ""
+    fileName = try container.decodeIfPresent(String.self, forKey: .fileName) ?? ""
+    sha256 = (try container.decodeIfPresent(String.self, forKey: .sha256) ?? "").lowercased()
+    parameterCountBillions = max(0, try container.decodeIfPresent(Double.self, forKey: .parameterCountBillions) ?? 0)
+    defaultNoThink = try container.decodeIfPresent(Bool.self, forKey: .defaultNoThink) ?? false
+    visionCapable = try container.decodeIfPresent(Bool.self, forKey: .visionCapable) ?? false
+    sourceTrust = try container.decodeIfPresent(LocalModelSourceTrust.self, forKey: .sourceTrust) ?? .curated
+    sourceHub = try container.decodeIfPresent(LocalModelHubSource.self, forKey: .sourceHub) ?? .huggingFace
   }
 }
 
@@ -606,11 +678,14 @@ enum LocalModelRuntimePreflight {
 
 enum LocalModelRuntimeSettings {
   static func selectedProfile(defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
-    LocalModelRuntimeProfiles.find(defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id)
+    LocalModelRuntimeCatalog.find(
+      defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id,
+      defaults: defaults
+    )
   }
 
   static func setSelectedProfile(_ profileId: String, defaults: UserDefaults = .standard) {
-    defaults.set(LocalModelRuntimeProfiles.find(profileId).id, forKey: keyProfile)
+    defaults.set(LocalModelRuntimeCatalog.find(profileId, defaults: defaults).id, forKey: keyProfile)
   }
 
   static func contextTokens(defaults: UserDefaults = .standard) -> Int {
