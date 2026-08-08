@@ -20,7 +20,7 @@ struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
     }
 
     do {
-      let result = try runtime.generate(
+      let result = try await runtime.generateAsync(
         profile: profile,
         systemPrompt: invocation.systemPrompt,
         userPrompt: invocation.prompt,

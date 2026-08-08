@@ -919,6 +919,14 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if let action = await modelPlannedLocalNativeAction(
+        requestText: requestText,
+        attachments: attachments,
+        outgoing: outgoing
+      ) {
+        _ = applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+        return
+      }
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(
         profile: profile,
         systemPrompt: localModelSystemPrompt,
@@ -980,6 +988,74 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
 
+    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+  }
+
+  private func modelPlannedLocalNativeAction(
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage
+  ) async -> AgentAction? {
+    guard store.modelPlannerSettings.enabled,
+          let runtime = localNativeToolRuntime else {
+      return nil
+    }
+    let requirements = AgentTaskRequirementAnalyzer.analyze(requestText)
+    let nativeIntentCapabilities: Set<AgentCapability> = [
+      .toolUse,
+      .deviceControl,
+      .appNavigation,
+      .liveData,
+      .research,
+      .knowledgeSearch,
+      .mcp,
+      .skill,
+      .code,
+      .taskExecution
+    ]
+    guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
+      return nil
+    }
+    guard let planner = AgentModelPlannerContactResolver(store: store)
+      .makePlanner(settings: store.modelPlannerSettings) else {
+      return nil
+    }
+    let planRequest = AgentPlanRequest(
+      goal: requestText,
+      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage
+    )
+    let conversation = AgentConversationContext(
+      conversationId: outgoing.conversationId,
+      summary: recentLocalConversationContext(
+        contactId: outgoing.contactId,
+        excluding: outgoing.id
+      ),
+      turns: [],
+      privateMode: true
+    )
+    let planningRequest = AgentModelPlanningPromptRequest(
+      planRequest: planRequest,
+      conversationContext: conversation,
+      hasAttachments: !attachments.isEmpty
+    )
+    let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
+    let plan = await planner.plan(
+      request: planningRequest,
+      settings: store.modelPlannerSettings,
+      safetySettings: store.agentSafetySettings,
+      fallbackPlan: fallbackPlan
+    )
+    guard plan.validation.valid else { return nil }
+    return plan.actions.first(where: { $0.kind == .callNativeTool })
+  }
+
+  private func applyLocalNativeAction(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
     task.risk = action.risk
     if action.risk == .blocked {
       markLocalNativeActionBlocked(
