@@ -19,6 +19,7 @@ final class LocalModelInferenceRuntime {
     self.storage = storage
     self.followsRegistry = backend == nil
     self.backend = backend ?? LocalModelInferenceBackendRegistry.current()
+    LocalModelWhisperResourceArbiter.shared.register(localModelRuntime: self)
   }
 
   var available: Bool {
@@ -73,6 +74,7 @@ final class LocalModelInferenceRuntime {
       beginInteractiveWork()
       defer { endInteractiveWork() }
     }
+    LocalModelWhisperResourceArbiter.shared.releaseWhisperForLocalModel()
     lock.lock()
     defer { lock.unlock() }
     refreshBackendIfNeededLocked()
@@ -181,6 +183,10 @@ final class LocalModelInferenceRuntime {
   }
 
   func releaseForAsr() {
+    releaseForResourcePressure()
+  }
+
+  func releaseForResourcePressure() {
     lock.lock()
     refreshBackendIfNeededLocked()
     backend.unload()
