@@ -3497,3 +3497,16 @@
 "cc_runtime_catalog_installing_progress" = "正在安装 %@：%@";
 "cc_runtime_catalog_install_success" = "已安装 %@（%d 个包）";
 "cc_runtime_catalog_install_failed" = "运行时包安装失败";
+"signalasi.agent.model_selection.title" = "选择模型";
+"signalasi.agent.model_selection.hero_title" = "Agent 模型";
+"signalasi.agent.model_selection.badge" = "路由";
+"signalasi.agent.model_selection.routing_section" = "路由方式";
+"signalasi.agent.model_selection.automatic" = "自动";
+"signalasi.agent.model_selection.automatic_subtitle" = "根据任务、速度、隐私和可用性自动选择";
+"signalasi.agent.model_selection.local_section" = "本机模型";
+"signalasi.agent.model_selection.local_subtitle" = "已安装并可在此 iPhone 上运行";
+"signalasi.agent.model_selection.on_device" = "本机";
+"signalasi.agent.model_selection.cloud_section" = "云模型";
+"signalasi.agent.model_selection.current" = "当前";
+"signalasi.agent.model_selection.no_models" = "没有就绪模型";
+"signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型或安装本机模型。";

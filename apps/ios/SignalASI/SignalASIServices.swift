@@ -727,11 +727,37 @@ final class MessageCoordinator: ObservableObject {
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
-      if shouldUseSelectedLocalModel(for: contact) {
+      if let localProfile = selectedLocalModel(for: contact) {
         try await receiveLocalModelReply(
+          profile: localProfile,
           requestText: requestText,
           attachments: attachments,
           outgoing: outgoing
+        )
+        finishPendingAgentReply(for: outgoing)
+        return
+      }
+      if let cloudContact = selectedCloudModelContact(for: contact) {
+        let cloudText = cloudPrompt(text: requestText, attachments: attachments)
+        var cloudTurns = store.messages(for: contact.id)
+        if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
+          cloudTurns[index].content = cloudText
+        }
+        let modelDetail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
+        let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: outgoing.contactId,
+          stage: "cloud_request",
+          detail: requestDetail,
+          status: .sent
+        )
+        try await receiveCloudStreamReply(
+          contact: cloudContact,
+          turns: cloudTurns,
+          outgoing: outgoing,
+          modelDetail: modelDetail,
+          displayContactId: outgoing.contactId
         )
         finishPendingAgentReply(for: outgoing)
         return
@@ -756,7 +782,8 @@ final class MessageCoordinator: ObservableObject {
           contact: contact,
           turns: cloudTurns,
           outgoing: outgoing,
-          modelDetail: modelDetail
+          modelDetail: modelDetail,
+          displayContactId: contact.id
         )
         finishPendingAgentReply(for: outgoing)
       case .link, .pcConnector:
@@ -806,13 +833,17 @@ final class MessageCoordinator: ObservableObject {
       }
       lastError = error.localizedDescription
       let stage: String
-      switch contact.deliveryMode {
-      case .cloudAPI:
+      if selectedCloudModelContact(for: contact) != nil {
         stage = "cloud_error"
-      case .link, .pcConnector:
-        stage = "publish_failed"
-      case .local:
-        stage = "failed"
+      } else {
+        switch contact.deliveryMode {
+        case .cloudAPI:
+          stage = "cloud_error"
+        case .link, .pcConnector:
+          stage = "publish_failed"
+        case .local:
+          stage = "failed"
+        }
       }
       store.appendDeliveryTrace(
         outgoing.id,
@@ -825,10 +856,38 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func shouldUseSelectedLocalModel(for contact: SignalASIContact) -> Bool {
-    contact.id == "hermes" &&
-      store.modelPlannerSettings.enabled &&
-      store.modelPlannerSettings.cloudContactId == "local-llm"
+  private func selectedLocalModel(for contact: SignalASIContact) -> LocalModelRuntimeProfile? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes",
+          (selection.mode == .manual && selection.targetId == "local-llm" ||
+            !AgentModelSelectionSettings.hasStoredSelection() &&
+            store.modelPlannerSettings.enabled &&
+            store.modelPlannerSettings.cloudContactId == "local-llm") else {
+      return nil
+    }
+    let profile = selection.mode == .manual
+      ? LocalModelRuntimeCatalog.find(selection.modelId)
+      : LocalModelRuntimeSettings.selectedProfile()
+    return LocalModelInferenceRuntime.shared.ready(profile: profile) ? profile : nil
+  }
+
+  private func selectedCloudModelContact(for contact: SignalASIContact) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes",
+          selection.mode == .manual,
+          selection.targetId != "local-llm",
+          let selected = store.contact(id: selection.targetId),
+          selected.deliveryMode == .cloudAPI,
+          let model = selected.selectedCloudModel,
+          AgentConnectorAvailability.cloudModelReady(
+            model: model,
+            apiKey: store.apiKey(for: model),
+            provider: selected.cloudProvider,
+            setupStatus: selected.setupStatus
+          ) else {
+      return nil
+    }
+    return selected
   }
 
   func approveLocalNativeAction(taskId: String, remember: Bool = false) {
@@ -952,11 +1011,11 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func receiveLocalModelReply(
+    profile: LocalModelRuntimeProfile,
     requestText: String,
     attachments: [SignalASIDraftAttachment],
     outgoing: ChatMessage
   ) async throws {
-    let profile = LocalModelRuntimeSettings.selectedProfile()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
     var task = AgentTaskRecord(
@@ -1514,9 +1573,11 @@ final class MessageCoordinator: ObservableObject {
     contact: SignalASIContact,
     turns: [ChatMessage],
     outgoing: ChatMessage,
-    modelDetail: String
+    modelDetail: String,
+    displayContactId: String
   ) async throws {
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let destinationId = displayContactId.ifBlank(contact.id)
     var accumulated = ""
     var incoming: ChatMessage?
     var completed = false
@@ -1537,14 +1598,14 @@ final class MessageCoordinator: ObservableObject {
         if let current = incoming {
           incoming = store.updateMessageContent(
             current.id,
-            contactId: contact.id,
+            contactId: destinationId,
             content: content,
             status: .sent
           ) ?? current
         } else {
           incoming = store.appendIncoming(
             content,
-            from: contact.id,
+            from: destinationId,
             remoteMessageId: event.requestId,
             status: .sent,
             traceStage: "cloud_reply",
@@ -1561,14 +1622,14 @@ final class MessageCoordinator: ObservableObject {
         completed = true
         store.appendDeliveryTrace(
           outgoing.id,
-          contactId: contact.id,
+          contactId: destinationId,
           stage: "cloud_reply",
           detail: modelDetail,
           status: .delivered
         )
         let final = store.updateMessageContent(
           current.id,
-          contactId: contact.id,
+          contactId: destinationId,
           content: clean,
           status: .delivered,
           traceStage: "cloud_reply_received",
@@ -1580,7 +1641,7 @@ final class MessageCoordinator: ObservableObject {
         if let current = incoming {
           store.appendDeliveryTrace(
             current.id,
-            contactId: contact.id,
+            contactId: destinationId,
             stage: "cloud_error",
             detail: failure.error.message,
             status: .failed
