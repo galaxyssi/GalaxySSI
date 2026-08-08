@@ -812,6 +812,9 @@ final class MessageCoordinator: ObservableObject {
         consentKey: AgentConfirmationPolicy.consentKey(for: action)
       )
     }
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
     task.phase = .executing
     task.pendingAction = nil
     task.result = ""
@@ -827,10 +830,12 @@ final class MessageCoordinator: ObservableObject {
         chinese: "原始本地 Agent 请求已不可用。"
       )
       task.executionLog.append("Native tool approval failed: outgoing message missing")
+      task.pendingActions = []
+      task.pendingAction = nil
       store.upsertAgentTask(task)
       return
     }
-    _ = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    _ = executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
   }
 
   func denyLocalNativeAction(taskId: String) {
@@ -841,6 +846,7 @@ final class MessageCoordinator: ObservableObject {
     }
     task.phase = .cancelled
     task.pendingAction = nil
+    task.pendingActions = []
     task.result = localReply(
       english: "The requested phone action was not executed.",
       chinese: "未执行请求的手机操作。"
@@ -919,12 +925,12 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if let action = await modelPlannedLocalNativeAction(
+      if let actions = await modelPlannedLocalNativeActions(
         requestText: requestText,
         attachments: attachments,
         outgoing: outgoing
       ) {
-        _ = applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+        _ = applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
         return
       }
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(
@@ -988,14 +994,14 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
 
-    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    return applyLocalNativeActions(actions: [action], outgoing: outgoing, task: &task)
   }
 
-  private func modelPlannedLocalNativeAction(
+  private func modelPlannedLocalNativeActions(
     requestText: String,
     attachments: [SignalASIDraftAttachment],
     outgoing: ChatMessage
-  ) async -> AgentAction? {
+  ) async -> [AgentAction]? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
       return nil
@@ -1048,7 +1054,42 @@ final class MessageCoordinator: ObservableObject {
       fallbackPlan: fallbackPlan
     )
     guard plan.validation.valid else { return nil }
-    return plan.actions.first(where: { $0.kind == .callNativeTool })
+    let actions = plan.actions.filter { $0.kind == .callNativeTool }
+    guard !actions.isEmpty, actions.count == plan.actions.count else {
+      return nil
+    }
+    guard actions.allSatisfy({ action in
+      ["depends_on", "use_outputs_from"].allSatisfy { key in
+        action.parameters[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+      }
+    }) else {
+      return nil
+    }
+    return actions
+  }
+
+  private func applyLocalNativeActions(
+    actions: [AgentAction],
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    let nativeActions = actions.filter { $0.kind == .callNativeTool }
+    guard !nativeActions.isEmpty else { return false }
+    task.pendingActions = nativeActions
+    task.pendingAction = nativeActions.first
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
+  private func advanceLocalNativeActions(
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let action = task.pendingActions.first else {
+      task.pendingAction = nil
+      return false
+    }
+    task.pendingAction = action
+    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
   }
 
   private func applyLocalNativeAction(
@@ -1056,6 +1097,10 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingAction = action
     task.risk = action.risk
     if action.risk == .blocked {
       markLocalNativeActionBlocked(
@@ -1091,7 +1136,6 @@ final class MessageCoordinator: ObservableObject {
     )
     if decision.requiresConfirmation {
       task.phase = .waitingConfirmation
-      task.pendingAction = action
       task.result = ""
       task.verification = "Waiting for user approval"
       let toolId = action.parameters["tool_id"] ?? action.target
@@ -1107,8 +1151,31 @@ final class MessageCoordinator: ObservableObject {
       )
       return true
     }
-    task.pendingAction = nil
-    return executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    return executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
+  }
+
+  private func executeLocalNativeActionAndAdvance(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingActions.removeAll { $0.id == action.id }
+    task.pendingAction = task.pendingActions.first
+    let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    guard handled, task.phase == .completed, !task.pendingActions.isEmpty else {
+      if task.phase != .completed {
+        task.pendingActions = []
+        task.pendingAction = nil
+      }
+      return handled
+    }
+    task.phase = .executing
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
   }
 
   private func executeLocalNativeAction(
@@ -1171,6 +1238,7 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .blocked
     task.blocked = true
     task.pendingAction = nil
+    task.pendingActions = []
     task.result = reason
     task.verification = "Native tool action blocked before execution"
     let toolId = action.parameters["tool_id"] ?? action.target
