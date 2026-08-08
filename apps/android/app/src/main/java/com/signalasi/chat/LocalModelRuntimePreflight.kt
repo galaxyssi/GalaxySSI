@@ -703,49 +703,56 @@ object LocalModelRuntimeSettings {
             .apply()
     }
 
-    fun enabledQnnProfileIds(context: Context): Set<String> {
+    fun enabledProfileIds(context: Context): Set<String> {
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val knownIds = LocalModelCatalog.profiles(context)
-            .filter(LocalModelRuntimeProfile::supportsQnnCooperation)
-            .mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
-        if (preferences.contains(KEY_ENABLED_QNN_PROFILES)) {
-            return preferences.getStringSet(KEY_ENABLED_QNN_PROFILES, emptySet())
+        val profiles = LocalModelCatalog.profiles(context)
+        val knownIds = profiles.mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
+        if (preferences.contains(KEY_ENABLED_PROFILES)) {
+            return preferences.getStringSet(KEY_ENABLED_PROFILES, emptySet())
                 .orEmpty()
                 .filterTo(linkedSetOf()) { it in knownIds }
         }
-        return LocalModelCatalog.profiles(context)
+        if (preferences.contains(KEY_ENABLED_QNN_PROFILES)) {
+            val legacyEnabled = preferences.getStringSet(KEY_ENABLED_QNN_PROFILES, emptySet())
+                .orEmpty()
+                .filterTo(linkedSetOf()) { it in knownIds }
+            if (legacyEnabled.isNotEmpty()) return legacyEnabled
+            return listOf(selectedProfile(context))
+                .filter { LocalModelManager.isInstalled(context, it) }
+                .mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
+        }
+        val installedQnn = profiles
             .filter(LocalModelRuntimeProfile::supportsQnnCooperation)
+            .filter { LocalModelManager.isInstalled(context, it) }
+            .mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
+        if (installedQnn.isNotEmpty()) return installedQnn
+        return listOf(selectedProfile(context))
             .filter { LocalModelManager.isInstalled(context, it) }
             .mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
     }
 
+    fun enabledQnnProfileIds(context: Context): Set<String> =
+        enabledProfileIds(context)
+            .filterTo(linkedSetOf()) { id ->
+                LocalModelCatalog.find(context, id).supportsQnnCooperation
+            }
+
     fun isProfileEnabled(context: Context, profile: LocalModelRuntimeProfile): Boolean =
-        if (profile.supportsQnnCooperation) {
-            profile.id in enabledQnnProfileIds(context)
-        } else {
-            selectedProfile(context).id == profile.id && enabledQnnProfileIds(context).isEmpty()
-        }
+        profile.id in enabledProfileIds(context)
 
     fun setProfileEnabled(context: Context, profile: LocalModelRuntimeProfile, enabled: Boolean) {
-        if (!profile.supportsQnnCooperation) {
-            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_PROFILE, profile.id)
-                .putStringSet(KEY_ENABLED_QNN_PROFILES, emptySet())
-                .apply()
-            return
-        }
-        val updated = if (enabled) {
-            LocalModelPostInstallSelection.enabledQnnProfiles(
-                enabledQnnProfileIds(context),
-                profile.id
-            )
-        } else {
-            enabledQnnProfileIds(context) - profile.id
-        }
+        val updated = LocalModelPostInstallSelection.updatedProfiles(
+            enabledProfileIds(context),
+            profile.id,
+            enabled
+        )
+        val qnnIds = LocalModelCatalog.profiles(context)
+            .filter { it.supportsQnnCooperation && it.id in updated }
+            .mapTo(linkedSetOf(), LocalModelRuntimeProfile::id)
         val editor = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
-            .putStringSet(KEY_ENABLED_QNN_PROFILES, updated)
+            .putStringSet(KEY_ENABLED_PROFILES, updated)
+            .putStringSet(KEY_ENABLED_QNN_PROFILES, qnnIds)
         if (enabled) {
             editor.putString(KEY_PROFILE, profile.id)
         } else if (selectedProfile(context).id == profile.id) {
@@ -762,20 +769,14 @@ object LocalModelRuntimeSettings {
     }
 
     fun removeProfile(context: Context, profile: LocalModelRuntimeProfile) {
-        if (profile.supportsQnnCooperation) {
-            setProfileEnabled(context, profile, enabled = false)
-        } else if (selectedProfile(context).id == profile.id) {
-            setSelectedProfile(context, LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M.id)
-        }
+        setProfileEnabled(context, profile, enabled = false)
     }
 
     fun activeProfiles(context: Context): List<LocalModelRuntimeProfile> {
-        val enabledQnn = enabledQnnProfileIds(context)
-        if (enabledQnn.isNotEmpty()) {
-            return LocalModelCatalog.profiles(context)
-                .filter { it.id in enabledQnn && LocalModelManager.isInstalled(context, it) }
-        }
-        return listOf(selectedProfile(context)).filter { LocalModelManager.isInstalled(context, it) }
+        val selectedId = selectedProfile(context).id
+        return LocalModelCatalog.profiles(context)
+            .filter { it.id in enabledProfileIds(context) && LocalModelManager.isInstalled(context, it) }
+            .sortedByDescending { it.id == selectedId }
     }
 
     fun displayProfile(context: Context): LocalModelRuntimeProfile {
@@ -797,6 +798,7 @@ object LocalModelRuntimeSettings {
 
     private const val PREFERENCES = "signalasi_local_model_runtime_v1"
     private const val KEY_PROFILE = "profile"
+    private const val KEY_ENABLED_PROFILES = "enabled_profiles"
     private const val KEY_ENABLED_QNN_PROFILES = "enabled_qnn_profiles"
     private const val KEY_CONTEXT_TOKENS = "context_tokens"
     private const val DEFAULT_CONTEXT_TOKENS = 4_096
