@@ -243,6 +243,13 @@ struct ConversationView: View {
     return all.filter { $0.conversationId == active.id }
   }
 
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: displayedMessages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
+  }
+
   private var contactStatusText: String {
     let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
     switch contact.deliveryMode {
@@ -288,6 +295,11 @@ struct ConversationView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
           }
           .padding(.horizontal, 12)
@@ -302,6 +314,17 @@ struct ConversationView: View {
             }
           }
           store.markContactRead(contact.id)
+        }
+        .onChange(of: waitingMessageIDs.count) { _ in
+          guard let last = displayedMessages.last else { return }
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(
+              waitingMessageIDs.contains(last.id)
+                ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+                : last.id,
+              anchor: .bottom
+            )
+          }
         }
       }
       Divider()

@@ -568,6 +568,7 @@ struct CloudModelClient {
 final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
+  @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   var onIncomingMessage: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
@@ -656,6 +657,24 @@ final class MessageCoordinator: ObservableObject {
     return requestConnectorStatuses(forceCapabilityManifest: force, now: now)
   }
 
+  private func beginPendingAgentReply(for message: ChatMessage) {
+    pendingAgentReplyTurnIds.insert(AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+    if pendingAgentReplyTurnIds.count > 256,
+       let oldest = pendingAgentReplyTurnIds.first {
+      pendingAgentReplyTurnIds.remove(oldest)
+    }
+  }
+
+  private func finishPendingAgentReply(for message: ChatMessage) {
+    finishPendingAgentReply(turnId: AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+  }
+
+  private func finishPendingAgentReply(turnId: String) {
+    let clean = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return }
+    pendingAgentReplyTurnIds.remove(clean)
+  }
+
   @discardableResult
   private func requestConnectorStatuses(
     forceCapabilityManifest: Bool = false,
@@ -703,6 +722,9 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let outgoing = store.appendOutgoing(displayText, to: contact.id)
+    if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
+      beginPendingAgentReply(for: outgoing)
+    }
     var disclosureTicket: AgentDisclosureTicket?
     do {
       if shouldUseSelectedLocalModel(for: contact) {
@@ -711,6 +733,7 @@ final class MessageCoordinator: ObservableObject {
           attachments: attachments,
           outgoing: outgoing
         )
+        finishPendingAgentReply(for: outgoing)
         return
       }
       switch contact.deliveryMode {
@@ -735,6 +758,7 @@ final class MessageCoordinator: ObservableObject {
           outgoing: outgoing,
           modelDetail: modelDetail
         )
+        finishPendingAgentReply(for: outgoing)
       case .link, .pcConnector:
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
@@ -768,8 +792,10 @@ final class MessageCoordinator: ObservableObject {
           detail: "Local conversation",
           status: .delivered
         )
+        finishPendingAgentReply(for: outgoing)
       }
     } catch {
+      finishPendingAgentReply(for: outgoing)
       if let ticket = disclosureTicket, ticket.allowed {
         AgentDataDisclosureLedger.update(
           store: disclosureStore,
@@ -1890,6 +1916,15 @@ final class MessageCoordinator: ObservableObject {
     let richOutputJson = AgentRichContentCodec.normalize(
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
+    let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) ||
+        ["waiting_input", "waiting_approval"].contains(remoteTaskStatus) {
+      finishPendingAgentReply(
+        turnId: appPayload.string("turn_id")
+          .ifBlank(appPayload.string("source_message_id"))
+          .ifBlank(appPayload.string("message_id"))
+      )
+    }
     let content = appPayload.string("content")
       .ifBlank(appPayload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
@@ -1899,6 +1934,11 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    finishPendingAgentReply(
+      turnId: appPayload.string("turn_id")
+        .ifBlank(appPayload.string("source_message_id"))
+        .ifBlank(appPayload.string("message_id"))
+    )
     let incoming = store.appendIncoming(
       content,
       from: contactId,

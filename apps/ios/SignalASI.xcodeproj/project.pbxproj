@@ -438,6 +438,7 @@
     A10000000000000000000467 /* trust-anchors.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000467 /* trust-anchors.json */; };
     A10000000000000000000468 /* AgentIOSRuntimePackDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000468 /* AgentIOSRuntimePackDownloader.swift */; };
     A10000000000000000000469 /* AgentIOSRuntimePackCatalogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000469 /* AgentIOSRuntimePackCatalogManager.swift */; };
+    A10000000000000000000470 /* AgentReplyWaitingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000470 /* AgentReplyWaitingIndicator.swift */; };
     A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */; };
     A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */; };
     A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000123 /* CustomDeviceHomeModels.swift */; };
@@ -1055,6 +1056,7 @@
     A20000000000000000000467 /* trust-anchors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/runtime/bootstrap/trust-anchors.json; sourceTree = "<group>"; };
     A20000000000000000000468 /* AgentIOSRuntimePackDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimePackDownloader.swift; sourceTree = "<group>"; };
     A20000000000000000000469 /* AgentIOSRuntimePackCatalogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimePackCatalogManager.swift; sourceTree = "<group>"; };
+    A20000000000000000000470 /* AgentReplyWaitingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyWaitingIndicator.swift; sourceTree = "<group>"; };
     A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFailureResponsePolicyModels.swift; sourceTree = "<group>"; };
     A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionsBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000123 /* CustomDeviceHomeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDeviceHomeModels.swift; sourceTree = "<group>"; };
@@ -1530,6 +1532,7 @@
         A20000000000000000000467 /* trust-anchors.json */,
         A20000000000000000000468 /* AgentIOSRuntimePackDownloader.swift */,
         A20000000000000000000469 /* AgentIOSRuntimePackCatalogManager.swift */,
+        A20000000000000000000470 /* AgentReplyWaitingIndicator.swift */,
         A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */,
         A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */,
         A20000000000000000000123 /* CustomDeviceHomeModels.swift */,
@@ -2313,6 +2316,7 @@
         A10000000000000000000466 /* AgentIOSRuntimePackTrust.swift in Sources */,
         A10000000000000000000468 /* AgentIOSRuntimePackDownloader.swift in Sources */,
         A10000000000000000000469 /* AgentIOSRuntimePackCatalogManager.swift in Sources */,
+        A10000000000000000000470 /* AgentReplyWaitingIndicator.swift in Sources */,
         A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */,
         A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */,
         A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */,
