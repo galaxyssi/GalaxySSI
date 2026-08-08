@@ -2047,6 +2047,7 @@
 "signalasi.local_model.download_action" = "下载";
 "signalasi.local_model.download_cancel" = "取消";
 "signalasi.local_model.download_ready" = "已就绪";
+"signalasi.local_model.download_active" = "下载中";
 "signalasi.local_model.download_delete" = "删除";
 "signalasi.local_model.download_started" = "已开始下载";
 "signalasi.local_model.download_cancelled" = "下载已取消";
@@ -2075,6 +2076,8 @@
 "signalasi.local_model.context_selected" = "已选择 %@";
 "signalasi.local_model.asr_model" = "Whisper 模型";
 "signalasi.local_model.size_and_quantization" = "%@ · %@ · %d tokens";
+"signalasi.local_model.profile_details" = "%@ · %@ · %@B";
+"signalasi.local_model.default_no_think" = "默认无思考模式";
 "signalasi.local_model.context_window" = "上下文窗口";
 "signalasi.local_model.context_window_subtitle" = "上下文越大，KV cache 占用越高";
 "signalasi.local_model.context_tokens" = "%d tokens";

@@ -19,6 +19,7 @@ struct SignalASILocalModelLabView: View {
   @State private var notificationStatus = ""
   @State private var statusMessage = ""
   @State private var catalogRevision = 0
+  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
 
   private let whisperModelManager = VoiceWhisperModelManager()
   private let localModelStorage = LocalModelRuntimeStorage()
@@ -147,19 +148,40 @@ struct SignalASILocalModelLabView: View {
         SignalASILocalModelSearchView()
       }
       ForEach(localModelProfiles) { profile in
-        let installed = localModelStorage.inspect(profile).installed
+        let artifact = LocalModelRuntimeCatalog.artifact(for: profile)
+        let downloadState = artifact.map { downloads.state(for: $0) } ?? .notInstalled
+        let installed = artifact != nil
+          ? downloadState == .ready
+          : localModelStorage.inspect(profile).installed
         SignalASILocalModelLabActionRow(
           title: profile.displayName,
           subtitle: profileSubtitle(profile),
           systemImage: "cpu",
           tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
-          badge: profile.id == selectedProfile.id
-            ? t("signalasi.local_model.selected", "Current")
-            : installed
-              ? t("signalasi.local_model.download_ready", "Ready")
-              : t("signalasi.local_model.use_action", "Use")
+          badge: downloadState == .downloading
+            ? t("signalasi.local_model.download_active", "Downloading")
+            : !installed && artifact != nil
+              ? t("signalasi.local_model.download_action", "Download")
+              : profile.id == selectedProfile.id
+                ? t("signalasi.local_model.selected", "Current")
+                : installed
+                  ? t("signalasi.local_model.download_ready", "Ready")
+                  : t("signalasi.local_model.use_action", "Use")
         ) {
-          selectProfile(profile)
+          guard let artifact else {
+            selectProfile(profile)
+            return
+          }
+          switch downloadState {
+          case .notInstalled, .failed:
+            downloads.start(artifact)
+            statusMessage = t("signalasi.local_model.download_started", "Download started")
+          case .downloading:
+            downloads.cancel(artifact)
+            statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
+          case .ready:
+            selectProfile(profile)
+          }
         }
       }
       SignalASILocalModelLabActionRow(
@@ -443,12 +465,20 @@ struct SignalASILocalModelLabView: View {
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
-    String(
-      format: t("signalasi.local_model.size_and_quantization", "%@ - %@ - %d tokens"),
+    var detail = String(
+      format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
       profile.quantizationLabel,
-      profile.defaultContextTokens
+      parameterLabel(profile.parameterCountBillions)
     )
+    if profile.defaultNoThink {
+      detail += "\n" + t("signalasi.local_model.default_no_think", "Default no-think mode")
+    }
+    return detail
+  }
+
+  private func parameterLabel(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
   }
 
   private func contextLabel(_ tokens: Int) -> String {
@@ -831,12 +861,20 @@ struct SignalASILocalModelSearchView: View {
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
-    String(
-      format: t("signalasi.local_model.size_and_quantization", "%@ - %@ - %d tokens"),
+    var detail = String(
+      format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
       profile.quantizationLabel,
-      profile.defaultContextTokens
+      parameterLabel(profile.parameterCountBillions)
     )
+    if profile.defaultNoThink {
+      detail += "\n" + t("signalasi.local_model.default_no_think", "Default no-think mode")
+    }
+    return detail
+  }
+
+  private func parameterLabel(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
   }
 
   private func formatBytes(_ bytes: Int64) -> String {

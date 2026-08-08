@@ -36,7 +36,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   }
 
   func state(for artifact: LocalModelHubArtifact) -> LocalModelArtifactInstallState {
-    let profile = LocalModelRuntimeCatalog.hubProfile(for: artifact)
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
     if storage.inspect(profile).installed {
       return .ready
     }
@@ -104,7 +104,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   func delete(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
     tasks.removeValue(forKey: artifact.id)
-    let profile = LocalModelRuntimeCatalog.hubProfile(for: artifact)
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
     try? storage.delete(profile)
     LocalModelRuntimeCatalog.removeHubProfile(profile)
     states[artifact.id] = .notInstalled
@@ -113,7 +113,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   }
 
   func destinationURL(for artifact: LocalModelHubArtifact) -> URL {
-    storage.finalFileURL(for: LocalModelRuntimeCatalog.hubProfile(for: artifact))
+    storage.finalFileURL(for: LocalModelRuntimeCatalog.profile(for: artifact))
   }
 
   private func loadPersistedStates() {

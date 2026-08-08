@@ -282,53 +282,184 @@ struct LocalModelRuntimeEstimate: Codable, Equatable {
 }
 
 enum LocalModelRuntimeProfiles {
-  static let GEMMA_3_1B_Q4 = LocalModelRuntimeProfile(
-    id: "gemma-3-1b-q4",
-    displayName: "Gemma 3 1B Q4",
-    expectedModelFileBytes: 820 * MIB,
+  static let GEMMA_3_1B_Q4 = profile(
+    id: "gemma-3-1b-it-q4-k-m",
+    displayName: "Gemma 3 1B Instruct",
+    repositoryId: "ggml-org/gemma-3-1b-it-GGUF",
+    fileName: "gemma-3-1b-it-Q4_K_M.gguf",
+    expectedModelFileBytes: 806_058_240,
+    sha256: "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
+    parameterCountBillions: 1,
     layerCount: 26,
-    keyValueHeadCount: 1,
-    headDimension: 256,
-    defaultContextTokens: 4_096,
-    maximumContextTokens: 32_768,
-    quantizationLabel: "Q4"
+    keyValueHeadCount: 4,
+    headDimension: 128,
+    maximumContextTokens: 32_768
   )
 
-  static let GEMMA_3_4B_Q4 = LocalModelRuntimeProfile(
-    id: "gemma-3-4b-q4",
-    displayName: "Gemma 3 4B Q4",
-    expectedModelFileBytes: 2_650 * MIB,
+  static let GEMMA_3_4B_Q4 = profile(
+    id: "gemma-3-4b-it-q4-k-m",
+    displayName: "Gemma 3 4B Instruct",
+    repositoryId: "ggml-org/gemma-3-4b-it-GGUF",
+    fileName: "gemma-3-4b-it-Q4_K_M.gguf",
+    expectedModelFileBytes: 2_489_757_856,
+    sha256: "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
+    parameterCountBillions: 4,
     layerCount: 34,
     keyValueHeadCount: 4,
     headDimension: 256,
-    defaultContextTokens: 4_096,
-    maximumContextTokens: 32_768,
-    quantizationLabel: "Q4"
+    maximumContextTokens: 128_000,
+    visionCapable: true
   )
 
-  static let QWEN_2_5_7B_Q4 = LocalModelRuntimeProfile(
-    id: "qwen-2.5-7b-q4",
-    displayName: "Qwen 2.5 7B Q4",
-    expectedModelFileBytes: 4_450 * MIB,
-    layerCount: 28,
-    keyValueHeadCount: 4,
+  static let QWEN_3_4B_Q4_K_M = profile(
+    id: "qwen3-4b-q4-k-m",
+    displayName: "Qwen3 4B",
+    repositoryId: "Qwen/Qwen3-4B-GGUF",
+    fileName: "Qwen3-4B-Q4_K_M.gguf",
+    expectedModelFileBytes: 2_497_280_256,
+    sha256: "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    parameterCountBillions: 4,
+    layerCount: 36,
+    keyValueHeadCount: 8,
     headDimension: 128,
-    defaultContextTokens: 4_096,
     maximumContextTokens: 32_768,
-    quantizationLabel: "Q4"
+    defaultNoThink: true
   )
+
+  static let QWEN_3_8B_Q4_K_M = profile(
+    id: "qwen3-8b-q4-k-m",
+    displayName: "Qwen3 8B",
+    repositoryId: "Qwen/Qwen3-8B-GGUF",
+    fileName: "Qwen3-8B-Q4_K_M.gguf",
+    expectedModelFileBytes: 5_027_783_488,
+    sha256: "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    parameterCountBillions: 8.2,
+    layerCount: 36,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    maximumContextTokens: 32_768,
+    defaultNoThink: true
+  )
+
+  static let QWEN_3_5_9B_Q4_K_M = profile(
+    id: "qwen3-5-9b-q4-k-m",
+    displayName: "Qwen3.5 9B",
+    repositoryId: "bartowski/Qwen_Qwen3.5-9B-GGUF",
+    fileName: "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+    expectedModelFileBytes: 6_169_341_984,
+    sha256: "d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43",
+    parameterCountBillions: 9,
+    layerCount: 32,
+    keyValueHeadCount: 4,
+    headDimension: 256,
+    maximumContextTokens: 262_144,
+    visionCapable: true
+  )
+
+  static let LLAMA_3_1_8B_Q4_K_M = profile(
+    id: "llama-3-1-8b-instruct-q4-k-m",
+    displayName: "Llama 3.1 8B Instruct",
+    repositoryId: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+    fileName: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    expectedModelFileBytes: 4_920_739_232,
+    sha256: "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+    parameterCountBillions: 8,
+    layerCount: 32,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    maximumContextTokens: 128_000
+  )
+
+  static let DEEPSEEK_R1_DISTILL_LLAMA_8B_Q4_K_M = profile(
+    id: "deepseek-r1-distill-llama-8b-q4-k-m",
+    displayName: "DeepSeek R1 Distill Llama 8B",
+    repositoryId: "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
+    fileName: "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
+    expectedModelFileBytes: 4_920_737_216,
+    sha256: "0addb1339a82385bcd973186cd80d18dcc71885d45eabd899781a118d03827d9",
+    parameterCountBillions: 8,
+    layerCount: 32,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    maximumContextTokens: 128_000
+  )
+
+  static let GEMMA_3_12B_Q4_K_M = profile(
+    id: "gemma-3-12b-it-q4-k-m",
+    displayName: "Gemma 3 12B Instruct",
+    repositoryId: "ggml-org/gemma-3-12b-it-GGUF",
+    fileName: "gemma-3-12b-it-Q4_K_M.gguf",
+    expectedModelFileBytes: 7_300_574_976,
+    sha256: "7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5",
+    parameterCountBillions: 12,
+    layerCount: 48,
+    keyValueHeadCount: 8,
+    headDimension: 256,
+    maximumContextTokens: 128_000,
+    visionCapable: true
+  )
+
+  @available(*, deprecated, message: "Use QWEN_3_8B_Q4_K_M")
+  static let QWEN_2_5_7B_Q4 = QWEN_3_8B_Q4_K_M
 
   static let all: [LocalModelRuntimeProfile] = [
     GEMMA_3_1B_Q4,
     GEMMA_3_4B_Q4,
-    QWEN_2_5_7B_Q4,
+    QWEN_3_4B_Q4_K_M,
+    QWEN_3_8B_Q4_K_M,
+    QWEN_3_5_9B_Q4_K_M,
+    LLAMA_3_1_8B_Q4_K_M,
+    DEEPSEEK_R1_DISTILL_LLAMA_8B_Q4_K_M,
+    GEMMA_3_12B_Q4_K_M,
   ]
 
   static func find(_ id: String) -> LocalModelRuntimeProfile {
-    all.first { $0.id == id } ?? GEMMA_3_4B_Q4
+    switch id {
+    case "gemma-3-1b-q4":
+      return GEMMA_3_1B_Q4
+    case "gemma-3-4b-q4":
+      return GEMMA_3_4B_Q4
+    case "qwen-2.5-7b-q4":
+      return QWEN_2_5_7B_Q4
+    default:
+      return all.first { $0.id == id } ?? GEMMA_3_4B_Q4
+    }
   }
 
-  private static let MIB: Int64 = 1_024 * 1_024
+  private static func profile(
+    id: String,
+    displayName: String,
+    repositoryId: String,
+    fileName: String,
+    expectedModelFileBytes: Int64,
+    sha256: String,
+    parameterCountBillions: Double,
+    layerCount: Int,
+    keyValueHeadCount: Int,
+    headDimension: Int,
+    maximumContextTokens: Int,
+    defaultNoThink: Bool = false,
+    visionCapable: Bool = false
+  ) -> LocalModelRuntimeProfile {
+    LocalModelRuntimeProfile(
+      id: id,
+      displayName: displayName,
+      expectedModelFileBytes: expectedModelFileBytes,
+      layerCount: layerCount,
+      keyValueHeadCount: keyValueHeadCount,
+      headDimension: headDimension,
+      defaultContextTokens: 4_096,
+      maximumContextTokens: maximumContextTokens,
+      quantizationLabel: "Q4_K_M",
+      repositoryId: repositoryId,
+      fileName: fileName,
+      sha256: sha256,
+      parameterCountBillions: parameterCountBillions,
+      defaultNoThink: defaultNoThink,
+      visionCapable: visionCapable
+    )
+  }
+
 }
 
 enum LocalModelRuntimePreflightError: Error, Equatable, LocalizedError {

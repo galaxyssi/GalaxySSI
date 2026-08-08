@@ -41,16 +41,30 @@ enum LocalModelRuntimeCatalog {
   }
 
   static func find(_ id: String, defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
-    profiles(defaults: defaults).first { $0.id == id } ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4
+    profiles(defaults: defaults).first { $0.id == id } ?? LocalModelRuntimeProfiles.find(id)
   }
 
   static func addHubArtifact(
     _ artifact: LocalModelHubArtifact,
     defaults: UserDefaults = .standard
   ) -> LocalModelRuntimeProfile {
-    let profile = hubProfile(for: artifact)
-    LocalModelProfileStore(defaults: defaults).upsert(profile)
+    let profile = profile(for: artifact, defaults: defaults)
+    if profile.sourceTrust == .hubVerified {
+      LocalModelProfileStore(defaults: defaults).upsert(profile)
+    }
     return profile
+  }
+
+  static func profile(
+    for artifact: LocalModelHubArtifact,
+    defaults: UserDefaults = .standard
+  ) -> LocalModelRuntimeProfile {
+    profiles(defaults: defaults).first {
+      $0.repositoryId == artifact.repositoryId &&
+        $0.fileName == artifact.fileName &&
+        $0.sha256.caseInsensitiveCompare(artifact.sha256) == .orderedSame &&
+        $0.sourceHub == artifact.source
+    } ?? hubProfile(for: artifact)
   }
 
   static func hubProfile(for artifact: LocalModelHubArtifact) -> LocalModelRuntimeProfile {
@@ -80,6 +94,37 @@ enum LocalModelRuntimeCatalog {
         !artifact.repositoryId.localizedCaseInsensitiveContains("qwen3.5"),
       sourceTrust: .hubVerified,
       sourceHub: artifact.source
+    )
+  }
+
+  static func artifact(for profile: LocalModelRuntimeProfile) -> LocalModelHubArtifact? {
+    guard profile.downloadable,
+          let encodedRepository = profile.repositoryId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+          let encodedFileName = profile.fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+      return nil
+    }
+    let downloadURL: URL?
+    switch profile.sourceHub {
+    case .huggingFace:
+      downloadURL = URL(string: "https://huggingface.co/\(encodedRepository)/resolve/main/\(encodedFileName)")
+    case .modelScope:
+      var components = URLComponents(string: "https://modelscope.cn/api/v1/models/\(encodedRepository)/repo")
+      components?.queryItems = [
+        URLQueryItem(name: "Revision", value: "master"),
+        URLQueryItem(name: "FilePath", value: profile.fileName)
+      ]
+      downloadURL = components?.url
+    }
+    guard let downloadURL else { return nil }
+    return LocalModelHubArtifact(
+      repositoryId: profile.repositoryId,
+      fileName: profile.fileName,
+      sizeBytes: profile.expectedModelFileBytes,
+      sha256: profile.sha256,
+      quantization: profile.quantizationLabel,
+      parameterCountBillions: profile.parameterCountBillions,
+      downloadURL: downloadURL,
+      source: profile.sourceHub
     )
   }
 
