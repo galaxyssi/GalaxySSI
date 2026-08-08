@@ -3,25 +3,66 @@ package com.signalasi.chat
 import android.content.Context
 import com.signalasi.llama.SignalASILlamaRuntime
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
 
 data class LocalModelInferenceResult(
     val text: String,
     val profileId: String,
     val backend: String,
     val smeAvailable: Boolean,
-    val elapsedMillis: Long
+    val elapsedMillis: Long,
+    val preparationMillis: Long = 0L,
+    val totalElapsedMillis: Long = elapsedMillis,
+    val timeToFirstTokenMillis: Double = 0.0,
+    val promptTokens: Long = 0L,
+    val generatedTokens: Long = 0L,
+    val prefillTokensPerSecond: Double = 0.0,
+    val decodeTokensPerSecond: Double = 0.0,
+    val stopReason: String = ""
+)
+
+enum class LocalModelThinkingMode {
+    AUTOMATIC,
+    THINK,
+    NO_THINK
+}
+
+enum class LocalModelWorkClass {
+    INTERACTIVE,
+    BACKGROUND
+}
+
+class LocalModelBackgroundDeferredException : IllegalStateException(
+    "The private local model is reserved for an interactive request"
 )
 
 object LocalModelInferenceRuntime {
     private val lock = Any()
+    private val processStartedAtElapsed = monotonicMillis()
+    private val foregroundWaiters = AtomicInteger(0)
     @Volatile private var loadedProfile = ""
     @Volatile private var loadedContextTokens = 0
+    @Volatile private var foregroundLeaseUntilElapsed =
+        processStartedAtElapsed + BACKGROUND_STARTUP_GRACE_MILLIS
 
     fun available(): Boolean = SignalASILlamaRuntime.isAvailable()
 
-    fun ready(context: Context): Boolean {
-        val profile = LocalModelRuntimeSettings.selectedProfile(context)
-        return available() && LocalModelManager.isInstalled(context, profile)
+    internal fun engineFor(profile: LocalModelRuntimeProfile): LocalModelInferenceEngine =
+        if (profile.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK) {
+            LocalModelInferenceEngine.GENIEX_NPU
+        } else {
+            LocalModelInferenceEngine.LEGACY_LLAMA
+        }
+
+    fun ready(context: Context): Boolean = LocalModelCooperativeRuntime.ready(context)
+
+    fun ready(context: Context, profile: LocalModelRuntimeProfile): Boolean {
+        if (!LocalModelManager.isInstalled(context, profile)) return false
+        if (engineFor(profile) == LocalModelInferenceEngine.LEGACY_LLAMA && !available()) return false
+        return runCatching {
+            profile.preferredAccelerator == LocalModelAcceleratorKind.CPU ||
+                LocalModelAcceleratorDetector.detect(context)[profile.preferredAccelerator].ready
+        }.getOrDefault(false)
     }
 
     fun generate(
@@ -30,23 +71,99 @@ object LocalModelInferenceRuntime {
         systemPrompt: String,
         userPrompt: String,
         maximumTokens: Int = 768,
-        temperature: Float = 0.3f
-    ): LocalModelInferenceResult = synchronized(lock) {
-        val appContext = context.applicationContext
+        temperature: Float = 0.3f,
+        thinkingMode: LocalModelThinkingMode = LocalModelThinkingMode.AUTOMATIC,
+        workClass: LocalModelWorkClass = LocalModelWorkClass.INTERACTIVE
+    ): LocalModelInferenceResult {
+        if (workClass == LocalModelWorkClass.BACKGROUND && !backgroundSafe(profile)) {
+            throw LocalModelBackgroundDeferredException()
+        }
+        if (workClass == LocalModelWorkClass.INTERACTIVE) foregroundWaiters.incrementAndGet()
+        return try {
+            synchronized(lock) {
+                if (workClass == LocalModelWorkClass.BACKGROUND && !canRunBackground()) {
+                    throw LocalModelBackgroundDeferredException()
+                }
+                generateLocked(
+                    context = context.applicationContext,
+                    profile = profile,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    maximumTokens = maximumTokens,
+                    temperature = temperature,
+                    thinkingMode = thinkingMode
+                )
+            }
+        } finally {
+            if (workClass == LocalModelWorkClass.INTERACTIVE) {
+                foregroundLeaseUntilElapsed = monotonicMillis() + FOREGROUND_IDLE_GRACE_MILLIS
+                foregroundWaiters.decrementAndGet()
+            }
+        }
+    }
+
+    private fun generateLocked(
+        context: Context,
+        profile: LocalModelRuntimeProfile,
+        systemPrompt: String,
+        userPrompt: String,
+        maximumTokens: Int,
+        temperature: Float,
+        thinkingMode: LocalModelThinkingMode
+    ): LocalModelInferenceResult {
+        val engine = engineFor(profile)
         runBlocking { LocalWhisperAsr.release() }
-        val modelFile = LocalModelManager.verifiedFile(appContext, profile)
-        val requestedContext = LocalModelRuntimeSettings.contextTokens(appContext)
-        val estimate = LocalModelRuntimePreflight.beforeLaunch(
-            context = appContext,
-            profile = profile,
-            modelFile = modelFile,
-            contextTokens = requestedContext
-        )
+        if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
+            SignalASILlamaRuntime.unload()
+            loadedProfile = ""
+            loadedContextTokens = 0
+            if (GenieXLocalModelRuntime.loadedProfileId().let { it.isNotBlank() && it != profile.id }) {
+                GenieXLocalModelRuntime.release()
+            }
+        } else if (GenieXLocalModelRuntime.loadedProfileId().isNotBlank()) {
+            GenieXLocalModelRuntime.release()
+        }
+        val modelFile = if (profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
+            LocalModelManager.verifiedFile(context, profile)
+        } else {
+            null
+        }
+        val requestedContext = LocalModelRuntimeSettings.contextTokens(context)
+        val estimate = if (modelFile != null) {
+            LocalModelRuntimePreflight.beforeLaunch(
+                context = context,
+                profile = profile,
+                modelFile = modelFile,
+                contextTokens = requestedContext
+            )
+        } else {
+            LocalModelRuntimePreflight.beforeLaunchManagedArtifact(
+                context = context,
+                profile = profile,
+                contextTokens = requestedContext
+            )
+        }
         val effectiveContext = estimate.recommendedContextTokens
+        if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
+            return GenieXLocalModelRuntime.generate(
+                context = context,
+                profile = profile,
+                modelFile = modelFile,
+                contextTokens = effectiveContext,
+                threads = estimate.recommendedThreads,
+                systemPrompt = systemPrompt,
+                userPrompt = prepareUserPrompt(profile, userPrompt, thinkingMode),
+                maximumTokens = maximumTokens,
+                temperature = temperature,
+                thinkingEnabled = thinkingEnabled(profile, thinkingMode)
+            )
+        }
+        GenieXLocalModelRuntime.release()
+        checkNotNull(modelFile) { "A GGUF file is required by the legacy local-model runtime" }
         if (loadedProfile != profile.id || loadedContextTokens != effectiveContext) {
             SignalASILlamaRuntime.unload()
             SignalASILlamaRuntime.loadModel(
-                context = appContext,
+                context = context,
                 modelPath = modelFile.absolutePath,
                 contextTokens = effectiveContext,
                 threads = estimate.recommendedThreads
@@ -54,7 +171,7 @@ object LocalModelInferenceRuntime {
             loadedProfile = profile.id
             loadedContextTokens = effectiveContext
         }
-        val effectivePrompt = prepareUserPrompt(profile, userPrompt)
+        val effectivePrompt = prepareUserPrompt(profile, userPrompt, thinkingMode)
         val startedAt = System.currentTimeMillis()
         val reply = SignalASILlamaRuntime.generate(
             systemPrompt = systemPrompt,
@@ -63,7 +180,7 @@ object LocalModelInferenceRuntime {
             temperature = temperature
         ).trim()
         check(reply.isNotBlank()) { "The local model returned an empty response" }
-        LocalModelInferenceResult(
+        return LocalModelInferenceResult(
             text = reply,
             profileId = profile.id,
             backend = SignalASILlamaRuntime.backendInfo(),
@@ -72,17 +189,26 @@ object LocalModelInferenceRuntime {
         )
     }
 
+    fun canRunBackground(): Boolean =
+        foregroundWaiters.get() == 0 && monotonicMillis() >= foregroundLeaseUntilElapsed
+
+    internal fun backgroundSafe(profile: LocalModelRuntimeProfile): Boolean =
+        profile.artifactFormat != LocalModelArtifactFormat.QAIRT
+
     fun releaseForAsr() = synchronized(lock) {
         SignalASILlamaRuntime.unload()
+        GenieXLocalModelRuntime.release()
         loadedProfile = ""
         loadedContextTokens = 0
     }
 
     fun unloadIfSelected(profileId: String) = synchronized(lock) {
-        if (loadedProfile == profileId) releaseForAsr()
+        if (loadedProfile == profileId || GenieXLocalModelRuntime.loadedProfileId() == profileId) {
+            releaseForAsr()
+        }
     }
 
-    fun loadedProfileId(): String = loadedProfile
+    fun loadedProfileId(): String = loadedProfile.ifBlank(GenieXLocalModelRuntime::loadedProfileId)
 
     fun backendInfo(context: Context): String = runCatching {
         SignalASILlamaRuntime.initialize(context.applicationContext)
@@ -91,10 +217,46 @@ object LocalModelInferenceRuntime {
 
     fun osExposesSme(): Boolean = runCatching(SignalASILlamaRuntime::osExposesSme).getOrDefault(false)
 
-    internal fun prepareUserPrompt(profile: LocalModelRuntimeProfile, userPrompt: String): String {
-        if (!profile.defaultNoThink || NO_THINK_COMMAND.containsMatchIn(userPrompt)) return userPrompt
-        return "$userPrompt\n/no_think"
+    internal fun prepareUserPrompt(
+        profile: LocalModelRuntimeProfile,
+        userPrompt: String,
+        thinkingMode: LocalModelThinkingMode = LocalModelThinkingMode.AUTOMATIC
+    ): String {
+        if (!profile.isQwenFamily) return userPrompt
+        if (thinkingMode == LocalModelThinkingMode.AUTOMATIC) {
+            if (THINKING_COMMAND.containsMatchIn(userPrompt) || !profile.defaultNoThink) return userPrompt
+            return "$userPrompt\n/no_think"
+        }
+        val withoutCommand = THINKING_COMMAND.replace(userPrompt, " ")
+            .replace(Regex("[ \\t]+(?=\\r?$)", RegexOption.MULTILINE), "")
+            .trim()
+        val command = if (thinkingMode == LocalModelThinkingMode.THINK) "/think" else "/no_think"
+        return if (withoutCommand.isBlank()) command else "$withoutCommand\n$command"
     }
 
-    private val NO_THINK_COMMAND = Regex("(?m)(^|\\s)/no_think(?=\\s|$)")
+    internal fun thinkingEnabled(
+        profile: LocalModelRuntimeProfile,
+        thinkingMode: LocalModelThinkingMode
+    ): Boolean = when (thinkingMode) {
+        LocalModelThinkingMode.AUTOMATIC -> !profile.defaultNoThink
+        LocalModelThinkingMode.THINK -> true
+        LocalModelThinkingMode.NO_THINK -> false
+    }
+
+    private val LocalModelRuntimeProfile.isQwenFamily: Boolean
+        get() = id.startsWith("qwen", ignoreCase = true) ||
+            repositoryId.substringAfterLast('/').startsWith("qwen", ignoreCase = true)
+
+    private val THINKING_COMMAND = Regex("(?m)(^|\\s)/(?:no_)?think(?=\\s|$)")
+
+    private fun monotonicMillis(): Long = System.nanoTime() / NANOSECONDS_PER_MILLISECOND
+
+    private const val BACKGROUND_STARTUP_GRACE_MILLIS = 30_000L
+    private const val FOREGROUND_IDLE_GRACE_MILLIS = 30_000L
+    private const val NANOSECONDS_PER_MILLISECOND = 1_000_000L
+}
+
+internal enum class LocalModelInferenceEngine {
+    LEGACY_LLAMA,
+    GENIEX_NPU
 }
