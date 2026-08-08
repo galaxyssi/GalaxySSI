@@ -1,7 +1,9 @@
 import AVFoundation
 import CoreImage
+import PhotosUI
 import SwiftUI
 import UIKit
+import Vision
 
 enum SignalASIQRCodeImageRenderer {
   static func image(from text: String) -> UIImage? {
@@ -47,6 +49,14 @@ struct QRCodeScannerView: UIViewControllerRepresentable {
         accessUnavailable: t(
           "signalasi.scanner.access_unavailable",
           "Camera access is unavailable on this device."
+        ),
+        photoAction: t(
+          "signalasi.scanner.photo_action",
+          "Photo"
+        ),
+        photoScanFailed: t(
+          "signalasi.scanner.photo_scan_failed",
+          "No SignalASI QR code was found in that photo."
         )
       )
     )
@@ -64,9 +74,11 @@ fileprivate struct QRScannerMessages {
   var cameraUnavailable: String
   var outputUnavailable: String
   var accessUnavailable: String
+  var photoAction: String
+  var photoScanFailed: String
 }
 
-final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate, PHPickerViewControllerDelegate {
   private let onCode: (String) -> Void
   private let onError: (String) -> Void
   private let messages: QRScannerMessages
@@ -74,6 +86,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private let sessionQueue = DispatchQueue(label: "signalasi.qr-scanner.session")
   private var configured = false
   private var didFinish = false
+  private var photoButton: UIButton?
 
   fileprivate init(
     onCode: @escaping (String) -> Void,
@@ -93,6 +106,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
+    installPhotoButton()
     prepareCamera()
   }
 
@@ -157,6 +171,82 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     startSession()
   }
 
+  private func installPhotoButton() {
+    let button = UIButton(type: .system)
+    button.setTitle(messages.photoAction, for: .normal)
+    button.setTitleColor(.white, for: .normal)
+    button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+    button.backgroundColor = UIColor.black.withAlphaComponent(0.52)
+    button.layer.cornerRadius = 8
+    button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.addTarget(self, action: #selector(openPhotoPicker), for: .touchUpInside)
+    view.addSubview(button)
+    NSLayoutConstraint.activate([
+      button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+      button.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      button.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
+    ])
+    photoButton = button
+  }
+
+  @objc private func openPhotoPicker() {
+    guard !didFinish else { return }
+    let configuration = PHPickerConfiguration(photoLibrary: .shared())
+    configuration.filter = .images
+    configuration.selectionLimit = 1
+    present(PHPickerViewController(configuration: configuration), animated: true)
+  }
+
+  func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+    picker.dismiss(animated: true)
+    guard let provider = results.first?.itemProvider else { return }
+    guard provider.canLoadObject(ofClass: UIImage.self) else {
+      reportScannerError(messages.photoScanFailed)
+      return
+    }
+    provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+      guard let self else { return }
+      DispatchQueue.main.async {
+        guard let image = object as? UIImage else {
+          self.reportScannerError(self.messages.photoScanFailed)
+          return
+        }
+        self.detectQRCode(in: image)
+      }
+    }
+  }
+
+  private func detectQRCode(in image: UIImage) {
+    guard let cgImage = image.cgImage else {
+      reportScannerError(messages.photoScanFailed)
+      return
+    }
+    let request = VNDetectBarcodesRequest { [weak self] request, _ in
+      let value = (request.results as? [VNBarcodeObservation])?
+        .first(where: { $0.symbology == .QR })?.payloadStringValue
+      DispatchQueue.main.async {
+        guard let self else { return }
+        if let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          self.finish(with: value)
+        } else {
+          self.reportScannerError(self.messages.photoScanFailed)
+        }
+      }
+    }
+    request.symbologies = [.QR]
+    let handler = VNImageRequestHandler(
+      cgImage: cgImage,
+      orientation: image.cgImagePropertyOrientation,
+      options: [:]
+    )
+    do {
+      try handler.perform([request])
+    } catch {
+      reportScannerError(messages.photoScanFailed)
+    }
+  }
+
   private func startSession() {
     sessionQueue.async { [weak self] in
       guard let self else { return }
@@ -210,8 +300,29 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
           let value = readable.stringValue else {
       return
     }
-    didFinish = true
     stopSession()
+    finish(with: value)
+  }
+
+  private func finish(with value: String) {
+    guard !didFinish else { return }
+    didFinish = true
     onCode(value)
+  }
+}
+
+private extension UIImage {
+  var cgImagePropertyOrientation: CGImagePropertyOrientation {
+    switch imageOrientation {
+    case .up: return .up
+    case .down: return .down
+    case .left: return .left
+    case .right: return .right
+    case .upMirrored: return .upMirrored
+    case .downMirrored: return .downMirrored
+    case .leftMirrored: return .leftMirrored
+    case .rightMirrored: return .rightMirrored
+    @unknown default: return .up
+    }
   }
 }

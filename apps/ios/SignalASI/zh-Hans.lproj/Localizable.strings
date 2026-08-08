@@ -1158,6 +1158,8 @@
 "signalasi.scanner.camera_unavailable" = "此设备上的相机不可用。";
 "signalasi.scanner.output_unavailable" = "二维码扫描输出不可用。";
 "signalasi.scanner.access_unavailable" = "此设备上的相机访问不可用。";
+"signalasi.scanner.photo_action" = "从相册";
+"signalasi.scanner.photo_scan_failed" = "照片中未找到 SignalASI 二维码。";
 "signalasi.message.actions" = "消息操作";
 "signalasi.message.delete" = "删除消息";
 "signalasi.message.details" = "详情";
