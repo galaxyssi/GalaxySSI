@@ -3,6 +3,7 @@ import CoreLocation
 import Foundation
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct SignalASILocalModelLabView: View {
@@ -18,17 +19,20 @@ struct SignalASILocalModelLabView: View {
   @State private var locationStatus = ""
   @State private var notificationStatus = ""
   @State private var statusMessage = ""
+  @State private var modelImporterPresented = false
+  @State private var modelImportProfile: LocalModelRuntimeProfile?
 
   private let whisperModelManager = VoiceWhisperModelManager()
 
   private var estimate: LocalModelRuntimeEstimate {
+    let storedFile = LocalModelRuntimeStorage.file(for: selectedProfile)
     LocalModelRuntimeEstimator.estimate(
       LocalModelRuntimeRequest(
         profile: selectedProfile,
         requestedContextTokens: contextTokens,
-        modelFileBytes: selectedProfile.expectedModelFileBytes,
-        modelFilePresent: true,
-        requireModelFile: false
+        modelFileBytes: storedFile?.bytes ?? selectedProfile.expectedModelFileBytes,
+        modelFilePresent: storedFile?.present == true,
+        requireModelFile: true
       ),
       device: deviceSnapshot
     )
@@ -111,6 +115,38 @@ struct SignalASILocalModelLabView: View {
       }
       Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
     }
+    .fileImporter(
+      isPresented: $modelImporterPresented,
+      allowedContentTypes: [.data],
+      allowsMultipleSelection: false
+    ) { result in
+      guard let profile = modelImportProfile else { return }
+      switch result {
+      case .success(let urls):
+        guard let source = urls.first else { return }
+        do {
+          _ = try LocalModelRuntimeStorage.importFile(from: source, for: profile)
+          statusMessage = String(
+            format: t("signalasi.local_model.imported", "%@ imported"),
+            profile.displayName
+          )
+          if selectedProfile.id == profile.id {
+            refreshSnapshots()
+          }
+        } catch {
+          statusMessage = String(
+            format: t("signalasi.local_model.import_error", "Model import failed: %@"),
+            error.localizedDescription
+          )
+        }
+      case .failure(let error):
+        statusMessage = String(
+          format: t("signalasi.local_model.import_error", "Model import failed: %@"),
+          error.localizedDescription
+        )
+      }
+      modelImportProfile = nil
+    }
     .onAppear(perform: refreshSnapshots)
   }
 
@@ -127,16 +163,25 @@ struct SignalASILocalModelLabView: View {
         SignalASILocalModelSearchView()
       }
       ForEach(LocalModelRuntimeProfiles.all) { profile in
+        let storedFile = LocalModelRuntimeStorage.file(for: profile)
+        let isSelected = profile.id == selectedProfile.id
         SignalASILocalModelLabActionRow(
           title: profile.displayName,
-          subtitle: profileSubtitle(profile),
+          subtitle: profileSubtitle(profile) + "\n" + modelFileStatus(storedFile: storedFile),
           systemImage: "cpu",
-          tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
-          badge: profile.id == selectedProfile.id
+          tint: isSelected ? .signalASIAccent : .blue,
+          badge: storedFile == nil
+            ? t("signalasi.local_model.import_action", "Import")
+            : isSelected
             ? t("signalasi.local_model.selected", "Current")
             : t("signalasi.local_model.use_action", "Use")
         ) {
-          selectProfile(profile)
+          if storedFile == nil {
+            modelImportProfile = profile
+            modelImporterPresented = true
+          } else {
+            selectProfile(profile)
+          }
         }
       }
       SignalASILocalModelLabActionRow(
@@ -423,6 +468,16 @@ struct SignalASILocalModelLabView: View {
       formatBytes(profile.expectedModelFileBytes),
       profile.quantizationLabel,
       profile.defaultContextTokens
+    )
+  }
+
+  private func modelFileStatus(storedFile: LocalModelStoredFile?) -> String {
+    guard let storedFile else {
+      return t("signalasi.local_model.file_missing", "No GGUF file imported")
+    }
+    return String(
+      format: t("signalasi.local_model.file_ready", "GGUF ready · %@"),
+      formatBytes(storedFile.bytes)
     )
   }
 

@@ -604,6 +604,82 @@ enum LocalModelRuntimePreflight {
   }
 }
 
+struct LocalModelStoredFile: Equatable {
+  var url: URL
+  var bytes: Int64
+
+  var present: Bool { bytes > 0 }
+}
+
+enum LocalModelRuntimeStorage {
+  private static let directoryName = "LocalModels"
+
+  static func file(for profile: LocalModelRuntimeProfile) -> LocalModelStoredFile? {
+    let url = fileURL(for: profile)
+    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+          values.isRegularFile == true,
+          let size = values.fileSize,
+          size > 0 else {
+      return nil
+    }
+    return LocalModelStoredFile(url: url, bytes: Int64(size))
+  }
+
+  @discardableResult
+  static func importFile(from sourceURL: URL, for profile: LocalModelRuntimeProfile) throws -> LocalModelStoredFile {
+    let fileManager = FileManager.default
+    guard sourceURL.isFileURL,
+          let values = try? sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+          values.isRegularFile == true,
+          let size = values.fileSize,
+          size > 0 else {
+      throw LocalModelRuntimeStorageError.invalidFile
+    }
+
+    let destination = fileURL(for: profile)
+    try fileManager.createDirectory(at: directoryURL(), withIntermediateDirectories: true)
+    let temporary = destination.appendingPathExtension("importing")
+    try? fileManager.removeItem(at: temporary)
+    defer { try? fileManager.removeItem(at: temporary) }
+    let scoped = sourceURL.startAccessingSecurityScopedResource()
+    defer {
+      if scoped { sourceURL.stopAccessingSecurityScopedResource() }
+    }
+    try fileManager.copyItem(at: sourceURL, to: temporary)
+    try? fileManager.removeItem(at: destination)
+    try fileManager.moveItem(at: temporary, to: destination)
+    return LocalModelStoredFile(url: destination, bytes: Int64(size))
+  }
+
+  static func removeFile(for profile: LocalModelRuntimeProfile) throws {
+    let url = fileURL(for: profile)
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    try FileManager.default.removeItem(at: url)
+  }
+
+  private static func fileURL(for profile: LocalModelRuntimeProfile) -> URL {
+    directoryURL().appendingPathComponent("\(profile.id).gguf", isDirectory: false)
+  }
+
+  private static func directoryURL() -> URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    return base.appendingPathComponent("SignalASI", isDirectory: true)
+      .appendingPathComponent(directoryName, isDirectory: true)
+  }
+}
+
+enum LocalModelRuntimeStorageError: LocalizedError, Equatable {
+  case invalidFile
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidFile:
+      return "The selected file is not a readable model file."
+    }
+  }
+}
+
 enum LocalModelRuntimeSettings {
   static func selectedProfile(defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
     LocalModelRuntimeProfiles.find(defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id)
