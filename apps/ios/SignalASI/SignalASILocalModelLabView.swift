@@ -702,14 +702,14 @@ struct SignalASILocalModelSearchView: View {
             if !hubResults.isEmpty {
               SignalASILocalModelLabSectionTitle(title: t("signalasi.local_model.hub_results_section", "Model Hub Results"))
               ForEach(hubResults) { result in
-                SignalASILocalModelLabActionRow(
+                SignalASILocalModelLabNavigationRow(
                   title: result.displayName,
                   subtitle: hubResultSubtitle(result),
                   systemImage: "globe",
                   tint: .blue,
                   badge: t("signalasi.local_model.open_repository", "Open")
                 ) {
-                  openHubResult(result)
+                  SignalASILocalModelHubArtifactView(model: result)
                 }
               }
             }
@@ -785,11 +785,6 @@ struct SignalASILocalModelSearchView: View {
     }
   }
 
-  private func openHubResult(_ result: LocalModelHubSearchResult) {
-    guard let url = result.repositoryURL else { return }
-    UIApplication.shared.open(url)
-  }
-
   private func hubResultSubtitle(_ result: LocalModelHubSearchResult) -> String {
     let owner = result.author.ifBlank(result.namespace).ifBlank(t("signalasi.local_model.hub_source", "Hugging Face model"))
     return String(
@@ -833,7 +828,7 @@ struct SignalASILocalModelSearchView: View {
   }
 }
 
-private struct LocalModelHubSearchResult: Identifiable, Decodable {
+struct LocalModelHubSearchResult: Identifiable, Decodable {
   var id: String
   var author: String
   var downloads: Int
