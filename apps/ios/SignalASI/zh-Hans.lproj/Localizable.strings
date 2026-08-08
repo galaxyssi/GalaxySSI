@@ -605,6 +605,17 @@
 "signalasi.agent_knowledge.import" = "导入资料";
 "signalasi.agent_knowledge.import_subtitle" = "支持 PDF、Word、Markdown、文本、JSON 等可读文档";
 "signalasi.agent_knowledge.add" = "添加";
+"signalasi.agent_knowledge.import_web" = "导入网页";
+"signalasi.agent_knowledge.import_web_subtitle" = "将公开 HTTP 或 HTTPS 网页导入为私有知识";
+"signalasi.agent_knowledge.import_web_action" = "网页";
+"signalasi.agent_knowledge.import_web_placeholder" = "https://example.com/page";
+"signalasi.agent_knowledge.import_web_hint" = "仅导入公开 HTTP 和 HTTPS 网页，大小上限为 5 MB。";
+"signalasi.agent_knowledge.import_web_loading" = "正在获取网页...";
+"signalasi.agent_knowledge.import_web_invalid" = "请输入有效的公开网页 URL";
+"signalasi.agent_knowledge.import_web_too_large" = "网页超过 5 MB 导入上限";
+"signalasi.agent_knowledge.import_web_http_error" = "网页返回 HTTP %d";
+"signalasi.agent_knowledge.import_web_type_error" = "不支持的网页内容类型：%@";
+"signalasi.agent_knowledge.imported_web" = "已将 %@ 导入为 %d 个知识分块";
 "signalasi.agent_knowledge.search" = "搜索知识";
 "signalasi.agent_knowledge.search_subtitle" = "结合短语、关键词和语义相似度进行检索";
 "signalasi.agent_knowledge.search_action" = "搜索";
