@@ -74,6 +74,7 @@ private fun LocalModelRuntimeProfile.toJson(): JSONObject = JSONObject()
     .put("parameter_billions", parameterCountBillions)
     .put("default_no_think", defaultNoThink)
     .put("vision_capable", visionCapable)
+    .put("preferred_accelerator", preferredAccelerator.name)
     .put("source_trust", sourceTrust.name)
     .put("source_hub", sourceHub.name)
 
@@ -96,9 +97,14 @@ private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
         parameterCountBillions = optDouble("parameter_billions", 0.0),
         defaultNoThink = optBoolean("default_no_think"),
         visionCapable = optBoolean("vision_capable"),
+        preferredAccelerator = optAcceleratorKind("preferred_accelerator"),
         sourceTrust = trust,
         sourceHub = runCatching {
             enumValueOf<LocalModelHubSource>(optString("source_hub", LocalModelHubSource.HUGGING_FACE.name))
         }.getOrDefault(LocalModelHubSource.HUGGING_FACE)
     ).also { require(it.downloadable) }
 }.getOrNull()
+
+private fun JSONObject.optAcceleratorKind(name: String): LocalModelAcceleratorKind =
+    runCatching { enumValueOf<LocalModelAcceleratorKind>(optString(name, LocalModelAcceleratorKind.CPU.name)) }
+        .getOrDefault(LocalModelAcceleratorKind.CPU)

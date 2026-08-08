@@ -9803,8 +9803,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val homeAssistant = HomeAssistantSettingsStore.load(this)
         val homeAssistantReady = homeAssistant.configured
         val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
-        val localModelProfile = LocalModelRuntimeSettings.selectedProfile(this)
-        val localModelInstalled = LocalModelManager.isInstalled(this, localModelProfile)
+        val localModelProfile = LocalModelRuntimeSettings.displayProfile(this)
+        val localModelInstalled = LocalModelInferenceRuntime.ready(this)
         val globalRuntime = if (::globalSuperAgentRuntime.isInitialized) {
             globalSuperAgentRuntime
         } else GlobalSuperAgentRuntime.get(this)
@@ -14901,7 +14901,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }.ifEmpty {
             listOf(ControlCenterRowSpec("nodes.scan", getString(R.string.cc_no_desktop_title), getString(R.string.cc_no_desktop_subtitle), R.drawable.ic_scan, getString(R.string.security_scan), ControlCenterTone.AMBER))
         }
-        val localRows = targets.filter { it.kind == AgentConnectorKind.MODEL && !it.id.startsWith("cloud:") }
+        val qnnProfiles = LocalModelManager.profiles(this).filter {
+            it.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK
+        }
+        val installedQnnProfiles = qnnProfiles.count { LocalModelManager.isInstalled(this, it) }
+        val localRows = listOf(
+            ControlCenterRowSpec(
+                actionId = "local_model.open",
+                title = getString(R.string.local_model_title),
+                subtitle = getString(R.string.local_model_qnn_catalog_subtitle),
+                iconRes = R.drawable.ic_local_model,
+                status = getString(
+                    R.string.local_model_qnn_installed_count,
+                    installedQnnProfiles,
+                    qnnProfiles.size
+                ),
+                tone = if (installedQnnProfiles == qnnProfiles.size && qnnProfiles.isNotEmpty()) {
+                    ControlCenterTone.GREEN
+                } else {
+                    ControlCenterTone.BLUE
+                }
+            )
+        ) + targets.filter { it.kind == AgentConnectorKind.MODEL && !it.id.startsWith("cloud:") }
             .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
         val cloudRows = targets.filter { it.id.startsWith("cloud:") }
             .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
@@ -26878,7 +26899,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showLocalModelFeaturePage() {
-        val profile = LocalModelRuntimeSettings.selectedProfile(this)
+        val profile = LocalModelRuntimeSettings.displayProfile(this)
+        val profiles = LocalModelManager.profiles(this)
+        val qnnProfiles = profiles.filter {
+            it.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK
+        }
+        val otherProfiles = profiles.filterNot { it in qnnProfiles }
         val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
         val storageSnapshot = LocalModelManager.storage(this).inspect(profile)
         val estimate = LocalModelRuntimeEstimator.estimate(
@@ -26894,6 +26920,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val accelerators = LocalModelAcceleratorDetector.detect(this)
         showFeaturePage(getString(R.string.local_model_title))
         featureContent.addView(localModelStatusCard(profile, estimate))
+        addSectionTitle(getString(R.string.local_model_qnn_section))
+        featureContent.addView(TextView(this).apply {
+            text = getString(R.string.local_model_qnn_catalog_subtitle)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12.5f
+            setPadding(dp(2), 0, dp(2), dp(10))
+        })
+        qnnProfiles.forEach { candidate ->
+            featureContent.addView(localModelProfileRow(candidate))
+        }
         addSectionTitle(getString(R.string.local_model_section_manage))
         featureContent.addView(featureRow(
             getString(R.string.local_model_search_title),
@@ -26903,7 +26939,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ).apply {
             setOnClickListener { showLocalModelSearchPage() }
         })
-        LocalModelManager.profiles(this).forEach { candidate ->
+        otherProfiles.forEach { candidate ->
             featureContent.addView(localModelProfileRow(candidate))
         }
         featureContent.addView(featureValueRow(
@@ -27116,7 +27152,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 profile.quantizationLabel,
                 parameterLabel
             ))
-            if (profile.defaultNoThink) {
+            if (profile.id == LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.id) {
+                append("\n")
+                append(getString(R.string.local_model_qwen_automatic_thinking))
+            } else if (profile.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id) {
+                append("\n")
+                append(getString(R.string.local_model_gemma_reasoning_role))
+            } else if (profile.defaultNoThink) {
                 append("\n")
                 append(getString(R.string.local_model_default_no_think))
             } else if (state.state == LocalModelInstallState.FAILED && state.detail.isNotBlank()) {
@@ -27127,7 +27169,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         binding.action.text = localModelActionLabel(profile, state)
         binding.action.setTextColor(getColorCompat(
             if (state.state == LocalModelInstallState.READY &&
-                LocalModelRuntimeSettings.selectedProfile(this).id == profile.id
+                LocalModelRuntimeSettings.isProfileEnabled(this, profile)
             ) {
                 R.color.text_secondary
             } else {
@@ -27161,10 +27203,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         LocalModelInstallState.VERIFYING -> getString(R.string.local_model_download_verifying)
         LocalModelInstallState.INSTALLING -> getString(R.string.local_model_download_installing)
         LocalModelInstallState.READY -> getString(
-            if (LocalModelRuntimeSettings.selectedProfile(this).id == profile.id) {
-                R.string.local_model_selected
+            if (LocalModelRuntimeSettings.isProfileEnabled(this, profile)) {
+                if (profile.supportsQnnCooperation) {
+                    R.string.local_model_enabled
+                } else {
+                    R.string.local_model_selected
+                }
             } else {
-                R.string.local_model_use_action
+                if (profile.supportsQnnCooperation) {
+                    R.string.local_model_enable_action
+                } else {
+                    R.string.local_model_use_action
+                }
             }
         )
         LocalModelInstallState.FAILED -> getString(R.string.common_retry)
@@ -27183,7 +27233,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LocalModelInstallState.VERIFYING,
             LocalModelInstallState.INSTALLING -> Unit
             LocalModelInstallState.READY -> {
-                LocalModelRuntimeSettings.setSelectedProfile(this, profile.id)
+                if (profile.supportsQnnCooperation) {
+                    LocalModelRuntimeSettings.setProfileEnabled(
+                        this,
+                        profile,
+                        enabled = !LocalModelRuntimeSettings.isProfileEnabled(this, profile)
+                    )
+                } else {
+                    LocalModelRuntimeSettings.setProfileEnabled(this, profile, enabled = true)
+                }
                 showLocalModelFeaturePage()
             }
         }
@@ -33176,6 +33234,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LocalModelRuntimeIssue.MODEL_FILE_INVALID,
             LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
             LocalModelRuntimeIssue.INSUFFICIENT_MEMORY,
+            LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE,
             LocalModelRuntimeIssue.DEVICE_TOO_HOT,
             LocalModelRuntimeIssue.CRITICAL_BATTERY,
             LocalModelRuntimeIssue.CONTEXT_REDUCED,
@@ -33193,6 +33252,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     R.string.local_model_issue_system_low_memory
                 LocalModelRuntimeIssue.INSUFFICIENT_MEMORY ->
                     R.string.local_model_issue_insufficient_memory
+                LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE ->
+                    R.string.local_model_issue_accelerator_unavailable
                 LocalModelRuntimeIssue.DEVICE_TOO_HOT ->
                     R.string.local_model_issue_device_hot
                 LocalModelRuntimeIssue.CRITICAL_BATTERY ->

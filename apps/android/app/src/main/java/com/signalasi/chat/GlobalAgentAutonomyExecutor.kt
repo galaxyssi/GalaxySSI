@@ -1913,9 +1913,8 @@ private fun runPrivateGlobalInference(
         return Result.failure(IllegalStateException("No private local model is ready"))
     }
     return runCatching {
-        LocalModelInferenceRuntime.generate(
+        LocalModelCooperativeRuntime.generate(
             context = context,
-            profile = LocalModelRuntimeSettings.selectedProfile(context),
             systemPrompt = systemPrompt,
             userPrompt = userPrompt
         )

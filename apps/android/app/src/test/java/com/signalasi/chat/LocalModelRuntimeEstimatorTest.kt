@@ -94,6 +94,36 @@ class LocalModelRuntimeEstimatorTest {
         assertTrue(LocalModelRuntimeIssue.MODEL_FILE_INVALID in estimate.issues)
     }
 
+    @Test
+    fun qnnProfilesRequireQualcommAcceleratorReady() {
+        val estimate = LocalModelRuntimeEstimator.estimate(
+            LocalModelRuntimeRequest(
+                profile = LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN,
+                acceleratorReady = false
+            ),
+            device()
+        )
+
+        assertEquals(LocalModelRuntimeReadiness.BLOCKED, estimate.readiness)
+        assertTrue(LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE in estimate.issues)
+    }
+
+    @Test
+    fun qnnProfilesAreMarkedForVendorAcceleration() {
+        assertEquals(
+            LocalModelAcceleratorKind.VENDOR_SDK,
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.preferredAccelerator
+        )
+        assertEquals(
+            LocalModelAcceleratorKind.VENDOR_SDK,
+            LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.preferredAccelerator
+        )
+        assertEquals("Q4_0", LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.quantizationLabel)
+        assertEquals("Q4_0", LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.quantizationLabel)
+        assertTrue(LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN.fileName.endsWith("Q4_0.gguf"))
+        assertTrue(LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.fileName.endsWith("Q4_0.gguf"))
+    }
+
     @Test(expected = IllegalStateException::class)
     fun launchGateRejectsBlockedAssessment() {
         LocalModelRuntimeEstimator.requireLaunchable(

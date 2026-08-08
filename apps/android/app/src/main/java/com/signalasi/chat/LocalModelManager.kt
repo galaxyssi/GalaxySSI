@@ -18,6 +18,16 @@ data class LocalModelDownloadState(
         get() = if (totalBytes <= 0L) 0 else ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
 }
 
+internal object LocalModelPostInstallSelection {
+    fun enabledQnnProfiles(
+        currentProfileIds: Set<String>,
+        installedProfileId: String
+    ): Set<String> {
+        require(installedProfileId.isNotBlank()) { "Installed local-model profile ID is required" }
+        return currentProfileIds + installedProfileId
+    }
+}
+
 class LocalModelMeteredConfirmationRequired(
     val profile: LocalModelRuntimeProfile
 ) : IllegalStateException("Metered network confirmation is required")
@@ -115,9 +125,7 @@ object LocalModelManager {
         if (profile.sourceTrust == LocalModelSourceTrust.HUB_VERIFIED) {
             LocalModelProfileStore(context).delete(profile.id)
         }
-        if (LocalModelRuntimeSettings.selectedProfile(context).id == profile.id) {
-            LocalModelRuntimeSettings.setSelectedProfile(context, LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M.id)
-        }
+        LocalModelRuntimeSettings.removeProfile(context, profile)
     }
 
     fun preferChinaMirror(context: Context): Boolean {

@@ -148,7 +148,7 @@ class LocalModelDownloadService : Service() {
                 )
                 updateNotification(profile)
                 storage.commitVerifiedPartial(profile, sourceUrl)
-                LocalModelRuntimeSettings.setSelectedProfile(this, profile.id)
+                LocalModelRuntimeSettings.registerInstalledProfile(this, profile)
                 LocalModelManager.record(
                     this,
                     profile,

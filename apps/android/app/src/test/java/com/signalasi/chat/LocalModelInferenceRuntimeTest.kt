@@ -7,6 +7,22 @@ import org.junit.Test
 
 class LocalModelInferenceRuntimeTest {
     @Test
+    fun qnnProfilesUseGenieXNpuAndCpuProfilesKeepLegacyRuntime() {
+        assertEquals(
+            LocalModelInferenceEngine.GENIEX_NPU,
+            LocalModelInferenceRuntime.engineFor(LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN)
+        )
+        assertEquals(
+            LocalModelInferenceEngine.GENIEX_NPU,
+            LocalModelInferenceRuntime.engineFor(LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN)
+        )
+        assertEquals(
+            LocalModelInferenceEngine.LEGACY_LLAMA,
+            LocalModelInferenceRuntime.engineFor(LocalModelRuntimeProfiles.GEMMA_3_1B_Q4)
+        )
+    }
+
+    @Test
     fun qwenPromptDefaultsToNoThinkExactlyOnce() {
         val prompt = LocalModelInferenceRuntime.prepareUserPrompt(
             LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M,
@@ -39,5 +55,29 @@ class LocalModelInferenceRuntimeTest {
 
         assertEquals("Hello", prompt)
         assertFalse(prompt.contains("/no_think"))
+    }
+
+    @Test
+    fun complexQwenRequestReplacesNoThinkWithThink() {
+        val prompt = LocalModelInferenceRuntime.prepareUserPrompt(
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN,
+            "Plan this task.\n/no_think",
+            LocalModelThinkingMode.THINK
+        )
+
+        assertTrue(prompt.endsWith("\n/think"))
+        assertFalse(prompt.contains("/no_think"))
+    }
+
+    @Test
+    fun fastQwenRequestReplacesThinkWithNoThink() {
+        val prompt = LocalModelInferenceRuntime.prepareUserPrompt(
+            LocalModelRuntimeProfiles.QWEN_3_1_7B_QNN,
+            "Answer briefly.\n/think",
+            LocalModelThinkingMode.NO_THINK
+        )
+
+        assertTrue(prompt.endsWith("\n/no_think"))
+        assertFalse(Regex("(?m)^/think$").containsMatchIn(prompt))
     }
 }
