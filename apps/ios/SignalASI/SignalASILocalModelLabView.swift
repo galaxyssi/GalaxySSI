@@ -158,15 +158,12 @@ struct SignalASILocalModelLabView: View {
           subtitle: profileSubtitle(profile),
           systemImage: "cpu",
           tint: profile.id == selectedProfile.id ? .signalASIAccent : .blue,
-          badge: downloadState == .downloading
-            ? t("signalasi.local_model.download_active", "Downloading")
-            : !installed && artifact != nil
-              ? t("signalasi.local_model.download_action", "Download")
-              : profile.id == selectedProfile.id
-                ? t("signalasi.local_model.selected", "Current")
-                : installed
-                  ? t("signalasi.local_model.download_ready", "Ready")
-                  : t("signalasi.local_model.use_action", "Use")
+          badge: modelDownloadBadge(
+            profile: profile,
+            artifact: artifact,
+            state: downloadState,
+            installed: installed
+          )
         ) {
           guard let artifact else {
             selectProfile(profile)
@@ -175,7 +172,14 @@ struct SignalASILocalModelLabView: View {
           switch downloadState {
           case .notInstalled, .failed:
             downloads.start(artifact)
-            statusMessage = t("signalasi.local_model.download_started", "Download started")
+            statusMessage = downloads.state(for: artifact) == .failed
+              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+              : t("signalasi.local_model.download_started", "Download started")
+          case .paused:
+            downloads.start(artifact)
+            statusMessage = downloads.state(for: artifact) == .failed
+              ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+              : t("signalasi.local_model.download_resumed", "Download resumed")
           case .downloading:
             downloads.cancel(artifact)
             statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
@@ -202,6 +206,35 @@ struct SignalASILocalModelLabView: View {
       ) {
         VoiceWhisperModelSettingsView()
       }
+    }
+  }
+
+  private func modelDownloadBadge(
+    profile: LocalModelRuntimeProfile,
+    artifact: LocalModelHubArtifact?,
+    state: LocalModelArtifactInstallState,
+    installed: Bool
+  ) -> String {
+    guard artifact != nil else {
+      return profile.id == selectedProfile.id
+        ? t("signalasi.local_model.selected", "Current")
+        : installed
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("signalasi.local_model.use_action", "Use")
+    }
+    switch state {
+    case .downloading:
+      return t("signalasi.local_model.download_active", "Downloading")
+    case .paused:
+      return t("signalasi.local_model.download_resume", "Resume")
+    case .notInstalled:
+      return t("signalasi.local_model.download_action", "Download")
+    case .failed:
+      return t("signalasi.common.retry", "Retry")
+    case .ready:
+      return profile.id == selectedProfile.id
+        ? t("signalasi.local_model.selected", "Current")
+        : t("signalasi.local_model.download_ready", "Ready")
     }
   }
 

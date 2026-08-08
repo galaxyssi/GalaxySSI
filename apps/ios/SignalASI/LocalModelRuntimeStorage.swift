@@ -44,6 +44,19 @@ final class LocalModelRuntimeStorage {
       .appendingPathExtension("installation.json")
   }
 
+  func stagingFileURL(for profile: LocalModelRuntimeProfile) -> URL {
+    let key = safeComponent("\(profile.sourceHub.rawValue)_\(profile.repositoryId)_\(profile.fileName)_\(profile.sha256.prefix(12))")
+    return rootURL
+      .appendingPathComponent("Staging", isDirectory: true)
+      .appendingPathComponent("\(key).part", isDirectory: false)
+  }
+
+  func requiredDownloadBytes(for profile: LocalModelRuntimeProfile) -> Int64 {
+    let partial = fileSize(stagingFileURL(for: profile))
+    let remaining = max(0, profile.expectedModelFileBytes - partial)
+    return safeAdd(remaining, 1_073_741_824)
+  }
+
   func availableBytes() -> Int64 {
     let values = try? rootURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
     return Int64(max(0, values?.volumeAvailableCapacityForImportantUsage ?? 0))
@@ -116,6 +129,7 @@ final class LocalModelRuntimeStorage {
   func delete(_ profile: LocalModelRuntimeProfile) throws {
     try? fileManager.removeItem(at: finalFileURL(for: profile))
     try? fileManager.removeItem(at: metadataFileURL(for: profile))
+    try? fileManager.removeItem(at: stagingFileURL(for: profile))
   }
 
   static func sha256(fileURL: URL) throws -> String {
@@ -135,6 +149,15 @@ final class LocalModelRuntimeStorage {
 
   private func fileIfPresent(_ url: URL) -> URL? {
     fileManager.fileExists(atPath: url.path) ? url : nil
+  }
+
+  private func fileSize(_ url: URL) -> Int64 {
+    let values = try? fileManager.attributesOfItem(atPath: url.path)
+    return max(0, (values?[.size] as? NSNumber)?.int64Value ?? 0)
+  }
+
+  private func safeAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    Int64.max - left < right ? Int64.max : left + right
   }
 
   private func fileModifiedEpochMillis(_ url: URL) -> Int64 {

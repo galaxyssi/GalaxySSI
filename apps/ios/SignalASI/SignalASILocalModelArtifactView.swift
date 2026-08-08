@@ -17,19 +17,32 @@ struct LocalModelHubArtifact: Identifiable, Equatable, Hashable {
 
 enum LocalModelArtifactInstallState: String, Equatable {
   case notInstalled
+  case paused
   case downloading
   case ready
   case failed
+}
+
+struct LocalModelArtifactProgress: Equatable {
+  var bytesDownloaded: Int64
+  var totalBytes: Int64
+
+  var percent: Int {
+    guard totalBytes > 0 else { return 0 }
+    return Int(max(0, min(100, bytesDownloaded * 100 / totalBytes)))
+  }
 }
 
 @MainActor
 final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   @Published private(set) var states: [String: LocalModelArtifactInstallState] = [:]
   @Published private(set) var errors: [String: String] = [:]
+  @Published private(set) var progress: [String: LocalModelArtifactProgress] = [:]
 
   private var tasks: [String: Task<Void, Never>] = [:]
   private let fileManager = FileManager.default
   private let storage = LocalModelRuntimeStorage()
+  private let chunkSize = 1_048_576
 
   init() {
     loadPersistedStates()
@@ -40,25 +53,56 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     if storage.inspect(profile).installed {
       return .ready
     }
-    return states[artifact.id] ?? .notInstalled
+    let saved = states[artifact.id] ?? .notInstalled
+    if saved == .downloading && tasks[artifact.id] == nil {
+      return partialBytes(for: profile) > 0 ? .paused : .notInstalled
+    }
+    if saved == .notInstalled && partialBytes(for: profile) > 0 {
+      return .paused
+    }
+    return saved
+  }
+
+  func progress(for artifact: LocalModelHubArtifact) -> LocalModelArtifactProgress {
+    if let value = progress[artifact.id] { return value }
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    return LocalModelArtifactProgress(
+      bytesDownloaded: partialBytes(for: profile),
+      totalBytes: artifact.sizeBytes
+    )
+  }
+
+  func error(for artifact: LocalModelHubArtifact) -> String? {
+    errors[artifact.id]
   }
 
   func start(_ artifact: LocalModelHubArtifact) {
     guard tasks[artifact.id] == nil else { return }
     let profile = LocalModelRuntimeCatalog.addHubArtifact(artifact)
+    let required = storage.requiredDownloadBytes(for: profile)
+    let available = storage.availableBytes()
+    if available > 0 && available < required {
+      errors[artifact.id] = LocalModelArtifactDownloadError.insufficientStorage(
+        required: required,
+        available: available
+      ).localizedDescription
+      states[artifact.id] = .failed
+      persistStates()
+      return
+    }
     errors[artifact.id] = nil
     states[artifact.id] = .downloading
+    progress[artifact.id] = LocalModelArtifactProgress(
+      bytesDownloaded: partialBytes(for: profile),
+      totalBytes: artifact.sizeBytes
+    )
     persistStates()
     tasks[artifact.id] = Task { [weak self] in
       do {
-        let (temporaryURL, response) = try await URLSession.shared.download(from: artifact.downloadURL)
-        try Task.checkCancellation()
         guard let self else { return }
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-          throw LocalModelArtifactDownloadError.httpStatus
-        }
-        let size = try fileManager.attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber
+        let temporaryURL = try await self.downloadToStaging(artifact, profile: profile)
+        try Task.checkCancellation()
+        let size = try self.fileManager.attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber
         guard size?.int64Value == artifact.sizeBytes else {
           throw LocalModelArtifactDownloadError.sizeMismatch
         }
@@ -71,44 +115,55 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
           profile: profile,
           downloadURL: artifact.downloadURL
         )
-        await MainActor.run {
-          self.states[artifact.id] = .ready
-          self.errors[artifact.id] = nil
-          self.persistStates()
-        }
+        self.progress[artifact.id] = LocalModelArtifactProgress(
+          bytesDownloaded: artifact.sizeBytes,
+          totalBytes: artifact.sizeBytes
+        )
+        self.states[artifact.id] = .ready
+        self.errors[artifact.id] = nil
+        self.persistStates()
       } catch is CancellationError {
-        await MainActor.run {
-          self?.states[artifact.id] = .notInstalled
-          self?.persistStates()
-        }
+        let partial = self?.partialBytes(for: profile) ?? 0
+        self?.states[artifact.id] = partial > 0 ? .paused : .notInstalled
+        self?.progress[artifact.id] = LocalModelArtifactProgress(
+          bytesDownloaded: partial,
+          totalBytes: artifact.sizeBytes
+        )
+        self?.persistStates()
       } catch {
-        await MainActor.run {
-          self?.states[artifact.id] = .failed
-          self?.errors[artifact.id] = error.localizedDescription
-          self?.persistStates()
-        }
+        let partial = self?.partialBytes(for: profile) ?? 0
+        self?.states[artifact.id] = .failed
+        self?.progress[artifact.id] = LocalModelArtifactProgress(
+          bytesDownloaded: partial,
+          totalBytes: artifact.sizeBytes
+        )
+        self?.errors[artifact.id] = error.localizedDescription
+        self?.persistStates()
       }
-      await MainActor.run {
-        self?.tasks.removeValue(forKey: artifact.id)
-      }
+      self?.tasks.removeValue(forKey: artifact.id)
     }
   }
 
   func cancel(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
-    tasks.removeValue(forKey: artifact.id)
-    states[artifact.id] = .notInstalled
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    let partial = partialBytes(for: profile)
+    states[artifact.id] = partial > 0 ? .paused : .notInstalled
+    progress[artifact.id] = LocalModelArtifactProgress(
+      bytesDownloaded: partial,
+      totalBytes: artifact.sizeBytes
+    )
     persistStates()
   }
 
   func delete(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
-    tasks.removeValue(forKey: artifact.id)
     let profile = LocalModelRuntimeCatalog.profile(for: artifact)
     try? storage.delete(profile)
     LocalModelRuntimeCatalog.removeHubProfile(profile)
     states[artifact.id] = .notInstalled
     errors[artifact.id] = nil
+    progress[artifact.id] = LocalModelArtifactProgress(bytesDownloaded: 0, totalBytes: artifact.sizeBytes)
     persistStates()
   }
 
@@ -129,18 +184,129 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     UserDefaults.standard.set(states.mapValues(\.rawValue), forKey: "signalasi.local_model.artifact_states")
   }
 
+  private func partialBytes(for profile: LocalModelRuntimeProfile) -> Int64 {
+    let url = storage.stagingFileURL(for: profile)
+    let values = try? fileManager.attributesOfItem(atPath: url.path)
+    return max(0, (values?[.size] as? NSNumber)?.int64Value ?? 0)
+  }
+
+  private func publishProgress(
+    _ artifact: LocalModelHubArtifact,
+    bytesDownloaded: Int64
+  ) {
+    progress[artifact.id] = LocalModelArtifactProgress(
+      bytesDownloaded: bytesDownloaded,
+      totalBytes: artifact.sizeBytes
+    )
+  }
+
+  private func downloadToStaging(
+    _ artifact: LocalModelHubArtifact,
+    profile: LocalModelRuntimeProfile
+  ) async throws -> URL {
+    let staging = storage.stagingFileURL(for: profile)
+    try fileManager.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
+    var offset = partialBytes(for: profile)
+    if offset < 0 || offset > artifact.sizeBytes {
+      try? fileManager.removeItem(at: staging)
+      offset = 0
+    }
+    var restartedWithoutRange = false
+
+    while true {
+      var request = URLRequest(url: artifact.downloadURL)
+      request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+      request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
+      if offset > 0 {
+        request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
+      }
+      let (bytes, response) = try await URLSession.shared.bytes(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        throw LocalModelArtifactDownloadError.httpStatus
+      }
+      if http.statusCode == 416 && offset == artifact.sizeBytes {
+        return staging
+      }
+      guard (200..<300).contains(http.statusCode) else {
+        throw LocalModelArtifactDownloadError.httpStatus
+      }
+      let append = offset > 0 && http.statusCode == 206 &&
+        contentRangeStart(http.value(forHTTPHeaderField: "Content-Range")) == offset
+      if offset > 0 && !append {
+        guard !restartedWithoutRange else {
+          throw LocalModelArtifactDownloadError.invalidContentRange
+        }
+        try? fileManager.removeItem(at: staging)
+        offset = 0
+        restartedWithoutRange = true
+        continue
+      }
+
+      let initialBytes = append ? offset : 0
+      if !fileManager.fileExists(atPath: staging.path) {
+        fileManager.createFile(atPath: staging.path, contents: nil)
+      }
+      let handle = try FileHandle(forWritingTo: staging)
+      defer { try? handle.close() }
+      if append {
+        try handle.seekToEnd()
+      } else {
+        try handle.truncate(atOffset: 0)
+      }
+      var downloaded = initialBytes
+      var buffer = Data()
+      buffer.reserveCapacity(chunkSize)
+      var lastPublishedAt = Date.distantPast
+      for try await byte in bytes {
+        try Task.checkCancellation()
+        buffer.append(byte)
+        if buffer.count >= chunkSize {
+          handle.write(buffer)
+          downloaded += Int64(buffer.count)
+          buffer.removeAll(keepingCapacity: true)
+          if Date().timeIntervalSince(lastPublishedAt) >= 0.5 {
+            publishProgress(artifact, bytesDownloaded: downloaded)
+            lastPublishedAt = Date()
+          }
+          guard downloaded <= artifact.sizeBytes else {
+            throw LocalModelArtifactDownloadError.sizeMismatch
+          }
+        }
+      }
+      if !buffer.isEmpty {
+        handle.write(buffer)
+        downloaded += Int64(buffer.count)
+      }
+      handle.synchronizeFile()
+      publishProgress(artifact, bytesDownloaded: downloaded)
+      return staging
+    }
+  }
+
+  private func contentRangeStart(_ value: String?) -> Int64? {
+    guard let value,
+          let range = value.split(separator: " ").last,
+          let start = range.split(separator: "-").first else { return nil }
+    return Int64(start)
+  }
+
 }
 
 enum LocalModelArtifactDownloadError: LocalizedError {
   case httpStatus
   case sizeMismatch
   case sha256Mismatch
+  case invalidContentRange
+  case insufficientStorage(required: Int64, available: Int64)
 
   var errorDescription: String? {
     switch self {
     case .httpStatus: return "Model source returned an invalid HTTP response"
     case .sizeMismatch: return "Downloaded model size does not match its pinned metadata"
     case .sha256Mismatch: return "Downloaded model failed SHA-256 verification"
+    case .invalidContentRange: return "Model source returned an invalid Content-Range"
+    case .insufficientStorage(let required, let available):
+      return "Local model needs \(required) bytes, but only \(available) bytes are available"
     }
   }
 }
@@ -338,12 +504,19 @@ struct SignalASILocalModelHubArtifactView: View {
 
   private func artifactRow(_ artifact: LocalModelHubArtifact) -> some View {
     let state = downloads.state(for: artifact)
+    let artifactProgress = downloads.progress(for: artifact)
+    let downloadError = downloads.error(for: artifact)
     return SignalASILocalModelLabActionRow(
       title: artifact.displayName,
-      subtitle: "\(formatBytes(artifact.sizeBytes)) - \(artifact.quantization) - \(sourceLabel(artifact.source)) - SHA256 \(artifact.sha256.prefix(12))...",
+      subtitle: artifactSubtitle(
+        artifact,
+        state: state,
+        progress: artifactProgress,
+        error: downloadError
+      ),
       systemImage: "arrow.down.circle",
       tint: state == .ready ? .signalASIAccent : .blue,
-      badge: stateLabel(state)
+      badge: stateLabel(state, progress: artifactProgress)
     ) {
       switch state {
       case .downloading:
@@ -352,9 +525,13 @@ struct SignalASILocalModelHubArtifactView: View {
       case .ready:
         artifactToDelete = artifact
         showingDeleteConfirmation = true
-      case .notInstalled, .failed:
+      case .notInstalled, .failed, .paused:
         downloads.start(artifact)
-        statusMessage = t("signalasi.local_model.download_started", "Download started")
+        statusMessage = downloads.state(for: artifact) == .failed
+          ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+          : state == .paused
+          ? t("signalasi.local_model.download_resumed", "Download resumed")
+          : t("signalasi.local_model.download_started", "Download started")
       }
     }
   }
@@ -374,10 +551,27 @@ struct SignalASILocalModelHubArtifactView: View {
     }
   }
 
-  private func stateLabel(_ state: LocalModelArtifactInstallState) -> String {
+  private func artifactSubtitle(
+    _ artifact: LocalModelHubArtifact,
+    state: LocalModelArtifactInstallState,
+    progress: LocalModelArtifactProgress,
+    error: String?
+  ) -> String {
+    let details = "\(formatBytes(artifact.sizeBytes)) - \(artifact.quantization) - \(sourceLabel(artifact.source)) - SHA256 \(artifact.sha256.prefix(12))..."
+    let failure = error.map { " - \($0)" } ?? ""
+    switch state {
+    case .downloading, .paused:
+      return "\(progress.percent)% - \(formatBytes(progress.bytesDownloaded)) / \(formatBytes(artifact.sizeBytes)) - \(details)"
+    case .notInstalled, .ready, .failed:
+      return details + failure
+    }
+  }
+
+  private func stateLabel(_ state: LocalModelArtifactInstallState, progress: LocalModelArtifactProgress) -> String {
     switch state {
     case .notInstalled: return t("signalasi.local_model.download_action", "Download")
-    case .downloading: return t("signalasi.local_model.download_cancel", "Cancel")
+    case .paused: return t("signalasi.local_model.download_resume", "Resume")
+    case .downloading: return "\(progress.percent)%"
     case .ready: return t("signalasi.local_model.download_delete", "Delete")
     case .failed: return t("signalasi.common.retry", "Retry")
     }

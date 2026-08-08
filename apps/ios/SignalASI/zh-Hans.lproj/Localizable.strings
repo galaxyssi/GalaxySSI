@@ -2051,6 +2051,9 @@
 "signalasi.local_model.download_delete" = "删除";
 "signalasi.local_model.download_started" = "已开始下载";
 "signalasi.local_model.download_cancelled" = "下载已取消";
+"signalasi.local_model.download_resume" = "继续";
+"signalasi.local_model.download_resumed" = "已继续下载";
+"signalasi.local_model.download_failed" = "下载失败";
 "signalasi.local_model.download_deleted" = "已删除下载的模型";
 "signalasi.local_model.artifact_ready" = "模型文件已通过校验并准备就绪";
 "signalasi.local_model.source_huggingface" = "Hugging Face";
