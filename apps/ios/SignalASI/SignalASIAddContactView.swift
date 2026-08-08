@@ -137,7 +137,7 @@ struct AddContactView: View {
               onCancel: clearPendingScanResult
             )
           }
-          if let pendingFriendRequest, pendingScannedAgentRequests.isEmpty && pendingScannedRequests.count <= 1 {
+          if let pendingFriendRequest, pendingScannedAgentRequests.isEmpty {
             sectionTitle(t("signalasi.friend_request.pending", "Pending Verification"))
             AddContactFriendRequestCard(
               request: pendingFriendRequest,
@@ -338,9 +338,10 @@ struct AddContactView: View {
   private func approveFriendRequest(_ request: SignalASIFriendRequest) {
     if store.approveFriendRequest(id: request.id) {
       if pendingFriendRequest?.id == request.id {
-        pendingFriendRequest = nil
+        pendingFriendRequest = pendingScannedRequests.first
       }
       pendingScannedRequests.removeAll { $0.id == request.id }
+      pendingFriendRequest = pendingScannedRequests.first
       setImportStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"), isError: false)
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
@@ -350,9 +351,10 @@ struct AddContactView: View {
   private func rejectFriendRequest(_ request: SignalASIFriendRequest) {
     if store.rejectFriendRequest(id: request.id) {
       if pendingFriendRequest?.id == request.id {
-        pendingFriendRequest = nil
+        pendingFriendRequest = pendingScannedRequests.first
       }
       pendingScannedRequests.removeAll { $0.id == request.id }
+      pendingFriendRequest = pendingScannedRequests.first
       setImportStatus(t("signalasi.common.rejected", "Rejected"), isError: false)
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
@@ -360,12 +362,13 @@ struct AddContactView: View {
   }
 
   private func approvePendingScannedRequests() {
-    let requests = pendingScannedRequests
+    let requests = pendingScannedAgentRequests
     let approvedCount = requests.reduce(0) { count, request in
       store.approveFriendRequest(id: request.id) ? count + 1 : count
     }
-    pendingScannedRequests = []
-    pendingFriendRequest = nil
+    let approvedIDs = Set(requests.map(\.id))
+    pendingScannedRequests.removeAll { approvedIDs.contains($0.id) }
+    pendingFriendRequest = pendingScannedRequests.first
     if approvedCount > 0 {
       let message = approvedCount == 1
         ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")

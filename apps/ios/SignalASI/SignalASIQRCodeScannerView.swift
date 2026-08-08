@@ -12,7 +12,9 @@ enum SignalASIQRCodeImageRenderer {
     filter.setValue(data, forKey: "inputMessage")
     filter.setValue("M", forKey: "inputCorrectionLevel")
     guard let output = filter.outputImage else { return nil }
-    return UIImage(ciImage: output.transformed(by: CGAffineTransform(scaleX: 10, y: 10)))
+    let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+    guard let cgImage = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+    return UIImage(cgImage: cgImage)
   }
 }
 
@@ -87,6 +89,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private var configured = false
   private var didFinish = false
   private var photoButton: UIButton?
+  private var statusLabel: UILabel?
 
   fileprivate init(
     onCode: @escaping (String) -> Void,
@@ -113,6 +116,12 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     stopSession()
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    guard configured, !didFinish else { return }
+    startSession()
   }
 
   deinit {
@@ -192,6 +201,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
   @objc private func openPhotoPicker() {
     guard !didFinish else { return }
+    stopSession()
     let configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
     configuration.selectionLimit = 1
@@ -199,17 +209,20 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   }
 
   func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-    picker.dismiss(animated: true)
+    picker.dismiss(animated: true) { [weak self] in
+      guard let self, !self.didFinish else { return }
+      self.startSession()
+    }
     guard let provider = results.first?.itemProvider else { return }
     guard provider.canLoadObject(ofClass: UIImage.self) else {
-      reportScannerError(messages.photoScanFailed)
+      showPhotoScanFailure()
       return
     }
     provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
       guard let self else { return }
       DispatchQueue.main.async {
         guard let image = object as? UIImage else {
-          self.reportScannerError(self.messages.photoScanFailed)
+          self.showPhotoScanFailure()
           return
         }
         self.detectQRCode(in: image)
@@ -219,7 +232,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
   private func detectQRCode(in image: UIImage) {
     guard let cgImage = image.cgImage else {
-      reportScannerError(messages.photoScanFailed)
+      showPhotoScanFailure()
       return
     }
     let request = VNDetectBarcodesRequest { [weak self] request, _ in
@@ -230,7 +243,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         if let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           self.finish(with: value)
         } else {
-          self.reportScannerError(self.messages.photoScanFailed)
+          self.showPhotoScanFailure()
         }
       }
     }
@@ -243,7 +256,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     do {
       try handler.perform([request])
     } catch {
-      reportScannerError(messages.photoScanFailed)
+      showPhotoScanFailure()
     }
   }
 
@@ -283,6 +296,31 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     ])
   }
 
+  private func showPhotoScanFailure() {
+    guard !didFinish else { return }
+    if let statusLabel {
+      statusLabel.text = messages.photoScanFailed
+      return
+    }
+    let label = UILabel()
+    label.text = messages.photoScanFailed
+    label.textColor = .white
+    label.backgroundColor = UIColor.black.withAlphaComponent(0.68)
+    label.textAlignment = .center
+    label.numberOfLines = 0
+    label.layer.cornerRadius = 8
+    label.layer.masksToBounds = true
+    label.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+      label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+      label.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+      label.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+    ])
+    statusLabel = label
+  }
+
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     view.layer.sublayers?.compactMap { $0 as? AVCaptureVideoPreviewLayer }.forEach {
@@ -307,6 +345,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private func finish(with value: String) {
     guard !didFinish else { return }
     didFinish = true
+    statusLabel?.removeFromSuperview()
     onCode(value)
   }
 }
