@@ -3477,6 +3477,13 @@
 "rich_output_type_web" = "网页";
 "rich_output_type_file" = "文件";
 "rich_output_progress" = "进度";
+"rich_output_saved" = "已保存";
+"rich_output_download" = "下载";
+"rich_output_save" = "保存";
+"runtime_artifact.status.title" = "产物";
+"runtime_artifact.download_requested" = "已请求桌面端重新发送此产物。";
+"runtime_artifact.download_failed" = "无法从桌面端请求此产物。";
+"runtime_artifact.error.invalid" = "产物信息无效。";
 "cc_runtime_import_action" = "选择文件";
 "cc_runtime_import_installing" = "正在安装";
 "cc_runtime_import_access_failed" = "无法打开所选运行时包";

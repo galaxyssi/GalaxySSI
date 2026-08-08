@@ -18,12 +18,14 @@ struct SignalASIRichContentView: View {
     if !richSource.isEmpty {
       let explicit = AgentRichContentCodec.decode(richSource)
       if !explicit.isEmpty {
-        return explicit
+        return explicit.map(AgentDesktopArtifactStore.shared.resolveBlock)
       }
     }
 
     let explicit = AgentRichContentCodec.decode(content)
-    return explicit.isEmpty ? AgentRichContentCodec.fromText(content) : explicit
+    return explicit.isEmpty
+      ? AgentRichContentCodec.fromText(content)
+      : explicit.map(AgentDesktopArtifactStore.shared.resolveBlock)
   }
 
   var body: some View {
@@ -717,12 +719,28 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var resourceBlock: some View {
+    let artifactRequest = AgentDesktopArtifactRequestPayload.from(block: block)
+    let artifactAction = artifactRequest.map { request in
+      AgentRichAction(
+        id: "download-desktop-artifact",
+        label: block.metadata["saved_to_downloads"] == "true"
+          ? t("rich_output_saved", "Saved")
+          : (AgentDesktopArtifactStore.shared.localFile(forArtifactURI: request.artifactURI) == nil
+            ? t("rich_output_download", "Download")
+            : t("rich_output_save", "Save")),
+        verb: "download_desktop_artifact",
+        value: request.encode(),
+        style: "primary"
+      )
+    }
     SignalASIRichResourceRow(
       icon: resourceIcon,
       title: resourceTitle,
       subtitle: resourceSubtitle,
       url: SignalASIRichContentLink.safeURL(block.uri),
-      typeLabel: resourceTypeLabel
+      typeLabel: resourceTypeLabel,
+      action: artifactAction,
+      onAction: onAction
     )
   }
 
@@ -1049,10 +1067,36 @@ private struct SignalASIRichResourceRow: View {
   var subtitle: String
   var url: URL?
   var typeLabel: String
+  var action: AgentRichAction?
+  var onAction: (AgentRichAction) -> Void
+
+  init(
+    icon: String,
+    title: String,
+    subtitle: String,
+    url: URL?,
+    typeLabel: String,
+    action: AgentRichAction? = nil,
+    onAction: @escaping (AgentRichAction) -> Void = { _ in }
+  ) {
+    self.icon = icon
+    self.title = title
+    self.subtitle = subtitle
+    self.url = url
+    self.typeLabel = typeLabel
+    self.action = action
+    self.onAction = onAction
+  }
 
   var body: some View {
     Group {
-      if let url {
+      if let action {
+        Button {
+          onAction(action)
+        } label: {
+          rowBody
+        }
+      } else if let url {
         Link(destination: url) {
           rowBody
         }
@@ -1086,7 +1130,15 @@ private struct SignalASIRichResourceRow: View {
         }
       }
       Spacer(minLength: 8)
-      if url != nil {
+      if let action {
+        Text(action.label)
+          .font(.caption.weight(.semibold))
+          .foregroundColor(.white)
+          .padding(.horizontal, 9)
+          .padding(.vertical, 6)
+          .background(Color.signalASIAccent)
+          .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      } else if url != nil {
         Image(systemName: "arrow.up.right.square")
           .font(.caption.weight(.semibold))
           .foregroundColor(.signalASITextSecondary)

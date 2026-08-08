@@ -221,7 +221,9 @@ struct ConversationView: View {
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
   @State private var runtimeArtifactExportFilename = ""
+  @State private var runtimeArtifactExportSourceURI = ""
   @State private var runtimeArtifactError = ""
+  @State private var runtimeArtifactStatus = ""
   @State private var agentSessionsShortcutActive = false
   @State private var scanShortcutActive = false
   var contactId: String
@@ -449,7 +451,15 @@ struct ConversationView: View {
       contentType: .data,
       defaultFilename: runtimeArtifactExportFilename
     ) { result in
-      if case .failure(let error) = result {
+      if case .success(let url) = result,
+         !runtimeArtifactExportSourceURI.isEmpty {
+        try? AgentDesktopArtifactStore.shared.markSavedToDownloads(
+          sourceURI: runtimeArtifactExportSourceURI,
+          savedURI: url.absoluteString
+        )
+        runtimeArtifactExportSourceURI = ""
+      } else if case .failure(let error) = result {
+        runtimeArtifactExportSourceURI = ""
         runtimeArtifactError = error.localizedDescription
       }
     }
@@ -465,6 +475,19 @@ struct ConversationView: View {
       }
     } message: {
       Text(runtimeArtifactError)
+    }
+    .alert(
+      t("runtime_artifact.status.title", "Artifact"),
+      isPresented: Binding(
+        get: { !runtimeArtifactStatus.isEmpty },
+        set: { if !$0 { runtimeArtifactStatus = "" } }
+      )
+    ) {
+      Button(t("signalasi.common.done", "Done"), role: .cancel) {
+        runtimeArtifactStatus = ""
+      }
+    } message: {
+      Text(runtimeArtifactStatus)
     }
     .sheet(isPresented: $cloudModelSwitchPresented) {
       NavigationView {
@@ -640,6 +663,33 @@ struct ConversationView: View {
   }
 
   private func handleRichAction(_ action: AgentRichAction) {
+    if action.verb == "download_desktop_artifact" {
+      guard let payload = AgentDesktopArtifactRequestPayload.decode(action.value) else {
+        runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+        return
+      }
+      if let file = AgentDesktopArtifactStore.shared.localFile(forArtifactURI: payload.artifactURI) {
+        do {
+          runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+          runtimeArtifactExportFilename = payload.displayName
+          runtimeArtifactExportSourceURI = payload.artifactURI
+          runtimeArtifactExportPresented = true
+        } catch {
+          runtimeArtifactError = error.localizedDescription
+        }
+      } else if coordinator.requestDesktopArtifactDownload(payload) {
+        runtimeArtifactStatus = t(
+          "runtime_artifact.download_requested",
+          "The Desktop was asked to resend this artifact."
+        )
+      } else {
+        runtimeArtifactError = t(
+          "runtime_artifact.download_failed",
+          "The artifact could not be requested from the Desktop."
+        )
+      }
+      return
+    }
     guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
       return
     }
@@ -660,6 +710,7 @@ struct ConversationView: View {
       } else {
         runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
         runtimeArtifactExportFilename = payload.displayName
+        runtimeArtifactExportSourceURI = ""
         runtimeArtifactExportPresented = true
       }
     } catch {

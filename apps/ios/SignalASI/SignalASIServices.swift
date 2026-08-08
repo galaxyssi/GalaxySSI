@@ -580,6 +580,7 @@ final class MessageCoordinator: ObservableObject {
   private let taskIdentityStore: AgentTaskIdentityStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
+  private var pendingDesktopArtifactDownloads: Set<String> = []
   private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
@@ -675,6 +676,70 @@ final class MessageCoordinator: ObservableObject {
     let clean = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return }
     pendingAgentReplyTurnIds.remove(clean)
+  }
+
+  @discardableResult
+  func requestDesktopArtifactDownload(_ request: AgentDesktopArtifactRequestPayload) -> Bool {
+    guard AgentDesktopArtifactStore.isSignalASIArtifactURI(request.artifactURI),
+          request.sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+          mqttClient.isConnected,
+          let link = desktopArtifactLink(for: request) else {
+      return false
+    }
+    guard pendingDesktopArtifactDownloads.insert(request.artifactURI).inserted else {
+      return true
+    }
+    Task { [weak self] in
+      await self?.publishDesktopArtifactDownload(request, link: link)
+    }
+    return true
+  }
+
+  private func desktopArtifactLink(for request: AgentDesktopArtifactRequestPayload) -> ServerLink? {
+    let paired = store.serverLinks.filter(\.paired)
+    if !request.desktopId.isBlank && !request.clientRouteId.isBlank {
+      return paired.first {
+        $0.desktopId == request.desktopId && $0.routes.clientRouteId == request.clientRouteId
+      }
+    }
+    if !request.desktopId.isBlank {
+      return paired.first { $0.desktopId == request.desktopId }
+    }
+    if !request.clientRouteId.isBlank {
+      return paired.first { $0.routes.clientRouteId == request.clientRouteId }
+    }
+    return paired.count == 1 ? paired.first : nil
+  }
+
+  private func publishDesktopArtifactDownload(
+    _ request: AgentDesktopArtifactRequestPayload,
+    link: ServerLink
+  ) async {
+    let payload: [String: Any] = [
+      "type": "artifact_redelivery_request",
+      "message_id": UUID().uuidString,
+      "artifact_id": request.artifactId,
+      "artifact_uri": request.artifactURI,
+      "task_id": request.taskId,
+      "sha256": request.sha256,
+      "desktop_id": link.desktopId,
+      "client_route_id": link.routes.clientRouteId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    let accepted = await publishDesktopArtifactControlPayload(payload, link: link)
+    if !accepted {
+      pendingDesktopArtifactDownloads.remove(request.artifactURI)
+      lastError = "Desktop artifact download request failed."
+    }
+  }
+
+  private func publishDesktopArtifactControlPayload(
+    _ payload: [String: Any],
+    link: ServerLink
+  ) async -> Bool {
+    guard let wire = try? linkWirePayload(payload, link: link) else { return false }
+    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    return result.accepted
   }
 
   private func updateAgentExecutionTarget(
@@ -2187,6 +2252,20 @@ final class MessageCoordinator: ObservableObject {
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
     }
+    if appPayload.string("type") == "artifact_chunk" {
+      handleDesktopArtifactChunk(appPayload, link: link)
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
+    if appPayload.string("type") == "artifact_redelivery_result" {
+      handleDesktopArtifactRedeliveryResult(appPayload)
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     if handleConnectorAgentStatus(appPayload, link: link) {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
@@ -2249,6 +2328,50 @@ final class MessageCoordinator: ObservableObject {
     NotificationService.notify(
       title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
+    )
+  }
+
+  private func handleDesktopArtifactChunk(_ payload: [String: Any], link: ServerLink?) {
+    do {
+      let result = try AgentDesktopArtifactStore.shared.ingest(payload)
+      guard result.completed else { return }
+      pendingDesktopArtifactDownloads.remove(result.artifactURI)
+      if let link {
+        let receipt: [String: Any] = [
+          "type": "artifact_receipt",
+          "artifact_id": result.artifactId,
+          "artifact_uri": result.artifactURI,
+          "task_id": result.taskId,
+          "sha256": result.sha256,
+          "status": "stored",
+          "desktop_id": link.desktopId,
+          "client_route_id": link.routes.clientRouteId,
+          "time": Int64(Date().timeIntervalSince1970 * 1_000)
+        ]
+        Task { [weak self] in
+          _ = await self?.publishDesktopArtifactControlPayload(receipt, link: link)
+        }
+      }
+      _ = store.appendSystem(
+        "Desktop artifact is ready: \(result.artifactId.prefix(12)).",
+        to: "system",
+        conversationId: payload.string("conversation_id")
+      )
+    } catch {
+      pendingDesktopArtifactDownloads.remove(payload.string("artifact_uri"))
+      lastError = error.localizedDescription
+    }
+  }
+
+  private func handleDesktopArtifactRedeliveryResult(_ payload: [String: Any]) {
+    guard payload.string("status").lowercased() != "stored" else { return }
+    let artifactURI = payload.string("artifact_uri")
+    pendingDesktopArtifactDownloads.remove(artifactURI)
+    lastError = "Desktop artifact is unavailable."
+    _ = store.appendSystem(
+      "Desktop artifact could not be downloaded.",
+      to: "system",
+      conversationId: payload.string("conversation_id")
     )
   }
 
