@@ -586,6 +586,8 @@ final class MessageCoordinator: ObservableObject {
       }
     )
   }()
+  private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
+    UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
@@ -799,6 +801,76 @@ final class MessageCoordinator: ObservableObject {
       store.modelPlannerSettings.cloudContactId == "local-llm"
   }
 
+  func approveLocalNativeAction(taskId: String, remember: Bool = false) {
+    guard var task = store.agentTask(id: taskId),
+          let action = task.pendingAction,
+          task.phase == .waitingConfirmation else {
+      return
+    }
+    if remember && AgentConfirmationPolicy.tier(for: action) == .confirmOnce {
+      localConfirmationConsentStore.remember(
+        consentKey: AgentConfirmationPolicy.consentKey(for: action)
+      )
+    }
+    task.phase = .executing
+    task.pendingAction = nil
+    task.result = ""
+    task.verification = "User approval received"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): approved")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else {
+      task.phase = .failed
+      task.result = localReply(
+        english: "The original local Agent request is no longer available.",
+        chinese: "原始本地 Agent 请求已不可用。"
+      )
+      task.executionLog.append("Native tool approval failed: outgoing message missing")
+      store.upsertAgentTask(task)
+      return
+    }
+    _ = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+  }
+
+  func denyLocalNativeAction(taskId: String) {
+    guard var task = store.agentTask(id: taskId),
+          let action = task.pendingAction,
+          task.phase == .waitingConfirmation else {
+      return
+    }
+    task.phase = .cancelled
+    task.pendingAction = nil
+    task.result = localReply(
+      english: "The requested phone action was not executed.",
+      chinese: "未执行请求的手机操作。"
+    )
+    task.verification = "User denied native tool action"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): denied")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    let reply = task.result
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_denied",
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      reply,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_denied_received",
+      detail: action.parameters["tool_id"] ?? action.target,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
   private func receiveLocalModelReply(
     requestText: String,
     attachments: [SignalASIDraftAttachment],
@@ -840,7 +912,7 @@ final class MessageCoordinator: ObservableObject {
           excluding: outgoing.id
         )
       )
-      if executeDirectLocalNativeAction(
+      if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
         task: &task
@@ -891,7 +963,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func executeDirectLocalNativeAction(
+  private func handleDirectLocalNativeAction(
     requestText: String,
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
@@ -904,14 +976,76 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage
     )
     guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
-          let action = plan.actions.first(where: { $0.kind == .callNativeTool }),
-          !action.requiresConfirmation else {
+          let action = plan.actions.first(where: { $0.kind == .callNativeTool }) else {
       return false
     }
 
+    task.risk = action.risk
+    if action.risk == .blocked {
+      markLocalNativeActionBlocked(
+        action: action,
+        outgoing: outgoing,
+        task: &task,
+        reason: localReply(
+          english: "This phone action is blocked by the local safety policy.",
+          chinese: "此手机操作已被本地安全策略阻止。"
+        )
+      )
+      return true
+    }
+    switch store.agentSafetySettings.permissionMode {
+    case .observeOnly, .suggestOnly:
+      markLocalNativeActionBlocked(
+        action: action,
+        outgoing: outgoing,
+        task: &task,
+        reason: localReply(
+          english: "The current Agent permission mode does not allow phone actions.",
+          chinese: "当前 Agent 权限模式不允许执行手机操作。"
+        )
+      )
+      return true
+    case .askBeforeAction, .autoLowRisk:
+      break
+    }
+    let decision = AgentConfirmationDecisionPolicy.decision(
+      actions: [action],
+      permissionMode: store.agentSafetySettings.permissionMode,
+      consentStore: localConfirmationConsentStore
+    )
+    if decision.requiresConfirmation {
+      task.phase = .waitingConfirmation
+      task.pendingAction = action
+      task.result = ""
+      task.verification = "Waiting for user approval"
+      let toolId = action.parameters["tool_id"] ?? action.target
+      task.executionLog.append("Native tool \(toolId): waiting for confirmation")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: outgoing.contactId,
+        stage: "local_native_tool_waiting_confirmation",
+        detail: action.parameters["tool_id"] ?? action.target,
+        status: .sent
+      )
+      return true
+    }
+    task.pendingAction = nil
+    return executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+  }
+
+  private func executeLocalNativeAction(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let runtime = localNativeToolRuntime else { return false }
+    let screen = AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+
     let result = runtime.actionExecutor.execute(
       action: action,
-      screen: request.screen
+      screen: screen
     )
     let reply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
@@ -941,6 +1075,55 @@ final class MessageCoordinator: ObservableObject {
       turnId: outgoing.turnId
     )
     return true
+  }
+
+  private func markLocalNativeActionBlocked(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord,
+    reason: String
+  ) {
+    task.phase = .blocked
+    task.blocked = true
+    task.pendingAction = nil
+    task.result = reason
+    task.verification = "Native tool action blocked before execution"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): blocked")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_blocked",
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: .failed
+    )
+    _ = store.appendIncoming(
+      reason,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .failed,
+      traceStage: "local_native_tool_blocked_received",
+      detail: action.parameters["tool_id"] ?? action.target,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
+  private func localOutgoingMessage(for task: AgentTaskRecord) -> ChatMessage? {
+    store.messages(for: "hermes").first { message in
+      message.isMine && (
+        message.turnId == task.taskId ||
+          message.id.uuidString == task.taskId
+      )
+    }
+  }
+
+  private func localReply(english: String, chinese: String) -> String {
+    LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+      ? chinese
+      : english
   }
 
   private func localModelPrompt(

@@ -680,6 +680,17 @@
 "signalasi.agent_task_center.delete_message" = "删除“%@”的任务记录？对应会话仍会保留。";
 "signalasi.agent_task_center.deleted" = "任务已删除";
 "signalasi.agent_task_center.delete_failed" = "未能删除任务";
+"signalasi.agent.confirmation.title" = "需要确认操作";
+"signalasi.agent.confirmation.subtitle" = "执行前请检查请求的手机操作。";
+"signalasi.agent.confirmation.untitled" = "手机操作";
+"signalasi.agent.confirmation.risk" = "风险：%@";
+"signalasi.agent.confirmation.risk_low" = "低";
+"signalasi.agent.confirmation.risk_medium" = "中";
+"signalasi.agent.confirmation.risk_high" = "高";
+"signalasi.agent.confirmation.risk_blocked" = "已阻止";
+"signalasi.agent.confirmation.deny" = "拒绝";
+"signalasi.agent.confirmation.allow_once" = "允许一次";
+"signalasi.agent.confirmation.allow_always" = "记住此权限";
 "signalasi.common.retry" = "重试";
 "signalasi.agent_risk.low" = "低";
 "signalasi.agent_risk.medium" = "中";

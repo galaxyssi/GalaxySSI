@@ -181,6 +181,12 @@ struct AgentHomeView: View {
     activeAgentTasks.first?.phase
   }
 
+  private var pendingConfirmationTask: AgentTaskRecord? {
+    activeAgentTasks.first { task in
+      task.phase == .waitingConfirmation && task.pendingAction != nil
+    }
+  }
+
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
@@ -247,6 +253,23 @@ struct AgentHomeView: View {
             activePhase: activeAgentPhase,
             executionPaused: store.agentSafetySettings.executionPaused
           )
+          if let pendingConfirmationTask {
+            SignalASIAgentConfirmationCard(
+              task: pendingConfirmationTask,
+              onApproveOnce: {
+                coordinator.approveLocalNativeAction(taskId: pendingConfirmationTask.taskId)
+              },
+              onApproveAlways: {
+                coordinator.approveLocalNativeAction(
+                  taskId: pendingConfirmationTask.taskId,
+                  remember: true
+                )
+              },
+              onDeny: {
+                coordinator.denyLocalNativeAction(taskId: pendingConfirmationTask.taskId)
+              }
+            )
+          }
           AgentInfoCard(
             currentApp: "SignalASI iOS",
             callableTargets: store.visibleContacts.count,
