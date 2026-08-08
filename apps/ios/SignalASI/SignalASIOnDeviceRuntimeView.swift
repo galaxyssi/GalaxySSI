@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SignalASIOnDeviceRuntimeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -298,11 +299,11 @@ struct SignalASIOnDeviceRuntimeView: View {
 struct SignalASIRuntimeSoftwareCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var searchText = ""
-
-  private var packs: [AgentRuntimePackStatus] {
-    SignalASIOnDeviceRuntimeView.packStatuses()
-      .filter { !["linux-base", "python-uv"].contains($0.id) }
-  }
+  @State private var packs = SignalASIOnDeviceRuntimeView.packStatuses()
+    .filter { !["linux-base", "python-uv"].contains($0.id) }
+  @State private var fileImporterPresented = false
+  @State private var isInstalling = false
+  @State private var installMessage = ""
 
   private var filteredPacks: [AgentRuntimePackStatus] {
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -370,6 +371,13 @@ struct SignalASIRuntimeSoftwareCenterView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .fileImporter(
+      isPresented: $fileImporterPresented,
+      allowedContentTypes: [Self.runtimePackType],
+      allowsMultipleSelection: false
+    ) { result in
+      handleImport(result)
+    }
   }
 
   private var searchSection: some View {
@@ -427,13 +435,59 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   private var advancedSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_runtime_software_section_advanced", "Advanced Installation"))
-      SignalASISecurityStatusRow(
+      SignalASISecurityActionRow(
         title: t("cc_runtime_import_title", "Install runtime pack"),
-        subtitle: t("cc_runtime_import_subtitle", "Import a SignalASI-signed .sarpack package"),
-        systemImage: "tray.and.arrow.down",
-        tint: .orange,
-        badge: t("cc_runtime_lifecycle_no_controller", "Not packaged")
-      )
+        subtitle: installMessage.ifBlank(t("cc_runtime_import_subtitle", "Import a SignalASI-signed .sarpack package")),
+        systemImage: isInstalling ? "arrow.triangle.2.circlepath" : "tray.and.arrow.down",
+        tint: isInstalling ? .blue : .orange,
+        badge: isInstalling
+          ? t("cc_runtime_import_installing", "Installing")
+          : t("cc_runtime_import_action", "Choose file")
+      ) {
+        guard !isInstalling else { return }
+        fileImporterPresented = true
+      }
+    }
+  }
+
+  private static var runtimePackType: UTType {
+    UTType(filenameExtension: "sarpack") ?? .data
+  }
+
+  private func handleImport(_ result: Result<[URL], Error>) {
+    guard case .success(let urls) = result, let source = urls.first else { return }
+    guard source.startAccessingSecurityScopedResource() else {
+      installMessage = t("cc_runtime_import_access_failed", "The selected runtime pack could not be opened")
+      return
+    }
+    isInstalling = true
+    installMessage = t("cc_runtime_import_preparing", "Verifying runtime pack...")
+    DispatchQueue.global(qos: .userInitiated).async {
+      let installer = AgentIOSRuntimePackInstaller()
+      let outcome: Result<AgentRuntimePackInstallResult, Error>
+      do {
+        outcome = .success(try installer.install(source: source))
+      } catch {
+        outcome = .failure(error)
+      }
+      source.stopAccessingSecurityScopedResource()
+      DispatchQueue.main.async {
+        isInstalling = false
+        switch outcome {
+        case .success(let result):
+          installMessage = String(
+            format: t("cc_runtime_import_success", "Installed %@ %@"),
+            result.packId,
+            result.version
+          )
+          packs = SignalASIOnDeviceRuntimeView.packStatuses()
+            .filter { !["linux-base", "python-uv"].contains($0.id) }
+        case .failure(let error):
+          installMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_import_failed", "Runtime pack installation failed")
+          )
+        }
+      }
     }
   }
 

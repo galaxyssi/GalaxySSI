@@ -149,6 +149,7 @@
     A10000000000000000000794 /* CloudModelContextOverflowRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */; };
     A10000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */; };
     A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */; };
+    A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */; };
     A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentExecutionPolicy.swift */; };
     A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000708 /* AgentModelPlannerSettings.swift */; };
     A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000709 /* LanguagePolicySettings.swift */; };
@@ -431,6 +432,10 @@
     A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
     A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
     A10000000000000000000120 /* AgentRuntimePackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000120 /* AgentRuntimePackModels.swift */; };
+    A10000000000000000000464 /* AgentRuntimePackArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000464 /* AgentRuntimePackArchive.swift */; };
+    A10000000000000000000465 /* AgentRuntimePackInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000465 /* AgentRuntimePackInstaller.swift */; };
+    A10000000000000000000466 /* AgentIOSRuntimePackTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000466 /* AgentIOSRuntimePackTrust.swift */; };
+    A10000000000000000000467 /* trust-anchors.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000467 /* trust-anchors.json */; };
     A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */; };
     A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */; };
     A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000123 /* CustomDeviceHomeModels.swift */; };
@@ -828,6 +833,7 @@
     A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelContextOverflowRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolDefaultStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeActionExecutorTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackInstallerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000707 /* AgentExecutionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000708 /* AgentModelPlannerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlannerSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000709 /* LanguagePolicySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettings.swift; sourceTree = "<group>"; };
@@ -1041,6 +1047,10 @@
     A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
     A20000000000000000000120 /* AgentRuntimePackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000464 /* AgentRuntimePackArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackArchive.swift; sourceTree = "<group>"; };
+    A20000000000000000000465 /* AgentRuntimePackInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackInstaller.swift; sourceTree = "<group>"; };
+    A20000000000000000000466 /* AgentIOSRuntimePackTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimePackTrust.swift; sourceTree = "<group>"; };
+    A20000000000000000000467 /* trust-anchors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/runtime/bootstrap/trust-anchors.json; sourceTree = "<group>"; };
     A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFailureResponsePolicyModels.swift; sourceTree = "<group>"; };
     A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionsBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000123 /* CustomDeviceHomeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDeviceHomeModels.swift; sourceTree = "<group>"; };
@@ -1510,6 +1520,10 @@
         A20000000000000000000421 /* AgentTranscriptEntryStore.swift */,
         A20000000000000000000423 /* AgentCronExpression.swift */,
         A20000000000000000000120 /* AgentRuntimePackModels.swift */,
+        A20000000000000000000464 /* AgentRuntimePackArchive.swift */,
+        A20000000000000000000465 /* AgentRuntimePackInstaller.swift */,
+        A20000000000000000000466 /* AgentIOSRuntimePackTrust.swift */,
+        A20000000000000000000467 /* trust-anchors.json */,
         A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */,
         A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */,
         A20000000000000000000123 /* CustomDeviceHomeModels.swift */,
@@ -2060,6 +2074,7 @@
         A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */,
         A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */,
         A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */,
+        A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */,
         A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */,
       );
       path = SignalASITests;
@@ -2161,7 +2176,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -2287,6 +2302,9 @@
         A10000000000000000000421 /* AgentTranscriptEntryStore.swift in Sources */,
         A10000000000000000000423 /* AgentCronExpression.swift in Sources */,
         A10000000000000000000120 /* AgentRuntimePackModels.swift in Sources */,
+        A10000000000000000000464 /* AgentRuntimePackArchive.swift in Sources */,
+        A10000000000000000000465 /* AgentRuntimePackInstaller.swift in Sources */,
+        A10000000000000000000466 /* AgentIOSRuntimePackTrust.swift in Sources */,
         A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */,
         A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */,
         A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */,
@@ -2861,6 +2879,7 @@
         A10000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift in Sources */,
         A10000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift in Sources */,
         A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */,
+        A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */,
         A10000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
