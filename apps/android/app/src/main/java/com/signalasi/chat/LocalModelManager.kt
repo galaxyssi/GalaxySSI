@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.Locale
 
@@ -16,6 +17,16 @@ data class LocalModelDownloadState(
 ) {
     val progressPercent: Int
         get() = if (totalBytes <= 0L) 0 else ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+}
+
+internal object LocalModelPostInstallSelection {
+    fun enabledQnnProfiles(
+        currentProfileIds: Set<String>,
+        installedProfileId: String
+    ): Set<String> {
+        require(installedProfileId.isNotBlank()) { "Installed local-model profile ID is required" }
+        return currentProfileIds + installedProfileId
+    }
 }
 
 class LocalModelMeteredConfirmationRequired(
@@ -42,10 +53,19 @@ object LocalModelManager {
     fun storage(context: Context): LocalModelStorage = LocalModelStorage(context.applicationContext)
 
     fun isInstalled(context: Context, profile: LocalModelRuntimeProfile): Boolean =
-        storage(context).inspect(profile).installed
+        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+            savedInstallState(context, profile) == LocalModelInstallState.READY &&
+                GenieXQairtModelManager.supportsDevice(profile)
+        } else {
+            storage(context).inspect(profile).installed
+        }
 
-    fun verifiedFile(context: Context, profile: LocalModelRuntimeProfile): File =
-        storage(context).verifyForNativeLoad(profile)
+    fun verifiedFile(context: Context, profile: LocalModelRuntimeProfile): File {
+        require(profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
+            "QAIRT models are resolved through the Qualcomm model manager"
+        }
+        return storage(context).verifyForNativeLoad(profile)
+    }
 
     fun state(context: Context, profile: LocalModelRuntimeProfile): LocalModelDownloadState {
         if (isInstalled(context, profile)) {
@@ -56,12 +76,12 @@ object LocalModelManager {
             )
         }
         val prefs = preferences(context)
-        val saved = runCatching {
-            enumValueOf<LocalModelInstallState>(
-                prefs.getString(KEY_STATE + profile.id, LocalModelInstallState.NOT_INSTALLED.name).orEmpty()
-            )
-        }.getOrDefault(LocalModelInstallState.NOT_INSTALLED)
-        val partialBytes = storage(context).partialFile(profile).length()
+        val saved = savedInstallState(context, profile)
+        val partialBytes = if (profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
+            storage(context).partialFile(profile).length()
+        } else {
+            prefs.getLong(KEY_BYTES + profile.id, 0L)
+        }
         val effective = if (saved in setOf(LocalModelInstallState.DOWNLOADING, LocalModelInstallState.QUEUED) &&
             !LocalModelDownloadService.isActive(profile.id)
         ) {
@@ -79,7 +99,10 @@ object LocalModelManager {
     }
 
     fun start(context: Context, profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
-        require(profile.downloadable) { "The selected GGUF artifact has no verified download metadata" }
+        require(profile.downloadable) { "The selected local-model artifact has no verified download metadata" }
+        require(GenieXQairtModelManager.supportsDevice(profile)) {
+            "${profile.displayName} is compiled for ${profile.targetChipset}"
+        }
         if (isInstalled(context, profile)) return
         val storage = storage(context)
         val required = storage.requiredDownloadBytes(profile)
@@ -110,14 +133,16 @@ object LocalModelManager {
     fun delete(context: Context, profile: LocalModelRuntimeProfile) {
         LocalModelDownloadService.cancel(context.applicationContext, profile.id)
         LocalModelInferenceRuntime.unloadIfSelected(profile.id)
-        storage(context).delete(profile, modelLoaded = LocalModelInferenceRuntime.loadedProfileId() == profile.id)
+        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+            runBlocking { GenieXQairtModelManager.remove(context.applicationContext, profile) }
+        } else {
+            storage(context).delete(profile, modelLoaded = LocalModelInferenceRuntime.loadedProfileId() == profile.id)
+        }
         clearState(context, profile)
         if (profile.sourceTrust == LocalModelSourceTrust.HUB_VERIFIED) {
             LocalModelProfileStore(context).delete(profile.id)
         }
-        if (LocalModelRuntimeSettings.selectedProfile(context).id == profile.id) {
-            LocalModelRuntimeSettings.setSelectedProfile(context, LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M.id)
-        }
+        LocalModelRuntimeSettings.removeProfile(context, profile)
     }
 
     fun preferChinaMirror(context: Context): Boolean {
@@ -152,6 +177,18 @@ object LocalModelManager {
 
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    private fun savedInstallState(
+        context: Context,
+        profile: LocalModelRuntimeProfile
+    ): LocalModelInstallState = runCatching {
+        enumValueOf<LocalModelInstallState>(
+            preferences(context).getString(
+                KEY_STATE + profile.id,
+                LocalModelInstallState.NOT_INSTALLED.name
+            ).orEmpty()
+        )
+    }.getOrDefault(LocalModelInstallState.NOT_INSTALLED)
 
     private fun isMetered(context: Context): Boolean {
         val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return true

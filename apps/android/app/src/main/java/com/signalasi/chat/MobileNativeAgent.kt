@@ -9594,7 +9594,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             )
         }
-        val profile = LocalModelRuntimeSettings.selectedProfile(context)
+        val profile = LocalModelCooperativeRuntime.displayProfile(context)
         if (!LocalModelInferenceRuntime.ready(context)) {
             return AgentActionResult(
                 action.id,
@@ -9615,11 +9615,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         LOCAL_MODEL_EXECUTOR.execute {
             val appContext = context.applicationContext
             val result = runCatching {
-                LocalModelInferenceRuntime.generate(
+                LocalModelCooperativeRuntime.generate(
                     context = appContext,
-                    profile = profile,
                     systemPrompt = CodexStyleResponsePolicy.prompt(appContext),
-                    userPrompt = promptWithLocalModelContext(action, requestPrompt)
+                    userPrompt = promptWithLocalModelContext(action, requestPrompt),
+                    hasAttachments = action.id.startsWith("attachment-") ||
+                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
                 )
             }
             val inference = result.getOrNull()
