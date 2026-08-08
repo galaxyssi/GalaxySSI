@@ -1,0 +1,111 @@
+import Foundation
+
+struct LocalModelInferenceResult: Equatable {
+  var text: String
+  var profileId: String
+  var backend: String
+  var smeAvailable: Bool
+  var elapsedMillis: Int64
+}
+
+struct LocalModelInferenceRuntimeSnapshot: Equatable {
+  var backend: String
+  var available: Bool
+  var loadedProfileId: String
+  var loadedContextTokens: Int
+
+  var loaded: Bool { !loadedProfileId.isEmpty }
+}
+
+enum LocalModelInferenceError: LocalizedError, Equatable {
+  case nativeBackendUnavailable
+  case modelNotReady
+  case modelLoadFailed(String)
+  case generationFailed(String)
+  case emptyResponse
+
+  var errorDescription: String? {
+    switch self {
+    case .nativeBackendUnavailable:
+      return "The native local model backend is not bundled in this build"
+    case .modelNotReady:
+      return "The selected local model is not installed or failed verification"
+    case let .modelLoadFailed(message):
+      return message.isEmpty ? "The local model could not be loaded" : message
+    case let .generationFailed(message):
+      return message.isEmpty ? "The local model could not generate a response" : message
+    case .emptyResponse:
+      return "The local model returned an empty response"
+    }
+  }
+}
+
+/// The Swift-side contract for the llama.cpp/Metal backend.
+///
+/// The app deliberately keeps the backend behind this protocol so the iOS target can
+/// link a native implementation without putting C++ details into the Swift UI layer.
+protocol LocalModelInferenceBackend: AnyObject {
+  var isAvailable: Bool { get }
+  var backendName: String { get }
+  var exposesSme: Bool { get }
+
+  func loadModel(at modelURL: URL, contextTokens: Int, threads: Int) throws
+  func generate(
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int,
+    temperature: Double
+  ) throws -> String
+  func unload()
+}
+
+final class UnavailableLocalModelInferenceBackend: LocalModelInferenceBackend {
+  var isAvailable: Bool { false }
+  var backendName: String { "Unavailable" }
+  var exposesSme: Bool { false }
+
+  func loadModel(at modelURL: URL, contextTokens: Int, threads: Int) throws {
+    throw LocalModelInferenceError.nativeBackendUnavailable
+  }
+
+  func generate(
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int,
+    temperature: Double
+  ) throws -> String {
+    throw LocalModelInferenceError.nativeBackendUnavailable
+  }
+
+  func unload() {}
+}
+
+/// A small registration point for the native Xcode target.
+///
+/// A future llama.cpp adapter can register once during app startup. Until then the
+/// default backend stays unavailable, which is safer than treating Metal hardware as
+/// proof that GGUF inference is executable.
+enum LocalModelInferenceBackendRegistry {
+  private static let lock = NSLock()
+  private static let unavailableBackend = UnavailableLocalModelInferenceBackend()
+  private static var registeredBackend: LocalModelInferenceBackend?
+
+  static func register(_ backend: LocalModelInferenceBackend) {
+    lock.lock()
+    registeredBackend = backend
+    lock.unlock()
+  }
+
+  static func clear() {
+    lock.lock()
+    registeredBackend?.unload()
+    registeredBackend = nil
+    lock.unlock()
+  }
+
+  static func current() -> LocalModelInferenceBackend {
+    lock.lock()
+    defer { lock.unlock() }
+    return registeredBackend ?? unavailableBackend
+  }
+}

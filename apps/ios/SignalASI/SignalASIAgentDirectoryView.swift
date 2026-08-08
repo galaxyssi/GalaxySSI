@@ -385,7 +385,12 @@ struct SignalASIMyAgentsView: View {
           }
           VStack(spacing: 8) {
             ForEach(filteredItems) { item in
-              if item.connected {
+              if item.id == "local-llm" {
+                NavigationLink(destination: SignalASILocalModelLabView()) {
+                  SignalASIAgentDirectoryRow(item: item)
+                }
+                .buttonStyle(.plain)
+              } else if item.connected {
                 NavigationLink(destination: ContactDetailView(contactId: item.contactId)) {
                   SignalASIAgentDirectoryRow(item: item)
                 }
@@ -561,7 +566,9 @@ private struct SignalASIAgentDirectorySnapshot {
     let contact = store.contact(id: id)
     let setupStatus = contact?.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
     let isConnected = connected(id)
-    let badge = statusBadge(setupStatus: setupStatus, connected: isConnected, fallback: fallbackStatus)
+    let badge = id == "local-llm"
+      ? localModelStatusBadge()
+      : statusBadge(setupStatus: setupStatus, connected: isConnected, fallback: fallbackStatus)
     let fallbackSubtitle = t(subtitleKey, subtitleFallback)
     return SignalASIAgentDirectoryItem(
       id: id,
@@ -620,6 +627,23 @@ private struct SignalASIAgentDirectorySnapshot {
     return contact.trustState == .verified ||
       contact.setupStatus == "ready" ||
       contact.deliveryMode == .cloudAPI
+  }
+
+  private func localModelStatusBadge() -> (text: String, key: String) {
+    let runtime = LocalModelInferenceRuntime.shared
+    guard runtime.available else {
+      return (
+        t("signalasi.local_model.runtime_unavailable", "Unavailable"),
+        "unavailable"
+      )
+    }
+    guard runtime.ready() else {
+      return (
+        t("signalasi.local_model.download_ready", "Needs model"),
+        "needs_setup"
+      )
+    }
+    return (t("signalasi.status.ready", "Ready"), "ready")
   }
 
   private func statusBadge(

@@ -2038,6 +2038,9 @@
 "signalasi.local_model.status" = "状态";
 "signalasi.local_model.runtime_unavailable" = "此版本未提供本地推理运行时";
 "signalasi.local_model.runtime_ready" = "可以进行端侧推理";
+"signalasi.local_model.native_runtime" = "原生推理运行时";
+"signalasi.local_model.native_runtime_ready_detail" = "%@ 后端可用";
+"signalasi.local_model.native_runtime_unavailable_detail" = "需要内置 GGUF 后端后才能启动本地推理";
 "signalasi.local_model.section_manage" = "模型管理";
 "signalasi.local_model.search_title" = "搜索模型";
 "signalasi.local_model.search_subtitle" = "从可信模型平台查找可下载的 GGUF 模型";

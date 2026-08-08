@@ -159,6 +159,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   func delete(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
     let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
     try? storage.delete(profile)
     LocalModelRuntimeCatalog.removeHubProfile(profile)
     states[artifact.id] = .notInstalled

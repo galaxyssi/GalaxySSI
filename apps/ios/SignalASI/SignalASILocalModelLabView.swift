@@ -12,6 +12,7 @@ struct SignalASILocalModelLabView: View {
   @State private var contextTokens = LocalModelRuntimeSettings.contextTokens()
   @State private var deviceSnapshot = LocalModelDeviceSnapshotDetector.capture()
   @State private var acceleratorSnapshot = LocalModelAcceleratorDetector.detect()
+  @State private var inferenceSnapshot = LocalModelInferenceRuntime.shared.snapshot()
   @State private var showingContextChoices = false
   @State private var cameraStatus = ""
   @State private var microphoneStatus = ""
@@ -47,10 +48,7 @@ struct SignalASILocalModelLabView: View {
   }
 
   private var runtimeAvailable: Bool {
-    acceleratorSnapshot.readyKinds.contains(.cpu) ||
-      acceleratorSnapshot.readyKinds.contains(.gpu) ||
-      acceleratorSnapshot.readyKinds.contains(.coreMLNeuralEngine) ||
-      acceleratorSnapshot.readyKinds.contains(.vendorSDK)
+    inferenceSnapshot.available
   }
 
   private var localModelConnectorCount: Int {
@@ -247,6 +245,17 @@ struct SignalASILocalModelLabView: View {
         systemImage: "doc",
         tint: .blue,
         badge: formatBytes(estimate.modelFileBytes)
+      )
+      SignalASILocalModelLabStatusRow(
+        title: t("signalasi.local_model.native_runtime", "Native Inference Runtime"),
+        subtitle: runtimeAvailable
+          ? String(format: t("signalasi.local_model.native_runtime_ready_detail", "%@ backend is available"), inferenceSnapshot.backend)
+          : t("signalasi.local_model.native_runtime_unavailable_detail", "A bundled GGUF backend is required before local inference can start"),
+        systemImage: "bolt.horizontal.circle",
+        tint: runtimeAvailable ? .signalASIAccent : .orange,
+        badge: runtimeAvailable
+          ? t("signalasi.local_model.runtime_ready", "Ready")
+          : t("signalasi.local_model.runtime_unavailable", "Unavailable")
       )
       SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.kv_cache", "KV cache"),
@@ -493,6 +502,7 @@ struct SignalASILocalModelLabView: View {
     contextTokens = min(LocalModelRuntimeSettings.contextTokens(), selectedProfile.maximumContextTokens)
     deviceSnapshot = LocalModelDeviceSnapshotDetector.capture()
     acceleratorSnapshot = LocalModelAcceleratorDetector.detect()
+    inferenceSnapshot = LocalModelInferenceRuntime.shared.snapshot()
     catalogRevision += 1
     refreshPermissionStatuses()
   }
