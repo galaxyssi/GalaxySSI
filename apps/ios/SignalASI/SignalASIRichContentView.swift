@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import SwiftUI
 import UIKit
+import WebKit
 import UniformTypeIdentifiers
 
 struct SignalASIRichContentView: View {
@@ -235,7 +236,7 @@ private struct SignalASIRichBlockView: View {
     case .divider:
       Divider()
         .padding(.vertical, 2)
-    case .code, .json, .diff, .html:
+    case .code, .json, .diff:
       codeBlock
     case .keyValue:
       keyValueBlock
@@ -269,7 +270,11 @@ private struct SignalASIRichBlockView: View {
       approvalBlock
     case .form:
       formBlock
-    case .file, .link, .citation, .webpage, .unknown:
+    case .html:
+      htmlBlock
+    case .webpage:
+      webpageBlock
+    case .file, .link, .citation, .unknown:
       resourceBlock
     }
   }
@@ -495,6 +500,35 @@ private struct SignalASIRichBlockView: View {
     } else {
       resourceBlock
     }
+  }
+
+  private var htmlBlock: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !block.title.isEmpty {
+        selectableText(block.title)
+          .font(.subheadline.weight(.semibold))
+      }
+      SignalASIInlineHTMLView(html: block.text)
+        .frame(maxWidth: .infinity)
+        .frame(height: 280)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      if !block.fallbackText.isEmpty {
+        selectableText(block.fallbackText)
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
+      }
+    }
+  }
+
+  private var webpageBlock: some View {
+    SignalASIRichResourceRow(
+      icon: "safari",
+      title: block.title.isEmpty ? block.uri : block.title,
+      subtitle: block.fallbackText.ifBlank(block.uri),
+      url: webpageURL,
+      typeLabel: t("rich_output_type_web", "Web")
+    )
   }
 
   private var videoBlock: some View {
@@ -963,6 +997,15 @@ private struct SignalASIRichBlockView: View {
     return url
   }
 
+  private var webpageURL: URL? {
+    guard let url = URL(string: block.uri),
+          url.scheme?.lowercased() == "https",
+          url.host?.isBlank == false else {
+      return nil
+    }
+    return url
+  }
+
   private var remoteURL: URL? {
     guard block.type == .image || block.type == .gallery,
           let url = SignalASIRichContentLink.safeURL(block.uri),
@@ -1233,6 +1276,70 @@ private struct SignalASIRichBarChartView: View {
     .orange,
     .purple
   ]
+}
+
+private struct SignalASIInlineHTMLView: UIViewRepresentable {
+  let html: String
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeUIView(context: Context) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    configuration.preferences.javaScriptEnabled = true
+    configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.navigationDelegate = context.coordinator
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    webView.scrollView.backgroundColor = .clear
+    webView.scrollView.alwaysBounceVertical = false
+    webView.scrollView.alwaysBounceHorizontal = false
+    context.coordinator.loadedHTML = html
+    webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
+    return webView
+  }
+
+  func updateUIView(_ webView: WKWebView, context: Context) {
+    guard context.coordinator.loadedHTML != html else { return }
+    context.coordinator.loadedHTML = html
+    webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
+  }
+
+  private static func isolatedDocument(_ fragment: String) -> String {
+    """
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; font-src data:; form-action 'none'; base-uri 'none'">
+        <style>
+          html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; overflow: auto; background: transparent; color: #14202B; font-family: -apple-system, BlinkMacSystemFont, sans-serif; touch-action: pan-x pan-y pinch-zoom; }
+          * { box-sizing: border-box; max-width: 100%; }
+          @media (prefers-color-scheme: dark) { html, body { color: #F3F5F7; } }
+        </style>
+      </head>
+      <body>
+        (fragment.prefix(32_000))
+      </body>
+    </html>
+    """
+  }
+
+  final class Coordinator: NSObject, WKNavigationDelegate {
+    var loadedHTML: String?
+
+    func webView(
+      _ webView: WKWebView,
+      decidePolicyFor navigationAction: WKNavigationAction,
+      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+      decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+    }
+  }
 }
 
 private struct SignalASIAudioArtifactView: View {
