@@ -673,6 +673,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var artifactRevision = 0
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
+  var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
   let desktopArtifactStore: AgentDesktopArtifactStore
@@ -2268,6 +2269,9 @@ final class MessageCoordinator: ObservableObject {
             conversationId: outgoing.conversationId,
             turnId: outgoing.turnId
           )
+        }
+        if let partial = incoming {
+          onIncomingMessageDelta?(partial)
         }
 
       case .completed:
