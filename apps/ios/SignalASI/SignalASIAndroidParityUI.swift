@@ -133,6 +133,7 @@ struct AgentHomeView: View {
   @State private var draft = ""
   @State private var attachments: [SignalASIDraftAttachment] = []
   @State private var actionTrayPresented = false
+  @State private var voiceTranscriptionPending = false
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
@@ -199,9 +200,22 @@ struct AgentHomeView: View {
     activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
   }
 
+  private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
+
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
+
+  private var waitingForAgentReply: Bool {
+    guard let latest = messages.last,
+          latest.isMine,
+          !latest.isSystem else {
+      return false
+    }
+    return latest.deliveryStatus != .failed
+  }
+
+  private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
 
   private var agentVoiceSettings: VoiceSettings {
     var settings = store.voiceSettings
@@ -290,7 +304,7 @@ struct AgentHomeView: View {
             memorySnapshot: store.agentMemorySnapshot(),
             knowledgeStats: store.agentKnowledgeStats
           )
-          if messages.isEmpty {
+          if messages.isEmpty && !voiceTranscriptionPending {
             AgentInsightBanner(
               unreadTotal: unreadTotal,
               runningTasks: activeAgentTasks.count,
@@ -325,6 +339,14 @@ struct AgentHomeView: View {
                   .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
               }
             }
+            if voiceTranscriptionPending {
+              SignalASIVoiceTranscriptionPendingView()
+                .id(Self.voiceTranscriptionPendingViewId)
+            }
+            if waitingForAgentReply {
+              SignalASIAgentReplyWaitingIndicator()
+                .id(Self.replyWaitingViewId)
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -333,7 +355,11 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground)
       .onChange(of: messages.count) { _ in
-        if let last = messages.last {
+        if waitingForAgentReply {
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+          }
+        } else if let last = messages.last {
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(last.id, anchor: .bottom)
           }
@@ -350,6 +376,18 @@ struct AgentHomeView: View {
               : last.id,
             anchor: .bottom
           )
+        }
+      }
+      .onChange(of: voiceTranscriptionPending) { pending in
+        guard pending else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(Self.voiceTranscriptionPendingViewId, anchor: .bottom)
+        }
+      }
+      .onChange(of: waitingForAgentReply) { waiting in
+        guard waiting else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
         }
       }
     }
@@ -440,6 +478,7 @@ struct AgentHomeView: View {
     SignalASIAgentComposerView(
       draft: $draft,
       actionTrayPresented: $actionTrayPresented,
+      voiceTranscriptionPending: $voiceTranscriptionPending,
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,
