@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal fun requiresCompactQnnExecution(asrAcceleration: String, asrQnnPackage: String): Boolean =
+    asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN && asrQnnPackage.isNotBlank()
+
 class AcceleratedLocalWhisperRuntime(
     context: Context,
     private val qnnFactory: () -> LocalWhisperRuntime = { QnnWhisperRuntime(context.applicationContext) },
@@ -18,6 +21,7 @@ class AcceleratedLocalWhisperRuntime(
             WhisperQnnSupport.canUse(context.applicationContext, it)
     }
 ) : LocalWhisperRuntime {
+    private val appContext = context.applicationContext
     private val mutableState = MutableStateFlow<WhisperRuntimeState>(WhisperRuntimeState.Unloaded)
     private var active: LocalWhisperRuntime? = null
 
@@ -27,6 +31,9 @@ class AcceleratedLocalWhisperRuntime(
         val current = active
         val ready = current?.state?.value as? WhisperRuntimeState.Ready
         val wantsQnn = qnnEligible(profile)
+        val compactQnnWasExplicitlySelected = VoiceAssistantSettings.get(appContext).let {
+            requiresCompactQnnExecution(it.asrAcceleration, it.asrQnnPackage)
+        }
         if (ready?.model?.profile?.id == profile.id &&
             (ready.model.accelerationBackend == WhisperAccelerationBackend.QNN_HTP) == wantsQnn
         ) return ready.model
@@ -44,6 +51,19 @@ class AcceleratedLocalWhisperRuntime(
                 return loaded
             } catch (error: Throwable) {
                 qnn.close()
+                if (compactQnnWasExplicitlySelected) {
+                    mutableState.value = WhisperRuntimeState.Failed(
+                        WhisperRuntimeError(
+                            if (error is OutOfMemoryError) {
+                                NativeWhisperCode.OUT_OF_MEMORY
+                            } else {
+                                NativeWhisperCode.MODEL_NOT_LOADED
+                            },
+                            error.message.orEmpty()
+                        )
+                    )
+                    throw error
+                }
                 Log.w(TAG, "QNN HTP unavailable; falling back to GGML for ${profile.id}", error)
             }
         }

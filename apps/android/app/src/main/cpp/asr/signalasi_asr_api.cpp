@@ -17,6 +17,7 @@ extern "C" SIGNALASI_ASR_EXPORT int signalasi_asr_frontend_abi_version() noexcep
 
 #include <array>
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <memory>
 #include <new>
@@ -196,6 +197,46 @@ Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeCre
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_signalasi_chat_voice_asr_local_CompactWhisperQnnFeatureExtractor_nativeExtract(
+    JNIEnv * environment,
+    jobject,
+    jstring mel_filter_path,
+    jobject pcm,
+    const jint sample_count,
+    jobject output) {
+    try {
+        if (pcm == nullptr || output == nullptr || sample_count <= 0) {
+            throw std::invalid_argument("Compact QNN Whisper PCM input is invalid");
+        }
+        const auto pcm_capacity = environment->GetDirectBufferCapacity(pcm);
+        const auto * samples = static_cast<const std::int16_t *>(environment->GetDirectBufferAddress(pcm));
+        const auto output_capacity = environment->GetDirectBufferCapacity(output);
+        auto * destination = static_cast<float *>(environment->GetDirectBufferAddress(output));
+        if (samples == nullptr || destination == nullptr ||
+            pcm_capacity < static_cast<jlong>(sample_count) * sizeof(std::int16_t)) {
+            throw std::invalid_argument("Compact QNN Whisper requires direct buffers");
+        }
+        MelFilterBank128 filter_bank;
+        std::string error;
+        if (!MelFilterBank128::load(to_string(environment, mel_filter_path), &filter_bank, &error)) {
+            throw std::invalid_argument(error);
+        }
+        LogMelExtractor extractor(std::move(filter_bank));
+        if (output_capacity < static_cast<jlong>(extractor.output_values() * sizeof(float))) {
+            throw std::invalid_argument("Compact QNN Whisper feature output is too small");
+        }
+        if (!extractor.compute_pcm16(samples, static_cast<std::size_t>(sample_count), &error)) {
+            throw std::invalid_argument(error);
+        }
+        std::memcpy(destination, extractor.output().data(), extractor.output_values() * sizeof(float));
+        return JNI_TRUE;
+    } catch (const std::exception & error) {
+        throw_java(environment, "java/lang/IllegalArgumentException", error.what());
+        return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeStart(
     JNIEnv * environment,
     jobject,
@@ -295,7 +336,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeWai
     const auto capacity = environment->GetDirectBufferCapacity(output);
     auto * destination = static_cast<float *>(environment->GetDirectBufferAddress(output));
     if (destination == nullptr ||
-        capacity < static_cast<jlong>(LogMelExtractor::kOutputValues * sizeof(float))) {
+        capacity < static_cast<jlong>(session->feature_value_count() * sizeof(float))) {
         throw_java(environment, "java/lang/IllegalArgumentException", "Log-Mel output buffer is invalid");
         return nullptr;
     }

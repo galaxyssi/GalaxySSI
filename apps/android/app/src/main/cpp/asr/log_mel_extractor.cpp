@@ -103,9 +103,11 @@ double mel_dot_product(const float * power,
 MelFilterBank128::MelFilterBank128() : values_(kValueCount, 0.0F) {}
 
 MelFilterBank128::MelFilterBank128(std::vector<float> values) : values_(std::move(values)) {
-    if (values_.size() != kValueCount) {
-        throw std::invalid_argument("Whisper mel filter bank must contain 128 x 201 values");
+    if (values_.size() != kValueCount &&
+        values_.size() != kCompactMelBins * kFftBins) {
+        throw std::invalid_argument("Whisper mel filter bank must contain 80 or 128 x 201 values");
     }
+    mel_bins_ = values_.size() / kFftBins;
     for (const auto value : values_) {
         if (!std::isfinite(value) || value < 0.0F) {
             throw std::invalid_argument("Whisper mel filter bank contains an invalid value");
@@ -130,14 +132,16 @@ bool MelFilterBank128::load(const std::string & path,
         set_error(error_message, "Could not open mel_filters.bin");
         return false;
     }
-    const auto expected_bytes = static_cast<std::streamsize>(kValueCount * sizeof(float));
-    if (stream.tellg() != expected_bytes) {
+    const auto bytes = stream.tellg();
+    const auto large_bytes = static_cast<std::streamsize>(kValueCount * sizeof(float));
+    const auto compact_bytes = static_cast<std::streamsize>(kCompactMelBins * kFftBins * sizeof(float));
+    if (bytes != large_bytes && bytes != compact_bytes) {
         set_error(error_message, "mel_filters.bin has an unexpected size");
         return false;
     }
     stream.seekg(0, std::ios::beg);
-    std::vector<float> values(kValueCount);
-    if (!stream.read(reinterpret_cast<char *>(values.data()), expected_bytes)) {
+    std::vector<float> values(static_cast<std::size_t>(bytes) / sizeof(float));
+    if (!stream.read(reinterpret_cast<char *>(values.data()), bytes)) {
         set_error(error_message, "Could not read mel_filters.bin");
         return false;
     }
@@ -151,17 +155,21 @@ bool MelFilterBank128::load(const std::string & path,
 }
 
 const float * MelFilterBank128::row(const std::size_t mel_bin) const noexcept {
-    return mel_bin < kMelBins ? values_.data() + mel_bin * kFftBins : nullptr;
+    return mel_bin < mel_bins_ ? values_.data() + mel_bin * kFftBins : nullptr;
 }
 
 const std::vector<float> & MelFilterBank128::values() const noexcept {
     return values_;
 }
 
+std::size_t MelFilterBank128::mel_bins() const noexcept {
+    return mel_bins_;
+}
+
 LogMelExtractor::LogMelExtractor(MelFilterBank128 filter_bank)
     : filter_bank_(std::move(filter_bank)),
       padded_samples_(kMaximumSamples + kFftSize, 0.0F),
-      mel_output_(kOutputValues, -1.5F) {
+      mel_output_(filter_bank_.mel_bins() * kMelFrames, -1.5F) {
     initialize_tables();
 }
 
@@ -205,7 +213,7 @@ bool LogMelExtractor::compute_pcm16(const std::int16_t * samples,
             power_spectrum_.data(),
             MelFilterBank128::kFftBins);
 
-        for (std::size_t mel = 0; mel < MelFilterBank128::kMelBins; ++mel) {
+        for (std::size_t mel = 0; mel < filter_bank_.mel_bins(); ++mel) {
             const auto * filters = filter_bank_.row(mel);
             const auto energy = mel_dot_product(
                 power_spectrum_.data(),
@@ -231,6 +239,10 @@ bool LogMelExtractor::compute_pcm16(const std::int16_t * samples,
 
 const std::vector<float> & LogMelExtractor::output() const noexcept {
     return mel_output_;
+}
+
+std::size_t LogMelExtractor::output_values() const noexcept {
+    return mel_output_.size();
 }
 
 void LogMelExtractor::initialize_tables() noexcept {

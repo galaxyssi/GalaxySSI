@@ -19,9 +19,14 @@ class WhisperAccelerationPolicyTest {
     fun qnnUsesOnlyModelFamiliesWithAValidatedAndroidPipeline() {
         assertTrue(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("tiny").family))
         assertTrue(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("base").family))
-        assertFalse(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("small").family))
+        assertTrue(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("small").family))
         assertFalse(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("medium").family))
         assertFalse(WhisperQnnSupport.isSupportedFamily(WhisperModelCatalog.require("large").family))
+        assertFalse(
+            CompactWhisperQnnModelCatalog.all.any {
+                it.manifest.modelId == LargeTurboQnnModelCatalog.MODEL_ID
+            }
+        )
     }
 
     @Test

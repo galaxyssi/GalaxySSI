@@ -30989,7 +30989,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             qnnPackages.forEach { modelPackage ->
                 val state = QnnWhisperPackageManager.state(this, modelPackage)
                 val isSelected = config.asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
-                    config.asrModel == modelPackage.profileId
+                    config.asrQnnPackage == modelPackage.id
                 val isActive = state.status == QnnWhisperPackageStatus.DOWNLOADING ||
                     state.status == QnnWhisperPackageStatus.VERIFYING
                 hasActiveDownload = hasActiveDownload || isActive
@@ -31055,14 +31055,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             }
                             QnnWhisperPackageStatus.READY -> {
                                 if (!isSelected) {
-                                    VoiceAssistantSettings.setAsrModel(
-                                        this@MainActivity,
-                                        modelPackage.profileId
-                                    )
-                                    VoiceAssistantSettings.setAsrAcceleration(
-                                        this@MainActivity,
-                                        VoiceAssistantSettings.ASR_ACCELERATION_QNN
-                                    )
+                                    QnnWhisperPackageManager.select(this@MainActivity, modelPackage)
                                     Toast.makeText(
                                         this@MainActivity,
                                         getString(

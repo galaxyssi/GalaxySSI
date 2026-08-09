@@ -191,7 +191,7 @@ FeatureWaitResult StreamingFrontendSession::wait_for_features(
     const std::chrono::milliseconds timeout,
     FeatureWindowMetadata * metadata,
     std::string * error_message) noexcept {
-    if (destination == nullptr || destination_count < LogMelExtractor::kOutputValues ||
+    if (destination == nullptr || destination_count < extractor_.output_values() ||
         metadata == nullptr) {
         set_error(error_message, "Feature output buffer is invalid");
         return FeatureWaitResult::kError;
@@ -228,7 +228,7 @@ FeatureWaitResult StreamingFrontendSession::wait_for_features(
     if (extracted) {
         std::memcpy(destination,
                     extractor_.output().data(),
-                    LogMelExtractor::kOutputValues * sizeof(float));
+                    extractor_.output_values() * sizeof(float));
     }
     {
         std::lock_guard<std::mutex> guard(window_mutex_);
@@ -239,6 +239,10 @@ FeatureWaitResult StreamingFrontendSession::wait_for_features(
         return FeatureWaitResult::kError;
     }
     return FeatureWaitResult::kReady;
+}
+
+std::size_t StreamingFrontendSession::feature_value_count() const noexcept {
+    return extractor_.output_values();
 }
 
 void StreamingFrontendSession::worker_loop() noexcept {

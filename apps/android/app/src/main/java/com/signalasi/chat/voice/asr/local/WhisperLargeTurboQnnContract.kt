@@ -2,14 +2,31 @@ package com.signalasi.chat.voice.asr.local
 
 internal enum class QnnTensorDataType {
     FLOAT16,
-    INT32
+    INT32,
+    UINT8,
+    UINT16
+}
+
+internal data class QnnQuantizationParameters(
+    val scale: Float,
+    val zeroPoint: Int
+) {
+    init {
+        require(scale.isFinite() && scale > 0F)
+        require(zeroPoint >= 0)
+    }
 }
 
 internal data class QnnTensorContract(
     val name: String,
     val dataType: QnnTensorDataType,
-    val shape: LongArray
+    val shape: LongArray,
+    val quantization: QnnQuantizationParameters? = null
 ) {
+    init {
+        require((dataType == QnnTensorDataType.UINT8 || dataType == QnnTensorDataType.UINT16) ||
+            quantization == null)
+    }
     val elementCount: Int = shape.fold(1L, Long::times).also {
         require(it in 1L..Int.MAX_VALUE)
     }.toInt()
@@ -19,6 +36,8 @@ internal data class QnnTensorContract(
         when (dataType) {
             QnnTensorDataType.FLOAT16 -> Short.SIZE_BYTES
             QnnTensorDataType.INT32 -> Int.SIZE_BYTES
+            QnnTensorDataType.UINT8 -> Byte.SIZE_BYTES
+            QnnTensorDataType.UINT16 -> Short.SIZE_BYTES
         }
     )
 }
@@ -66,6 +85,23 @@ internal data class QnnGraphContract(
                 "$graphName ${tensor.name} has an unexpected shape"
             }
         }
+    }
+}
+
+internal data class QnnWhisperModelContract(
+    val melBins: Int,
+    val melFrames: Int,
+    val decoderLayers: Int,
+    val decoderContextTokens: Int,
+    val vocabularySize: Int,
+    val encoder: QnnGraphContract,
+    val decoder: QnnGraphContract
+) {
+    init {
+        require(melBins in setOf(80, 128) && melFrames == 3_000)
+        require(decoderLayers in 1..64)
+        require(decoderContextTokens in 1..200)
+        require(vocabularySize in 1..100_000)
     }
 }
 
@@ -120,6 +156,16 @@ internal object WhisperLargeTurboQnnContract {
                 add(float16("v_cache_self_${layer}_out", DECODER_HEADS, 1, SELF_CACHE_TOKENS, DECODER_HEAD_SIZE))
             }
         }
+    )
+
+    val model = QnnWhisperModelContract(
+        melBins = MEL_BINS,
+        melFrames = MEL_FRAMES,
+        decoderLayers = DECODER_LAYERS,
+        decoderContextTokens = DECODER_CONTEXT_TOKENS,
+        vocabularySize = VOCABULARY_SIZE,
+        encoder = encoder,
+        decoder = decoder
     )
 
     private fun float16(name: String, vararg shape: Int) = QnnTensorContract(

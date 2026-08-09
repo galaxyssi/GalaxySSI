@@ -3,36 +3,27 @@ package com.signalasi.chat.voice.asr.local
 import android.content.Context
 import android.os.Build
 import android.os.SystemClock
-import android.system.Os
-import android.system.OsConstants
-import android.util.Log
-import com.argmaxinc.whisperkit.ExperimentalWhisperKit
-import com.argmaxinc.whisperkit.TranscriptionResult
-import com.argmaxinc.whisperkit.WhisperKit
+import com.signalasi.chat.VoiceAssistantSettings
 import com.signalasi.chat.voice.model.WhisperModelFamily
 import com.signalasi.chat.voice.model.WhisperModelProfile
-import com.signalasi.chat.voice.model.WhisperQuantization
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 internal object WhisperQnnSupport {
-    fun isSupportedFamily(family: WhisperModelFamily): Boolean =
-        family == WhisperModelFamily.TINY || family == WhisperModelFamily.BASE
+    fun isSupportedFamily(family: WhisperModelFamily): Boolean = family in setOf(
+        WhisperModelFamily.TINY,
+        WhisperModelFamily.BASE,
+        WhisperModelFamily.SMALL
+    )
 
     fun isQualcommDevice(): Boolean {
         val identity = buildList {
@@ -52,26 +43,37 @@ internal object WhisperQnnSupport {
             .listFiles()
             .orEmpty()
             .map { it.name.lowercase(Locale.ROOT) }
-        return names.any { it == "libqnnhtp.so" } &&
-            names.any { it == "libqnnsystem.so" } &&
-            names.any { it == "libwhisperkit_jni.so" }
+            .toSet()
+        return "libqnnhtp.so" in names &&
+            "libqnnsystem.so" in names &&
+            "libonnxruntime_providers_qnn.so" in names &&
+            "libsignalasi_asr.so" in names
     }
 
-    fun usesFourKilobytePages(): Boolean = runCatching {
-        Os.sysconf(OsConstants._SC_PAGESIZE) == 4_096L
-    }.getOrDefault(true)
-
-    fun canInstall(context: Context): Boolean =
-        isQualcommDevice() && usesFourKilobytePages() && hasPackagedRuntime(context)
+    fun canInstall(context: Context): Boolean {
+        if (!isQualcommDevice() || !hasPackagedRuntime(context)) return false
+        val compact = CompactWhisperQnnModelCatalog.tinyFloat
+        val store = LargeTurboQnnModelStore(
+            filesDirectory = context.applicationContext.filesDir,
+            modelRootName = compact.modelRootName,
+            deviceRootName = CompactWhisperQnnModelCatalog.DEVICE_ROOT_NAME
+        )
+        val snapshot = AndroidLargeTurboQnnDeviceCapabilityDetector(
+            context.applicationContext,
+            store,
+            compact.manifest
+        ).snapshot(QnnContextModelState.NOT_INSTALLED)
+        return LargeTurboQnnDevicePolicy(compact.manifest).evaluate(snapshot).eligibility !=
+            QnnAsrEligibility.FALLBACK_REQUIRED
+    }
 
     fun canUse(context: Context, profile: WhisperModelProfile): Boolean {
-        val modelPackage = QnnWhisperPackageManager.packageForProfile(profile.id) ?: return false
-        return isSupportedFamily(profile.family) && profile.quantization == WhisperQuantization.F16 &&
+        val modelPackage = QnnWhisperPackageManager.selectedPackage(context) ?: return false
+        return isSupportedFamily(profile.family) && modelPackage.profileId == profile.id &&
             canInstall(context) && QnnWhisperPackageManager.isInstalled(context, modelPackage)
     }
 }
 
-@OptIn(ExperimentalWhisperKit::class)
 internal class QnnWhisperRuntime(
     context: Context,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -82,56 +84,49 @@ internal class QnnWhisperRuntime(
     private val decodeMutex = Mutex()
     private val closed = AtomicBoolean(false)
     private val sessions = ConcurrentHashMap<String, Session>()
-    private val pendingResult = AtomicReference<CompletableDeferred<TranscriptionResult>?>(null)
     private val mutableState = MutableStateFlow<WhisperRuntimeState>(WhisperRuntimeState.Unloaded)
-    private var whisperKit: WhisperKit? = null
+    private var bundle: RuntimeBundle? = null
     private var loadedModel: WhisperLoadedModel? = null
-    private var pipelineInitialized = false
 
     override val state: StateFlow<WhisperRuntimeState> = mutableState.asStateFlow()
 
     override suspend fun load(profile: WhisperModelProfile, options: WhisperLoadOptions): WhisperLoadedModel =
         lifecycleMutex.withLock {
             check(!closed.get()) { "QNN Whisper runtime is closed" }
-            require(WhisperQnnSupport.canUse(appContext, profile)) {
+            val modelPackage = requireNotNull(QnnWhisperPackageManager.selectedPackage(appContext)) {
+                "No compact QNN Whisper package is selected"
+            }
+            require(modelPackage.profileId == profile.id && WhisperQnnSupport.canUse(appContext, profile)) {
                 "QNN HTP is not available for ${profile.displayName} on this device"
             }
-            loadedModel?.takeIf { it.profile.id == profile.id }?.let { return@withLock it }
+            loadedModel?.takeIf { it.profile.id == profile.id && bundle?.modelPackage?.id == modelPackage.id }
+                ?.let { return@withLock it }
             unloadLocked(UnloadReason.MODEL_SWITCH)
             mutableState.value = WhisperRuntimeState.Loading(profile.id)
             val startedAt = elapsedRealtime()
             try {
-                val runtime = SignalASIWhisperKitFactory.create(
-                    appContext,
-                    modelVariant(profile),
-                    { what, result ->
-                        if (what == WhisperKit.TextOutputCallback.MSG_TEXT_OUT) {
-                            pendingResult.get()?.complete(result)
-                        }
-                    },
-                    QnnWhisperModelDownloader()
-                )
-                runtime.loadModel().collect { }
-                runtime.init(SAMPLE_RATE_HZ, 1, 0L)
-                pipelineInitialized = true
+                val opened = openBundle(modelPackage)
+                if (options.warmUp) {
+                    val silence = FloatArray(opened.contract.melBins * opened.contract.melFrames) { -1.5F }
+                    opened.transcriber.transcribe(silence, "zh", 1)
+                }
                 val loaded = WhisperLoadedModel(
                     profile = profile,
-                    threadCount = options.threadCount,
+                    threadCount = 1,
                     loadedAtMillis = clock(),
                     loadDurationMs = (elapsedRealtime() - startedAt).coerceAtLeast(0L),
                     warmUpTimings = null,
                     accelerationBackend = WhisperAccelerationBackend.QNN_HTP,
-                    accelerationDetail = "Qualcomm QNN 2.45 / HTP NPU"
+                    accelerationDetail = "Qualcomm QNN 2.45 / HTP / ${modelPackage.displayName}"
                 )
-                whisperKit = runtime
+                bundle = opened
                 loadedModel = loaded
                 mutableState.value = WhisperRuntimeState.Ready(loaded)
                 loaded
             } catch (error: Throwable) {
-                runCatching { whisperKit?.deinitialize() }
-                whisperKit = null
+                bundle?.close()
+                bundle = null
                 loadedModel = null
-                pipelineInitialized = false
                 mutableState.value = WhisperRuntimeState.Failed(
                     WhisperRuntimeError(NativeWhisperCode.MODEL_NOT_LOADED, error.message.orEmpty())
                 )
@@ -164,7 +159,7 @@ internal class QnnWhisperRuntime(
     }
 
     override fun requestAbortAll(reason: AbortReason) {
-        pendingResult.getAndSet(null)?.cancel()
+        bundle?.network?.cancelActiveRun()
         sessions.values.forEach { it.requestAbort(reason) }
     }
 
@@ -173,29 +168,48 @@ internal class QnnWhisperRuntime(
         runBlocking { lifecycleMutex.withLock { unloadLocked(UnloadReason.APP_SHUTDOWN) } }
     }
 
+    private fun openBundle(modelPackage: QnnWhisperPackage): RuntimeBundle {
+        val directory = QnnWhisperPackageManager.modelRoot(appContext, modelPackage).canonicalFile
+        require(directory.isDirectory) { "Compact QNN Whisper model is not installed" }
+        val contract = CompactWhisperQnnContractParser.parse(directory, modelPackage.manifest)
+        val wrappers = WhisperQnnContextAssetInstaller(
+            AndroidQnnContextAssetSource(appContext.assets),
+            CompactWhisperQnnContextAssets.forPackage(modelPackage)
+        ).ensureInstalled(directory)
+        val tokenizer = WhisperTiktokenTokenizer.load(
+            File(directory, "tokenizer.tiktoken"),
+            File(directory, "generation_config.json")
+        )
+        val nativeDirectory = File(appContext.applicationInfo.nativeLibraryDir).canonicalFile
+        val network = OrtWhisperQnnNetwork.open(
+            modelDirectory = directory,
+            wrapperFiles = wrappers,
+            contract = contract,
+            generation = tokenizer.generation,
+            providerLibrary = requireNativeLibrary(nativeDirectory, "libonnxruntime_providers_qnn.so"),
+            htpBackendLibrary = requireNativeLibrary(nativeDirectory, "libQnnHtp.so")
+        )
+        return RuntimeBundle(
+            modelPackage = modelPackage,
+            modelDirectory = directory,
+            contract = contract,
+            network = network,
+            transcriber = WhisperGreedyTranscriber(network, tokenizer, contract)
+        )
+    }
+
     private fun unloadLocked(reason: UnloadReason) {
-        if (whisperKit == null) {
+        if (bundle == null) {
             mutableState.value = WhisperRuntimeState.Unloaded
             return
         }
         mutableState.value = WhisperRuntimeState.Unloading(reason)
-        pendingResult.getAndSet(null)?.cancel()
         sessions.values.toList().forEach(Session::close)
         sessions.clear()
-        if (pipelineInitialized) {
-            runCatching { whisperKit?.deinitialize() }
-                .onFailure { Log.w(TAG, "QNN Whisper deinitialize failed", it) }
-        }
-        pipelineInitialized = false
-        whisperKit = null
+        bundle?.close()
+        bundle = null
         loadedModel = null
         mutableState.value = WhisperRuntimeState.Unloaded
-    }
-
-    private fun modelVariant(profile: WhisperModelProfile): String = when (profile.family) {
-        WhisperModelFamily.TINY -> WhisperKit.Builder.OPENAI_TINY
-        WhisperModelFamily.BASE -> WhisperKit.Builder.OPENAI_BASE
-        else -> error("QNN Whisper currently supports Tiny and Base model families")
     }
 
     private inner class Session(
@@ -203,72 +217,61 @@ internal class QnnWhisperRuntime(
         override val config: LocalWhisperSessionConfig
     ) : LocalWhisperSession {
         private val sessionClosed = AtomicBoolean(false)
+        private val aborted = AtomicBoolean(false)
 
         override suspend fun decode(request: WhisperDecodeRequest): NativeWhisperResult {
             check(!sessionClosed.get()) { "QNN Whisper session is closed" }
             return decodeMutex.withLock {
-                val runtime = requireNotNull(whisperKit) { "QNN Whisper runtime is not loaded" }
+                val active = requireNotNull(bundle) { "QNN Whisper runtime is not loaded" }
                 val loaded = requireNotNull(loadedModel)
+                aborted.set(false)
                 mutableState.value = WhisperRuntimeState.Decoding(id, request.mode)
                 val startedAt = elapsedRealtime()
-                if (!pipelineInitialized) {
-                    runtime.init(SAMPLE_RATE_HZ, 1, 0L)
-                    pipelineInitialized = true
-                }
-                val preparedAt = elapsedRealtime()
-                val deferred = CompletableDeferred<TranscriptionResult>()
-                check(pendingResult.compareAndSet(null, deferred)) { "Another QNN decode is already active" }
                 try {
-                    val pcm = request.pcm16.copyOfRange(request.offset, request.offset + request.length)
-                    val bytes = pcm.toLittleEndianBytes().padToFrame()
-                    val bufferedSeconds = runtime.transcribe(bytes)
-                    val transcribedAt = elapsedRealtime()
-                    check(bufferedSeconds >= 0) { "QNN Whisper rejected the PCM stream" }
-                    val transcription = withTimeout(DECODE_TIMEOUT_MS) { deferred.await() }
-                    val callbackAt = elapsedRealtime()
+                    val featureStartedAt = elapsedRealtime()
+                    val features = CompactWhisperQnnFeatureExtractor.extract(
+                        active.modelDirectory,
+                        active.contract.melBins,
+                        request.pcm16,
+                        request.offset,
+                        request.length
+                    )
+                    val featureMs = (elapsedRealtime() - featureStartedAt).coerceAtLeast(0L)
+                    val transcription = active.transcriber.transcribe(
+                        features,
+                        normalizeWhisperLanguage(config.language),
+                        config.maxTokens.takeIf { it > 0 }?.coerceAtMost(160) ?: 160
+                    ) { aborted.get() || sessionClosed.get() }
                     val totalMs = (elapsedRealtime() - startedAt).coerceAtLeast(1L)
-                    val audioMs = pcm.size.toLong() * 1_000L / SAMPLE_RATE_HZ
+                    val audioMs = request.length.toLong() * 1_000L / request.sampleRateHz
                     val timings = NativeWhisperTimings(
-                        sampleMs = 0.0,
-                        encodeMs = 0.0,
-                        decodeMs = totalMs.toDouble(),
+                        sampleMs = featureMs.toDouble(),
+                        encodeMs = transcription.encoderNanos / 1_000_000.0,
+                        decodeMs = transcription.decoderNanos / 1_000_000.0,
                         totalMs = totalMs.toDouble(),
                         audioMs = audioMs,
                         realTimeFactor = totalMs.toDouble() / audioMs.coerceAtLeast(1L)
                     )
-                    val segments = transcription.segments.ifEmpty {
-                        listOf(com.argmaxinc.whisperkit.TranscriptionSegment(transcription.text))
-                    }
-                    Log.i(
-                        TAG,
-                        "decode id=$id audioMs=$audioMs paddedBytes=${bytes.size} " +
-                            "prepareMs=${preparedAt - startedAt} " +
-                            "transcribeMs=${transcribedAt - preparedAt} " +
-                            "callbackMs=${callbackAt - transcribedAt} totalMs=$totalMs " +
-                            "bufferedSeconds=$bufferedSeconds textChars=${transcription.text.length}"
-                    )
                     NativeWhisperResult(
                         codeValue = NativeWhisperCode.OK.wireValue,
-                        segments = segments.map {
-                            NativeWhisperSegment(0L, audioMs, it.text, 0f, 0f)
-                        }.toTypedArray(),
-                        detectedLanguage = config.language.takeUnless { it == "auto" },
+                        segments = arrayOf(
+                            NativeWhisperSegment(0L, audioMs, transcription.text, 0F, 0F)
+                        ),
+                        detectedLanguage = transcription.detectedLanguage,
                         timings = timings,
                         aborted = false,
                         message = null
                     )
                 } catch (error: Throwable) {
                     NativeWhisperResult.failure(
-                        if (error is OutOfMemoryError) NativeWhisperCode.OUT_OF_MEMORY else NativeWhisperCode.DECODE_FAILED,
+                        when {
+                            aborted.get() || error is QnnInferenceCancelledException -> NativeWhisperCode.ABORTED
+                            error is OutOfMemoryError -> NativeWhisperCode.OUT_OF_MEMORY
+                            else -> NativeWhisperCode.DECODE_FAILED
+                        },
                         error.message ?: "QNN Whisper decode failed"
                     )
                 } finally {
-                    pendingResult.compareAndSet(deferred, null)
-                    if (pipelineInitialized) {
-                        runCatching { runtime.deinitialize() }
-                            .onFailure { Log.w(TAG, "QNN Whisper session reset failed", it) }
-                        pipelineInitialized = false
-                    }
                     if (!closed.get() && loadedModel?.profile?.id == loaded.profile.id) {
                         mutableState.value = WhisperRuntimeState.Ready(loaded)
                     }
@@ -277,30 +280,38 @@ internal class QnnWhisperRuntime(
         }
 
         override fun requestAbort(reason: AbortReason) {
-            if (!sessionClosed.get()) pendingResult.getAndSet(null)?.cancel()
+            aborted.set(true)
+            bundle?.network?.cancelActiveRun()
         }
 
         override fun close() {
             if (!sessionClosed.compareAndSet(false, true)) return
+            aborted.set(true)
             sessions.remove(id, this)
         }
     }
 
-    private fun ShortArray.toLittleEndianBytes(): ByteArray =
-        ByteBuffer.allocate(size * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
-            asShortBuffer().put(this@toLittleEndianBytes)
-        }.array()
-
-    private fun ByteArray.padToFrame(): ByteArray {
-        val remainder = size % FRAME_BYTES
-        if (remainder == 0) return this
-        return copyOf(size + FRAME_BYTES - remainder)
+    private data class RuntimeBundle(
+        val modelPackage: QnnWhisperPackage,
+        val modelDirectory: File,
+        val contract: QnnWhisperModelContract,
+        val network: OrtWhisperQnnNetwork,
+        val transcriber: WhisperGreedyTranscriber
+    ) : AutoCloseable {
+        override fun close() = network.close()
     }
 
-    private companion object {
-        const val TAG = "SignalASIQnnWhisper"
-        const val SAMPLE_RATE_HZ = 16_000
-        const val FRAME_BYTES = 30 * SAMPLE_RATE_HZ * 2
-        const val DECODE_TIMEOUT_MS = 180_000L
+    private fun requireNativeLibrary(directory: File, name: String): File =
+        File(directory, name).canonicalFile.also { library ->
+            require(library.isFile && library.canRead()) { "$name is unavailable" }
+        }
+
+    private fun normalizeWhisperLanguage(language: String): String {
+        val normalized = language.trim().lowercase(Locale.ROOT).replace('_', '-')
+        return when {
+            normalized.isBlank() -> "zh"
+            normalized == "auto" -> "auto"
+            else -> normalized.substringBefore('-')
+        }
     }
 }

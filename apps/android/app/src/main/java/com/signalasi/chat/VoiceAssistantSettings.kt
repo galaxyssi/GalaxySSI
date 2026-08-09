@@ -17,6 +17,7 @@ data class VoiceAssistantConfig(
     val remoteWhisperAllowed: Boolean,
     val asrModel: String,
     val asrAcceleration: String,
+    val asrQnnPackage: String,
     val asrRuntimeMode: WhisperUserVoiceMode,
     val asrLanguage: String,
     val ttsProvider: String,
@@ -46,6 +47,7 @@ object VoiceAssistantSettings {
     private const val KEY_REMOTE_WHISPER_ALLOWED = "remote_whisper_allowed"
     private const val KEY_ASR_MODEL = "asr_model"
     private const val KEY_ASR_ACCELERATION = "asr_acceleration"
+    private const val KEY_ASR_QNN_PACKAGE = "asr_qnn_package"
     private const val KEY_ASR_RUNTIME_MODE = "asr_runtime_mode"
     private const val KEY_TTS_PROVIDER = "tts_provider"
     private const val KEY_MICROSOFT_VOICE = "microsoft_voice"
@@ -108,6 +110,7 @@ object VoiceAssistantSettings {
             asrAcceleration = prefs.getString(KEY_ASR_ACCELERATION, ASR_ACCELERATION_GGML).orEmpty()
                 .takeIf { it == ASR_ACCELERATION_GGML || it == ASR_ACCELERATION_QNN }
                 ?: ASR_ACCELERATION_GGML,
+            asrQnnPackage = prefs.getString(KEY_ASR_QNN_PACKAGE, "").orEmpty(),
             asrRuntimeMode = runCatching {
                 enumValueOf<WhisperUserVoiceMode>(
                     prefs.getString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.AUTOMATIC.name).orEmpty()
@@ -202,6 +205,17 @@ object VoiceAssistantSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_ASR_MODEL, model)
             .putString(KEY_ASR_ACCELERATION, ASR_ACCELERATION_GGML)
+            .remove(KEY_ASR_QNN_PACKAGE)
+            .putString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.MANUAL.name)
+            .apply()
+    }
+
+    fun setAsrQnnPackage(context: Context, packageId: String, profileId: String) {
+        val model = WhisperModelManager.model(profileId).id
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ASR_MODEL, model)
+            .putString(KEY_ASR_ACCELERATION, ASR_ACCELERATION_QNN)
+            .putString(KEY_ASR_QNN_PACKAGE, packageId)
             .putString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.MANUAL.name)
             .apply()
     }

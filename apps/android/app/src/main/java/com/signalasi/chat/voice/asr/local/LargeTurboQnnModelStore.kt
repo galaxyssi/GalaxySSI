@@ -111,6 +111,8 @@ class QnnContextModelInstallException(message: String, cause: Throwable? = null)
 
 class LargeTurboQnnModelStore(
     filesDirectory: File,
+    modelRootName: String = LargeTurboQnnModelCatalog.MODEL_ROOT_NAME,
+    deviceRootName: String = LargeTurboQnnModelCatalog.DEVICE_ROOT_NAME,
     private val clock: () -> Long = System::currentTimeMillis,
     private val usableSpace: (File) -> Long = File::getUsableSpace
 ) {
@@ -120,9 +122,9 @@ class LargeTurboQnnModelStore(
                 secureChild(filesDirectory.canonicalFile, "models"),
                 "asr"
             ),
-            LargeTurboQnnModelCatalog.MODEL_ROOT_NAME
+            modelRootName
         ),
-        LargeTurboQnnModelCatalog.DEVICE_ROOT_NAME
+        deviceRootName
     )
     private val releases = secureChild(root, "releases")
     private val staging = secureChild(root, ".staging")
@@ -366,7 +368,8 @@ class LargeTurboQnnModelStore(
         val destination = secureChild(target, asset.installedName)
         when (asset.transform) {
             QnnContextSupportTransform.NONE -> copyAndSync(source, destination)
-            QnnContextSupportTransform.MEL_128_NPY_TO_FLOAT32 -> extractMel128(source, destination)
+            QnnContextSupportTransform.MEL_80_NPY_TO_FLOAT32 -> extractMel(source, destination, 80)
+            QnnContextSupportTransform.MEL_128_NPY_TO_FLOAT32 -> extractMel(source, destination, 128)
         }
         if (destination.length() != asset.installedSizeBytes) {
             throw QnnContextModelInstallException("Support asset output is invalid for ${asset.installedName}")
@@ -374,9 +377,10 @@ class LargeTurboQnnModelStore(
         return QnnContextInstalledFile(asset.installedName, destination.length(), sha256(destination))
     }
 
-    private fun extractMel128(source: File, destination: File) = ZipFile(source).use { zip ->
-        val entry = zip.getEntry("mel_128.npy")
-            ?: throw QnnContextModelInstallException("OpenAI mel filter archive is missing mel_128.npy")
+    private fun extractMel(source: File, destination: File, melBins: Int) = ZipFile(source).use { zip ->
+        require(melBins in setOf(80, 128))
+        val entry = zip.getEntry("mel_${melBins}.npy")
+            ?: throw QnnContextModelInstallException("OpenAI mel filter archive is missing mel_${melBins}.npy")
         zip.getInputStream(entry).buffered().use { input ->
             val magic = ByteArray(6).also { input.readFully(it) }
             if (!magic.contentEquals(byteArrayOf(0x93.toByte(), 0x4e, 0x55, 0x4d, 0x50, 0x59))) {
@@ -392,7 +396,7 @@ class LargeTurboQnnModelStore(
             }
             val header = ByteArray(headerSize).also { input.readFully(it) }.toString(Charsets.US_ASCII)
             if (!("'<f4'" in header || "\"<f4\"" in header) || "True" in header ||
-                !Regex("\\(\\s*128\\s*,\\s*201\\s*[,]?\\s*\\)").containsMatchIn(header)
+                !Regex("\\(\\s*$melBins\\s*,\\s*201\\s*[,]?\\s*\\)").containsMatchIn(header)
             ) {
                 throw QnnContextModelInstallException("OpenAI mel filter tensor layout is unsupported")
             }
@@ -403,13 +407,15 @@ class LargeTurboQnnModelStore(
                     val read = input.read(buffer)
                     if (read < 0) break
                     copied += read
-                    if (copied > MEL_128_BYTES) {
+                    val expectedBytes = melBins.toLong() * MEL_FFT_BINS * Float.SIZE_BYTES
+                    if (copied > expectedBytes) {
                         throw QnnContextModelInstallException("OpenAI mel filter tensor is oversized")
                     }
                     output.write(buffer, 0, read)
                 }
                 output.fd.sync()
-                if (copied != MEL_128_BYTES) {
+                val expectedBytes = melBins.toLong() * MEL_FFT_BINS * Float.SIZE_BYTES
+                if (copied != expectedBytes) {
                     throw QnnContextModelInstallException("OpenAI mel filter tensor is truncated")
                 }
             }
@@ -428,14 +434,17 @@ class LargeTurboQnnModelStore(
             .getJSONObject("inputs").getJSONObject("input_features")
         val logits = modelFiles.getJSONObject("decoder.bin")
             .getJSONObject("outputs").getJSONObject("logits")
-        requireMetadata(root.getString("model_id") == "whisper_large_v3_turbo", "model id")
+        requireMetadata(root.getString("model_id") == manifest.metadataModelId, "model id")
         requireMetadata(root.getString("runtime") == "qnn_context_binary", "runtime")
-        requireMetadata(root.getString("precision") == "float", "precision")
+        requireMetadata(root.getString("precision") == manifest.precision, "precision")
         requireMetadata(root.getJSONObject("tool_versions").getString("qairt") == manifest.qairtVersion, "QAIRT version")
         requireMetadata(chipset.getInt("htp_version") == manifest.htpVersion, "HTP version")
         requireMetadata(chipset.getInt("soc_model") == manifest.socModel, "SoC model")
         requireMetadata(aliases.any { it in manifest.targetAliases }, "chipset alias")
-        requireMetadata(encoderInput.getJSONArray("shape").toIntList() == listOf(1, 128, 3_000), "encoder input")
+        requireMetadata(
+            encoderInput.getJSONArray("shape").toIntList() == listOf(1, manifest.melBins, manifest.melFrames),
+            "encoder input"
+        )
         requireMetadata(logits.getJSONArray("shape").toIntList() == listOf(1, manifest.vocabularySize, 1, 1), "decoder output")
     }
 
@@ -675,7 +684,7 @@ class LargeTurboQnnModelStore(
         const val INSTALL_RECORD_FILE = "manifest.json"
         const val ARCHIVE_DIGEST_FILE = "model.sha256"
         const val BUFFER_BYTES = 256 * 1024
-        const val MEL_128_BYTES = 128L * 201L * 4L
+        const val MEL_FFT_BINS = 201L
         const val MIN_FREE_AFTER_INSTALL_BYTES = 512L * 1024L * 1024L
         const val QUARANTINE_RECORD_FILE = ".quarantined.json"
         const val MAX_QUARANTINE_DETAIL_CHARS = 512
