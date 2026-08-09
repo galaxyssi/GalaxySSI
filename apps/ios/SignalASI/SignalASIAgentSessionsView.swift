@@ -21,6 +21,9 @@ struct SignalASIAgentSessionsView: View {
   @State private var contextSession: AgentConversation?
   @State private var detailsSession: AgentConversation?
   @State private var deletingSession: AgentConversation?
+  @State private var multiDeleteMode = false
+  @State private var selectedSessionIDs: Set<String> = []
+  @State private var bulkDeletePresented = false
   @State private var statusText = ""
 
   private var visibleSessions: [AgentConversation] {
@@ -76,6 +79,10 @@ struct SignalASIAgentSessionsView: View {
               .padding(.horizontal, 4)
           }
 
+          if multiDeleteMode {
+            bulkDeleteToolbar
+          }
+
           AgentSessionActionRow(
             title: t("signalasi.agent_session.new", "New session"),
             subtitle: t("signalasi.agent_sessions.new_subtitle", "Start a fresh Agent context for the next request"),
@@ -107,12 +114,18 @@ struct SignalASIAgentSessionsView: View {
               ForEach(group.sessions) { session in
                 AgentSessionRow(
                   session: session,
-                  selected: session.id == store.activeAgentConversationId,
+                  selected: !multiDeleteMode && session.id == store.activeAgentConversationId,
+                  selectionMode: multiDeleteMode,
+                  marked: selectedSessionIDs.contains(session.id),
                   metrics: store.agentSessionMetrics(session.id),
                   subtitle: sessionSubtitle(session),
                   badge: rowBadge(session),
                   onOpen: {
-                    selectSession(session)
+                    if multiDeleteMode {
+                      toggleSelectedSession(session.id)
+                    } else {
+                      selectSession(session)
+                    }
                   },
                   actions: {
                     sessionMenu(session)
@@ -180,6 +193,28 @@ struct SignalASIAgentSessionsView: View {
     } message: {
       Text(t("signalasi.agent_session.delete_confirm", "Delete this session and all of its messages?"))
     }
+    .alert(
+      t("signalasi.agent_sessions.delete_selected", "Delete selected sessions"),
+      isPresented: $bulkDeletePresented
+    ) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
+      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
+        confirmBulkDelete()
+      }
+    } message: {
+      Text(
+        String(
+          format: t(
+            "signalasi.agent_sessions.delete_selected_confirm",
+            "Delete %d selected sessions and their messages?"
+          ),
+          selectedSessionIDs.count
+        )
+      )
+    }
+    .onChange(of: showArchived) { _ in
+      selectedSessionIDs.removeAll()
+    }
   }
 
   private var groupedSessions: [(title: String, sessions: [AgentConversation])] {
@@ -207,6 +242,53 @@ struct SignalASIAgentSessionsView: View {
         }
       }
     )
+  }
+
+  private var bulkDeleteToolbar: some View {
+    HStack(spacing: 8) {
+      Text(
+        String(
+          format: t("signalasi.agent_sessions.selected_count", "%d selected"),
+          selectedSessionIDs.count
+        )
+      )
+      .font(.system(size: 12, weight: .semibold))
+      .foregroundColor(.signalASITextSecondary)
+      Spacer(minLength: 0)
+      Button {
+        let visibleIDs = Set(visibleSessions.map(\.id))
+        selectedSessionIDs = selectedSessionIDs == visibleIDs ? [] : visibleIDs
+      } label: {
+        Label(
+          selectedSessionIDs == Set(visibleSessions.map(\.id))
+            ? t("signalasi.agent_sessions.clear_selection", "Clear")
+            : t("signalasi.agent_sessions.select_all", "Select all"),
+          systemImage: "checklist"
+        )
+        .font(.system(size: 12, weight: .semibold))
+      }
+      .buttonStyle(.bordered)
+      Button {
+        bulkDeletePresented = true
+      } label: {
+        Label(t("signalasi.common.delete", "Delete"), systemImage: "trash")
+          .font(.system(size: 12, weight: .semibold))
+      }
+      .buttonStyle(.bordered)
+      .tint(.red)
+      .disabled(selectedSessionIDs.isEmpty)
+      Button {
+        multiDeleteMode = false
+        selectedSessionIDs.removeAll()
+      } label: {
+        Image(systemName: "xmark")
+          .font(.system(size: 14, weight: .bold))
+          .frame(width: 28, height: 28)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("signalasi.common.cancel", "Cancel")))
+    }
+    .padding(.horizontal, 4)
   }
 
   @ViewBuilder
@@ -248,6 +330,9 @@ struct SignalASIAgentSessionsView: View {
       Button(t("signalasi.agent_session.details", "Session details")) {
         detailsSession = session
       }
+      Button(t("signalasi.agent_session.delete_more", "Delete more")) {
+        beginMultiDelete()
+      }
       if session.mergedIntoConversationId.isBlank {
         Button(session.status == .archived ? t("signalasi.agent_session.restore", "Restore session") : t("signalasi.agent_session.archive", "Archive")) {
           if session.status == .archived {
@@ -270,9 +355,77 @@ struct SignalASIAgentSessionsView: View {
   }
 
   private func createSession() {
+    multiDeleteMode = false
+    selectedSessionIDs.removeAll()
     let session = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     statusText = String(format: t("signalasi.agent_sessions.created", "Selected %@"), session.title)
     showArchived = false
+  }
+
+  private func beginMultiDelete() {
+    multiDeleteMode = true
+    selectedSessionIDs.removeAll()
+  }
+
+  private func toggleSelectedSession(_ sessionId: String) {
+    if selectedSessionIDs.contains(sessionId) {
+      selectedSessionIDs.remove(sessionId)
+    } else {
+      selectedSessionIDs.insert(sessionId)
+    }
+  }
+
+  private func confirmBulkDelete() {
+    let sessions = visibleSessions.filter { selectedSessionIDs.contains($0.id) }
+    guard !sessions.isEmpty else { return }
+    let cleanupRequests: [(conversationId: String, taskIds: [String])] = sessions
+      .filter { $0.mergedIntoConversationId.isBlank }
+      .map { session in
+        (
+          conversationId: session.id,
+          taskIds: store.agentTasks(forSession: session.id, limit: 256).map(\.taskId)
+        )
+      }
+    let deletedCount = sessions.reduce(into: 0) { count, session in
+      if store.deleteAgentSession(id: session.id) {
+        count += 1
+      }
+    }
+    multiDeleteMode = false
+    selectedSessionIDs.removeAll()
+    bulkDeletePresented = false
+    guard deletedCount > 0 else {
+      statusText = t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+      return
+    }
+    guard !cleanupRequests.isEmpty else {
+      statusText = String(
+        format: t("signalasi.agent_sessions.deleted_selected", "%d sessions deleted"),
+        deletedCount
+      )
+      return
+    }
+    statusText = String(
+      format: t(
+        "signalasi.agent_sessions.deleted_selected_pending",
+        "%d sessions deleted; cleaning up the paired Desktop..."
+      ),
+      deletedCount
+    )
+    Task { @MainActor in
+      var failed = 0
+      for request in cleanupRequests {
+        if !await coordinator.publishRemoteAgentConversationDelete(
+          conversationId: request.conversationId,
+          taskIds: request.taskIds
+        ) {
+          failed += 1
+        }
+      }
+      statusText = failed == 0
+        ? t("signalasi.agent_sessions.deleted_selected_sent", "Selected sessions deleted and remote cleanup sent")
+        : t("signalasi.agent_sessions.deleted_selected_failed", "Sessions deleted; some remote cleanup requests failed")
+    }
   }
 
   private func selectSession(_ session: AgentConversation) {
@@ -463,6 +616,8 @@ private struct AgentSessionSearchRow: View {
 private struct AgentSessionRow<Actions: View>: View {
   var session: AgentConversation
   var selected: Bool
+  var selectionMode: Bool
+  var marked: Bool
   var metrics: AgentSessionMetrics
   var subtitle: String
   var badge: String
@@ -472,6 +627,8 @@ private struct AgentSessionRow<Actions: View>: View {
   init(
     session: AgentConversation,
     selected: Bool,
+    selectionMode: Bool,
+    marked: Bool,
     metrics: AgentSessionMetrics,
     subtitle: String,
     badge: String,
@@ -480,6 +637,8 @@ private struct AgentSessionRow<Actions: View>: View {
   ) {
     self.session = session
     self.selected = selected
+    self.selectionMode = selectionMode
+    self.marked = marked
     self.metrics = metrics
     self.subtitle = subtitle
     self.badge = badge
@@ -492,12 +651,18 @@ private struct AgentSessionRow<Actions: View>: View {
       Button(action: onOpen) {
         HStack(spacing: 12) {
           ZStack {
-            Circle()
-              .fill(selected ? Color.signalASIAccent : Color.blue)
-            if session.pinned {
-              Image(systemName: "pin.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(.white)
+            if selectionMode {
+              Image(systemName: marked ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(marked ? .signalASIAccent : .signalASITextSecondary)
+            } else {
+              Circle()
+                .fill(selected ? Color.signalASIAccent : Color.blue)
+              if session.pinned {
+                Image(systemName: "pin.fill")
+                  .font(.system(size: 9, weight: .bold))
+                  .foregroundColor(.white)
+              }
             }
           }
           .frame(width: 14, height: 14)
