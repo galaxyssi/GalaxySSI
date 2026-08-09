@@ -763,7 +763,11 @@ struct AgentHomeView: View {
               }
             }
             ForEach(transcriptMessages) { message in
-              MessageBubble(message: message, onAction: handleRichAction)
+              MessageBubble(
+                message: message,
+                onAction: handleRichAction,
+                onFormSubmit: handleAgentRichForm
+              )
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -1001,6 +1005,30 @@ struct AgentHomeView: View {
   private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
     coordinator.cancelLocalNativeAction(taskId: task.taskId)
     richActionStatus = t("signalasi.agent.task_control.cancelled", "Task cancelled")
+  }
+
+  private func handleAgentRichForm(_ block: AgentRichBlock, _ values: [String: String]) {
+    let formID = block.id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !formID.isEmpty else {
+      richActionStatus = t("signalasi.agent.form.invalid", "This Agent form is invalid.")
+      return
+    }
+    let payload: [String: Any] = [
+      "form_id": formID,
+      "task_id": block.metadata["task_id"] ?? activeAgentTasks.first?.taskId ?? "",
+      "values": values
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+          let encoded = String(data: data, encoding: .utf8) else {
+      richActionStatus = t("signalasi.agent.form.invalid", "This Agent form is invalid.")
+      return
+    }
+    draft = "\(block.title.ifBlank(t("signalasi.agent.form.response", "Form response"))): \(encoded)"
+    attachments.removeAll()
+    actionTrayPresented = false
+    attachmentError = ""
+    sendAgentMessage()
+    richActionStatus = t("signalasi.agent.form.submitted", "Form submitted to Agent.")
   }
 
   private func agentPhaseLabel(_ phase: AgentPhase) -> String {
