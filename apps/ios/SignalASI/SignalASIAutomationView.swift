@@ -39,14 +39,22 @@ struct SignalASIAutomationView: View {
         title: t("signalasi.automation.title", "Automation"),
         leading: { SignalASIBackButton() },
         trailing: {
-          Button {
-            creatingTask = true
-          } label: {
-            Image(systemName: "plus")
-              .font(.system(size: 18, weight: .bold))
-              .foregroundColor(.signalASIAccent)
+          HStack(spacing: 16) {
+            NavigationLink(destination: SignalASIWorkflowsView()) {
+              Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.signalASIAccent)
+            }
+            .accessibilityLabel(t("signalasi.workflow.title", "Workflows"))
+            Button {
+              creatingTask = true
+            } label: {
+              Image(systemName: "plus")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.signalASIAccent)
+            }
+            .accessibilityLabel(t("signalasi.automation.new_task", "New proactive task"))
           }
-          .accessibilityLabel(t("signalasi.automation.new_task", "New proactive task"))
         }
       )
 
@@ -647,12 +655,16 @@ struct SignalASIAutomationEditorView: View {
               minHeight: 96
             )
           } else {
-            AutomationTextInputRow(
-              title: t("signalasi.automation.target", "Target"),
-              icon: actionIcon(draft.actionKind),
-              tint: .signalASIAccent,
-              text: $draft.targetId
-            )
+            if draft.actionKind == .workflow {
+              WorkflowTargetPickerRow(targetId: $draft.targetId, language: interfaceLanguage)
+            } else {
+              AutomationTextInputRow(
+                title: t("signalasi.automation.target", "Target"),
+                icon: actionIcon(draft.actionKind),
+                tint: .signalASIAccent,
+                text: $draft.targetId
+              )
+            }
           }
           if draft.actionKind != .workflow {
             AutomationTextEditorRow(
