@@ -512,6 +512,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val profile: LocalModelRuntimeProfile,
         val subtitle: TextView,
         val action: TextView,
+        val enabledSwitch: Switch,
         val progress: ProgressBar
     )
     private val localModelRowBindings = linkedMapOf<String, LocalModelRowBinding>()
@@ -4648,7 +4649,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
         }
-        findViewById<View>(R.id.agentSessionSummary).setOnClickListener { showAgentSessionsPage() }
+        findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
+        findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener { showAgentModelSelectionPage() }
         agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
         agentInsightBar.setOnClickListener { showGlobalInsightsDialog() }
         agentPermissionModeButton.setOnClickListener {
@@ -7238,18 +7240,42 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun refreshAgentConversationHeader(
-        conversation: AgentConversation = agentTranscriptStore.activeConversation(),
-        contextCount: Int = agentTranscriptStore.context(conversation.id).turns.size
+        conversation: AgentConversation = agentTranscriptStore.activeConversation()
     ) {
-        agentSessionTitle.text = agentConversationDisplayTitle(conversation)
-        val baseSubtitle = getString(
-            R.string.agent_session_context_count,
-            agentConversationSourceLabel(conversation),
-            contextCount
+        agentSessionTitle.text = getString(
+            R.string.agent_header_session_title,
+            agentConversationDisplayTitle(conversation)
         )
-        agentSubtitleText.text = if (conversation.summary.isNotBlank()) {
-            "$baseSubtitle · ${getString(R.string.agent_session_context_compacted)}"
-        } else baseSubtitle
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+        val selection = AgentModelSelectionSettings.selection(this)
+        val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)
+        val manualSelectionAvailable = selection.mode == AgentModelSelectionMode.MANUAL && preferredTarget != null
+        val modelName = if (manualSelectionAvailable) {
+            when (preferredTarget?.id) {
+                "local-llm" -> selection.modelId
+                    .takeIf(String::isNotBlank)
+                    ?.let { LocalModelManager.profile(this, it).displayName }
+                    ?: LocalModelRuntimeSettings.displayProfile(this).displayName
+                else -> selection.displayName.ifBlank { preferredTarget?.let(::agentModelTargetDisplayName).orEmpty() }
+            }
+        } else {
+            agentConversationSourceLabel(conversation)
+                .takeUnless { source ->
+                    source.isBlank() ||
+                        source.equals("Automatic", ignoreCase = true) ||
+                        source.equals("SignalASI", ignoreCase = true) ||
+                        source.equals("Agent Knowledge", ignoreCase = true)
+                }
+                ?: AgentConnectorRouteSelector.select(targets, decision = null)
+                    ?.target
+                    ?.let(::agentModelTargetDisplayName)
+                    .orEmpty()
+        }.ifBlank { getString(R.string.agent_model_selection_automatic) }
+        agentSubtitleText.text = if (manualSelectionAvailable) {
+            getString(R.string.agent_header_model_manual, modelName)
+        } else {
+            getString(R.string.agent_header_model_auto_with_name, modelName)
+        }
     }
 
     private fun agentConversationDisplayTitle(conversation: AgentConversation): String =
@@ -7371,6 +7397,155 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         refreshAgentConversationHeader()
         refreshAgentTranscriptWindow()
         if (featurePage.visibility == View.VISIBLE) hideFeaturePage()
+    }
+
+    private fun showAgentModelSelectionPage() {
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+        val selection = AgentModelSelectionSettings.selection(this)
+        val preferredTargetId = AgentModelSelectionPolicy.preferredTargetId(selection, targets)
+        val automaticSelected = selection.mode == AgentModelSelectionMode.AUTO || preferredTargetId.isBlank()
+
+        showFeaturePage(getString(R.string.agent_model_selection_title))
+        setFeatureBackAction { hideFeaturePage() }
+        featureContent.addView(
+            agentModelSelectionRow(
+                title = getString(R.string.agent_model_selection_automatic),
+                subtitle = getString(R.string.agent_model_selection_automatic_subtitle),
+                iconRes = R.drawable.ic_agent_skill,
+                iconColor = Color.parseColor("#12BFA4"),
+                selected = automaticSelected
+            ).apply {
+                setOnClickListener {
+                    AgentModelSelectionSettings.selectAuto(this@MainActivity)
+                    refreshAgentConversationHeader()
+                    hideFeaturePage()
+                }
+            }
+        )
+
+        val localProfiles = LocalModelRuntimeSettings.activeProfiles(this)
+        if (localProfiles.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_model_selection_local_section))
+            localProfiles.forEach { profile ->
+                val selected = preferredTargetId == "local-llm" && selection.modelId == profile.id
+                featureContent.addView(
+                    agentModelSelectionRow(
+                        title = profile.displayName,
+                        subtitle = getString(R.string.agent_model_selection_local_subtitle),
+                        iconRes = R.drawable.ic_local_model,
+                        iconColor = featureIconColor(R.drawable.ic_local_model),
+                        selected = selected
+                    ).apply {
+                        setOnClickListener {
+                            LocalModelRuntimeSettings.setSelectedProfile(this@MainActivity, profile.id)
+                            AgentModelSelectionSettings.selectManual(
+                                this@MainActivity,
+                                targetId = "local-llm",
+                                modelId = profile.id,
+                                displayName = profile.displayName
+                            )
+                            refreshAgentConversationHeader()
+                            hideFeaturePage()
+                        }
+                    }
+                )
+            }
+        }
+
+        val cloudTargets = targets
+            .asSequence()
+            .filter { target ->
+                target.kind == AgentConnectorKind.MODEL &&
+                    target.status == AgentConnectorStatus.AVAILABLE &&
+                    target.id != "local-llm" &&
+                    target.id != "cloud-models" &&
+                    target.providerProfile?.modelId?.isNotBlank() == true
+            }
+            .distinctBy(AgentCallableTarget::id)
+            .toList()
+        if (cloudTargets.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_model_selection_cloud_section))
+            cloudTargets.forEach { target ->
+                val providerProfile = checkNotNull(target.providerProfile)
+                val modelName = providerProfile.displayName
+                    .takeIf { it.isNotBlank() && !it.equals(target.title, ignoreCase = true) }
+                    ?: modelDisplayLabel(providerProfile.modelId)
+                featureContent.addView(
+                    agentModelSelectionRow(
+                        title = modelName,
+                        subtitle = target.title,
+                        iconRes = providerIcon(providerProfile.providerId.ifBlank { target.title }),
+                        iconColor = Color.parseColor(providerColor(providerProfile.providerId.ifBlank { target.title })),
+                        selected = preferredTargetId == target.id
+                    ).apply {
+                        setOnClickListener {
+                            AgentModelSelectionSettings.selectManual(
+                                this@MainActivity,
+                                targetId = target.id,
+                                modelId = providerProfile.modelId,
+                                displayName = modelName
+                            )
+                            refreshAgentConversationHeader()
+                            hideFeaturePage()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private fun agentModelTargetDisplayName(target: AgentCallableTarget): String = when {
+        target.id == "local-llm" -> LocalModelRuntimeSettings.displayProfile(this).displayName
+        target.providerProfile?.modelId?.isNotBlank() == true -> modelDisplayLabel(target.providerProfile.modelId)
+        else -> target.title
+    }
+
+    private fun agentModelSelectionRow(
+        title: String,
+        subtitle: String,
+        iconRes: Int,
+        iconColor: Int,
+        selected: Boolean
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        isClickable = true
+        isFocusable = true
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(10), dp(4), dp(10))
+            addView(featureIcon(iconRes, iconColor), LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(8), 0)
+                addView(TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 15.5f
+                    setTextColor(getColorCompat(R.color.text_primary))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = subtitle
+                    textSize = 12f
+                    setTextColor(getColorCompat(R.color.text_secondary))
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(this@MainActivity).apply {
+                text = if (selected) "\u2713" else ""
+                textSize = 22f
+                gravity = Gravity.CENTER
+                setTextColor(getColorCompat(R.color.signalasi_green))
+            }, LinearLayout.LayoutParams(dp(40), dp(44)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(68)))
+        addView(View(this@MainActivity).apply {
+            setBackgroundColor(adjustAlpha(getColorCompat(R.color.text_secondary), 0.18f))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply {
+            marginStart = dp(60)
+        })
     }
 
     private fun showAgentSessionsPage(showArchived: Boolean = false) {
@@ -9803,8 +9978,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val homeAssistant = HomeAssistantSettingsStore.load(this)
         val homeAssistantReady = homeAssistant.configured
         val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
-        val localModelProfile = LocalModelRuntimeSettings.selectedProfile(this)
-        val localModelInstalled = LocalModelManager.isInstalled(this, localModelProfile)
+        val localModelProfile = LocalModelRuntimeSettings.displayProfile(this)
+        val localModelInstalled = LocalModelInferenceRuntime.ready(this)
         val globalRuntime = if (::globalSuperAgentRuntime.isInitialized) {
             globalSuperAgentRuntime
         } else GlobalSuperAgentRuntime.get(this)
@@ -14901,7 +15076,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }.ifEmpty {
             listOf(ControlCenterRowSpec("nodes.scan", getString(R.string.cc_no_desktop_title), getString(R.string.cc_no_desktop_subtitle), R.drawable.ic_scan, getString(R.string.security_scan), ControlCenterTone.AMBER))
         }
-        val localRows = targets.filter { it.kind == AgentConnectorKind.MODEL && !it.id.startsWith("cloud:") }
+        val qnnProfiles = LocalModelManager.profiles(this).filter {
+            it.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK
+        }
+        val installedQnnProfiles = qnnProfiles.count { LocalModelManager.isInstalled(this, it) }
+        val localRows = listOf(
+            ControlCenterRowSpec(
+                actionId = "local_model.open",
+                title = getString(R.string.local_model_title),
+                subtitle = getString(R.string.local_model_qnn_catalog_subtitle),
+                iconRes = R.drawable.ic_local_model,
+                status = getString(
+                    R.string.local_model_qnn_installed_count,
+                    installedQnnProfiles,
+                    qnnProfiles.size
+                ),
+                tone = if (installedQnnProfiles == qnnProfiles.size && qnnProfiles.isNotEmpty()) {
+                    ControlCenterTone.GREEN
+                } else {
+                    ControlCenterTone.BLUE
+                }
+            )
+        ) + targets.filter { it.kind == AgentConnectorKind.MODEL && !it.id.startsWith("cloud:") }
             .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
         val cloudRows = targets.filter { it.id.startsWith("cloud:") }
             .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
@@ -26878,15 +27074,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showLocalModelFeaturePage() {
-        val profile = LocalModelRuntimeSettings.selectedProfile(this)
+        val profile = LocalModelRuntimeSettings.displayProfile(this)
+        val profiles = LocalModelManager.profiles(this)
+        val qnnProfiles = profiles.filter {
+            it.preferredAccelerator == LocalModelAcceleratorKind.VENDOR_SDK
+        }
+        val otherProfiles = profiles.filterNot { it in qnnProfiles }
         val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
-        val storageSnapshot = LocalModelManager.storage(this).inspect(profile)
+        val modelInstalled = LocalModelManager.isInstalled(this, profile)
         val estimate = LocalModelRuntimeEstimator.estimate(
             LocalModelRuntimeRequest(
                 profile = profile,
                 requestedContextTokens = contextTokens,
                 modelFileBytes = profile.expectedModelFileBytes,
-                modelFilePresent = storageSnapshot.installed,
+                modelFilePresent = modelInstalled,
                 requireModelFile = true
             ),
             LocalModelDeviceSnapshotDetector.capture(this)
@@ -26894,6 +27095,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val accelerators = LocalModelAcceleratorDetector.detect(this)
         showFeaturePage(getString(R.string.local_model_title))
         featureContent.addView(localModelStatusCard(profile, estimate))
+        addSectionTitle(getString(R.string.local_model_qnn_section))
+        featureContent.addView(TextView(this).apply {
+            text = getString(R.string.local_model_qnn_catalog_subtitle)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12.5f
+            setPadding(dp(2), 0, dp(2), dp(10))
+        })
+        qnnProfiles.forEach { candidate ->
+            featureContent.addView(localModelProfileRow(candidate))
+        }
         addSectionTitle(getString(R.string.local_model_section_manage))
         featureContent.addView(featureRow(
             getString(R.string.local_model_search_title),
@@ -26903,7 +27114,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ).apply {
             setOnClickListener { showLocalModelSearchPage() }
         })
-        LocalModelManager.profiles(this).forEach { candidate ->
+        otherProfiles.forEach { candidate ->
             featureContent.addView(localModelProfileRow(candidate))
         }
         featureContent.addView(featureValueRow(
@@ -27041,8 +27252,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val actionView = TextView(this).apply {
             setTextColor(getColorCompat(R.color.signalasi_green))
             textSize = 12.5f
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
             maxLines = 1
+        }
+        val enabledSwitch = Switch(this).apply {
+            showText = false
+            visibility = View.GONE
+            contentDescription = getString(R.string.local_model_enable_action)
         }
         val progressView = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
@@ -27050,7 +27266,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E5E7EB"))
             visibility = View.GONE
         }
-        val binding = LocalModelRowBinding(profile, subtitleView, actionView, progressView)
+        val binding = LocalModelRowBinding(
+            profile,
+            subtitleView,
+            actionView,
+            enabledSwitch,
+            progressView
+        )
         localModelRowBindings[profile.id] = binding
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -27075,7 +27297,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     })
                     addView(subtitleView)
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(actionView, LinearLayout.LayoutParams(dp(76), dp(36)))
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    addView(actionView, LinearLayout.LayoutParams(0, dp(36), 1f))
+                    addView(enabledSwitch, LinearLayout.LayoutParams(dp(52), dp(40)).apply {
+                        leftMargin = dp(4)
+                    })
+                }, LinearLayout.LayoutParams(dp(126), dp(40)))
             })
             addView(progressView, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -27116,7 +27345,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 profile.quantizationLabel,
                 parameterLabel
             ))
-            if (profile.defaultNoThink) {
+            if (profile.isQwen17Qnn) {
+                append("\n")
+                append(getString(R.string.local_model_qwen_automatic_thinking))
+            } else if (profile.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id) {
+                append("\n")
+                append(getString(R.string.local_model_gemma_reasoning_role))
+            } else if (profile.defaultNoThink) {
                 append("\n")
                 append(getString(R.string.local_model_default_no_think))
             } else if (state.state == LocalModelInstallState.FAILED && state.detail.isNotBlank()) {
@@ -27125,15 +27360,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         binding.action.text = localModelActionLabel(profile, state)
+        val installed = state.state == LocalModelInstallState.READY
+        val enabled = installed && LocalModelRuntimeSettings.isProfileEnabled(this, profile)
         binding.action.setTextColor(getColorCompat(
-            if (state.state == LocalModelInstallState.READY &&
-                LocalModelRuntimeSettings.selectedProfile(this).id == profile.id
-            ) {
+            if (installed) {
                 R.color.text_secondary
             } else {
                 R.color.signalasi_green
             }
         ))
+        binding.enabledSwitch.setOnCheckedChangeListener(null)
+        binding.enabledSwitch.visibility = if (installed) View.VISIBLE else View.GONE
+        binding.enabledSwitch.isEnabled = installed
+        binding.enabledSwitch.isChecked = enabled
+        binding.enabledSwitch.contentDescription = getString(
+            if (enabled) R.string.local_model_disable_action else R.string.local_model_enable_action
+        )
+        binding.enabledSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != LocalModelRuntimeSettings.isProfileEnabled(this, profile)) {
+                setLocalModelProfileEnabled(profile, checked)
+            }
+        }
         val showProgress = state.state in setOf(
             LocalModelInstallState.QUEUED,
             LocalModelInstallState.DOWNLOADING,
@@ -27161,10 +27408,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         LocalModelInstallState.VERIFYING -> getString(R.string.local_model_download_verifying)
         LocalModelInstallState.INSTALLING -> getString(R.string.local_model_download_installing)
         LocalModelInstallState.READY -> getString(
-            if (LocalModelRuntimeSettings.selectedProfile(this).id == profile.id) {
-                R.string.local_model_selected
+            if (LocalModelRuntimeSettings.isProfileEnabled(this, profile)) {
+                R.string.local_model_enabled
             } else {
-                R.string.local_model_use_action
+                R.string.local_model_download_ready
             }
         )
         LocalModelInstallState.FAILED -> getString(R.string.common_retry)
@@ -27183,10 +27430,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LocalModelInstallState.VERIFYING,
             LocalModelInstallState.INSTALLING -> Unit
             LocalModelInstallState.READY -> {
-                LocalModelRuntimeSettings.setSelectedProfile(this, profile.id)
-                showLocalModelFeaturePage()
+                setLocalModelProfileEnabled(
+                    profile,
+                    enabled = !LocalModelRuntimeSettings.isProfileEnabled(this, profile)
+                )
             }
         }
+    }
+
+    private fun setLocalModelProfileEnabled(
+        profile: LocalModelRuntimeProfile,
+        enabled: Boolean
+    ) {
+        LocalModelRuntimeSettings.setProfileEnabled(this, profile, enabled)
+        if (!enabled) {
+            cloudExecutor.execute {
+                LocalModelInferenceRuntime.unloadIfSelected(profile.id)
+            }
+        }
+        showLocalModelFeaturePage()
     }
 
     private fun requestLocalModelDownload(profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
@@ -33176,6 +33438,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LocalModelRuntimeIssue.MODEL_FILE_INVALID,
             LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
             LocalModelRuntimeIssue.INSUFFICIENT_MEMORY,
+            LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE,
             LocalModelRuntimeIssue.DEVICE_TOO_HOT,
             LocalModelRuntimeIssue.CRITICAL_BATTERY,
             LocalModelRuntimeIssue.CONTEXT_REDUCED,
@@ -33193,6 +33456,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     R.string.local_model_issue_system_low_memory
                 LocalModelRuntimeIssue.INSUFFICIENT_MEMORY ->
                     R.string.local_model_issue_insufficient_memory
+                LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE ->
+                    R.string.local_model_issue_accelerator_unavailable
                 LocalModelRuntimeIssue.DEVICE_TOO_HOT ->
                     R.string.local_model_issue_device_hot
                 LocalModelRuntimeIssue.CRITICAL_BATTERY ->
@@ -33598,6 +33863,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             iconRes == R.drawable.ic_avatar_ai_agent ||
             iconRes == R.drawable.ic_avatar_custom_agent ||
             iconRes == R.drawable.ic_avatar_cloud_model ||
+            iconRes == R.drawable.logo_provider_openai ||
+            iconRes == R.drawable.logo_provider_deepseek ||
+            iconRes == R.drawable.logo_provider_anthropic ||
+            iconRes == R.drawable.logo_provider_gemini ||
+            iconRes == R.drawable.logo_provider_qwen ||
+            iconRes == R.drawable.logo_provider_openrouter ||
             iconRes == R.drawable.ic_send_plane
     }
 

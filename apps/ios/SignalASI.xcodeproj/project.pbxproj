@@ -29,6 +29,10 @@
     A10000000000000000000993 /* SignalASIOnDeviceAgentPermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000993 /* SignalASIOnDeviceAgentPermissionsView.swift */; };
     A10000000000000000000994 /* SignalASILanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000994 /* SignalASILanguageSettingsView.swift */; };
     A10000000000000000001460 /* SignalASILanguagePolicyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */; };
+    A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001462 /* AgentWorkflowStore.swift */; };
+    A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */; };
+    A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
+    A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* SignalASIWorkflowsView.swift */; };
     A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000995 /* SignalASIAgentMemoryView.swift */; };
     A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */; };
     A10000000000000000001240 /* SignalASIMemoryControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001240 /* SignalASIMemoryControlView.swift */; };
@@ -43,6 +47,7 @@
     A10000000000000000001524 /* SignalASILlamaNativeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */; };
     A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */; };
     A10000000000000000001526 /* SignalASIAgentConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001526 /* SignalASIAgentConfirmationView.swift */; };
+    A10000000000000000001500 /* SignalASIAgentAuditOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */; };
     A10000000000000000000998 /* SignalASIAgentSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000998 /* SignalASIAgentSessionsView.swift */; };
     A10000000000000000000999 /* SignalASINativeToolCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */; };
     A10000000000000000001340 /* SignalASIMcpControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001340 /* SignalASIMcpControlCenterView.swift */; };
@@ -130,6 +135,7 @@
     A10000000000000000000488 /* AgentPreferenceMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000488 /* AgentPreferenceMode.swift */; };
     A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000704 /* AgentTaskExecutionMode.swift */; };
     A10000000000000000000705 /* AgentSafetySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000705 /* AgentSafetySettings.swift */; };
+    A10000000000000000000707 /* AgentDirectActionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentDirectActionContext.swift */; };
     A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000706 /* CloudModelCredentialPolicy.swift */; };
     A10000000000000000000779 /* CloudModelStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000779 /* CloudModelStreaming.swift */; };
     A10000000000000000000780 /* CloudModelStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000780 /* CloudModelStreamingTests.swift */; };
@@ -339,6 +345,11 @@
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
+    A10000000000000000002005 /* AgentSubagentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002005 /* AgentSubagentRuntime.swift */; };
+    A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */; };
+    A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */; };
+    A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */; };
+    A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002001 /* AgentConnectorResponseResolver.swift */; };
     A10000000000000000000402 /* AgentReputationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000402 /* AgentReputationModels.swift */; };
     A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000403 /* AgentResourceProfileModels.swift */; };
     A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000404 /* AgentProviderProfileCatalog.swift */; };
@@ -391,6 +402,8 @@
     A10000000000000000000111 /* AgentObservationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000111 /* AgentObservationModels.swift */; };
     A10000000000000000000697 /* AgentPrivateDataInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000697 /* AgentPrivateDataInventory.swift */; };
     A10000000000000000000698 /* AgentRunRecoveryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000698 /* AgentRunRecoveryPolicy.swift */; };
+    A10000000000000000000902 /* AgentRunEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000902 /* AgentRunEventStore.swift */; };
+    A10000000000000000000903 /* VoiceAgentRunBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000903 /* VoiceAgentRunBridge.swift */; };
     A10000000000000000000532 /* GlobalAgentObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000532 /* GlobalAgentObservations.swift */; };
     A10000000000000000000112 /* AgentMcpCoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000112 /* AgentMcpCoreModels.swift */; };
     A10000000000000000000113 /* AgentMcpPackageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000113 /* AgentMcpPackageModels.swift */; };
@@ -428,6 +441,10 @@
     A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* AgentPlanRunModels.swift */; };
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
+    A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002008 /* AgentWorkflowTriggers.swift */; };
+    A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */; };
+    A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */; };
+    A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
     A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
     A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
@@ -713,6 +730,10 @@
     A20000000000000000000993 /* SignalASIOnDeviceAgentPermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIOnDeviceAgentPermissionsView.swift; sourceTree = "<group>"; };
     A20000000000000000000994 /* SignalASILanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILanguageSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILanguagePolicyFormatter.swift; sourceTree = "<group>"; };
+    A20000000000000000001462 /* AgentWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowExecutionHistory.swift; sourceTree = "<group>"; };
+    A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
+    A20000000000000000001463 /* SignalASIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowsView.swift; sourceTree = "<group>"; };
     A20000000000000000000995 /* SignalASIAgentMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryView.swift; sourceTree = "<group>"; };
     A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryTelemetryView.swift; sourceTree = "<group>"; };
     A20000000000000000001240 /* SignalASIMemoryControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlView.swift; sourceTree = "<group>"; };
@@ -727,6 +748,7 @@
     A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILlamaNativeBackend.swift; sourceTree = "<group>"; };
     A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001526 /* SignalASIAgentConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentConfirmationView.swift; sourceTree = "<group>"; };
+    A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentAuditOperationsView.swift; sourceTree = "<group>"; };
     A20000000000000000000998 /* SignalASIAgentSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentSessionsView.swift; sourceTree = "<group>"; };
     A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASINativeToolCatalogView.swift; sourceTree = "<group>"; };
     A20000000000000000001340 /* SignalASIMcpControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMcpControlCenterView.swift; sourceTree = "<group>"; };
@@ -816,6 +838,7 @@
     A20000000000000000000488 /* AgentPreferenceMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceMode.swift; sourceTree = "<group>"; };
     A20000000000000000000704 /* AgentTaskExecutionMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskExecutionMode.swift; sourceTree = "<group>"; };
     A20000000000000000000705 /* AgentSafetySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSafetySettings.swift; sourceTree = "<group>"; };
+    A20000000000000000000707 /* AgentDirectActionContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectActionContext.swift; sourceTree = "<group>"; };
     A20000000000000000000706 /* CloudModelCredentialPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelCredentialPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000779 /* CloudModelStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreaming.swift; sourceTree = "<group>"; };
     A20000000000000000000780 /* CloudModelStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamingTests.swift; sourceTree = "<group>"; };
@@ -956,6 +979,11 @@
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
+    A20000000000000000002005 /* AgentSubagentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSubagentRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentObservationContextStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentConnectorResponseStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentManagedResponseLedger.swift; sourceTree = "<group>"; };
+    A20000000000000000002001 /* AgentConnectorResponseResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000402 /* AgentReputationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReputationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000403 /* AgentResourceProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResourceProfileModels.swift; sourceTree = "<group>"; };
     A20000000000000000000404 /* AgentProviderProfileCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderProfileCatalog.swift; sourceTree = "<group>"; };
@@ -1008,6 +1036,8 @@
     A20000000000000000000111 /* AgentObservationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentObservationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000697 /* AgentPrivateDataInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPrivateDataInventory.swift; sourceTree = "<group>"; };
     A20000000000000000000698 /* AgentRunRecoveryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000902 /* AgentRunEventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunEventStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000903 /* VoiceAgentRunBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentRunBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000532 /* GlobalAgentObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000112 /* AgentMcpCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpCoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000113 /* AgentMcpPackageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpPackageModels.swift; sourceTree = "<group>"; };
@@ -1045,6 +1075,10 @@
     A20000000000000000000117 /* AgentPlanRunModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanRunModels.swift; sourceTree = "<group>"; };
     A20000000000000000000671 /* AgentTaskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenter.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000002008 /* AgentWorkflowTriggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggers.swift; sourceTree = "<group>"; };
+    A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowTriggerView.swift; sourceTree = "<group>"; };
+    A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProactiveBackgroundScheduler.swift; sourceTree = "<group>"; };
+    A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveWebhookStore.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
@@ -1432,8 +1466,14 @@
         A20000000000000000000737 /* voice */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
+        A20000000000000000000707 /* AgentDirectActionContext.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
         A20000000000000000000401 /* AgentConnectorModels.swift */,
+        A20000000000000000002005 /* AgentSubagentRuntime.swift */,
+        A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */,
+        A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */,
+        A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */,
+        A20000000000000000002001 /* AgentConnectorResponseResolver.swift */,
         A20000000000000000000402 /* AgentReputationModels.swift */,
         A20000000000000000000403 /* AgentResourceProfileModels.swift */,
         A20000000000000000000404 /* AgentProviderProfileCatalog.swift */,
@@ -1487,6 +1527,8 @@
         A20000000000000000000116 /* AgentWorkspaceModels.swift */,
         A20000000000000000000673 /* AgentWorkspaceStore.swift */,
         A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */,
+        A20000000000000000000902 /* AgentRunEventStore.swift */,
+        A20000000000000000000903 /* VoiceAgentRunBridge.swift */,
         A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */,
         A20000000000000000000679 /* AgentTaskSupervisor.swift */,
         A20000000000000000000681 /* AgentActionNotificationModels.swift */,
@@ -1514,6 +1556,10 @@
         A20000000000000000000671 /* AgentTaskCenter.swift */,
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
+        A20000000000000000002008 /* AgentWorkflowTriggers.swift */,
+        A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */,
+        A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */,
+        A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
         A20000000000000000000695 /* AgentTaskIdentity.swift */,
         A20000000000000000000696 /* AgentTaskIntent.swift */,
@@ -1791,12 +1837,17 @@
         A20000000000000000000993 /* SignalASIOnDeviceAgentPermissionsView.swift */,
         A20000000000000000000994 /* SignalASILanguageSettingsView.swift */,
         A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */,
+        A20000000000000000001462 /* AgentWorkflowStore.swift */,
+        A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */,
+        A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
+        A20000000000000000001463 /* SignalASIWorkflowsView.swift */,
         A20000000000000000000995 /* SignalASIAgentMemoryView.swift */,
         A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */,
         A20000000000000000001240 /* SignalASIMemoryControlView.swift */,
         A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */,
         A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */,
         A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */,
+        A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */,
         A20000000000000000000998 /* SignalASIAgentSessionsView.swift */,
         A20000000000000000000999 /* SignalASINativeToolCatalogView.swift */,
         A20000000000000000001340 /* SignalASIMcpControlCenterView.swift */,
@@ -2233,8 +2284,11 @@
         A10000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift in Sources */,
         A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */,
         A10000000000000000000705 /* AgentSafetySettings.swift in Sources */,
+        A10000000000000000000707 /* AgentDirectActionContext.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
         A10000000000000000000401 /* AgentConnectorModels.swift in Sources */,
+        A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */,
+        A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */,
         A10000000000000000000402 /* AgentReputationModels.swift in Sources */,
         A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */,
         A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */,
@@ -2271,6 +2325,8 @@
         A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */,
         A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */,
         A10000000000000000000675 /* AgentRunRecoveryCoordinator.swift in Sources */,
+        A10000000000000000000902 /* AgentRunEventStore.swift in Sources */,
+        A10000000000000000000903 /* VoiceAgentRunBridge.swift in Sources */,
         A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */,
         A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */,
         A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */,
@@ -2298,6 +2354,10 @@
         A10000000000000000000671 /* AgentTaskCenter.swift in Sources */,
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
+        A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */,
+        A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */,
+        A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */,
+        A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
         A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */,
         A10000000000000000000696 /* AgentTaskIntent.swift in Sources */,
@@ -2511,6 +2571,9 @@
         A10000000000000000000200 /* AgentTeamPlanBridgeModels.swift in Sources */,
         A10000000000000000000269 /* AgentConnectorResponseModels.swift in Sources */,
         A10000000000000000000270 /* AgentManagedResponseModels.swift in Sources */,
+        A10000000000000000002005 /* AgentSubagentRuntime.swift in Sources */,
+        A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */,
+        A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
@@ -2598,12 +2661,17 @@
         A10000000000000000000993 /* SignalASIOnDeviceAgentPermissionsView.swift in Sources */,
         A10000000000000000000994 /* SignalASILanguageSettingsView.swift in Sources */,
         A10000000000000000001460 /* SignalASILanguagePolicyFormatter.swift in Sources */,
+        A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */,
+        A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */,
+        A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
+        A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */,
         A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */,
         A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */,
         A10000000000000000001240 /* SignalASIMemoryControlView.swift in Sources */,
         A10000000000000000001241 /* SignalASIMemoryControlDetailViews.swift in Sources */,
         A10000000000000000000996 /* SignalASIAgentKnowledgeView.swift in Sources */,
         A10000000000000000000997 /* SignalASIAgentRecentTasksView.swift in Sources */,
+        A10000000000000000001500 /* SignalASIAgentAuditOperationsView.swift in Sources */,
         A10000000000000000000998 /* SignalASIAgentSessionsView.swift in Sources */,
         A10000000000000000000999 /* SignalASINativeToolCatalogView.swift in Sources */,
         A10000000000000000001340 /* SignalASIMcpControlCenterView.swift in Sources */,
@@ -3029,6 +3097,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh";
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
@@ -3081,6 +3150,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh com.signalasi.chat.ios.workflow-trigger-refresh";
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
