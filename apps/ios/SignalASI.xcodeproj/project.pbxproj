@@ -49,6 +49,7 @@
     A10000000000000000001524 /* SignalASILlamaNativeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */; };
     A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */; };
     A10000000000000000001527 /* LocalModelCooperativeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001527 /* LocalModelCooperativeRuntime.swift */; };
+    A10000000000000000001528 /* SignalASIMqttReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001528 /* SignalASIMqttReliability.swift */; };
     A10000000000000000001526 /* SignalASIAgentConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001526 /* SignalASIAgentConfirmationView.swift */; };
     A10000000000000000001500 /* SignalASIAgentAuditOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */; };
     A10000000000000000000998 /* SignalASIAgentSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000998 /* SignalASIAgentSessionsView.swift */; };
@@ -756,6 +757,7 @@
     A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILlamaNativeBackend.swift; sourceTree = "<group>"; };
     A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAgentPlanningProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001527 /* LocalModelCooperativeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelCooperativeRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000001528 /* SignalASIMqttReliability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMqttReliability.swift; sourceTree = "<group>"; };
     A20000000000000000001526 /* SignalASIAgentConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentConfirmationView.swift; sourceTree = "<group>"; };
     A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentAuditOperationsView.swift; sourceTree = "<group>"; };
     A20000000000000000000998 /* SignalASIAgentSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentSessionsView.swift; sourceTree = "<group>"; };
@@ -1891,6 +1893,7 @@
         A20000000000000000001524 /* SignalASILlamaNativeBackend.swift */,
         A20000000000000000001525 /* LocalModelAgentPlanningProvider.swift */,
         A20000000000000000001527 /* LocalModelCooperativeRuntime.swift */,
+        A20000000000000000001528 /* SignalASIMqttReliability.swift */,
         A20000000000000000001526 /* SignalASIAgentConfirmationView.swift */,
         A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */,
         A20000000000000000001051 /* SignalASIAppAdaptersView.swift */,
@@ -2721,6 +2724,7 @@
         A10000000000000000001524 /* SignalASILlamaNativeBackend.swift in Sources */,
         A10000000000000000001525 /* LocalModelAgentPlanningProvider.swift in Sources */,
         A10000000000000000001527 /* LocalModelCooperativeRuntime.swift in Sources */,
+        A10000000000000000001528 /* SignalASIMqttReliability.swift in Sources */,
         A10000000000000000001526 /* SignalASIAgentConfirmationView.swift in Sources */,
         A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */,
         A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */,
