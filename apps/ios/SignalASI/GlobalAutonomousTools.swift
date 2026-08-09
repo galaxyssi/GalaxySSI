@@ -274,20 +274,24 @@ final class GlobalAutonomousToolHost {
       descriptor: descriptor,
       workspaceId: workspaceId
     )
-    let result = skillHost.isSkillToolId(descriptor.id)
-      ? skillHost.invoke(
+    let result: AgentNativeToolResult
+    if skillHost.isSkillToolId(descriptor.id) {
+      result = skillHost.invoke(
         toolId: descriptor.id,
         input: input,
         nativeRegistry: registry,
         context: context,
         hooks: hooks
       )
-      : registry.invoke(
+    } else {
+      result = registry.invoke(
         descriptor.id,
         input: input,
         context: context,
         hooks: hooks
       )
+      AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
+    }
     let output = AgentMcpJSONCodec.stringify(result.output)
     let summary = [
       result.message.ifBlank(result.error?.message ?? ""),

@@ -24,33 +24,65 @@ struct AgentIOSDefaultNativeActionHandoffProvider: AgentIOSNativeActionHandoffPr
   }
 }
 
-@MainActor
 enum AgentIOSNativeToolHandoffPresenter {
   static func openIfNeeded(_ result: AgentActionResult) {
     guard result.success,
           let rawOutput = result.metadata["native_tool_output"],
           let data = rawOutput.data(using: .utf8),
-          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
-          output["requires_user_action"]?.boolValue == true,
-          let handoffKind = output["handoff_kind"]?.stringValue,
-          ["dial", "sms_compose", "settings"].contains(handoffKind),
-          let rawURL = output["url"]?.stringValue else {
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
       return
     }
+    openIfNeeded(output)
+  }
 
-    let url: URL
-    if rawURL == "app-settings:" {
-      guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
-      url = settingsURL
-    } else {
-      guard let candidate = URL(string: rawURL),
-            ["tel", "sms"].contains(candidate.scheme?.lowercased() ?? "") else {
-        return
+  static func openIfNeeded(_ result: AgentNativeToolResult) {
+    guard result.isSuccess else { return }
+    openIfNeeded(.object(result.output))
+  }
+
+  private static func openIfNeeded(_ output: AgentMcpJSONObject) {
+    guard let rawURL = handoffURL(in: .object(output)) else { return }
+    open(rawURL: rawURL)
+  }
+
+  private static func handoffURL(in value: AgentMcpJSONValue) -> String? {
+    switch value {
+    case .object(let object):
+      if object["requires_user_action"]?.boolValue == true,
+         let handoffKind = object["handoff_kind"]?.stringValue,
+         ["dial", "sms_compose", "settings"].contains(handoffKind),
+         let rawURL = object["url"]?.stringValue {
+        return rawURL
       }
-      url = candidate
+      return object.values.lazy.compactMap { handoffURL(in: $0) }.first
+    case .array(let values):
+      return values.lazy.compactMap { handoffURL(in: $0) }.first
+    case .string, .int, .double, .bool, .null:
+      return nil
     }
+  }
 
-    AgentIOSDefaultNativeActionHandoffProvider().open(url)
+  private static func open(rawURL: String) {
+    let openBlock = {
+      let url: URL
+      if rawURL == "app-settings:" {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        url = settingsURL
+      } else {
+        guard let candidate = URL(string: rawURL),
+              ["tel", "sms"].contains(candidate.scheme?.lowercased() ?? "") else {
+          return
+        }
+        url = candidate
+      }
+
+      AgentIOSDefaultNativeActionHandoffProvider().open(url)
+    }
+    if Thread.isMainThread {
+      openBlock()
+    } else {
+      DispatchQueue.main.async(execute: openBlock)
+    }
   }
 }
 
