@@ -752,10 +752,14 @@ struct AgentHomeView: View {
                 status: agentPhaseLabel(activeExecutionTask.phase),
                 location: agentExecutionLocationSummary(activeExecutionTask),
                 step: agentExecutionStep(activeExecutionTask),
+                canResume: AgentTaskCenterPolicy.resumable(activeExecutionTask),
+                resumeTitle: t("signalasi.agent.resume_task", "Resume task"),
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
                 cancelTitle: t("signalasi.common.cancel_task", "Cancel task")
               ) {
-                coordinator.cancelLocalNativeAction(taskId: activeExecutionTask.taskId)
+                resumeActiveAgentTask(activeExecutionTask)
+              } onCancel: {
+                cancelActiveAgentTask(activeExecutionTask)
               }
             }
             ForEach(transcriptMessages) { message in
@@ -986,6 +990,17 @@ struct AgentHomeView: View {
       _ = await coordinator.send(message.content, to: contact)
       retryingAgentMessageIDs.remove(message.id)
     }
+  }
+
+  private func resumeActiveAgentTask(_ task: AgentTaskRecord) {
+    richActionStatus = coordinator.resumeLocalNativeAction(taskId: task.taskId)
+      ? t("signalasi.agent.task_control.resumed", "Task resumed")
+      : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
+  }
+
+  private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
+    coordinator.cancelLocalNativeAction(taskId: task.taskId)
+    richActionStatus = t("signalasi.agent.task_control.cancelled", "Task cancelled")
   }
 
   private func agentPhaseLabel(_ phase: AgentPhase) -> String {
@@ -1528,8 +1543,11 @@ private struct SignalASIAgentExecutionStatusCard: View {
   var status: String
   var location: String
   var step: String
+  var canResume: Bool
+  var resumeTitle: String
   var canCancel: Bool
   var cancelTitle: String
+  var onResume: () -> Void
   var onCancel: () -> Void
 
   var body: some View {
@@ -1557,13 +1575,25 @@ private struct SignalASIAgentExecutionStatusCard: View {
         .foregroundColor(.signalASITextPrimary)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
-      if canCancel {
-        Button(role: .destructive, action: onCancel) {
-          Label(cancelTitle, systemImage: "xmark.circle")
-            .font(.system(size: 12, weight: .semibold))
-            .frame(maxWidth: .infinity, minHeight: 36)
+      if canResume || canCancel {
+        HStack(spacing: 8) {
+          if canResume {
+            Button(action: onResume) {
+              Label(resumeTitle, systemImage: "play.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.bordered)
+          }
+          if canCancel {
+            Button(role: .destructive, action: onCancel) {
+              Label(cancelTitle, systemImage: "xmark.circle")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.bordered)
+          }
         }
-        .buttonStyle(.bordered)
       }
     }
     .padding(12)
