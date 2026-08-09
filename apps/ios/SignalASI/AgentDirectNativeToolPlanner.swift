@@ -261,6 +261,123 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isLocationReadGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.locationForegroundRead, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "location-status",
+        target: "Location",
+        description: "Read foreground location",
+        input: ["timeout_ms": .int(10_000)],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isSensorListGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.sensorsList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "list-sensors",
+        target: "Sensors",
+        description: "List device sensors",
+        input: ["limit": .int(64)],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isSensorSampleGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.sensorSample, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "sample-sensor",
+        target: "Sensors",
+        description: "Read one foreground sensor sample",
+        input: [
+          "type": .string(sensorType(in: lower)),
+          "timeout_ms": .int(5_000)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isBluetoothStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.bluetoothStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "bluetooth-status",
+        target: "Bluetooth",
+        description: "Read Bluetooth status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isBluetoothDiscoveryGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "discover-bluetooth",
+        target: "Bluetooth",
+        description: "Discover nearby Bluetooth devices",
+        input: [
+          "timeout_ms": .int(10_000),
+          "limit": .int(16)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isBluetoothPairingGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "open-bluetooth-pairing",
+        target: "Bluetooth Settings",
+        description: "Open Bluetooth pairing settings",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isNFCStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.nfcStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "nfc-status",
+        target: "NFC",
+        description: "Read NFC status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let query = installedAppsQuery(goal: goal, lower: lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.installedAppsList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "list-installed-apps",
+        target: "Installed Apps",
+        description: "List visible installed apps",
+        input: [
+          "query": .string(query),
+          "limit": .int(100)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let package = packageName(in: goal, lower: lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.packageDetail, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "app-package-detail",
+        target: package,
+        description: "Read visible app detail",
+        input: ["package_name": .string(package)],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isFlashlightGoal(lower),
        let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.flashlightSet, in: request) {
       return nativeAction(
@@ -400,6 +517,139 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isNetworkStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, ["network status", "phone network", "device network", "\u{7f51}\u{7edc}\u{72b6}\u{6001}"])
+  }
+
+  private static func isLocationReadGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "current location",
+      "phone location",
+      "where am i",
+      "location now",
+      "\u{83b7}\u{53d6}\u{4f4d}\u{7f6e}",
+      "\u{5f53}\u{524d}\u{4f4d}\u{7f6e}",
+      "\u{624b}\u{673a}\u{4f4d}\u{7f6e}",
+      "\u{6211}\u{5728}\u{54ea}\u{91cc}"
+    ])
+  }
+
+  private static func isSensorListGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "list sensors",
+      "device sensors",
+      "sensor list",
+      "\u{5217}\u{51fa}\u{4f20}\u{611f}\u{5668}",
+      "\u{624b}\u{673a}\u{4f20}\u{611f}\u{5668}",
+      "\u{4f20}\u{611f}\u{5668}\u{5217}\u{8868}"
+    ])
+  }
+
+  private static func isSensorSampleGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "sample sensor",
+      "read sensor",
+      "sensor sample",
+      "sensor data",
+      "\u{8bfb}\u{53d6}\u{4f20}\u{611f}\u{5668}",
+      "\u{4f20}\u{611f}\u{5668}\u{6570}\u{636e}",
+      "\u{91c7}\u{6837}\u{4f20}\u{611f}\u{5668}"
+    ])
+  }
+
+  private static func sensorType(in lower: String) -> String {
+    if containsAny(lower, ["gyroscope", "gyro", "\u{9640}\u{87ba}\u{4eea}"]) { return "gyroscope" }
+    if containsAny(lower, ["magnetic", "magnetometer", "\u{78c1}\u{529b}\u{8ba1}", "\u{78c1}\u{573a}"]) {
+      return "magnetic_field"
+    }
+    if containsAny(lower, ["gravity", "\u{91cd}\u{529b}"]) { return "gravity" }
+    if containsAny(lower, ["linear acceleration", "\u{7ebf}\u{6027}\u{52a0}\u{901f}\u{5ea6}"]) {
+      return "linear_acceleration"
+    }
+    if containsAny(lower, ["rotation", "\u{65cb}\u{8f6c}"]) { return "rotation_vector" }
+    return "accelerometer"
+  }
+
+  private static func isBluetoothStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "bluetooth status",
+      "is bluetooth on",
+      "\u{84dd}\u{7259}\u{72b6}\u{6001}",
+      "\u{84dd}\u{7259}\u{662f}\u{5426}\u{6253}\u{5f00}"
+    ])
+  }
+
+  private static func isBluetoothDiscoveryGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "discover bluetooth",
+      "scan bluetooth",
+      "nearby bluetooth",
+      "\u{626b}\u{63cf}\u{84dd}\u{7259}",
+      "\u{9644}\u{8fd1}\u{84dd}\u{7259}",
+      "\u{53d1}\u{73b0}\u{84dd}\u{7259}\u{8bbe}\u{5907}"
+    ])
+  }
+
+  private static func isBluetoothPairingGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "open bluetooth pairing",
+      "pair bluetooth",
+      "\u{6253}\u{5f00}\u{84dd}\u{7259}\u{914d}\u{5bf9}",
+      "\u{84dd}\u{7259}\u{914d}\u{5bf9}",
+      "\u{914d}\u{5bf9}\u{84dd}\u{7259}"
+    ])
+  }
+
+  private static func isNFCStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "nfc status",
+      "is nfc on",
+      "check nfc",
+      "nfc\u{72b6}\u{6001}",
+      "nfc\u{662f}\u{5426}\u{6253}\u{5f00}"
+    ])
+  }
+
+  private static func installedAppsQuery(goal: String, lower: String) -> String? {
+    let searchPrefixes = [
+      "search installed apps",
+      "find installed apps",
+      "\u{641c}\u{7d22}\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}",
+      "\u{67e5}\u{627e}\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}"
+    ]
+    if let prefix = searchPrefixes.first(where: { lower.hasPrefix($0) }) {
+      return String(goal.dropFirst(prefix.count))
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .prefixString(160)
+    }
+    guard containsAny(lower, [
+      "list installed apps",
+      "installed applications",
+      "installed app list",
+      "\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}",
+      "\u{5e94}\u{7528}\u{5217}\u{8868}",
+      "\u{5217}\u{51fa}\u{5df2}\u{5b89}\u{88c5}app"
+    ]) else {
+      return nil
+    }
+    return ""
+  }
+
+  private static func packageName(in goal: String, lower: String) -> String? {
+    guard containsAny(lower, [
+      "package detail",
+      "package info",
+      "app package",
+      "\u{5e94}\u{7528}\u{5305}\u{540d}",
+      "\u{5e94}\u{7528}\u{8be6}\u{60c5}"
+    ]),
+    let regex = try? NSRegularExpression(
+      pattern: #"\b[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\b"#
+    ) else {
+      return nil
+    }
+    let nsGoal = goal as NSString
+    let range = NSRange(location: 0, length: nsGoal.length)
+    guard let match = regex.firstMatch(in: goal, range: range) else { return nil }
+    return nsGoal.substring(with: match.range).prefixString(255)
   }
 
   private static func isWifiStatusGoal(_ lower: String) -> Bool {
