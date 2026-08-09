@@ -423,7 +423,10 @@ enum AgentPhoneNativeToolCatalog {
   static func onDeviceRuntimeExecutableDefinitions(
     provider: AgentIOSOnDeviceRuntimeToolProviding
   ) -> [AgentNativeToolExecutableDefinition] {
-    let executor = AgentIOSOnDeviceRuntimeNativeToolExecutor(provider: provider)
+    let executor = AgentIOSOnDeviceRuntimeNativeToolExecutor(
+      provider: provider,
+      workspaceManager: provider.runtimeWorkspaceManager
+    )
     return AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
   }
 

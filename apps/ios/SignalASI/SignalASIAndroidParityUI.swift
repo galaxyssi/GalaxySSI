@@ -140,6 +140,14 @@ struct AgentHomeView: View {
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
+  @State private var modelSelection = AgentModelSelectionSettings.selection()
+  @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
+  @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
+  @State private var runtimeArtifactExportPresented = false
+  @State private var runtimeArtifactExportFilename = ""
+  @State private var runtimeArtifactExportSourceURI = ""
+  @State private var runtimeArtifactError = ""
+  @State private var runtimeArtifactStatus = ""
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -147,6 +155,13 @@ struct AgentHomeView: View {
 
   private var messages: [ChatMessage] {
     store.messages(for: contact.id)
+  }
+
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: messages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
   }
 
   private var unreadTotal: Int {
@@ -188,6 +203,10 @@ struct AgentHomeView: View {
     }
   }
 
+  private var cancellableAgentTask: AgentTaskRecord? {
+    activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
+  }
+
   private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
@@ -227,6 +246,7 @@ struct AgentHomeView: View {
       .onAppear {
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+        modelSelection = AgentModelSelectionSettings.selection()
       }
       .fileImporter(
         isPresented: $fileImporterPresented,
@@ -248,8 +268,121 @@ struct AgentHomeView: View {
       .sheet(item: $selectedMessageForDetails) { message in
         MessageDetailView(message: message, contact: contact)
       }
+      .sheet(item: $runtimeArtifactPreview) { preview in
+        SignalASIRuntimeArtifactPreviewView(preview: preview)
+      }
+      .fileExporter(
+        isPresented: $runtimeArtifactExportPresented,
+        document: runtimeArtifactDocument,
+        contentType: .data,
+        defaultFilename: runtimeArtifactExportFilename
+      ) { result in
+        if case .success(let url) = result,
+           !runtimeArtifactExportSourceURI.isEmpty {
+          try? AgentDesktopArtifactStore.shared.markSavedToDownloads(
+            sourceURI: runtimeArtifactExportSourceURI,
+            savedURI: url.absoluteString
+          )
+          runtimeArtifactExportSourceURI = ""
+        } else if case .failure(let error) = result {
+          runtimeArtifactExportSourceURI = ""
+          runtimeArtifactError = error.localizedDescription
+        }
+      }
+      .alert(
+        t("runtime_artifact.error.title", "Artifact unavailable"),
+        isPresented: Binding(
+          get: { !runtimeArtifactError.isEmpty },
+          set: { if !$0 { runtimeArtifactError = "" } }
+        )
+      ) {
+        Button(t("signalasi.common.done", "Done"), role: .cancel) {
+          runtimeArtifactError = ""
+        }
+      } message: {
+        Text(runtimeArtifactError)
+      }
+      .alert(
+        t("runtime_artifact.status.title", "Artifact"),
+        isPresented: Binding(
+          get: { !runtimeArtifactStatus.isEmpty },
+          set: { if !$0 { runtimeArtifactStatus = "" } }
+        )
+      ) {
+        Button(t("signalasi.common.done", "Done"), role: .cancel) {
+          runtimeArtifactStatus = ""
+        }
+      } message: {
+        Text(runtimeArtifactStatus)
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var runtimeArtifactManagedRoots: [URL] {
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    return [
+      root,
+      root.appendingPathComponent("runs", isDirectory: true),
+      root.appendingPathComponent("runs/artifacts", isDirectory: true),
+      root.appendingPathComponent("artifacts", isDirectory: true)
+    ]
+  }
+
+  private func handleRichAction(_ action: AgentRichAction) {
+    if action.verb == "download_desktop_artifact" {
+      guard let payload = AgentDesktopArtifactRequestPayload.decode(action.value) else {
+        runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+        return
+      }
+      if let file = AgentDesktopArtifactStore.shared.localFile(forArtifactURI: payload.artifactURI) {
+        do {
+          runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+          runtimeArtifactExportFilename = payload.displayName
+          runtimeArtifactExportSourceURI = payload.artifactURI
+          runtimeArtifactExportPresented = true
+        } catch {
+          runtimeArtifactError = error.localizedDescription
+        }
+      } else if coordinator.requestDesktopArtifactDownload(payload) {
+        runtimeArtifactStatus = t(
+          "runtime_artifact.download_requested",
+          "The Desktop was asked to resend this artifact."
+        )
+      } else {
+        runtimeArtifactError = t(
+          "runtime_artifact.download_failed",
+          "The artifact could not be requested from the Desktop."
+        )
+      }
+      return
+    }
+    guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
+      return
+    }
+    guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
+      runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+      return
+    }
+    do {
+      let file = try AgentRuntimeArtifactUi.resolve(
+        payload: payload,
+        managedRoots: runtimeArtifactManagedRoots
+      )
+      if action.verb == "preview_runtime_artifact" {
+        runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
+          title: payload.displayName,
+          content: try AgentRuntimeArtifactUi.preview(file: file)
+        )
+      } else {
+        runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+        runtimeArtifactExportFilename = payload.displayName
+        runtimeArtifactExportSourceURI = ""
+        runtimeArtifactExportPresented = true
+      }
+    } catch {
+      runtimeArtifactError = error.localizedDescription
+    }
   }
 
   private var agentOutput: some View {
@@ -301,7 +434,7 @@ struct AgentHomeView: View {
             )
           } else {
             ForEach(messages) { message in
-              MessageBubble(message: message)
+              MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -320,6 +453,11 @@ struct AgentHomeView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
             if voiceTranscriptionPending {
               SignalASIVoiceTranscriptionPendingView()
@@ -349,6 +487,17 @@ struct AgentHomeView: View {
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
       }
+      .onChange(of: waitingMessageIDs.count) { _ in
+        guard let last = messages.last else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(
+            waitingMessageIDs.contains(last.id)
+              ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+              : last.id,
+            anchor: .bottom
+          )
+        }
+      }
       .onChange(of: voiceTranscriptionPending) { pending in
         guard pending else { return }
         withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
@@ -376,21 +525,34 @@ struct AgentHomeView: View {
           .foregroundColor(.signalASITextSecondary)
       }
       Spacer(minLength: 8)
-      NavigationLink(destination: SignalASIAgentSessionsView()) {
-        VStack(alignment: .trailing, spacing: 4) {
+      VStack(alignment: .trailing, spacing: 2) {
+        NavigationLink(destination: SignalASIAgentSessionsView()) {
           Text(t("signalasi.agent.session.new", "New session"))
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
             .lineLimit(1)
-          Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.tab.subtitle", "Phone-native super agent"))
-            .font(.system(size: 10, weight: .regular))
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(width: 128, minHeight: 44, alignment: .trailing)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        NavigationLink(
+          destination: SignalASIAgentModelSelectionView {
+            modelSelection = AgentModelSelectionSettings.selection()
+          }
+        ) {
+          HStack(spacing: 3) {
+            Image(systemName: "chevron.left")
+              .font(.system(size: 8, weight: .bold))
+            Text(headerModelLabel)
+              .lineLimit(1)
+              .minimumScaleFactor(0.72)
+          }
+          .font(.system(size: 10, weight: .regular))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
       }
-      .buttonStyle(.plain)
+      .frame(width: 138, minHeight: 44, alignment: .trailing)
       NavigationLink(destination: SettingsView()) {
         Image(systemName: "ellipsis")
           .font(.system(size: 22, weight: .bold))
@@ -405,6 +567,33 @@ struct AgentHomeView: View {
     .background(Color.signalASIPageBackground)
   }
 
+  private var headerModelLabel: String {
+    guard modelSelection.mode == .manual else {
+      return t("signalasi.agent.model_selection.automatic", "Automatic")
+    }
+    if modelSelection.targetId == "local-llm" {
+      let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
+      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+        LocalModelInferenceRuntime.shared.ready(profile: profile)
+      return ready
+        ? profile.displayName
+        : t("signalasi.agent.model_selection.automatic", "Automatic")
+    }
+    if let contact = store.contact(id: modelSelection.targetId),
+       contact.type == "agent" {
+      return modelSelection.displayName.ifBlank(contact.displayName).ifBlank(contact.id)
+    }
+    if let contact = store.contact(id: modelSelection.targetId),
+       let model = contact.selectedCloudModel,
+       AgentConnectorAvailability.cloudModelReady(
+         contact: contact,
+         apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
+       ) {
+      return model.displayName.ifBlank(model.modelId)
+    }
+    return t("signalasi.agent.model_selection.automatic", "Automatic")
+  }
+
   private var agentComposer: some View {
     SignalASIAgentComposerView(
       draft: $draft,
@@ -413,6 +602,7 @@ struct AgentHomeView: View {
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,
+      hasPendingPrimaryAction: cancellableAgentTask != nil,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -425,9 +615,15 @@ struct AgentHomeView: View {
         fileImporterPresented = true
       },
       onSend: sendAgentMessage,
+      onPendingPrimaryAction: cancelPendingAgentTask,
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
+  }
+
+  private func cancelPendingAgentTask() {
+    guard let task = cancellableAgentTask else { return }
+    coordinator.cancelLocalNativeAction(taskId: task.taskId)
   }
 
   private var agentRuntimePanel: some View {

@@ -260,6 +260,17 @@ struct SignalASILocalModelLabView: View {
           : t("signalasi.local_model.runtime_unavailable", "Unavailable")
       )
       SignalASILocalModelLabStatusRow(
+        title: t("signalasi.local_model.background_runtime", "Background Inference"),
+        subtitle: inferenceSnapshot.backgroundReady
+          ? t("signalasi.local_model.background_runtime_ready_detail", "The selected model can run when no interactive inference is active")
+          : t("signalasi.local_model.background_runtime_deferred_detail", "Background inference is deferred while the runtime is unavailable or foreground work is active"),
+        systemImage: "moon.zzz",
+        tint: inferenceSnapshot.backgroundReady ? .signalASIAccent : .orange,
+        badge: inferenceSnapshot.backgroundReady
+          ? t("signalasi.local_model.background_runtime_ready", "Eligible")
+          : t("signalasi.local_model.background_runtime_deferred", "Deferred")
+      )
+      SignalASILocalModelLabStatusRow(
         title: t("signalasi.local_model.kv_cache", "KV cache"),
         subtitle: String(
           format: t("signalasi.local_model.kv_cache_subtitle", "Estimated at %d tokens context"),
@@ -513,6 +524,9 @@ struct SignalASILocalModelLabView: View {
   private func setProfileEnabled(_ profile: LocalModelRuntimeProfile, enabled: Bool) {
     guard enabled != LocalModelRuntimeSettings.isProfileEnabled(profile) else { return }
     LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: enabled)
+    if !enabled {
+      LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
+    }
     if enabled {
       statusMessage = String(
         format: t("signalasi.local_model.enabled_profile", "%@ enabled"),

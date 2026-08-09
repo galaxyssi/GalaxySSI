@@ -1,6 +1,9 @@
+import AVKit
+import AVFoundation
 import Foundation
 import SwiftUI
 import UIKit
+import WebKit
 import UniformTypeIdentifiers
 
 struct SignalASIRichContentView: View {
@@ -45,13 +48,24 @@ struct SignalASIRichContentView: View {
       } else if layout.collapsible {
         VStack(alignment: .leading, spacing: 8) {
           ForEach(layout.sections) { section in
-            SignalASIRichSectionView(
-              section: section,
-              isOutgoing: isOutgoing,
-              onAction: onAction,
-              onFormSubmit: onFormSubmit,
-              onArtifactSave: { exportArtifact($0) }
-            )
+            if section.kind == .finalAnswer {
+              SignalASIRichBlockListView(
+                blocks: section.blocks,
+                isOutgoing: isOutgoing,
+                onAction: onAction,
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
+              )
+              .padding(.vertical, 4)
+            } else {
+              SignalASIRichSectionView(
+                section: section,
+                isOutgoing: isOutgoing,
+                onAction: onAction,
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
+              )
+            }
           }
         }
       } else {
@@ -172,7 +186,7 @@ private struct SignalASIRichSectionView: View {
     case .executionLog:
       return t("rich_output_section_execution_log", "Execution log")
     case .finalAnswer:
-      return t("rich_output_section_final_answer", "Final answer")
+      return ""
     case .evidence:
       return t("rich_output_section_evidence", "Evidence")
     }
@@ -233,7 +247,7 @@ private struct SignalASIRichBlockView: View {
     case .divider:
       Divider()
         .padding(.vertical, 2)
-    case .code, .json, .diff, .html:
+    case .code, .json, .diff:
       codeBlock
     case .keyValue:
       keyValueBlock
@@ -241,6 +255,10 @@ private struct SignalASIRichBlockView: View {
       tableBlock
     case .image:
       imageBlock
+    case .video:
+      videoBlock
+    case .audio:
+      audioBlock
     case .gallery:
       galleryBlock
     case .chart:
@@ -263,7 +281,11 @@ private struct SignalASIRichBlockView: View {
       approvalBlock
     case .form:
       formBlock
-    case .video, .audio, .file, .link, .citation, .webpage, .unknown:
+    case .html:
+      htmlBlock
+    case .webpage:
+      webpageBlock
+    case .file, .link, .citation, .unknown:
       resourceBlock
     }
   }
@@ -447,7 +469,7 @@ private struct SignalASIRichBlockView: View {
           .font(.subheadline.weight(.semibold))
       }
 
-      if let image = inlineImage {
+      if let image = inlineImage ?? localImage {
         Image(uiImage: image)
           .resizable()
           .scaledToFit()
@@ -477,6 +499,57 @@ private struct SignalASIRichBlockView: View {
         resourceBlock
       }
       }
+    }
+  }
+
+  private var audioBlock: some View {
+    if let url = mediaURL {
+      SignalASIAudioArtifactView(
+        url: url,
+        title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title
+      )
+    } else {
+      resourceBlock
+    }
+  }
+
+  private var htmlBlock: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !block.title.isEmpty {
+        selectableText(block.title)
+          .font(.subheadline.weight(.semibold))
+      }
+      SignalASIInlineHTMLView(html: block.text)
+        .frame(maxWidth: .infinity)
+        .frame(height: 280)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      if !block.fallbackText.isEmpty {
+        selectableText(block.fallbackText)
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
+      }
+    }
+  }
+
+  private var webpageBlock: some View {
+    SignalASIRichResourceRow(
+      icon: "safari",
+      title: block.title.isEmpty ? block.uri : block.title,
+      subtitle: block.fallbackText.ifBlank(block.uri),
+      url: webpageURL,
+      typeLabel: t("rich_output_type_web", "Web")
+    )
+  }
+
+  private var videoBlock: some View {
+    if let url = mediaURL {
+      SignalASIVideoArtifactView(
+        url: url,
+        title: block.title.isEmpty ? t("rich_output_type_video", "Video") : block.title
+      )
+    } else {
+      resourceBlock
     }
   }
 
@@ -917,6 +990,33 @@ private struct SignalASIRichBlockView: View {
     return UIImage(data: data)
   }
 
+  private var localImage: UIImage? {
+    guard let url = localURL else { return nil }
+    return UIImage(contentsOfFile: url.path)
+  }
+
+  private var localURL: URL? {
+    guard let url = URL(string: block.uri), url.isFileURL else { return nil }
+    return url
+  }
+
+  private var mediaURL: URL? {
+    guard let url = URL(string: block.uri),
+          ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
+      return nil
+    }
+    return url
+  }
+
+  private var webpageURL: URL? {
+    guard let url = URL(string: block.uri),
+          url.scheme?.lowercased() == "https",
+          url.host?.isBlank == false else {
+      return nil
+    }
+    return url
+  }
+
   private var remoteURL: URL? {
     guard block.type == .image || block.type == .gallery,
           let url = SignalASIRichContentLink.safeURL(block.uri),
@@ -1187,6 +1287,281 @@ private struct SignalASIRichBarChartView: View {
     .orange,
     .purple
   ]
+}
+
+private struct SignalASIInlineHTMLView: UIViewRepresentable {
+  let html: String
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeUIView(context: Context) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    configuration.preferences.javaScriptEnabled = true
+    configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.navigationDelegate = context.coordinator
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    webView.scrollView.backgroundColor = .clear
+    webView.scrollView.alwaysBounceVertical = false
+    webView.scrollView.alwaysBounceHorizontal = false
+    context.coordinator.loadedHTML = html
+    webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
+    return webView
+  }
+
+  func updateUIView(_ webView: WKWebView, context: Context) {
+    guard context.coordinator.loadedHTML != html else { return }
+    context.coordinator.loadedHTML = html
+    webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
+  }
+
+  private static func isolatedDocument(_ fragment: String) -> String {
+    """
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; font-src data:; form-action 'none'; base-uri 'none'">
+        <style>
+          html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; overflow: auto; background: transparent; color: #14202B; font-family: -apple-system, BlinkMacSystemFont, sans-serif; touch-action: pan-x pan-y pinch-zoom; }
+          * { box-sizing: border-box; max-width: 100%; }
+          @media (prefers-color-scheme: dark) { html, body { color: #F3F5F7; } }
+        </style>
+      </head>
+      <body>
+        (fragment.prefix(32_000))
+      </body>
+    </html>
+    """
+  }
+
+  final class Coordinator: NSObject, WKNavigationDelegate {
+    var loadedHTML: String?
+
+    func webView(
+      _ webView: WKWebView,
+      decidePolicyFor navigationAction: WKNavigationAction,
+      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+      decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+    }
+  }
+}
+
+private struct SignalASIAudioArtifactView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @StateObject private var player: SignalASIAudioArtifactPlayer
+  let url: URL
+  let title: String
+
+  init(url: URL, title: String) {
+    self.url = url
+    self.title = title
+    _player = StateObject(wrappedValue: SignalASIAudioArtifactPlayer(url: url))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "waveform")
+          .foregroundColor(.signalASIAccent)
+        Text(title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(2)
+        Spacer(minLength: 8)
+        Button {
+          player.togglePlayback()
+        } label: {
+          Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(Color.signalASIAccent))
+            .foregroundColor(.white)
+        }
+        .buttonStyle(.plain)
+          .accessibilityLabel(
+            SignalASILocalization.string(
+              player.isPlaying ? "rich_output_pause" : "rich_output_play",
+              fallback: player.isPlaying
+                ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
+                : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
+              language: interfaceLanguage
+            )
+          )
+      }
+      Slider(
+        value: Binding(
+          get: { player.currentTime },
+          set: { player.seek(to: $0) }
+        ),
+        in: 0...max(player.duration, 1)
+      )
+      HStack {
+        Text(formatTime(player.currentTime))
+        Spacer()
+        Text(formatTime(player.duration))
+      }
+      .font(.caption2.monospacedDigit())
+      .foregroundColor(.signalASITextSecondary)
+    }
+    .padding(10)
+    .background(Color.signalASISearchBackground.opacity(0.45))
+    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .onDisappear {
+      player.stop()
+    }
+  }
+
+  private func formatTime(_ value: TimeInterval) -> String {
+    let totalSeconds = max(0, Int(value.rounded()))
+    return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+  }
+}
+
+private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
+  @Published private(set) var isPlaying = false
+  @Published private(set) var currentTime: TimeInterval = 0
+  @Published private(set) var duration: TimeInterval = 0
+
+  private let url: URL
+  private var player: AVPlayer?
+  private var timeObserver: Any?
+  private var endObserver: NSObjectProtocol?
+
+  init(url: URL) {
+    self.url = url
+    super.init()
+  }
+
+  func togglePlayback() {
+    if isPlaying {
+      player?.pause()
+      isPlaying = false
+      stopTimer()
+      return
+    }
+    do {
+      if player == nil {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try AVAudioSession.sharedInstance().setActive(true)
+        let audioPlayer = AVPlayer(url: url)
+        player = audioPlayer
+        installObservers(for: audioPlayer)
+      }
+      player?.play()
+      isPlaying = true
+    } catch {
+      player = nil
+      duration = 0
+      currentTime = 0
+    }
+  }
+
+  func seek(to value: TimeInterval) {
+    let resolved = min(max(0, value), max(duration, 0))
+    player?.seek(to: CMTime(seconds: resolved, preferredTimescale: 600))
+    currentTime = resolved
+  }
+
+  func stop() {
+    player?.pause()
+    player?.seek(to: .zero)
+    currentTime = 0
+    isPlaying = false
+    removeObservers()
+    player = nil
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  deinit {
+    removeObservers()
+  }
+
+  private func installObservers(for player: AVPlayer) {
+    let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
+    timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+      guard let self else { return }
+      self.currentTime = max(0, time.seconds.isFinite ? time.seconds : 0)
+      if let seconds = player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 {
+        self.duration = seconds
+      }
+    }
+    if let item = player.currentItem {
+      endObserver = NotificationCenter.default.addObserver(
+        forName: .AVPlayerItemDidPlayToEndTime,
+        object: item,
+        queue: .main
+      ) { [weak self] _ in
+        self?.finishPlayback()
+      }
+    }
+  }
+
+  private func finishPlayback() {
+    currentTime = 0
+    isPlaying = false
+    player?.seek(to: .zero)
+  }
+
+  private func removeObservers() {
+    if let timeObserver {
+      player?.removeTimeObserver(timeObserver)
+      self.timeObserver = nil
+    }
+    if let endObserver {
+      NotificationCenter.default.removeObserver(endObserver)
+      self.endObserver = nil
+    }
+  }
+}
+
+private struct SignalASIVideoArtifactView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @StateObject private var player: SignalASIVideoArtifactPlayer
+  let title: String
+
+  init(url: URL, title: String) {
+    self.title = title
+    _player = StateObject(wrappedValue: SignalASIVideoArtifactPlayer(url: url))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !title.isEmpty {
+        Text(title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundColor(.signalASITextPrimary)
+      }
+      VideoPlayer(player: player.player)
+        .frame(maxWidth: .infinity)
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityLabel(title.isEmpty
+          ? SignalASILocalization.string("rich_output_type_video", fallback: "Video", language: interfaceLanguage)
+          : title)
+    }
+    .onDisappear {
+      player.stop()
+    }
+  }
+}
+
+private final class SignalASIVideoArtifactPlayer: ObservableObject {
+  let player: AVPlayer
+
+  init(url: URL) {
+    player = AVPlayer(url: url)
+  }
+
+  func stop() {
+    player.pause()
+    player.seek(to: .zero)
+  }
 }
 
 private struct SignalASIArtifactDocument: FileDocument {

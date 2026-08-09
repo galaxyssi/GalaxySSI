@@ -52,6 +52,10 @@ struct QRCodeScannerView: UIViewControllerRepresentable {
           "signalasi.scanner.access_unavailable",
           "Camera access is unavailable on this device."
         ),
+        cancelAction: t(
+          "signalasi.common.cancel",
+          "Cancel"
+        ),
         photoAction: t(
           "signalasi.scanner.photo_action",
           "Photo"
@@ -76,6 +80,7 @@ fileprivate struct QRScannerMessages {
   var cameraUnavailable: String
   var outputUnavailable: String
   var accessUnavailable: String
+  var cancelAction: String
   var photoAction: String
   var photoScanFailed: String
 }
@@ -109,6 +114,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
+    installCancelButton()
     installPhotoButton()
     prepareCamera()
   }
@@ -199,13 +205,40 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     photoButton = button
   }
 
+  private func installCancelButton() {
+    let button = UIButton(type: .system)
+    button.setTitle(messages.cancelAction, for: .normal)
+    button.setTitleColor(.white, for: .normal)
+    button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+    button.backgroundColor = UIColor.black.withAlphaComponent(0.52)
+    button.layer.cornerRadius = 8
+    button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.addTarget(self, action: #selector(cancelScanner), for: .touchUpInside)
+    view.addSubview(button)
+    NSLayoutConstraint.activate([
+      button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+      button.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      button.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
+    ])
+  }
+
+  @objc private func cancelScanner() {
+    guard !didFinish else { return }
+    didFinish = true
+    stopSession()
+    dismiss(animated: true)
+  }
+
   @objc private func openPhotoPicker() {
     guard !didFinish else { return }
     stopSession()
     let configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
     configuration.selectionLimit = 1
-    present(PHPickerViewController(configuration: configuration), animated: true)
+    let picker = PHPickerViewController(configuration: configuration)
+    picker.delegate = self
+    present(picker, animated: true)
   }
 
   func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -231,10 +264,6 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   }
 
   private func detectQRCode(in image: UIImage) {
-    guard let cgImage = image.cgImage else {
-      showPhotoScanFailure()
-      return
-    }
     let request = VNDetectBarcodesRequest { [weak self] request, _ in
       let value = (request.results as? [VNBarcodeObservation])?
         .first(where: { $0.symbology == .QR })?.payloadStringValue
@@ -248,13 +277,22 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
       }
     }
     request.symbologies = [.QR]
-    let handler = VNImageRequestHandler(
-      cgImage: cgImage,
-      orientation: image.cgImagePropertyOrientation,
-      options: [:]
-    )
     do {
-      try handler.perform([request])
+      if let cgImage = image.cgImage {
+        try VNImageRequestHandler(
+          cgImage: cgImage,
+          orientation: image.cgImagePropertyOrientation,
+          options: [:]
+        ).perform([request])
+      } else if let ciImage = image.ciImage ?? CIImage(image: image) {
+        try VNImageRequestHandler(
+          ciImage: ciImage,
+          orientation: image.cgImagePropertyOrientation,
+          options: [:]
+        ).perform([request])
+      } else {
+        showPhotoScanFailure()
+      }
     } catch {
       showPhotoScanFailure()
     }

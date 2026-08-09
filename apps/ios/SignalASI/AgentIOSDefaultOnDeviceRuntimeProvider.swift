@@ -9,6 +9,10 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   private let nowMillis: () -> Int64
   private let catalogManager: AgentIOSRuntimePackCatalogManager
 
+  var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? {
+    workspaceManager
+  }
+
   init(
     runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
     workspaceManager: AgentRuntimeProjectWorkspaceManager? = nil,
