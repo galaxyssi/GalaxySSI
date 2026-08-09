@@ -18,6 +18,7 @@ struct SignalASIAgentRuntimePanelView: View {
   var t: (String, String) -> String
 
   @State private var expandedSectionIds: Set<String> = ["requirements", "recent_tasks"]
+  @State private var selectedTask: AgentTaskRecord?
 
   private var activeTasks: [AgentTaskRecord] {
     recentTasks.filter { task in
@@ -103,6 +104,9 @@ struct SignalASIAgentRuntimePanelView: View {
         rows: auditRows,
         emptyTitle: t("agent_audit_empty", "No Agent audit events yet")
       )
+    }
+    .sheet(item: $selectedTask) { task in
+      SignalASIAgentRuntimeTaskDetailSheet(task: task, t: t)
     }
   }
 
@@ -292,7 +296,19 @@ struct SignalASIAgentRuntimePanelView: View {
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
+  @ViewBuilder
   private func runtimeRow(_ row: SignalASIAgentRuntimeRow) -> some View {
+    if let onTap = row.onTap {
+      Button(action: onTap) {
+        runtimeRowContent(row)
+      }
+      .buttonStyle(.plain)
+    } else {
+      runtimeRowContent(row)
+    }
+  }
+
+  private func runtimeRowContent(_ row: SignalASIAgentRuntimeRow) -> some View {
     HStack(alignment: .top, spacing: 10) {
       Image(systemName: row.systemImage)
         .font(.system(size: 15, weight: .semibold))
@@ -624,7 +640,8 @@ struct SignalASIAgentRuntimePanelView: View {
         ),
         badge: statusText(task),
         systemImage: "clock",
-        tint: statusTint(task)
+        tint: statusTint(task),
+        onTap: { selectedTask = task }
       )
     }
   }
@@ -971,4 +988,5 @@ private struct SignalASIAgentRuntimeRow: Identifiable {
   var badge: String
   var systemImage: String
   var tint: Color
+  var onTap: (() -> Void)? = nil
 }
