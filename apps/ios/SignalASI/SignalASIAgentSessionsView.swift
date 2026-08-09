@@ -570,6 +570,15 @@ struct SignalASIAgentSessionsView: View {
     )
   }
 
+  private func sessionDisplayTitle(_ session: AgentConversation) -> String {
+    let title = session.title.ifBlank(session.id)
+    guard session.createdByAgent else { return title }
+    return String(
+      format: t("signalasi.agent_session.created_by_agent", "SignalASI · %@"),
+      title
+    )
+  }
+
   private func rowBadge(_ session: AgentConversation) -> String {
     if !session.mergedIntoConversationId.isBlank {
       return t("signalasi.agent_session.merged", "Merged")
@@ -750,7 +759,7 @@ private struct AgentSessionRow<Actions: View>: View {
           }
           .frame(width: 14, height: 14)
           VStack(alignment: .leading, spacing: 4) {
-            Text(session.title.ifBlank(session.id))
+            Text(sessionDisplayTitle(session))
               .font(.system(size: 15, weight: .semibold))
               .foregroundColor(.signalASITextPrimary)
               .lineLimit(2)

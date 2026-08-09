@@ -1328,13 +1328,19 @@ struct AgentHomeView: View {
     guard let session = activeAgentSession else { return fallback }
     let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(fallback)
-    if session.trackingPaused {
-      return title + " - " + t("signalasi.agent_session.tracking_paused", "Tracking paused")
-    }
+    let sourceTitle = session.createdByAgent
+      ? String(
+          format: t("signalasi.agent_session.created_by_agent", "SignalASI · %@"),
+          title
+        )
+      : title
     if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return title + " - " + t("signalasi.agent_session.merged", "Merged")
+      return sourceTitle + " · " + t("signalasi.agent_session.merged", "Merged")
     }
-    return title
+    if session.trackingPaused {
+      return sourceTitle + " · " + t("signalasi.agent_session.tracking_paused", "Tracking paused")
+    }
+    return sourceTitle
   }
 
   private var agentComposer: some View {
