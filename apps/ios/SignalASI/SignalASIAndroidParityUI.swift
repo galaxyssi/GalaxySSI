@@ -49,6 +49,8 @@ struct AgentHomeView: View {
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
+  @State private var scanStatus = ""
+  @State private var scanStatusIsError = false
   @State private var recentTasksShortcutActive = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
@@ -356,7 +358,12 @@ struct AgentHomeView: View {
             autoOpenScanner: true,
             onAgentAdded: { agentIDs in
               scanShortcutActive = false
-              focusScannedAgent(agentIDs.first)
+              scanStatus = t(
+                "signalasi.agent.scan.selecting",
+                "Agent added. Selecting it for this session..."
+              )
+              scanStatusIsError = false
+              focusScannedAgents(agentIDs)
             }
           ),
           isActive: $scanShortcutActive
@@ -393,6 +400,12 @@ struct AgentHomeView: View {
         NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)
       ) { notification in
         let agentIDs = notification.userInfo?["agentIDs"] as? [String] ?? []
+        guard !agentIDs.isEmpty else { return }
+        scanStatus = t(
+          "signalasi.agent.scan.selecting",
+          "Agent added. Selecting it for this session..."
+        )
+        scanStatusIsError = false
         focusScannedAgents(agentIDs)
       }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
@@ -814,6 +827,14 @@ struct AgentHomeView: View {
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
         LazyVStack(spacing: 10) {
+          if !scanStatus.isEmpty {
+            SignalASIAgentScanStatusView(
+              message: scanStatus,
+              isError: scanStatusIsError,
+              dismissTitle: t("signalasi.agent.scan.dismiss", "Dismiss"),
+              onDismiss: { scanStatus = "" }
+            )
+          }
           if let routeWarning = manualRouteWarning {
             SignalASISecurityNavigationRow(
               title: routeWarning.title,
@@ -2109,10 +2130,20 @@ struct AgentHomeView: View {
         }
         for targetID in normalizedIDs {
           if focusScannedAgentIfAvailable(targetID) {
+            scanStatus = t(
+              "signalasi.agent.scan.selected",
+              "Agent added and selected for this session."
+            )
+            scanStatusIsError = false
             return
           }
         }
       }
+      scanStatus = t(
+        "signalasi.agent.scan.not_ready",
+        "Agent was added, but is not ready to communicate yet. Check the Agent connection in Contacts."
+      )
+      scanStatusIsError = true
     }
   }
 
@@ -2131,11 +2162,6 @@ struct AgentHomeView: View {
     )
     modelSelection = AgentModelSelectionSettings.selection(for: conversationId)
     return true
-  }
-
-  private func focusScannedAgent(_ targetId: String?) {
-    guard let targetId else { return }
-    _ = focusScannedAgentIfAvailable(targetId)
   }
 
   private func ensureActiveAgentSession() {
