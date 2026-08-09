@@ -377,7 +377,7 @@ struct AgentHomeView: View {
         coordinator.updateAgentScreenContext(snapshot.screen)
       }
       .onChange(of: store.activeAgentConversationId) { _ in
-        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
+        resetAgentSessionPresentation()
       }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
         runtimeArtifactStatus = t(
@@ -1545,12 +1545,39 @@ struct AgentHomeView: View {
       .list(limit: 12, toolId: "", status: nil)
   }
 
-  private func createAgentConversation() {
-    _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+  private func resetAgentSessionPresentation() {
     draft = ""
     attachments.removeAll()
+    voiceAttachmentSnapshot.removeAll()
+    voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError = ""
+    selectedMessageForDetails = nil
+    composerFocusRequest += 1
+    visibleAgentMessageLimit = Self.agentTranscriptPageSize
+    olderTranscriptAnchor = nil
+    transcriptAutoFollow = true
+    transcriptShowLatestButton = false
+    retryingAgentMessageIDs.removeAll()
+    retryingAgentTaskIDs.removeAll()
+    runtimeArtifactPreview = nil
+    runtimeArtifactDocument = nil
+    runtimeArtifactExportPresented = false
+    runtimeArtifactExportFilename = ""
+    runtimeArtifactExportSourceURI = ""
+    runtimeArtifactError = ""
+    runtimeArtifactStatus = ""
+    richActionStatus = ""
+    recoveringAgentTaskIDs.removeAll()
+    approvalActionsInFlight.removeAll()
+    cancellingRemoteTaskIDs.removeAll()
+    modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
+    refreshAgentRuntimeAuditRecords()
+  }
+
+  private func createAgentConversation() {
+    _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+    resetAgentSessionPresentation()
   }
 
   private func ensureActiveAgentSession() {
