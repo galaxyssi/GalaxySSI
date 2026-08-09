@@ -975,6 +975,10 @@ struct AgentHomeView: View {
                 t: t
               )
             }
+            AgentProcessCard(
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused
+            )
             SignalASIAgentScreenContextCard(
               screen: agentScreenSnapshot.screen,
               sections: agentScreenSnapshot.sections,
