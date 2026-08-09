@@ -24,6 +24,36 @@ struct AgentIOSDefaultNativeActionHandoffProvider: AgentIOSNativeActionHandoffPr
   }
 }
 
+@MainActor
+enum AgentIOSNativeToolHandoffPresenter {
+  static func openIfNeeded(_ result: AgentActionResult) {
+    guard result.success,
+          let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          output["requires_user_action"]?.boolValue == true,
+          let handoffKind = output["handoff_kind"]?.stringValue,
+          ["dial", "sms_compose", "settings"].contains(handoffKind),
+          let rawURL = output["url"]?.stringValue else {
+      return
+    }
+
+    let url: URL
+    if rawURL == "app-settings:" {
+      guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+      url = settingsURL
+    } else {
+      guard let candidate = URL(string: rawURL),
+            ["tel", "sms"].contains(candidate.scheme?.lowercased() ?? "") else {
+        return
+      }
+      url = candidate
+    }
+
+    AgentIOSDefaultNativeActionHandoffProvider().open(url)
+  }
+}
+
 struct AgentIOSNativeActionExecutor: AgentActionExecutor {
   var handoffProvider: AgentIOSNativeActionHandoffProviding
   var notificationCenter: UNUserNotificationCenter
