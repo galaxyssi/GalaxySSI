@@ -46,7 +46,7 @@ final class LocalModelInferenceRuntime {
     lock.unlock()
     guard backendAvailable else { return false }
     let selected = profile ?? LocalModelRuntimeSettings.selectedProfile()
-    return storage.inspect(selected).installed
+    return LocalModelRuntimeSettings.isProfileEnabled(selected) && storage.inspect(selected).installed
   }
 
   func generate(
@@ -56,6 +56,9 @@ final class LocalModelInferenceRuntime {
     maximumTokens: Int = 768,
     temperature: Double = 0.3
   ) throws -> LocalModelInferenceResult {
+    guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
+      throw LocalModelInferenceError.modelDisabled
+    }
     lock.lock()
     defer { lock.unlock() }
     refreshBackendIfNeededLocked()
@@ -63,7 +66,6 @@ final class LocalModelInferenceRuntime {
     guard backend.isAvailable else {
       throw LocalModelInferenceError.nativeBackendUnavailable
     }
-
     let modelURL: URL
     do {
       modelURL = try storage.verifyForNativeLoad(profile)
