@@ -3202,7 +3202,9 @@ final class SignalASIStore: ObservableObject {
     if conversation.title.isBlank || conversation.title == "New session" {
       conversation.title = inferredAgentSessionTitle(content: content, fallback: contact.displayName)
     }
-    conversation.selectedModelOrAgent = contact.displayName.ifBlank(conversation.selectedModelOrAgent)
+    if conversation.selectedModelOrAgent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      conversation.selectedModelOrAgent = contact.displayName.ifBlank("Automatic")
+    }
     conversation.updatedAt = max(conversation.updatedAt, timestamp)
     persistAgentConversation(conversation)
   }
