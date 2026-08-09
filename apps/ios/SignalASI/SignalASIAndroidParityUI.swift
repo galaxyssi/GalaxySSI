@@ -1770,6 +1770,10 @@ struct AgentHomeView: View {
         : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
     case .retry:
       retryAgentTask(task, mode: .retry)
+    case .rollback:
+      richActionStatus = coordinator.rollbackLastLocalNativeAction(taskId: task.taskId)
+        ? t("signalasi.agent.task_control.rollback_requested", "Rollback requested")
+        : t("signalasi.agent.task_control.rollback_failed", "This action cannot be rolled back")
     case .copy:
       copyAgentRuntimeTask(task)
     case .viewLog:

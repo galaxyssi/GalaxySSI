@@ -4,6 +4,7 @@ enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
   case cancel = "CANCEL"
   case resume = "RESUME"
   case retry = "RETRY"
+  case rollback = "ROLLBACK"
   case copy = "COPY"
   case viewLog = "VIEW_LOG"
   case delete = "DELETE"
@@ -35,6 +36,9 @@ enum AgentTaskCenterPolicy {
     if terminalPhases.contains(task.phase), isReusableGoal(task.goal) {
       actions.append(.retry)
     }
+    if rollbackAvailable(task) {
+      actions.append(.rollback)
+    }
     actions.append(.copy)
     actions.append(.viewLog)
     if terminalPhases.contains(task.phase) {
@@ -61,6 +65,10 @@ enum AgentTaskCenterPolicy {
   static func isReusableGoal(_ goal: String) -> Bool {
     let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
     return !clean.isEmpty && clean != sensitiveGoalPlaceholder
+  }
+
+  static func rollbackAvailable(_ task: AgentTaskRecord) -> Bool {
+    terminalPhases.contains(task.phase) && task.nativeRollbackAction != nil
   }
 
   private static let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]
