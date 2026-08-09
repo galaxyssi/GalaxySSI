@@ -1219,7 +1219,8 @@ final class MessageCoordinator: ObservableObject {
     _ text: String,
     to contact: SignalASIContact,
     attachments: [SignalASIDraftAttachment] = [],
-    agentGoalOverride: String = ""
+    agentGoalOverride: String = "",
+    voiceSessionId: String = ""
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
@@ -1227,7 +1228,11 @@ final class MessageCoordinator: ObservableObject {
     let requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
-    let outgoing = store.appendOutgoing(displayText, to: contact.id)
+    let outgoing = store.appendOutgoing(
+      displayText,
+      to: contact.id,
+      turnId: voiceSessionId
+    )
     if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
       beginPendingAgentReply(for: outgoing)
     }
@@ -2705,6 +2710,9 @@ final class MessageCoordinator: ObservableObject {
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
       return
+    }
+    if appPayload.string("type") == "agent_task_event" {
+      _ = VoiceAgentRunBridgeRegistry.shared.consumeRemoteEnvelope(appPayload)
     }
     let messageId = appPayload.string("message_id")
     if appPayload.string("type") == "delivery_ack" {
