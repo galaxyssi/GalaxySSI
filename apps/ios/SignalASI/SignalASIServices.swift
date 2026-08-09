@@ -678,6 +678,7 @@ final class MessageCoordinator: ObservableObject {
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
+  private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var pendingDesktopArtifactDownloads: Set<String> = []
@@ -715,6 +716,7 @@ final class MessageCoordinator: ObservableObject {
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
+    desktopMarketplaceStore: AgentDesktopMarketplaceStore = .shared,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
@@ -726,6 +728,7 @@ final class MessageCoordinator: ObservableObject {
     self.diagnosticLedger = diagnosticLedger
     self.disclosureStore = disclosureStore
     self.taskIdentityStore = taskIdentityStore
+    self.desktopMarketplaceStore = desktopMarketplaceStore
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
@@ -756,6 +759,18 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
+  }
+
+  func desktopMarketplaceItems(
+    kind: AgentCapabilityCatalogKind? = nil
+  ) -> [AgentDesktopMarketplaceItem] {
+    guard mqttClient.isConnected else { return [] }
+    let pairedDesktopIds = Set(store.serverLinks.filter(\.paired).map(\.desktopId))
+    return desktopMarketplaceStore.list(
+      selectedKind: kind,
+      pairedDesktopIds: pairedDesktopIds,
+      desktopSessionDesktopIds: pairedDesktopIds
+    )
   }
 
   @discardableResult
@@ -2542,6 +2557,10 @@ final class MessageCoordinator: ObservableObject {
       }
     }
 
+    if type == "capability_manifest" {
+      updateDesktopMarketplace(from: payload)
+    }
+
     if hasConnectorAgents {
       _ = store.updateDesktopAgentContacts(from: payload, link: link)
     }
@@ -2561,6 +2580,15 @@ final class MessageCoordinator: ObservableObject {
     onIncomingMessage?(systemMessage)
     NotificationService.notify(title: "SignalASI", body: content)
     return true
+  }
+
+  private func updateDesktopMarketplace(from payload: [String: Any]) {
+    guard JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload),
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return
+    }
+    _ = desktopMarketplaceStore.update(payload: object)
   }
 
   private func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
