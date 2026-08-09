@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SignalASIMcpControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var connections: [AgentMcpConnection] = []
   @State private var statusMessage = ""
   @State private var statusIsError = false
@@ -65,6 +66,7 @@ struct SignalASIMcpControlCenterView: View {
           addSection
           installedSection
           recommendedSection
+          desktopMarketplaceSection
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -74,6 +76,9 @@ struct SignalASIMcpControlCenterView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear(perform: refresh)
+    .onReceive(NotificationCenter.default.publisher(for: .signalASIDesktopMarketplaceDidUpdate)) { _ in
+      refresh()
+    }
     .fileImporter(
       isPresented: $importingPackage,
       allowedContentTypes: [.zip, .data, .item],
@@ -202,6 +207,35 @@ struct SignalASIMcpControlCenterView: View {
     }
   }
 
+  private var desktopMarketplaceSection: some View {
+    let items = coordinator.desktopMarketplaceItems()
+    return VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("agent_marketplace_desktop_title", "Desktop Marketplace"))
+      if items.isEmpty {
+        SignalASISecurityStatusRow(
+          title: t("agent_marketplace_desktop_empty", "No Desktop capabilities available"),
+          subtitle: t(
+            "agent_marketplace_desktop_empty_subtitle",
+            "Pair a Desktop and wait for its capability manifest to appear here"
+          ),
+          systemImage: "desktopcomputer",
+          tint: .signalASITextSecondary,
+          badge: t("agent_marketplace_desktop_waiting", "Waiting")
+        )
+      } else {
+        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+          SignalASISecurityStatusRow(
+            title: item.name,
+            subtitle: desktopMarketplaceSummary(item),
+            systemImage: desktopMarketplaceSystemImage(item),
+            tint: desktopMarketplaceTint(item),
+            badge: desktopMarketplaceStatus(item)
+          )
+        }
+      }
+    }
+  }
+
   private func handlePackageImport(_ result: Result<URL, Error>) {
     do {
       let url = try result.get()
@@ -279,6 +313,64 @@ struct SignalASIMcpControlCenterView: View {
     case .unavailable:
       return t("badge_unavailable", "Unavailable")
     }
+  }
+
+  private func desktopMarketplaceSummary(_ item: AgentDesktopMarketplaceItem) -> String {
+    var parts = [item.desktopName, String(format: t("agent_marketplace_version", "v%@"), item.availableVersion)]
+    if !item.capabilities.isEmpty {
+      parts.append(String(format: t("agent_marketplace_capability_count", "%d capabilities"), item.capabilities.count))
+    }
+    if !item.permissions.isEmpty {
+      parts.append(String(format: t("agent_marketplace_permission_count", "%d permissions"), item.permissions.count))
+    }
+    if !item.summary.isBlank {
+      parts.append(item.summary)
+    }
+    return parts.joined(separator: " / ")
+  }
+
+  private func desktopMarketplaceStatus(_ item: AgentDesktopMarketplaceItem) -> String {
+    if item.revoked {
+      return t("agent_marketplace_access_revoked", "Access revoked")
+    }
+    if item.updateAvailable {
+      return t("agent_marketplace_update", "Update")
+    }
+    switch item.installState {
+    case .builtIn:
+      return t("agent_marketplace_built_in", "Built in")
+    case .available:
+      return t("agent_capability_install", "Install")
+    case .installed:
+      return item.enabled
+        ? t("agent_capability_added", "Added")
+        : t("agent_marketplace_disabled", "Disabled")
+    case .needsSetup:
+      return t("agent_capability_requires_setup", "Setup")
+    case .unavailable:
+      return t("badge_unavailable", "Unavailable")
+    }
+  }
+
+  private func desktopMarketplaceSystemImage(_ item: AgentDesktopMarketplaceItem) -> String {
+    switch item.kind {
+    case .nativeTool:
+      return "wrench.and.screwdriver"
+    case .mcp:
+      return "shippingbox"
+    case .automation:
+      return "arrow.triangle.2.circlepath"
+    }
+  }
+
+  private func desktopMarketplaceTint(_ item: AgentDesktopMarketplaceItem) -> Color {
+    if item.revoked || item.installState == .unavailable {
+      return .orange
+    }
+    if item.installState == .needsSetup {
+      return .yellow
+    }
+    return .blue
   }
 
   private func connectionSubtitle(_ connection: AgentMcpConnection) -> String {
