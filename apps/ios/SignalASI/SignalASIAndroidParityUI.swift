@@ -871,6 +871,19 @@ struct AgentHomeView: View {
               nativeToolSummary: nativeToolSummary,
               screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
               executionPaused: store.agentSafetySettings.executionPaused,
+              permissionMode: store.agentSafetySettings.permissionMode,
+              highRiskGuard: store.agentSafetySettings.highRiskGuard,
+              memoryCapture: store.agentSafetySettings.memoryCapture,
+              onCyclePermissionMode: cycleAgentPermissionMode,
+              onToggleHighRiskGuard: {
+                store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
+              },
+              onToggleMemoryCapture: {
+                store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
+              },
+              onToggleExecutionPaused: {
+                store.updateAgentSafetySettings { $0.executionPaused.toggle() }
+              },
               t: t
             )
           } else {
