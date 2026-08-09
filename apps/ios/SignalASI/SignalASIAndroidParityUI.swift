@@ -513,10 +513,7 @@ struct AgentHomeView: View {
           primaryButton: .default(
             Text(t("signalasi.agent.high_risk_confirmation.execute", "Execute"))
           ) {
-            coordinator.approveLocalNativeAction(
-              taskId: task.taskId,
-              highRiskConfirmed: true
-            )
+            approveHighRiskTask(task)
           },
           secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
         )
@@ -1554,6 +1551,22 @@ struct AgentHomeView: View {
     return true
   }
 
+  private func approveHighRiskTask(_ task: AgentTaskRecord) {
+    guard taskBelongsToActiveSession(task),
+          let current = store.agentTask(id: task.taskId),
+          current.phase == .waitingConfirmation,
+          let action = current.pendingAction,
+          action.risk.weight >= AgentRisk.high.weight else {
+      pendingHighRiskApprovalTask = nil
+      return
+    }
+    coordinator.approveLocalNativeAction(
+      taskId: current.taskId,
+      highRiskConfirmed: true
+    )
+    pendingHighRiskApprovalTask = nil
+  }
+
   private var agentRuntimePanel: some View {
     SignalASIAgentRuntimePanelView(
       safetySettings: store.agentSafetySettings,
@@ -1737,6 +1750,7 @@ struct AgentHomeView: View {
     recoveringAgentTaskIDs.removeAll()
     approvalActionsInFlight.removeAll()
     cancellingRemoteTaskIDs.removeAll()
+    pendingHighRiskApprovalTask = nil
     modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
     refreshAgentRuntimeAuditRecords()
   }
