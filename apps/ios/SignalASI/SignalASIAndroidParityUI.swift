@@ -298,6 +298,27 @@ struct AgentHomeView: View {
       .max { $0.updatedAtMillis < $1.updatedAtMillis }
   }
 
+  private var liveExecutionTargetLabel: String? {
+    let candidates = [
+      activeRemoteAgentTask?.target,
+      activeExecutionTask?.targetTitle
+    ]
+    return candidates
+      .map { $0?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+      .first { value in
+        !value.isEmpty && !Self.genericExecutionTargetLabels.contains(value.lowercased())
+      }
+  }
+
+  private static let genericExecutionTargetLabels: Set<String> = [
+    "agent or model",
+    "cloud models",
+    "mobile executor",
+    "selected resource",
+    "signalasi",
+    "agent"
+  ]
+
   private var cancellableAgentTask: AgentTaskRecord? {
     activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
   }
@@ -1283,6 +1304,9 @@ struct AgentHomeView: View {
 
   private var headerModelLabel: String {
     guard modelSelection.mode == .manual, activeManualTarget != nil else {
+      if let liveExecutionTargetLabel {
+        return liveExecutionTargetLabel
+      }
       let sessionLabel = activeAgentSession?.selectedModelOrAgent
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")
