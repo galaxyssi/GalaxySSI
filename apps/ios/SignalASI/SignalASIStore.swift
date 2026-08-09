@@ -1324,6 +1324,24 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func replaceAgentKnowledgeSource(
+    title: String,
+    content: String,
+    source: String,
+    kind: AgentKnowledgeKind = .document,
+    tags: [String] = []
+  ) -> [AgentKnowledgeItem] {
+    let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !sourceKey.isEmpty {
+      let existingIds = agentKnowledgeItems.filter { $0.source == sourceKey }.map(\.id)
+      if !existingIds.isEmpty {
+        _ = deleteAgentKnowledgeSource(itemIds: existingIds)
+      }
+    }
+    return importAgentKnowledge(title: title, content: content, source: sourceKey, kind: kind, tags: tags)
+  }
+
+  @discardableResult
   func upsertAgentKnowledge(_ item: AgentKnowledgeItem) -> AgentKnowledgeItem {
     agentKnowledgeItems.removeAll { $0.id == item.id }
     agentKnowledgeItems = Array((agentKnowledgeItems + [item]).suffix(500))
