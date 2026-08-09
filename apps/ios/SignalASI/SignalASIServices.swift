@@ -1878,7 +1878,9 @@ final class MessageCoordinator: ObservableObject {
     guard AgentCallableTargetCatalog.preferredTargetId(
       selection: selection,
       targets: callableTargets
-    ) == selected.id else {
+    ) == selected.id,
+    let selectedTarget = callableTargets.first(where: { $0.id == selected.id }),
+    AgentConnectorRouteSelector.isDeliverable(selectedTarget) else {
       return nil
     }
     let setup = selected.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
