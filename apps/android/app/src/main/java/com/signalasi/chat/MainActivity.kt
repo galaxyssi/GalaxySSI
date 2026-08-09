@@ -7274,7 +7274,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentConversationDisplayTitle(conversation)
         )
         val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
-        val selection = AgentModelSelectionSettings.selection(this)
+        val selection = AgentModelSelectionSettings.selection(this, conversation.id)
         val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)
         val manualSelectionAvailable = selection.mode == AgentModelSelectionMode.MANUAL &&
             selection.targetId.isNotBlank()
@@ -7472,8 +7472,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showAgentModelSelectionPage() {
+        val conversationId = agentTranscriptStore.activeConversation().id
         val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
-        val selection = AgentModelSelectionSettings.selection(this)
+        val selection = AgentModelSelectionSettings.selection(this, conversationId)
         val preferredTargetId = AgentModelSelectionPolicy.preferredTargetId(selection, targets)
         val automaticSelected = selection.mode == AgentModelSelectionMode.AUTO || preferredTargetId.isBlank()
 
@@ -7488,7 +7489,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 selected = automaticSelected
             ).apply {
                 setOnClickListener {
-                    AgentModelSelectionSettings.selectAuto(this@MainActivity)
+                    AgentModelSelectionSettings.selectAuto(this@MainActivity, conversationId)
                     refreshAgentConversationHeader()
                     hideFeaturePage()
                 }
@@ -7512,6 +7513,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             LocalModelRuntimeSettings.setSelectedProfile(this@MainActivity, profile.id)
                             AgentModelSelectionSettings.selectManual(
                                 this@MainActivity,
+                                conversationId = conversationId,
                                 targetId = "local-llm",
                                 modelId = profile.id,
                                 displayName = profile.displayName
@@ -7540,6 +7542,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         setOnClickListener {
                             AgentModelSelectionSettings.selectManual(
                                 this@MainActivity,
+                                conversationId = conversationId,
                                 targetId = target.id,
                                 modelId = "",
                                 displayName = agentName
@@ -7581,6 +7584,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         setOnClickListener {
                             AgentModelSelectionSettings.selectManual(
                                 this@MainActivity,
+                                conversationId = conversationId,
                                 targetId = target.id,
                                 modelId = providerProfile.modelId,
                                 displayName = modelName

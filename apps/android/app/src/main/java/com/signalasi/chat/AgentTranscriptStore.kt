@@ -770,6 +770,7 @@ class AgentTranscriptStore(context: Context) {
         val all = decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
         val deletedConversation = all.firstOrNull { it.id == conversationId } ?: return false
         entryDatabase.deleteConversation(conversationId)
+        AgentModelSelectionSettings.clearConversation(appContext, conversationId)
         saveConversations(all.filterNot { it.id == conversationId })
         if (preferences.readString(KEY_ACTIVE_CONVERSATION, "") == conversationId) {
             preferences.remove(KEY_ACTIVE_CONVERSATION)
