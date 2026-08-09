@@ -133,6 +133,7 @@ struct AgentHomeView: View {
   @State private var draft = ""
   @State private var attachments: [SignalASIDraftAttachment] = []
   @State private var actionTrayPresented = false
+  @State private var voiceTranscriptionPending = false
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
@@ -180,6 +181,8 @@ struct AgentHomeView: View {
   private var activeAgentPhase: AgentPhase? {
     activeAgentTasks.first?.phase
   }
+
+  private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
@@ -254,7 +257,7 @@ struct AgentHomeView: View {
             memorySnapshot: store.agentMemorySnapshot(),
             knowledgeStats: store.agentKnowledgeStats
           )
-          if messages.isEmpty {
+          if messages.isEmpty && !voiceTranscriptionPending {
             AgentInsightBanner(
               unreadTotal: unreadTotal,
               runningTasks: activeAgentTasks.count,
@@ -284,6 +287,10 @@ struct AgentHomeView: View {
                   }
                 }
             }
+            if voiceTranscriptionPending {
+              SignalASIVoiceTranscriptionPendingView()
+                .id(Self.voiceTranscriptionPendingViewId)
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -299,6 +306,12 @@ struct AgentHomeView: View {
         }
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: voiceTranscriptionPending) { pending in
+        guard pending else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(Self.voiceTranscriptionPendingViewId, anchor: .bottom)
+        }
       }
     }
   }
@@ -348,6 +361,7 @@ struct AgentHomeView: View {
     SignalASIAgentComposerView(
       draft: $draft,
       actionTrayPresented: $actionTrayPresented,
+      voiceTranscriptionPending: $voiceTranscriptionPending,
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,

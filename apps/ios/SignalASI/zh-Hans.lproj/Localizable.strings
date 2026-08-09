@@ -3411,6 +3411,7 @@
 "voice_too_short" = "按住时间太短";
 "voice_cancelled" = "已取消语音";
 "voice_no_speech" = "没有识别到语音";
+"signalasi.voice.transcription_pending" = "正在识别语音";
 "signalasi.voice.permission_missing" = "缺少麦克风或语音识别权限。";
 "signalasi.voice.speech_disabled" = "语音识别已关闭。";
 "signalasi.voice.speech_unavailable" = "语音识别无法启动。";
