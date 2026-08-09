@@ -314,3 +314,205 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     )
   }
 }
+
+@MainActor
+final class VoiceProgressiveReplySpeechService: ObservableObject {
+  @Published private(set) var isSpeaking = false
+
+  private let inner: VoiceReplySpeechService
+  private var cancellables = Set<AnyCancellable>()
+  private var generation: UInt64 = 0
+  private var activeRequest: VoiceReplyPlaybackRequest?
+  private var inputBuffer = ""
+  private var queuedChunks: [String] = []
+  private var inputClosed = false
+  private var chunkIndex = 0
+  private var playingChunk = false
+  private var reportedPlaybackStart = false
+  private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
+  private var onDone: ((VoiceReplyPlaybackRequest, Bool, String?) -> Void)?
+
+  init(inner: VoiceReplySpeechService = VoiceReplySpeechService()) {
+    self.inner = inner
+    inner.$isSpeaking
+      .receive(on: RunLoop.main)
+      .sink { [weak self] value in
+        self?.isSpeaking = value
+      }
+      .store(in: &cancellables)
+  }
+
+  @MainActor
+  func speak(
+    _ request: VoiceReplyPlaybackRequest,
+    onPlaybackStarted: @escaping (VoiceReplyPlaybackRequest) -> Void,
+    onDone: @escaping (VoiceReplyPlaybackRequest, Bool, String?) -> Void
+  ) {
+    _ = stop()
+    inner.speak(request, onPlaybackStarted: onPlaybackStarted, onDone: onDone)
+  }
+
+  @MainActor
+  func beginProgressive(
+    _ request: VoiceReplyPlaybackRequest,
+    onPlaybackStarted: @escaping (VoiceReplyPlaybackRequest) -> Void,
+    onDone: @escaping (VoiceReplyPlaybackRequest, Bool, String?) -> Void
+  ) {
+    _ = stop()
+    generation &+= 1
+    activeRequest = request
+    inputBuffer = ""
+    queuedChunks = []
+    inputClosed = false
+    chunkIndex = 0
+    playingChunk = false
+    reportedPlaybackStart = false
+    self.onPlaybackStarted = onPlaybackStarted
+    self.onDone = onDone
+  }
+
+  @MainActor
+  func appendProgressive(_ text: String, isFinal: Bool) {
+    guard activeRequest != nil else { return }
+    if !text.isEmpty {
+      inputBuffer += text
+    }
+    if isFinal {
+      inputClosed = true
+    }
+    let split = VoiceProgressiveSentenceChunker.split(inputBuffer, final: inputClosed)
+    queuedChunks.append(contentsOf: split.committed)
+    inputBuffer = split.remainder
+    pump()
+  }
+
+  @MainActor
+  func finishProgressive() {
+    appendProgressive("", isFinal: true)
+  }
+
+  @discardableResult
+  @MainActor
+  func stop() -> Bool {
+    let request = activeRequest
+    let hadProgressiveState = request != nil || playingChunk || !queuedChunks.isEmpty || !inputBuffer.isEmpty
+    let done = onDone
+    generation &+= 1
+    activeRequest = nil
+    inputBuffer = ""
+    queuedChunks = []
+    inputClosed = false
+    playingChunk = false
+    onPlaybackStarted = nil
+    onDone = nil
+    let hadInnerPlayback = inner.stop()
+    if let request {
+      done?(request, false, "Speech playback was cancelled")
+    }
+    return hadProgressiveState || hadInnerPlayback
+  }
+
+  private func pump() {
+    guard !playingChunk,
+          let baseRequest = activeRequest,
+          let chunk = queuedChunks.first else {
+      if let baseRequest = activeRequest,
+         inputClosed,
+         !playingChunk,
+         queuedChunks.isEmpty,
+         inputBuffer.isEmpty {
+        finishProgressive(baseRequest, success: true, error: nil)
+      }
+      return
+    }
+    queuedChunks.removeFirst()
+    playingChunk = true
+    chunkIndex += 1
+    let currentGeneration = generation
+    var chunkRequest = baseRequest
+    chunkRequest.utteranceId = baseRequest.utteranceId + ":chunk:" + String(chunkIndex)
+    chunkRequest.text = chunk
+    inner.speak(
+      chunkRequest,
+      onPlaybackStarted: { [weak self] _ in
+        guard let self,
+              self.generation == currentGeneration,
+              self.activeRequest?.sessionId == baseRequest.sessionId else { return }
+        if !self.reportedPlaybackStart {
+          self.reportedPlaybackStart = true
+          self.onPlaybackStarted?(baseRequest)
+        }
+      },
+      onDone: { [weak self] _, success, error in
+        guard let self else { return }
+        Task { @MainActor in
+          self.chunkFinished(
+            generation: currentGeneration,
+            request: baseRequest,
+            success: success,
+            error: error
+          )
+        }
+      }
+    )
+  }
+
+  private func chunkFinished(
+    generation: UInt64,
+    request: VoiceReplyPlaybackRequest,
+    success: Bool,
+    error: String?
+  ) {
+    guard self.generation == generation,
+          activeRequest?.sessionId == request.sessionId else { return }
+    playingChunk = false
+    guard success else {
+      finishProgressive(request, success: false, error: error)
+      return
+    }
+    pump()
+  }
+
+  private func finishProgressive(
+    _ request: VoiceReplyPlaybackRequest,
+    success: Bool,
+    error: String?
+  ) {
+    guard activeRequest?.sessionId == request.sessionId else { return }
+    let done = onDone
+    generation &+= 1
+    activeRequest = nil
+    inputBuffer = ""
+    queuedChunks = []
+    inputClosed = false
+    playingChunk = false
+    onPlaybackStarted = nil
+    onDone = nil
+    done?(request, success, error)
+  }
+}
+
+private enum VoiceProgressiveSentenceChunker {
+  private static let boundaries: Set<Character> = [".", "!", "?", ";", ":", "。", "！", "？", "；", "：", "\n"]
+
+  static func split(_ text: String, final: Bool) -> (committed: [String], remainder: String) {
+    guard !text.isEmpty else { return ([], "") }
+    var committed: [String] = []
+    var start = text.startIndex
+    for index in text.indices {
+      guard boundaries.contains(text[index]) else { continue }
+      let end = text.index(after: index)
+      let value = String(text[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !value.isEmpty {
+        committed.append(value)
+      }
+      start = end
+    }
+    let remainder = String(text[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    if final, !remainder.isEmpty {
+      committed.append(remainder)
+      return (committed, "")
+    }
+    return (committed, remainder)
+  }
+}

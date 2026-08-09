@@ -671,6 +671,7 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   var onIncomingMessage: ((ChatMessage) -> Void)?
+  var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
   private let deliveryStore: SignalASILinkDeliveryStore
@@ -2126,6 +2127,9 @@ final class MessageCoordinator: ObservableObject {
             conversationId: outgoing.conversationId,
             turnId: outgoing.turnId
           )
+        }
+        if let partial = incoming {
+          onIncomingMessageDelta?(partial)
         }
 
       case .completed:
