@@ -347,6 +347,27 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil {
+          SignalASIAgentHomeSafetyStrip(
+            permissionMode: store.agentSafetySettings.permissionMode,
+            highRiskGuard: store.agentSafetySettings.highRiskGuard,
+            memoryCapture: store.agentSafetySettings.memoryCapture,
+            executionPaused: store.agentSafetySettings.executionPaused,
+            onCyclePermissionMode: cycleAgentPermissionMode,
+            onToggleHighRiskGuard: {
+              store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
+            },
+            onToggleMemoryCapture: {
+              store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
+            },
+            onToggleExecutionPaused: {
+              store.updateAgentSafetySettings { $0.executionPaused.toggle() }
+            },
+            t: t
+          )
+          .padding(.horizontal, 10)
+          .padding(.top, 6)
+        }
         agentOutput
         agentComposer
       }

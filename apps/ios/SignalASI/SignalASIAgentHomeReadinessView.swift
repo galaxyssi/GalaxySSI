@@ -265,3 +265,108 @@ struct SignalASIAgentHomeReadinessView: View {
     .padding(.horizontal, 14)
   }
 }
+
+struct SignalASIAgentHomeSafetyStrip: View {
+  var permissionMode: AgentPermissionMode
+  var highRiskGuard: Bool
+  var memoryCapture: Bool
+  var executionPaused: Bool
+  var onCyclePermissionMode: () -> Void
+  var onToggleHighRiskGuard: () -> Void
+  var onToggleMemoryCapture: () -> Void
+  var onToggleExecutionPaused: () -> Void
+  var t: (String, String) -> String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack(spacing: 7) {
+        Image(systemName: "slider.horizontal.3")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASIAccent)
+        Text(t("signalasi.agent.readiness.title", "Agent controls"))
+          .font(.system(size: 12, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+        Spacer(minLength: 0)
+      }
+      HStack(spacing: 7) {
+        controlButton(
+          title: String(
+            format: t("agent_safety_permission_mode_value", "Mode: %@"),
+            t(permissionMode.displayTitle, permissionMode.displayTitle)
+          ),
+          systemImage: "checklist",
+          tint: .signalASITextPrimary,
+          action: onCyclePermissionMode
+        )
+        controlButton(
+          title: String(
+            format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"),
+            onOff(highRiskGuard)
+          ),
+          systemImage: "shield.lefthalf.filled",
+          tint: highRiskGuard ? .signalASIAccent : .orange,
+          action: onToggleHighRiskGuard
+        )
+      }
+      HStack(spacing: 7) {
+        controlButton(
+          title: String(
+            format: t("agent_safety_memory_capture_value", "Memory: %@"),
+            onOff(memoryCapture)
+          ),
+          systemImage: "brain",
+          tint: memoryCapture ? .signalASIAccent : .orange,
+          action: onToggleMemoryCapture
+        )
+        controlButton(
+          title: String(
+            format: t("agent_safety_execution_value", "Execution: %@"),
+            executionPaused
+              ? t("signalasi.status.paused", "Paused")
+              : t("common_on", "On")
+          ),
+          systemImage: executionPaused ? "pause.circle" : "play.circle",
+          tint: executionPaused ? .orange : .signalASIAccent,
+          action: onToggleExecutionPaused
+        )
+      }
+    }
+    .padding(9)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .contain)
+  }
+
+  private func controlButton(
+    title: String,
+    systemImage: String,
+    tint: Color,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        Image(systemName: systemImage)
+          .font(.system(size: 11, weight: .semibold))
+        Text(title)
+          .font(.system(size: 10.5, weight: .bold))
+          .lineLimit(1)
+          .minimumScaleFactor(0.55)
+      }
+      .foregroundColor(tint)
+      .frame(maxWidth: .infinity, minHeight: 36)
+      .padding(.horizontal, 5)
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(Text(title))
+  }
+
+  private func onOff(_ value: Bool) -> String {
+    value ? t("common_on", "On") : t("common_off", "Off")
+  }
+}
