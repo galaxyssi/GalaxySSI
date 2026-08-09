@@ -3497,7 +3497,6 @@
 "rich_output_chart_description" = "包含 %d 个数据点的图表";
 "rich_output_section_plan" = "计划";
 "rich_output_section_execution_log" = "执行日志";
-"rich_output_section_final_answer" = "最终答案";
 "rich_output_section_evidence" = "证据";
 "rich_output_section_items" = "%d 项";
 "rich_output_section_expand" = "展开分区";
