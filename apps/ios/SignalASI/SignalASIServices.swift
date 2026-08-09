@@ -2167,6 +2167,44 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  @MainActor
+  func replanLocalNativeAction(taskId: String) async -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          [.failed, .blocked].contains(task.phase),
+          AgentTaskCenterPolicy.isReusableGoal(task.goal),
+          let runtime = localNativeToolRuntime,
+          let outgoing = localOutgoingMessage(for: task) else {
+      return false
+    }
+    let planRequest = AgentPlanRequest(
+      goal: task.goal,
+      screen: currentAgentScreenContext,
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage
+    )
+    let fallbackActions = AgentDirectNativeToolPlanner.plan(request: planRequest)?.actions
+      .filter { $0.kind == .callNativeTool } ?? []
+    let actions = await modelPlannedLocalNativeActions(
+      requestText: task.goal,
+      attachments: [],
+      outgoing: outgoing
+    ) ?? fallbackActions
+    guard !actions.isEmpty else {
+      return false
+    }
+    task.phase = .executing
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.result = ""
+    task.verification = "Native action plan rebuilt from the current screen"
+    task.executionLog.append("Native action plan: replanned \(actions.count) action(s)")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
+  }
+
+  @discardableResult
   func retryFailedLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
           task.phase == .failed,

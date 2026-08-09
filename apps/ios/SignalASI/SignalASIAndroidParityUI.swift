@@ -1438,20 +1438,8 @@ struct AgentHomeView: View {
   }
 
   private func retryBlockedAgentTask(_ task: AgentTaskRecord) {
-    guard (task.blocked || task.phase == .blocked),
-          AgentTaskCenterPolicy.isReusableGoal(task.goal),
-          retryingAgentTaskIDs.insert(task.taskId).inserted else {
-      return
-    }
-    Task { @MainActor in
-      if let destination = store.agentSessionDestination(id: task.sessionId) {
-        _ = store.switchAgentSession(destination)
-      } else {
-        _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-      }
-      _ = await coordinator.send(task.goal, to: contact)
-      retryingAgentTaskIDs.remove(task.taskId)
-    }
+    guard task.blocked || task.phase == .blocked else { return }
+    retryAgentTask(task, mode: .replan)
   }
 
   private enum AgentTaskRestartMode {
@@ -1486,9 +1474,15 @@ struct AgentHomeView: View {
       )
     }
     richActionStatus = mode == .replan
-      ? t("signalasi.agent.task_control.replanned", "Task re-planned")
+      ? t("signalasi.agent.task_control.replanning", "Re-planning task...")
       : t("signalasi.agent_tasks.retrying", "Retrying task...")
     Task { @MainActor in
+      if mode == .replan,
+         await coordinator.replanLocalNativeAction(taskId: task.taskId) {
+        retryingAgentTaskIDs.remove(task.taskId)
+        richActionStatus = t("signalasi.agent.task_control.replanned", "Task re-planned")
+        return
+      }
       if let destination = store.agentSessionDestination(id: task.sessionId) {
         _ = store.switchAgentSession(destination)
       }
