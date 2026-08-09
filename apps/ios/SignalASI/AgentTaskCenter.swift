@@ -53,13 +53,25 @@ enum AgentTaskCenterPolicy {
       (task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
+  static func pauseable(_ task: AgentTaskRecord) -> Bool {
+    [.planning, .waitingConfirmation, .executing, .verifying].contains(task.phase) &&
+      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+  }
+
   static func isReusableGoal(_ goal: String) -> Bool {
     let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
     return !clean.isEmpty && clean != sensitiveGoalPlaceholder
   }
 
   private static let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]
-  private static let cancellablePhases: Set<AgentPhase> = [.waitingConfirmation, .executing, .verifying, .paused]
+  private static let cancellablePhases: Set<AgentPhase> = [
+    .observing,
+    .waitingConfirmation,
+    .executing,
+    .verifying,
+    .waitingResponse,
+    .paused
+  ]
   private static let sensitiveGoalPlaceholder = "Sensitive goal withheld"
 }
 
