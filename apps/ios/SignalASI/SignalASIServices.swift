@@ -404,6 +404,15 @@ enum CloudContextOverflowPolicy {
 
 struct CloudModelClient {
   func send(contact: SignalASIContact, store: SignalASIStore, turns: [ChatMessage]) async throws -> String {
+    try await send(contact: contact, store: store, turns: turns, images: [])
+  }
+
+  func send(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload]
+  ) async throws -> String {
     guard let model = contact.selectedCloudModel else {
       throw SignalASIError.missingCloudModel
     }
@@ -415,11 +424,11 @@ struct CloudModelClient {
     let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy)
     switch model.apiStyle {
     case .anthropic:
-      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
     case .gemini:
-      return try await sendGemini(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+      return try await sendGemini(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
     case .openAICompatible:
-      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt, images: images)
     }
   }
 
@@ -458,7 +467,8 @@ struct CloudModelClient {
     model: CloudModelConfig,
     apiKey: String,
     turns: [ChatMessage],
-    systemPrompt: String
+    systemPrompt: String,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
       try await sendOpenAICompatibleAttempt(
@@ -466,6 +476,7 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
+        images: images,
         contextWindowTokens: contextWindow
       )
     }
@@ -476,7 +487,8 @@ struct CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
-    contextWindowTokens: Int
+    contextWindowTokens: Int,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
@@ -492,6 +504,7 @@ struct CloudModelClient {
     messages.append(contentsOf: context.turns.filter { !$0.isSystem }.map {
       ["role": $0.isMine ? "user" : "assistant", "content": $0.content] as [String: Any]
     })
+    CloudVisionPayloadEncoder.attachOpenAI(to: &messages, images: images)
     request.httpBody = try SignalASILinkProtocol.jsonData([
       "model": model.modelId,
       "messages": messages,
@@ -513,7 +526,8 @@ struct CloudModelClient {
     model: CloudModelConfig,
     apiKey: String,
     turns: [ChatMessage],
-    systemPrompt: String
+    systemPrompt: String,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
       try await sendAnthropicAttempt(
@@ -521,6 +535,7 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
+        images: images,
         contextWindowTokens: contextWindow
       )
     }
@@ -531,7 +546,8 @@ struct CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
-    contextWindowTokens: Int
+    contextWindowTokens: Int,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
@@ -548,9 +564,10 @@ struct CloudModelClient {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
     request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-    let messages = context.turns.filter { !$0.isSystem }.map {
-      ["role": $0.isMine ? "user" : "assistant", "content": $0.content]
+    var messages = context.turns.filter { !$0.isSystem }.map {
+      ["role": $0.isMine ? "user" : "assistant", "content": $0.content] as [String: Any]
     }
+    CloudVisionPayloadEncoder.attachAnthropic(to: &messages, images: images)
     request.httpBody = try SignalASILinkProtocol.jsonData([
       "model": model.modelId,
       "system": context.systemPrompt,
@@ -569,7 +586,8 @@ struct CloudModelClient {
     model: CloudModelConfig,
     apiKey: String,
     turns: [ChatMessage],
-    systemPrompt: String
+    systemPrompt: String,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
       try await sendGeminiAttempt(
@@ -577,6 +595,7 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
+        images: images,
         contextWindowTokens: contextWindow
       )
     }
@@ -587,7 +606,8 @@ struct CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
-    contextWindowTokens: Int
+    contextWindowTokens: Int,
+    images: [CloudImagePayload] = []
   ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
@@ -606,12 +626,13 @@ struct CloudModelClient {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    let contents = context.turns.filter { !$0.isSystem }.map {
+    var contents = context.turns.filter { !$0.isSystem }.map {
       [
         "role": $0.isMine ? "user" : "model",
         "parts": [["text": $0.content]]
       ] as [String: Any]
     }
+    CloudVisionPayloadEncoder.attachGemini(to: &contents, images: images)
     request.httpBody = try SignalASILinkProtocol.jsonData([
       "system_instruction": ["parts": [["text": context.systemPrompt]]],
       "contents": contents,
@@ -1378,6 +1399,7 @@ final class MessageCoordinator: ObservableObject {
         return true
       }
       if let cloudContact = selectedCloudModelContact(for: contact) {
+        let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
@@ -1395,6 +1417,7 @@ final class MessageCoordinator: ObservableObject {
         try await receiveCloudStreamReply(
           contact: cloudContact,
           turns: cloudTurns,
+          images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
           displayContactId: outgoing.contactId
@@ -1437,6 +1460,7 @@ final class MessageCoordinator: ObservableObject {
       }
       switch contact.deliveryMode {
       case .cloudAPI:
+        let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
@@ -1454,6 +1478,7 @@ final class MessageCoordinator: ObservableObject {
         try await receiveCloudStreamReply(
           contact: contact,
           turns: cloudTurns,
+          images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
           displayContactId: contact.id
@@ -2523,6 +2548,7 @@ final class MessageCoordinator: ObservableObject {
   private func receiveCloudStreamReply(
     contact: SignalASIContact,
     turns: [ChatMessage],
+    images: [CloudImagePayload],
     outgoing: ChatMessage,
     modelDetail: String,
     displayContactId: String
@@ -2537,6 +2563,7 @@ final class MessageCoordinator: ObservableObject {
       contact: contact,
       store: store,
       turns: turns,
+      images: images,
       requestId: requestId
     ) {
       switch event {
