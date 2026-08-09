@@ -58,6 +58,10 @@
 "agent_status_waiting_response" = "正在等待回复";
 "agent_status_paused" = "任务已暂停";
 "agent_status_paused_subtitle" = "执行已暂停，准备好后可继续。";
+"agent_status_blocked" = "动作已阻断";
+"agent_status_completed" = "动作已完成";
+"agent_status_failed" = "动作失败";
+"agent_status_cancelled" = "任务已取消";
 "agent_status_default_subtitle" = "SignalASI · 执行动作前确认 · 高危保护开启";
 "agent_status_waiting_response_subtitle" = "正在等待 %@";
 "agent_badge_safe" = "安全";

@@ -1153,8 +1153,14 @@ struct AgentHomeView: View {
       return t("agent_status_waiting_response", "Waiting for reply")
     case .paused:
       return t("agent_status_paused", "Task paused")
-    case .cancelled, .blocked, .completed, .failed:
-      return phase.rawValue
+    case .cancelled:
+      return t("agent_status_cancelled", "Task cancelled")
+    case .blocked:
+      return t("agent_status_blocked", "Action blocked")
+    case .completed:
+      return t("agent_status_completed", "Action completed")
+    case .failed:
+      return t("agent_status_failed", "Action failed")
     }
   }
 
