@@ -17,12 +17,14 @@ struct SignalASIAgentRuntimePanelView: View {
   var onUpdatePendingAction: (String, String, String, String) -> AgentPendingActionEditResult
   var onMovePendingAction: (String, String, Int) -> AgentPendingActionEditResult
   var onRemovePendingAction: (String, String) -> AgentPendingActionEditResult
+  var onTaskAction: (AgentTaskCenterAction, AgentTaskRecord) -> Void
   var onOpenRecentTasks: () -> Void
   var t: (String, String) -> String
 
   @State private var expandedSectionIds: Set<String> = ["requirements", "recent_tasks"]
   @State private var selectedTask: AgentTaskRecord?
   @State private var selectedAction: SignalASIAgentRuntimeActionSelection?
+  @State private var deletingTask: AgentTaskRecord?
 
   private var activeTasks: [AgentTaskRecord] {
     recentTasks.filter { task in
@@ -110,7 +112,37 @@ struct SignalASIAgentRuntimePanelView: View {
       )
     }
     .sheet(item: $selectedTask) { task in
-      SignalASIAgentRuntimeTaskDetailSheet(task: task, t: t)
+      SignalASIAgentRuntimeTaskDetailSheet(
+        task: task,
+        t: t,
+        taskActions: AgentTaskCenterPolicy.actions(task),
+        onAction: { action in
+          if action == .delete {
+            selectedTask = nil
+            deletingTask = task
+          } else {
+            onTaskAction(action, task)
+          }
+        }
+      )
+    }
+    .alert(item: $deletingTask) { task in
+      Alert(
+        title: Text(t("signalasi.agent_task_center.delete_title", "Delete task?")),
+        message: Text(
+          String(
+            format: t(
+              "signalasi.agent_task_center.delete_message",
+              "Delete the task record for \"%@\"? The conversation will remain available."
+            ),
+            task.goal
+          )
+        ),
+        primaryButton: .destructive(Text(t("signalasi.common.delete", "Delete"))) {
+          onTaskAction(.delete, task)
+        },
+        secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
+      )
     }
     .sheet(item: $selectedAction) { selection in
       SignalASIAgentRuntimeActionEditorSheet(

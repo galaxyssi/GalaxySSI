@@ -1745,11 +1745,67 @@ struct AgentHomeView: View {
           actionId: actionId
         )
       },
+      onTaskAction: handleAgentRuntimeTaskAction,
       onOpenRecentTasks: {
         recentTasksShortcutActive = true
       },
       t: t
     )
+  }
+
+  private func handleAgentRuntimeTaskAction(
+    _ action: AgentTaskCenterAction,
+    task: AgentTaskRecord
+  ) {
+    switch action {
+    case .cancel:
+      richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
+        ? t("signalasi.agent.task_control.cancelled", "Task cancelled")
+        : t("signalasi.agent.task_control.cancel_failed", "This task could not be cancelled")
+    case .resume:
+      richActionStatus = coordinator.resumeLocalNativeAction(taskId: task.taskId)
+        ? t("signalasi.agent.task_control.resumed", "Task resumed")
+        : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
+    case .retry:
+      retryAgentTask(task, mode: .retry)
+    case .copy:
+      copyAgentRuntimeTask(task)
+    case .viewLog:
+      richActionStatus = task.executionLog.isEmpty
+        ? t("signalasi.agent_task_center.log_empty", "No execution log yet")
+        : t("signalasi.agent_task_center.log_ready", "Execution log is shown below")
+    case .delete:
+      let deleted = store.deleteAgentTask(id: task.taskId)
+      richActionStatus = t(
+        deleted ? "signalasi.agent_task_center.deleted" : "signalasi.agent_task_center.delete_failed",
+        deleted ? "Task deleted" : "The task could not be deleted"
+      )
+    }
+  }
+
+  private func copyAgentRuntimeTask(_ task: AgentTaskRecord) {
+    let execution = AgentExecutionPresentationPolicy.location(record: task)
+    var lines = [
+      task.goal.ifBlank(task.taskId),
+      "",
+      "\(t("signalasi.agent_task_detail.status", "Status")): \(agentPhaseLabel(task.phase))",
+      "\(t("signalasi.agent_task_detail.execution", "Execution")): \(execution.locationName.ifBlank("-"))",
+      "\(t("signalasi.agent_task_detail.route", "Route")): \(task.routeKind.rawValue.lowercased().replacingOccurrences(of: "_", with: " "))",
+      "\(t("signalasi.agent_task_detail.target", "Agent or model")): \(task.targetTitle.ifBlank("-"))",
+      "\(t("signalasi.agent_task_detail.risk", "Risk")): \(task.risk.rawValue.lowercased())"
+    ]
+    if !task.result.isBlank {
+      lines += ["", t("signalasi.agent_task_detail.result", "Result"), task.result]
+    }
+    if !task.verification.isBlank {
+      lines += ["", t("signalasi.agent_task_detail.verification", "Verification"), task.verification]
+    }
+    if !task.executionLog.isEmpty {
+      lines += ["", t("signalasi.agent_task_detail.timeline", "Execution timeline")]
+      lines += task.executionLog
+    }
+    UIPasteboard.general.string = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    richActionStatus = t("signalasi.agent_task_center.copied", "Task details copied")
   }
 
   private var agentRuntimeTasks: [AgentTaskRecord] {
