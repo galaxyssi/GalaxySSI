@@ -83,18 +83,23 @@ struct SignalASIAgentModelSelectionView: View {
     }
   }
 
-  private var agentContacts: [SignalASIContact] {
-    store.visibleContacts
-      .filter { contact in
-        contact.id != "hermes" &&
-          !contact.deleted &&
-          contact.type == "agent" &&
-          contact.deliveryMode.isSignalASILinkFamily &&
-          isAvailableAgent(contact)
-      }
-      .sorted { left, right in
-        left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
-      }
+  private var callableTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
+  private var agentTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.selectableAgentTargets(callableTargets)
+      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+  }
+
+  private var preferredTargetId: String {
+    AgentCallableTargetCatalog.preferredTargetId(
+      selection: selection,
+      targets: callableTargets
+    )
   }
 
   var body: some View {
@@ -155,14 +160,14 @@ struct SignalASIAgentModelSelectionView: View {
             }
           }
 
-          if !agentContacts.isEmpty {
+          if !agentTargets.isEmpty {
             SignalASISecuritySectionTitle(
               title: t("signalasi.agent.model_selection.agent_section", "AGENTS")
             )
-            ForEach(agentContacts) { contact in
-              let selected = isSelectedAgent(contact)
+            ForEach(agentTargets) { target in
+              let selected = isSelectedAgent(target)
               SignalASISecurityActionRow(
-                title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+                title: target.title,
                 subtitle: t(
                   "signalasi.agent.model_selection.agent_subtitle",
                   "Connected and ready Agent"
@@ -173,7 +178,7 @@ struct SignalASIAgentModelSelectionView: View {
                   ? t("signalasi.agent.model_selection.current", "Current")
                   : t("signalasi.common.select", "Select")
               ) {
-                selectAgent(contact)
+                selectAgent(target)
               }
             }
           }
@@ -201,7 +206,7 @@ struct SignalASIAgentModelSelectionView: View {
             }
           }
 
-          if localProfiles.isEmpty && agentContacts.isEmpty && cloudContacts.isEmpty {
+          if localProfiles.isEmpty && agentTargets.isEmpty && cloudContacts.isEmpty {
             SignalASISecurityStatusRow(
               title: t("signalasi.agent.model_selection.no_models", "No ready models"),
               subtitle: t(
@@ -238,7 +243,8 @@ struct SignalASIAgentModelSelectionView: View {
       return (model.displayName.ifBlank(model.modelId), contact.displayName)
     }
     if let contact = store.contact(id: selection.targetId),
-       contact.type == "agent" {
+       contact.type == "agent",
+       preferredTargetId == selection.targetId {
       return (
         contact.displayName.ifBlank(contact.name).ifBlank(selection.displayName).ifBlank(contact.id),
         t("signalasi.agent.model_selection.on_agent", "Agent")
@@ -262,8 +268,8 @@ struct SignalASIAgentModelSelectionView: View {
     selection.mode == .manual && selection.targetId == contact.id
   }
 
-  private func isSelectedAgent(_ contact: SignalASIContact) -> Bool {
-    selection.mode == .manual && selection.targetId == contact.id
+  private func isSelectedAgent(_ target: AgentCallableTarget) -> Bool {
+    preferredTargetId == target.id
   }
 
   private func selectAutomatic() {
@@ -302,10 +308,10 @@ struct SignalASIAgentModelSelectionView: View {
     finishSelection()
   }
 
-  private func selectAgent(_ contact: SignalASIContact) {
-    let title = contact.displayName.ifBlank(contact.name).ifBlank(contact.id)
+  private func selectAgent(_ target: AgentCallableTarget) {
+    let title = target.title
     AgentModelSelectionSettings.selectManual(
-      targetId: contact.id,
+      targetId: target.id,
       modelId: "",
       displayName: title
     )
@@ -314,11 +320,6 @@ struct SignalASIAgentModelSelectionView: View {
       label: title
     )
     finishSelection()
-  }
-
-  private func isAvailableAgent(_ contact: SignalASIContact) -> Bool {
-    let setup = contact.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    return contact.trustState == .verified && (setup == "ready" || setup == "verified")
   }
 
   private func finishSelection() {
