@@ -269,8 +269,6 @@ struct AgentHomeView: View {
       VStack(spacing: 0) {
         header
         agentOutput
-        Divider()
-          .background(Color.signalASISeparator)
         agentComposer
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
@@ -425,17 +423,6 @@ struct AgentHomeView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 10) {
-          agentRuntimePanel
-          SignalASIAgentScreenContextCard(
-            screen: agentScreenSnapshot.screen,
-            sections: agentScreenSnapshot.sections,
-            onCommand: prefillAgentScreenCommand,
-            t: t
-          )
-          AgentProcessCard(
-            activePhase: activeAgentPhase,
-            executionPaused: store.agentSafetySettings.executionPaused
-          )
           if let pendingConfirmationTask {
             SignalASIAgentConfirmationCard(
               task: pendingConfirmationTask,
@@ -453,21 +440,18 @@ struct AgentHomeView: View {
               }
             )
           }
-          AgentInfoCard(
-            currentApp: "SignalASI iOS",
-            callableTargets: store.visibleContacts.count,
-            runningTasks: activeAgentTasks.count,
-            memorySnapshot: store.agentMemorySnapshot(),
-            knowledgeStats: store.agentKnowledgeStats
-          )
-          if messages.isEmpty && !voiceTranscriptionPending {
-            AgentInsightBanner(
-              unreadTotal: unreadTotal,
-              runningTasks: activeAgentTasks.count,
-              callableTargets: store.visibleContacts.count,
-              executionPaused: store.agentSafetySettings.executionPaused,
-              nativeToolSummary: nativeToolSummary
-            )
+          if messages.isEmpty && !voiceTranscriptionPending && pendingConfirmationTask == nil {
+            VStack(spacing: 10) {
+              SignalASILogoView(size: 48, cornerRadius: 10)
+              Text(t("signalasi.agent.empty.title", "How can I help?"))
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+              Text(t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"))
+                .font(.system(size: 13))
+                .foregroundColor(.signalASITextSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 180)
+            .accessibilityElement(children: .combine)
           } else {
             ForEach(messages) { message in
               MessageBubble(message: message, onAction: handleRichAction)
@@ -563,7 +547,7 @@ struct AgentHomeView: View {
         Text("SignalASI")
           .font(.system(size: 14.5, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-        Text(t("signalasi.agent.brand.subtitle", "Super Agent"))
+        Text(t("signalasi.agent.brand.subtitle", "Superintelligent agent"))
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
       }
@@ -595,12 +579,12 @@ struct AgentHomeView: View {
         }
         .buttonStyle(.plain)
       }
-      .frame(width: 138, minHeight: 44, alignment: .trailing)
+      .frame(width: 128, minHeight: 44, alignment: .trailing)
       NavigationLink(destination: SettingsView()) {
-        Image(systemName: "ellipsis")
+        Image(systemName: "ellipsis.horizontal")
           .font(.system(size: 22, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-          .frame(width: 36, height: 44)
+          .frame(width: 44, height: 44)
       }
       .buttonStyle(.plain)
     }

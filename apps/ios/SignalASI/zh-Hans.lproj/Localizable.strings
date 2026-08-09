@@ -985,7 +985,7 @@
 "signalasi.agent.current_app" = "当前 App：%@";
 "signalasi.agent.callable_targets" = "可调用对象：%d";
 "signalasi.agent.running_tasks" = "运行任务：%d";
-"signalasi.agent.goal_hint" = "输入消息...";
+"signalasi.agent.goal_hint" = "输入消息或按住说话...";
 "signalasi.agent.voice_button" = "按住说话";
 "signalasi.agent.native_tools" = "原生工具";
 "signalasi.agent.native_tools.subtitle" = "%d 个联系人、设备动作和本地安全控制";
@@ -3607,3 +3607,5 @@
 "signalasi.workflow.name_limit" = "名称上限";
 "signalasi.workflow.goal_limit" = "目标上限";
 "signalasi.workflow.platform" = "平台";
+"signalasi.agent.empty.title" = "我可以帮你做什么？";
+"signalasi.agent.empty.subtitle" = "输入目标，或按住说话";

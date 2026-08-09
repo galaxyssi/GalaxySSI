@@ -103,6 +103,11 @@ struct SignalASIAgentComposerView: View {
         .textInputAutocapitalization(.sentences)
         .lineLimit(2)
         .focused($inputFocused)
+        .onSubmit {
+          guard canSend else { return }
+          actionTrayPresented = false
+          onSend()
+        }
         .onTapGesture {
           actionTrayPresented = false
         }
