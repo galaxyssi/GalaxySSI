@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+extension Notification.Name {
+  static let signalASIDesktopPairingDidComplete = Notification.Name(
+    "signalasi.desktopPairingDidComplete"
+  )
+}
+
 struct AddContactView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
@@ -343,6 +349,11 @@ struct AddContactView: View {
       )
       if !pairedDesktopAgentNames.isEmpty {
         onAgentAdded?()
+        NotificationCenter.default.post(
+          name: .signalASIDesktopPairingDidComplete,
+          object: nil,
+          userInfo: ["agentIDs": Self.desktopAgentIDs(from: pairing)]
+        )
       }
     } catch {
       setImportStatus(error.localizedDescription, isError: true)
@@ -493,6 +504,26 @@ struct AddContactView: View {
       "Local LLM",
       "Custom Agent"
     ]
+  }
+
+  private static func desktopAgentIDs(from pairing: PairingQRCode) -> [String] {
+    guard let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) else {
+      return []
+    }
+    return source.agents.compactMap { agent -> String? in
+      let agentID = agent.string("agent_id")
+        .ifBlank(agent.string("mobile_contact_id"))
+        .ifBlank(agent.string("id"))
+      let kind = agent.string("kind").ifBlank(agent.string("agent_kind"))
+      guard !agentID.isEmpty, agentID != "cloud-model", kind != "cloud-model" else {
+        return nil
+      }
+      if agentID.hasPrefix("\(pairing.desktopId):") {
+        return agentID
+      }
+      let suffix = agentID.split(separator: ":").last.map(String.init) ?? agentID
+      return "\(pairing.desktopId):\(suffix)"
+    }
   }
 }
 

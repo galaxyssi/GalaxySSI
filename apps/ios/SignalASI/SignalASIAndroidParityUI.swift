@@ -446,6 +446,12 @@ struct AgentHomeView: View {
       .onChange(of: store.activeAgentConversationId) { _ in
         resetAgentSessionPresentation()
       }
+      .onReceive(
+        NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)
+      ) { notification in
+        let agentIDs = notification.userInfo?["agentIDs"] as? [String] ?? []
+        focusScannedAgents(agentIDs)
+      }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
         runtimeArtifactStatus = t(
           "runtime_artifact.download_completed",
@@ -1979,6 +1985,43 @@ struct AgentHomeView: View {
   private func createAgentConversation() {
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
+  }
+
+  private func focusScannedAgents(_ targetIDs: [String]) {
+    let normalizedIDs = targetIDs
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    guard !normalizedIDs.isEmpty else { return }
+
+    Task { @MainActor in
+      for delay in [UInt64(0), 300_000_000, 900_000_000, 1_800_000_000] {
+        if delay > 0 {
+          try? await Task.sleep(nanoseconds: delay)
+        }
+        for targetID in normalizedIDs {
+          if focusScannedAgentIfAvailable(targetID) {
+            return
+          }
+        }
+      }
+    }
+  }
+
+  private func focusScannedAgentIfAvailable(_ targetID: String) -> Bool {
+    guard let target = store.contact(id: targetID),
+          target.type == "agent",
+          target.isCommunicable else {
+      return false
+    }
+    let conversationId = store.activeAgentConversationId
+    AgentModelSelectionSettings.selectManual(
+      for: conversationId,
+      targetId: target.id,
+      modelId: target.selectedCloudModel?.modelId ?? "",
+      displayName: target.displayName
+    )
+    modelSelection = AgentModelSelectionSettings.selection(for: conversationId)
+    return true
   }
 
   private func ensureActiveAgentSession() {
