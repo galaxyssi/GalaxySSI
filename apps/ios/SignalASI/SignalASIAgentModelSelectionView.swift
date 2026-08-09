@@ -290,7 +290,10 @@ struct SignalASIAgentModelSelectionView: View {
           .ifBlank(contact.name)
           .ifBlank(selection.displayName)
           .ifBlank(contact.id)
-        let ready = preferredTargetId == targetId
+        let ready = callableTargets
+          .first(where: { $0.id == targetId })
+          .map { AgentConnectorRouteSelector.isDeliverable($0) }
+          ?? false
         return (
           title,
           ready
