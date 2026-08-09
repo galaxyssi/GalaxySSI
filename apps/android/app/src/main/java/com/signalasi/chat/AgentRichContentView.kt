@@ -102,7 +102,11 @@ class AgentRichContentView(
             if (enableResponseSections && sectionLayout.collapsible) {
                 sectionLayout.sections.forEachIndexed { index, section ->
                     addView(
-                        collapsibleSection(entry.id, section),
+                        if (section.kind == AgentResponseSectionKind.FINAL_ANSWER) {
+                            finalAnswerSection(section)
+                        } else {
+                            collapsibleSection(entry.id, section)
+                        },
                         LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -116,6 +120,13 @@ class AgentRichContentView(
             }
         }
     }
+
+    private fun finalAnswerSection(section: AgentResponseSection): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addBlockViews(this, section.blocks)
+        }
 
     private fun addBlockViews(container: LinearLayout, blocks: List<AgentRichBlock>) {
         blocks.forEachIndexed { index, block ->
@@ -216,14 +227,17 @@ class AgentRichContentView(
         }
     }
 
-    private fun sectionTitle(kind: AgentResponseSectionKind): String = activity.getString(
-        when (kind) {
-            AgentResponseSectionKind.PLAN -> R.string.rich_output_section_plan
-            AgentResponseSectionKind.EXECUTION_LOG -> R.string.rich_output_section_execution_log
-            AgentResponseSectionKind.FINAL_ANSWER -> R.string.rich_output_section_final_answer
-            AgentResponseSectionKind.EVIDENCE -> R.string.rich_output_section_evidence
-        }
-    )
+    private fun sectionTitle(kind: AgentResponseSectionKind): String {
+        if (kind == AgentResponseSectionKind.FINAL_ANSWER) return ""
+        return activity.getString(
+            when (kind) {
+                AgentResponseSectionKind.PLAN -> R.string.rich_output_section_plan
+                AgentResponseSectionKind.EXECUTION_LOG -> R.string.rich_output_section_execution_log
+                AgentResponseSectionKind.EVIDENCE -> R.string.rich_output_section_evidence
+                AgentResponseSectionKind.FINAL_ANSWER -> error("Final answers do not use section headers")
+            }
+        )
+    }
 
     private fun blockView(source: AgentRichBlock): View {
         val block = AgentDesktopArtifactStore.resolveBlock(activity, source)

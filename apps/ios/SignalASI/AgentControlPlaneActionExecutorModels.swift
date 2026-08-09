@@ -10,14 +10,16 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     delegate: AgentActionExecutor,
     recoverableSource: @escaping () -> [AgentRecoverableRun] = { [] },
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
-    healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger()
+    healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger(),
+    runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore()
   ) {
     let provider = ActionExecutorAgentProvider(
       registrationSource: registrationSource,
       delegate: delegate,
       recoverableSource: recoverableSource,
       runStartReceipts: runStartReceipts,
-      healthLedger: healthLedger
+      healthLedger: healthLedger,
+      runEventStore: runEventStore
     )
     self.provider = provider
     let directory = AgentAdapterDirectory()
@@ -131,6 +133,20 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     }
   }
 
+  @discardableResult
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    provider.acceptConnectorResponse(response)
+  }
+
+  @discardableResult
+  func observeConnectorResponses(from bus: AgentConnectorResponseBus) -> UUID {
+    provider.observeConnectorResponses(from: bus)
+  }
+
+  func removeConnectorResponseObserver(_ token: UUID, from bus: AgentConnectorResponseBus) {
+    provider.removeConnectorResponseObserver(token, from: bus)
+  }
+
   static func stableRunId(conversationId: String, turnId: String, actionId: String, agentId: String) -> String {
     let source = [conversationId, turnId, actionId, agentId].joined(separator: "\u{001f}")
     var bytes = Array(Insecure.MD5.hash(data: Data(source.utf8)))
@@ -192,6 +208,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let recoverableSource: () -> [AgentRecoverableRun]
   private let runStartReceipts: AgentRunStartReceiptStore
   private let healthLedger: AgentProviderHealthLedger
+  private let runEventStore: AgentRunEventPersistence?
   private let localProtocol: AgentProtocolRange
   private let lock = NSRecursiveLock()
   private var transportsByAgentId: [String: ActionExecutorAgentTransport] = [:]
@@ -208,6 +225,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     recoverableSource: @escaping () -> [AgentRecoverableRun] = { [] },
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
+    runEventStore: AgentRunEventPersistence? = nil,
     providerId: String = "signalasi-connectors",
     localProtocol: AgentProtocolRange = AgentProtocolRange(
       preferred: "1.0",
@@ -221,6 +239,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     self.recoverableSource = recoverableSource
     self.runStartReceipts = runStartReceipts
     self.healthLedger = healthLedger
+    self.runEventStore = runEventStore
     self.providerId = providerId
     self.localProtocol = localProtocol
   }
@@ -363,6 +382,30 @@ final class ActionExecutorAgentProvider: AgentProvider {
       }
     }
     return nil
+  }
+
+  @discardableResult
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.acceptConnectorResponse(response) {
+        return result
+      }
+    }
+    return nil
+  }
+
+  @discardableResult
+  func observeConnectorResponses(from bus: AgentConnectorResponseBus) -> UUID {
+    bus.addListener { [weak self] response in
+      _ = self?.acceptConnectorResponse(response)
+    }
+  }
+
+  func removeConnectorResponseObserver(_ token: UUID, from bus: AgentConnectorResponseBus) {
+    bus.removeListener(token)
   }
 
   func nativeToolLifecycleEventSink(
@@ -560,7 +603,8 @@ final class ActionExecutorAgentProvider: AgentProvider {
       },
       delegate: delegate,
       recoverableSource: recoverableSource,
-      agentId: agentId
+      agentId: agentId,
+      runEventStore: runEventStore
     )
     transportsByAgentId[agentId] = transport
     return transport
@@ -613,6 +657,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private let delegate: AgentActionExecutor
   private let recoverableSource: () -> [AgentRecoverableRun]
   private let agentId: String
+  private let runEventStore: AgentRunEventPersistence?
   private let lock = NSRecursiveLock()
   private var preparedByRunId: [String: PreparedAction] = [:]
   private var resultsByRunId: [String: AgentActionResult] = [:]
@@ -625,12 +670,14 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     registrationSource: @escaping () -> [AgentRegistration],
     delegate: AgentActionExecutor,
     recoverableSource: @escaping () -> [AgentRecoverableRun],
-    agentId: String
+    agentId: String,
+    runEventStore: AgentRunEventPersistence?
   ) {
     self.registrationSource = registrationSource
     self.delegate = delegate
     self.recoverableSource = recoverableSource
     self.agentId = agentId
+    self.runEventStore = runEventStore
   }
 
   func prepare(runId: String, action: AgentAction, screen: AgentScreenContext, registration: AgentRegistration) {
@@ -768,6 +815,38 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         payload: ["message": .string("Agent Run cancelled")]
       )
     }
+  }
+
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    let active: ActiveRun
+    let settlement: AgentConnectorResponseSettlement
+    let runId: String
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorResponseResolver.canAccept(pending: pending, response: response)
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorResponseResolver.settle(pending: pending, response: response) else {
+      lock.unlock()
+      return nil
+    }
+    runId = match.key
+    active = match.value
+    settlement = resolved
+    resultsByRunId[runId] = resolved.result
+    activeByRunId.removeValue(forKey: runId)
+    eventContextsByRunId.removeValue(forKey: runId)
+    lock.unlock()
+    emit(
+      request: active.request,
+      registration: active.registration,
+      type: settlement.eventType,
+      sequence: 5,
+      payload: settlement.eventPayload
+    )
+    return settlement.result
   }
 
   func acceptConnectorTerminalStatus(_ envelope: AgentConnectorTerminalStatusEnvelope) -> AgentActionResult? {
@@ -994,8 +1073,13 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     AsyncStream(bufferingPolicy: .bufferingNewest(Self.eventReplay)) { continuation in
       let token = UUID()
       lock.lock()
+      let persisted = runEventStore?.events(runId: runId) ?? []
       let buffered = eventBuffersByRunId[runId] ?? []
-      for event in buffered {
+      var seenEventIds = Set<String>()
+      for event in persisted where seenEventIds.insert(event.eventId).inserted {
+        continuation.yield(event)
+      }
+      for event in buffered where seenEventIds.insert(event.eventId).inserted {
         continuation.yield(event)
       }
       continuationsByRunId[runId, default: [:]][token] = continuation
@@ -1096,11 +1180,12 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     var deliveries: [(AgentRunControlEvent, [AsyncStream<AgentRunControlEvent>.Continuation])] = []
     lock.lock()
     for event in events {
-      var buffer = eventBuffersByRunId[event.runId] ?? []
-      buffer.append(event)
-      eventBuffersByRunId[event.runId] = Array(buffer.suffix(Self.eventReplay))
-      let continuations = continuationsByRunId[event.runId].map { Array($0.values) } ?? []
-      deliveries.append((event, continuations))
+      let persisted = runEventStore?.appendNext(event) ?? event
+      var buffer = eventBuffersByRunId[persisted.runId] ?? []
+      buffer.append(persisted)
+      eventBuffersByRunId[persisted.runId] = Array(buffer.suffix(Self.eventReplay))
+      let continuations = continuationsByRunId[persisted.runId].map { Array($0.values) } ?? []
+      deliveries.append((persisted, continuations))
     }
     lock.unlock()
     for (event, continuations) in deliveries {
