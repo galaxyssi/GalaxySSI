@@ -1,6 +1,85 @@
 import CryptoKit
 import Foundation
 
+struct AgentDesktopArtifactRequestPayload: Equatable {
+  var artifactURI: String
+  var displayName: String
+  var artifactID: String
+  var taskID: String
+  var sha256: String
+  var desktopID: String
+  var clientRouteID: String
+
+  static func decode(_ raw: String) -> AgentDesktopArtifactRequestPayload? {
+    guard let data = raw.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    let artifactURI = string(object, keys: ["artifact_uri", "artifact_source_uri", "uri"])
+    let sha256 = string(object, keys: ["sha256", "digest"]).lowercased()
+    guard !artifactURI.isEmpty,
+          sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+      return nil
+    }
+    return AgentDesktopArtifactRequestPayload(
+      artifactURI: artifactURI,
+      displayName: string(object, keys: ["display_name", "name"]).ifBlank("SignalASI-artifact"),
+      artifactID: string(object, keys: ["artifact_id"]),
+      taskID: string(object, keys: ["task_id"]),
+      sha256: sha256,
+      desktopID: string(object, keys: ["desktop_id"]),
+      clientRouteID: string(object, keys: ["client_route_id"])
+    )
+  }
+
+  var richBlock: AgentRichBlock {
+    let metadata = Dictionary(uniqueKeysWithValues: [
+      "artifact_id": artifactID,
+      "artifact_source_uri": artifactURI,
+      "client_route_id": clientRouteID,
+      "desktop_id": desktopID,
+      "sha256": sha256,
+      "task_id": taskID
+    ].filter { !$0.value.isEmpty })
+    return AgentRichBlock(
+      id: artifactID.ifBlank(artifactURI),
+      type: .file,
+      title: AgentDesktopArtifactStore.safeFileName(displayName),
+      uri: artifactURI,
+      mimeType: "application/octet-stream",
+      metadata: metadata
+    )
+  }
+
+  private init(
+    artifactURI: String,
+    displayName: String,
+    artifactID: String,
+    taskID: String,
+    sha256: String,
+    desktopID: String,
+    clientRouteID: String
+  ) {
+    self.artifactURI = artifactURI.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.displayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.artifactID = artifactID.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.taskID = taskID.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.sha256 = sha256.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    self.desktopID = desktopID.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.clientRouteID = clientRouteID.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static func string(_ object: [String: Any], keys: [String]) -> String {
+    for key in keys {
+      if let value = object[key] as? String {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty { return clean }
+      }
+    }
+    return ""
+  }
+}
+
 struct AgentDesktopArtifactIngestResult: Equatable {
   var completed: Bool
   var artifactId: String
