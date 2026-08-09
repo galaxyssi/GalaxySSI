@@ -13,9 +13,12 @@ if(ANDROID)
 endif()
 
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
-set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
-set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+# Whisper owns a pinned GGML revision that is intentionally different from
+# GenieX. Link that revision into libwhisper instead of publishing generic
+# libggml*.so files that Android could bind to GenieX's newer libllama.so.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_ARM_ARCH "" CACHE STRING "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -55,4 +58,13 @@ target_include_directories(whisper PRIVATE
 
 find_library(LOG_LIB log)
 find_library(ANDROID_LIB android)
+
+# GenieX scans GGML backends through the dynamic-loader ABI. Qualcomm's
+# packaged Hexagon backend exposes its registry function but not the generic
+# ggml_backend_init entry point, so publish a tiny adapter without duplicating
+# the vendor implementation.
+add_library(ggml-hexagon-dl SHARED ggml_hexagon_dl_adapter.c)
+target_compile_options(ggml-hexagon-dl PRIVATE -O2 -fvisibility=hidden)
+target_link_libraries(ggml-hexagon-dl PRIVATE ${LOG_LIB} ${CMAKE_DL_LIBS})
+
 target_link_libraries(whisper PRIVATE ${LOG_LIB} ${ANDROID_LIB} ${CMAKE_DL_LIBS} ggml)
