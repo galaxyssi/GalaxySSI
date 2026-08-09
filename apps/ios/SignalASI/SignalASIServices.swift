@@ -730,6 +730,8 @@ final class MessageCoordinator: ObservableObject {
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
+  private var liveConnectorMessageIds: [String: UUID] = [:]
+  private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
@@ -3067,6 +3069,13 @@ final class MessageCoordinator: ObservableObject {
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
     }
+    if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
+      applyAgentConnectorStreamUpdate(streamUpdate)
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     if appPayload.string("type") == "artifact_chunk" ||
       appPayload.string("type") == "artifact_redelivery_result" {
       handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
@@ -3111,6 +3120,10 @@ final class MessageCoordinator: ObservableObject {
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
     let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    let streamKey = AgentConnectorStreamUpdate.streamKey(
+      sourceMessageId: appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))),
+      turnId: responseTurnId
+    )
     if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) ||
         ["waiting_input", "waiting_approval"].contains(remoteTaskStatus) {
       finishPendingAgentReply(
@@ -3123,6 +3136,8 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(appPayload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
     guard !content.isEmpty || !richOutputJson.isEmpty else {
+      liveConnectorMessageIds.removeValue(forKey: streamKey)
+      liveConnectorSequenceByKey.removeValue(forKey: streamKey)
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
@@ -3133,14 +3148,32 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(appPayload.string("source_message_id"))
         .ifBlank(appPayload.string("message_id"))
     )
-    let incoming = store.appendIncoming(
-      content,
-      from: displayContactId,
-      remoteMessageId: appPayload.string("message_id"),
-      conversationId: appPayload.string("conversation_id"),
-      turnId: appPayload.string("turn_id"),
-      richOutputJson: richOutputJson
-    )
+    let incoming: ChatMessage
+    let streamRemoteMessageId = "agent-stream-(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
+    let liveMessageId = liveConnectorMessageIds.removeValue(forKey: streamKey)
+      ?? store.messages(for: displayContactId).last(where: { $0.remoteMessageId == streamRemoteMessageId })?.id
+    if let liveMessageId,
+       let updated = store.updateMessageContent(
+         liveMessageId,
+         contactId: displayContactId,
+         content: content,
+         status: .delivered,
+         traceStage: "agent_reply_received",
+         detail: remoteTaskStatus,
+         richOutputJson: richOutputJson
+       ) {
+      liveConnectorSequenceByKey.removeValue(forKey: streamKey)
+      incoming = updated
+    } else {
+      incoming = store.appendIncoming(
+        content,
+        from: displayContactId,
+        remoteMessageId: appPayload.string("message_id"),
+        conversationId: appPayload.string("conversation_id"),
+        turnId: appPayload.string("turn_id"),
+        richOutputJson: richOutputJson
+      )
+    }
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
@@ -3152,6 +3185,43 @@ final class MessageCoordinator: ObservableObject {
       title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
+  }
+
+  private func applyAgentConnectorStreamUpdate(_ update: AgentConnectorStreamUpdate) {
+    if update.sequence > 0,
+       update.sequence <= (liveConnectorSequenceByKey[update.streamKey] ?? 0) {
+      return
+    }
+    if update.sequence > 0 {
+      liveConnectorSequenceByKey[update.streamKey] = update.sequence
+    }
+    let displayContactId = agentHomeDisplayContactIdsByTurnId[update.turnId] ?? update.contactId
+    let current: ChatMessage?
+    if let messageId = liveConnectorMessageIds[update.streamKey] {
+      current = store.updateMessageContent(
+        messageId,
+        contactId: displayContactId,
+        content: update.content,
+        status: .sent,
+        traceStage: "agent_partial_result",
+        detail: update.sequence > 0 ? "sequence=\(update.sequence)" : ""
+      )
+    } else {
+      let appended = store.appendIncoming(
+        update.content,
+        from: displayContactId,
+        remoteMessageId: "agent-stream-\(update.sourceMessageId)",
+        status: .sent,
+        traceStage: "agent_partial_result",
+        conversationId: update.conversationId,
+        turnId: update.turnId
+      )
+      liveConnectorMessageIds[update.streamKey] = appended.id
+      current = appended
+    }
+    if let current {
+      onIncomingMessageDelta?(current)
+    }
   }
 
   private func handleRemoteProactiveWebhook(
