@@ -102,10 +102,7 @@ struct SignalASIAgentModelSelectionView: View {
   }
 
   private var localProfiles: [LocalModelRuntimeProfile] {
-    LocalModelRuntimeCatalog.profiles().filter {
-      LocalModelRuntimeSettings.isProfileEnabled($0) &&
-        LocalModelInferenceRuntime.shared.ready(profile: $0)
-    }
+    LocalModelRuntimeSettings.activeProfiles()
   }
 
   private var cloudContacts: [SignalASIContact] {
@@ -274,8 +271,7 @@ struct SignalASIAgentModelSelectionView: View {
 
     if targetId == "local-llm" {
       let profile = LocalModelRuntimeCatalog.find(selection.modelId)
-      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
-        LocalModelInferenceRuntime.shared.ready(profile: profile)
+      let ready = localProfiles.contains { $0.id == profile.id }
       let title = profile.displayName
         .ifBlank(selection.displayName)
         .ifBlank(selection.modelId)
