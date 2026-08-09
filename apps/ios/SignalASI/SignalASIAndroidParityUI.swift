@@ -999,6 +999,16 @@ struct AgentHomeView: View {
                   } label: {
                     Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
                   }
+                  if let task = agentTask(for: message), AgentTaskCenterPolicy.cancellable(task) {
+                    Button(role: .destructive) {
+                      cancelActiveAgentTask(task)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.task_control.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  }
                   Button(role: .destructive) {
                     store.deleteMessage(message.id, contactId: contact.id)
                   } label: {
@@ -1285,6 +1295,12 @@ struct AgentHomeView: View {
   private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
     coordinator.cancelLocalNativeAction(taskId: task.taskId)
     richActionStatus = t("signalasi.agent.task_control.cancelled", "Task cancelled")
+  }
+
+  private func agentTask(for message: ChatMessage) -> AgentTaskRecord? {
+    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !turnID.isEmpty else { return nil }
+    return store.agentTask(id: turnID)
   }
 
   private func handleAgentRichForm(_ block: AgentRichBlock, _ values: [String: String]) {
