@@ -340,6 +340,7 @@
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
+    A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */; };
     A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */; };
     A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */; };
     A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002001 /* AgentConnectorResponseResolver.swift */; };
@@ -953,6 +954,7 @@
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
+    A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentObservationContextStore.swift; sourceTree = "<group>"; };
     A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentConnectorResponseStore.swift; sourceTree = "<group>"; };
     A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentManagedResponseLedger.swift; sourceTree = "<group>"; };
     A20000000000000000002001 /* AgentConnectorResponseResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseResolver.swift; sourceTree = "<group>"; };
@@ -1427,6 +1429,7 @@
         A20000000000000000000707 /* AgentDirectActionContext.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
         A20000000000000000000401 /* AgentConnectorModels.swift */,
+        A20000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift */,
         A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */,
         A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */,
         A20000000000000000002001 /* AgentConnectorResponseResolver.swift */,
@@ -2497,6 +2500,7 @@
         A10000000000000000000200 /* AgentTeamPlanBridgeModels.swift in Sources */,
         A10000000000000000000269 /* AgentConnectorResponseModels.swift in Sources */,
         A10000000000000000000270 /* AgentManagedResponseModels.swift in Sources */,
+        A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */,
         A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
