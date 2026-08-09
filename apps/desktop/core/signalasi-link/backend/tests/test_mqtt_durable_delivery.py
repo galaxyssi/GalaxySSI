@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,6 +14,13 @@ class DurableMqttClient:
 
 
 class MqttDurableDeliveryTest(unittest.TestCase):
+    def tearDown(self) -> None:
+        mqtt_bridge.outbound_retry_stop_event.set()
+        thread = mqtt_bridge.outbound_retry_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+        mqtt_bridge.outbound_retry_thread = None
+
     def test_existing_durable_message_does_not_advance_signal_session_again(self) -> None:
         paired_client = {
             "client_route_id": "current-route",
@@ -98,6 +106,52 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             ],
             published_topics,
         )
+
+    def test_retry_loop_prepares_persisted_task_results_before_transport_flush(self) -> None:
+        mqtt_client = DurableMqttClient()
+        mqtt_bridge.outbound_retry_stop_event.clear()
+
+        def finish_after_flush(_mqttc) -> None:
+            mqtt_bridge.outbound_retry_stop_event.set()
+
+        with (
+            patch.object(mqtt_bridge, "client", mqtt_client),
+            patch.object(mqtt_bridge, "OUTBOUND_RETRY_POLL_SECONDS", 0.001),
+            patch.object(mqtt_bridge, "flush_pending_task_results") as task_results,
+            patch.object(
+                mqtt_bridge,
+                "flush_outbound_messages",
+                side_effect=finish_after_flush,
+            ) as transport,
+        ):
+            mqtt_bridge._outbound_retry_loop()
+
+        task_results.assert_called_once_with(mqtt_client)
+        transport.assert_called_once_with(mqtt_client)
+
+    def test_task_result_enqueue_restores_retry_worker(self) -> None:
+        payload = {
+            "task_id": "task-1",
+            "client_route_id": "route-1",
+            "conversation_id": "conversation-1",
+            "turn_id": "turn-1",
+        }
+        wire_payload = {"_client_route_id": "route-1"}
+
+        with (
+            patch.object(mqtt_bridge, "queue_task_result"),
+            patch.object(mqtt_bridge, "_ensure_outbound_retry_thread") as ensure_retry,
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=False),
+            patch.object(mqtt_bridge, "outbound_status", return_value=None),
+        ):
+            published = mqtt_bridge._publish_or_queue_task_result(
+                DurableMqttClient(),
+                wire_payload,
+                payload,
+            )
+
+        self.assertFalse(published)
+        ensure_retry.assert_called_once_with()
 
 
 if __name__ == "__main__":
