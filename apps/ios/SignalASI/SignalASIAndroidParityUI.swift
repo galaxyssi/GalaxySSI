@@ -141,6 +141,7 @@ struct AgentHomeView: View {
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelectionSettings.selection()
+  @State private var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
@@ -614,8 +615,9 @@ struct AgentHomeView: View {
       onAddFile: {
         fileImporterPresented = true
       },
-      onSend: sendAgentMessage,
+      onSend: { sendAgentMessage() },
       onPendingPrimaryAction: cancelPendingAgentTask,
+      onVoiceStart: beginAgentVoiceCapture,
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
@@ -647,15 +649,26 @@ struct AgentHomeView: View {
     )
   }
 
-  private func sendAgentMessage() {
+  private func sendAgentMessage(
+    voiceAttachmentSnapshot: [SignalASIDraftAttachment]? = nil
+  ) {
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    let outgoingAttachments = attachments
+    let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
+      goalOverride: voiceAttachmentSnapshot == nil ? nil : cleanDraft,
+      composerAttachments: attachments,
+      attachmentSnapshot: voiceAttachmentSnapshot
+    )
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
       ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
       : ""
     draft = ""
-    attachments.removeAll()
+    if let voiceAttachmentSnapshot {
+      let consumedIDs = Set(outgoingAttachments.map(\.id))
+      attachments.removeAll { consumedIDs.contains($0.id) }
+    } else {
+      attachments.removeAll()
+    }
     actionTrayPresented = false
     attachmentError = ""
     Task {
@@ -670,12 +683,18 @@ struct AgentHomeView: View {
 
   private func sendAgentVoiceTranscript(_ transcript: String) {
     let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    let capturedAttachments = voiceAttachmentSnapshot
+    voiceAttachmentSnapshot.removeAll()
     guard !cleanTranscript.isEmpty else {
       attachmentError = t("voice_no_speech", "No speech captured.")
       return
     }
     draft = cleanTranscript
-    sendAgentMessage()
+    sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
+  }
+
+  private func beginAgentVoiceCapture() {
+    voiceAttachmentSnapshot = attachments
   }
 
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {

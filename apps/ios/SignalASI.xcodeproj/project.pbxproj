@@ -237,6 +237,7 @@
     A10000000000000000000778 /* VoiceLiveWhisperCaptureControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000778 /* VoiceLiveWhisperCaptureControllerTests.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
+    A10000000000000000009999 /* AgentVoiceAttachmentSubmissionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009999 /* AgentVoiceAttachmentSubmissionPolicy.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
     A10000000000000000000492 /* AgentExplicitToolHandles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000492 /* AgentExplicitToolHandles.swift */; };
     A10000000000000000000493 /* AgentExplicitToolHandlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */; };
@@ -954,6 +955,7 @@
     A20000000000000000000778 /* VoiceLiveWhisperCaptureControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperCaptureControllerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
+    A20000000000000000009999 /* AgentVoiceAttachmentSubmissionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVoiceAttachmentSubmissionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000492 /* AgentExplicitToolHandles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExplicitToolHandles.swift; sourceTree = "<group>"; };
     A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExplicitToolHandlesTests.swift; sourceTree = "<group>"; };
@@ -1736,6 +1738,7 @@
         A20000000000000000000141 /* AgentRichContentModels.swift */,
         A20000000000000000000484 /* AgentResponseSections.swift */,
         A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */,
+        A20000000000000000009999 /* AgentVoiceAttachmentSubmissionPolicy.swift */,
         A20000000000000000000142 /* AgentDesktopArtifactModels.swift */,
         A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */,
         A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */,
@@ -2547,6 +2550,7 @@
         A10000000000000000000141 /* AgentRichContentModels.swift in Sources */,
         A10000000000000000000484 /* AgentResponseSections.swift in Sources */,
         A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */,
+        A10000000000000000009999 /* AgentVoiceAttachmentSubmissionPolicy.swift in Sources */,
         A10000000000000000000142 /* AgentDesktopArtifactModels.swift in Sources */,
         A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */,
         A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */,
