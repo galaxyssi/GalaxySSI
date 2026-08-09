@@ -9,6 +9,8 @@ final class LocalModelInferenceRuntime {
   private var backend: LocalModelInferenceBackend
   private var loadedProfile = ""
   private var loadedContextTokens = 0
+  private var foregroundWaiters = 0
+  private var foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + Self.backgroundStartupGraceSeconds
 
   init(
     storage: LocalModelRuntimeStorage = LocalModelRuntimeStorage(),
@@ -55,14 +57,26 @@ final class LocalModelInferenceRuntime {
     userPrompt: String,
     maximumTokens: Int = 768,
     temperature: Double = 0.3,
-    thinkingMode: LocalModelThinkingMode = .automatic
+    thinkingMode: LocalModelThinkingMode = .automatic,
+    workClass: LocalModelWorkClass = .interactive
   ) throws -> LocalModelInferenceResult {
     guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
       throw LocalModelInferenceError.modelDisabled
     }
+    if workClass == .background && !Self.backgroundSafe(profile) {
+      throw LocalModelBackgroundDeferredError(reason: "This local model backend is reserved for interactive inference")
+    }
+    if workClass == .interactive {
+      beginInteractiveWork()
+      defer { endInteractiveWork() }
+    }
     lock.lock()
     defer { lock.unlock() }
     refreshBackendIfNeededLocked()
+
+    if workClass == .background && !canRunBackgroundLocked() {
+      throw LocalModelBackgroundDeferredError()
+    }
 
     guard backend.isAvailable else {
       throw LocalModelInferenceError.nativeBackendUnavailable
@@ -140,7 +154,8 @@ final class LocalModelInferenceRuntime {
     userPrompt: String,
     maximumTokens: Int = 768,
     temperature: Double = 0.3,
-    thinkingMode: LocalModelThinkingMode = .automatic
+    thinkingMode: LocalModelThinkingMode = .automatic,
+    workClass: LocalModelWorkClass = .interactive
   ) async throws -> LocalModelInferenceResult {
     try await withCheckedThrowingContinuation { continuation in
       DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -151,7 +166,8 @@ final class LocalModelInferenceRuntime {
             userPrompt: userPrompt,
             maximumTokens: maximumTokens,
             temperature: temperature,
-            thinkingMode: thinkingMode
+            thinkingMode: thinkingMode,
+            workClass: workClass
           ))
         } catch {
           continuation.resume(throwing: error)
@@ -188,6 +204,17 @@ final class LocalModelInferenceRuntime {
     return loadedProfile
   }
 
+  func readyForBackground(profile: LocalModelRuntimeProfile? = nil) -> Bool {
+    let resolvedProfile = profile ?? LocalModelRuntimeSettings.selectedProfile()
+    return Self.backgroundSafe(resolvedProfile) && ready(profile: resolvedProfile)
+  }
+
+  func canRunBackground() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return canRunBackgroundLocked()
+  }
+
   private func refreshBackendIfNeededLocked() {
     guard followsRegistry else { return }
     let registered = LocalModelInferenceBackendRegistry.current()
@@ -196,6 +223,28 @@ final class LocalModelInferenceRuntime {
     backend = registered
     loadedProfile = ""
     loadedContextTokens = 0
+  }
+
+  private func beginInteractiveWork() {
+    lock.lock()
+    foregroundWaiters += 1
+    lock.unlock()
+  }
+
+  private func endInteractiveWork() {
+    lock.lock()
+    foregroundWaiters = max(0, foregroundWaiters - 1)
+    foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + Self.foregroundIdleGraceSeconds
+    lock.unlock()
+  }
+
+  private func canRunBackgroundLocked() -> Bool {
+    foregroundWaiters == 0 && ProcessInfo.processInfo.systemUptime >= foregroundLeaseUntilUptime
+  }
+
+  private static func backgroundSafe(_ profile: LocalModelRuntimeProfile) -> Bool {
+    let identity = "\(profile.id) \(profile.repositoryId) \(profile.quantizationLabel)".lowercased()
+    return !identity.contains("qairt") && !identity.contains("geniex")
   }
 
   static func prepareUserPrompt(
@@ -222,6 +271,9 @@ final class LocalModelInferenceRuntime {
   private static let thinkingCommand = try! NSRegularExpression(
     pattern: "(?m)(^|\\s)/(?:no_)?think(?=\\s|$)"
   )
+
+  private static let backgroundStartupGraceSeconds: TimeInterval = 2.0
+  private static let foregroundIdleGraceSeconds: TimeInterval = 1.5
 
 }
 

@@ -131,6 +131,10 @@ final class LocalModelCooperativeRuntime {
     !readyProfiles().isEmpty
   }
 
+  func readyForBackground() -> Bool {
+    !readyProfiles(workClass: .background).isEmpty
+  }
+
   func displayProfile() -> LocalModelRuntimeProfile {
     LocalModelRuntimeSettings.selectedProfile()
   }
@@ -142,21 +146,38 @@ final class LocalModelCooperativeRuntime {
     maximumTokens: Int = 768,
     temperature: Double = 0.3,
     hasAttachments: Bool = false,
-    executionProfile: AgentExecutionProfile? = nil
+    executionProfile: AgentExecutionProfile? = nil,
+    workClass: LocalModelWorkClass = .interactive
   ) async throws -> LocalModelInferenceResult {
     let resolvedExecutionProfile = executionProfile ?? AgentExecutionProfile.forGoal(
       userPrompt,
       hasAttachments: hasAttachments
     )
-    let available = readyProfiles()
+    let available = readyProfiles(workClass: workClass)
+    let selectedProfile = LocalModelRuntimeSettings.selectedProfile()
+    let resolvedFallback = available.first { $0.id == selectedProfile.id } ??
+      available.first { $0.id == fallbackProfile.id } ??
+      available.first
+    guard let resolvedFallback else {
+      if workClass == .background {
+        throw LocalModelBackgroundDeferredError()
+      }
+      throw LocalModelInferenceError.modelNotReady
+    }
     let plan = LocalModelCooperationPolicy.plan(
       executionProfile: resolvedExecutionProfile,
       availableProfiles: available,
-      fallbackProfile: fallbackProfile,
+      fallbackProfile: resolvedFallback,
       userPrompt: userPrompt,
       hasAttachments: hasAttachments
     )
-    guard runtime.ready(profile: plan.answerProfile) else {
+    let answerReady = workClass == .background
+      ? runtime.readyForBackground(profile: plan.answerProfile)
+      : runtime.ready(profile: plan.answerProfile)
+    guard answerReady else {
+      if workClass == .background {
+        throw LocalModelBackgroundDeferredError()
+      }
       throw LocalModelInferenceError.modelNotReady
     }
 
@@ -169,7 +190,8 @@ final class LocalModelCooperativeRuntime {
         userPrompt: String(userPrompt.prefix(Self.maximumPlannerInputCharacters)),
         maximumTokens: Self.plannerMaximumTokens,
         temperature: 0.1,
-        thinkingMode: plan.plannerThinkingMode
+        thinkingMode: plan.plannerThinkingMode,
+        workClass: workClass
       ).text.toPlanningBrief()) ?? ""
     }
 
@@ -212,7 +234,8 @@ final class LocalModelCooperativeRuntime {
           userPrompt: index == 0 ? answerPrompt : userPrompt,
           maximumTokens: maximumTokens,
           temperature: temperature,
-          thinkingMode: mode
+          thinkingMode: mode,
+          workClass: workClass
         )
         return result.withElapsedMillis(
           max(result.elapsedMillis, Int64(Date().timeIntervalSince(startedAt) * 1_000))
@@ -226,8 +249,14 @@ final class LocalModelCooperativeRuntime {
     )
   }
 
-  private func readyProfiles() -> [LocalModelRuntimeProfile] {
-    LocalModelRuntimeSettings.activeProfiles().filter { runtime.ready(profile: $0) }
+  private func readyProfiles(
+    workClass: LocalModelWorkClass = .interactive
+  ) -> [LocalModelRuntimeProfile] {
+    LocalModelRuntimeSettings.activeProfiles().filter { profile in
+      workClass == .background
+        ? runtime.readyForBackground(profile: profile)
+        : runtime.ready(profile: profile)
+    }
   }
 
   private static let plannerSystemPrompt =
