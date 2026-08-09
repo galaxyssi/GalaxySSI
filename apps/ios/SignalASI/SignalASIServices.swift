@@ -1478,7 +1478,7 @@ final class MessageCoordinator: ObservableObject {
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
-      if let localProfile = selectedLocalModel(for: contact) {
+      if let localProfile = selectedLocalModel(for: contact, conversationId: outgoing.conversationId) {
         if attachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
@@ -1516,7 +1516,7 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
-      if let cloudContact = selectedCloudModelContact(for: contact) {
+      if let cloudContact = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId) {
         let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
         var cloudTurns = store.messages(for: contact.id)
@@ -1543,7 +1543,7 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
-      if let agentContact = selectedAgentContact(for: contact) {
+      if let agentContact = selectedAgentContact(for: contact, conversationId: outgoing.conversationId) {
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
@@ -1654,9 +1654,9 @@ final class MessageCoordinator: ObservableObject {
       }
       lastError = error.localizedDescription
       let stage: String
-      if selectedAgentContact(for: contact) != nil {
+      if selectedAgentContact(for: contact, conversationId: outgoing.conversationId) != nil {
         stage = "publish_failed"
-      } else if selectedCloudModelContact(for: contact) != nil {
+      } else if selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId) != nil {
         stage = "cloud_error"
       } else {
         switch contact.deliveryMode {
@@ -1680,13 +1680,16 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func selectedLocalModel(for contact: SignalASIContact) -> LocalModelRuntimeProfile? {
-    let selection = AgentModelSelectionSettings.selection()
+  private func selectedLocalModel(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> LocalModelRuntimeProfile? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes" else {
       return nil
     }
     let manualSelection = selection.mode == .manual && selection.targetId == "local-llm"
-    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection() &&
+    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
       store.modelPlannerSettings.enabled &&
       store.modelPlannerSettings.cloudContactId == "local-llm"
     guard manualSelection || legacySelection else { return nil }
@@ -1698,8 +1701,11 @@ final class MessageCoordinator: ObservableObject {
     return ready ? profile : nil
   }
 
-  private func selectedCloudModelContact(for contact: SignalASIContact) -> SignalASIContact? {
-    let selection = AgentModelSelectionSettings.selection()
+  private func selectedCloudModelContact(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes",
           selection.mode == .manual,
           selection.targetId != "local-llm",
@@ -1717,8 +1723,11 @@ final class MessageCoordinator: ObservableObject {
     return selected
   }
 
-  private func selectedAgentContact(for contact: SignalASIContact) -> SignalASIContact? {
-    let selection = AgentModelSelectionSettings.selection()
+  private func selectedAgentContact(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes",
           selection.mode == .manual,
           let selected = store.contact(id: selection.targetId),
