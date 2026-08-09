@@ -608,6 +608,7 @@ struct SignalASIGlobalAgentControlView: View {
 }
 
 struct SignalASIGlobalAgentInsightInboxView: View {
+  @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var statusMessage = ""
@@ -653,11 +654,12 @@ struct SignalASIGlobalAgentInsightInboxView: View {
                   "Your feedback changes when and where SignalASI intervenes."
                 ),
                 sourceLabel: sourceLabel(item),
+                canOpenTopic: store.agentSessionDestination(id: item.destinationConversationId) != nil,
                 openTitle: t("agent_global_insight_open_topic", "Open topic"),
                 helpfulTitle: t("agent_global_feedback_helpful", "Helpful"),
                 notRelevantTitle: t("agent_global_feedback_not_relevant", "Not relevant"),
                 tooFrequentTitle: t("agent_global_feedback_too_frequent", "Too frequent"),
-                onOpen: markViewed,
+                onOpen: openTopic,
                 onFeedback: recordFeedback
               )
               .onAppear { store.markGlobalProactiveInboxViewed(item) }
@@ -705,8 +707,13 @@ struct SignalASIGlobalAgentInsightInboxView: View {
     }
   }
 
-  private func markViewed(_ item: GlobalProactiveInboxItem) {
+  private func openTopic(_ item: GlobalProactiveInboxItem) {
+    guard let destination = store.agentSessionDestination(id: item.destinationConversationId),
+          store.switchAgentSession(destination) else {
+      return
+    }
     store.markGlobalProactiveInboxViewed(item)
+    dismiss()
   }
 
   private func recordFeedback(_ item: GlobalProactiveInboxItem, _ kind: GlobalAgentFeedbackKind) {
@@ -732,6 +739,7 @@ private struct SignalASIGlobalInsightCard: View {
   var feedbackLabel: String?
   var feedbackHint: String
   var sourceLabel: String
+  var canOpenTopic: Bool
   var openTitle: String
   var helpfulTitle: String
   var notRelevantTitle: String
@@ -779,10 +787,13 @@ private struct SignalASIGlobalInsightCard: View {
         .foregroundColor(.signalASITextSecondary)
         .fixedSize(horizontal: false, vertical: true)
       LazyVGrid(columns: feedbackColumns, alignment: .leading, spacing: 8) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
-          SignalASIGlobalFeedbackChip(title: openTitle, emphasized: false)
+        if canOpenTopic {
+          Button {
+            onOpen(item)
+          } label: {
+            SignalASIGlobalFeedbackChip(title: openTitle, emphasized: false)
+          }
         }
-        .simultaneousGesture(TapGesture().onEnded { onOpen(item) })
         Button { onFeedback(item, .helpful) } label: {
           SignalASIGlobalFeedbackChip(title: helpfulTitle, emphasized: item.feedbackKind == .helpful)
         }
