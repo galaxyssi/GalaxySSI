@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.signalasi.chat.VoiceAssistantSettings
 import com.signalasi.chat.WhisperModelManager
+import com.signalasi.chat.LocalWhisperAsr
 import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperModelCatalog
@@ -27,9 +28,25 @@ import kotlin.math.sin
 @RunWith(AndroidJUnit4::class)
 class LocalWhisperRuntimeInstrumentedTest {
     @Test
-    fun acceleratedTinyUsesQnnHtpWhenAvailable() = runBlocking {
+    fun selectedCompactModelTranscribesThroughTheAppAsrEntryPoint() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val profile = WhisperModelCatalog.require("tiny")
+
+        val outcome = withTimeout(180_000L) {
+            LocalWhisperAsr.transcribePcmOutcome(
+                context = context,
+                pcm16 = ShortArray(16_000),
+                language = "en",
+                source = "instrumented_qnn_entry_point"
+            )
+        }
+
+        assertEquals(VoiceAssistantSettings.get(context).asrModel, outcome.profileId)
+    }
+
+    @Test
+    fun selectedCompactModelUsesQnnHtpWhenAvailable() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val profile = WhisperModelCatalog.require(VoiceAssistantSettings.get(context).asrModel)
         assertTrue("QNN HTP runtime is not packaged for this Qualcomm device", WhisperQnnSupport.canUse(context, profile))
 
         val runtime = QnnWhisperRuntime(context)
