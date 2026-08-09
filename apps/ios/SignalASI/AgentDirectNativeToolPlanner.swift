@@ -32,6 +32,48 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if let url = downloadURL(in: goal, lower: lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadEnqueue, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "enqueue-download",
+        target: url,
+        description: "Enqueue HTTPS download",
+        input: [
+          "url": .string(url),
+          "title": .string(downloadTitle(for: url)),
+          "description": .string(goal.prefixString(500))
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isDownloadQueryGoal(lower),
+       let downloadID = downloadID(in: goal),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadQuery, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "query-download",
+        target: "Download #\(downloadID)",
+        description: "Read download status",
+        input: ["download_id": .int(Int64(downloadID))],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isDownloadRemoveGoal(lower),
+       let downloadID = downloadID(in: goal),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadRemove, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "remove-download",
+        target: "Download #\(downloadID)",
+        description: "Remove managed download",
+        input: ["download_id": .int(Int64(downloadID))],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isSMSComposeGoal(lower),
        let phoneNumber = phoneNumber(in: goal),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsComposeHandoff, in: request) {
@@ -815,6 +857,52 @@ enum AgentDirectNativeToolPlanner {
     containsAny(lower, [
       "phone service status", "telephony status", "carrier status", "手机服务状态", "电话服务状态"
     ])
+  }
+
+  private static func downloadURL(in goal: String, lower: String) -> String? {
+    let prefixes = ["download file ", "download ", "save file ", "下载文件 ", "下载"]
+    for prefix in prefixes where lower.hasPrefix(prefix) {
+      let raw = String(goal.dropFirst(prefix.count))
+      return normalizedHTTPURL(raw)
+    }
+    return nil
+  }
+
+  private static func downloadTitle(for urlString: String) -> String {
+    guard let url = URL(string: urlString),
+          !url.lastPathComponent.isEmpty,
+          url.lastPathComponent != "/" else {
+      return "SignalASI download"
+    }
+    return String(
+      (url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent).prefix(240)
+    )
+  }
+
+  private static func isDownloadQueryGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["query download", "download status", "check download", "查看下载", "下载状态", "查询下载"])
+  }
+
+  private static func isDownloadRemoveGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "remove download", "delete download", "cancel download", "删除下载", "取消下载"
+    ])
+  }
+
+  private static func downloadID(in goal: String) -> Int? {
+    let pattern = "(?:download|file|下载)[^0-9]{0,24}([0-9]+)"
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+      return nil
+    }
+    let value = goal as NSString
+    let range = NSRange(location: 0, length: value.length)
+    guard let match = regex.firstMatch(in: goal, range: range),
+          match.numberOfRanges > 1,
+          let id = Int(value.substring(with: match.range(at: 1))),
+          id > 0 else {
+      return nil
+    }
+    return id
   }
 
   private static func isTelephonyCallStateGoal(_ lower: String) -> Bool {
