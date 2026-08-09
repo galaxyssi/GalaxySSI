@@ -1,9 +1,21 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentModelSelectionPolicyTest {
+    @Test
+    fun conversationSelectionKeysAreIsolated() {
+        val first = AgentModelSelectionSettings.conversationPreferenceKey("conversation-a", "mode")
+        val second = AgentModelSelectionSettings.conversationPreferenceKey("conversation-b", "mode")
+
+        assertNotEquals(first, second)
+        assertTrue(first.contains("conversation-a"))
+        assertTrue(second.contains("conversation-b"))
+    }
+
     private val localModel = AgentCallableTarget(
         id = "local-llm",
         title = "Qwen3 1.7B QNN",

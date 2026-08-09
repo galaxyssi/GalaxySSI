@@ -7760,7 +7760,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     private fun manualSelectedConnectorAction(request: AgentRequest): AgentAction? {
         val appContext = context ?: return null
-        val selection = AgentModelSelectionSettings.selection(appContext)
+        val selection = AgentModelSelectionSettings.selection(
+            appContext,
+            request.conversationContext.conversationId
+        )
         if (selection.mode != AgentModelSelectionMode.MANUAL || selection.targetId.isBlank()) return null
         val target = request.targets.firstOrNull { it.id == selection.targetId }
         val displayName = selection.displayName

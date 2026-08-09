@@ -70,53 +70,92 @@ object AgentExecutionTargetStatusPolicy {
 }
 
 object AgentModelSelectionSettings {
-    fun selection(context: Context): AgentModelSelection {
+    fun selection(context: Context, conversationId: String): AgentModelSelection {
+        val scope = normalizedConversationId(conversationId)
+        if (scope.isBlank()) return AgentModelSelection()
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         val mode = runCatching {
             AgentModelSelectionMode.valueOf(
-                preferences.getString(KEY_MODE, AgentModelSelectionMode.AUTO.name).orEmpty()
+                preferences.getString(key(scope, KEY_MODE), AgentModelSelectionMode.AUTO.name).orEmpty()
             )
         }.getOrDefault(AgentModelSelectionMode.AUTO)
         return AgentModelSelection(
             mode = mode,
-            targetId = preferences.getString(KEY_TARGET_ID, "").orEmpty(),
-            modelId = preferences.getString(KEY_MODEL_ID, "").orEmpty(),
-            displayName = preferences.getString(KEY_DISPLAY_NAME, "").orEmpty()
+            targetId = preferences.getString(key(scope, KEY_TARGET_ID), "").orEmpty(),
+            modelId = preferences.getString(key(scope, KEY_MODEL_ID), "").orEmpty(),
+            displayName = preferences.getString(key(scope, KEY_DISPLAY_NAME), "").orEmpty()
         )
     }
 
-    fun selectAuto(context: Context) {
+    fun selectAuto(context: Context, conversationId: String) {
+        val scope = requireConversationId(conversationId)
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_MODE, AgentModelSelectionMode.AUTO.name)
-            .remove(KEY_TARGET_ID)
-            .remove(KEY_MODEL_ID)
-            .remove(KEY_DISPLAY_NAME)
+            .putString(key(scope, KEY_MODE), AgentModelSelectionMode.AUTO.name)
+            .remove(key(scope, KEY_TARGET_ID))
+            .remove(key(scope, KEY_MODEL_ID))
+            .remove(key(scope, KEY_DISPLAY_NAME))
             .apply()
     }
 
     fun selectManual(
         context: Context,
+        conversationId: String,
         targetId: String,
         modelId: String,
         displayName: String
     ) {
+        val scope = requireConversationId(conversationId)
         require(targetId.isNotBlank()) { "A model target is required" }
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_MODE, AgentModelSelectionMode.MANUAL.name)
-            .putString(KEY_TARGET_ID, targetId)
-            .putString(KEY_MODEL_ID, modelId)
-            .putString(KEY_DISPLAY_NAME, displayName)
+            .putString(key(scope, KEY_MODE), AgentModelSelectionMode.MANUAL.name)
+            .putString(key(scope, KEY_TARGET_ID), targetId)
+            .putString(key(scope, KEY_MODEL_ID), modelId)
+            .putString(key(scope, KEY_DISPLAY_NAME), displayName)
             .apply()
     }
 
-    fun preferredTargetId(context: Context, targets: List<AgentCallableTarget>): String =
-        AgentModelSelectionPolicy.preferredTargetId(selection(context), targets)
+    fun clearConversation(context: Context, conversationId: String) {
+        val scope = normalizedConversationId(conversationId)
+        if (scope.isBlank()) return
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .remove(key(scope, KEY_MODE))
+            .remove(key(scope, KEY_TARGET_ID))
+            .remove(key(scope, KEY_MODEL_ID))
+            .remove(key(scope, KEY_DISPLAY_NAME))
+            .apply()
+    }
 
-    private const val PREFERENCES = "signalasi_agent_model_selection_v1"
+    fun preferredTargetId(
+        context: Context,
+        conversationId: String,
+        targets: List<AgentCallableTarget>
+    ): String = AgentModelSelectionPolicy.preferredTargetId(
+        selection(context, conversationId),
+        targets
+    )
+
+    internal fun conversationPreferenceKey(conversationId: String, field: String): String =
+        key(requireConversationId(conversationId), field)
+
+    private fun key(conversationId: String, field: String): String =
+        "$KEY_CONVERSATION_PREFIX$conversationId.$field"
+
+    private fun requireConversationId(conversationId: String): String =
+        normalizedConversationId(conversationId).also {
+            require(it.isNotBlank()) { "A conversation id is required" }
+        }
+
+    private fun normalizedConversationId(conversationId: String): String =
+        conversationId.trim().take(MAX_CONVERSATION_ID_LENGTH)
+
+    private const val PREFERENCES = "signalasi_agent_model_selection_v2"
+    private const val KEY_CONVERSATION_PREFIX = "conversation."
     private const val KEY_MODE = "mode"
     private const val KEY_TARGET_ID = "target_id"
     private const val KEY_MODEL_ID = "model_id"
     private const val KEY_DISPLAY_NAME = "display_name"
+    private const val MAX_CONVERSATION_ID_LENGTH = 160
 }
