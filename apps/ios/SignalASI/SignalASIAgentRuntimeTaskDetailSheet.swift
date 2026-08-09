@@ -44,6 +44,10 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
             title: t("signalasi.agent_task_detail.verification", "Verification"),
             value: task.verification
           )
+          detailSection(
+            title: t("agent_section_plan_context", "Plan context"),
+            value: planContextText
+          )
           detailListSection(
             title: t("signalasi.agent_task_detail.files", "Output files"),
             values: task.outputFiles
@@ -150,6 +154,27 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
         detail: relativeTime(task.updatedAtMillis)
       )
     ]
+  }
+
+  private var planContextText: String {
+    guard let context = task.planContext else { return "" }
+    let route = [
+      context.routeKind.rawValue.lowercased().replacingOccurrences(of: "_", with: " "),
+      context.routeTargetTitle,
+      context.routeStatus
+    ]
+      .filter { !$0.isBlank }
+      .joined(separator: " / ")
+    return [
+      "\(t("agent_plan_context_planner", "Planner")): \(context.plannerProfile.ifBlank("-"))",
+      "\(t("agent_plan_context_route", "Route")): \(route.ifBlank("-"))",
+      "\(t("agent_plan_context_reason", "Route rationale")): \(context.routeRationale.ifBlank("-"))",
+      "\(t("agent_plan_context_expected", "Expected result")): \(context.expectedResult.ifBlank("-"))",
+      "\(t("agent_plan_context_rollback", "Rollback strategy")): \(context.rollbackStrategy.ifBlank("-"))",
+      "\(t("agent_plan_context_revision", "Revision")): \(String(format: t("signalasi.agent_runtime.plan_revision_detail", "Revision %d / %d replans"), context.revision, context.replanCount))",
+      "\(t("agent_plan_context_checkpoints", "Checkpoints")): \(String(format: t("signalasi.agent_runtime.plan_checkpoint_detail", "%d active / %d history actions"), context.activeCheckpointCount, context.actionHistoryCount))",
+      "\(t("agent_plan_context_tool_graph", "Tool graph")): \(String(format: t("signalasi.agent_runtime.plan_tool_graph_timeout_detail", "Depth %d / %d permissions / %ds timeout"), context.toolGraphDepth, context.requiredPermissionCount, context.timeoutSeconds))"
+    ].joined(separator: "\n")
   }
 
   @ViewBuilder

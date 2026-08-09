@@ -562,6 +562,7 @@ struct SignalASIAgentRuntimePanelView: View {
     let activeGoal = planTask?.goal.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let cleanGoal = draftGoal.isEmpty ? activeGoal : draftGoal
     guard !cleanGoal.isEmpty else { return [] }
+    let savedPlanContext = planTask?.planContext
     var rows = [
       SignalASIAgentRuntimeRow(
         id: "goal",
@@ -574,17 +575,33 @@ struct SignalASIAgentRuntimePanelView: View {
       SignalASIAgentRuntimeRow(
         id: "planner",
         title: t("agent_plan_context_planner", "Planner"),
-        detail: modelPlannerSettings.enabled
-          ? t("signalasi.agent_runtime.model_planner_enabled", "Model planner enabled")
-          : t("signalasi.agent_runtime.local_deterministic_planner", "Local deterministic planner"),
-        badge: modelPlannerSettings.enabled ? t("common_on", "On") : t("common_off", "Off"),
+        detail: savedPlanContext?.plannerProfile.ifBlank(
+          modelPlannerSettings.enabled
+            ? t("signalasi.agent_runtime.model_planner_enabled", "Model planner enabled")
+            : t("signalasi.agent_runtime.local_deterministic_planner", "Local deterministic planner")
+        ) ?? (
+          modelPlannerSettings.enabled
+            ? t("signalasi.agent_runtime.model_planner_enabled", "Model planner enabled")
+            : t("signalasi.agent_runtime.local_deterministic_planner", "Local deterministic planner")
+        ),
+        badge: savedPlanContext == nil
+          ? (modelPlannerSettings.enabled ? t("common_on", "On") : t("common_off", "Off"))
+          : t("agent_plan_context_saved", "Saved"),
         systemImage: "cpu",
         tint: modelPlannerSettings.enabled ? .signalASIAccent : .signalASITextSecondary
       ),
       SignalASIAgentRuntimeRow(
         id: "route",
         title: t("agent_plan_context_route", "Route"),
-        detail: planTask.map(taskRouteDetail) ?? routeDetail,
+        detail: savedPlanContext.map { context in
+          [
+            routeLabel(context.routeKind),
+            context.routeTargetTitle,
+            context.routeStatus
+          ]
+            .filter { !$0.isBlank }
+            .joined(separator: " / ")
+        } ?? planTask.map(taskRouteDetail) ?? routeDetail,
         badge: permissionModeTitle(safetySettings.permissionMode),
         systemImage: "arrow.triangle.branch",
         tint: .signalASIInsightText
@@ -642,7 +659,80 @@ struct SignalASIAgentRuntimePanelView: View {
         )
       ])
     }
+    if let savedPlanContext {
+      rows.append(contentsOf: persistedPlanContextRows(savedPlanContext))
+    }
     return rows
+  }
+
+  private func persistedPlanContextRows(_ context: AgentTaskPlanContext) -> [SignalASIAgentRuntimeRow] {
+    [
+      SignalASIAgentRuntimeRow(
+        id: "plan-route-rationale",
+        title: t("agent_plan_context_reason", "Route rationale"),
+        detail: context.routeRationale.ifBlank(t("agent_plan_context_no_reason", "No route rationale")),
+        badge: "",
+        systemImage: "text.magnifyingglass",
+        tint: .signalASIInsightText
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "plan-expected-result",
+        title: t("agent_plan_context_expected", "Expected result"),
+        detail: context.expectedResult.ifBlank(t("agent_plan_context_no_expected", "No expected result")),
+        badge: "",
+        systemImage: "checkmark.circle",
+        tint: .signalASIAccent
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "plan-rollback",
+        title: t("agent_plan_context_rollback", "Rollback strategy"),
+        detail: context.rollbackStrategy.ifBlank(t("agent_plan_context_no_rollback", "No rollback strategy")),
+        badge: context.confirmationRequired
+          ? t("agent_plan_context_confirmation", "Confirm")
+          : t("agent_plan_context_no_confirmation", "Automatic"),
+        systemImage: "arrow.uturn.backward",
+        tint: .orange
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "plan-revision",
+        title: t("agent_plan_context_revision", "Revision"),
+        detail: String(
+          format: t("signalasi.agent_runtime.plan_revision_detail", "Revision %d / %d replans"),
+          context.revision,
+          context.replanCount
+        ),
+        badge: context.planId.prefix(8).description,
+        systemImage: "arrow.triangle.2.circlepath",
+        tint: .blue
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "plan-checkpoints",
+        title: t("agent_plan_context_checkpoints", "Checkpoints"),
+        detail: String(
+          format: t("signalasi.agent_runtime.plan_checkpoint_detail", "%d active / %d history actions"),
+          context.activeCheckpointCount,
+          context.actionHistoryCount
+        ),
+        badge: String(context.actionCount),
+        systemImage: "bookmark",
+        tint: .signalASITextPrimary
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "plan-tool-graph",
+        title: t("agent_plan_context_tool_graph", "Tool graph"),
+        detail: String(
+          format: t("signalasi.agent_runtime.plan_tool_graph_detail", "Depth %d / %d permissions"),
+          context.toolGraphDepth,
+          context.requiredPermissionCount
+        ),
+        badge: String(
+          format: t("signalasi.agent_runtime.plan_timeout_badge", "%ds"),
+          context.timeoutSeconds
+        ),
+        systemImage: "point.3.connected.trianglepath.dotted",
+        tint: .signalASIInsightText
+      )
+    ]
   }
 
   private var verificationRows: [SignalASIAgentRuntimeRow] {
