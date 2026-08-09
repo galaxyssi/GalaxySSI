@@ -1536,7 +1536,17 @@ struct AgentHomeView: View {
   }
 
   private var agentRuntimeTasks: [AgentTaskRecord] {
-    store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
+    let sessionID = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sessionID.isEmpty else {
+      return store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
+    }
+    let scopedTasks = store.agentTasks(forSession: sessionID, limit: 12)
+    if !scopedTasks.isEmpty {
+      return scopedTasks
+    }
+    // Legacy task records may not have a session ID yet.
+    return store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
   }
 
   private var shouldShowAgentRuntimePanel: Bool {
