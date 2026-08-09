@@ -913,6 +913,38 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func executeWorkflowTrigger(
+    _ trigger: AgentWorkflowTrigger,
+    workflowStore: UserDefaultsAgentWorkflowStore = .shared
+  ) async -> Bool {
+    guard let workflow = workflowStore.findById(trigger.workflowId)
+      ?? workflowStore.find(trigger.workflowName),
+      let contact = store.visibleContacts.first(where: { !$0.deleted && $0.id != "system" }) else {
+      lastError = "The workflow trigger target is unavailable."
+      return false
+    }
+    workflowStore.markRun(id: workflow.id)
+    let executionId = "ios-workflow-event-\(UUID().uuidString.lowercased())"
+    if let record = try? AgentWorkflowExecutionRecord(
+      id: executionId,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      source: .event,
+      status: .running,
+      resultSummary: "Device event received."
+    ) {
+      store.recordWorkflowExecution(record)
+    }
+    await send(workflow.goal, to: contact, agentGoalOverride: workflow.goal)
+    store.completeWorkflowExecution(
+      id: executionId,
+      status: .completed,
+      resultSummary: "Workflow request submitted from a device event."
+    )
+    return true
+  }
+
+  @discardableResult
   func executeProactiveTask(_ task: AgentProactiveTask) async -> Bool {
     let action = task.action
     let targetId: String
