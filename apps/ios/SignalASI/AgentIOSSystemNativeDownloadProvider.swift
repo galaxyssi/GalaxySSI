@@ -14,7 +14,7 @@ protocol AgentIOSDownloadManaging {
 final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
   static let shared = AgentIOSDefaultDownloadProvider()
 
-  private struct DownloadRecord {
+  private struct DownloadRecord: Codable {
     var id: Int64
     var url: String
     var title: String
@@ -49,6 +49,11 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     }
   }
 
+  private struct PersistentState: Codable {
+    var nextId: Int64
+    var records: [DownloadRecord]
+  }
+
   private enum Status {
     static let pending: Int64 = 1
     static let running: Int64 = 2
@@ -60,6 +65,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
   private let queue = DispatchQueue(label: "signalasi.ios.system.downloads")
   private let session: URLSession
   private let storageDirectory: URL
+  private let stateURL: URL
   private var nextId: Int64 = 1
   private var records: [Int64: DownloadRecord] = [:]
   private var tasks: [Int64: URLSessionDownloadTask] = [:]
@@ -72,9 +78,13 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     if let storageDirectory {
       self.storageDirectory = storageDirectory
     } else {
-      let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+      let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       self.storageDirectory = base.appendingPathComponent("SignalASIDownloads", isDirectory: true)
+    }
+    self.stateURL = self.storageDirectory.appendingPathComponent("downloads.json", isDirectory: false)
+    queue.sync {
+      restoreStateLocked()
     }
   }
 
@@ -108,6 +118,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
         createdAtEpochMillis: nowMillis,
         updatedAtEpochMillis: nowMillis
       )
+      persistLocked()
       return id
     }
 
@@ -124,6 +135,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
       tasks[downloadId] = task
       records[downloadId]?.status = Status.running
       records[downloadId]?.updatedAtEpochMillis = currentMillis()
+      persistLocked()
     }
     task.resume()
 
@@ -177,6 +189,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
       guard let record = records.removeValue(forKey: id) else {
         return (0, nil, nil)
       }
+      persistLocked()
       return (1, tasks.removeValue(forKey: id), record.localFileURL)
     }
     removed.task?.cancel()
@@ -211,9 +224,8 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
       guard var record = self.records[id] else {
         return
       }
-      defer {
-        self.tasks.removeValue(forKey: id)
-      }
+      defer { self.persistLocked() }
+      defer { self.tasks.removeValue(forKey: id) }
       record.updatedAtEpochMillis = self.currentMillis()
       record.mediaType = self.bounded(response?.mimeType ?? "", 255)
 
@@ -296,6 +308,59 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
 
   private func currentMillis() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  }
+
+  private func restoreStateLocked() {
+    guard let data = try? Data(contentsOf: stateURL),
+          let state = try? JSONDecoder().decode(PersistentState.self, from: data) else {
+      return
+    }
+
+    records = state.records.reduce(into: [Int64: DownloadRecord]()) { result, record in
+      guard record.id > 0 else { return }
+      result[record.id] = record
+    }
+    nextId = max(state.nextId, (records.keys.max() ?? 0) + 1, 1)
+
+    var changed = false
+    for id in records.keys {
+      guard var record = records[id] else { continue }
+      if record.status == Status.pending || record.status == Status.running {
+        record.status = Status.paused
+        record.updatedAtEpochMillis = currentMillis()
+        changed = true
+      }
+      if let localFileURL = record.localFileURL,
+         !FileManager.default.fileExists(atPath: localFileURL.path) {
+        record.localFileURL = nil
+        if record.status == Status.successful {
+          record.status = Status.failed
+          record.reason = -2
+        }
+        changed = true
+      }
+      records[id] = record
+    }
+    if changed {
+      persistLocked()
+    }
+  }
+
+  private func persistLocked() {
+    let state = PersistentState(
+      nextId: max(nextId, (records.keys.max() ?? 0) + 1, 1),
+      records: records.values.sorted { $0.id < $1.id }
+    )
+    guard let data = try? JSONEncoder().encode(state) else { return }
+    do {
+      try FileManager.default.createDirectory(
+        at: storageDirectory,
+        withIntermediateDirectories: true
+      )
+      try data.write(to: stateURL, options: [.atomic])
+    } catch {
+      // Download results remain usable in memory when persistence is unavailable.
+    }
   }
 
   private func bounded(_ value: String, _ limit: Int) -> String {
