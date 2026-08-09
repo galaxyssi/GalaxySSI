@@ -2698,6 +2698,7 @@ final class SignalASIStore: ObservableObject {
 
   private func resetToFreshState() {
     UserDefaultsAgentWorkflowStore.shared.clear()
+    UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
     workflowExecutionHistoryStore.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]

@@ -31,6 +31,7 @@
     A10000000000000000001460 /* SignalASILanguagePolicyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */; };
     A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001462 /* AgentWorkflowStore.swift */; };
     A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */; };
+    A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
     A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* SignalASIWorkflowsView.swift */; };
     A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000995 /* SignalASIAgentMemoryView.swift */; };
     A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */; };
@@ -715,6 +716,7 @@
     A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILanguagePolicyFormatter.swift; sourceTree = "<group>"; };
     A20000000000000000001462 /* AgentWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowStore.swift; sourceTree = "<group>"; };
     A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowExecutionHistory.swift; sourceTree = "<group>"; };
+    A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
     A20000000000000000001463 /* SignalASIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowsView.swift; sourceTree = "<group>"; };
     A20000000000000000000995 /* SignalASIAgentMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryView.swift; sourceTree = "<group>"; };
     A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryTelemetryView.swift; sourceTree = "<group>"; };
@@ -1792,6 +1794,7 @@
         A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */,
         A20000000000000000001462 /* AgentWorkflowStore.swift */,
         A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */,
+        A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
         A20000000000000000001463 /* SignalASIWorkflowsView.swift */,
         A20000000000000000000995 /* SignalASIAgentMemoryView.swift */,
         A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */,
@@ -2600,6 +2603,7 @@
         A10000000000000000001460 /* SignalASILanguagePolicyFormatter.swift in Sources */,
         A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */,
         A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */,
+        A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
         A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */,
         A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */,
         A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */,
