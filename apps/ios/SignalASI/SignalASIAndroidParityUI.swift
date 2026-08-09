@@ -269,6 +269,11 @@ struct AgentHomeView: View {
     }
   }
 
+  private var activeExecutionTask: AgentTaskRecord? {
+    guard pendingConfirmationTask == nil else { return nil }
+    return activeAgentTasks.first
+  }
+
   private var cancellableAgentTask: AgentTaskRecord? {
     activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
   }
@@ -506,7 +511,10 @@ struct AgentHomeView: View {
               }
             )
           }
-          if messages.isEmpty && !voiceTranscriptionPending && pendingConfirmationTask == nil {
+          if messages.isEmpty &&
+              !voiceTranscriptionPending &&
+              pendingConfirmationTask == nil &&
+              activeExecutionTask == nil {
             VStack(spacing: 10) {
               SignalASILogoView(size: 48, cornerRadius: 10)
               Text(t("signalasi.agent.empty.title", "How can I help?"))
@@ -519,6 +527,18 @@ struct AgentHomeView: View {
             .frame(maxWidth: .infinity, minHeight: 180)
             .accessibilityElement(children: .combine)
           } else {
+            if let activeExecutionTask {
+              SignalASIAgentExecutionStatusCard(
+                executor: activeExecutionTask.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
+                status: agentPhaseLabel(activeExecutionTask.phase),
+                location: agentExecutionLocationSummary(activeExecutionTask),
+                step: agentExecutionStep(activeExecutionTask),
+                canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
+                cancelTitle: t("signalasi.common.cancel_task", "Cancel task")
+              ) {
+                coordinator.cancelLocalNativeAction(taskId: activeExecutionTask.taskId)
+              }
+            }
             ForEach(transcriptMessages) { message in
               MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
@@ -746,6 +766,84 @@ struct AgentHomeView: View {
     Task { @MainActor in
       _ = await coordinator.send(message.content, to: contact)
       retryingAgentMessageIDs.remove(message.id)
+    }
+  }
+
+  private func agentPhaseLabel(_ phase: AgentPhase) -> String {
+    switch phase {
+    case .observing:
+      return t("agent_status_observing", "Observing the current screen")
+    case .planning:
+      return t("agent_status_planning", "Planning from the goal")
+    case .waitingConfirmation:
+      return t("agent_status_waiting_confirmation", "Waiting for confirmation")
+    case .executing:
+      return t("agent_status_executing", "Executing action")
+    case .verifying:
+      return t("agent_status_verifying", "Verifying result")
+    case .waitingResponse:
+      return t("agent_status_waiting_response", "Waiting for reply")
+    case .paused:
+      return t("agent_status_paused", "Task paused")
+    case .cancelled, .blocked, .completed, .failed:
+      return phase.rawValue
+    }
+  }
+
+  private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
+    let location = AgentExecutionPresentationPolicy.location(record: task)
+    return [
+      locationLabel(location.locationKind),
+      runtimeLabel(location.runtimeKind),
+      location.locationName
+    ]
+      .filter { !$0.isBlank }
+      .joined(separator: " · ")
+      .ifBlank(t("signalasi.agent.execution.unknown", "Execution location unavailable"))
+  }
+
+  private func agentExecutionStep(_ task: AgentTaskRecord) -> String {
+    let pendingStep = task.pendingAction?.description ?? ""
+    return pendingStep
+      .ifBlank(task.executionLog.last ?? "")
+      .ifBlank(agentPhaseLabel(task.phase))
+  }
+
+  private func locationLabel(_ value: AgentExecutionLocationKind) -> String {
+    switch value {
+    case .phone:
+      return t("signalasi.agent_execution.location.phone", "Phone")
+    case .desktop:
+      return t("signalasi.agent_execution.location.desktop", "Desktop")
+    case .cloud:
+      return t("signalasi.agent_execution.location.cloud", "Cloud")
+    case .connectedDevice:
+      return t("signalasi.agent_execution.location.device", "Connected device")
+    case .unknown:
+      return ""
+    }
+  }
+
+  private func runtimeLabel(_ value: AgentExecutionRuntimeKind) -> String {
+    switch value {
+    case .phoneNative:
+      return t("signalasi.agent_execution.runtime.phone_native", "Phone native")
+    case .phoneLinux:
+      return t("signalasi.agent_execution.runtime.phone_linux", "Phone Linux")
+    case .phoneLocalModel:
+      return t("signalasi.agent_execution.runtime.local_model", "Local model")
+    case .phoneCloudAPI:
+      return t("signalasi.agent_execution.runtime.cloud_api", "Cloud API")
+    case .desktopAgent:
+      return t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent")
+    case .desktopTool:
+      return t("signalasi.agent_execution.runtime.desktop_tool", "Desktop tool")
+    case .connectedDevice:
+      return t("signalasi.agent_execution.runtime.connected_device", "Connected device")
+    case .knowledge:
+      return t("signalasi.agent_execution.runtime.knowledge", "Knowledge")
+    case .unknown:
+      return ""
     }
   }
 
@@ -1133,6 +1231,61 @@ private struct SignalASIAgentRetryCard: View {
     .overlay(
       RoundedRectangle(cornerRadius: 8, style: .continuous)
         .stroke(Color.orange.opacity(0.55), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .contain)
+  }
+}
+
+private struct SignalASIAgentExecutionStatusCard: View {
+  var executor: String
+  var status: String
+  var location: String
+  var step: String
+  var canCancel: Bool
+  var cancelTitle: String
+  var onCancel: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Circle()
+          .fill(Color.signalASIAccent)
+          .frame(width: 8, height: 8)
+        Text(executor)
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+        Spacer(minLength: 6)
+        Text(location)
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundColor(.signalASIAccent)
+          .lineLimit(1)
+      }
+      Text(status)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundColor(.signalASITextSecondary)
+        .lineLimit(2)
+      Text(step)
+        .font(.system(size: 12))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+      if canCancel {
+        Button(role: .destructive, action: onCancel) {
+          Label(cancelTitle, systemImage: "xmark.circle")
+            .font(.system(size: 12, weight: .semibold))
+            .frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .buttonStyle(.bordered)
+      }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .contain)
