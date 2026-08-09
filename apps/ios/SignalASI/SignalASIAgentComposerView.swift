@@ -63,7 +63,7 @@ struct SignalASIAgentComposerView: View {
   var body: some View {
     VStack(spacing: 8) {
       if newGlobalInsightCount > 0 {
-        NavigationLink(destination: SignalASIAgentInsightInboxView()) {
+        NavigationLink(destination: SignalASIGlobalAgentInsightInboxView()) {
           HStack(spacing: 9) {
             Image(systemName: "sparkles")
               .font(.system(size: 18, weight: .semibold))
