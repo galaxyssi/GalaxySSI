@@ -13,6 +13,7 @@
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A00 /* SignalASIRichContentView.swift */; };
+    A10000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */; };
     A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001370 /* SignalASIMessageActionsView.swift */; };
     A10000000000000000001433 /* SignalASIPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001433 /* SignalASIPairingView.swift */; };
     A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */; };
@@ -737,6 +738,7 @@
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000A00 /* SignalASIRichContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichContentView.swift; sourceTree = "<group>"; };
+    A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAsyncAnimatedImageView.swift; sourceTree = "<group>"; };
     A20000000000000000001370 /* SignalASIMessageActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMessageActionsView.swift; sourceTree = "<group>"; };
     A20000000000000000001433 /* SignalASIPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPairingView.swift; sourceTree = "<group>"; };
 		A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIFriendRequestDetailView.swift; sourceTree = "<group>"; };
@@ -1979,6 +1981,7 @@
         A20000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift */,
         A20000000000000000001360 /* SignalASIVoiceProviderPagesView.swift */,
         A20000000000000000000A00 /* SignalASIRichContentView.swift */,
+        A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
       );
       path = SignalASI;
@@ -2826,6 +2829,7 @@
         A10000000000000000001110 /* SignalASIVoiceAssistantSettingsView.swift in Sources */,
         A10000000000000000001360 /* SignalASIVoiceProviderPagesView.swift in Sources */,
         A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */,
+        A10000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
