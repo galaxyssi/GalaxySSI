@@ -150,43 +150,66 @@
                         android:layout_height="1dp"
                         android:layout_weight="1" />
 
-                    <LinearLayout
+                    <FrameLayout
                         android:id="@+id/agentSessionSummary"
                         android:layout_width="128dp"
                         android:layout_height="match_parent"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center_vertical|end"
-                        android:orientation="vertical"
                         android:paddingStart="8dp"
                         android:paddingEnd="8dp">
 
-                        <TextView
-                            android:id="@+id/agentSessionTitle"
+                        <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:ellipsize="end"
-                            android:gravity="end"
-                            android:includeFontPadding="false"
-                            android:maxLines="1"
-                            android:text="@string/agent_session_new"
-                            android:textColor="@color/agent_session_title"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:layout_height="match_parent"
+                            android:gravity="center_vertical|end"
+                            android:orientation="vertical">
 
-                        <TextView
-                            android:id="@+id/agentSubtitleText"
+                            <TextView
+                                android:id="@+id/agentSessionTitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:ellipsize="end"
+                                android:gravity="end"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:text="@string/agent_session_new"
+                                android:textColor="@color/agent_session_title"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/agentSubtitleText"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:gravity="end"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:text="@string/agent_header_model_auto"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+
+                        <View
+                            android:id="@+id/agentSessionTitleTap"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:ellipsize="end"
-                            android:gravity="end"
-                            android:includeFontPadding="false"
-                            android:maxLines="1"
-                            android:text="@string/agent_tab_subtitle"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="10sp" />
-                    </LinearLayout>
+                            android:layout_height="30dp"
+                            android:layout_gravity="top|end"
+                            android:background="@android:color/transparent"
+                            android:clickable="true"
+                            android:contentDescription="@string/agent_sessions_title"
+                            android:focusable="true" />
+
+                        <View
+                            android:id="@+id/agentModelSelectionTap"
+                            android:layout_width="match_parent"
+                            android:layout_height="30dp"
+                            android:layout_gravity="bottom|end"
+                            android:background="@android:color/transparent"
+                            android:clickable="true"
+                            android:contentDescription="@string/agent_model_selection_title"
+                            android:focusable="true" />
+                    </FrameLayout>
 
                     <ImageButton
                         android:id="@+id/agentSettingsButton"
