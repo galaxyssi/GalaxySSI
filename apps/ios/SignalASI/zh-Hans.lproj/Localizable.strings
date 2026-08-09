@@ -805,6 +805,7 @@
 "signalasi.agent_session.resume_tracking" = "恢复全局跟踪";
 "signalasi.agent_session.tracking_paused" = "已暂停跟踪";
 "signalasi.agent_session.merged" = "已合并";
+"signalasi.agent_session.created_by_agent" = "SignalASI · %@";
 "signalasi.agent_memory.title" = "个人记忆";
 "signalasi.agent_memory.hero_title" = "加密 Agent 记忆";
 "signalasi.agent_memory.hero_subtitle" = "%d 条有效 / %d 个冲突 / %d 个历史版本";
