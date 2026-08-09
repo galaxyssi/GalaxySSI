@@ -581,14 +581,18 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
-  private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = {
-    try? AgentPhoneNativeToolCatalog.defaultRuntime(
+  private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
+    let settingsStore = store
+    return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: LocalAgentUnsupportedActionExecutor(),
       screenProvider: { _ in
         AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+      },
+      homeAssistantSettingsProvider: {
+        settingsStore.homeAssistantSettings
       }
     )
-  }()
+  }
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
