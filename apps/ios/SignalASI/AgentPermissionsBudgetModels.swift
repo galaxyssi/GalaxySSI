@@ -142,7 +142,7 @@ enum PhoneExecutionAuthority {
     if isCancelled(taskId: taskId) {
       return cancelledResult(action: action, taskId: taskId)
     }
-    if action.kind.isConcurrentPhoneRead {
+    if action.kind.runsOutsidePhoneSideEffectLock {
       return delegate.execute(action: action, screen: screen)
         .withAuthorityMetadata(taskId: taskId, serialized: false)
     }
@@ -215,8 +215,8 @@ enum PhoneExecutionAuthority {
 }
 
 private extension AgentActionKind {
-  var isConcurrentPhoneRead: Bool {
-    self == .readScreen || self == .draftPlan
+  var runsOutsidePhoneSideEffectLock: Bool {
+    self == .readScreen || self == .draftPlan || self == .callConnector
   }
 }
 
