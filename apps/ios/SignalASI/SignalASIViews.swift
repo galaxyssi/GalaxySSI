@@ -8,6 +8,7 @@ import UIKit
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
   @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
   init() {
@@ -15,6 +16,9 @@ struct SignalASIApp: App {
     let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: coordinator)
+    _workflowTriggerCoordinator = StateObject(
+      wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
+    )
     _backgroundScheduler = StateObject(
       wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
     )
@@ -28,6 +32,7 @@ struct SignalASIApp: App {
         .signalASITextScale(store.displaySettings)
         .onAppear {
           coordinator.start()
+          workflowTriggerCoordinator.start()
           backgroundScheduler.start()
         }
     }

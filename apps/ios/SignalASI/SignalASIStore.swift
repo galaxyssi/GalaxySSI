@@ -632,6 +632,31 @@ final class SignalASIStore: ObservableObject {
       .map { $0 }
   }
 
+  func recordWorkflowExecution(_ record: AgentWorkflowExecutionRecord) {
+    try? workflowExecutionHistoryStore.upsert(record)
+  }
+
+  func completeWorkflowExecution(
+    id: String,
+    status: AgentWorkflowExecutionStatus,
+    resultSummary: String
+  ) {
+    guard let current = workflowExecutionHistoryStore.findById(id),
+      let updated = try? AgentWorkflowExecutionRecord(
+        id: current.id,
+        workflowId: current.workflowId,
+        workflowName: current.workflowName,
+        source: current.source,
+        status: status,
+        startedAtMillis: current.startedAtMillis,
+        completedAtMillis: Int64(Date().timeIntervalSince1970 * 1_000),
+        resultSummary: resultSummary
+      ) else {
+      return
+    }
+    try? workflowExecutionHistoryStore.upsert(updated)
+  }
+
   func makeAutomationTaskDraft(name: String = "", prompt: String = "") -> AgentProactiveTask {
     let now = Self.nowMillis()
     let taskId = "ios-proactive-\(UUID().uuidString.lowercased())"
@@ -1955,6 +1980,7 @@ final class SignalASIStore: ObservableObject {
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
         includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty ||
+          !UserDefaultsAgentWorkflowTriggerStore.shared.list().isEmpty ||
           !workflowExecutionHistoryStore.listAll().isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
@@ -1973,6 +1999,7 @@ final class SignalASIStore: ObservableObject {
         proactiveTasks: automationTasks(),
         proactiveRuns: Array(proactiveRuns.suffix(500)),
         workflowExecutions: workflowExecutionHistoryStore.exportRecords(),
+        workflowTriggers: UserDefaultsAgentWorkflowTriggerStore.shared.list(),
         globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
         globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
         agentConversations: agentSessions(includeArchived: true),
@@ -2035,6 +2062,9 @@ final class SignalASIStore: ObservableObject {
       proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
       if let workflowExecutions = payload.agentData.workflowExecutions {
         try workflowExecutionHistoryStore.replaceAll(workflowExecutions)
+      }
+      if let workflowTriggers = payload.agentData.workflowTriggers {
+        try UserDefaultsAgentWorkflowTriggerStore.shared.replaceAll(workflowTriggers)
       }
       globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
       globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
@@ -2698,6 +2728,7 @@ final class SignalASIStore: ObservableObject {
 
   private func resetToFreshState() {
     UserDefaultsAgentWorkflowStore.shared.clear()
+    UserDefaultsAgentWorkflowTriggerStore.shared.clear()
     workflowExecutionHistoryStore.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
