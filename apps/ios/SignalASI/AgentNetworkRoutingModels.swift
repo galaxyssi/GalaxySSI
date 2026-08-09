@@ -532,10 +532,7 @@ enum AgentCallableTargetCatalog {
     targets: [AgentCallableTarget]
   ) -> String {
     guard selection.mode == .manual else { return "" }
-    if selection.targetId == "local-llm" { return selection.targetId }
-    return targets.first(where: {
-      $0.id == selection.targetId && AgentConnectorRouteSelector.isDeliverable($0)
-    })?.id ?? ""
+    return selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func target(
