@@ -224,6 +224,12 @@ final class AgentDesktopArtifactStore {
     URLComponents(string: value)?.scheme?.lowercased() == "signalasi-artifact"
   }
 
+  static func stableID(uri: String, sha256: String) -> String {
+    SHA256.hash(data: Data("\(uri)\0\(sha256)".utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+  }
+
   static func safeFileName(_ value: String) -> String {
     AgentRichFormatRegistry.safeFileName(value)
   }

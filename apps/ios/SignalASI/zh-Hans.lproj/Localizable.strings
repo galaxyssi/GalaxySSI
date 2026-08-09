@@ -3466,4 +3466,6 @@
 "rich_output_type_document" = "文档";
 "rich_output_type_web" = "网页";
 "rich_output_type_file" = "文件";
+"rich_output_download" = "下载";
+"rich_output_save" = "保存到文件";
 "rich_output_progress" = "进度";
