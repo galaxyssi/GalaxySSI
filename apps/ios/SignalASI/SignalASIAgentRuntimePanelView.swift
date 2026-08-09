@@ -343,17 +343,10 @@ struct SignalASIAgentRuntimePanelView: View {
         let kind = action.kind.rawValue
           .lowercased()
           .replacingOccurrences(of: "_", with: " ")
-        let detail = action.result.ifBlank(
-          String(
-            format: t("agent_action_queue_meta", "%@ / %@ risk"),
-            target,
-            riskText(action.risk)
-          )
-        )
         return SignalASIAgentRuntimeRow(
           id: "queue-action-\(action.id)",
           title: action.description.ifBlank(kind),
-          detail: detail,
+          detail: actionQueueDetail(action, target: target),
           badge: actionStatusText(action.status),
           systemImage: action.status == .blocked ? "hand.raised" : "arrow.triangle.2.circlepath",
           tint: actionStatusTint(action.status)
@@ -374,6 +367,36 @@ struct SignalASIAgentRuntimePanelView: View {
         tint: statusTint(task)
       )
     }
+  }
+
+  private func actionQueueDetail(_ action: AgentAction, target: String) -> String {
+    var details = [
+      String(
+        format: t("agent_action_queue_meta", "%@ / %@ risk"),
+        target,
+        riskText(action.risk)
+      )
+    ]
+    let dependencyCount = AgentToolCoordination.dependencyIds(action).count
+    let outputSourceCount = AgentToolCoordination.outputSourceIds(action).count
+    if dependencyCount > 0 || outputSourceCount > 0 {
+      details.append(
+        String(
+          format: t("agent_action_queue_dependencies", "%d dependencies / %d output sources"),
+          dependencyCount,
+          outputSourceCount
+        )
+      )
+    }
+    if !action.result.isBlank {
+      details.append(
+        String(
+          format: t("agent_action_queue_result", "Result: %@"),
+          action.result
+        )
+      )
+    }
+    return details.joined(separator: " / ")
   }
 
   private var queuedActionEntries: [(task: AgentTaskRecord, action: AgentAction)] {
