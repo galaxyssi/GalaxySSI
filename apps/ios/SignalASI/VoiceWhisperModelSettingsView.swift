@@ -124,6 +124,11 @@ struct VoiceWhisperModelSettingsView: View {
       if let record = row.benchmarkRecord {
         benchmarkDetails = VoiceWhisperBenchmarkDetailsPresenter.presentation(model: row.model, record: record, localized: t)
       }
+    case .unavailable:
+      statusMessage = t(
+        "voice_asr_model_unsupported",
+        "Unsupported on this iPhone"
+      )
     case .waiting:
       break
     }
@@ -227,6 +232,8 @@ struct VoiceWhisperModelSettingsView: View {
     switch action {
     case .current:
       return .green
+    case .unavailable:
+      return .orange
     case .retry:
       return .orange
     case .waiting:
