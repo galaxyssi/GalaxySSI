@@ -1,6 +1,69 @@
 import CryptoKit
 import Foundation
 
+struct AgentTaskPlanContext: Codable, Equatable {
+  var planId: String
+  var plannerProfile: String
+  var selectedAgentOrModel: String
+  var routeKind: AgentRouteKind
+  var routeTargetTitle: String
+  var routeStatus: String
+  var routeRationale: String
+  var expectedResult: String
+  var rollbackStrategy: String
+  var revision: Int
+  var replanCount: Int
+  var actionCount: Int
+  var actionHistoryCount: Int
+  var activeCheckpointCount: Int
+  var toolGraphDepth: Int
+  var requiredPermissionCount: Int
+  var timeoutSeconds: Int
+  var confirmationRequired: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case planId = "plan_id"
+    case plannerProfile = "planner_profile"
+    case selectedAgentOrModel = "selected_agent_or_model"
+    case routeKind = "route_kind"
+    case routeTargetTitle = "route_target_title"
+    case routeStatus = "route_status"
+    case routeRationale = "route_rationale"
+    case expectedResult = "expected_result"
+    case rollbackStrategy = "rollback_strategy"
+    case revision
+    case replanCount = "replan_count"
+    case actionCount = "action_count"
+    case actionHistoryCount = "action_history_count"
+    case activeCheckpointCount = "active_checkpoint_count"
+    case toolGraphDepth = "tool_graph_depth"
+    case requiredPermissionCount = "required_permission_count"
+    case timeoutSeconds = "timeout_seconds"
+    case confirmationRequired = "confirmation_required"
+  }
+
+  init(plan: AgentPlan) {
+    planId = plan.planId
+    plannerProfile = plan.plannerProfile
+    selectedAgentOrModel = plan.selectedAgentOrModel
+    routeKind = plan.route.kind
+    routeTargetTitle = plan.route.targetTitle.ifBlank(plan.selectedAgentOrModel)
+    routeStatus = plan.route.status
+    routeRationale = plan.routeRationale
+    expectedResult = plan.expectedResult
+    rollbackStrategy = plan.rollbackStrategy
+    revision = plan.revision
+    replanCount = plan.replanCount
+    actionCount = plan.actions.count
+    actionHistoryCount = plan.actionHistory.count
+    activeCheckpointCount = plan.checkpoints.filter { $0.status == .active }.count
+    toolGraphDepth = AgentToolCoordination.toolGraphDepth(plan)
+    requiredPermissionCount = plan.requiredPermissions.count
+    timeoutSeconds = plan.timeoutSeconds
+    confirmationRequired = plan.confirmationRequired
+  }
+}
+
 struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var taskId: String
   var sessionId: String
@@ -20,6 +83,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var pendingActions: [AgentAction]
   var lastCompletedNativeAction: AgentAction?
   var nativeRollbackAction: AgentAction?
+  var planContext: AgentTaskPlanContext?
   var nativeActionResults: [String]
   var result: String
   var verification: String
@@ -49,6 +113,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     pendingActions: [AgentAction] = [],
     lastCompletedNativeAction: AgentAction? = nil,
     nativeRollbackAction: AgentAction? = nil,
+    planContext: AgentTaskPlanContext? = nil,
     nativeActionResults: [String] = [],
     result: String = "",
     verification: String = "",
@@ -75,6 +140,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.pendingActions = pendingActions
     self.lastCompletedNativeAction = lastCompletedNativeAction
     self.nativeRollbackAction = nativeRollbackAction
+    self.planContext = planContext
     self.nativeActionResults = nativeActionResults
     self.result = result
     self.verification = verification
@@ -103,6 +169,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case pendingActions = "pending_actions"
     case lastCompletedNativeAction = "last_completed_native_action"
     case nativeRollbackAction = "native_rollback_action"
+    case planContext = "plan_context"
     case nativeActionResults = "native_action_results"
     case result
     case verification
@@ -133,6 +200,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       pendingActions: try container.decodeIfPresent([AgentAction].self, forKey: .pendingActions) ?? [],
       lastCompletedNativeAction: try container.decodeIfPresent(AgentAction.self, forKey: .lastCompletedNativeAction),
       nativeRollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .nativeRollbackAction),
+      planContext: try container.decodeIfPresent(AgentTaskPlanContext.self, forKey: .planContext),
       nativeActionResults: try container.decodeIfPresent([String].self, forKey: .nativeActionResults) ?? [],
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
       verification: try container.decodeIfPresent(String.self, forKey: .verification) ?? "",

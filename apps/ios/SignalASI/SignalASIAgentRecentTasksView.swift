@@ -289,6 +289,26 @@ struct SignalASIAgentRecentTasksView: View {
       "\(t("signalasi.agent_task_detail.risk", "Risk")): \(riskText(task.risk))",
       "\(t("signalasi.agent_task_detail.updated", "Updated")): \(listTime(task.updatedAtMillis))"
     ]
+    if let context = task.planContext {
+      let route = [
+        context.routeKind.rawValue.lowercased().replacingOccurrences(of: "_", with: " "),
+        context.routeTargetTitle,
+        context.routeStatus
+      ]
+        .filter { !$0.isBlank }
+        .joined(separator: " / ")
+      lines += ["", t("agent_section_plan_context", "Plan context")]
+      lines += [
+        t("agent_plan_context_planner", "Planner") + ": " + context.plannerProfile.ifBlank("-"),
+        t("agent_plan_context_route", "Route") + ": " + route.ifBlank("-"),
+        t("agent_plan_context_reason", "Route rationale") + ": " + context.routeRationale.ifBlank("-"),
+        t("agent_plan_context_expected", "Expected result") + ": " + context.expectedResult.ifBlank("-"),
+        t("agent_plan_context_rollback", "Rollback strategy") + ": " + context.rollbackStrategy.ifBlank("-"),
+        String(format: t("signalasi.agent_runtime.plan_revision_detail", "Revision %d / %d replans"), context.revision, context.replanCount),
+        String(format: t("signalasi.agent_runtime.plan_checkpoint_detail", "%d active / %d history actions"), context.activeCheckpointCount, context.actionHistoryCount),
+        String(format: t("signalasi.agent_runtime.plan_tool_graph_timeout_detail", "Depth %d / %d permissions / %ds timeout"), context.toolGraphDepth, context.requiredPermissionCount, context.timeoutSeconds)
+      ]
+    }
     if !task.result.isBlank {
       lines += ["", t("signalasi.agent_task_detail.result", "Result"), task.result]
     }

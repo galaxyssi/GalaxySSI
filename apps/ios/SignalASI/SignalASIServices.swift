@@ -2182,13 +2182,21 @@ final class MessageCoordinator: ObservableObject {
       nativeTools: runtime.registry.descriptors(),
       responseLanguage: store.languagePolicy.responseLanguage
     )
-    let fallbackActions = AgentDirectNativeToolPlanner.plan(request: planRequest)?.actions
-      .filter { $0.kind == .callNativeTool } ?? []
-    let actions = await modelPlannedLocalNativeActions(
+    let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
+    let plan = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
       outgoing: outgoing
-    ) ?? fallbackActions
+    ) ?? fallbackPlan
+    guard var resolvedPlan = plan else {
+      return false
+    }
+    resolvedPlan.actions = resolvedPlan.actions.filter { $0.kind == .callNativeTool }
+    resolvedPlan.replanCount = max(
+      resolvedPlan.replanCount,
+      (task.planContext?.replanCount ?? 0) + 1
+    )
+    let actions = resolvedPlan.actions
     guard !actions.isEmpty else {
       return false
     }
@@ -2201,7 +2209,12 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native action plan: replanned \(actions.count) action(s)")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    return applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
+    return applyLocalNativeActions(
+      actions: actions,
+      outgoing: outgoing,
+      task: &task,
+      plan: resolvedPlan
+    )
   }
 
   @discardableResult
@@ -2474,13 +2487,18 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if let actions = await modelPlannedLocalNativeActions(
+      if let plan = await modelPlannedLocalNativeActions(
         requestText: requestText,
         attachments: attachments,
         outgoing: outgoing
       ) {
         guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-        _ = applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
+        _ = applyLocalNativeActions(
+          actions: plan.actions,
+          outgoing: outgoing,
+          task: &task,
+          plan: plan
+        )
         return
       }
       let executionProfile = AgentExecutionProfile.forGoal(
@@ -2612,14 +2630,19 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
 
-    return applyLocalNativeActions(actions: [action], outgoing: outgoing, task: &task)
+    return applyLocalNativeActions(
+      actions: [action],
+      outgoing: outgoing,
+      task: &task,
+      plan: plan
+    )
   }
 
   private func modelPlannedLocalNativeActions(
     requestText: String,
     attachments: [SignalASIDraftAttachment],
     outgoing: ChatMessage
-  ) async -> [AgentAction]? {
+  ) async -> AgentPlan? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
       return nil
@@ -2692,16 +2715,20 @@ final class MessageCoordinator: ObservableObject {
     }) else {
       return nil
     }
-    return actions
+    return plan
   }
 
   private func applyLocalNativeActions(
     actions: [AgentAction],
     outgoing: ChatMessage,
-    task: inout AgentTaskRecord
+    task: inout AgentTaskRecord,
+    plan: AgentPlan? = nil
   ) -> Bool {
     let nativeActions = actions.filter { $0.kind == .callNativeTool }
     guard !nativeActions.isEmpty else { return false }
+    if let plan {
+      task.planContext = AgentTaskPlanContext(plan: plan)
+    }
     task.nativeActionResults = []
     task.pendingActions = nativeActions
     task.pendingAction = nativeActions.first
