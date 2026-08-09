@@ -1283,6 +1283,33 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
+    if contact.deliveryMode == .local,
+       attachments.isEmpty,
+       let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: commandResult.actionId,
+        detail: "Local workflow template command",
+        status: .delivered
+      )
+      let response = store.appendIncoming(
+        commandResult.text,
+        from: contact.id,
+        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+        status: .delivered,
+        traceStage: commandResult.actionId,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      onIncomingMessage?(response)
+      if let template = commandResult.templateToRun {
+        Task { @MainActor [weak self] in
+          _ = await self?.executeWorkflowTemplateManually(template)
+        }
+      }
+      return true
+    }
     if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
       beginPendingAgentReply(for: outgoing)
     }
@@ -2272,6 +2299,32 @@ final class MessageCoordinator: ObservableObject {
       id: executionId,
       status: .completed,
       resultSummary: "Workflow request submitted from a device event."
+    )
+    return true
+  }
+
+  @discardableResult
+  func executeWorkflowTemplateManually(_ template: AgentWorkflowTemplate) async -> Bool {
+    guard let contact = store.visibleContacts.first(where: { !$0.deleted && $0.id != "system" }) else {
+      lastError = "The workflow template target is unavailable."
+      return false
+    }
+    let executionId = "ios-workflow-template-\(UUID().uuidString.lowercased())"
+    if let record = try? AgentWorkflowExecutionRecord(
+      id: executionId,
+      workflowId: "template:\(template.id)",
+      workflowName: template.name,
+      source: .manual,
+      status: .running,
+      resultSummary: "Workflow template request started."
+    ) {
+      store.recordWorkflowExecution(record)
+    }
+    await send(template.goal, to: contact, agentGoalOverride: template.goal)
+    store.completeWorkflowExecution(
+      id: executionId,
+      status: .completed,
+      resultSummary: "Workflow template request submitted manually."
     )
     return true
   }
