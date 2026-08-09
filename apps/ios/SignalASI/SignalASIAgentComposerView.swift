@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIAgentComposerView: View {
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
+  @Binding var voiceTranscriptionPending: Bool
   @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
   @FocusState private var inputFocused: Bool
 
@@ -81,6 +82,7 @@ struct SignalASIAgentComposerView: View {
       inputFocused = true
     }
     .onDisappear {
+      voiceTranscriptionPending = false
       holdToTalk.cancelFromView()
     }
   }
@@ -176,6 +178,7 @@ struct SignalASIAgentComposerView: View {
           onStart: {
             actionTrayPresented = false
             inputFocused = false
+            voiceTranscriptionPending = true
           },
           onFinish: onVoiceTranscript
         )
@@ -183,6 +186,7 @@ struct SignalASIAgentComposerView: View {
       .onEnded { value in
         let didRecord = holdToTalk.isRecording
         holdToTalk.dragEnded(translation: value.translation)
+        voiceTranscriptionPending = false
         if !didRecord {
           actionTrayPresented = false
           inputFocused = true
@@ -295,6 +299,50 @@ struct SignalASIAgentComposerView: View {
 
   private func closeTray() {
     actionTrayPresented = false
+  }
+}
+
+struct SignalASIVoiceTranscriptionPendingView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var isPulsing = false
+
+  var body: some View {
+    HStack {
+      Spacer(minLength: 48)
+      HStack(spacing: 5) {
+        ForEach(0..<3, id: \.self) { index in
+          Circle()
+            .fill(Color.signalASIAgentRecordingDeep)
+            .frame(width: 7, height: 7)
+            .scaleEffect(isPulsing ? 1 : 0.82)
+            .opacity(isPulsing ? 1 : 0.32)
+            .animation(
+              .easeInOut(duration: 0.45)
+                .repeatForever(autoreverses: true)
+                .delay(Double(index) * 0.12),
+              value: isPulsing
+            )
+        }
+      }
+      .padding(.horizontal, 15)
+      .padding(.vertical, 10)
+      .frame(minWidth: 96, minHeight: 44)
+      .background(Color.signalASIAgentRecordingLight)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .frame(maxWidth: .infinity)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(t("signalasi.voice.transcription_pending", "Recognizing voice"))
+    .onAppear {
+      isPulsing = true
+    }
+    .onDisappear {
+      isPulsing = false
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 

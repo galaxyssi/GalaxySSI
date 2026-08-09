@@ -126,6 +126,66 @@ struct SignalASILocalModelLabActionRow: View {
   }
 }
 
+struct SignalASILocalModelLabToggleRow: View {
+  var title: String
+  var subtitle: String
+  var systemImage: String
+  var tint: Color
+  var badge: String
+  var isOn: Bool
+  var isEnabled: Bool = true
+  var onToggle: (Bool) -> Void
+
+  var body: some View {
+    HStack(spacing: 12) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(tint.opacity(0.16))
+        Image(systemName: systemImage)
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(tint)
+      }
+      .frame(width: 42, height: 42)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.82)
+        Text(subtitle)
+          .font(.system(size: 12))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 8)
+      if !badge.isEmpty {
+        Text(badge)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(tint)
+          .lineLimit(1)
+          .minimumScaleFactor(0.72)
+          .padding(.horizontal, 8)
+          .frame(minHeight: 28)
+          .background(tint.opacity(0.12))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      }
+      Toggle(title, isOn: Binding(
+        get: { isOn },
+        set: { onToggle($0) }
+      ))
+      .labelsHidden()
+      .tint(tint)
+      .disabled(!isEnabled)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 11)
+    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+}
+
 struct SignalASILocalModelLabStatusRow: View {
   var title: String
   var subtitle: String
