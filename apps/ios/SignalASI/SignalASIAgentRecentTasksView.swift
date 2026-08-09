@@ -486,6 +486,34 @@ private struct AgentTaskDetailSheet: View {
             detailBlock(t("signalasi.agent_task_detail.route", "Route"), task.routeKind.rawValue)
             detailBlock(t("signalasi.agent_task_detail.target", "Agent or model"), task.targetTitle.ifBlank("-"))
             detailBlock(t("signalasi.agent_task_detail.risk", "Risk"), task.risk.rawValue.lowercased())
+            detailBlock(
+              t("signalasi.agent_task_detail.updated", "Updated"),
+              listTime(task.updatedAtMillis)
+            )
+            detailBlock(
+              t("agent_plan_context_progress", "Progress"),
+              String(
+                format: t(
+                  "signalasi.agent_runtime.plan_progress_detail",
+                  "%d pending / %d native results / %d files"
+                ),
+                pendingActionCount,
+                task.nativeActionResults.count,
+                task.outputFiles.count
+              )
+            )
+            if let action = task.lastCompletedNativeAction {
+              detailBlock(
+                t("signalasi.agent_task_detail.last_action", "Last completed action"),
+                action.description.ifBlank(action.target).ifBlank(action.kind.rawValue)
+              )
+            }
+            if task.nativeRollbackAction != nil {
+              detailBlock(
+                t("signalasi.agent_task_detail.rollback", "Rollback"),
+                t("signalasi.agent_task_detail.rollback_available", "The last native action can be rolled back.")
+              )
+            }
             if !task.result.isBlank {
               detailBlock(t("signalasi.agent_task_detail.result", "Result"), task.result)
             }
@@ -501,6 +529,12 @@ private struct AgentTaskDetailSheet: View {
                 ? t("signalasi.agent_task_center.log_empty", "No execution log was recorded for this task.")
                 : task.executionLog.joined(separator: "\n")
             )
+            if !task.nativeActionResults.isEmpty {
+              detailBlock(
+                t("signalasi.agent_task_detail.native_results", "Native action results"),
+                task.nativeActionResults.joined(separator: "\n")
+              )
+            }
           }
         }
         .padding(12)
@@ -579,6 +613,20 @@ private struct AgentTaskDetailSheet: View {
     .padding(12)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var pendingActionCount: Int {
+    task.pendingActions.isEmpty
+      ? (task.pendingAction == nil ? 0 : 1)
+      : task.pendingActions.count
+  }
+
+  private func listTime(_ millis: Int64) -> String {
+    guard millis > 0 else { return "-" }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: interfaceLanguage == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
+    formatter.dateFormat = "MM-dd HH:mm"
+    return formatter.string(from: Date(timeIntervalSince1970: Double(millis) / 1_000))
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

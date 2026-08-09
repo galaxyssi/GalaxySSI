@@ -710,6 +710,10 @@
 "signalasi.agent_task_detail.target" = "Agent 或模型";
 "signalasi.agent_task_detail.risk" = "风险";
 "signalasi.agent_task_detail.updated" = "更新时间";
+"signalasi.agent_task_detail.last_action" = "最近完成的动作";
+"signalasi.agent_task_detail.rollback" = "回滚";
+"signalasi.agent_task_detail.rollback_available" = "上一个原生动作可以回滚。";
+"signalasi.agent_task_detail.native_results" = "原生动作结果";
 "signalasi.agent_task_detail.result" = "结果";
 "signalasi.agent_task_detail.verification" = "验证";
 "signalasi.agent_task_detail.files" = "产出文件";
