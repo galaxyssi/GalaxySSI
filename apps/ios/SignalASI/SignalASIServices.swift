@@ -1886,10 +1886,18 @@ final class MessageCoordinator: ObservableObject {
     return selected
   }
 
-  func approveLocalNativeAction(taskId: String, remember: Bool = false) {
+  func approveLocalNativeAction(
+    taskId: String,
+    remember: Bool = false,
+    highRiskConfirmed: Bool = false
+  ) {
     guard var task = store.agentTask(id: taskId),
           let action = task.pendingAction,
           task.phase == .waitingConfirmation else {
+      return
+    }
+    // Android requires a second, explicit confirmation for high-risk actions.
+    guard action.risk.weight < AgentRisk.high.weight || highRiskConfirmed else {
       return
     }
     if remember && AgentConfirmationPolicy.tier(for: action) == .confirmOnce {

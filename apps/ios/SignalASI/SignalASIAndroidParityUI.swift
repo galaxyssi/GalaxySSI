@@ -178,6 +178,7 @@ struct AgentHomeView: View {
   @State private var recoveringAgentTaskIDs: Set<String> = []
   @State private var approvalActionsInFlight: Set<String> = []
   @State private var cancellingRemoteTaskIDs: Set<String> = []
+  @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -498,6 +499,28 @@ struct AgentHomeView: View {
       } message: {
         Text(richActionStatus)
       }
+      .alert(item: $pendingHighRiskApprovalTask) { task in
+        let action = task.pendingAction
+        let fallbackDescription = t("signalasi.agent.confirmation.untitled", "Phone action")
+        let description = action.map {
+          $0.description.ifBlank(fallbackDescription)
+        } ?? fallbackDescription
+        let target = action?.target.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let detail = target.isEmpty ? description : "\(description)\n\(target)"
+        return Alert(
+          title: Text(t("signalasi.agent.high_risk_confirmation.title", "Confirm high-risk action")),
+          message: Text(detail),
+          primaryButton: .default(
+            Text(t("signalasi.agent.high_risk_confirmation.execute", "Execute"))
+          ) {
+            coordinator.approveLocalNativeAction(
+              taskId: task.taskId,
+              highRiskConfirmed: true
+            )
+          },
+          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
+        )
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -769,13 +792,10 @@ struct AgentHomeView: View {
             SignalASIAgentConfirmationCard(
               task: pendingConfirmationTask,
               onApproveOnce: {
-                coordinator.approveLocalNativeAction(taskId: pendingConfirmationTask.taskId)
+                requestAgentTaskApproval(pendingConfirmationTask)
               },
               onApproveAlways: {
-                coordinator.approveLocalNativeAction(
-                  taskId: pendingConfirmationTask.taskId,
-                  remember: true
-                )
+                requestAgentTaskApproval(pendingConfirmationTask, remember: true)
               },
               onDeny: {
                 coordinator.denyLocalNativeAction(taskId: pendingConfirmationTask.taskId)
@@ -1509,19 +1529,29 @@ struct AgentHomeView: View {
 
   private func handlePendingAgentTaskAction() {
     guard let task = primaryAgentTask else { return }
-    if task.phase == .waitingConfirmation,
-            let action = task.pendingAction,
-            action.risk.weight < AgentRisk.high.weight {
-      coordinator.approveLocalNativeAction(taskId: task.taskId)
-      richActionStatus = t(
-        "signalasi.agent.approval_status.approved",
-        "The Agent action was approved."
-      )
+    if task.phase == .waitingConfirmation {
+      if requestAgentTaskApproval(task) {
+        richActionStatus = t(
+          "signalasi.agent.approval_status.approved",
+          "The Agent action was approved."
+        )
+      }
     } else if task.phase == .paused {
       _ = coordinator.resumeLocalNativeAction(taskId: task.taskId)
     } else {
       coordinator.cancelLocalNativeAction(taskId: task.taskId)
     }
+  }
+
+  @discardableResult
+  private func requestAgentTaskApproval(_ task: AgentTaskRecord, remember: Bool = false) -> Bool {
+    guard let action = task.pendingAction else { return false }
+    if action.risk.weight >= AgentRisk.high.weight {
+      pendingHighRiskApprovalTask = task
+      return false
+    }
+    coordinator.approveLocalNativeAction(taskId: task.taskId, remember: remember)
+    return true
   }
 
   private var agentRuntimePanel: some View {
