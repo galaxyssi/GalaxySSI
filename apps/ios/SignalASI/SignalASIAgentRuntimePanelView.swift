@@ -98,7 +98,7 @@ struct SignalASIAgentRuntimePanelView: View {
       runtimeSection(
         id: "audit_trail",
         title: t("agent_section_audit_trail", "Audit Trail"),
-        subtitle: String(format: t("signalasi.agent_runtime.audit_summary", "%d events"), auditRecords.count),
+        subtitle: String(format: t("signalasi.agent_runtime.audit_summary", "%d events"), auditEventCount),
         systemImage: "list.clipboard",
         rows: auditRows,
         emptyTitle: t("agent_audit_empty", "No Agent audit events yet")
@@ -630,7 +630,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var auditRows: [SignalASIAgentRuntimeRow] {
-    auditRecords.prefix(3).map { record in
+    let nativeRows = auditRecords.prefix(3).map { record in
       SignalASIAgentRuntimeRow(
         id: "audit-\(record.auditId)",
         title: record.toolId,
@@ -644,6 +644,32 @@ struct SignalASIAgentRuntimePanelView: View {
         systemImage: record.status == .succeeded ? "checkmark.circle" : "exclamationmark.circle",
         tint: record.status == .succeeded ? .signalASIAccent : .orange
       )
+    }
+    let taskRows = recentTasks.flatMap { task in
+      task.executionLog.suffix(2).enumerated().map { index, entry in
+        SignalASIAgentRuntimeRow(
+          id: "audit-task-\(task.taskId)-\(index)",
+          title: task.goal.ifBlank(task.targetTitle).ifBlank(t("agent_section_recent_tasks", "Recent task")),
+          detail: String(
+            format: t("signalasi.agent_runtime.task_audit_detail", "%@ / %@ / %@"),
+            relativeTime(task.updatedAtMillis),
+            statusText(task),
+            entry
+          ),
+          badge: statusText(task),
+          systemImage: task.phase == .failed || task.phase == .blocked
+            ? "exclamationmark.circle"
+            : "clock.arrow.circlepath",
+          tint: statusTint(task)
+        )
+      }
+    }
+    return Array((nativeRows + taskRows).prefix(6))
+  }
+
+  private var auditEventCount: Int {
+    auditRecords.count + recentTasks.reduce(0) { count, task in
+      count + task.executionLog.count
     }
   }
 
