@@ -94,6 +94,7 @@
 "agent_plan_context_untrusted" = "需检查";
 "agent_plan_context_no_result" = "暂无结果";
 "agent_plan_context_tool_budget" = "工具预算";
+"signalasi.agent_runtime.verification_evidence_detail" = "%@ / %d 个时间线事件 / %d 个文件 / %d 个原生结果";
 "signalasi.agent_route.local_system" = "本地系统";
 "signalasi.agent_route.cloud_model" = "云端模型";
 "signalasi.agent_route.local_model" = "本地模型";
