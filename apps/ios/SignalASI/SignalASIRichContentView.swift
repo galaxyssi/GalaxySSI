@@ -469,10 +469,8 @@ private struct SignalASIRichBlockView: View {
           .font(.subheadline.weight(.semibold))
       }
 
-      if let image = inlineImage ?? localImage {
-        Image(uiImage: image)
-          .resizable()
-          .scaledToFit()
+      if let data = inlineImageData ?? localImageData {
+        SignalASIAnimatedImageView(data: data)
           .frame(maxHeight: 240)
           .background(Color.signalASISearchBackground.opacity(0.5))
           .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -981,18 +979,18 @@ private struct SignalASIRichBlockView: View {
     max(1, block.columns.count, block.rows.map(\.count).max() ?? 0)
   }
 
-  private var inlineImage: UIImage? {
+  private var inlineImageData: Data? {
     var value = block.dataB64.trimmingCharacters(in: .whitespacesAndNewlines)
     if let comma = value.firstIndex(of: ",") {
       value = String(value[value.index(after: comma)...])
     }
     guard !value.isEmpty, let data = Data(base64Encoded: value) else { return nil }
-    return UIImage(data: data)
+    return data
   }
 
-  private var localImage: UIImage? {
+  private var localImageData: Data? {
     guard let url = localURL else { return nil }
-    return UIImage(contentsOfFile: url.path)
+    return try? Data(contentsOf: url)
   }
 
   private var localURL: URL? {
