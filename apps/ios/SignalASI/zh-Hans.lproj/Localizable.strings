@@ -3674,3 +3674,11 @@
 "signalasi.agent.execution.duration_minutes" = "耗时 %dm %ds";
 "signalasi.agent.execution.duration_seconds" = "耗时 %ds";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";
+"runtime_artifact.download_completed" = "工件下载已完成，现已可在此设备上使用。";
+"runtime_artifact.error.title" = "工件不可用";
+"runtime_artifact.status.title" = "工件";
+"runtime_artifact.error.invalid" = "工件信息无效。";
+"runtime_artifact.download_requested" = "已请求桌面重新发送此工件。";
+"runtime_artifact.download_failed" = "无法从桌面请求此工件。";
+"signalasi.common.cancel_task" = "取消任务";
+"signalasi.agent.execution.unknown" = "执行位置不可用";
