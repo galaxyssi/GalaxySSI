@@ -3543,6 +3543,7 @@
 "signalasi.agent.model_selection.current" = "当前";
 "signalasi.agent.model_selection.no_models" = "没有就绪模型";
 "signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型或安装本机模型。";
+"signalasi.agent.cancel_task" = "取消任务";
 "signalasi.workflow.title" = "工作流";
 "signalasi.workflow.new" = "新建工作流";
 "signalasi.workflow.hero_title" = "可复用 Agent 工作流";
