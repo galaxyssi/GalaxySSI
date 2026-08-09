@@ -3609,3 +3609,4 @@
 "signalasi.workflow.platform" = "平台";
 "signalasi.agent.empty.title" = "我可以帮你做什么？";
 "signalasi.agent.empty.subtitle" = "输入目标，或按住说话";
+"signalasi.agent.resume_task" = "恢复任务";
