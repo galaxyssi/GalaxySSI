@@ -4,6 +4,7 @@ typealias VoiceWhisperStringLocalizer = (String, String) -> String
 
 enum VoiceWhisperModelRowAction: Equatable {
   case current
+  case unavailable
   case use
   case useAndTest
   case download
@@ -14,6 +15,8 @@ enum VoiceWhisperModelRowAction: Equatable {
     switch self {
     case .current:
       return "Current"
+    case .unavailable:
+      return "Unavailable"
     case .use:
       return "Use"
     case .useAndTest:
@@ -31,6 +34,8 @@ enum VoiceWhisperModelRowAction: Equatable {
     switch self {
     case .current:
       return localized("section_current", "Current")
+    case .unavailable:
+      return localized("voice_asr_model_unsupported", "Unsupported on this device")
     case .use:
       return localized("settings_language_use", "Use")
     case .useAndTest:
@@ -51,6 +56,8 @@ enum VoiceWhisperModelRowAction: Equatable {
     switch self {
     case .current:
       return "checkmark.circle.fill"
+    case .unavailable:
+      return "xmark.octagon"
     case .use:
       return "arrow.right.circle"
     case .useAndTest:
@@ -68,7 +75,7 @@ enum VoiceWhisperModelRowAction: Equatable {
     switch self {
     case .current, .use, .useAndTest, .download, .retry:
       return true
-    case .waiting:
+    case .unavailable, .waiting:
       return false
     }
   }
@@ -103,6 +110,9 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   var action: VoiceWhisperModelRowAction {
     if let benchmarkProgress {
       return .waiting(progress: benchmarkProgressPercent(benchmarkProgress))
+    }
+    if benchmarkRecord?.certification.level == .unsupported {
+      return .unavailable
     }
     if available, benchmarkRecord == nil {
       return .useAndTest
