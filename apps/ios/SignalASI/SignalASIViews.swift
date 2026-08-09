@@ -866,6 +866,7 @@ struct MessageDetailView: View {
 struct MessageBubble: View {
   var message: ChatMessage
   var onAction: (AgentRichAction) -> Void = { _ in }
+  var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   var body: some View {
     HStack {
@@ -875,7 +876,8 @@ struct MessageBubble: View {
           content: message.content,
           richOutputJson: message.richOutputJson,
           isOutgoing: message.isMine,
-          onAction: onAction
+          onAction: onAction,
+          onFormSubmit: onFormSubmit
         )
           .padding(.horizontal, 12)
           .padding(.vertical, 9)
