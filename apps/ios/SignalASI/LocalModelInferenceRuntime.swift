@@ -68,6 +68,9 @@ final class LocalModelInferenceRuntime {
     thinkingMode: LocalModelThinkingMode = .automatic,
     workClass: LocalModelWorkClass = .interactive
   ) throws -> LocalModelInferenceResult {
+    guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
+      throw LocalModelInferenceError.profileDisabled
+    }
     if workClass == .background && !Self.backgroundSafe(profile) {
       throw LocalModelBackgroundDeferredError(reason: "This local model backend is reserved for interactive inference")
     }
