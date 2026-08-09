@@ -160,6 +160,7 @@ struct AgentHomeView: View {
   @State private var retryingAgentTaskIDs: Set<String> = []
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
+  @State private var scanShortcutActive = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
@@ -366,6 +367,15 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
+      .background(
+        NavigationLink(
+          destination: AddContactView(autoOpenScanner: true),
+          isActive: $scanShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
       .onAppear {
         ensureActiveAgentSession()
         store.markContactRead(contact.id)
@@ -1400,6 +1410,9 @@ struct AgentHomeView: View {
         attachments.removeAll { $0.id == attachment.id }
       },
       onNewSession: createAgentConversation,
+      onScan: {
+        scanShortcutActive = true
+      },
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
         fileImporterPresented = true

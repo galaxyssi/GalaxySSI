@@ -18,6 +18,7 @@ struct SignalASIAgentComposerView: View {
   var focusRequest: Int = 0
   var onRemoveAttachment: (SignalASIDraftAttachment) -> Void
   var onNewSession: () -> Void
+  var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
   var onSend: () -> Void
@@ -350,13 +351,13 @@ struct SignalASIAgentComposerView: View {
       ) {
         closeTray()
       }
-      SignalASIAgentComposerTrayNavigationLink(
+      SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_scan", "Scan"),
         systemImage: "qrcode.viewfinder",
-        minimumTouchSize: minimumTouchSize,
-        destination: AddContactView(autoOpenScanner: true)
+        minimumTouchSize: minimumTouchSize
       ) {
         closeTray()
+        onScan()
       }
       SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_take_photo", "Take photo"),
