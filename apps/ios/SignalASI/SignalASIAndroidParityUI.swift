@@ -140,6 +140,7 @@ struct AgentHomeView: View {
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
+  @State private var modelSelection = AgentModelSelectionSettings.selection()
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -227,6 +228,7 @@ struct AgentHomeView: View {
       .onAppear {
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+        modelSelection = AgentModelSelectionSettings.selection()
       }
       .fileImporter(
         isPresented: $fileImporterPresented,
@@ -376,21 +378,34 @@ struct AgentHomeView: View {
           .foregroundColor(.signalASITextSecondary)
       }
       Spacer(minLength: 8)
-      NavigationLink(destination: SignalASIAgentSessionsView()) {
-        VStack(alignment: .trailing, spacing: 4) {
+      VStack(alignment: .trailing, spacing: 2) {
+        NavigationLink(destination: SignalASIAgentSessionsView()) {
           Text(t("signalasi.agent.session.new", "New session"))
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
             .lineLimit(1)
-          Text(unreadTotal > 0 ? String(format: t("signalasi.agent.unread", "%d unread"), unreadTotal) : t("signalasi.agent.tab.subtitle", "Phone-native super agent"))
-            .font(.system(size: 10, weight: .regular))
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(width: 128, minHeight: 44, alignment: .trailing)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        NavigationLink(
+          destination: SignalASIAgentModelSelectionView {
+            modelSelection = AgentModelSelectionSettings.selection()
+          }
+        ) {
+          HStack(spacing: 3) {
+            Image(systemName: "chevron.left")
+              .font(.system(size: 8, weight: .bold))
+            Text(headerModelLabel)
+              .lineLimit(1)
+              .minimumScaleFactor(0.72)
+          }
+          .font(.system(size: 10, weight: .regular))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
       }
-      .buttonStyle(.plain)
+      .frame(width: 138, minHeight: 44, alignment: .trailing)
       NavigationLink(destination: SettingsView()) {
         Image(systemName: "ellipsis")
           .font(.system(size: 22, weight: .bold))
@@ -403,6 +418,27 @@ struct AgentHomeView: View {
     .padding(.vertical, 8)
     .frame(height: 76)
     .background(Color.signalASIPageBackground)
+  }
+
+  private var headerModelLabel: String {
+    guard modelSelection.mode == .manual else {
+      return t("signalasi.agent.model_selection.automatic", "Automatic")
+    }
+    if modelSelection.targetId == "local-llm" {
+      let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
+      return LocalModelInferenceRuntime.shared.ready(profile: profile)
+        ? profile.displayName
+        : t("signalasi.agent.model_selection.automatic", "Automatic")
+    }
+    if let contact = store.contact(id: modelSelection.targetId),
+       let model = contact.selectedCloudModel,
+       AgentConnectorAvailability.cloudModelReady(
+         contact: contact,
+         apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
+       ) {
+      return model.displayName.ifBlank(model.modelId)
+    }
+    return t("signalasi.agent.model_selection.automatic", "Automatic")
   }
 
   private var agentComposer: some View {
