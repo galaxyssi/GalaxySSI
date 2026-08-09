@@ -3648,4 +3648,7 @@
 "signalasi.agent.remote_status.cancelling" = "正在取消……";
 "signalasi.agent.remote_status.cancel_sent" = "取消请求已发送。";
 "signalasi.agent.remote_status.cancel_failed" = "取消请求发送失败。";
+"signalasi.agent.execution.timeline" = "执行时间线";
+"signalasi.agent.execution.duration_minutes" = "耗时 %dm %ds";
+"signalasi.agent.execution.duration_seconds" = "耗时 %ds";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";

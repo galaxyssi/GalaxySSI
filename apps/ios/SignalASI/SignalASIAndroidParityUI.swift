@@ -761,6 +761,13 @@ struct AgentHomeView: View {
                 status: remoteAgentStatusLabel(activeRemoteAgentTask.status),
                 location: activeRemoteAgentTask.location,
                 step: remoteAgentStep(activeRemoteAgentTask),
+                duration: executionDuration(
+                  startedAtMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
+                    ?? activeRemoteAgentTask.updatedAtMillis,
+                  updatedAtMillis: activeRemoteAgentTask.updatedAtMillis
+                ),
+                detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: activeRemoteAgentTask.isCancellable &&
@@ -780,6 +787,12 @@ struct AgentHomeView: View {
                 status: agentPhaseLabel(activeExecutionTask.phase),
                 location: agentExecutionLocationSummary(activeExecutionTask),
                 step: agentExecutionStep(activeExecutionTask),
+                duration: executionDuration(
+                  startedAtMillis: activeExecutionTask.createdAtMillis,
+                  updatedAtMillis: activeExecutionTask.updatedAtMillis
+                ),
+                detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                details: activeExecutionTask.executionLog,
                 canResume: AgentTaskCenterPolicy.resumable(activeExecutionTask),
                 resumeTitle: t("signalasi.agent.resume_task", "Resume task"),
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
@@ -1131,6 +1144,27 @@ struct AgentHomeView: View {
     snapshot.currentStep
       .ifBlank(snapshot.detail)
       .ifBlank(remoteAgentStatusLabel(snapshot.status))
+  }
+
+  private func remoteAgentTimelineLine(_ event: AgentRemoteTaskStatusEvent) -> String {
+    let label = remoteAgentStatusLabel(event.status)
+    return event.currentStep
+      .ifBlank(event.detail)
+      .ifBlank(label)
+  }
+
+  private func executionDuration(startedAtMillis: Int64, updatedAtMillis: Int64) -> String {
+    guard startedAtMillis > 0, updatedAtMillis >= startedAtMillis else { return "" }
+    let totalSeconds = max(0, (updatedAtMillis - startedAtMillis) / 1_000)
+    let minutes = totalSeconds / 60
+    let seconds = totalSeconds % 60
+    if minutes > 0 {
+      return t(
+        "signalasi.agent.execution.duration_minutes",
+        "Duration (minutes)m (seconds)s"
+      )
+    }
+    return t("signalasi.agent.execution.duration_seconds", "Duration (seconds)s")
   }
 
   private func locationLabel(_ value: AgentExecutionLocationKind) -> String {
@@ -1629,10 +1663,14 @@ private struct SignalASIAgentRetryCard: View {
 }
 
 private struct SignalASIAgentExecutionStatusCard: View {
+  @State private var detailsExpanded = false
   var executor: String
   var status: String
   var location: String
   var step: String
+  var duration: String = ""
+  var detailsTitle: String = ""
+  var details: [String] = []
   var canResume: Bool
   var resumeTitle: String
   var canCancel: Bool
@@ -1665,6 +1703,42 @@ private struct SignalASIAgentExecutionStatusCard: View {
         .foregroundColor(.signalASITextPrimary)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
+      if !duration.isEmpty {
+        Text(duration)
+          .font(.system(size: 11))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(1)
+      }
+      if !details.isEmpty {
+        Button {
+          detailsExpanded.toggle()
+        } label: {
+          Label(
+            detailsTitle.ifBlank("Details"),
+            systemImage: detailsExpanded ? "chevron.up" : "chevron.down"
+          )
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(.signalASIInsightText)
+        }
+        .buttonStyle(.plain)
+        if detailsExpanded {
+          VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(details.suffix(8).enumerated()), id: \.offset) { _, detail in
+              HStack(alignment: .top, spacing: 6) {
+                Circle()
+                  .fill(Color.signalASIInsightText)
+                  .frame(width: 4, height: 4)
+                  .padding(.top, 5)
+                Text(detail)
+                  .font(.system(size: 11))
+                  .foregroundColor(.signalASITextSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+          }
+          .padding(.leading, 4)
+        }
+      }
       if canResume || canCancel {
         HStack(spacing: 8) {
           if canResume {

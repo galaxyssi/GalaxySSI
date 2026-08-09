@@ -3371,6 +3371,20 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(payload.string("detail"))
       .ifBlank(payload.string("content"))
       .ifBlank(payload.string("text"))
+    let snapshotKey = "\(conversationId):\(taskId.ifBlank(turnId))"
+    let event = AgentRemoteTaskStatusEvent(
+      status: status,
+      currentStep: currentStep,
+      detail: detail,
+      updatedAtMillis: updatedAtMillis
+    )
+    var history = remoteAgentTaskStatuses[snapshotKey]?.history ?? []
+    if history.last != event {
+      history.append(event)
+    }
+    if history.count > 32 {
+      history.removeFirst(history.count - 32)
+    }
     let snapshot = AgentRemoteTaskStatusSnapshot(
       taskId: taskId,
       clientRouteId: clientRouteId,
@@ -3384,7 +3398,8 @@ final class MessageCoordinator: ObservableObject {
       currentStep: currentStep,
       advertisedCancellable: advertisedCancellable,
       detail: detail,
-      updatedAtMillis: updatedAtMillis
+      updatedAtMillis: updatedAtMillis,
+      history: history
     )
     if snapshot.isTerminal {
       remoteAgentTaskStatuses.removeValue(forKey: snapshot.id)
