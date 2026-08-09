@@ -34,6 +34,8 @@
     A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001462 /* AgentWorkflowStore.swift */; };
     A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */; };
     A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */; };
+    A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002017 /* AgentRecordedRunStore.swift */; };
+    A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */; };
     A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentWorkflowConditions.swift */; };
     A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* SignalASIWorkflowsView.swift */; };
     A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000995 /* SignalASIAgentMemoryView.swift */; };
@@ -753,6 +755,8 @@
     A20000000000000000001462 /* AgentWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowStore.swift; sourceTree = "<group>"; };
     A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowExecutionHistory.swift; sourceTree = "<group>"; };
     A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveEvents.swift; sourceTree = "<group>"; };
+    A20000000000000000002017 /* AgentRecordedRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRecordedRunStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalSkillCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002011 /* AgentWorkflowConditions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowConditions.swift; sourceTree = "<group>"; };
     A20000000000000000001463 /* SignalASIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowsView.swift; sourceTree = "<group>"; };
     A20000000000000000000995 /* SignalASIAgentMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryView.swift; sourceTree = "<group>"; };
@@ -1890,6 +1894,8 @@
         A20000000000000000001462 /* AgentWorkflowStore.swift */,
         A20000000000000000002006 /* AgentWorkflowExecutionHistory.swift */,
         A20000000000000000002010 /* AgentRemoteProactiveEvents.swift */,
+        A20000000000000000002017 /* AgentRecordedRunStore.swift */,
+        A20000000000000000002018 /* AgentLocalSkillCommandRouter.swift */,
         A20000000000000000002011 /* AgentWorkflowConditions.swift */,
         A20000000000000000001463 /* SignalASIWorkflowsView.swift */,
         A20000000000000000000995 /* SignalASIAgentMemoryView.swift */,
@@ -2732,6 +2738,8 @@
         A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */,
         A10000000000000000002006 /* AgentWorkflowExecutionHistory.swift in Sources */,
         A10000000000000000002010 /* AgentRemoteProactiveEvents.swift in Sources */,
+        A10000000000000000002017 /* AgentRecordedRunStore.swift in Sources */,
+        A10000000000000000002018 /* AgentLocalSkillCommandRouter.swift in Sources */,
         A10000000000000000002011 /* AgentWorkflowConditions.swift in Sources */,
         A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */,
         A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */,

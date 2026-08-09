@@ -701,6 +701,8 @@ final class MessageCoordinator: ObservableObject {
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
+  private lazy var localRecordedRunStore = UserDefaultsAgentRecordedRunStore()
+  private lazy var localSkillRuntime = AgentSkillRuntime(store: UserDefaultsAgentSkillStore())
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
   private var automationSchedulerTask: Task<Void, Never>?
@@ -1338,6 +1340,34 @@ final class MessageCoordinator: ObservableObject {
     var disclosureTicket: AgentDisclosureTicket?
     do {
       if let localProfile = selectedLocalModel(for: contact) {
+        if attachments.isEmpty,
+           let commandResult = AgentLocalSkillCommandRouter.handle(
+             displayText,
+             store: store,
+             conversationId: outgoing.conversationId,
+             runtime: localNativeToolRuntime,
+             runStore: localRecordedRunStore
+           ) {
+          store.appendDeliveryTrace(
+            outgoing.id,
+            contactId: contact.id,
+            stage: commandResult.actionId,
+            detail: "Local Skill command",
+            status: .delivered
+          )
+          let response = store.appendIncoming(
+            commandResult.text,
+            from: contact.id,
+            remoteMessageId: "local-" + commandResult.actionId + "-" + UUID().uuidString.lowercased(),
+            status: .delivered,
+            traceStage: commandResult.actionId,
+            conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId
+          )
+          onIncomingMessage?(response)
+          finishPendingAgentReply(for: outgoing)
+          return true
+        }
         try await receiveLocalModelReply(
           profile: localProfile,
           requestText: requestText,
@@ -1764,6 +1794,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleMatchedLocalSkill(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if let actions = await modelPlannedLocalNativeActions(
         requestText: requestText,
         attachments: attachments,
@@ -1823,6 +1860,61 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       throw error
     }
+  }
+
+  private func handleMatchedLocalSkill(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let runtime = localNativeToolRuntime,
+          let match = AgentSkillMatcher(localSkillRuntime).match(requestText) else {
+      return false
+    }
+    if match.installation.manifest.nativeTools.contains(AgentConversationSkillCompiler.agentOrchestrationToolId) {
+      return false
+    }
+    let result = AgentSkillExecutionEngine(
+      runtime: localSkillRuntime,
+      registry: runtime.registry
+    ).execute(
+      match: match,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    task.phase = result.success ? .completed : .failed
+    task.result = result.message
+    task.verification = result.success ? "Skill execution receipt returned" : "Skill execution failed"
+    task.executionLog.append(
+      "Skill \(match.installation.manifest.name)@\(match.installation.version): \(result.success ? "completed" : "failed")"
+    )
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    localRecordedRunStore.recordSkillExecution(
+      match: match,
+      result: result,
+      request: requestText,
+      conversationId: outgoing.conversationId,
+      taskId: task.taskId
+    )
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: result.success ? "local_skill_reply" : "local_skill_failed",
+      detail: match.installation.id,
+      status: result.success ? .delivered : .failed
+    )
+    _ = store.appendIncoming(
+      result.message,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: result.success ? .delivered : .failed,
+      traceStage: result.success ? "local_skill_reply_received" : "local_skill_error",
+      detail: match.installation.id,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
   }
 
   private func handleDirectLocalNativeAction(
@@ -2061,6 +2153,13 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
+    localRecordedRunStore.recordNativeAction(
+      action: executionAction,
+      result: result,
+      task: task,
+      outgoing: outgoing,
+      final: !hasRemainingActions
+    )
     task.phase = result.success ? .completed : .failed
     task.result = reply
     task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
