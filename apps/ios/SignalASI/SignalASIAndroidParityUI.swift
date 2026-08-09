@@ -267,6 +267,28 @@ struct AgentHomeView: View {
     return scopedTasks.isEmpty ? store.recentAgentTasks(limit: 24) : scopedTasks
   }
 
+  private var recoverableAgentTasksFromOtherSessions: [AgentTaskRecord] {
+    let activeSessionID = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !activeSessionID.isEmpty else { return [] }
+    let recoverablePhases: [AgentPhase] = [
+      .observing,
+      .planning,
+      .waitingConfirmation,
+      .executing,
+      .verifying,
+      .waitingResponse,
+      .paused
+    ]
+    return store.recentAgentTasks(limit: 50)
+      .filter { task in
+        let sessionID = task.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !sessionID.isEmpty && sessionID != activeSessionID && recoverablePhases.contains(task.phase)
+      }
+      .prefix(3)
+      .map { $0 }
+  }
+
   private func taskBelongsToActiveSession(_ task: AgentTaskRecord) -> Bool {
     let activeSessionId = store.activeAgentConversationId
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -675,6 +697,70 @@ struct AgentHomeView: View {
     attachmentError = ""
   }
 
+  @ViewBuilder
+  private func recoverableAgentTaskBanner(_ task: AgentTaskRecord) -> some View {
+    Button {
+      openRecoverableAgentTask(task)
+    } label: {
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: task.phase == .waitingConfirmation ? "exclamationmark.shield" : "arrow.clockwise.circle")
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundColor(task.phase == .waitingConfirmation ? .orange : .signalASIAccent)
+          .frame(width: 28, height: 28)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(t("signalasi.agent.recovery.title", "Recoverable Agent task"))
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+          Text(task.goal.ifBlank(t("signalasi.agent_tasks.title", "Agent task")))
+            .font(.system(size: 12))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(2)
+          Text(agentPhaseLabel(task.phase))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(task.phase == .waitingConfirmation ? .orange : .signalASIAccent)
+        }
+        Spacer(minLength: 8)
+        Image(systemName: "arrow.right")
+          .font(.system(size: 13, weight: .bold))
+          .foregroundColor(.signalASIAccent)
+          .frame(width: 28, height: 28)
+      }
+      .padding(12)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.signalASIInsightBackground)
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+      )
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(
+      Text(
+        String(
+          format: t(
+            "signalasi.agent.recovery.accessibility",
+            "Open recoverable Agent task: %@"
+          ),
+          task.goal.ifBlank(t("signalasi.agent_tasks.title", "Agent task"))
+        )
+      )
+    )
+  }
+
+  private func openRecoverableAgentTask(_ task: AgentTaskRecord) {
+    let sessionID = task.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sessionID.isEmpty else {
+      recentTasksShortcutActive = true
+      return
+    }
+    guard store.switchAgentSession(sessionID) else {
+      recentTasksShortcutActive = true
+      return
+    }
+    resetAgentSessionPresentation()
+  }
+
   private func recoverAgentTask(_ rawPayload: String) {
     guard let payload = AgentFailureRecoveryPayload.decode(rawPayload) else {
       richActionStatus = t("signalasi.agent.action_status.invalid", "This Agent action is invalid.")
@@ -774,6 +860,9 @@ struct AgentHomeView: View {
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
         LazyVStack(spacing: 10) {
+          if let recoverableAgentTask = recoverableAgentTasksFromOtherSessions.first {
+            recoverableAgentTaskBanner(recoverableAgentTask)
+          }
           if hasOlderTranscriptMessages {
             Button {
               loadOlderTranscriptMessages()
@@ -829,7 +918,8 @@ struct AgentHomeView: View {
               pendingConfirmationTask == nil &&
               blockedAgentTask == nil &&
               activeExecutionTask == nil &&
-              activeRemoteAgentTask == nil {
+              activeRemoteAgentTask == nil &&
+              recoverableAgentTasksFromOtherSessions.isEmpty {
             VStack(spacing: 10) {
               SignalASILogoView(size: 48, cornerRadius: 10)
               Text(t("signalasi.agent.empty.title", "How can I help?"))
