@@ -2123,7 +2123,6 @@
     <string name="rich_output_show_more">Show more</string>
     <string name="rich_output_section_plan">Plan</string>
     <string name="rich_output_section_execution_log">Execution log</string>
-    <string name="rich_output_section_final_answer">Final answer</string>
     <string name="rich_output_section_evidence">Evidence</string>
     <string name="rich_output_section_items">%1$d items</string>
     <string name="rich_output_section_expand">Expand section</string>
@@ -2550,5 +2549,7 @@
     <string name="agent_model_selection_automatic_subtitle">Choose by task, speed, privacy, and availability</string>
     <string name="agent_model_selection_local_section">On-device models</string>
     <string name="agent_model_selection_local_subtitle">Enabled · On device</string>
+    <string name="agent_model_selection_agent_section">Desktop Agents</string>
+    <string name="agent_model_selection_agent_subtitle">Available · Paired Desktop</string>
     <string name="agent_model_selection_cloud_section">Cloud models</string>
 </resources>

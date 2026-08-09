@@ -223,6 +223,11 @@ final class TransportBackedAgentProvider: AgentProvider {
   private let localProtocol: AgentProtocolRange
   private let runStartReceipts: AgentRunStartReceiptStore
   private var agreement: AgentProtocolAgreement?
+  private let registrationCacheLock = NSLock()
+  private var cachedRegistrations: [AgentRegistration] = []
+  private var registrationsCachedAt: Date?
+
+  private static let registrationCacheTTL: TimeInterval = 1
 
   init(
     providerId: String,
@@ -252,12 +257,24 @@ final class TransportBackedAgentProvider: AgentProvider {
   func disconnect() async {
     await transport.close()
     agreement = nil
+    registrationCacheLock.lock()
+    cachedRegistrations = []
+    registrationsCachedAt = nil
+    registrationCacheLock.unlock()
   }
 
   func registrations() async throws -> [AgentRegistration] {
     _ = try await ensureConnected()
+    if let cached = registrationCacheSnapshot() {
+      return cached
+    }
     let registrations = try await transport.registrations()
-    return registrations.filter { $0.providerId == providerId }
+      .filter { $0.providerId == providerId }
+    registrationCacheLock.lock()
+    cachedRegistrations = registrations
+    registrationsCachedAt = Date()
+    registrationCacheLock.unlock()
+    return registrations
   }
 
   func adapter(agentId: String) async throws -> AgentAdapter? {
@@ -289,6 +306,16 @@ final class TransportBackedAgentProvider: AgentProvider {
       return agreement
     }
     return try await connect()
+  }
+
+  private func registrationCacheSnapshot(now: Date = Date()) -> [AgentRegistration]? {
+    registrationCacheLock.lock()
+    defer { registrationCacheLock.unlock() }
+    guard let cachedAt = registrationsCachedAt,
+          now.timeIntervalSince(cachedAt) <= Self.registrationCacheTTL else {
+      return nil
+    }
+    return cachedRegistrations
   }
 }
 

@@ -848,7 +848,7 @@ enum AgentRuntimePackCatalogPolicy {
   }
 
   @discardableResult
-  private static func validateHTTPSURL(_ value: String) throws -> URLComponents {
+  static func validateHTTPSURL(_ value: String) throws -> URLComponents {
     try require((1...maxURLCharacters).contains(value.count), "Runtime pack URL is invalid")
     guard let components = URLComponents(string: value) else {
       throw AgentRuntimeCapabilityError.invalid("Runtime pack URL is invalid")

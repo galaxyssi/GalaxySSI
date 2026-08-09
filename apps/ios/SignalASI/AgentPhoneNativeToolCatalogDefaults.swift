@@ -30,10 +30,11 @@ extension AgentPhoneNativeToolCatalog {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
     guardSideEffects: Bool = true,
+    actionNotificationPublisher: AgentActionNotificationPublishing? = nil,
     nativeToolEventSink: AgentNativeToolLifecycleEventSink = .none,
     homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding? = nil,
-    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider(),
+    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSOwnedNotificationToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),
@@ -69,9 +70,16 @@ extension AgentPhoneNativeToolCatalog {
       nowMillis: nowMillis,
       eventSink: nativeToolEventSink
     )
+    let notifyingActionExecutor = NotifyingAgentActionExecutor(
+      delegate: nativeActionExecutor,
+      notifications: AgentActionNotificationCenter(
+        publisher: actionNotificationPublisher ?? AgentIOSUserNotificationPublisher(),
+        nowMillis: nowMillis
+      )
+    )
     let resolvedActionExecutor: AgentActionExecutor = guardSideEffects
-      ? PhoneExecutionAuthority.guarded(nativeActionExecutor)
-      : nativeActionExecutor
+      ? PhoneExecutionAuthority.guarded(notifyingActionExecutor)
+      : notifyingActionExecutor
     return AgentPhoneNativeToolRuntime(
       registry: registry,
       actionExecutor: resolvedActionExecutor,
@@ -93,7 +101,7 @@ extension AgentPhoneNativeToolCatalog {
     },
     homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding? = nil,
-    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider(),
+    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSOwnedNotificationToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),

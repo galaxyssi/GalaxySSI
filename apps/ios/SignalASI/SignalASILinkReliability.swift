@@ -14,6 +14,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var updatedAt: Date
   var requiresValidatedNetwork: Bool
   var blockedByAttachmentTransferIds: [String]
+  var clientSourceMessageId: String
+  var contactId: String
 
   init(
     messageId: String,
@@ -26,7 +28,9 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     createdAt: Date,
     updatedAt: Date,
     requiresValidatedNetwork: Bool = false,
-    blockedByAttachmentTransferIds: [String] = []
+    blockedByAttachmentTransferIds: [String] = [],
+    clientSourceMessageId: String = "",
+    contactId: String = ""
   ) {
     self.messageId = messageId
     self.topic = topic
@@ -39,6 +43,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.updatedAt = updatedAt
     self.requiresValidatedNetwork = requiresValidatedNetwork
     self.blockedByAttachmentTransferIds = Self.normalizedTransferIds(blockedByAttachmentTransferIds)
+    self.clientSourceMessageId = clientSourceMessageId
+    self.contactId = contactId
   }
 
   enum CodingKeys: String, CodingKey {
@@ -53,6 +59,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case updatedAt
     case requiresValidatedNetwork = "requires_validated_network"
     case blockedByAttachmentTransferIds = "blocked_by_attachment_transfers"
+    case clientSourceMessageId = "client_source_message_id"
+    case contactId = "contact_id"
   }
 
   init(from decoder: Decoder) throws {
@@ -73,6 +81,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     blockedByAttachmentTransferIds = Self.normalizedTransferIds(
       try container.decodeIfPresent([String].self, forKey: .blockedByAttachmentTransferIds) ?? []
     )
+    clientSourceMessageId = try container.decodeIfPresent(String.self, forKey: .clientSourceMessageId) ?? ""
+    contactId = try container.decodeIfPresent(String.self, forKey: .contactId) ?? ""
   }
 
   static func normalizedTransferIds(_ transferIds: [String]) -> [String] {
@@ -108,6 +118,14 @@ enum IncomingStageResult: Equatable {
   case pending
   case completed
   case invalid
+}
+
+struct ExhaustedLinkMessage: Equatable, Identifiable {
+  var id: String { messageId }
+  var messageId: String
+  var clientSourceMessageId: String
+  var contactId: String
+  var attempts: Int
 }
 
 @MainActor
@@ -169,6 +187,8 @@ final class SignalASILinkDeliveryStore {
     wirePayload: String,
     requiresValidatedNetwork: Bool = false,
     blockedByAttachmentTransferIds: [String] = [],
+    clientSourceMessageId: String = "",
+    contactId: String = "",
     now: Date = Date()
   ) {
     guard !messageId.isEmpty, !topic.isEmpty, !wirePayload.isEmpty else { return }
@@ -187,7 +207,9 @@ final class SignalASILinkDeliveryStore {
         createdAt: now,
         updatedAt: now,
         requiresValidatedNetwork: requiresValidatedNetwork,
-        blockedByAttachmentTransferIds: transferDependencies
+        blockedByAttachmentTransferIds: transferDependencies,
+        clientSourceMessageId: clientSourceMessageId,
+        contactId: contactId
       )
     )
     save()
@@ -223,9 +245,52 @@ final class SignalASILinkDeliveryStore {
     }
   }
 
+  @discardableResult
+  func discardClientSourceMessage(_ sourceMessageId: String) -> Int {
+    guard !sourceMessageId.isEmpty else { return 0 }
+    let before = state.outbox.count
+    state.outbox
+      .filter { $0.clientSourceMessageId == sourceMessageId || $0.messageId == sourceMessageId }
+      .forEach(deleteWirePayload)
+    state.outbox.removeAll {
+      $0.clientSourceMessageId == sourceMessageId || $0.messageId == sourceMessageId
+    }
+    let removed = before - state.outbox.count
+    if removed > 0 { save() }
+    return removed
+  }
+
+  @discardableResult
+  func discardExhausted(maxAttempts: Int) -> [ExhaustedLinkMessage] {
+    guard maxAttempts > 0 else { return [] }
+    let source = state.outbox
+    var kept: [PendingLinkMessage] = []
+    var exhausted: [ExhaustedLinkMessage] = []
+    for item in source {
+      guard item.attempts >= maxAttempts else {
+        kept.append(item)
+        continue
+      }
+      deleteWirePayload(item)
+      exhausted.append(
+        ExhaustedLinkMessage(
+          messageId: item.messageId,
+          clientSourceMessageId: item.clientSourceMessageId,
+          contactId: item.contactId,
+          attempts: item.attempts
+        )
+      )
+    }
+    guard exhausted.isEmpty == false else { return [] }
+    state.outbox = kept
+    save()
+    return exhausted
+  }
+
   func pending(
     now: Date = Date(),
-    allowValidatedNetworkMessages: Bool = true
+    allowValidatedNetworkMessages: Bool = true,
+    maxAttempts: Int = Int.max
   ) -> [PendingLinkMessage] {
     state.outbox
       .compactMap { item -> PendingLinkMessage? in
@@ -233,6 +298,9 @@ final class SignalASILinkDeliveryStore {
           return nil
         }
         if item.requiresValidatedNetwork && !allowValidatedNetworkMessages {
+          return nil
+        }
+        if item.attempts >= maxAttempts {
           return nil
         }
         guard item.nextAttemptAt <= now,
@@ -251,12 +319,14 @@ final class SignalASILinkDeliveryStore {
 
   func nextRetryDelay(
     now: Date = Date(),
-    allowValidatedNetworkMessages: Bool = true
+    allowValidatedNetworkMessages: Bool = true,
+    maxAttempts: Int = Int.max
   ) -> TimeInterval? {
     state.outbox
       .filter { item in
         item.blockedByAttachmentTransferIds.isEmpty &&
           hasWirePayload(item) &&
+          item.attempts < maxAttempts &&
           !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
       }
       .map { max(0, $0.nextAttemptAt.timeIntervalSince(now)) }

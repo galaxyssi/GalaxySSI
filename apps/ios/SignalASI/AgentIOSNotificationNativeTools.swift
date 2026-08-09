@@ -159,7 +159,7 @@ enum AgentIOSNotificationNativeToolCatalog {
   static let toolIds: Set<String> = [notificationsList, notificationReply]
 
   static func definitions(
-    provider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider()
+    provider: AgentIOSNotificationToolProviding = AgentIOSOwnedNotificationToolProvider()
   ) -> [AgentPhoneNativeToolDefinition] {
     [
       definition(

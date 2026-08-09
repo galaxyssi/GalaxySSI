@@ -1,6 +1,8 @@
 package com.signalasi.chat.voice.asr.local
 
 import android.content.Context
+import com.signalasi.chat.QnnRuntimeResourceArbiter
+import com.signalasi.chat.SharedQnnRuntimeResources
 import com.signalasi.chat.voice.audio.DirectPcmFramePacket
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +38,8 @@ class HighAccuracyLocalAsrController internal constructor(
     private val modelDirectoryResolver: () -> File?,
     private val engineFactory: () -> LocalAsrEngine,
     private val runtimeMonitorFactory: ((LocalAsrEngine) -> LocalAsrRuntimeMonitor)? = null,
-    private val preparationCoordinator: QnnAsrPreparationCoordinator? = null
+    private val preparationCoordinator: QnnAsrPreparationCoordinator? = null,
+    resourceArbiter: QnnRuntimeResourceArbiter? = null
 ) : AutoCloseable {
     private val engine = lazy(LazyThreadSafetyMode.SYNCHRONIZED, engineFactory)
     private val prepareMutex = Mutex()
@@ -48,6 +51,7 @@ class HighAccuracyLocalAsrController internal constructor(
     private var activeTurn: HighAccuracyLocalAsrTurn? = null
     private var runtimeMonitor: LocalAsrRuntimeMonitor? = null
     private val mutablePreparationStatus = MutableStateFlow(QnnAsrPreparationStatus.IDLE)
+    private val resourceRegistration = resourceArbiter?.registerAsr(::reservesQnnRuntime)
 
     val preparationStatus: StateFlow<QnnAsrPreparationStatus> = mutablePreparationStatus.asStateFlow()
 
@@ -146,8 +150,14 @@ class HighAccuracyLocalAsrController internal constructor(
         synchronized(turnLock) { runtimeMonitor }?.onMicrophonePermissionChanged(granted)
     }
 
+    internal fun reservesQnnRuntime(): Boolean =
+        prepareJob?.isActive == true ||
+            mutablePreparationStatus.value.phase == QnnAsrPreparationPhase.PREPARING ||
+            isReady()
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        resourceRegistration?.close()
         val turn = synchronized(turnLock) {
             activeTurn.also { activeTurn = null }
         }
@@ -186,7 +196,8 @@ class HighAccuracyLocalAsrController internal constructor(
                 runtimeMonitorFactory = { runtime ->
                     AndroidLocalAsrRuntimeMonitor(application, runtime, scope)
                 },
-                preparationCoordinator = QnnAsrPreparationCoordinator(source)
+                preparationCoordinator = QnnAsrPreparationCoordinator(source),
+                resourceArbiter = SharedQnnRuntimeResources.arbiter
             )
         }
     }

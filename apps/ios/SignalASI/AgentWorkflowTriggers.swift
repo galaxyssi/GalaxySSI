@@ -23,6 +23,7 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
   static let maxIdentifierCharacters = 128
   static let maxWorkflowNameCharacters = 80
   static let maxConditionCharacters = 240
+  static let maxAdditionalConditions = 32
   static let maxCooldownMinutes = 7 * 24 * 60
 
   var id: String
@@ -34,6 +35,7 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
   var cooldownMinutes: Int
   var lastTriggeredAtMillis: Int64
   var createdAtMillis: Int64
+  var conditions: [AgentWorkflowCondition]
 
   init(
     id: String = UUID().uuidString.lowercased(),
@@ -44,7 +46,8 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
     enabled: Bool = true,
     cooldownMinutes: Int = 5,
     lastTriggeredAtMillis: Int64 = 0,
-    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    conditions: [AgentWorkflowCondition] = []
   ) throws {
     let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanWorkflowId = workflowId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -56,9 +59,13 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
       cleanCondition.count <= Self.maxConditionCharacters,
       !kind.requiresCondition || !cleanCondition.isEmpty,
       (1...Self.maxCooldownMinutes).contains(cooldownMinutes),
+      conditions.count <= Self.maxAdditionalConditions,
       lastTriggeredAtMillis >= 0,
       createdAtMillis >= 0 else {
       throw AgentProactiveTaskError.invalid("Workflow trigger fields are invalid")
+    }
+    for condition in conditions {
+      try condition.validate()
     }
     self.id = cleanId
     self.workflowId = cleanWorkflowId
@@ -69,6 +76,7 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
     self.cooldownMinutes = cooldownMinutes
     self.lastTriggeredAtMillis = lastTriggeredAtMillis
     self.createdAtMillis = createdAtMillis
+    self.conditions = conditions
   }
 
   enum CodingKeys: String, CodingKey {
@@ -81,6 +89,37 @@ struct AgentWorkflowTrigger: Codable, Equatable, Identifiable {
     case cooldownMinutes = "cooldown_minutes"
     case lastTriggeredAtMillis = "last_triggered_at"
     case createdAtMillis = "created_at"
+    case conditions
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      id: try container.decode(String.self, forKey: .id),
+      workflowId: try container.decode(String.self, forKey: .workflowId),
+      workflowName: try container.decode(String.self, forKey: .workflowName),
+      kind: try container.decode(AgentWorkflowTriggerKind.self, forKey: .kind),
+      condition: try container.decodeIfPresent(String.self, forKey: .condition) ?? "",
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true,
+      cooldownMinutes: try container.decodeIfPresent(Int.self, forKey: .cooldownMinutes) ?? 5,
+      lastTriggeredAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastTriggeredAtMillis) ?? 0,
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      conditions: try container.decodeIfPresent([AgentWorkflowCondition].self, forKey: .conditions) ?? []
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(workflowId, forKey: .workflowId)
+    try container.encode(workflowName, forKey: .workflowName)
+    try container.encode(kind, forKey: .kind)
+    try container.encode(condition, forKey: .condition)
+    try container.encode(enabled, forKey: .enabled)
+    try container.encode(cooldownMinutes, forKey: .cooldownMinutes)
+    try container.encode(lastTriggeredAtMillis, forKey: .lastTriggeredAtMillis)
+    try container.encode(createdAtMillis, forKey: .createdAtMillis)
+    try container.encode(conditions, forKey: .conditions)
   }
 }
 
@@ -123,7 +162,8 @@ final class UserDefaultsAgentWorkflowTriggerStore: ObservableObject {
       enabled: trigger.enabled,
       cooldownMinutes: trigger.cooldownMinutes,
       lastTriggeredAtMillis: trigger.lastTriggeredAtMillis,
-      createdAtMillis: trigger.createdAtMillis
+      createdAtMillis: trigger.createdAtMillis,
+      conditions: trigger.conditions
     )
     triggers.removeAll { $0.id == normalized.id || Self.identity($0) == Self.identity(normalized) }
     triggers = Array((triggers + [normalized]).suffix(Self.maxItems))
@@ -314,13 +354,43 @@ final class AgentWorkflowTriggerCoordinator: ObservableObject {
 
   private func dispatch(_ kind: AgentWorkflowTriggerKind) {
     let now = Int64(Date().timeIntervalSince1970 * 1_000)
-    for trigger in triggerStore.readyTriggers(kind: kind, nowMillis: now) {
+    let snapshot = conditionSnapshot(nowMillis: now)
+    for trigger in triggerStore.readyTriggers(kind: kind, nowMillis: now)
+      where AgentWorkflowConditionEvaluator.evaluateAll(trigger.conditions, snapshot: snapshot) {
       triggerStore.markTriggered(id: trigger.id, at: now)
       Task { @MainActor [weak self] in
         guard let self else { return }
         _ = await self.coordinator.executeWorkflowTrigger(trigger, workflowStore: self.workflowStore)
       }
     }
+  }
+
+  private func conditionSnapshot(nowMillis: Int64) -> AgentWorkflowConditionSnapshot {
+    let device = UIDevice.current
+    let batteryPercent: Int? = device.batteryLevel >= 0
+      ? min(max(Int(device.batteryLevel * 100), 0), 100)
+      : nil
+    let charging: Bool?
+    switch device.batteryState {
+    case .charging, .full:
+      charging = true
+    case .unplugged:
+      charging = false
+    case .unknown:
+      charging = nil
+    @unknown default:
+      charging = nil
+    }
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let networkAvailable = probe.networkPresent && probe.internetCapable && probe.validated
+    let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: Double(nowMillis) / 1_000))
+    let minuteOfDay = components.hour.map { $0 * 60 + (components.minute ?? 0) }
+    return AgentWorkflowConditionSnapshot(
+      isDeviceCharging: charging,
+      batteryPercent: batteryPercent,
+      isNetworkAvailable: networkAvailable,
+      minuteOfDay: minuteOfDay
+    )
   }
 
   private static func isCharging(_ state: UIDevice.BatteryState) -> Bool {

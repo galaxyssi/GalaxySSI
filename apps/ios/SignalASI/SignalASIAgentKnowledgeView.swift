@@ -10,6 +10,7 @@ struct SignalASIAgentKnowledgeView: View {
   @State private var activeQuery = ""
   @State private var searchHits: [AgentKnowledgeHit] = []
   @State private var showingImporter = false
+  @State private var showingWebImporter = false
   @State private var showingSearch = false
   @State private var selectedGroup: AgentKnowledgeSourceGroup?
   @State private var statusText = ""
@@ -59,6 +60,18 @@ struct SignalASIAgentKnowledgeView: View {
               badge: t("signalasi.agent_knowledge.add", "Add")
             ) {
               showingImporter = true
+            }
+            AgentKnowledgeActionRow(
+              title: t("signalasi.agent_knowledge.import_web", "Import web page"),
+              subtitle: t(
+                "signalasi.agent_knowledge.import_web_subtitle",
+                "Fetch a public HTTP or HTTPS page into private Agent knowledge"
+              ),
+              systemImage: "globe",
+              tint: .orange,
+              badge: t("signalasi.agent_knowledge.import_web_action", "Web")
+            ) {
+              showingWebImporter = true
             }
             AgentKnowledgeActionRow(
               title: t("signalasi.agent_knowledge.search", "Search knowledge"),
@@ -190,6 +203,12 @@ struct SignalASIAgentKnowledgeView: View {
         runSearch(query)
       }
     }
+    .sheet(isPresented: $showingWebImporter) {
+      AgentKnowledgeWebImportSheet { value in
+        importWebPage(value)
+      }
+      .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
+    }
     .sheet(item: $selectedGroup) { group in
       AgentKnowledgeSourceAccessSheet(group: group) { message in
         statusText = message
@@ -232,6 +251,169 @@ struct SignalASIAgentKnowledgeView: View {
       )
     }
   }
+
+  private func importWebPage(_ value: String) {
+    statusText = t("signalasi.agent_knowledge.import_web_loading", "Fetching web page...")
+    Task { @MainActor in
+      do {
+        let url = try normalizedWebURL(value)
+        let request = URLRequest(
+          url: url,
+          cachePolicy: .reloadIgnoringLocalCacheData,
+          timeoutInterval: 12
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard data.count <= Self.maximumWebBytes else {
+          throw webImportError(
+            t("signalasi.agent_knowledge.import_web_too_large", "Web page exceeds the 5 MB import limit")
+          )
+        }
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+          throw webImportError(String(
+            format: t("signalasi.agent_knowledge.import_web_http_error", "Web page returned HTTP %d"),
+            httpResponse.statusCode
+          ))
+        }
+        let mimeType = response.mimeType?.lowercased() ?? "text/html"
+        guard Self.supportedWebMimeTypes.contains(mimeType) else {
+          throw webImportError(String(
+            format: t("signalasi.agent_knowledge.import_web_type_error", "Unsupported web content type: %@"),
+            mimeType
+          ))
+        }
+        let body = decodeWebBody(data, response: response)
+        let title = webPageTitle(body).ifBlank(url.host?.ifBlank("Web page") ?? "Web page")
+        let text = try extractWebText(body)
+        let imported = store.replaceAgentKnowledgeSource(
+          title: String(title.prefix(180)),
+          content: text,
+          source: url.absoluteString,
+          kind: .document,
+          tags: ["web", url.host ?? ""]
+        )
+        guard !imported.isEmpty else {
+          throw webImportError(t(
+            "signalasi.agent_knowledge.no_readable_text",
+            "No readable text found in this web page"
+          ))
+        }
+        statusText = String(
+          format: t("signalasi.agent_knowledge.imported_web", "Imported %@ as %d knowledge chunks"),
+          title,
+          imported.count
+        )
+        if !activeQuery.isEmpty {
+          runSearch(activeQuery)
+        }
+      } catch {
+        statusText = String(
+          format: t("signalasi.agent_knowledge.import_failed", "Import failed: %@"),
+          error.localizedDescription
+        )
+      }
+    }
+  }
+
+  private func normalizedWebURL(_ value: String) throws -> URL {
+    let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty else {
+      throw webImportError(t("signalasi.agent_knowledge.import_web_invalid", "Enter a valid web page URL"))
+    }
+    let candidate = raw.range(of: "^https?://", options: [.regularExpression, .caseInsensitive]) == nil
+      ? "https://\(raw)"
+      : raw
+    guard let url = URL(string: candidate),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https"].contains(scheme),
+          let host = url.host?.lowercased(),
+          !host.isEmpty,
+          url.user == nil,
+          !isPrivateWebHost(host) else {
+      throw webImportError(t(
+        "signalasi.agent_knowledge.import_web_invalid",
+        "Only public HTTP and HTTPS web pages can be imported"
+      ))
+    }
+    return url
+  }
+
+  private func isPrivateWebHost(_ host: String) -> Bool {
+    if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".internal") {
+      return true
+    }
+    let octets = host.split(separator: ".").compactMap { Int($0) }
+    guard octets.count == 4 else {
+      return host == "::1" || host.hasPrefix("fe80:") || host.hasPrefix("fc") || host.hasPrefix("fd")
+    }
+    let first = octets[0]
+    let second = octets[1]
+    return first == 0 || first == 10 || first == 127 ||
+      (first == 169 && second == 254) ||
+      (first == 172 && (16...31).contains(second)) ||
+      (first == 192 && second == 168)
+  }
+
+  private func decodeWebBody(_ data: Data, response: URLResponse) -> String {
+    if let encoding = response.textEncodingName,
+       let stringEncoding = String.Encoding(ianaCharSet: encoding),
+       let value = String(data: data, encoding: stringEncoding) {
+      return value
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  private func webPageTitle(_ html: String) -> String {
+    guard let match = html.range(of: "<title[^>]*>(.*?)</title>", options: [.regularExpression, .caseInsensitive]) else {
+      return ""
+    }
+    let title = String(html[match])
+      .replacingOccurrences(of: "^<title[^>]*>|</title>$", with: "", options: [.regularExpression, .caseInsensitive])
+    return htmlToPlainText(title).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func extractWebText(_ html: String) throws -> String {
+    let withoutNonContent = html
+      .replacingOccurrences(of: "<script[^>]*>[\\s\\S]*?</script>", with: " ", options: [.regularExpression, .caseInsensitive])
+      .replacingOccurrences(of: "<style[^>]*>[\\s\\S]*?</style>", with: " ", options: [.regularExpression, .caseInsensitive])
+      .replacingOccurrences(of: "<noscript[^>]*>[\\s\\S]*?</noscript>", with: " ", options: [.regularExpression, .caseInsensitive])
+    let text = htmlToPlainText(withoutNonContent)
+      .replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+      .replacingOccurrences(of: "\\n{3,}", with: "\\n\\n", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else {
+      throw webImportError(t("signalasi.agent_knowledge.no_readable_text", "No readable text found in this web page"))
+    }
+    return String(text.prefix(Self.maximumExtractedWebCharacters))
+  }
+
+  private func htmlToPlainText(_ html: String) -> String {
+    let withBreaks = html
+      .replacingOccurrences(of: "<br\\s*/?>", with: "\\n", options: [.regularExpression, .caseInsensitive])
+      .replacingOccurrences(of: "</(p|div|li|h[1-6]|tr|section|article)>", with: "\\n", options: [.regularExpression, .caseInsensitive])
+      .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+    if let data = withBreaks.data(using: .utf8),
+       let attributed = try? NSAttributedString(
+         data: data,
+         options: [
+           .documentType: NSAttributedString.DocumentType.html,
+           .characterEncoding: String.Encoding.utf8.rawValue
+         ],
+         documentAttributes: nil
+       ) {
+      return attributed.string
+    }
+    return withBreaks
+  }
+
+  private func webImportError(_ message: String) -> NSError {
+    NSError(domain: "SignalASIAgentKnowledgeWebImport", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+  }
+
+  private static let maximumWebBytes = 5 * 1024 * 1024
+  private static let maximumExtractedWebCharacters = 128_000
+  private static let supportedWebMimeTypes: Set<String> = ["text/html", "application/xhtml+xml", "text/plain"]
 
   private func runSearch(_ query: String) {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -426,6 +608,55 @@ private struct AgentKnowledgeSearchSheet: View {
             dismiss()
           }
           .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+      }
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct AgentKnowledgeWebImportSheet: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dismiss) private var dismiss
+  @State private var url = ""
+  var onImport: (String) -> Void
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section(t("signalasi.agent_knowledge.import_web", "Import web page")) {
+          TextField(
+            t("signalasi.agent_knowledge.import_web_placeholder", "https://example.com/page"),
+            text: $url
+          )
+          .keyboardType(.URL)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+          Text(t(
+            "signalasi.agent_knowledge.import_web_hint",
+            "Only public HTTP and HTTPS pages up to 5 MB are imported."
+          ))
+          .font(.caption)
+          .foregroundColor(.secondary)
+        }
+      }
+      .navigationTitle(t("signalasi.agent_knowledge.import_web", "Import web page"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("signalasi.common.cancel", "Cancel")) {
+            dismiss()
+          }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("signalasi.agent_knowledge.import_web_action", "Import")) {
+            onImport(url)
+            dismiss()
+          }
+          .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
       }
     }

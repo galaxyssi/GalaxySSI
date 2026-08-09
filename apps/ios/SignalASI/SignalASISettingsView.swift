@@ -15,7 +15,7 @@ struct SettingsView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.tab.settings", "Settings"),
-          leading: { Color.clear },
+          leading: { SignalASIBackButton() },
           trailing: { Color.clear }
         )
         ScrollView {

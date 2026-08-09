@@ -200,7 +200,7 @@ enum AgentRuntimeArtifactUi {
       actions.append(
         AgentRichAction(
           id: "preview",
-          label: zh ? "View" : "View",
+          label: zh ? "查看" : "View",
           verb: "preview_runtime_artifact",
           value: payload.encode()
         )
@@ -209,7 +209,7 @@ enum AgentRuntimeArtifactUi {
     actions.append(
       AgentRichAction(
         id: "save",
-        label: zh ? "Save" : "Save",
+        label: zh ? "保存" : "Save",
         verb: "save_runtime_artifact",
         value: payload.encode(),
         style: "primary"
