@@ -244,15 +244,15 @@ struct AgentObservedContext: Codable, Equatable, Identifiable {
     expiresAtMillis > 0 && nowMillis >= expiresAtMillis
   }
 
-  fileprivate var isUsable: Bool {
+  var isUsable: Bool {
     !targetId.isEmpty && !text.isEmpty
   }
 
-  fileprivate static let maxTotalEntries = 128
-  fileprivate static let maxEntriesPerTarget = 16
-  fileprivate static let maxTargetCharacters = 160
-  fileprivate static let maxIdCharacters = 160
-  fileprivate static let maxEntryCharacters = 8_000
+  static let maxTotalEntries = 128
+  static let maxEntriesPerTarget = 16
+  static let maxTargetCharacters = 160
+  static let maxIdCharacters = 160
+  static let maxEntryCharacters = 8_000
 }
 
 enum AgentObservationContextJsonCodec {
@@ -284,7 +284,20 @@ enum AgentObservationContextJsonCodec {
   }
 }
 
-final class InMemoryAgentObservationContextStore {
+protocol AgentObservationContextStore: AnyObject {
+  func observe(
+    targetId: String,
+    text: String,
+    conversationId: String,
+    taskId: String
+  ) -> AgentObservedContext?
+  func peek(targetId: String, conversationId: String) -> [AgentObservedContext]
+  func acknowledge(entryIds: Set<String>) -> Int
+  func clearTarget(_ targetId: String) -> Int
+  func clear()
+}
+
+final class InMemoryAgentObservationContextStore: AgentObservationContextStore {
   private let lock = NSRecursiveLock()
   private let clock: () -> Int64
   private let idFactory: () -> String

@@ -282,7 +282,18 @@ object LocalModelAcceleratorDetector {
     }
 
     private fun vendorLibraryNames(family: String): Set<String> = when (family) {
-        "Qualcomm QNN" -> setOf("libqnnhtp.so", "libqnnsystem.so", "libsnpe.so")
+        "Qualcomm QNN" -> setOf(
+            "libqnnhtp.so",
+            "libqnnsystem.so",
+            "libsnpe.so",
+            "libggml-hexagon.so",
+            "libggml-htp-v68.so",
+            "libggml-htp-v69.so",
+            "libggml-htp-v73.so",
+            "libggml-htp-v75.so",
+            "libggml-htp-v79.so",
+            "libggml-htp-v81.so"
+        )
         "MediaTek NeuroPilot" -> setOf("libneuron_adapter.so", "libneuronusdk_adapter.so")
         "Samsung ENN" -> setOf("libenn_public_api_cpp.so", "libenn_user.so")
         "Google Tensor" -> setOf("libedgetpu_delegate.so", "libgoogle_nn.so")
