@@ -156,9 +156,16 @@ MQTT_PROBE_TIMEOUT_SECONDS = max(
     float(os.environ.get("SIGNALASI_MQTT_PROBE_TIMEOUT_SECONDS", "10")),
 )
 MQTT_PROBE_INITIAL_DELAY_SECONDS = 2.0
+MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS = max(
+    5.0,
+    float(os.environ.get("SIGNALASI_MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS", "15")),
+)
 transport_probe_stop_event = threading.Event()
 transport_probe_thread: threading.Thread | None = None
+transport_probe_thread_lock = threading.Lock()
 transport_reconnect_in_progress = threading.Event()
+transport_reconnect_lock = threading.Lock()
+transport_reconnect_requested_at = 0.0
 inbound_route_queues: dict[str, queue.Queue] = {}
 inbound_route_queues_lock = threading.Lock()
 INBOUND_ROUTE_IDLE_SECONDS = 120
@@ -1421,10 +1428,35 @@ def _force_close_transport_if_still_stale(mqttc, generation: int) -> None:
         log.debug("MQTT stale transport socket was already closed: %s", exc)
 
 
+def _begin_transport_reconnect(now: float | None = None) -> bool:
+    global transport_reconnect_requested_at
+    requested_at = time.monotonic() if now is None else float(now)
+    with transport_reconnect_lock:
+        if transport_reconnect_in_progress.is_set():
+            return False
+        transport_reconnect_in_progress.set()
+        transport_reconnect_requested_at = requested_at
+        return True
+
+
+def _clear_transport_reconnect() -> None:
+    global transport_reconnect_requested_at
+    with transport_reconnect_lock:
+        transport_reconnect_in_progress.clear()
+        transport_reconnect_requested_at = 0.0
+
+
+def _transport_reconnect_age(now: float | None = None) -> float | None:
+    observed_at = time.monotonic() if now is None else float(now)
+    with transport_reconnect_lock:
+        if not transport_reconnect_in_progress.is_set():
+            return None
+        return max(0.0, observed_at - transport_reconnect_requested_at)
+
+
 def _request_transport_reconnect(mqttc, reason: str, generation: int | None = None) -> None:
-    if transport_reconnect_in_progress.is_set():
+    if not _begin_transport_reconnect():
         return
-    transport_reconnect_in_progress.set()
     if generation is None:
         generation = transport_probe_state.stalled(time.monotonic())[2]
     transport_probe_state.disconnected()
@@ -1441,46 +1473,67 @@ def _request_transport_reconnect(mqttc, reason: str, generation: int | None = No
     ).start()
 
 
+def _transport_probe_tick() -> None:
+    mqttc = client
+    if mqttc is None:
+        return
+    now = time.monotonic()
+    reconnect_age = _transport_reconnect_age(now)
+    if reconnect_age is not None:
+        if reconnect_age < MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS:
+            return
+        log.warning(
+            "MQTT transport recovery guard expired elapsed_ms=%s; retrying recovery",
+            round(reconnect_age * 1000),
+        )
+        _clear_transport_reconnect()
+        _request_transport_reconnect(mqttc, "reconnect_guard_timeout")
+        return
+    try:
+        if not mqttc.is_connected():
+            return
+    except Exception as exc:
+        log.warning("MQTT transport connection check failed: %s", exc)
+        return
+    stalled, elapsed, generation = transport_probe_state.stalled(now)
+    if stalled:
+        log.warning(
+            "MQTT transport probe timed out elapsed_ms=%s generation=%s",
+            round(elapsed * 1000),
+            generation,
+        )
+        _request_transport_reconnect(mqttc, "probe_timeout", generation)
+        return
+    if transport_probe_state.should_publish(now):
+        _publish_transport_probe(mqttc, now)
+
+
 def _transport_probe_loop() -> None:
     global transport_probe_thread
     try:
         while not transport_probe_stop_event.wait(0.5):
-            mqttc = client
-            if mqttc is None or transport_reconnect_in_progress.is_set():
-                continue
             try:
-                if not mqttc.is_connected():
-                    continue
+                _transport_probe_tick()
             except Exception:
-                continue
-            now = time.monotonic()
-            stalled, elapsed, generation = transport_probe_state.stalled(now)
-            if stalled:
-                log.warning(
-                    "MQTT transport probe timed out elapsed_ms=%s generation=%s",
-                    round(elapsed * 1000),
-                    generation,
-                )
-                _request_transport_reconnect(mqttc, "probe_timeout", generation)
-                continue
-            if transport_probe_state.should_publish(now):
-                _publish_transport_probe(mqttc, now)
+                log.exception("MQTT transport probe iteration failed; watchdog remains active")
     finally:
-        if threading.current_thread() is transport_probe_thread:
-            transport_probe_thread = None
+        with transport_probe_thread_lock:
+            if threading.current_thread() is transport_probe_thread:
+                transport_probe_thread = None
 
 
 def _ensure_transport_probe_thread() -> None:
     global transport_probe_thread
-    if transport_probe_thread is not None and transport_probe_thread.is_alive():
-        return
-    transport_probe_stop_event.clear()
-    transport_probe_thread = threading.Thread(
-        target=_transport_probe_loop,
-        daemon=True,
-        name="signalasi-mqtt-probe",
-    )
-    transport_probe_thread.start()
+    with transport_probe_thread_lock:
+        if transport_probe_thread is not None and transport_probe_thread.is_alive():
+            return
+        transport_probe_stop_event.clear()
+        transport_probe_thread = threading.Thread(
+            target=_transport_probe_loop,
+            daemon=True,
+            name="signalasi-mqtt-probe",
+        )
+        transport_probe_thread.start()
 
 
 def _dispatch_codex_event(task_id: str, event: dict) -> None:
@@ -1972,12 +2025,13 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
         status = publish_connector_status(mqttc, reason="mqtt_connected")
         if not status.get("ok"):
             log.warning("Desktop recovery presence publish skipped: %s", status)
-        transport_reconnect_in_progress.clear()
+        _clear_transport_reconnect()
         transport_probe_state.connected(
             time.monotonic(),
             MQTT_PROBE_INITIAL_DELAY_SECONDS,
         )
     else:
+        _clear_transport_reconnect()
         transport_probe_state.disconnected()
         log.warning(f"MQTT connection failed rc={reason_code}")
 
@@ -2122,6 +2176,7 @@ def _clear_mqtt_wire_transport_state() -> None:
 
 def on_disconnect(mqttc, userdata, *args):
     reason_code = args[-2] if len(args) >= 2 else (args[0] if args else "unknown")
+    _clear_transport_reconnect()
     transport_probe_state.disconnected()
     _clear_mqtt_wire_transport_state()
     log.warning(f"MQTT disconnected rc={reason_code}")
@@ -6742,12 +6797,16 @@ def _presence_loop() -> None:
     global presence_thread
     try:
         while not presence_stop_event.wait(PRESENCE_INTERVAL_SECONDS):
-            mqttc = client
-            if mqttc is not None and mqttc.is_connected():
-                flush_outbound_messages(mqttc)
-            status = publish_connector_status(reason="heartbeat")
-            if not status.get("ok"):
-                log.debug("Desktop presence heartbeat skipped: %s", status)
+            _ensure_transport_probe_thread()
+            try:
+                mqttc = client
+                if mqttc is not None and mqttc.is_connected():
+                    flush_outbound_messages(mqttc)
+                status = publish_connector_status(reason="heartbeat")
+                if not status.get("ok"):
+                    log.debug("Desktop presence heartbeat skipped: %s", status)
+            except Exception:
+                log.exception("Desktop presence heartbeat failed; worker remains active")
     finally:
         if threading.current_thread() is presence_thread:
             presence_thread = None
@@ -7155,7 +7214,7 @@ def stop():
     outbound_retry_stop_event.set()
     transport_probe_stop_event.set()
     transport_probe_state.disconnected()
-    transport_reconnect_in_progress.clear()
+    _clear_transport_reconnect()
     _stop_inbound_route_workers()
     _close_phone_tool_sessions(reason="Desktop MQTT bridge stopped")
     if client:
