@@ -251,6 +251,7 @@ struct AgentHomeView: View {
 
   private var activeAgentTasks: [AgentTaskRecord] {
     store.recentAgentTasks(limit: 24).filter { task in
+      guard taskBelongsToActiveSession(task) else { return false }
       switch task.phase {
       case .observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused:
         return true
@@ -258,6 +259,17 @@ struct AgentHomeView: View {
         return false
       }
     }
+  }
+
+  private func taskBelongsToActiveSession(_ task: AgentTaskRecord) -> Bool {
+    let activeSessionId = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let taskSessionId = task.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !activeSessionId.isEmpty else {
+      return taskSessionId.isEmpty
+    }
+    // Empty task session IDs are legacy records created before session scoping.
+    return taskSessionId.isEmpty || taskSessionId == activeSessionId
   }
 
   private var activeAgentPhase: AgentPhase? {
