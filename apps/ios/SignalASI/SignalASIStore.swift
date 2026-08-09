@@ -616,6 +616,164 @@ final class SignalASIStore: ObservableObject {
       .map { $0 }
   }
 
+  func queuedAutomationRuns(limit: Int = 8) -> [AgentProactiveRun] {
+    proactiveRuns
+      .filter { $0.status == .queued }
+      .sorted { $0.scheduledForMillis < $1.scheduledForMillis }
+      .prefix(max(0, limit))
+      .map { $0 }
+  }
+
+  @discardableResult
+  func claimDueAutomationTasks(nowMillis: Int64? = nil) -> Int {
+    let now = max(nowMillis ?? Self.nowMillis(), 0)
+    var claimed = 0
+    for task in automationTasks() {
+      guard task.enabled,
+            task.nextRunAtMillis > 0,
+            task.nextRunAtMillis <= now else {
+        continue
+      }
+      if AgentProactiveTaskScheduler.shouldDisable(task: task, nowMillis: now) {
+        guard let disabled = try? AgentProactiveTask(
+          taskId: task.taskId,
+          name: task.name,
+          trigger: task.trigger,
+          action: task.action,
+          policy: task.policy,
+          enabled: false,
+          nextRunAtMillis: 0,
+          lastRunAtMillis: task.lastRunAtMillis,
+          lastStatus: task.lastStatus,
+          runCount: task.runCount,
+          consecutiveFailures: task.consecutiveFailures,
+          revision: task.revision + 1,
+          createdAtMillis: task.createdAtMillis,
+          updatedAtMillis: now
+        ) else {
+          continue
+        }
+        replaceAutomationTask(disabled)
+        continue
+      }
+      guard let due = try? AgentProactiveTaskScheduler.dueOccurrences(task: task, nowMillis: now),
+            let scheduledTask = try? AgentProactiveTask(
+              taskId: task.taskId,
+              name: task.name,
+              trigger: task.trigger,
+              action: task.action,
+              policy: task.policy,
+              enabled: task.enabled,
+              nextRunAtMillis: due.nextRunAtMillis,
+              lastRunAtMillis: task.lastRunAtMillis,
+              lastStatus: task.lastStatus,
+              runCount: task.runCount,
+              consecutiveFailures: task.consecutiveFailures,
+              revision: task.revision,
+              createdAtMillis: task.createdAtMillis,
+              updatedAtMillis: now
+            ) else {
+        continue
+      }
+
+      var updatedTask = scheduledTask
+      for occurrence in due.occurrences {
+        let isSkipped = occurrence.status == .skipped
+        guard let run = try? AgentProactiveRun(
+          runId: "ios-proactive-run-\(UUID().uuidString.lowercased())",
+          taskId: task.taskId,
+          scheduledForMillis: occurrence.scheduledForMillis,
+          status: occurrence.status,
+          causeJson: "{\"source\":\"scheduler\",\"scheduled_for_millis\":\(occurrence.scheduledForMillis)}",
+          startedAtMillis: isSkipped ? now : 0,
+          completedAtMillis: isSkipped ? now : 0,
+          resultSummary: isSkipped ? "Occurrence skipped by misfire policy." : "Run queued by iOS scheduler."
+        ) else {
+          continue
+        }
+        proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+        claimed += 1
+        if isSkipped {
+          updatedTask = (try? AgentProactiveTaskScheduler.recordOutcome(
+            task: updatedTask,
+            status: .skipped,
+            completedAtMillis: now
+          )) ?? updatedTask
+        }
+      }
+      replaceAutomationTask(updatedTask)
+    }
+    return claimed
+  }
+
+  @discardableResult
+  func beginAutomationRun(id runId: String, nowMillis: Int64? = nil) -> AgentProactiveRun? {
+    let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let index = proactiveRuns.firstIndex(where: { $0.runId == clean }),
+          proactiveRuns[index].status == .queued,
+          let task = automationTask(id: proactiveRuns[index].taskId) else {
+      return nil
+    }
+    let active = proactiveRuns.filter {
+      $0.taskId == task.taskId && [.running, .waiting, .retrying].contains($0.status)
+    }.count
+    guard active < task.policy.maxConcurrency else { return nil }
+    let now = max(nowMillis ?? Self.nowMillis(), 0)
+    guard let running = try? AgentProactiveRun(
+      runId: proactiveRuns[index].runId,
+      taskId: proactiveRuns[index].taskId,
+      scheduledForMillis: proactiveRuns[index].scheduledForMillis,
+      status: .running,
+      attempt: proactiveRuns[index].attempt,
+      causeJson: proactiveRuns[index].causeJson,
+      startedAtMillis: now,
+      resultSummary: "Run started on iOS."
+    ) else {
+      return nil
+    }
+    proactiveRuns[index] = running
+    return running
+  }
+
+  @discardableResult
+  func finishAutomationRun(
+    id runId: String,
+    status: AgentProactiveRunStatus,
+    resultSummary: String,
+    errorCode: String = "",
+    nowMillis: Int64? = nil
+  ) -> Bool {
+    let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let index = proactiveRuns.firstIndex(where: { $0.runId == clean }),
+          !proactiveRuns[index].status.terminal,
+          let task = automationTask(id: proactiveRuns[index].taskId) else {
+      return false
+    }
+    let now = max(nowMillis ?? Self.nowMillis(), 0)
+    guard let finished = try? AgentProactiveRun(
+      runId: proactiveRuns[index].runId,
+      taskId: proactiveRuns[index].taskId,
+      scheduledForMillis: proactiveRuns[index].scheduledForMillis,
+      status: status,
+      attempt: proactiveRuns[index].attempt,
+      causeJson: proactiveRuns[index].causeJson,
+      startedAtMillis: proactiveRuns[index].startedAtMillis,
+      completedAtMillis: now,
+      resultSummary: resultSummary,
+      errorCode: errorCode
+    ),
+    let updatedTask = try? AgentProactiveTaskScheduler.recordOutcome(
+      task: task,
+      status: status,
+      completedAtMillis: now
+    ) else {
+      return false
+    }
+    proactiveRuns[index] = finished
+    replaceAutomationTask(updatedTask)
+    return true
+  }
+
   func makeAutomationTaskDraft(name: String = "", prompt: String = "") -> AgentProactiveTask {
     let now = Self.nowMillis()
     let taskId = "ios-proactive-\(UUID().uuidString.lowercased())"
@@ -724,8 +882,7 @@ final class SignalASIStore: ObservableObject {
       scheduledForMillis: now,
       status: .queued,
       causeJson: "{\"source\":\"manual\"}",
-      startedAtMillis: now,
-      resultSummary: "Run queued on iOS."
+      resultSummary: "Run queued on iOS scheduler."
     )
     let updatedTask = try AgentProactiveTask(
       taskId: task.taskId,
@@ -735,17 +892,16 @@ final class SignalASIStore: ObservableObject {
       policy: task.policy,
       enabled: task.enabled,
       nextRunAtMillis: task.nextRunAtMillis,
-      lastRunAtMillis: now,
+      lastRunAtMillis: task.lastRunAtMillis,
       lastStatus: .queued,
-      runCount: task.runCount + 1,
+      runCount: task.runCount,
       consecutiveFailures: task.consecutiveFailures,
       revision: task.revision,
       createdAtMillis: task.createdAtMillis,
       updatedAtMillis: now
     )
     proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
-    proactiveTasks.removeAll { $0.taskId == updatedTask.taskId }
-    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updatedTask]).prefix(200))
+    replaceAutomationTask(updatedTask)
     return run
   }
 
@@ -2623,6 +2779,11 @@ final class SignalASIStore: ObservableObject {
       }
       return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
     }
+  }
+
+  private func replaceAutomationTask(_ task: AgentProactiveTask) {
+    proactiveTasks.removeAll { $0.taskId == task.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [task]).prefix(200))
   }
 
   private func upsert(_ contact: SignalASIContact) {

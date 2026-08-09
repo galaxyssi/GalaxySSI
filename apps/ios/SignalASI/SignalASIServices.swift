@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import Foundation
 import Network
 import Speech
@@ -699,10 +700,13 @@ final class MessageCoordinator: ObservableObject {
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
+  private var automationSchedulerTask: Task<Void, Never>?
+  private var automationBackgroundTaskRegistered = false
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
   private static let maximumOutboxDeliveryAttempts = 6
+  private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
 
@@ -759,6 +763,190 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
+    startAutomationScheduler()
+  }
+
+  private func startAutomationScheduler() {
+    automationSchedulerTask?.cancel()
+    registerAutomationBackgroundTask()
+    automationSchedulerTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        await self.runAutomationSchedulerCycle()
+        try? await Task.sleep(nanoseconds: 30_000_000_000)
+      }
+    }
+  }
+
+  func runAutomationSchedulerCycle() async {
+    _ = store.claimDueAutomationTasks()
+    for run in store.queuedAutomationRuns(limit: 8) {
+      guard let running = store.beginAutomationRun(id: run.runId) else { continue }
+      await executeAutomationRun(running)
+    }
+    scheduleAutomationBackgroundRefresh()
+  }
+
+  private func registerAutomationBackgroundTask() {
+    guard !automationBackgroundTaskRegistered else { return }
+    automationBackgroundTaskRegistered = true
+    BGTaskScheduler.shared.register(
+      forTaskWithIdentifier: Self.automationBackgroundTaskIdentifier,
+      using: nil
+    ) { [weak self] task in
+      guard let refreshTask = task as? BGAppRefreshTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      let work = Task { @MainActor [weak self] in
+        guard let self, !Task.isCancelled else {
+          refreshTask.setTaskCompleted(success: false)
+          return
+        }
+        await self.runAutomationSchedulerCycle()
+        refreshTask.setTaskCompleted(success: !Task.isCancelled)
+      }
+      refreshTask.expirationHandler = {
+        work.cancel()
+      }
+    }
+  }
+
+  private func scheduleAutomationBackgroundRefresh() {
+    let nextRun = store.automationTasks()
+      .filter { $0.enabled && $0.nextRunAtMillis > 0 }
+      .map(\.nextRunAtMillis)
+      .min()
+    guard let nextRun else {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automationBackgroundTaskIdentifier)
+      return
+    }
+    let now = Date()
+    let nextDate = Date(timeIntervalSince1970: Double(nextRun) / 1_000)
+    let request = BGAppRefreshTaskRequest(identifier: Self.automationBackgroundTaskIdentifier)
+    request.earliestBeginDate = max(nextDate, now.addingTimeInterval(60))
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automationBackgroundTaskIdentifier)
+    try? BGTaskScheduler.shared.submit(request)
+  }
+
+  private func executeAutomationRun(_ run: AgentProactiveRun) async {
+    guard let task = store.automationTask(id: run.taskId) else {
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .failed,
+        resultSummary: "The automation task no longer exists.",
+        errorCode: "task_missing"
+      )
+      return
+    }
+    do {
+      let summary = try await executeAutomationAction(task.action, task: task, run: run)
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .completed,
+        resultSummary: summary
+      )
+    } catch {
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .failed,
+        resultSummary: error.localizedDescription,
+        errorCode: "automation_execution_failed"
+      )
+    }
+  }
+
+  private func executeAutomationAction(
+    _ action: AgentProactiveAction,
+    task: AgentProactiveTask,
+    run: AgentProactiveRun
+  ) async throws -> String {
+    switch action.kind {
+    case .agent, .workflow:
+      guard let contact = automationContact(for: action) else {
+        throw AgentProactiveTaskError.invalid("Automation target is not available")
+      }
+      let prompt = action.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("Execute automation: \(task.name)")
+      guard await send(prompt, to: contact) else {
+        throw AgentProactiveTaskError.invalid("Automation Agent request could not be dispatched")
+      }
+      return "Agent request dispatched to \(contact.displayName)."
+
+    case .subagentTeam:
+      let lead = action.team.first(where: { $0.role == .lead }) ?? action.team.first
+      var teamPrompt = action.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("Execute automation: \(task.name)")
+      if !action.team.isEmpty {
+        let roster = action.team.map {
+          "- \($0.role.rawValue): \($0.agentId)\($0.instructions.isEmpty ? "" : " - \($0.instructions)")"
+        }.joined(separator: "\n")
+        teamPrompt += "\n\nCoordinate this Agent team:\n\(roster)"
+      }
+      var leadAction = action
+      leadAction.targetId = lead?.agentId ?? action.targetId
+      guard let contact = automationContact(for: leadAction) else {
+        throw AgentProactiveTaskError.invalid("Automation team lead is not available")
+      }
+      guard await send(teamPrompt, to: contact) else {
+        throw AgentProactiveTaskError.invalid("Automation team request could not be dispatched")
+      }
+      return "Agent team request dispatched to \(contact.displayName)."
+
+    case .nativeTool:
+      guard let runtime = localNativeToolRuntime else {
+        throw AgentProactiveTaskError.invalid("iOS native tool runtime is unavailable")
+      }
+      var parameters: [String: String] = [
+        "tool_id": action.targetId,
+        "input_json": action.argumentsJson,
+        "invocation_id": run.runId,
+        "_signalasi_task_id": run.runId,
+        "conversation_id": action.contactId,
+        "turn_id": run.runId
+      ]
+      if !action.grantedPermissions.isEmpty {
+        parameters["granted_permissions"] = action.grantedPermissions.sorted().joined(separator: ",")
+      }
+      if !action.grantedConsents.isEmpty {
+        parameters["granted_consents"] = action.grantedConsents.sorted().joined(separator: ",")
+      }
+      let nativeAction = AgentAction(
+        id: run.runId,
+        kind: .callNativeTool,
+        target: action.targetId,
+        risk: .medium,
+        status: .running,
+        description: "Scheduled automation native tool \(action.targetId)",
+        parameters: parameters,
+        requiresConfirmation: false
+      )
+      let result = runtime.actionExecutor.execute(
+        action: nativeAction,
+        screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: task.name)
+      )
+      guard result.success else {
+        throw AgentProactiveTaskError.invalid(result.message.ifBlank("Native tool execution failed"))
+      }
+      return result.message.ifBlank("Native tool completed.")
+    }
+  }
+
+  private func automationContact(for action: AgentProactiveAction) -> SignalASIContact? {
+    let candidates = [action.targetId, action.contactId]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    for candidate in candidates {
+      if let contact = store.contact(id: candidate), !contact.deleted {
+        return contact
+      }
+      if let contact = store.contacts.first(where: {
+        !$0.deleted && ($0.signalASIId == candidate || $0.name == candidate)
+      }) {
+        return contact
+      }
+    }
+    return nil
   }
 
   func desktopMarketplaceItems(
@@ -961,9 +1149,9 @@ final class MessageCoordinator: ObservableObject {
     to contact: SignalASIContact,
     attachments: [SignalASIDraftAttachment] = [],
     agentGoalOverride: String = ""
-  ) async {
+  ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+    guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
     let requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -982,7 +1170,7 @@ final class MessageCoordinator: ObservableObject {
           outgoing: outgoing
         )
         finishPendingAgentReply(for: outgoing)
-        return
+        return true
       }
       if let cloudContact = selectedCloudModelContact(for: contact) {
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
@@ -1007,7 +1195,7 @@ final class MessageCoordinator: ObservableObject {
           displayContactId: outgoing.contactId
         )
         finishPendingAgentReply(for: outgoing)
-        return
+        return true
       }
       if let agentContact = selectedAgentContact(for: contact) {
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1040,7 +1228,7 @@ final class MessageCoordinator: ObservableObject {
           id: outgoing.conversationId,
           label: agentContact.displayName.ifBlank(agentContact.name).ifBlank(agentContact.id)
         )
-        return
+        return true
       }
       switch contact.deliveryMode {
       case .cloudAPI:
@@ -1066,6 +1254,7 @@ final class MessageCoordinator: ObservableObject {
           displayContactId: contact.id
         )
         finishPendingAgentReply(for: outgoing)
+        return true
       case .link, .pcConnector:
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
@@ -1100,6 +1289,7 @@ final class MessageCoordinator: ObservableObject {
           status: .delivered
         )
         finishPendingAgentReply(for: outgoing)
+        return true
       }
     } catch {
       finishPendingAgentReply(for: outgoing)
@@ -1138,6 +1328,7 @@ final class MessageCoordinator: ObservableObject {
         status: .failed
       )
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
+      return false
     }
   }
 

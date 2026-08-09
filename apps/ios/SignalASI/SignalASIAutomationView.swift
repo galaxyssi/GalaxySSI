@@ -354,6 +354,7 @@ struct SignalASIAutomationView: View {
 
 struct SignalASIAutomationDetailView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.presentationMode) private var presentationMode
   @State private var deleteConfirmation = false
@@ -402,6 +403,9 @@ struct SignalASIAutomationDetailView: View {
             ) {
               do {
                 _ = try store.triggerAutomationTaskNow(id: task.taskId)
+                Task {
+                  await coordinator.runAutomationSchedulerCycle()
+                }
               } catch {
                 errorMessage = error.localizedDescription
               }
