@@ -2617,7 +2617,7 @@ private struct AgentStatusChip: View {
   }
 }
 
-private struct SignalASIAndroidMenuGroup<Content: View>: View {
+struct SignalASIAndroidMenuGroup<Content: View>: View {
   let content: Content
 
   init(@ViewBuilder content: () -> Content) {
@@ -2633,7 +2633,7 @@ private struct SignalASIAndroidMenuGroup<Content: View>: View {
   }
 }
 
-private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
+struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
   var title: String
   var subtitle: String
   var systemImage: String
@@ -2671,7 +2671,7 @@ private struct SignalASIAndroidGroupedMenuLink<Destination: View>: View {
   }
 }
 
-private struct SignalASIAndroidGroupedMenuButton: View {
+struct SignalASIAndroidGroupedMenuButton: View {
   var title: String
   var subtitle: String
   var systemImage: String
@@ -2693,7 +2693,7 @@ private struct SignalASIAndroidGroupedMenuButton: View {
   }
 }
 
-private struct SignalASIAndroidGroupedMenuRowContent: View {
+struct SignalASIAndroidGroupedMenuRowContent: View {
   var title: String
   var subtitle: String
   var systemImage: String
@@ -2725,7 +2725,7 @@ private struct SignalASIAndroidGroupedMenuRowContent: View {
   }
 }
 
-private struct SignalASIAndroidMenuIcon: View {
+struct SignalASIAndroidMenuIcon: View {
   var systemImage: String
   var assetImageName: String?
   var tint: Color
@@ -2749,7 +2749,7 @@ private struct SignalASIAndroidMenuIcon: View {
   }
 }
 
-private struct SignalASIAndroidMenuDivider: View {
+struct SignalASIAndroidMenuDivider: View {
   var body: some View {
     Rectangle()
       .fill(Color.signalASISeparator)
@@ -2758,7 +2758,7 @@ private struct SignalASIAndroidMenuDivider: View {
   }
 }
 
-private struct SignalASIAndroidMenuLink<Destination: View>: View {
+struct SignalASIAndroidMenuLink<Destination: View>: View {
   var title: String
   var subtitle: String
   var systemImage: String
@@ -2813,7 +2813,7 @@ private struct SignalASIAndroidMenuLink<Destination: View>: View {
   }
 }
 
-private struct SignalASIAndroidMenuButton: View {
+struct SignalASIAndroidMenuButton: View {
   var title: String
   var subtitle: String
   var systemImage: String
