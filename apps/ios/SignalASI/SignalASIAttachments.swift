@@ -1,5 +1,7 @@
 import CryptoKit
 import Foundation
+import ImageIO
+import UIKit
 import UniformTypeIdentifiers
 
 struct SignalASIDraftAttachment: Identifiable, Equatable {
@@ -242,6 +244,11 @@ enum AgentAttachmentWorkspaceStager {
   private static let pathSeparator = "/"
 }
 
+struct AgentAnimatedImageFrames {
+  var images: [UIImage]
+  var duration: TimeInterval
+}
+
 enum AgentAnimatedImageTiming {
   private static let gifDelayCentiseconds: UInt8 = 8
 
@@ -269,6 +276,41 @@ enum AgentAnimatedImageTiming {
     return output ?? source
   }
 
+  static func frames(from source: Data) -> AgentAnimatedImageFrames? {
+    let data = normalizeZeroFrameDelays(source)
+    guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    let count = CGImageSourceGetCount(imageSource)
+    guard count > 1 else { return nil }
+
+    var images: [UIImage] = []
+    var duration: TimeInterval = 0
+    for index in 0..<count {
+      guard let image = CGImageSourceCreateImageAtIndex(imageSource, index, nil) else { continue }
+      images.append(UIImage(cgImage: image))
+      duration += frameDelay(imageSource: imageSource, index: index)
+    }
+    guard images.count > 1 else { return nil }
+    return AgentAnimatedImageFrames(
+      images: images,
+      duration: max(gifDelaySeconds * Double(images.count), duration)
+    )
+  }
+
+  static func staticImage(from source: Data) -> UIImage? {
+    UIImage(data: normalizeZeroFrameDelays(source))
+  }
+
+  private static func frameDelay(imageSource: CGImageSource, index: Int) -> TimeInterval {
+    guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, index, nil) as? [String: Any],
+          let gif = properties[kCGImagePropertyGIFDictionary as String] as? [String: Any] else {
+      return gifDelaySeconds
+    }
+    let unclamped = (gif[kCGImagePropertyGIFUnclampedDelayTime as String] as? NSNumber)?.doubleValue ?? 0
+    let clamped = (gif[kCGImagePropertyGIFDelayTime as String] as? NSNumber)?.doubleValue ?? 0
+    let delay = unclamped > 0 ? unclamped : clamped
+    return delay > 0 ? min(delay, 5) : gifDelaySeconds
+  }
+
   private static func isGif(_ data: Data) -> Bool {
     data.count >= 6 &&
       data[0] == 0x47 &&
@@ -278,6 +320,8 @@ enum AgentAnimatedImageTiming {
       (data[4] == 0x37 || data[4] == 0x39) &&
       data[5] == 0x61
   }
+
+  private static let gifDelaySeconds: TimeInterval = 0.08
 }
 
 enum SignalASIAttachmentPayloadBuilder {
