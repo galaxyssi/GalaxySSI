@@ -41,15 +41,16 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     private val transport = OkHttpCloudModelStreamClient()
     private val activeRoundIds = ConcurrentHashMap<String, String>()
 
-    fun streamConversation(
+    internal fun streamConversation(
         context: Context,
         contact: JSONObject,
         turns: List<ChatMessage>,
         requestId: String,
+        images: List<CloudImagePayload> = emptyList(),
         onToolEvent: ((CloudToolEvent) -> Unit)? = null
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
-            emitLegacy(context, contact, turns, requestId, onToolEvent)
+            emitLegacy(context, contact, turns, requestId, images, onToolEvent)
             return@flow
         }
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -58,7 +59,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             text = turns.joinToString("\n") { it.content },
             historyCount = turns.size,
             systemInstructions = true,
-            purpose = "Streaming conversation response"
+            purpose = "Streaming conversation response",
+            attachmentKinds = if (images.isEmpty()) emptySet() else setOf(AgentDisclosedDataKind.IMAGE),
+            attachmentCount = images.size,
+            attachmentBytes = images.sumOf { it.bytes.size.toLong() }
         )
         if (!disclosure.allowed) {
             emit(
@@ -70,7 +74,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             return@flow
         }
         val prepared = runCatching {
-            CloudModelClient.prepareConversationStream(context, contact, turns, requestId)
+            CloudModelClient.prepareConversationStream(context, contact, turns, requestId, images)
         }.getOrElse { error ->
             AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, error.message.orEmpty())
             emit(ModelStreamEvent.Failed(requestId, error.toStreamError()))
@@ -141,7 +145,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             AgentDisclosureStatus.FAILED,
                             "stream unsupported; used compatibility request"
                         )
-                        emitLegacy(context, contact, turns, requestId, onToolEvent)
+                        emitLegacy(context, contact, turns, requestId, images, onToolEvent)
                     } else {
                         AgentDataDisclosureLedger.update(
                             context,
@@ -249,10 +253,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         requestId: String,
+        images: List<CloudImagePayload>,
         onToolEvent: ((CloudToolEvent) -> Unit)?
     ) {
         val result = runCatching {
-            CloudModelClient.legacyConversationResponse(context, contact, turns, onToolEvent)
+            CloudModelClient.legacyConversationResponse(context, contact, turns, images, onToolEvent)
         }
         val text = result.getOrNull().orEmpty()
         if (text.isNotBlank()) {

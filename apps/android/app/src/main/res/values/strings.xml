@@ -116,6 +116,7 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible custom endpoint</string>
     <string name="cloud_request_failed">Cloud model call failed: %1$s</string>
     <string name="cloud_unknown_error">Unknown error</string>
+    <string name="cloud_image_prepare_failed">Could not prepare %1$s for the cloud model.</string>
     <string name="cloud_empty_response">The model returned an empty response.</string>
     <string name="cloud_streaming_status">Responding</string>
     <string name="cloud_stream_interrupted_status">Interrupted</string>
