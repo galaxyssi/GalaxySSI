@@ -124,6 +124,20 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     }
   }
 
+  @discardableResult
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    provider.acceptConnectorResponse(response)
+  }
+
+  @discardableResult
+  func observeConnectorResponses(from bus: AgentConnectorResponseBus) -> UUID {
+    provider.observeConnectorResponses(from: bus)
+  }
+
+  func removeConnectorResponseObserver(_ token: UUID, from bus: AgentConnectorResponseBus) {
+    provider.removeConnectorResponseObserver(token, from: bus)
+  }
+
   static func stableRunId(conversationId: String, turnId: String, actionId: String, agentId: String) -> String {
     let source = [conversationId, turnId, actionId, agentId].joined(separator: "\u{001f}")
     var bytes = Array(Insecure.MD5.hash(data: Data(source.utf8)))
@@ -305,6 +319,30 @@ final class ActionExecutorAgentProvider: AgentProvider {
       }
     }
     return nil
+  }
+
+  @discardableResult
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.acceptConnectorResponse(response) {
+        return result
+      }
+    }
+    return nil
+  }
+
+  @discardableResult
+  func observeConnectorResponses(from bus: AgentConnectorResponseBus) -> UUID {
+    bus.addListener { [weak self] response in
+      _ = self?.acceptConnectorResponse(response)
+    }
+  }
+
+  func removeConnectorResponseObserver(_ token: UUID, from bus: AgentConnectorResponseBus) {
+    bus.removeListener(token)
   }
 
   func nativeToolLifecycleEventSink(
@@ -702,6 +740,38 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         payload: ["message": .string("Agent Run cancelled")]
       )
     }
+  }
+
+  func acceptConnectorResponse(_ response: AgentConnectorResponse) -> AgentActionResult? {
+    let active: ActiveRun
+    let settlement: AgentConnectorResponseSettlement
+    let runId: String
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorResponseResolver.canAccept(pending: pending, response: response)
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorResponseResolver.settle(pending: pending, response: response) else {
+      lock.unlock()
+      return nil
+    }
+    runId = match.key
+    active = match.value
+    settlement = resolved
+    resultsByRunId[runId] = resolved.result
+    activeByRunId.removeValue(forKey: runId)
+    eventContextsByRunId.removeValue(forKey: runId)
+    lock.unlock()
+    emit(
+      request: active.request,
+      registration: active.registration,
+      type: settlement.eventType,
+      sequence: 5,
+      payload: settlement.eventPayload
+    )
+    return settlement.result
   }
 
   func acceptConnectorTerminalStatus(_ envelope: AgentConnectorTerminalStatusEnvelope) -> AgentActionResult? {
