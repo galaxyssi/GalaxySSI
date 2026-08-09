@@ -695,6 +695,7 @@ final class MessageCoordinator: ObservableObject {
       }
     )
   }
+  private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
@@ -1544,6 +1545,15 @@ final class MessageCoordinator: ObservableObject {
     let planningRequest = AgentModelPlanningPromptRequest(
       planRequest: planRequest,
       conversationContext: conversation,
+      globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
+        query: requestText,
+        currentConversationId: outgoing.conversationId,
+        excludedConversationIds: Set(
+          store.agentSessions(includeArchived: true)
+            .filter { $0.privateMode || $0.trackingPaused }
+            .map(\.id)
+        )
+      ),
       hasAttachments: !attachments.isEmpty
     )
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])

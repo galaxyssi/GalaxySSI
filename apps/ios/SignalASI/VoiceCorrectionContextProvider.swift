@@ -71,6 +71,7 @@ private extension AgentModelPlanningPromptRequest {
       parsingContext: parsingContext,
       conversationContext: conversationContext,
       executionHistory: executionHistory,
+      globalRealtimeContext: globalRealtimeContext,
       requirements: requirements,
       hasAttachments: hasAttachments || conversationContext.hasAttachments,
       allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
