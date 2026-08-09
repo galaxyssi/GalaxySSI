@@ -9648,6 +9648,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     context = appContext,
                     systemPrompt = CodexStyleResponsePolicy.prompt(appContext),
                     userPrompt = promptWithLocalModelContext(action, requestPrompt),
+                    preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
                     hasAttachments = action.id.startsWith("attachment-") ||
                         action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
                 )
