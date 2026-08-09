@@ -5,6 +5,7 @@ extension CloudModelClient {
     contact: SignalASIContact,
     store: SignalASIStore,
     turns: [ChatMessage],
+    images: [CloudImagePayload] = [],
     requestId: String = UUID().uuidString,
     streamClient: CloudModelStreamClient = URLSessionCloudModelStreamClient()
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
@@ -14,6 +15,7 @@ extension CloudModelClient {
         contact: contact,
         store: store,
         turns: turns,
+        images: images,
         requestId: normalizedRequestId
       )
     }
@@ -73,7 +75,8 @@ extension CloudModelClient {
     contact: SignalASIContact,
     store: SignalASIStore,
     turns: [ChatMessage],
-    requestId: String
+    requestId: String,
+    images: [CloudImagePayload] = []
   ) async throws -> ModelStreamRequest {
     guard let model = contact.selectedCloudModel else {
       throw SignalASIError.missingCloudModel
@@ -89,6 +92,7 @@ extension CloudModelClient {
       apiKey: apiKey,
       turns: turns,
       systemPrompt: systemPrompt,
+      images: images,
       requestId: requestId
     )
   }
@@ -121,7 +125,8 @@ extension CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
-    requestId: String
+    requestId: String,
+    images: [CloudImagePayload] = []
   ) throws -> ModelStreamRequest {
     let context = CloudModelConversationContext.prepare(
       model: model,
@@ -136,6 +141,7 @@ extension CloudModelClient {
         apiKey: apiKey,
         turns: context.turns,
         systemPrompt: context.systemPrompt,
+        images: images,
         requestId: requestId
       )
     case .gemini:
@@ -144,6 +150,7 @@ extension CloudModelClient {
         apiKey: apiKey,
         turns: context.turns,
         systemPrompt: context.systemPrompt,
+        images: images,
         requestId: requestId
       )
     case .openAICompatible:
@@ -152,6 +159,7 @@ extension CloudModelClient {
         apiKey: apiKey,
         turns: context.turns,
         systemPrompt: context.systemPrompt,
+        images: images,
         requestId: requestId
       )
     }
@@ -162,12 +170,15 @@ extension CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
+    images: [CloudImagePayload],
     requestId: String
   ) throws -> ModelStreamRequest {
     let endpoint = try Self.validStreamingEndpoint(model.endpoint)
+    var messages = Self.openAIMessages(turns: turns, systemPrompt: systemPrompt)
+    CloudVisionPayloadEncoder.attachOpenAI(to: &messages, images: images)
     let body = try Self.bodyJSON([
       "model": model.modelId,
-      "messages": Self.openAIMessages(turns: turns, systemPrompt: systemPrompt),
+      "messages": messages,
       "stream": true,
       "tools": CloudModelStreamToolSchemas.openAITools(),
       "tool_choice": "auto"
@@ -187,14 +198,17 @@ extension CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
+    images: [CloudImagePayload],
     requestId: String
   ) throws -> ModelStreamRequest {
     let endpoint = try Self.validStreamingEndpoint(model.endpoint)
+    var messages = Self.anthropicMessages(turns: turns)
+    CloudVisionPayloadEncoder.attachAnthropic(to: &messages, images: images)
     let body = try Self.bodyJSON([
       "model": model.modelId,
       "system": systemPrompt,
       "max_tokens": 1200,
-      "messages": Self.anthropicMessages(turns: turns),
+      "messages": messages,
       "tools": CloudModelStreamToolSchemas.anthropicTools(),
       "stream": true
     ])
@@ -217,12 +231,15 @@ extension CloudModelClient {
     apiKey: String,
     turns: [ChatMessage],
     systemPrompt: String,
+    images: [CloudImagePayload],
     requestId: String
   ) throws -> ModelStreamRequest {
     let endpoint = try Self.geminiStreamingEndpoint(endpoint: model.endpoint, apiKey: apiKey)
+    var contents = Self.geminiContents(turns: turns)
+    CloudVisionPayloadEncoder.attachGemini(to: &contents, images: images)
     let body = try Self.bodyJSON([
       "system_instruction": ["parts": [["text": systemPrompt]]],
-      "contents": Self.geminiContents(turns: turns),
+      "contents": contents,
       "generationConfig": ["temperature": 0.7, "maxOutputTokens": 1200],
       "tools": CloudModelStreamToolSchemas.geminiTools()
     ])

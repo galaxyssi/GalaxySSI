@@ -458,6 +458,7 @@ enum AgentDataDisclosureLedger {
     systemInstructions: Bool = false,
     toolOutput: Bool = false,
     purpose: String,
+    attachments: [AgentDataDisclosureAttachment] = [],
     conversationId: String = "",
     taskId: String = "",
     turnId: String = ""
@@ -471,6 +472,9 @@ enum AgentDataDisclosureLedger {
       .ifBlank(destination.modelId)
       .ifBlank("Cloud model")
     let localNetwork = isPrivateEndpoint(destination.endpoint)
+    let attachmentKinds = Set(attachments.map {
+      AgentDataDisclosureClassifier.attachmentKind(mimeType: $0.mimeType, displayName: $0.displayName)
+    })
     let record = AgentDataDisclosureRecord(
       destinationId: destinationId,
       destinationTitle: title,
@@ -485,8 +489,10 @@ enum AgentDataDisclosureLedger {
         includeHistory: historyCount > 1,
         includeSystemInstructions: systemInstructions,
         includeToolOutput: toolOutput
-      ),
+      ).union(attachmentKinds),
       textCharacters: text.count,
+      attachmentCount: attachments.count,
+      attachmentBytes: attachments.reduce(Int64(0)) { $0 + max($1.sizeBytes, 0) },
       conversationIdHash: disclosureHash(conversationId),
       taskIdHash: disclosureHash(taskId),
       turnIdHash: disclosureHash(turnId)
