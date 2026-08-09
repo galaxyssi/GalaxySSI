@@ -13,6 +13,7 @@ struct SignalASIAgentRuntimePanelView: View {
   var onCyclePermissionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
+  var onOpenRecentTasks: () -> Void
   var t: (String, String) -> String
 
   @State private var expandedSectionIds: Set<String> = ["requirements", "recent_tasks"]
@@ -89,7 +90,9 @@ struct SignalASIAgentRuntimePanelView: View {
         subtitle: String(format: t("signalasi.agent_runtime.recent_summary", "%d tasks"), recentTasks.count),
         systemImage: "clock.arrow.circlepath",
         rows: recentTaskRows,
-        emptyTitle: t("agent_recent_empty", "No recent Agent tasks yet")
+        emptyTitle: t("agent_recent_empty", "No recent Agent tasks yet"),
+        action: onOpenRecentTasks,
+        actionTitle: t("signalasi.agent_tasks.title", "Tasks")
       )
       runtimeSection(
         id: "audit_trail",
@@ -189,40 +192,64 @@ struct SignalASIAgentRuntimePanelView: View {
     subtitle: String,
     systemImage: String,
     rows: [SignalASIAgentRuntimeRow],
-    emptyTitle: String
+    emptyTitle: String,
+    action: (() -> Void)? = nil,
+    actionTitle: String = ""
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Button {
-        withAnimation(.easeOut(duration: 0.16)) {
-          if expandedSectionIds.contains(id) {
-            expandedSectionIds.remove(id)
-          } else {
-            expandedSectionIds.insert(id)
+      HStack(spacing: 8) {
+        Button {
+          withAnimation(.easeOut(duration: 0.16)) {
+            if expandedSectionIds.contains(id) {
+              expandedSectionIds.remove(id)
+            } else {
+              expandedSectionIds.insert(id)
+            }
+          }
+        } label: {
+          HStack(spacing: 10) {
+            Image(systemName: systemImage)
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.signalASITextPrimary)
+                .lineLimit(1)
+              Text(subtitle)
+                .font(.system(size: 11))
+                .foregroundColor(.signalASITextSecondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: expandedSectionIds.contains(id) ? "chevron.up" : "chevron.down")
+              .font(.system(size: 12, weight: .bold))
+              .foregroundColor(.signalASITextSecondary)
+              .frame(width: 28, height: 28)
           }
         }
-      } label: {
-        HStack(spacing: 10) {
-          Image(systemName: systemImage)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.signalASIAccent)
-            .frame(width: 24, height: 24)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-              .font(.system(size: 13, weight: .bold))
-              .foregroundColor(.signalASITextPrimary)
-              .lineLimit(1)
-            Text(subtitle)
-              .font(.system(size: 11))
-              .foregroundColor(.signalASITextSecondary)
-              .lineLimit(1)
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+          Text(
+            expandedSectionIds.contains(id)
+              ? t("signalasi.agent_runtime.collapse", "Collapse")
+              : t("signalasi.agent_runtime.expand", "Expand")
+          )
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        if let action {
+          Button(action: action) {
+            Image(systemName: "arrow.up.right.square")
+              .font(.system(size: 14, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .frame(width: 28, height: 28)
           }
-          Spacer(minLength: 8)
-          Image(systemName: expandedSectionIds.contains(id) ? "chevron.up" : "chevron.down")
-            .font(.system(size: 12, weight: .bold))
-            .foregroundColor(.signalASITextSecondary)
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(actionTitle))
         }
       }
-      .buttonStyle(.plain)
 
       if expandedSectionIds.contains(id) {
         if rows.isEmpty {
