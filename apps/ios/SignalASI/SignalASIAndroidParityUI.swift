@@ -2160,6 +2160,10 @@ struct AgentHomeView: View {
       modelId: target.selectedCloudModel?.modelId ?? "",
       displayName: target.displayName
     )
+    store.setAgentSessionSelectedModelOrAgent(
+      id: conversationId,
+      label: target.displayName.ifBlank(target.name).ifBlank(target.id)
+    )
     modelSelection = AgentModelSelectionSettings.selection(for: conversationId)
     return true
   }
