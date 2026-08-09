@@ -1351,6 +1351,93 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func mergeAgentSessionIntoParent(id conversationId: String) -> AgentConversationMergeResult {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let source = agentSession(id: clean) else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: nil, targetConversation: nil,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .sourceNotFound
+      )
+    }
+    guard source.createdByAgent else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: source, targetConversation: nil,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .notAgentCreated
+      )
+    }
+    guard source.mergedIntoConversationId.isBlank else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: source, targetConversation: nil,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .alreadyMerged
+      )
+    }
+    guard let target = agentSession(id: source.parentConversationId) else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: source, targetConversation: nil,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .targetNotFound
+      )
+    }
+    guard source.id != target.id else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: source, targetConversation: target,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .sameConversation
+      )
+    }
+    guard source.privateMode == target.privateMode else {
+      return AgentConversationMergeResult(
+        merged: false, sourceConversation: source, targetConversation: target,
+        copiedEntryCount: 0, skippedEntryCount: 0, failure: .privacyMismatch
+      )
+    }
+
+    let sourceMessages = agentSessionMessages(source.id).filter { !$0.isSystem }
+    for message in sourceMessages {
+      var copy = message
+      copy.id = UUID()
+      copy.conversationId = target.id
+      copy.remoteMessageId = ""
+      messagesByContact[copy.contactId, default: []].append(copy)
+    }
+
+    let now = Self.nowMillis()
+    var mergedSource = source
+    mergedSource.status = .archived
+    mergedSource.trackingPaused = true
+    mergedSource.mergedIntoConversationId = target.id
+    mergedSource.mergedAtMillis = now
+    mergedSource.updatedAt = now
+
+    var mergedTarget = target
+    mergedTarget.status = .active
+    mergedTarget.summary = mergedSessionSummary(target.summary, source.summary)
+    mergedTarget.inputTokens = saturatingAdd(target.inputTokens, source.inputTokens)
+    mergedTarget.outputTokens = saturatingAdd(target.outputTokens, source.outputTokens)
+    mergedTarget.costMicros = saturatingAdd(target.costMicros, source.costMicros)
+    mergedTarget.updatedAt = max(target.updatedAt, source.updatedAt, now)
+
+    agentTaskRecords = agentTaskRecords.map { task in
+      guard task.sessionId == source.id else { return task }
+      var rebound = task
+      rebound.sessionId = target.id
+      return rebound
+    }
+    persistAgentConversation(mergedSource)
+    persistAgentConversation(mergedTarget)
+    if activeAgentConversationId == source.id {
+      activeAgentConversationId = target.id
+    }
+    save()
+    return AgentConversationMergeResult(
+      merged: true,
+      sourceConversation: mergedSource,
+      targetConversation: mergedTarget,
+      copiedEntryCount: sourceMessages.count,
+      skippedEntryCount: 0,
+      failure: .none
+    )
+  }
+
+  @discardableResult
   func archiveAgentSession(id conversationId: String) -> Bool {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     let shouldClearActive = activeAgentConversationId == clean
@@ -3152,6 +3239,19 @@ final class SignalASIStore: ObservableObject {
     conversation.updatedAt = Self.nowMillis()
     persistAgentConversation(conversation)
     return true
+  }
+
+  private func mergedSessionSummary(_ target: String, _ source: String) -> String {
+    let targetSummary = target.trimmingCharacters(in: .whitespacesAndNewlines)
+    let sourceSummary = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    if targetSummary.isEmpty { return sourceSummary }
+    if sourceSummary.isEmpty || targetSummary == sourceSummary { return targetSummary }
+    return "\(targetSummary)\n\n\(sourceSummary)"
+  }
+
+  private func saturatingAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    let (value, overflow) = left.addingReportingOverflow(right)
+    return overflow ? Int64.max : value
   }
 
   private func persistAgentConversation(_ conversation: AgentConversation) {

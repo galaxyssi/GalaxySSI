@@ -21,6 +21,7 @@ struct SignalASIAgentSessionsView: View {
   @State private var contextSession: AgentConversation?
   @State private var detailsSession: AgentConversation?
   @State private var deletingSession: AgentConversation?
+  @State private var mergingSession: AgentConversation?
   @State private var statusText = ""
 
   private var visibleSessions: [AgentConversation] {
@@ -180,6 +181,28 @@ struct SignalASIAgentSessionsView: View {
     } message: {
       Text(t("signalasi.agent_session.delete_confirm", "Delete this session and all of its messages?"))
     }
+    .alert(t("signalasi.agent_session.merge_into_original", "Merge into original session"), isPresented: mergeAlertPresented) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        mergingSession = nil
+      }
+      Button(t("signalasi.agent_session.merge_confirm_action", "Merge"), role: .destructive) {
+        confirmMerge()
+      }
+    } message: {
+      if let session = mergingSession,
+         let target = store.agentSession(id: session.parentConversationId) {
+        Text(
+          String(
+            format: t(
+              "signalasi.agent_session.merge_confirm",
+              "Merge %@ into %@? Messages and running task history will continue in the original session."
+            ),
+            session.title,
+            target.title
+          )
+        )
+      }
+    }
   }
 
   private var groupedSessions: [(title: String, sessions: [AgentConversation])] {
@@ -209,6 +232,17 @@ struct SignalASIAgentSessionsView: View {
     )
   }
 
+  private var mergeAlertPresented: Binding<Bool> {
+    Binding(
+      get: { mergingSession != nil },
+      set: { value in
+        if !value {
+          mergingSession = nil
+        }
+      }
+    )
+  }
+
   @ViewBuilder
   private func sessionMenu(_ session: AgentConversation) -> some View {
     Menu {
@@ -225,6 +259,11 @@ struct SignalASIAgentSessionsView: View {
       }
       Button(session.pinned ? t("signalasi.agent_session.unpin", "Unpin") : t("signalasi.agent_session.pin", "Pin")) {
         _ = store.setAgentSessionPinned(id: session.id, pinned: !session.pinned)
+      }
+      if canMerge(session) {
+        Button(t("signalasi.agent_session.merge_into_original", "Merge into original session")) {
+          mergingSession = session
+        }
       }
       if session.mergedIntoConversationId.isBlank {
         Button(session.privateMode ? t("signalasi.agent_session.standard", "Standard session") : t("signalasi.agent_session.private", "Private session")) {
@@ -273,6 +312,50 @@ struct SignalASIAgentSessionsView: View {
     let session = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     statusText = String(format: t("signalasi.agent_sessions.created", "Selected %@"), session.title)
     showArchived = false
+  }
+
+  private func canMerge(_ session: AgentConversation) -> Bool {
+    guard session.createdByAgent,
+          !session.parentConversationId.isBlank,
+          session.mergedIntoConversationId.isBlank,
+          let parent = store.agentSession(id: session.parentConversationId) else {
+      return false
+    }
+    return parent.privateMode == session.privateMode
+  }
+
+  private func confirmMerge() {
+    guard let session = mergingSession else { return }
+    let result = store.mergeAgentSessionIntoParent(id: session.id)
+    mergingSession = nil
+    guard result.merged else {
+      statusText = mergeFailureMessage(result.failure)
+      return
+    }
+    let targetTitle = result.targetConversation?.title.ifBlank(
+      t("signalasi.agent_session.new", "New session")
+    ) ?? t("signalasi.agent_session.new", "New session")
+    statusText = String(
+      format: t("signalasi.agent_sessions.merge_success", "Merged %d messages into %@"),
+      result.copiedEntryCount,
+      targetTitle
+    )
+    showArchived = false
+  }
+
+  private func mergeFailureMessage(_ failure: AgentConversationMergeFailure) -> String {
+    switch failure {
+    case .sourceNotFound:
+      return t("signalasi.agent_session.merge_source_missing", "The Agent-created session no longer exists")
+    case .targetNotFound:
+      return t("signalasi.agent_session.merge_target_missing", "The original session no longer exists")
+    case .notAgentCreated:
+      return t("signalasi.agent_session.merge_unavailable", "Only Agent-created sessions can be merged")
+    case .alreadyMerged:
+      return t("signalasi.agent_session.merge_already_done", "This session has already been merged")
+    case .sameConversation, .privacyMismatch, .none:
+      return t("signalasi.agent_session.merge_unavailable", "This session cannot be merged")
+    }
   }
 
   private func selectSession(_ session: AgentConversation) {
