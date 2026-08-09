@@ -3616,4 +3616,13 @@
 "signalasi.agent.retry.title" = "Agent 请求失败";
 "signalasi.agent.retry.subtitle" = "可以重试最近一次 Agent 请求。";
 "signalasi.agent.resume_task" = "恢复任务";
+"signalasi.agent.action_status.title" = "Agent 操作";
+"signalasi.agent.action_status.empty" = "此操作没有可用内容。";
+"signalasi.agent.action_status.invalid" = "此 Agent 操作无效。";
+"signalasi.agent.action_status.invalid_uri" = "此链接无法在 iOS 上打开。";
+"signalasi.agent.action_status.open_failed" = "无法打开此链接。";
+"signalasi.agent.action_status.unsupported" = "iOS 暂不支持此 Agent 操作。";
+"signalasi.agent.action_status.conversation_unavailable" = "此 Agent 会话已不可用。";
+"signalasi.agent.action_status.recovery_started" = "已开始恢复任务。";
+"signalasi.agent.action_status.recovery_failed" = "恢复请求发送失败。";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";
