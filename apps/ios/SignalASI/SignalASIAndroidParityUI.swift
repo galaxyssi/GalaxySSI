@@ -361,6 +361,10 @@ struct AgentHomeView: View {
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
+        coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
+      }
+      .onChange(of: agentScreenSnapshot) { snapshot in
+        coordinator.updateAgentScreenContext(snapshot.screen)
       }
       .onChange(of: store.activeAgentConversationId) { _ in
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
@@ -1405,6 +1409,7 @@ struct AgentHomeView: View {
   private func sendAgentMessage(
     voiceAttachmentSnapshot: [SignalASIDraftAttachment]? = nil
   ) {
+    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
       goalOverride: voiceAttachmentSnapshot == nil ? nil : cleanDraft,
