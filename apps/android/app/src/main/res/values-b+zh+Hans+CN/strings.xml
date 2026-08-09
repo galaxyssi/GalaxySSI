@@ -1320,4 +1320,14 @@
     <string name="voice_entity_device">设备</string>
     <string name="voice_entity_negation">否定词</string>
     <string name="voice_entity_action">动作</string>
+    <string name="agent_header_session_title">%1$s ›</string>
+    <string name="agent_header_model_auto">‹ Auto</string>
+    <string name="agent_header_model_auto_with_name">‹ Auto · %1$s</string>
+    <string name="agent_header_model_manual">‹ %1$s</string>
+    <string name="agent_model_selection_title">选择模型</string>
+    <string name="agent_model_selection_automatic">自动</string>
+    <string name="agent_model_selection_automatic_subtitle">根据任务、速度、隐私与可用性自动选择</string>
+    <string name="agent_model_selection_local_section">本机模型</string>
+    <string name="agent_model_selection_local_subtitle">已启用 · 本机</string>
+    <string name="agent_model_selection_cloud_section">云端模型</string>
 </resources>

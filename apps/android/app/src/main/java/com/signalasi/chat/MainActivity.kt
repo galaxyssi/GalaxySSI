@@ -4649,7 +4649,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
         }
-        findViewById<View>(R.id.agentSessionSummary).setOnClickListener { showAgentSessionsPage() }
+        findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
+        findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener { showAgentModelSelectionPage() }
         agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
         agentInsightBar.setOnClickListener { showGlobalInsightsDialog() }
         agentPermissionModeButton.setOnClickListener {
@@ -7239,18 +7240,42 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun refreshAgentConversationHeader(
-        conversation: AgentConversation = agentTranscriptStore.activeConversation(),
-        contextCount: Int = agentTranscriptStore.context(conversation.id).turns.size
+        conversation: AgentConversation = agentTranscriptStore.activeConversation()
     ) {
-        agentSessionTitle.text = agentConversationDisplayTitle(conversation)
-        val baseSubtitle = getString(
-            R.string.agent_session_context_count,
-            agentConversationSourceLabel(conversation),
-            contextCount
+        agentSessionTitle.text = getString(
+            R.string.agent_header_session_title,
+            agentConversationDisplayTitle(conversation)
         )
-        agentSubtitleText.text = if (conversation.summary.isNotBlank()) {
-            "$baseSubtitle · ${getString(R.string.agent_session_context_compacted)}"
-        } else baseSubtitle
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+        val selection = AgentModelSelectionSettings.selection(this)
+        val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)
+        val manualSelectionAvailable = selection.mode == AgentModelSelectionMode.MANUAL && preferredTarget != null
+        val modelName = if (manualSelectionAvailable) {
+            when (preferredTarget?.id) {
+                "local-llm" -> selection.modelId
+                    .takeIf(String::isNotBlank)
+                    ?.let { LocalModelManager.profile(this, it).displayName }
+                    ?: LocalModelRuntimeSettings.displayProfile(this).displayName
+                else -> selection.displayName.ifBlank { preferredTarget?.let(::agentModelTargetDisplayName).orEmpty() }
+            }
+        } else {
+            agentConversationSourceLabel(conversation)
+                .takeUnless { source ->
+                    source.isBlank() ||
+                        source.equals("Automatic", ignoreCase = true) ||
+                        source.equals("SignalASI", ignoreCase = true) ||
+                        source.equals("Agent Knowledge", ignoreCase = true)
+                }
+                ?: AgentConnectorRouteSelector.select(targets, decision = null)
+                    ?.target
+                    ?.let(::agentModelTargetDisplayName)
+                    .orEmpty()
+        }.ifBlank { getString(R.string.agent_model_selection_automatic) }
+        agentSubtitleText.text = if (manualSelectionAvailable) {
+            getString(R.string.agent_header_model_manual, modelName)
+        } else {
+            getString(R.string.agent_header_model_auto_with_name, modelName)
+        }
     }
 
     private fun agentConversationDisplayTitle(conversation: AgentConversation): String =
@@ -7372,6 +7397,155 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         refreshAgentConversationHeader()
         refreshAgentTranscriptWindow()
         if (featurePage.visibility == View.VISIBLE) hideFeaturePage()
+    }
+
+    private fun showAgentModelSelectionPage() {
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+        val selection = AgentModelSelectionSettings.selection(this)
+        val preferredTargetId = AgentModelSelectionPolicy.preferredTargetId(selection, targets)
+        val automaticSelected = selection.mode == AgentModelSelectionMode.AUTO || preferredTargetId.isBlank()
+
+        showFeaturePage(getString(R.string.agent_model_selection_title))
+        setFeatureBackAction { hideFeaturePage() }
+        featureContent.addView(
+            agentModelSelectionRow(
+                title = getString(R.string.agent_model_selection_automatic),
+                subtitle = getString(R.string.agent_model_selection_automatic_subtitle),
+                iconRes = R.drawable.ic_agent_skill,
+                iconColor = Color.parseColor("#12BFA4"),
+                selected = automaticSelected
+            ).apply {
+                setOnClickListener {
+                    AgentModelSelectionSettings.selectAuto(this@MainActivity)
+                    refreshAgentConversationHeader()
+                    hideFeaturePage()
+                }
+            }
+        )
+
+        val localProfiles = LocalModelRuntimeSettings.activeProfiles(this)
+        if (localProfiles.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_model_selection_local_section))
+            localProfiles.forEach { profile ->
+                val selected = preferredTargetId == "local-llm" && selection.modelId == profile.id
+                featureContent.addView(
+                    agentModelSelectionRow(
+                        title = profile.displayName,
+                        subtitle = getString(R.string.agent_model_selection_local_subtitle),
+                        iconRes = R.drawable.ic_local_model,
+                        iconColor = featureIconColor(R.drawable.ic_local_model),
+                        selected = selected
+                    ).apply {
+                        setOnClickListener {
+                            LocalModelRuntimeSettings.setSelectedProfile(this@MainActivity, profile.id)
+                            AgentModelSelectionSettings.selectManual(
+                                this@MainActivity,
+                                targetId = "local-llm",
+                                modelId = profile.id,
+                                displayName = profile.displayName
+                            )
+                            refreshAgentConversationHeader()
+                            hideFeaturePage()
+                        }
+                    }
+                )
+            }
+        }
+
+        val cloudTargets = targets
+            .asSequence()
+            .filter { target ->
+                target.kind == AgentConnectorKind.MODEL &&
+                    target.status == AgentConnectorStatus.AVAILABLE &&
+                    target.id != "local-llm" &&
+                    target.id != "cloud-models" &&
+                    target.providerProfile?.modelId?.isNotBlank() == true
+            }
+            .distinctBy(AgentCallableTarget::id)
+            .toList()
+        if (cloudTargets.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_model_selection_cloud_section))
+            cloudTargets.forEach { target ->
+                val providerProfile = checkNotNull(target.providerProfile)
+                val modelName = providerProfile.displayName
+                    .takeIf { it.isNotBlank() && !it.equals(target.title, ignoreCase = true) }
+                    ?: modelDisplayLabel(providerProfile.modelId)
+                featureContent.addView(
+                    agentModelSelectionRow(
+                        title = modelName,
+                        subtitle = target.title,
+                        iconRes = providerIcon(providerProfile.providerId.ifBlank { target.title }),
+                        iconColor = Color.parseColor(providerColor(providerProfile.providerId.ifBlank { target.title })),
+                        selected = preferredTargetId == target.id
+                    ).apply {
+                        setOnClickListener {
+                            AgentModelSelectionSettings.selectManual(
+                                this@MainActivity,
+                                targetId = target.id,
+                                modelId = providerProfile.modelId,
+                                displayName = modelName
+                            )
+                            refreshAgentConversationHeader()
+                            hideFeaturePage()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private fun agentModelTargetDisplayName(target: AgentCallableTarget): String = when {
+        target.id == "local-llm" -> LocalModelRuntimeSettings.displayProfile(this).displayName
+        target.providerProfile?.modelId?.isNotBlank() == true -> modelDisplayLabel(target.providerProfile.modelId)
+        else -> target.title
+    }
+
+    private fun agentModelSelectionRow(
+        title: String,
+        subtitle: String,
+        iconRes: Int,
+        iconColor: Int,
+        selected: Boolean
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        isClickable = true
+        isFocusable = true
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(10), dp(4), dp(10))
+            addView(featureIcon(iconRes, iconColor), LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(8), 0)
+                addView(TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 15.5f
+                    setTextColor(getColorCompat(R.color.text_primary))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = subtitle
+                    textSize = 12f
+                    setTextColor(getColorCompat(R.color.text_secondary))
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(this@MainActivity).apply {
+                text = if (selected) "\u2713" else ""
+                textSize = 22f
+                gravity = Gravity.CENTER
+                setTextColor(getColorCompat(R.color.signalasi_green))
+            }, LinearLayout.LayoutParams(dp(40), dp(44)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(68)))
+        addView(View(this@MainActivity).apply {
+            setBackgroundColor(adjustAlpha(getColorCompat(R.color.text_secondary), 0.18f))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply {
+            marginStart = dp(60)
+        })
     }
 
     private fun showAgentSessionsPage(showArchived: Boolean = false) {
@@ -33689,6 +33863,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             iconRes == R.drawable.ic_avatar_ai_agent ||
             iconRes == R.drawable.ic_avatar_custom_agent ||
             iconRes == R.drawable.ic_avatar_cloud_model ||
+            iconRes == R.drawable.logo_provider_openai ||
+            iconRes == R.drawable.logo_provider_deepseek ||
+            iconRes == R.drawable.logo_provider_anthropic ||
+            iconRes == R.drawable.logo_provider_gemini ||
+            iconRes == R.drawable.logo_provider_qwen ||
+            iconRes == R.drawable.logo_provider_openrouter ||
             iconRes == R.drawable.ic_send_plane
     }
 
