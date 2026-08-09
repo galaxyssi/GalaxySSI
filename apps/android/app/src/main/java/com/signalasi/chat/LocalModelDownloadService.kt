@@ -9,6 +9,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,6 +22,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.coroutineContext
 
 class LocalModelDownloadService : Service() {
     private enum class StopRequest { NONE, PAUSE, CANCEL }
@@ -35,6 +39,7 @@ class LocalModelDownloadService : Service() {
         .build()
     @Volatile private var activeProfileId = ""
     @Volatile private var activeCall: Call? = null
+    @Volatile private var activeQairtJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -55,6 +60,7 @@ class LocalModelDownloadService : Service() {
 
     override fun onDestroy() {
         activeCall?.cancel()
+        activeQairtJob?.cancel()
         executor.shutdownNow()
         activeIds.clear()
         super.onDestroy()
@@ -84,6 +90,7 @@ class LocalModelDownloadService : Service() {
                 download(profile)
             } finally {
                 activeCall = null
+                activeQairtJob = null
                 activeIds -= profile.id
                 activeProfileId = ""
                 runNext()
@@ -96,6 +103,7 @@ class LocalModelDownloadService : Service() {
         if (profileId == activeProfileId) {
             stopRequest.set(request)
             activeCall?.cancel()
+            activeQairtJob?.cancel()
         } else {
             queue.remove(profileId)
             activeIds -= profileId
@@ -111,6 +119,10 @@ class LocalModelDownloadService : Service() {
     }
 
     private fun download(profile: LocalModelRuntimeProfile) {
+        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+            downloadQairt(profile)
+            return
+        }
         val storage = LocalModelManager.storage(this)
         val urls = profile.sourceUrls(LocalModelManager.preferChinaMirror(this))
         var sourceIndex = LocalModelManager.state(this, profile).sourceIndex.coerceIn(0, urls.lastIndex)
@@ -148,7 +160,7 @@ class LocalModelDownloadService : Service() {
                 )
                 updateNotification(profile)
                 storage.commitVerifiedPartial(profile, sourceUrl)
-                LocalModelRuntimeSettings.setSelectedProfile(this, profile.id)
+                LocalModelRuntimeSettings.registerInstalledProfile(this, profile)
                 LocalModelManager.record(
                     this,
                     profile,
@@ -214,6 +226,84 @@ class LocalModelDownloadService : Service() {
             )
         )
         updateNotification(profile)
+    }
+
+    private fun downloadQairt(profile: LocalModelRuntimeProfile) = runBlocking {
+        activeQairtJob = coroutineContext.job
+        try {
+            LocalModelManager.record(
+                this@LocalModelDownloadService,
+                profile,
+                LocalModelDownloadState(
+                    LocalModelInstallState.DOWNLOADING,
+                    LocalModelManager.state(this@LocalModelDownloadService, profile).bytesDownloaded,
+                    profile.expectedModelFileBytes
+                )
+            )
+            GenieXQairtModelManager.pull(this@LocalModelDownloadService, profile) { progress ->
+                val total = progress.totalBytes.takeIf { it > 0L } ?: profile.expectedModelFileBytes
+                LocalModelManager.record(
+                    this@LocalModelDownloadService,
+                    profile,
+                    LocalModelDownloadState(
+                        LocalModelInstallState.DOWNLOADING,
+                        progress.downloadedBytes.coerceAtMost(total),
+                        total
+                    )
+                )
+                updateNotification(profile)
+            }
+            checkStop(profile)
+            LocalModelManager.record(
+                this@LocalModelDownloadService,
+                profile,
+                LocalModelDownloadState(
+                    LocalModelInstallState.INSTALLING,
+                    profile.expectedModelFileBytes,
+                    profile.expectedModelFileBytes
+                )
+            )
+            updateNotification(profile)
+            LocalModelRuntimeSettings.registerInstalledProfile(this@LocalModelDownloadService, profile)
+            LocalModelManager.record(
+                this@LocalModelDownloadService,
+                profile,
+                LocalModelDownloadState(
+                    LocalModelInstallState.READY,
+                    profile.expectedModelFileBytes,
+                    profile.expectedModelFileBytes
+                )
+            )
+            updateNotification(profile)
+        } catch (error: Throwable) {
+            val current = LocalModelManager.state(this@LocalModelDownloadService, profile)
+            when (stopRequest.get()) {
+                StopRequest.PAUSE -> LocalModelManager.record(
+                    this@LocalModelDownloadService,
+                    profile,
+                    current.copy(state = LocalModelInstallState.PAUSED)
+                )
+                StopRequest.CANCEL -> {
+                    runCatching {
+                        GenieXQairtModelManager.remove(this@LocalModelDownloadService, profile)
+                    }
+                    LocalModelManager.clearState(this@LocalModelDownloadService, profile)
+                }
+                StopRequest.NONE -> {
+                    LocalModelManager.record(
+                        this@LocalModelDownloadService,
+                        profile,
+                        current.copy(
+                            state = LocalModelInstallState.FAILED,
+                            detail = error.message.orEmpty().ifBlank { "Qualcomm model download failed" }
+                        )
+                    )
+                    updateNotification(profile)
+                }
+            }
+        } finally {
+            activeQairtJob = null
+        }
     }
 
     private fun downloadFrom(profile: LocalModelRuntimeProfile, sourceUrl: String, sourceIndex: Int) {

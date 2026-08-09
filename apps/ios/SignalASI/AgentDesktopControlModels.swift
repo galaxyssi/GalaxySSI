@@ -679,6 +679,31 @@ struct AgentDesktopRemoteControlSnapshot: Equatable {
     fullDesktopExecutor && currentAuthorization?.status == "pending"
   }
 
+  static func initial(for link: ServerLink) -> AgentDesktopRemoteControlSnapshot {
+    AgentDesktopRemoteControlSnapshot(
+      desktopId: link.desktopId,
+      desktopName: link.desktopName.ifBlank("SignalASI Desktop"),
+      desktopFingerprint: link.desktopFingerprint,
+      serverRouteId: link.routes.serverRouteId,
+      fullDesktopExecutor: link.fullDesktopExecutor,
+      enabled: link.fullDesktopExecutor,
+      requireUnlocked: false,
+      currentAuthorization: nil,
+      authorizations: [],
+      recentAudit: [],
+      recentReceipts: [],
+      activeRuns: [],
+      lastActionStatus: "",
+      lastActionSummary: "",
+      lastActionAt: 0,
+      screenshot: nil,
+      perception: nil,
+      surfaceCatalog: nil,
+      streamFps: 0,
+      streamActive: false
+    )
+  }
+
   static func parse(_ source: AgentMcpJSONObject?) -> AgentDesktopRemoteControlSnapshot? {
     guard let source else { return nil }
     let authorizations = parseAuthorizations(source["authorizations"])

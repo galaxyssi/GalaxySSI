@@ -9,69 +9,6 @@ struct AgentDesktopArtifactIngestResult: Equatable {
   var taskId: String
 }
 
-struct AgentDesktopArtifactRequestPayload: Codable, Equatable {
-  var artifactId: String
-  var artifactURI: String
-  var sha256: String
-  var taskId: String
-  var desktopId: String
-  var clientRouteId: String
-  var displayName: String
-  var mimeType: String
-  var sizeBytes: Int64
-
-  enum CodingKeys: String, CodingKey {
-    case artifactId = "artifact_id"
-    case artifactURI = "artifact_uri"
-    case sha256
-    case taskId = "task_id"
-    case desktopId = "desktop_id"
-    case clientRouteId = "client_route_id"
-    case displayName = "display_name"
-    case mimeType = "mime_type"
-    case sizeBytes = "size_bytes"
-  }
-
-  static func from(block: AgentRichBlock) -> AgentDesktopArtifactRequestPayload? {
-    let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
-    let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactURI),
-          digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
-      return nil
-    }
-    let suppliedArtifactId = (block.metadata["artifact_id"] ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let artifactId = suppliedArtifactId.isEmpty
-      ? SHA256.hash(data: Data("\(artifactURI)\u{0000}\(digest)".utf8))
-        .map { String(format: "%02x", $0) }
-        .joined()
-      : suppliedArtifactId
-    return AgentDesktopArtifactRequestPayload(
-      artifactId: artifactId,
-      artifactURI: artifactURI,
-      sha256: digest,
-      taskId: block.metadata["task_id"] ?? "",
-      desktopId: block.metadata["desktop_id"] ?? "",
-      clientRouteId: block.metadata["client_route_id"] ?? "",
-      displayName: AgentDesktopArtifactStore.safeFileName(
-        block.title.ifBlank(block.metadata["name"] ?? "SignalASI-artifact")
-      ),
-      mimeType: block.mimeType.ifBlank("application/octet-stream"),
-      sizeBytes: Int64(block.metadata["size_bytes"] ?? "") ?? 0
-    )
-  }
-
-  func encode() -> String {
-    guard let data = try? JSONEncoder().encode(self) else { return "{}" }
-    return String(decoding: data, as: UTF8.self)
-  }
-
-  static func decode(_ raw: String) -> AgentDesktopArtifactRequestPayload? {
-    guard let data = raw.data(using: .utf8) else { return nil }
-    return try? JSONDecoder().decode(self, from: data)
-  }
-}
-
 enum AgentDesktopArtifactStoreError: Error, Equatable {
   case invalidPayload(String)
   case integrity(String)
@@ -80,12 +17,6 @@ enum AgentDesktopArtifactStoreError: Error, Equatable {
 
 final class AgentDesktopArtifactStore {
   static let defaultRootDirectoryName = "desktop-artifacts"
-  static let shared = AgentDesktopArtifactStore(
-    applicationSupportDirectory: FileManager.default.urls(
-      for: .applicationSupportDirectory,
-      in: .userDomainMask
-    ).first ?? FileManager.default.temporaryDirectory
-  )
 
   private let rootURL: URL
   private let fileManager: FileManager
@@ -250,16 +181,9 @@ final class AgentDesktopArtifactStore {
   func localFile(for block: AgentRichBlock) -> URL? {
     let resolved = resolveBlock(block)
     guard let sourceURI = resolved.metadata["artifact_source_uri"],
-      let file = localFile(forArtifactURI: sourceURI) else {
-      return nil
-    }
-    return file
-  }
-
-  func localFile(forArtifactURI artifactURI: String) -> URL? {
-    guard let record = try? existingRecord(artifactURI: artifactURI),
-          let file = try? artifactFile(record: record),
-          fileManager.fileExists(atPath: file.path) else {
+      let record = try? existingRecord(artifactURI: sourceURI),
+      let file = try? artifactFile(record: record),
+      fileManager.fileExists(atPath: file.path) else {
       return nil
     }
     return file
@@ -298,6 +222,12 @@ final class AgentDesktopArtifactStore {
 
   static func isSignalASIArtifactURI(_ value: String) -> Bool {
     URLComponents(string: value)?.scheme?.lowercased() == "signalasi-artifact"
+  }
+
+  static func stableID(uri: String, sha256: String) -> String {
+    SHA256.hash(data: Data("\(uri)\0\(sha256)".utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
   }
 
   static func safeFileName(_ value: String) -> String {
