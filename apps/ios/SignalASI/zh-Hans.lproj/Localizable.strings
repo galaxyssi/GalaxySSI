@@ -746,6 +746,16 @@
 "signalasi.agent_sessions.deleted_remote_pending" = "会话已删除，正在清理配对的桌面端……";
 "signalasi.agent_sessions.deleted_remote_sent" = "远程清理请求已发送";
 "signalasi.agent_sessions.deleted_remote_failed" = "会话已删除，但远程清理请求发送失败";
+"signalasi.agent_session.delete_more" = "删除更多";
+"signalasi.agent_sessions.selected_count" = "已选择 %d 个";
+"signalasi.agent_sessions.select_all" = "全选";
+"signalasi.agent_sessions.clear_selection" = "清除选择";
+"signalasi.agent_sessions.delete_selected" = "删除所选会话";
+"signalasi.agent_sessions.delete_selected_confirm" = "删除已选择的 %d 个会话及其消息？";
+"signalasi.agent_sessions.deleted_selected" = "已删除 %d 个会话";
+"signalasi.agent_sessions.deleted_selected_pending" = "已删除 %d 个会话，正在清理配对的桌面端……";
+"signalasi.agent_sessions.deleted_selected_sent" = "所选会话已删除，远程清理请求已发送";
+"signalasi.agent_sessions.deleted_selected_failed" = "会话已删除，但部分远程清理请求发送失败";
 "signalasi.agent_sessions.delete_failed" = "会话未删除";
 "signalasi.agent_sessions.context_updated" = "上下文策略已更新";
 "signalasi.agent_session.new" = "新会话";
