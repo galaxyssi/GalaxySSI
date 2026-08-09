@@ -10,6 +10,7 @@ import UserNotifications
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var agentStartupRecovery: AgentStartupRecoveryCoordinator
   @StateObject private var voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
   @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
   @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
@@ -19,6 +20,7 @@ struct SignalASIApp: App {
     let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: coordinator)
+    _agentStartupRecovery = StateObject(wrappedValue: AgentStartupRecoveryCoordinator())
     _voiceAgentRunRecovery = StateObject(
       wrappedValue: VoiceAgentRunRecoveryCoordinator.shared
     )
@@ -35,10 +37,12 @@ struct SignalASIApp: App {
       RootView()
         .environmentObject(store)
         .environmentObject(coordinator)
+        .environmentObject(agentStartupRecovery)
         .environmentObject(voiceAgentRunRecovery)
         .signalASITextScale(store.displaySettings)
         .onAppear {
           coordinator.start()
+          agentStartupRecovery.start(store: store)
           voiceAgentRunRecovery.start()
           workflowTriggerCoordinator.start()
           backgroundScheduler.start()

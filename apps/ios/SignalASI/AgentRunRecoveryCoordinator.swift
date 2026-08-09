@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 enum AgentRunRecoveryOutcome: String, Codable, CaseIterable, Identifiable {
   case restoredLocalWait = "RESTORED_LOCAL_WAIT"
@@ -439,6 +440,91 @@ final class AgentRunRecoveryCoordinator {
 
   private static let remoteUnavailableReason = "remote_run_temporarily_unavailable"
   private static let maxWriteAttempts = 4
+}
+
+@MainActor
+final class AgentStartupRecoveryCoordinator: ObservableObject {
+  @Published private(set) var isRecovering = false
+  @Published private(set) var recoveredRunCount = 0
+  @Published private(set) var lastError = ""
+
+  private var hasStarted = false
+
+  func start(store: SignalASIStore) {
+    guard !hasStarted else { return }
+    hasStarted = true
+    isRecovering = true
+    lastError = ""
+
+    let contacts = store.contacts
+    Task { @MainActor [weak self] in
+      let runStore = UserDefaultsAgentRunEventStore()
+      let workspaceStore = FileAgentWorkspaceStore()
+      let recordedStore = UserDefaultsAgentRecordedRunStore()
+      let recovery = AgentRunRecoveryCoordinator(
+        runStore: runStore,
+        workspaceStore: workspaceStore,
+        recordedRun: { runId in
+          recordedStore.runs().first { $0.runId == runId }
+        },
+        registration: { agentId, deviceId in
+          Self.recoveryRegistration(
+            agentId: agentId,
+            deviceId: deviceId,
+            contacts: contacts
+          )
+        },
+        adapterResolver: { _ in nil }
+      )
+
+      do {
+        let results = try await recovery.recover()
+        guard let self else { return }
+        self.recoveredRunCount = results.count
+        store.refreshAgentRuntimeState()
+      } catch {
+        self?.lastError = error.localizedDescription
+      }
+      self?.isRecovering = false
+    }
+  }
+
+  private static func recoveryRegistration(
+    agentId: String,
+    deviceId: String,
+    contacts: [SignalASIContact]
+  ) -> AgentRunRecoveryRegistration? {
+    let cleanAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanDeviceId = deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let contact = contacts.first(where: { contact in
+      !contact.deleted && (
+        contact.id == cleanAgentId ||
+          contact.connectorAgentId == cleanAgentId ||
+          (!cleanDeviceId.isEmpty && contact.desktopId == cleanDeviceId && contact.type == "agent")
+      )
+    }) else {
+      return nil
+    }
+
+    let location: AgentResourceLocation
+    let connectionKind: AgentConnectionKind
+    switch contact.deliveryMode {
+    case .local:
+      location = .phone
+      connectionKind = .inProcess
+    case .cloudAPI:
+      location = .cloud
+      connectionKind = .http
+    case .link, .pcConnector:
+      location = .trustedDesktop
+      connectionKind = .signalasiLink
+    }
+    return AgentRunRecoveryRegistration(
+      agentId: contact.connectorAgentId.ifBlank(contact.id),
+      location: location,
+      connectionKind: connectionKind
+    )
+  }
 }
 
 private extension Dictionary where Key == String, Value == AgentRunControlPayloadValue {
