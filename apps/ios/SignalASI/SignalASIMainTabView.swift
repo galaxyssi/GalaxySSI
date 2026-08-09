@@ -1,83 +1,8 @@
 import SwiftUI
 
 struct SignalASIMainTabView: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @EnvironmentObject private var store: SignalASIStore
-  @State private var selection = SignalASIMainTab.agent
-
-  private var unreadTotal: Int {
-    store.visibleContacts.reduce(0) { total, contact in
-      total + store.conversationSummary(for: contact.id).unreadCount
-    }
-  }
-
   var body: some View {
-    VStack(spacing: 0) {
-      activeContent
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      Divider()
-        .background(Color.signalASISeparator)
-      tabBar
-    }
-    .background(Color.signalASIPageBackground.ignoresSafeArea())
-  }
-
-  @ViewBuilder
-  private var activeContent: some View {
-    switch selection {
-    case .voice:
-      SignalASIVoiceTabView()
-    case .agent:
-      AgentHomeView()
-    case .messages:
-      ChatListView()
-    case .contacts:
-      ContactsView()
-    case .discover:
-      DiscoverView()
-    case .settings:
-      SettingsView(navigateToMainTab: { tab in
-        withAnimation(.easeOut(duration: 0.14)) {
-          selection = tab
-        }
-      })
-    }
-  }
-
-  private var tabBar: some View {
-    HStack(spacing: 0) {
-      ForEach(SignalASIMainTab.allCases) { tab in
-        SignalASIMainTabButton(
-          tab: tab,
-          title: title(for: tab),
-          isSelected: selection == tab,
-          badgeCount: badgeCount(for: tab)
-        ) {
-          withAnimation(.easeOut(duration: 0.14)) {
-            selection = tab
-          }
-        }
-      }
-    }
-    .padding(.horizontal, 4)
-    .padding(.top, 6)
-    .padding(.bottom, 8)
-    .background(Color.signalASIBarBackground)
-  }
-
-  private func badgeCount(for tab: SignalASIMainTab) -> Int {
-    switch tab {
-    case .messages:
-      return unreadTotal
-    case .contacts:
-      return store.pendingFriendRequests.count
-    case .voice, .agent, .discover, .settings:
-      return 0
-    }
-  }
-
-  private func title(for tab: SignalASIMainTab) -> String {
-    SignalASILocalization.string(tab.titleKey, fallback: tab.fallbackTitle, language: interfaceLanguage)
+    AgentHomeView()
   }
 }
 
@@ -190,58 +115,6 @@ enum SignalASIMainTab: String, CaseIterable, Identifiable {
       return "safari.fill"
     case .settings:
       return "gearshape.fill"
-    }
-  }
-}
-
-private struct SignalASIMainTabButton: View {
-  var tab: SignalASIMainTab
-  var title: String
-  var isSelected: Bool
-  var badgeCount: Int
-  var action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      VStack(spacing: 4) {
-        ZStack(alignment: .topTrailing) {
-          tabIcon
-          if badgeCount > 0 {
-            Text(badgeCount > 99 ? "99+" : "\(badgeCount)")
-              .font(.system(size: 9, weight: .bold))
-              .foregroundColor(.white)
-              .monospacedDigit()
-              .padding(.horizontal, 4)
-              .frame(minWidth: 16, minHeight: 16)
-              .background(Capsule().fill(Color.signalASIUnreadRed))
-              .offset(x: 10, y: -7)
-          }
-        }
-        Text(title)
-          .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-          .lineLimit(1)
-          .minimumScaleFactor(0.72)
-      }
-      .foregroundColor(isSelected ? .signalASIAccent : .signalASITextSecondary)
-      .frame(maxWidth: .infinity, minHeight: 54)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(Text(title))
-  }
-
-  @ViewBuilder
-  private var tabIcon: some View {
-    if let assetName = isSelected ? tab.selectedIconAssetName : tab.iconAssetName {
-      Image(assetName)
-        .resizable()
-        .renderingMode(.original)
-        .scaledToFit()
-        .frame(width: 24, height: 24)
-    } else {
-      Image(systemName: isSelected ? tab.selectedSystemIconName : tab.systemIconName)
-        .font(.system(size: 24, weight: .semibold))
-        .frame(width: 24, height: 24)
     }
   }
 }

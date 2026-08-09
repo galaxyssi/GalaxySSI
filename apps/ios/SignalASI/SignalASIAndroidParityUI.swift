@@ -818,7 +818,7 @@ struct DiscoverView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.discover.title", "Discover"),
-          leading: { Color.clear },
+          leading: { SignalASIBackButton() },
           trailing: { Color.clear }
         )
         ScrollView {
