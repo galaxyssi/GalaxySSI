@@ -1534,6 +1534,41 @@ final class MessageCoordinator: ObservableObject {
     )
   }
 
+  @discardableResult
+  func resumeLocalNativeAction(taskId: String) -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          task.phase == .paused,
+          let action = task.pendingAction ?? task.pendingActions.first else {
+      return false
+    }
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingAction = action
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = "User resumed paused native tool execution"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): resumed")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else {
+      task.phase = .failed
+      task.result = localReply(
+        english: "The original local Agent request is no longer available.",
+        chinese: "原始本地 Agent 请求已不可用。"
+      )
+      task.executionLog.append("Native tool resume failed: outgoing message missing")
+      task.pendingActions = []
+      task.pendingAction = nil
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return false
+    }
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
   func cancelLocalNativeAction(taskId: String) {
     guard var task = store.agentTask(id: taskId),
           [.waitingConfirmation, .executing, .verifying, .paused].contains(task.phase),
