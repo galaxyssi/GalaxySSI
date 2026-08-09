@@ -75,6 +75,8 @@
 "agent_section_action_queue" = "动作队列";
 "agent_action_queue_empty" = "暂无活动 Agent 计划";
 "agent_action_queue_meta" = "%@ / %@ 风险";
+"agent_action_queue_dependencies" = "%d 个依赖 / %d 个输出来源";
+"agent_action_queue_result" = "结果：%@";
 "agent_section_requirements" = "要求";
 "agent_requirements_empty" = "暂无活动执行要求";
 "agent_requirement_granted" = "就绪";
