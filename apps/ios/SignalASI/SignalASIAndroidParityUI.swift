@@ -1473,6 +1473,7 @@ struct AgentHomeView: View {
       attachmentSnapshot: voiceAttachmentSnapshot
     )
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
+    let isVoiceSubmission = voiceAttachmentSnapshot != nil
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
       ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
       : ""
@@ -1485,13 +1486,16 @@ struct AgentHomeView: View {
     }
     actionTrayPresented = false
     attachmentError = ""
-    Task {
-      await coordinator.send(
+    Task { @MainActor in
+      let sent = await coordinator.send(
         text,
         to: contact,
         attachments: outgoingAttachments,
         agentGoalOverride: agentGoal
       )
+      if isVoiceSubmission && !sent {
+        voiceTranscriptionPending = false
+      }
     }
   }
 
