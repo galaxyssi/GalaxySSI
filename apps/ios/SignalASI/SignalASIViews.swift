@@ -3,6 +3,7 @@ import BackgroundTasks
 import CoreImage
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct SignalASIApp: App {
@@ -230,6 +231,11 @@ struct ConversationView: View {
   @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
+  @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
+  @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
+  @State private var runtimeArtifactExportPresented = false
+  @State private var runtimeArtifactExportFilename = ""
+  @State private var runtimeArtifactError = ""
   @State private var agentSessionsShortcutActive = false
   @State private var scanShortcutActive = false
   var contactId: String
@@ -290,7 +296,7 @@ struct ConversationView: View {
         ScrollView {
           LazyVStack(spacing: 10) {
             ForEach(displayedMessages) { message in
-              MessageBubble(message: message)
+              MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -447,6 +453,32 @@ struct ConversationView: View {
     }
     .sheet(item: $selectedMessageForDetails) { message in
       SignalASIMessageActionsView(message: message, contact: contact)
+    }
+    .sheet(item: $runtimeArtifactPreview) { preview in
+      SignalASIRuntimeArtifactPreviewView(preview: preview)
+    }
+    .fileExporter(
+      isPresented: $runtimeArtifactExportPresented,
+      document: runtimeArtifactDocument,
+      contentType: .data,
+      defaultFilename: runtimeArtifactExportFilename
+    ) { result in
+      if case .failure(let error) = result {
+        runtimeArtifactError = error.localizedDescription
+      }
+    }
+    .alert(
+      t("runtime_artifact.error.title", "Artifact unavailable"),
+      isPresented: Binding(
+        get: { !runtimeArtifactError.isEmpty },
+        set: { if !$0 { runtimeArtifactError = "" } }
+      )
+    ) {
+      Button(t("signalasi.common.done", "Done"), role: .cancel) {
+        runtimeArtifactError = ""
+      }
+    } message: {
+      Text(runtimeArtifactError)
     }
     .sheet(isPresented: $cloudModelSwitchPresented) {
       NavigationView {
@@ -611,17 +643,43 @@ struct ConversationView: View {
     contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
   }
 
-  private var waitingForAgentReply: Bool {
-    guard isAgentSessionContact,
-          let latest = displayedMessages.last,
-          latest.isMine,
-          !latest.isSystem else {
-      return false
-    }
-    return latest.deliveryStatus != .failed
+  private var runtimeArtifactManagedRoots: [URL] {
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    return [
+      root,
+      root.appendingPathComponent("runs", isDirectory: true),
+      root.appendingPathComponent("runs/artifacts", isDirectory: true),
+      root.appendingPathComponent("artifacts", isDirectory: true)
+    ]
   }
 
-  private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
+  private func handleRichAction(_ action: AgentRichAction) {
+    guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
+      return
+    }
+    guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
+      runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+      return
+    }
+    do {
+      let file = try AgentRuntimeArtifactUi.resolve(
+        payload: payload,
+        managedRoots: runtimeArtifactManagedRoots
+      )
+      if action.verb == "preview_runtime_artifact" {
+        runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
+          title: payload.displayName,
+          content: try AgentRuntimeArtifactUi.preview(file: file)
+        )
+      } else {
+        runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+        runtimeArtifactExportFilename = payload.displayName
+        runtimeArtifactExportPresented = true
+      }
+    } catch {
+      runtimeArtifactError = error.localizedDescription
+    }
+  }
 
   private func dismissAttachmentMenu(then action: @escaping () -> Void) {
     withAnimation(.easeIn(duration: 0.12)) {
@@ -790,6 +848,7 @@ struct MessageDetailView: View {
 
 struct MessageBubble: View {
   var message: ChatMessage
+  var onAction: (AgentRichAction) -> Void = { _ in }
 
   var body: some View {
     HStack {
@@ -798,7 +857,8 @@ struct MessageBubble: View {
         SignalASIRichContentView(
           content: message.content,
           richOutputJson: message.richOutputJson,
-          isOutgoing: message.isMine
+          isOutgoing: message.isMine,
+          onAction: onAction
         )
           .padding(.horizontal, 12)
           .padding(.vertical, 9)
@@ -835,45 +895,74 @@ struct MessageBubble: View {
   }
 }
 
-struct SignalASIAgentReplyWaitingIndicator: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @State private var isAnimating = false
+struct SignalASIRuntimeArtifactPreview: Identifiable {
+  let id = UUID()
+  let title: String
+  let content: String
+}
 
-  var body: some View {
-    HStack(spacing: 8) {
-      Text(t("signalasi.agent.reply_waiting", "Waiting for reply"))
-        .font(.footnote)
-      HStack(spacing: 4) {
-        ForEach(0..<3, id: \.self) { index in
-          Circle()
-            .fill(Color.signalASITextSecondary)
-            .frame(width: 5, height: 5)
-            .scaleEffect(isAnimating ? 1 : 0.55)
-            .opacity(isAnimating ? 1 : 0.35)
-            .animation(
-              .easeInOut(duration: 0.6)
-                .repeatForever()
-                .delay(Double(index) * 0.14),
-              value: isAnimating
-            )
-        }
-      }
-      Spacer(minLength: 0)
-    }
-    .foregroundColor(.signalASITextSecondary)
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.signalASIButtonSoft)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    .onAppear {
-      isAnimating = true
-    }
-    .accessibilityLabel(t("signalasi.agent.reply_waiting", "Waiting for reply"))
+struct SignalASIRuntimeArtifactDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.data] }
+  static var writableContentTypes: [UTType] { [.data] }
+
+  var data: Data
+
+  init(data: Data = Data()) {
+    self.data = data
   }
 
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  init(configuration: ReadConfiguration) throws {
+    data = configuration.file.regularFileContents ?? Data()
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
+  }
+}
+
+struct SignalASIRuntimeArtifactPreviewView: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  let preview: SignalASIRuntimeArtifactPreview
+  @State private var copied = false
+
+  var body: some View {
+    NavigationView {
+      ScrollView {
+        Text(preview.content)
+          .font(.system(size: 13, design: .monospaced))
+          .foregroundColor(.signalASITextPrimary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(14)
+      }
+      .background(Color.signalASIPageBackground)
+      .navigationTitle(preview.title)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(SignalASILocalization.string("signalasi.common.done", fallback: "Done", language: interfaceLanguage)) {
+            dismiss()
+          }
+        }
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            UIPasteboard.general.string = preview.content
+            copied = true
+          } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+          }
+          .accessibilityLabel(
+            SignalASILocalization.string(
+              copied ? "rich_output_copied" : "rich_output_copy",
+              fallback: copied ? "Copied" : "Copy",
+              language: interfaceLanguage
+            )
+          )
+        }
+      }
+    }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 }
 
