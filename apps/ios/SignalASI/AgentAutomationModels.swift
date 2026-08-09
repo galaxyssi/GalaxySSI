@@ -1015,6 +1015,34 @@ enum AgentProactiveTaskScheduler {
     return Int64(unsigned % UInt64(jitterSeconds * 1_000 + 1))
   }
 
+  static func stableRunId(taskId: String, occurrence: String) -> String {
+    let identity = "\(taskId)\u{1f}\(occurrence)"
+    let digest = SHA256.hash(data: Data(identity.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "ios-proactive-run-\(digest)"
+  }
+
+  static func remoteWebhookEventMatches(
+    filter: [String: String],
+    payload: [String: Any]
+  ) -> Bool {
+    filter.allSatisfy { path, expected in
+      var current: Any? = payload
+      for segment in path.split(separator: ".") {
+        guard let object = current as? [String: Any] else { return false }
+        current = object[String(segment)]
+      }
+      if let value = current as? String {
+        return value == expected
+      }
+      if let value = current as? NSNumber {
+        return value.stringValue == expected
+      }
+      return false
+    }
+  }
+
   static func requireIdentifier(_ value: String, label: String) throws {
     let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard clean.range(
