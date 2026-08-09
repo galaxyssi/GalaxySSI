@@ -578,7 +578,7 @@ struct AgentHomeView: View {
           HStack(spacing: 3) {
             Image(systemName: "chevron.left")
               .font(.system(size: 8, weight: .bold))
-            Text(headerModelLabel)
+            Text(headerModelStatusLabel)
               .lineLimit(1)
               .minimumScaleFactor(0.72)
           }
@@ -640,6 +640,19 @@ struct AgentHomeView: View {
         .ifBlank(fallbackLabel)
     }
     return fallbackLabel
+  }
+
+  private var headerModelStatusLabel: String {
+    let key: String
+    let fallback: String
+    if modelSelection.mode == .manual, activeManualTarget != nil {
+      key = "signalasi.agent.header.routing.manual"
+      fallback = "Manual · %@"
+    } else {
+      key = "signalasi.agent.header.routing.auto"
+      fallback = "Automatic · %@"
+    }
+    return String(format: t(key, fallback), headerModelLabel)
   }
 
   private var headerSessionTitle: String {
