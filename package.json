@@ -7,6 +7,7 @@
   "scripts": {
     "check": "node tools/dev/check-repo.js",
     "check:android": "node tools/dev/check-android-build.js",
+    "check:android:source-size": "node tools/quality/check-kotlin-source-size.mjs",
     "check:android:16kb": "node tools/dev/check-android-16kb.js",
     "check:android:qnn-package": "node tools/dev/check-android-qnn-package.js",
     "test:android:elf-normalizer": "node --test tools/dev/android-elf-page-normalizer.test.mjs",

@@ -624,6 +624,11 @@ const checks = [
     run: checkCoreRegressions
   },
   {
+    name: "Kotlin source size",
+    command: process.execPath,
+    args: [path.join(root, "tools", "quality", "check-kotlin-source-size.mjs")]
+  },
+  {
     name: "version health score",
     run: checkVersionHealthScore
   },
