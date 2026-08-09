@@ -665,6 +665,8 @@
 "signalasi.agent_tasks.retrying" = "正在重试任务...";
 "signalasi.agent_tasks.retry_sent" = "任务已发送给 Agent";
 "signalasi.agent_tasks.retry_failed" = "任务发送失败";
+"signalasi.agent.recovery.title" = "有可继续的 Agent 任务";
+"signalasi.agent.recovery.accessibility" = "打开可继续的 Agent 任务：%@";
 "signalasi.agent.blocked.title" = "Agent 任务已阻止";
 "signalasi.agent.blocked.subtitle" = "任务未能继续，可以重新提交原目标。";
 "signalasi.agent_tasks.target_phone" = "SignalASI";
