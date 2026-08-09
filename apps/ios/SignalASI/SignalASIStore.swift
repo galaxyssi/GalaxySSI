@@ -2157,7 +2157,7 @@ final class SignalASIStore: ObservableObject {
         displayName: displayName,
         type: "agent",
         agentKind: kind,
-        deliveryMode: .link,
+        deliveryMode: .pcConnector,
         trustState: isPaired ? .verified : .unverified,
         desktopId: desktopId,
         desktopName: desktopName,
@@ -2177,7 +2177,7 @@ final class SignalASIStore: ObservableObject {
       contact.type = "agent"
       contact.agentKind = kind
       contact.agentId = agentId
-      contact.deliveryMode = .link
+      contact.deliveryMode = .pcConnector
       contact.trustState = isPaired ? .verified : .unverified
       contact.desktopId = desktopId
       contact.desktopName = desktopName
@@ -2548,6 +2548,7 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func resetToFreshState() {
+    UserDefaultsAgentWorkflowStore.shared.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
