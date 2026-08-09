@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SignalASIAgentComposerView: View {
+  @EnvironmentObject private var store: SignalASIStore
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
   @Binding var voiceTranscriptionPending: Bool
@@ -41,8 +42,52 @@ struct SignalASIAgentComposerView: View {
     CGFloat(deviceInputPolicy.minimumTouchTargetDp)
   }
 
+  private var newGlobalInsightCount: Int {
+    store.globalProactiveInboxNewCount()
+  }
+
+  private var globalInsightTitle: String {
+    String(
+      format: t(
+        "agent_global_new_insights",
+        "SignalASI has %d new findings"
+      ),
+      newGlobalInsightCount
+    )
+  }
+
   var body: some View {
     VStack(spacing: 8) {
+      if newGlobalInsightCount > 0 {
+        NavigationLink(destination: SignalASIAgentInsightInboxView()) {
+          HStack(spacing: 9) {
+            Image(systemName: "sparkles")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundColor(.signalASIInsightText)
+              .frame(width: 20, height: 20)
+            Text(globalInsightTitle)
+              .font(.system(size: 13, weight: .bold))
+              .foregroundColor(.signalASIInsightText)
+              .lineLimit(1)
+              .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+              .font(.system(size: 13, weight: .bold))
+              .foregroundColor(.signalASIInsightText)
+              .frame(width: 18, height: 18)
+          }
+          .padding(.horizontal, 12)
+          .frame(maxWidth: .infinity, minHeight: 44)
+          .background(Color.signalASIInsightBackground)
+          .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+              .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+          )
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(globalInsightTitle))
+      }
       if !attachments.isEmpty {
         AttachmentPreviewStrip(attachments: attachments, onRemove: onRemoveAttachment)
       }
