@@ -963,6 +963,9 @@ struct AgentHomeView: View {
         }
       }
       .onChange(of: messages.count) { _ in
+        if voiceTranscriptionPending && !messages.isEmpty {
+          voiceTranscriptionPending = false
+        }
         if transcriptAutoFollow {
           if let last = messages.last, waitingMessageIDs.contains(last.id) {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
@@ -1420,7 +1423,10 @@ struct AgentHomeView: View {
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
-      onVoiceCancelled: { restoreAgentVoiceAttachments() },
+      onVoiceCancelled: {
+        voiceTranscriptionPending = false
+        restoreAgentVoiceAttachments()
+      },
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
@@ -1494,10 +1500,12 @@ struct AgentHomeView: View {
     let capturedAttachments = voiceAttachmentSnapshot
     voiceAttachmentSnapshot.removeAll()
     guard !cleanTranscript.isEmpty else {
+      voiceTranscriptionPending = false
       restoreAgentVoiceAttachments(capturedAttachments)
       attachmentError = t("voice_no_speech", "No speech captured.")
       return
     }
+    voiceTranscriptionPending = true
     draft = cleanTranscript
     sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
   }
