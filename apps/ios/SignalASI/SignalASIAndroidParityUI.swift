@@ -173,6 +173,8 @@ struct AgentHomeView: View {
   @State private var runtimeArtifactExportSourceURI = ""
   @State private var runtimeArtifactError = ""
   @State private var runtimeArtifactStatus = ""
+  @State private var richActionStatus = ""
+  @State private var recoveringAgentTaskIDs: Set<String> = []
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -421,6 +423,19 @@ struct AgentHomeView: View {
       } message: {
         Text(runtimeArtifactStatus)
       }
+      .alert(
+        t("signalasi.agent.action_status.title", "Agent action"),
+        isPresented: Binding(
+          get: { !richActionStatus.isEmpty },
+          set: { if !$0 { richActionStatus = "" } }
+        )
+      ) {
+        Button(t("signalasi.common.done", "Done"), role: .cancel) {
+          richActionStatus = ""
+        }
+      } message: {
+        Text(richActionStatus)
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -436,7 +451,26 @@ struct AgentHomeView: View {
   }
 
   private func handleRichAction(_ action: AgentRichAction) {
-    if action.verb == "download_desktop_artifact" {
+    switch action.verb {
+    case "copy":
+      let value = action.value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !value.isEmpty else {
+        richActionStatus = t("signalasi.agent.action_status.empty", "This action has no content.")
+        return
+      }
+      UIPasteboard.general.string = value
+      richActionStatus = t("signalasi.common.copied", "Copied")
+    case "open_uri":
+      openRichActionURI(action.value)
+    case "set_input":
+      prefillAgentScreenCommand(action.value)
+    case "submit_prompt":
+      submitRichPrompt(action.value)
+    case "open_conversation":
+      openRichConversation(action.value)
+    case "recover_agent_task":
+      recoverAgentTask(action.value)
+    case "download_desktop_artifact":
       guard let payload = AgentDesktopArtifactRequestPayload.decode(action.value) else {
         runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
         return
@@ -461,33 +495,116 @@ struct AgentHomeView: View {
           "The artifact could not be requested from the Desktop."
         )
       }
-      return
-    }
-    guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
-      return
-    }
-    guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
-      runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
-      return
-    }
-    do {
-      let file = try AgentRuntimeArtifactUi.resolve(
-        payload: payload,
-        managedRoots: runtimeArtifactManagedRoots
-      )
-      if action.verb == "preview_runtime_artifact" {
-        runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
-          title: payload.displayName,
-          content: try AgentRuntimeArtifactUi.preview(file: file)
-        )
-      } else {
-        runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
-        runtimeArtifactExportFilename = payload.displayName
-        runtimeArtifactExportSourceURI = ""
-        runtimeArtifactExportPresented = true
+    case "preview_runtime_artifact", "save_runtime_artifact":
+      guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
+        runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+        return
       }
-    } catch {
-      runtimeArtifactError = error.localizedDescription
+      do {
+        let file = try AgentRuntimeArtifactUi.resolve(
+          payload: payload,
+          managedRoots: runtimeArtifactManagedRoots
+        )
+        if action.verb == "preview_runtime_artifact" {
+          runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
+            title: payload.displayName,
+            content: try AgentRuntimeArtifactUi.preview(file: file)
+          )
+        } else {
+          runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+          runtimeArtifactExportFilename = payload.displayName
+          runtimeArtifactExportSourceURI = ""
+          runtimeArtifactExportPresented = true
+        }
+      } catch {
+        runtimeArtifactError = error.localizedDescription
+      }
+    default:
+      richActionStatus = t(
+        "signalasi.agent.action_status.unsupported",
+        "This Agent action is not supported on iOS yet."
+      )
+    }
+  }
+
+  private func openRichActionURI(_ rawURI: String) {
+    let value = rawURI.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: value),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https", "mailto", "tel", "sms"].contains(scheme),
+          (scheme == "http" || scheme == "https" ? url.host != nil : true) else {
+      richActionStatus = t("signalasi.agent.action_status.invalid_uri", "This link cannot be opened on iOS.")
+      return
+    }
+    UIApplication.shared.open(url, options: [:]) { opened in
+      guard !opened else { return }
+      DispatchQueue.main.async {
+        richActionStatus = t("signalasi.agent.action_status.open_failed", "The link could not be opened.")
+      }
+    }
+  }
+
+  private func submitRichPrompt(_ rawPrompt: String) {
+    let prompt = rawPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !prompt.isEmpty else {
+      richActionStatus = t("signalasi.agent.action_status.empty", "This action has no content.")
+      return
+    }
+    draft = prompt
+    attachments.removeAll()
+    actionTrayPresented = false
+    attachmentError = ""
+    sendAgentMessage()
+  }
+
+  private func openRichConversation(_ rawConversationID: String) {
+    let conversationID = rawConversationID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationID.isEmpty, store.switchAgentSession(conversationID) else {
+      richActionStatus = t(
+        "signalasi.agent.action_status.conversation_unavailable",
+        "That Agent conversation is no longer available."
+      )
+      return
+    }
+    draft = ""
+    attachments.removeAll()
+    actionTrayPresented = false
+    attachmentError = ""
+  }
+
+  private func recoverAgentTask(_ rawPayload: String) {
+    guard let payload = AgentFailureRecoveryPayload.decode(rawPayload) else {
+      richActionStatus = t("signalasi.agent.action_status.invalid", "This Agent action is invalid.")
+      return
+    }
+    let conversationID = payload.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let taskID = payload.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationID.isEmpty, !taskID.isEmpty else {
+      richActionStatus = t("signalasi.agent.action_status.invalid", "This Agent action is invalid.")
+      return
+    }
+    guard store.switchAgentSession(conversationID) else {
+      richActionStatus = t(
+        "signalasi.agent.action_status.conversation_unavailable",
+        "That Agent conversation is no longer available."
+      )
+      return
+    }
+    guard !recoveringAgentTaskIDs.contains(taskID) else { return }
+    recoveringAgentTaskIDs.insert(taskID)
+    let resolvedLanguage = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    let chinese = resolvedLanguage.lowercased().hasPrefix("zh")
+    let instruction = AgentFailureRecoveryPolicy.instruction(payload: payload, chinese: chinese)
+    richActionStatus = t("signalasi.agent.action_status.recovery_started", "Recovery request started.")
+    Task { @MainActor in
+      let sent = await coordinator.send(instruction, to: contact)
+      recoveringAgentTaskIDs.remove(taskID)
+      if !sent {
+        richActionStatus = t(
+          "signalasi.agent.action_status.recovery_failed",
+          "The recovery request could not be sent."
+        )
+      }
     }
   }
 
