@@ -266,8 +266,8 @@ struct SignalASIAgentComposerView: View {
       .onEnded { value in
         let didRecord = holdToTalk.isRecording
         holdToTalk.dragEnded(translation: value.translation)
-        voiceTranscriptionPending = false
         if !didRecord {
+          voiceTranscriptionPending = false
           actionTrayPresented = false
           inputFocused = true
         }
