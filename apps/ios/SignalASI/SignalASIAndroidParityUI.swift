@@ -1209,12 +1209,19 @@ struct AgentHomeView: View {
     let minutes = totalSeconds / 60
     let seconds = totalSeconds % 60
     if minutes > 0 {
-      return t(
-        "signalasi.agent.execution.duration_minutes",
-        "Duration (minutes)m (seconds)s"
+      return String(
+        format: t(
+          "signalasi.agent.execution.duration_minutes",
+          "Duration %dm %ds"
+        ),
+        minutes,
+        seconds
       )
     }
-    return t("signalasi.agent.execution.duration_seconds", "Duration (seconds)s")
+    return String(
+      format: t("signalasi.agent.execution.duration_seconds", "Duration %ds"),
+      seconds
+    )
   }
 
   private func locationLabel(_ value: AgentExecutionLocationKind) -> String {
