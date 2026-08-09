@@ -1179,12 +1179,32 @@ struct AgentHomeView: View {
 
   private func remoteAgentStatusLabel(_ status: String) -> String {
     switch AgentRemoteTaskStatusPolicy.normalize(status) {
-    case "accepted", "queued", "starting", "recovering", "running":
-      return t("signalasi.agent.remote_status.running", "Running")
+    case "accepted":
+      return t("agent_task_status_accepted", "Accepted")
+    case "queued":
+      return t("agent_task_status_queued", "Queued")
+    case "starting":
+      return t("agent_task_status_starting", "Starting")
+    case "recovering":
+      return t("agent_task_status_recovering", "Recovering")
+    case "running":
+      return t("agent_task_status_running", "Running")
     case "waiting_input":
-      return t("signalasi.agent.remote_status.waiting_input", "Waiting for input")
+      return t("agent_task_status_waiting_input", "Waiting for input")
     case "waiting_approval":
-      return t("signalasi.agent.remote_status.waiting_approval", "Waiting for approval")
+      return t("agent_task_status_waiting_approval", "Waiting for approval")
+    case "completed":
+      return t("agent_task_status_completed", "Completed")
+    case "failed":
+      return t("agent_task_status_failed", "Failed")
+    case "cancelled":
+      return t("agent_task_status_cancelled", "Cancelled")
+    case "timed_out":
+      return t("agent_task_status_timed_out", "Timed out")
+    case "not_found":
+      return t("agent_task_status_not_found", "Task unavailable")
+    case "cancelling":
+      return t("agent_task_status_cancelling", "Cancelling")
     default:
       return status.replacingOccurrences(of: "_", with: " ").capitalized
     }
