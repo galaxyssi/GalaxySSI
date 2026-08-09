@@ -412,7 +412,12 @@ struct AgentHomeView: View {
       .navigationBarHidden(true)
       .background(
         NavigationLink(
-          destination: AddContactView(autoOpenScanner: true),
+          destination: AddContactView(
+            autoOpenScanner: true,
+            onAgentAdded: {
+              scanShortcutActive = false
+            }
+          ),
           isActive: $scanShortcutActive
         ) {
           EmptyView()
