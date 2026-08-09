@@ -590,6 +590,7 @@
     A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */; };
     A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */; };
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
+    A10000000000000000000A02 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentIOSWebSearchCompletionPolicy.swift */; };
     A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */; };
     A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */; };
     A10000000000000000000444 /* AgentIOSWebMediaContentReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */; };
@@ -1299,6 +1300,7 @@
     A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareBluetoothDiscoveryProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareStatusProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000A02 /* AgentIOSWebSearchCompletionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCompletionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionBrowserSessionStore.swift; sourceTree = "<group>"; };
     A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaDownloadWriter.swift; sourceTree = "<group>"; };
     A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaContentReader.swift; sourceTree = "<group>"; };
@@ -1537,6 +1539,7 @@
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
+        A20000000000000000000A02 /* AgentIOSWebSearchCompletionPolicy.swift */,
         A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */,
         A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */,
         A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */,
@@ -2682,6 +2685,7 @@
         A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */,
         A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
+        A10000000000000000000A02 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */,
         A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */,
         A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */,
         A10000000000000000000444 /* AgentIOSWebMediaContentReader.swift in Sources */,

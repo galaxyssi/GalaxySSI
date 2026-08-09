@@ -248,6 +248,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       let requestedMaxResults = input["max_results"]?.intValue ?? 5
       let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(10))))
+      let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
+      let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
       let endpoints = try searchEndpoints(query: query, maxResults: maxResults)
@@ -290,8 +292,27 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }
       }
 
-      let waitMillis = max(0, min(timeoutMillis, invocation.remainingTimeMillis))
-      let completed = group.wait(timeout: .now() + .milliseconds(Int(waitMillis))) == .success
+      var completed = false
+      var earlyCompleted = false
+      while !completed && !earlyCompleted {
+        let groups = accumulator.snapshot().map { attempt in
+          attempt.results.map { $0.url }
+        }
+        if AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(
+          profile: profile,
+          explicitSources: explicitSources,
+          groups: groups,
+          limit: maxResults,
+          providerCount: endpoints.count
+        ) {
+          earlyCompleted = true
+          break
+        }
+        let remaining = max(0, min(timeoutMillis, invocation.remainingTimeMillis))
+        guard remaining > 0 else { break }
+        let slice = max(1, min(100, remaining))
+        completed = group.wait(timeout: .now() + .milliseconds(Int(slice))) == .success
+      }
       if invocation.isCancellationRequested {
         throw AgentIOSURLSessionWebError.cancelled
       }
@@ -333,11 +354,21 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       output["result_count"] = .int(Int64(merged.count))
       var resultMetadata = metadata(operation: .webSearch, method: .get)
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
+      let completedProviders = Set(attempts.map(\.provider))
+      let cancelledProviders = earlyCompleted
+        ? endpoints.map(\.provider).filter { !completedProviders.contains($0) }
+        : []
       resultMetadata["provider"] = .string(first.provider)
+      resultMetadata["profile"] = .string(profile)
       resultMetadata["providers"] = .array(successfulProviders.map(AgentMcpJSONValue.string))
       resultMetadata["engine_fanout"] = .int(Int64(endpoints.count))
       resultMetadata["parallel"] = .bool(true)
-      resultMetadata["partial"] = .bool(!completed)
+      resultMetadata["partial"] = .bool(!completed && !earlyCompleted)
+      resultMetadata["early_completed"] = .bool(earlyCompleted)
+      resultMetadata["completion_reason"] = .string(
+        earlyCompleted ? "sufficient_diverse_evidence" : ""
+      )
+      resultMetadata["cancelled_providers"] = .array(cancelledProviders.map(AgentMcpJSONValue.string))
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: message(.webSearch, method: .get),
