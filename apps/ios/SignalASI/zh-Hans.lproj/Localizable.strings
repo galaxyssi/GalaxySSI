@@ -3702,6 +3702,7 @@
 "signalasi.agent.task_control.paused" = "任务已暂停";
 "signalasi.agent.task_control.pause_failed" = "此任务无法暂停";
 "signalasi.agent.task_control.replanned" = "已重新规划任务";
+"signalasi.agent.task_control.replanning" = "正在重新规划任务……";
 "signalasi.agent.task_control.pause" = "暂停任务";
 "signalasi.agent.task_control.replan" = "重新规划任务";
 "signalasi.agent.task_control.replan_prompt" = "重新规划并继续此 Agent 任务：%@";
