@@ -478,23 +478,12 @@ private struct SignalASIRichBlockView: View {
           .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
           .accessibilityLabel(block.title.isEmpty ? t("rich_output_type_image", "Image") : block.title)
       } else if let url = remoteURL {
-        AsyncImage(url: url) { phase in
-          switch phase {
-          case .empty:
-            previewPlaceholder(t("rich_output_loading", "Loading preview"))
-          case .success(let image):
-            image
-              .resizable()
-              .scaledToFit()
-              .frame(maxHeight: 240)
-              .background(Color.signalASISearchBackground.opacity(0.5))
-              .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-          case .failure:
-            resourceBlock
-          @unknown default:
-            previewPlaceholder(t("rich_output_load_failed", "Preview unavailable"))
-          }
+        SignalASIAsyncAnimatedImageView(url: url) {
+          resourceBlock
         }
+        .frame(maxHeight: 240)
+        .background(Color.signalASISearchBackground.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
       } else {
         resourceBlock
       }
