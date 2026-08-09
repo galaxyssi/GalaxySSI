@@ -144,14 +144,24 @@ struct SignalASIDesktopControlView: View {
 }
 
 private struct SignalASIDesktopControlDetail: View {
+  @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   var link: ServerLink
   var mqttConnected: Bool
   var t: (String, String) -> String
   @State private var statusMessage = ""
   @State private var streamFps = 1
+  @State private var textInput = ""
+  @State private var filePathInput = ""
+  @State private var showingTextInput = false
+  @State private var showingFileInput = false
 
   private var authorized: Bool {
-    link.paired && link.fullDesktopExecutor
+    link.paired && coordinator.desktopControlSnapshot(for: link).authorized
+  }
+
+  private var snapshot: AgentDesktopRemoteControlSnapshot {
+    coordinator.desktopControlSnapshot(for: link)
   }
 
   var body: some View {
@@ -173,37 +183,85 @@ private struct SignalASIDesktopControlDetail: View {
           showsDisclosure: false
         )
       }
+      if snapshot.lastActionStatus == "unverified" {
+        SignalASIDesktopControlRow(
+          title: t("desktop_control_unverified_receipt", "Receipt needs verification"),
+          subtitle: snapshot.lastActionSummary,
+          systemImage: "exclamationmark.shield",
+          tint: .orange,
+          badge: t("signalasi.status.review", "Review"),
+          showsDisclosure: false
+        )
+      }
       surfacesSection
       displaySection
       actionsSection
       authorizationSection
       recentActivitySection
-      Text(t("desktop_control_security_footer", "MQTT only transports data. Control actions are end-to-end encrypted, bound to device identity, replay-protected, and audited; live screen frames are signed, temporary, and not retained."))
+      Text(t("desktop_control_security_footer", "MQTT only transports data. Control actions are end-to-end encrypted and audited; receipt evidence is shown as pending verification until the desktop identity verifier is available."))
         .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
         .padding(.horizontal, 4)
     }
+    .alert(t("desktop_control_type_text", "Type text"), isPresented: $showingTextInput) {
+      TextField(t("desktop_control_type_text_placeholder", "Text to type"), text: $textInput)
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) { textInput = "" }
+      Button(t("desktop_control_action_type", "Type text")) {
+        send(AgentDesktopControlRequestFactory.typeText(
+          snapshot: snapshot,
+          routing: routing,
+          text: textInput,
+          nowMillis: nowMillis
+        ))
+        textInput = ""
+      }
+    }
+    .alert(t("desktop_control_select_file", "Select Desktop file"), isPresented: $showingFileInput) {
+      TextField(t("desktop_control_file_path_placeholder", "Desktop file path"), text: $filePathInput)
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) { filePathInput = "" }
+      Button(t("desktop_control_action_file_select", "Select file")) {
+        send(AgentDesktopControlRequestFactory.selectFile(
+          snapshot: snapshot,
+          routing: routing,
+          path: filePathInput,
+          nowMillis: nowMillis
+        ))
+        filePathInput = ""
+      }
+    }
+  }
+
+  private var nowMillis: Int64 {
+    Int64(Date().timeIntervalSince1970 * 1000)
+  }
+
+  private var routing: AgentDesktopControlRequestRoutingContext {
+    AgentDesktopControlRequestRoutingContext(
+      clientRouteId: link.routes.clientRouteId,
+      controllerFingerprint: store.profile.identityFingerprint,
+      controllerSignalName: store.profile.signalASIId
+    )
   }
 
   private var surfacesSection: some View {
     section(t("desktop_control_surfaces", "Displays and windows")) {
-      SignalASIDesktopControlRow(
+      SignalASIDesktopControlActionRow(
         title: t("desktop_control_surface_select", "Select a display or window"),
         subtitle: t("desktop_control_surface_select_subtitle", "Load controllable surfaces from this computer"),
         systemImage: "rectangle.on.rectangle",
         tint: .blue,
         badge: t("desktop_control_surface_load", "Load"),
-        showsDisclosure: false,
-        enabled: authorized
+        enabled: authorized,
+        action: { send(AgentDesktopControlRequestFactory.surfaces(snapshot: snapshot, routing: routing, nowMillis: nowMillis)) }
       )
-      SignalASIDesktopControlRow(
+      SignalASIDesktopControlActionRow(
         title: t("desktop_control_surface_refresh", "Refresh surfaces"),
         subtitle: t("desktop_control_surface_refresh_subtitle", "Find connected displays and currently visible windows"),
         systemImage: "arrow.clockwise",
         tint: .blue,
         badge: t("desktop_control_surface_refresh_action", "Refresh"),
-        showsDisclosure: false,
-        enabled: authorized
+        enabled: authorized,
+        action: { send(AgentDesktopControlRequestFactory.surfaces(snapshot: snapshot, routing: routing, nowMillis: nowMillis)) }
       )
     }
   }
@@ -214,14 +272,21 @@ private struct SignalASIDesktopControlDetail: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .fill(Color.black.opacity(0.86))
         VStack(spacing: 10) {
-          Image(systemName: authorized ? "display" : "lock.shield")
-            .font(.system(size: 34, weight: .semibold))
-            .foregroundColor(.signalASITextSecondary)
-          Text(displayPlaceholder)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.signalASITextSecondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 16)
+          if let data = snapshot.screenshot?.jpegBytes, let image = UIImage(data: data) {
+            Image(uiImage: image)
+              .resizable()
+              .scaledToFit()
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          } else {
+            Image(systemName: authorized ? "display" : "lock.shield")
+              .font(.system(size: 34, weight: .semibold))
+              .foregroundColor(.signalASITextSecondary)
+            Text(displayPlaceholder)
+              .font(.system(size: 14, weight: .semibold))
+              .foregroundColor(.signalASITextSecondary)
+              .multilineTextAlignment(.center)
+              .padding(.horizontal, 16)
+          }
         }
       }
       .frame(maxWidth: .infinity)
@@ -234,13 +299,18 @@ private struct SignalASIDesktopControlDetail: View {
         tint: .signalASIAccent,
         badge: t("desktop_control_action_view_screen", "View screen"),
         enabled: authorized,
-        action: markPendingAction
+        action: { send(AgentDesktopControlRequestFactory.screenshot(snapshot: snapshot, routing: routing, nowMillis: nowMillis)) }
       )
       Menu {
         ForEach([1, 2, 3], id: \.self) { fps in
           Button(String(format: t("desktop_control_stream_rate", "%d FPS"), fps)) {
             streamFps = fps
-            markPendingAction()
+            send(AgentDesktopControlRequestFactory.screenshotStreamFrame(
+              snapshot: snapshot,
+              routing: routing,
+              fps: fps,
+              nowMillis: nowMillis
+            ))
           }
         }
       } label: {
@@ -263,7 +333,7 @@ private struct SignalASIDesktopControlDetail: View {
         tint: .purple,
         badge: t("desktop_perception_capture_action", "Capture"),
         enabled: authorized,
-        action: markPendingAction
+        action: { send(AgentDesktopControlRequestFactory.perception(snapshot: snapshot, routing: routing, nowMillis: nowMillis)) }
       )
     }
   }
@@ -271,12 +341,20 @@ private struct SignalASIDesktopControlDetail: View {
   private var actionsSection: some View {
     section(t("desktop_control_actions", "Controls")) {
       HStack(spacing: 8) {
-        controlChip(t("desktop_control_scroll_up", "Scroll up"), "arrow.up", enabled: authorized)
-        controlChip(t("desktop_control_scroll_down", "Scroll down"), "arrow.down", enabled: authorized)
+        controlChip(t("desktop_control_scroll_up", "Scroll up"), "arrow.up", enabled: authorized) {
+          send(AgentDesktopControlRequestFactory.scroll(snapshot: snapshot, routing: routing, delta: -480, nowMillis: nowMillis))
+        }
+        controlChip(t("desktop_control_scroll_down", "Scroll down"), "arrow.down", enabled: authorized) {
+          send(AgentDesktopControlRequestFactory.scroll(snapshot: snapshot, routing: routing, delta: 480, nowMillis: nowMillis))
+        }
       }
       HStack(spacing: 8) {
-        controlChip(t("desktop_control_previous_window", "Previous window"), "arrow.left.square", enabled: authorized)
-        controlChip(t("desktop_control_next_window", "Next window"), "arrow.right.square", enabled: authorized)
+        controlChip(t("desktop_control_previous_window", "Previous window"), "arrow.left.square", enabled: authorized) {
+          send(AgentDesktopControlRequestFactory.windowSwitch(snapshot: snapshot, routing: routing, previous: true, nowMillis: nowMillis))
+        }
+        controlChip(t("desktop_control_next_window", "Next window"), "arrow.right.square", enabled: authorized) {
+          send(AgentDesktopControlRequestFactory.windowSwitch(snapshot: snapshot, routing: routing, nowMillis: nowMillis))
+        }
       }
       SignalASIDesktopControlActionRow(
         title: t("desktop_control_type_text", "Type text"),
@@ -285,7 +363,7 @@ private struct SignalASIDesktopControlDetail: View {
         tint: .blue,
         badge: t("desktop_control_action_type", "Type text"),
         enabled: authorized,
-        action: markPendingAction
+        action: { showingTextInput = true }
       )
       SignalASIDesktopControlActionRow(
         title: t("desktop_control_select_file", "Select Desktop file"),
@@ -294,7 +372,7 @@ private struct SignalASIDesktopControlDetail: View {
         tint: .orange,
         badge: t("desktop_control_action_file_select", "Select file"),
         enabled: authorized,
-        action: markPendingAction
+        action: { showingFileInput = true }
       )
     }
   }
@@ -347,14 +425,25 @@ private struct SignalASIDesktopControlDetail: View {
 
   private var recentActivitySection: some View {
     section(t("desktop_control_recent_activity", "Recent control activity")) {
-      SignalASIDesktopControlRow(
-        title: t("desktop_control_no_recent_activity", "No recent control activity"),
-        subtitle: t("desktop_control_no_authorized_apps_subtitle", "This app has no Desktop execution record"),
-        systemImage: "clock.arrow.circlepath",
-        tint: .signalASITextSecondary,
-        badge: mqttConnected ? t("signalasi.status.online", "Online") : t("signalasi.status.disconnected", "Disconnected"),
-        showsDisclosure: false
-      )
+      if let receipt = snapshot.recentReceipts.first {
+        SignalASIDesktopControlRow(
+          title: receipt.toolId.ifBlank(t("desktop_control_latest_action", "Latest action")),
+          subtitle: receipt.summary.ifBlank(receipt.status),
+          systemImage: receipt.status == "succeeded" ? "checkmark.circle" : "exclamationmark.circle",
+          tint: receipt.status == "succeeded" ? .signalASIAccent : .orange,
+          badge: t("desktop_control_unverified_receipt", "Review"),
+          showsDisclosure: false
+        )
+      } else {
+        SignalASIDesktopControlRow(
+          title: t("desktop_control_no_recent_activity", "No recent control activity"),
+          subtitle: t("desktop_control_no_authorized_apps_subtitle", "This app has no Desktop execution record"),
+          systemImage: "clock.arrow.circlepath",
+          tint: .signalASITextSecondary,
+          badge: mqttConnected ? t("signalasi.status.online", "Online") : t("signalasi.status.disconnected", "Disconnected"),
+          showsDisclosure: false
+        )
+      }
     }
   }
 
@@ -416,8 +505,8 @@ private struct SignalASIDesktopControlDetail: View {
     }
   }
 
-  private func controlChip(_ title: String, _ systemImage: String, enabled: Bool) -> some View {
-    Button(action: markPendingAction) {
+  private func controlChip(_ title: String, _ systemImage: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
       HStack(spacing: 7) {
         Image(systemName: systemImage)
           .font(.system(size: 14, weight: .semibold))
@@ -436,8 +525,17 @@ private struct SignalASIDesktopControlDetail: View {
     .disabled(!enabled)
   }
 
-  private func markPendingAction() {
+  private func send(_ request: AgentDesktopControlActionRequest?) {
+    guard let request else {
+      statusMessage = t("desktop_control_request_unavailable", "Desktop session unavailable")
+      return
+    }
     statusMessage = t("desktop_control_request_sent", "Encrypted request sent")
+    Task { @MainActor in
+      if !(await coordinator.sendDesktopControl(request, link: link)) {
+        statusMessage = t("desktop_control_request_failed", "Request could not be sent")
+      }
+    }
   }
 
   private func copy(_ value: String, message: String) {

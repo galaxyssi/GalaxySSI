@@ -83,6 +83,7 @@ protocol AgentConnectorResponseSink: AnyObject {
   @discardableResult
   func publish(_ response: AgentConnectorResponse) -> Bool
   func pending() -> [AgentConnectorResponse]
+  func remove(_ response: AgentConnectorResponse)
   func clear()
 }
 
@@ -102,6 +103,14 @@ final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
     lock.lock()
     defer { lock.unlock() }
     return responses
+  }
+
+  func remove(_ response: AgentConnectorResponse) {
+    lock.lock()
+    defer { lock.unlock() }
+    responses.removeAll {
+      $0.sourceMessageId == response.sourceMessageId && $0.contactId == response.contactId
+    }
   }
 
   func clear() {
@@ -268,13 +277,13 @@ final class AgentConnectorResponseBus {
   private var listeners: [UUID: (AgentConnectorResponse) -> Void] = [:]
   private let registry: AgentManagedConnectorResponseRegistry
   private let managedLedger: AgentManagedResponseLedger?
-  private let store: AgentConnectorResponseStore
+  private let store: AgentConnectorResponseSink
   private let nowMillis: () -> Int64
 
   init(
     registry: AgentManagedConnectorResponseRegistry = .shared,
-    managedLedger: AgentManagedResponseLedger? = nil,
-    store: AgentConnectorResponseStore = AgentConnectorResponseStore(),
+    managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
+    store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.registry = registry
@@ -309,7 +318,7 @@ final class AgentConnectorResponseBus {
     if managedLedger?.complete(normalized) != nil {
       return true
     }
-    store.append(normalized)
+    store.publish(normalized)
     let callbacks: [(AgentConnectorResponse) -> Void]
     lock.lock()
     callbacks = Array(listeners.values)
@@ -329,6 +338,7 @@ final class AgentConnectorResponseBus {
   func clear() {
     store.clear()
     registry.clear()
+    managedLedger?.clear()
     lock.lock()
     defer { lock.unlock() }
     listeners.removeAll()
