@@ -281,6 +281,7 @@ final class GlobalAutonomousSkillHost {
           }
         )
       )
+      AgentIOSNativeToolHandoffPresenter.openIfNeeded(childResult)
       let stepRecord = Self.stepRecord(
         step: step,
         result: childResult

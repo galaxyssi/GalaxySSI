@@ -72,6 +72,7 @@ final class AgentSkillExecutionEngine {
       var context = contextFactory(match, step, index, conversationId, turnId)
       context.grantedPermissions.formUnion(descriptor.requiredPermissions.filter(\.required).map(\.id))
       let result = registry.invoke(step.toolId, input: step.input, context: context, hooks: hooks)
+      AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       results.append(result)
       if !result.isSuccess {
         return fallback(match, reason: result.message.ifBlank(result.error?.message ?? "Skill tool failed"), results: results)
