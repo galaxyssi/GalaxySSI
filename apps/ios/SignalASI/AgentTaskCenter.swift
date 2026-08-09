@@ -2,6 +2,7 @@ import Foundation
 
 enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
   case cancel = "CANCEL"
+  case resume = "RESUME"
   case retry = "RETRY"
   case copy = "COPY"
   case viewLog = "VIEW_LOG"
@@ -25,6 +26,9 @@ protocol AgentTaskStore: AnyObject {
 enum AgentTaskCenterPolicy {
   static func actions(_ task: AgentTaskRecord) -> [AgentTaskCenterAction] {
     var actions: [AgentTaskCenterAction] = []
+    if resumable(task) {
+      actions.append(.resume)
+    }
     if cancellable(task) {
       actions.append(.cancel)
     }
@@ -41,6 +45,11 @@ enum AgentTaskCenterPolicy {
 
   static func cancellable(_ task: AgentTaskRecord) -> Bool {
     cancellablePhases.contains(task.phase) &&
+      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+  }
+
+  static func resumable(_ task: AgentTaskRecord) -> Bool {
+    task.phase == .paused &&
       (task.pendingAction != nil || !task.pendingActions.isEmpty)
   }
 
