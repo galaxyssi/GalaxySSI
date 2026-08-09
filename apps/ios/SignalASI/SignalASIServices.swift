@@ -912,6 +912,42 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  @discardableResult
+  func executeProactiveTask(_ task: AgentProactiveTask) async -> Bool {
+    let action = task.action
+    let targetId: String
+    if action.contactId != "system" {
+      targetId = action.contactId
+    } else if let target = store.contact(id: action.targetId) {
+      targetId = target.id
+    } else {
+      targetId = store.visibleContacts.first?.id ?? ""
+    }
+    guard let contact = store.contact(id: targetId), !contact.deleted else {
+      lastError = "The proactive task target is unavailable."
+      return false
+    }
+    let prompt: String
+    switch action.kind {
+    case .agent:
+      prompt = action.prompt
+    case .workflow:
+      let workflow = AgentWorkflowResolver.resolve(action.targetId)
+      prompt = "Run the workflow \(workflow?.name ?? action.targetId).\n\(workflow?.goal ?? action.prompt)"
+    case .subagentTeam:
+      let members = action.team.map(\.agentId).joined(separator: ", ")
+      prompt = "Run this proactive team task with agents \(members).\n\(action.prompt)"
+    case .nativeTool:
+      prompt = "Run native tool \(action.targetId) with arguments \(action.argumentsJson).\n\(action.prompt)"
+    }
+    guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      lastError = "The proactive task has no prompt."
+      return false
+    }
+    await send(prompt, to: contact, agentGoalOverride: prompt)
+    return true
+  }
+
   private func receiveCloudStreamReply(
     contact: SignalASIContact,
     turns: [ChatMessage],
