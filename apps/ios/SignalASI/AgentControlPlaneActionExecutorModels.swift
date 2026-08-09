@@ -186,7 +186,11 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let lock = NSRecursiveLock()
   private var transportsByAgentId: [String: ActionExecutorAgentTransport] = [:]
   private var adaptersByAgentId: [String: AgentAdapter] = [:]
+  private var cachedRegistrations: [AgentRegistration]?
+  private var registrationsCachedAtUptime: TimeInterval = 0
   let providerId: String
+
+  private static let registrationCacheTTL: TimeInterval = 1
 
   init(
     registrationSource: @escaping () -> [AgentRegistration],
@@ -218,6 +222,8 @@ final class ActionExecutorAgentProvider: AgentProvider {
     let adapters = Array(adaptersByAgentId.values)
     adaptersByAgentId.removeAll()
     transportsByAgentId.removeAll()
+    cachedRegistrations = nil
+    registrationsCachedAtUptime = 0
     lock.unlock()
     for adapter in adapters {
       await adapter.disconnect()
@@ -225,7 +231,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   func registrations() async throws -> [AgentRegistration] {
-    registrationSource()
+    registrationSnapshot()
   }
 
   func adapter(agentId: String) async throws -> AgentAdapter? {
@@ -260,7 +266,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   func registration(agentId: String) -> AgentRegistration? {
-    registrationSource().first { $0.agentId == agentId }
+    registrationSnapshot().first { $0.agentId == agentId }
   }
 
   func resolveAgentId(_ requested: String) -> String? {
@@ -268,7 +274,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     guard !clean.isEmpty else {
       return nil
     }
-    let registrations = registrationSource()
+    let registrations = registrationSnapshot()
     return registrations.first { $0.agentId == clean }?.agentId ??
       registrations.first { $0.agentId.hasSuffix(":\(clean)") || clean.hasSuffix(":\($0.agentId)") }?.agentId ??
       registrations.first { $0.displayName.compare(clean, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }?.agentId
@@ -497,7 +503,9 @@ final class ActionExecutorAgentProvider: AgentProvider {
       return transport
     }
     let transport = ActionExecutorAgentTransport(
-      registrationSource: registrationSource,
+      registrationSource: { [weak self] in
+        self?.registrationSnapshot() ?? []
+      },
       delegate: delegate,
       recoverableSource: recoverableSource,
       agentId: agentId
@@ -510,6 +518,21 @@ final class ActionExecutorAgentProvider: AgentProvider {
     lock.lock()
     defer { lock.unlock() }
     return transportsByAgentId[agentId]
+  }
+
+  private func registrationSnapshot(
+    nowUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+  ) -> [AgentRegistration] {
+    lock.lock()
+    defer { lock.unlock() }
+    if let cachedRegistrations,
+       nowUptime - registrationsCachedAtUptime <= Self.registrationCacheTTL {
+      return cachedRegistrations
+    }
+    let registrations = registrationSource()
+    cachedRegistrations = registrations
+    registrationsCachedAtUptime = nowUptime
+    return registrations
   }
 }
 
