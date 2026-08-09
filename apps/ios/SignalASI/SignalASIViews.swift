@@ -257,6 +257,13 @@ struct ConversationView: View {
     return all.filter { $0.conversationId == active.id }
   }
 
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: displayedMessages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
+  }
+
   private var contactStatusText: String {
     let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
     switch contact.deliveryMode {
@@ -302,10 +309,11 @@ struct ConversationView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
-            }
-            if waitingForAgentReply {
-              SignalASIAgentReplyWaitingIndicator()
-                .id(Self.replyWaitingViewId)
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
           }
           .padding(.horizontal, 12)
@@ -314,21 +322,22 @@ struct ConversationView: View {
         }
         .background(Color.signalASIPageBackground)
         .onChange(of: displayedMessages.count) { _ in
-          if waitingForAgentReply {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
-            }
-          } else if let last = displayedMessages.last {
+          if let last = displayedMessages.last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
           }
           store.markContactRead(contact.id)
         }
-        .onChange(of: waitingForAgentReply) { waiting in
-          guard waiting else { return }
+        .onChange(of: waitingMessageIDs.count) { _ in
+          guard let last = displayedMessages.last else { return }
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+            proxy.scrollTo(
+              waitingMessageIDs.contains(last.id)
+                ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+                : last.id,
+              anchor: .bottom
+            )
           }
         }
       }
