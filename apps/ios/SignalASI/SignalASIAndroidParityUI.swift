@@ -157,6 +157,7 @@ struct AgentHomeView: View {
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
   @State private var retryingAgentMessageIDs: Set<UUID> = []
+  @State private var retryingAgentTaskIDs: Set<String> = []
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
@@ -284,6 +285,17 @@ struct AgentHomeView: View {
 
   private var primaryActionResumesTask: Bool {
     primaryAgentTask?.phase == .paused
+  }
+
+  private var blockedAgentTask: AgentTaskRecord? {
+    let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return store.recentAgentTasks(limit: 24).first { task in
+      let taskSessionId = task.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let belongsToSession = sessionId.isEmpty || taskSessionId.isEmpty || taskSessionId == sessionId
+      return belongsToSession &&
+        (task.blocked || task.phase == .blocked) &&
+        AgentTaskCenterPolicy.isReusableGoal(task.goal)
+    }
   }
 
   private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
@@ -511,9 +523,25 @@ struct AgentHomeView: View {
               }
             )
           }
+          if let blockedAgentTask {
+            SignalASIAgentBlockedTaskCard(
+              title: t("signalasi.agent.blocked.title", "Agent task blocked"),
+              goal: blockedAgentTask.goal,
+              subtitle: t(
+                "signalasi.agent.blocked.subtitle",
+                "This task could not continue. Retry the original goal."
+              ),
+              retryTitle: t("signalasi.common.retry", "Retry"),
+              retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
+              isRetrying: retryingAgentTaskIDs.contains(blockedAgentTask.taskId)
+            ) {
+              retryBlockedAgentTask(blockedAgentTask)
+            }
+          }
           if messages.isEmpty &&
               !voiceTranscriptionPending &&
               pendingConfirmationTask == nil &&
+              blockedAgentTask == nil &&
               activeExecutionTask == nil {
             VStack(spacing: 10) {
               SignalASILogoView(size: 48, cornerRadius: 10)
@@ -844,6 +872,18 @@ struct AgentHomeView: View {
       return t("signalasi.agent_execution.runtime.knowledge", "Knowledge")
     case .unknown:
       return ""
+    }
+  }
+
+  private func retryBlockedAgentTask(_ task: AgentTaskRecord) {
+    guard (task.blocked || task.phase == .blocked),
+          AgentTaskCenterPolicy.isReusableGoal(task.goal),
+          retryingAgentTaskIDs.insert(task.taskId).inserted else {
+      return
+    }
+    Task { @MainActor in
+      _ = await coordinator.send(task.goal, to: contact)
+      retryingAgentTaskIDs.remove(task.taskId)
     }
   }
 
@@ -1185,6 +1225,61 @@ struct AgentHomeView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIAgentBlockedTaskCard: View {
+  var title: String
+  var goal: String
+  var subtitle: String
+  var retryTitle: String
+  var retryingTitle: String
+  var isRetrying: Bool
+  var onRetry: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.octagon")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.orange)
+          .frame(width: 20, height: 20)
+        Text(title)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(2)
+        Spacer(minLength: 0)
+      }
+      Text(goal)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(3)
+        .fixedSize(horizontal: false, vertical: true)
+      Text(subtitle)
+        .font(.system(size: 12))
+        .foregroundColor(.signalASITextSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Button(action: onRetry) {
+        Label(
+          isRetrying ? retryingTitle : retryTitle,
+          systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
+        )
+        .font(.system(size: 13, weight: .semibold))
+        .frame(maxWidth: .infinity, minHeight: 38)
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(.signalASIAccent)
+      .disabled(isRetrying)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.orange.opacity(0.55), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .contain)
   }
 }
 
