@@ -1477,6 +1477,7 @@ struct VoiceSettingsView: View {
   }
 
   private func startRecording() async {
+    interruptActiveVoiceReply()
     let granted = await speech.requestAuthorization(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
     permissionStatus = granted ? "" : t("Microphone or speech permission is missing.", "Microphone or speech permission is missing.")
     guard granted else { return }
@@ -1485,6 +1486,19 @@ struct VoiceSettingsView: View {
       try speech.start(settings: store.voiceSettings)
     } catch {
       permissionStatus = error.localizedDescription
+    }
+  }
+
+  private func interruptActiveVoiceReply() {
+    let sessionId = activeVoiceReplySessionId
+    let hadPlayback = replySpeech.stop()
+    guard !sessionId.isEmpty else { return }
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .cancelled(sessionId: sessionId, reasonCode: "barge_in")
+    )
+    clearActiveVoiceReplySession(sessionId)
+    if hadPlayback {
+      permissionStatus = t("voice_reply_interrupted", "Voice reply interrupted.")
     }
   }
 
@@ -1559,13 +1573,23 @@ struct VoiceSettingsView: View {
         .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
       )
       permissionStatus = t("Speaking reply", "Speaking reply")
-    } onDone: { done, _, _ in
-      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
+    } onDone: { done, success, _ in
+      let wasActiveSession = activeVoiceReplySessionId == done.sessionId ||
+        activeVoiceReplyPlaybackSessionId == done.sessionId
+      if success {
+        _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
+      } else {
+        _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+          .cancelled(sessionId: done.sessionId, reasonCode: "tts_cancelled")
+        )
+      }
       if activeVoiceReplyPlaybackSessionId == done.sessionId {
         activeVoiceReplyPlaybackSessionId = ""
       }
       clearActiveVoiceReplySession(done.sessionId)
-      permissionStatus = ""
+      if wasActiveSession {
+        permissionStatus = ""
+      }
     }
   }
 

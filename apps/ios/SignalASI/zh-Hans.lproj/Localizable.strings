@@ -3019,6 +3019,7 @@
 "voice_section_tts" = "TTS";
 "voice_speak_replies" = "朗读回复";
 "voice_speak_replies_subtitle" = "Agent 回复后自动用 TTS 播放";
+"voice_reply_interrupted" = "已打断语音回复";
 "signalasi.voice.text_to_speech" = "文本转语音";
 "signalasi.voice.text_to_speech_subtitle" = "为语音会话启用语音播放";
 "voice_tts_provider" = "TTS 提供方";

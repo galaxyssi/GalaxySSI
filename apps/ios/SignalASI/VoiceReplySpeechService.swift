@@ -70,7 +70,13 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   }
 
   @MainActor
-  func stop() {
+  @discardableResult
+  func stop() -> Bool {
+    let hadActivePlayback = activeRequest != nil ||
+      activeSystemUtterance != nil ||
+      edgeSynthesisTask != nil ||
+      isSpeaking ||
+      synthesizer.isSpeaking
     if synthesizer.isSpeaking {
       synthesizer.stopSpeaking(at: .immediate)
     }
@@ -81,6 +87,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
       edgePlayer = nil
       completeActiveRequest(request, success: false, error: "Speech playback was cancelled", errorCode: "tts_cancelled")
     }
+    return hadActivePlayback
   }
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
