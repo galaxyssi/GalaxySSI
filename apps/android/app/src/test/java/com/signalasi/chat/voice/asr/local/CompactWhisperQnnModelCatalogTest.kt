@@ -46,6 +46,18 @@ class CompactWhisperQnnModelCatalogTest {
             assertTrue(compact.manifest.archive.sourceUrl.startsWith(
                 "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/"
             ))
+            assertTrue(compact.manifest.archive.sourceUrl.endsWith(
+                "qualcomm_snapdragon_8_elite_gen5_for_galaxy.zip"
+            ))
+            assertEquals(
+                "qualcomm-snapdragon-8-elite-gen5-for-galaxy",
+                compact.manifest.targetChipset
+            )
+            compact.manifest.archive.entries.forEach { entry ->
+                assertTrue(entry.archivePath.contains(
+                    "qualcomm_snapdragon_8_elite_gen5_for_galaxy/"
+                ))
+            }
             assertFalse(compact.manifest.archive.sourceUrl.contains("whisper_large_v3_turbo"))
         }
     }

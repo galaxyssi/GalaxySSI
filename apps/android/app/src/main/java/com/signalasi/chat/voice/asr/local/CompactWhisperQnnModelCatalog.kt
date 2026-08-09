@@ -10,7 +10,7 @@ internal object CompactWhisperQnnModelCatalog {
         modelRootName = "whisper-tiny-qnn-float",
         profileId = "tiny",
         precision = "float",
-        archiveName = "whisper_tiny-qnn_context_binary-float-$CHIPSET",
+        archiveName = "whisper_tiny-qnn_context_binary-float-$ASSET_CHIPSET",
         archiveUrlModel = "whisper_tiny",
         archiveSize = 105_910_421L,
         archiveEtag = "\"62df896b12ecb49b396af68abf16a117-13\"",
@@ -41,7 +41,7 @@ internal object CompactWhisperQnnModelCatalog {
         modelRootName = "whisper-base-qnn-float",
         profileId = "base",
         precision = "float",
-        archiveName = "whisper_base-qnn_context_binary-float-$CHIPSET",
+        archiveName = "whisper_base-qnn_context_binary-float-$ASSET_CHIPSET",
         archiveUrlModel = "whisper_base",
         archiveSize = 180_939_859L,
         archiveEtag = "\"9856a8f66b1736a1c944ee1001311bf6-22\"",
@@ -72,7 +72,7 @@ internal object CompactWhisperQnnModelCatalog {
         modelRootName = "whisper-small-qnn-w8a16",
         profileId = "small",
         precision = "w8a16",
-        archiveName = "whisper_small_quantized-qnn_context_binary-w8a16-$CHIPSET",
+        archiveName = "whisper_small_quantized-qnn_context_binary-w8a16-$ASSET_CHIPSET",
         archiveUrlModel = "whisper_small_quantized",
         archiveSize = 293_970_633L,
         archiveEtag = "\"e9be3436637e984605a933fe5440bfcd-36\"",
@@ -103,7 +103,7 @@ internal object CompactWhisperQnnModelCatalog {
         modelRootName = "whisper-small-qnn-float",
         profileId = "small",
         precision = "float",
-        archiveName = "whisper_small-qnn_context_binary-float-$CHIPSET",
+        archiveName = "whisper_small-qnn_context_binary-float-$ASSET_CHIPSET",
         archiveUrlModel = "whisper_small",
         archiveSize = 573_246_593L,
         archiveEtag = "\"94ccf87c7364b75d1c4dff79d39bc992-69\"",
@@ -161,8 +161,8 @@ internal object CompactWhisperQnnModelCatalog {
             displayName = displayName,
             releaseVersion = RELEASE_VERSION,
             qairtVersion = QAIRT_VERSION,
-            targetChipset = CHIPSET,
-            targetAliases = setOf(CHIPSET, "sm8850-ad", "sm8850"),
+            targetChipset = TARGET_CHIPSET,
+            targetAliases = setOf(TARGET_CHIPSET, "sm8850-ad", "sm8850"),
             htpVersion = 81,
             socModel = 87,
             sampleRateHz = 16_000,
@@ -242,7 +242,8 @@ internal object CompactWhisperQnnModelCatalog {
 
     private const val RELEASE_VERSION = "0.59.0"
     private const val QAIRT_VERSION = "2.45.0.260326154327"
-    private const val CHIPSET = "qualcomm-snapdragon-8-elite-gen5-for-galaxy"
+    private const val TARGET_CHIPSET = "qualcomm-snapdragon-8-elite-gen5-for-galaxy"
+    private const val ASSET_CHIPSET = "qualcomm_snapdragon_8_elite_gen5_for_galaxy"
     private const val PUBLIC_ASSETS =
         "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models"
     private const val WHISPER_ASSETS =
