@@ -214,7 +214,7 @@ struct AddContactView: View {
     .sheet(isPresented: $myQRCodePresented) {
       MyContactQRCodeView()
     }
-    .sheet(isPresented: $contactScannerPresented) {
+    .fullScreenCover(isPresented: $contactScannerPresented) {
       QRCodeScannerView(
         onCode: { value in
           contactScannerPresented = false
@@ -229,7 +229,13 @@ struct AddContactView: View {
     .onAppear {
       guard autoOpenScanner, !scannerAutoOpened else { return }
       scannerAutoOpened = true
-      contactScannerPresented = true
+      // Wait for the navigation push to finish before presenting the camera.
+      // This avoids a presentation race when the scan action is launched from
+      // the composer, directory, or another pushed iOS 15 view.
+      DispatchQueue.main.async {
+        guard autoOpenScanner else { return }
+        contactScannerPresented = true
+      }
     }
   }
 
