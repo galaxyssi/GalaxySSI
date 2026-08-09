@@ -1390,6 +1390,7 @@ final class SignalASIStore: ObservableObject {
       activeAgentConversationId = agentSessions().first?.id ?? ""
     }
     guard beforeConversations != agentConversations.count || removedMessages > 0 else { return false }
+    AgentModelSelectionSettings.clearConversation(clean)
     save()
     return true
   }

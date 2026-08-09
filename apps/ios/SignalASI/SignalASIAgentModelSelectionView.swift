@@ -13,25 +13,38 @@ struct AgentModelSelection: Codable, Equatable {
 }
 
 enum AgentModelSelectionSettings {
-  private static let storageKey = "signalasi_agent_model_selection_v1"
+  private static let conversationKeyPrefix = "conversation."
+  private static let maxConversationIdLength = 160
 
-  static func hasStoredSelection(defaults: UserDefaults = .standard) -> Bool {
-    defaults.data(forKey: storageKey) != nil
+  static func hasStoredSelection(
+    for conversationId: String,
+    defaults: UserDefaults = .standard
+  ) -> Bool {
+    guard let key = storageKey(for: conversationId, field: "selection") else { return false }
+    return defaults.data(forKey: key) != nil
   }
 
-  static func selection(defaults: UserDefaults = .standard) -> AgentModelSelection {
-    guard let data = defaults.data(forKey: storageKey),
+  static func selection(
+    for conversationId: String,
+    defaults: UserDefaults = .standard
+  ) -> AgentModelSelection {
+    guard let key = storageKey(for: conversationId, field: "selection"),
+          let data = defaults.data(forKey: key),
           let value = try? JSONDecoder().decode(AgentModelSelection.self, from: data) else {
       return AgentModelSelection()
     }
     return value
   }
 
-  static func selectAutomatic(defaults: UserDefaults = .standard) {
-    save(AgentModelSelection(), defaults: defaults)
+  static func selectAutomatic(
+    for conversationId: String,
+    defaults: UserDefaults = .standard
+  ) {
+    save(AgentModelSelection(), for: conversationId, defaults: defaults)
   }
 
   static func selectManual(
+    for conversationId: String,
     targetId: String,
     modelId: String,
     displayName: String,
@@ -46,13 +59,34 @@ enum AgentModelSelectionSettings {
         modelId: String(modelId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
         displayName: String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
       ),
+      for: conversationId,
       defaults: defaults
     )
   }
 
-  private static func save(_ value: AgentModelSelection, defaults: UserDefaults) {
-    guard let data = try? JSONEncoder().encode(value) else { return }
-    defaults.set(data, forKey: storageKey)
+  static func clearConversation(
+    _ conversationId: String,
+    defaults: UserDefaults = .standard
+  ) {
+    guard let key = storageKey(for: conversationId, field: "selection") else { return }
+    defaults.removeObject(forKey: key)
+  }
+
+  private static func save(
+    _ value: AgentModelSelection,
+    for conversationId: String,
+    defaults: UserDefaults
+  ) {
+    guard let key = storageKey(for: conversationId, field: "selection"),
+          let data = try? JSONEncoder().encode(value) else { return }
+    defaults.set(data, forKey: key)
+  }
+
+  private static func storageKey(for conversationId: String, field: String) -> String? {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    let scope = String(clean.prefix(maxConversationIdLength))
+    return "\(conversationKeyPrefix)\(scope).\(field)"
   }
 }
 
@@ -64,7 +98,7 @@ struct SignalASIAgentModelSelectionView: View {
   var onSelectionChanged: (() -> Void)?
 
   private var selection: AgentModelSelection {
-    AgentModelSelectionSettings.selection()
+    AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
   }
 
   private var localProfiles: [LocalModelRuntimeProfile] {
@@ -312,7 +346,7 @@ struct SignalASIAgentModelSelectionView: View {
   }
 
   private func selectAutomatic() {
-    AgentModelSelectionSettings.selectAutomatic()
+    AgentModelSelectionSettings.selectAutomatic(for: store.activeAgentConversationId)
     store.setAgentSessionSelectedModelOrAgent(
       id: store.activeAgentConversationId,
       label: t("signalasi.agent.model_selection.automatic", "Automatic")
@@ -323,6 +357,7 @@ struct SignalASIAgentModelSelectionView: View {
   private func selectLocal(_ profile: LocalModelRuntimeProfile) {
     LocalModelRuntimeSettings.setSelectedProfile(profile.id)
     AgentModelSelectionSettings.selectManual(
+      for: store.activeAgentConversationId,
       targetId: "local-llm",
       modelId: profile.id,
       displayName: profile.displayName
@@ -336,6 +371,7 @@ struct SignalASIAgentModelSelectionView: View {
 
   private func selectCloud(_ contact: SignalASIContact, model: CloudModelConfig) {
     AgentModelSelectionSettings.selectManual(
+      for: store.activeAgentConversationId,
       targetId: contact.id,
       modelId: model.modelId,
       displayName: model.displayName.ifBlank(model.modelId)
@@ -350,6 +386,7 @@ struct SignalASIAgentModelSelectionView: View {
   private func selectAgent(_ target: AgentCallableTarget) {
     let title = target.title
     AgentModelSelectionSettings.selectManual(
+      for: store.activeAgentConversationId,
       targetId: target.id,
       modelId: "",
       displayName: title

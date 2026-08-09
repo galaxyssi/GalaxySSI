@@ -164,7 +164,7 @@ struct AgentHomeView: View {
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
-  @State private var modelSelection = AgentModelSelectionSettings.selection()
+  @State private var modelSelection = AgentModelSelection()
   @State private var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
@@ -360,10 +360,10 @@ struct AgentHomeView: View {
         ensureActiveAgentSession()
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
-        modelSelection = AgentModelSelectionSettings.selection()
+        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
       .onChange(of: store.activeAgentConversationId) { _ in
-        modelSelection = AgentModelSelectionSettings.selection()
+        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
       .fileImporter(
         isPresented: $fileImporterPresented,
@@ -1206,7 +1206,7 @@ struct AgentHomeView: View {
         .buttonStyle(.plain)
         NavigationLink(
           destination: SignalASIAgentModelSelectionView {
-            modelSelection = AgentModelSelectionSettings.selection()
+            modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
           }
         ) {
           HStack(spacing: 3) {
