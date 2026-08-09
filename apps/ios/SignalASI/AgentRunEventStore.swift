@@ -1,6 +1,7 @@
 import Foundation
 
 protocol AgentRunEventPersistence: AgentRunControlStore {
+  func appendNextAll(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent]
   func events(runId: String) -> [AgentRunControlEvent]
   func latestEvent(runId: String) -> AgentRunControlEvent?
   func snapshot(runId: String) -> AgentRunControlSnapshot?
@@ -46,10 +47,32 @@ final class UserDefaultsAgentRunEventStore: AgentRunEventPersistence {
   }
 
   func appendNextAll(_ events: [AgentRunControlEvent]) -> [AgentRunControlEvent] {
-    guard let runId = events.first?.runId, events.allSatisfy({ $0.runId == runId }) else {
+    guard let runId = events.first.map({ clean($0.runId) }),
+          !runId.isEmpty,
+          events.allSatisfy({ clean($0.runId) == runId && !clean($0.taskId).isEmpty }) else {
       return []
     }
-    return events.map(appendNext)
+    lock.lock()
+    defer { lock.unlock() }
+    var current = eventsLocked(runId)
+    var knownEventIds = Set(current.map(\.eventId))
+    var state = current.reduce(AgentRunControlState.created) {
+      AgentRunEventStore.reduce(current: $0, event: $1.type)
+    }
+    var sequence = current.last?.sequence ?? 0
+    var appended: [AgentRunControlEvent] = []
+    for event in events {
+      guard knownEventIds.insert(event.eventId).inserted else { continue }
+      guard !state.isTerminal || event.type == .runRecovered else { continue }
+      sequence += 1
+      let sequenced = event.withSequence(sequence)
+      current.append(sequenced)
+      appended.append(sequenced)
+      state = AgentRunEventStore.reduce(current: state, event: sequenced.type)
+    }
+    guard !appended.isEmpty else { return [] }
+    persistLocked(runId: runId, events: Array(current.suffix(Self.maxEventsPerRun)))
+    return appended
   }
 
   func events(runId: String) -> [AgentRunControlEvent] {

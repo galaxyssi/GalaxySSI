@@ -1177,10 +1177,26 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     guard !events.isEmpty else {
       return
     }
+    let persistedEvents: [AgentRunControlEvent]
+    if let runEventStore {
+      var groups: [String: [AgentRunControlEvent]] = [:]
+      var order: [String] = []
+      for event in events {
+        if groups[event.runId] == nil {
+          order.append(event.runId)
+        }
+        groups[event.runId, default: []].append(event)
+      }
+      persistedEvents = order.flatMap { runEventStore.appendNextAll(groups[$0] ?? []) }
+    } else {
+      persistedEvents = events
+    }
+    guard !persistedEvents.isEmpty else {
+      return
+    }
     var deliveries: [(AgentRunControlEvent, [AsyncStream<AgentRunControlEvent>.Continuation])] = []
     lock.lock()
-    for event in events {
-      let persisted = runEventStore?.appendNext(event) ?? event
+    for persisted in persistedEvents {
       var buffer = eventBuffersByRunId[persisted.runId] ?? []
       buffer.append(persisted)
       eventBuffersByRunId[persisted.runId] = Array(buffer.suffix(Self.eventReplay))
