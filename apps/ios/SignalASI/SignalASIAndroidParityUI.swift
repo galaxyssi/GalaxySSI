@@ -153,8 +153,23 @@ struct AgentHomeView: View {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
   }
 
+  private var activeAgentSession: AgentConversation? {
+    store.agentSession(id: store.activeAgentConversationId)
+  }
+
   private var messages: [ChatMessage] {
-    store.messages(for: contact.id)
+    let allMessages = store.messages(for: contact.id)
+    guard let session = activeAgentSession else {
+      return allMessages
+    }
+    let scopedMessages = store.agentSessionMessages(session.id)
+    guard scopedMessages.isEmpty else {
+      return scopedMessages
+    }
+    // Keep legacy system messages visible until the first message is assigned to a session.
+    return allMessages.filter {
+      $0.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
   }
 
   private var waitingMessageIDs: Set<UUID> {
@@ -244,8 +259,12 @@ struct AgentHomeView: View {
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
       .onAppear {
+        ensureActiveAgentSession()
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+        modelSelection = AgentModelSelectionSettings.selection()
+      }
+      .onChange(of: store.activeAgentConversationId) { _ in
         modelSelection = AgentModelSelectionSettings.selection()
       }
       .fileImporter(
@@ -527,7 +546,7 @@ struct AgentHomeView: View {
       Spacer(minLength: 8)
       VStack(alignment: .trailing, spacing: 2) {
         NavigationLink(destination: SignalASIAgentSessionsView()) {
-          Text(t("signalasi.agent.session.new", "New session"))
+          Text(headerSessionTitle)
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
             .lineLimit(1)
@@ -569,7 +588,15 @@ struct AgentHomeView: View {
 
   private var headerModelLabel: String {
     guard modelSelection.mode == .manual else {
-      return t("signalasi.agent.model_selection.automatic", "Automatic")
+      let sessionLabel = activeAgentSession?.selectedModelOrAgent
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")
+      guard !sessionLabel.isEmpty,
+            sessionLabel.caseInsensitiveCompare("automatic") != .orderedSame,
+            sessionLabel.caseInsensitiveCompare(contact.displayName) != .orderedSame else {
+        return automaticLabel
+      }
+      return sessionLabel
     }
     if modelSelection.targetId == "local-llm" {
       let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
@@ -592,6 +619,20 @@ struct AgentHomeView: View {
       return model.displayName.ifBlank(model.modelId)
     }
     return t("signalasi.agent.model_selection.automatic", "Automatic")
+  }
+
+  private var headerSessionTitle: String {
+    let fallback = t("signalasi.agent.session.new", "New session")
+    guard let session = activeAgentSession else { return fallback }
+    let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(fallback)
+    if session.trackingPaused {
+      return title + " - " + t("signalasi.agent_session.tracking_paused", "Tracking paused")
+    }
+    if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return title + " - " + t("signalasi.agent_session.merged", "Merged")
+    }
+    return title
   }
 
   private var agentComposer: some View {
@@ -720,6 +761,16 @@ struct AgentHomeView: View {
     attachments.removeAll()
     actionTrayPresented = false
     attachmentError = ""
+  }
+
+  private func ensureActiveAgentSession() {
+    if let session = activeAgentSession {
+      if session.status == .archived {
+        _ = store.switchAgentSession(session.id)
+      }
+      return
+    }
+    _ = store.createAgentSession(title: t("signalasi.agent.session.new", "New session"))
   }
 
   private func openCameraAttachmentPicker() {
