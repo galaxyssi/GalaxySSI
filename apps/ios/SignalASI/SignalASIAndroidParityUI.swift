@@ -907,6 +907,11 @@ struct AgentHomeView: View {
               SignalASIAgentReplyWaitingIndicator()
                 .id(Self.replyWaitingViewId)
             }
+            if shouldShowAgentRuntimePanel {
+              agentRuntimePanel
+                .padding(.top, 2)
+                .transition(.opacity)
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -992,6 +997,9 @@ struct AgentHomeView: View {
           transcriptShowLatestButton = true
         }
         store.markContactRead(contact.id)
+        refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: activeAgentPhase) { _ in
         refreshAgentRuntimeAuditRecords()
       }
       .onChange(of: waitingMessageIDs.count) { _ in
@@ -1490,7 +1498,7 @@ struct AgentHomeView: View {
       taskBudget: store.agentTaskBudget,
       callableTargets: store.visibleContacts.count,
       currentGoal: draft,
-      recentTasks: store.recentAgentTasks(limit: 12),
+      recentTasks: agentRuntimeTasks,
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
       auditRecords: agentRuntimeAuditRecords,
       onCyclePermissionMode: cycleAgentPermissionMode,
@@ -1502,6 +1510,16 @@ struct AgentHomeView: View {
       },
       t: t
     )
+  }
+
+  private var agentRuntimeTasks: [AgentTaskRecord] {
+    store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
+  }
+
+  private var shouldShowAgentRuntimePanel: Bool {
+    activeExecutionTask != nil ||
+      activeRemoteAgentTask != nil ||
+      !agentRuntimeTasks.isEmpty
   }
 
   private func sendAgentMessage(
