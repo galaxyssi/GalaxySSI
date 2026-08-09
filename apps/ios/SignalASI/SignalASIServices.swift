@@ -838,6 +838,28 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let outgoing = store.appendOutgoing(displayText, to: contact.id)
+    if contact.deliveryMode == .local,
+       attachments.isEmpty,
+       let commandResult = AgentWorkflowCommandRouter.handle(displayText) {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: commandResult.actionId,
+        detail: "Local workflow management command",
+        status: .delivered
+      )
+      let response = store.appendIncoming(
+        commandResult.text,
+        from: contact.id,
+        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+        status: .delivered,
+        traceStage: commandResult.actionId,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      onIncomingMessage?(response)
+      return
+    }
     var disclosureTicket: AgentDisclosureTicket?
     do {
       if shouldUseSelectedLocalModel(for: contact) {
