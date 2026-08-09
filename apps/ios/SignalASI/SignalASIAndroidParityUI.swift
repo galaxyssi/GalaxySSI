@@ -321,6 +321,15 @@ struct AgentHomeView: View {
     primaryAgentTask?.phase == .paused
   }
 
+  private var primaryActionApprovesTask: Bool {
+    guard let task = primaryAgentTask,
+          task.phase == .waitingConfirmation,
+          let action = task.pendingAction else {
+      return false
+    }
+    return action.risk.weight < AgentRisk.high.weight
+  }
+
   private var blockedAgentTask: AgentTaskRecord? {
     let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return store.recentAgentTasks(limit: 24).first { task in
@@ -1448,6 +1457,7 @@ struct AgentHomeView: View {
       canSend: canSend,
       hasPendingPrimaryAction: primaryAgentTask != nil,
       pendingPrimaryActionResumesTask: primaryActionResumesTask,
+      pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -1476,7 +1486,15 @@ struct AgentHomeView: View {
 
   private func handlePendingAgentTaskAction() {
     guard let task = primaryAgentTask else { return }
-    if task.phase == .paused {
+    if task.phase == .waitingConfirmation,
+            let action = task.pendingAction,
+            action.risk.weight < AgentRisk.high.weight {
+      coordinator.approveLocalNativeAction(taskId: task.taskId)
+      richActionStatus = t(
+        "signalasi.agent.approval_status.approved",
+        "The Agent action was approved."
+      )
+    } else if task.phase == .paused {
       _ = coordinator.resumeLocalNativeAction(taskId: task.taskId)
     } else {
       coordinator.cancelLocalNativeAction(taskId: task.taskId)
