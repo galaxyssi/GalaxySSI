@@ -158,6 +158,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var taskHistory: [AgentTaskRecord]?
   var proactiveTasks: [AgentProactiveTask]?
   var proactiveRuns: [AgentProactiveRun]?
+  var workflowExecutions: [AgentWorkflowExecutionRecord]?
+  var workflowTriggers: [AgentWorkflowTrigger]?
   var globalProactiveMessages: [GlobalProactiveMessage]?
   var globalAgentFeedback: [GlobalAgentFeedback]?
   var agentConversations: [AgentConversation]?
@@ -183,6 +185,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskHistory: nil,
     proactiveTasks: nil,
     proactiveRuns: nil,
+    workflowExecutions: nil,
+    workflowTriggers: nil,
     globalProactiveMessages: nil,
     globalAgentFeedback: nil,
     agentConversations: nil,
@@ -209,6 +213,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskHistory: [AgentTaskRecord]? = nil,
     proactiveTasks: [AgentProactiveTask]? = nil,
     proactiveRuns: [AgentProactiveRun]? = nil,
+    workflowExecutions: [AgentWorkflowExecutionRecord]? = nil,
+    workflowTriggers: [AgentWorkflowTrigger]? = nil,
     globalProactiveMessages: [GlobalProactiveMessage]? = nil,
     globalAgentFeedback: [GlobalAgentFeedback]? = nil,
     agentConversations: [AgentConversation]? = nil,
@@ -235,6 +241,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.taskHistory = taskHistory.map { Array($0.suffix(200)) }
     self.proactiveTasks = proactiveTasks.map { Array($0.suffix(200)) }
     self.proactiveRuns = proactiveRuns.map { Array($0.suffix(500)) }
+    self.workflowExecutions = workflowExecutions.map { Array($0.suffix(500)) }
+    self.workflowTriggers = workflowTriggers.map { Array($0.suffix(100)) }
     self.globalProactiveMessages = globalProactiveMessages.map { Array($0.suffix(500)) }
     self.globalAgentFeedback = globalAgentFeedback.map { Array($0.suffix(500)) }
     self.agentConversations = agentConversations.map { Array($0.suffix(200)) }
@@ -261,6 +269,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case taskHistory = "task_history"
     case proactiveTasks = "proactive_tasks"
     case proactiveRuns = "proactive_runs"
+    case workflowExecutions = "workflow_executions"
+    case workflowTriggers = "workflow_triggers"
     case globalProactiveMessages = "global_proactive_messages"
     case globalAgentFeedback = "global_agent_feedback"
     case agentConversations = "agent_conversations"
@@ -307,6 +317,15 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     }
     proactiveRuns = try container.decodeIfPresent([AgentProactiveRun].self, forKey: .proactiveRuns).map {
       Array($0.suffix(500))
+    }
+    workflowExecutions = try container.decodeIfPresent(
+      [AgentWorkflowExecutionRecord].self,
+      forKey: .workflowExecutions
+    ).map {
+      Array($0.suffix(500))
+    }
+    workflowTriggers = try container.decodeIfPresent([AgentWorkflowTrigger].self, forKey: .workflowTriggers).map {
+      Array($0.suffix(100))
     }
     globalProactiveMessages = try container.decodeIfPresent([GlobalProactiveMessage].self, forKey: .globalProactiveMessages).map {
       Array($0.suffix(500))

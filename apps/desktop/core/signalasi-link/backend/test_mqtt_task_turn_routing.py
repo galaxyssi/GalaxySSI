@@ -237,6 +237,66 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             [event["event_id"] for event in published_payloads[0]["events"]],
         )
 
+    def test_live_readable_progress_uses_reliable_phone_delivery(self):
+        task = {
+            "task_id": "task-live-progress",
+            "status": "running",
+            "status_seq": 2,
+            "updated_at": 200,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "phone-turn-1",
+            "events": [{
+                "event_id": "narration-1",
+                "kind": "narration",
+                "status": "completed",
+                "title": "Checking the worksheet",
+                "detail": "I am checking each answer before annotating the image.",
+            }],
+        }
+
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-1"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            published = mqtt_bridge._publish_or_queue_task_event(
+                ConnectedMqtt(),
+                {"scheme": "signal", "_client_route_id": "phone-1"},
+                task,
+                [],
+            )
+
+        self.assertTrue(published)
+        self.assertTrue(publish.call_args.kwargs["durable"])
+
+    def test_status_only_heartbeat_does_not_enter_reliable_backlog(self):
+        task = {
+            "task_id": "task-heartbeat",
+            "status": "running",
+            "status_seq": 2,
+            "updated_at": 200,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "phone-turn-1",
+            "events": [],
+        }
+
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-1"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            published = mqtt_bridge._publish_or_queue_task_event(
+                ConnectedMqtt(),
+                {"scheme": "signal", "_client_route_id": "phone-1"},
+                task,
+                [],
+            )
+
+        self.assertTrue(published)
+        self.assertFalse(publish.call_args.kwargs["durable"])
+
     def test_queued_task_event_resolves_identity_only_when_flushed(self):
         task = {
             "task_id": "task-reconnect",

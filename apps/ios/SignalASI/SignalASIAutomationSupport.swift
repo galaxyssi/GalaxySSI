@@ -162,9 +162,13 @@ struct AutomationEditorDraft {
         deliveryMode: deliveryMode
       )
     case .workflow:
+      let reference = targetId.ifBlank(defaultTarget(for: .workflow))
+      guard AgentWorkflowResolver.resolve(reference) != nil else {
+        throw AgentProactiveTaskError.invalid("Workflow '\(reference)' was not found")
+      }
       return try AgentProactiveAction(
         kind: .workflow,
-        targetId: targetId.ifBlank(defaultTarget(for: .workflow)),
+        targetId: reference,
         argumentsJson: "{}",
         deliveryMode: deliveryMode
       )
@@ -201,7 +205,7 @@ struct AutomationEditorDraft {
     switch kind {
     case .agent: return "codex"
     case .subagentTeam: return ""
-    case .workflow: return "missing-workflow"
+    case .workflow: return AgentWorkflowResolver.defaultReference()
     case .nativeTool: return AgentPhoneNativeToolCatalog.descriptors().first?.id ?? "signalasi.device.status"
     }
   }
