@@ -1959,7 +1959,8 @@ final class SignalASIStore: ObservableObject {
     content: String,
     status: ChatDeliveryStatus? = nil,
     traceStage: String? = nil,
-    detail: String = ""
+    detail: String = "",
+    richOutputJson: String? = nil
   ) -> ChatMessage? {
     guard var messages = messagesByContact[contactId],
           let index = messages.firstIndex(where: { $0.id == messageId }) else {
@@ -1971,6 +1972,9 @@ final class SignalASIStore: ObservableObject {
     }
     if let traceStage {
       messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: traceStage, detail: detail))
+    }
+    if let richOutputJson {
+      messages[index].richOutputJson = richOutputJson
     }
     messagesByContact[contactId] = messages
     save()
