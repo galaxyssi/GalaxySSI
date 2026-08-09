@@ -12,6 +12,7 @@ struct AgentSessionMetrics: Equatable {
 }
 
 struct SignalASIAgentSessionsView: View {
+  @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -399,6 +400,7 @@ struct SignalASIAgentSessionsView: View {
     let session = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     statusText = String(format: t("signalasi.agent_sessions.created", "Selected %@"), session.title)
     showArchived = false
+    dismiss()
   }
 
   private func canMerge(_ session: AgentConversation) -> Bool {
@@ -515,6 +517,7 @@ struct SignalASIAgentSessionsView: View {
     if store.switchAgentSession(session.id) {
       statusText = String(format: t("signalasi.agent_sessions.selected", "Selected %@"), session.title)
       showArchived = false
+      dismiss()
     }
   }
 
