@@ -962,6 +962,7 @@ final class MessageCoordinator: ObservableObject {
         action: nativeAction,
         screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: task.name)
       )
+      AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       guard result.success else {
         throw AgentProactiveTaskError.invalid(result.message.ifBlank("Native tool execution failed"))
       }
@@ -2186,6 +2187,7 @@ final class MessageCoordinator: ObservableObject {
       action: executionAction,
       screen: screen
     )
+    AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
     let stepReply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
