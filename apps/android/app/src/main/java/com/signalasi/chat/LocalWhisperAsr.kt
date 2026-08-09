@@ -15,6 +15,7 @@ import com.signalasi.chat.voice.asr.local.LocalWhisperRuntime
 import com.signalasi.chat.voice.asr.local.LocalWhisperSessionConfig
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
 import com.signalasi.chat.voice.asr.local.NativeWhisperResult
+import com.signalasi.chat.voice.asr.local.QnnWhisperPackageManager
 import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
 import com.signalasi.chat.voice.asr.local.WhisperFinalAudioChunker
 import com.signalasi.chat.voice.asr.local.WhisperFinalResultAssembler
@@ -118,7 +119,19 @@ object LocalWhisperAsr {
         val config = VoiceAssistantSettings.get(context)
         val requested = WhisperModelManager.model(requestedProfileIdOverride ?: config.asrModel)
         val audioDurationMs = durationMs(pcm16)
-        val policyDecision = if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(context)) {
+        val selectedQnnPackage = QnnWhisperPackageManager.selectedPackage(context)
+        val manualInstalledQnn = shouldBypassWhisperCertificationForManualQnn(
+            runtimeMode = config.asrRuntimeMode,
+            acceleration = config.asrAcceleration,
+            selectedProfileId = requested.id,
+            qnnProfileId = selectedQnnPackage?.profileId,
+            qnnInstalled = selectedQnnPackage?.let {
+                QnnWhisperPackageManager.isInstalled(context, it)
+            } == true
+        )
+        val policyDecision = if (
+            VoiceFeatureFlags.isWhisperPolicyEngineEnabled(context) && !manualInstalledQnn
+        ) {
             WhisperBenchmarkManager.decide(
                 context = context,
                 userMode = if (requestedProfileIdOverride != null) {
@@ -169,7 +182,10 @@ object LocalWhisperAsr {
         )
         trace(context, traceId, VoiceTraceEvents.ASR_FINAL_STARTED, baseAttributes, once = true)
         try {
-            require(WhisperModelManager.isAvailable(context, selected)) {
+            require(
+                WhisperModelManager.isAvailable(context, selected) ||
+                    (manualInstalledQnn && selected.id == requested.id)
+            ) {
                 "ASR model ${selected.displayName} is not downloaded"
             }
             val normalizedLanguage = language.substringBefore('-').lowercase()
@@ -581,3 +597,14 @@ object LocalWhisperAsr {
         }
     }
 }
+
+internal fun shouldBypassWhisperCertificationForManualQnn(
+    runtimeMode: WhisperUserVoiceMode,
+    acceleration: String,
+    selectedProfileId: String,
+    qnnProfileId: String?,
+    qnnInstalled: Boolean
+): Boolean = runtimeMode == WhisperUserVoiceMode.MANUAL &&
+    acceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
+    qnnInstalled &&
+    qnnProfileId == selectedProfileId
