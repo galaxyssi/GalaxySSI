@@ -3112,6 +3112,7 @@
 "agent_task_status_failed" = "执行失败";
 "agent_task_status_cancelled" = "已取消";
 "agent_task_status_timed_out" = "已超时";
+"agent_task_status_not_found" = "任务不可用";
 "agent_task_status_cancelling" = "正在取消";
 "delivery_trace_desktop_reply_queued" = "桌面回复已入队";
 "delivery_trace_desktop_reply_ack" = "桌面回复 Broker ACK";
