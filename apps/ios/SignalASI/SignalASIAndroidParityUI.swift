@@ -599,27 +599,31 @@ struct AgentHomeView: View {
       }
       return sessionLabel
     }
+    let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")
+    let targetId = modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallbackLabel = modelSelection.displayName
+      .ifBlank(modelSelection.modelId)
+      .ifBlank(targetId)
+      .ifBlank(automaticLabel)
     if modelSelection.targetId == "local-llm" {
       let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
-      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
-        LocalModelInferenceRuntime.shared.ready(profile: profile)
-      return ready
-        ? profile.displayName
-        : t("signalasi.agent.model_selection.automatic", "Automatic")
+      return profile.displayName
+        .ifBlank(modelSelection.displayName)
+        .ifBlank(modelSelection.modelId)
+        .ifBlank(fallbackLabel)
     }
     if let contact = store.contact(id: modelSelection.targetId),
        contact.type == "agent" {
       return modelSelection.displayName.ifBlank(contact.displayName).ifBlank(contact.id)
     }
     if let contact = store.contact(id: modelSelection.targetId),
-       let model = contact.selectedCloudModel,
-       AgentConnectorAvailability.cloudModelReady(
-         contact: contact,
-         apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
-       ) {
-      return model.displayName.ifBlank(model.modelId)
+       let model = contact.selectedCloudModel {
+      return model.displayName
+        .ifBlank(model.modelId)
+        .ifBlank(modelSelection.displayName)
+        .ifBlank(fallbackLabel)
     }
-    return t("signalasi.agent.model_selection.automatic", "Automatic")
+    return fallbackLabel
   }
 
   private var headerSessionTitle: String {
