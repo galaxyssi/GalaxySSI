@@ -175,6 +175,7 @@ struct AgentHomeView: View {
   @State private var runtimeArtifactStatus = ""
   @State private var richActionStatus = ""
   @State private var recoveringAgentTaskIDs: Set<String> = []
+  @State private var approvalActionsInFlight: Set<String> = []
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -452,6 +453,10 @@ struct AgentHomeView: View {
 
   private func handleRichAction(_ action: AgentRichAction) {
     switch action.verb {
+    case "decide_task_permission":
+      handleLocalPermissionAction(action.value)
+    case "decide_remote_task_permission":
+      handleRemotePermissionAction(action.value)
     case "copy":
       let value = action.value.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !value.isEmpty else {
@@ -605,6 +610,63 @@ struct AgentHomeView: View {
           "The recovery request could not be sent."
         )
       }
+    }
+  }
+
+  private func handleLocalPermissionAction(_ rawChoice: String) {
+    guard let choice = AgentPermissionChoice.fromWireValue(rawChoice) else {
+      richActionStatus = t("signalasi.agent.approval_status.invalid", "This Agent action is invalid.")
+      return
+    }
+    guard let task = pendingConfirmationTask else {
+      richActionStatus = t(
+        "signalasi.agent.approval_status.unavailable",
+        "This local approval is no longer available."
+      )
+      return
+    }
+    if choice == .denyAlways {
+      coordinator.denyLocalNativeAction(taskId: task.taskId)
+      richActionStatus = t("signalasi.agent.approval_status.denied", "The Agent action was denied.")
+    } else {
+      coordinator.approveLocalNativeAction(
+        taskId: task.taskId,
+        remember: choice != .allowOnce
+      )
+      richActionStatus = t("signalasi.agent.approval_status.approved", "The Agent action was approved.")
+    }
+  }
+
+  private func handleRemotePermissionAction(_ rawDecision: String) {
+    guard let decision = AgentRemoteApprovalDecision.decode(rawDecision) else {
+      richActionStatus = t("signalasi.agent.approval_status.invalid", "This Agent action is invalid.")
+      return
+    }
+    let activeConversationID = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !activeConversationID.isEmpty,
+          decision.conversationId == activeConversationID else {
+      richActionStatus = t(
+        "signalasi.agent.approval_status.unavailable",
+        "This remote approval is not part of the active Agent conversation."
+      )
+      return
+    }
+    let operationKey = "\(decision.taskId):\(decision.approvalId):\(decision.actionHash)"
+    guard approvalActionsInFlight.insert(operationKey).inserted else {
+      richActionStatus = t(
+        "signalasi.agent.approval_status.pending",
+        "This approval request is already being sent."
+      )
+      return
+    }
+    richActionStatus = t("signalasi.agent.approval_status.sending", "Sending approval decision...")
+    Task { @MainActor in
+      let published = await coordinator.publishRemoteAgentApproval(decision)
+      approvalActionsInFlight.remove(operationKey)
+      richActionStatus = published
+        ? t("signalasi.agent.approval_status.sent", "Approval decision sent.")
+        : t("signalasi.agent.approval_status.failed", "The approval decision could not be sent.")
     }
   }
 

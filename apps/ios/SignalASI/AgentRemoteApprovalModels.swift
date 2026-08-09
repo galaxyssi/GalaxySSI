@@ -1,5 +1,23 @@
 import Foundation
 
+enum AgentPermissionChoice: String, Codable, CaseIterable, Identifiable {
+  case allowOnce = "allow_once"
+  case allowSession = "allow_session"
+  case allowAlways = "allow_always"
+  case denyAlways = "deny_always"
+
+  var id: String { rawValue }
+
+  var wireValue: String { rawValue }
+
+  var approved: Bool { self != .denyAlways }
+
+  static func fromWireValue(_ value: String?) -> AgentPermissionChoice? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return allCases.first { $0.rawValue == normalized }
+  }
+}
+
 struct AgentRemoteApprovalRequest: Codable, Equatable {
   var taskId: String
   var clientRouteId: String
@@ -26,7 +44,7 @@ struct AgentRemoteApprovalRequest: Codable, Equatable {
     "\(actionHash.prefix(8))...\(actionHash.suffix(8))"
   }
 
-  func decision(approved: Bool) -> AgentRemoteApprovalDecision {
+  func decision(choice: AgentPermissionChoice) -> AgentRemoteApprovalDecision {
     AgentRemoteApprovalDecision(
       taskId: taskId,
       clientRouteId: clientRouteId,
@@ -36,8 +54,12 @@ struct AgentRemoteApprovalRequest: Codable, Equatable {
       sourceMessageId: sourceMessageId,
       approvalId: approvalId,
       actionHash: actionHash,
-      approved: approved
+      choice: choice
     )
+  }
+
+  func decision(approved: Bool) -> AgentRemoteApprovalDecision {
+    decision(choice: approved ? .allowOnce : .denyAlways)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -140,7 +162,9 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
   var sourceMessageId: Int64
   var approvalId: String
   var actionHash: String
-  var approved: Bool
+  var choice: AgentPermissionChoice
+
+  var approved: Bool { choice.approved }
 
   enum CodingKeys: String, CodingKey {
     case taskId = "task_id"
@@ -151,7 +175,7 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
     case sourceMessageId = "source_message_id"
     case approvalId = "approval_id"
     case actionHash = "action_hash"
-    case approved
+    case choice = "decision_scope"
   }
 
   func encode() -> String {
@@ -164,6 +188,7 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
       "source_message_id": .int(sourceMessageId),
       "approval_id": .string(approvalId),
       "action_hash": .string(actionHash),
+      "decision_scope": .string(choice.wireValue),
       "approved": .bool(approved)
     ])
   }
@@ -183,6 +208,9 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
     let actionHash = object.string("action_hash")
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
+    guard let choice = AgentPermissionChoice.fromWireValue(object.string("decision_scope")) else {
+      return nil
+    }
 
     guard !taskId.isEmpty,
       !clientRouteId.isEmpty,
@@ -191,7 +219,8 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
       !contactId.isEmpty,
       sourceMessageId > 0,
       approvalId.range(of: AgentRemoteApprovalValidation.idPattern, options: .regularExpression) != nil,
-      actionHash.range(of: AgentRemoteApprovalValidation.hashPattern, options: .regularExpression) != nil else {
+      actionHash.range(of: AgentRemoteApprovalValidation.hashPattern, options: .regularExpression) != nil,
+      object.bool("approved") == choice.approved else {
       return nil
     }
     return AgentRemoteApprovalDecision(
@@ -203,7 +232,7 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
       sourceMessageId: sourceMessageId,
       approvalId: approvalId,
       actionHash: actionHash,
-      approved: object.bool("approved")
+      choice: choice
     )
   }
 }

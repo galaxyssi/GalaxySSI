@@ -3625,4 +3625,13 @@
 "signalasi.agent.action_status.conversation_unavailable" = "此 Agent 会话已不可用。";
 "signalasi.agent.action_status.recovery_started" = "已开始恢复任务。";
 "signalasi.agent.action_status.recovery_failed" = "恢复请求发送失败。";
+"signalasi.agent.approval_status.title" = "Agent 审批";
+"signalasi.agent.approval_status.invalid" = "此 Agent 操作无效。";
+"signalasi.agent.approval_status.unavailable" = "此审批请求已不可用。";
+"signalasi.agent.approval_status.pending" = "此审批请求正在发送。";
+"signalasi.agent.approval_status.sending" = "正在发送审批决定……";
+"signalasi.agent.approval_status.sent" = "审批决定已发送。";
+"signalasi.agent.approval_status.failed" = "审批决定发送失败。";
+"signalasi.agent.approval_status.approved" = "Agent 操作已批准。";
+"signalasi.agent.approval_status.denied" = "Agent 操作已拒绝。";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";
