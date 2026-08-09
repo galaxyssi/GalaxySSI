@@ -244,6 +244,7 @@
     A10000000000000000000528 /* GlobalConversationMergeRebinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000528 /* GlobalConversationMergeRebinding.swift */; };
     A10000000000000000000529 /* GlobalConversationMergeLifecycleRebindingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000529 /* GlobalConversationMergeLifecycleRebindingTests.swift */; };
     A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000500 /* GlobalRealtimeContext.swift */; };
+    A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */; };
     A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000501 /* GlobalRealtimeContextTests.swift */; };
     A10000000000000000000502 /* CloudWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000502 /* CloudWebGrounding.swift */; };
     A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000503 /* CloudWebGroundingTests.swift */; };
@@ -939,6 +940,7 @@
     A20000000000000000000528 /* GlobalConversationMergeRebinding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalConversationMergeRebinding.swift; sourceTree = "<group>"; };
     A20000000000000000000529 /* GlobalConversationMergeLifecycleRebindingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalConversationMergeLifecycleRebindingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000500 /* GlobalRealtimeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContext.swift; sourceTree = "<group>"; };
+    A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000501 /* GlobalRealtimeContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000502 /* CloudWebGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGrounding.swift; sourceTree = "<group>"; };
     A20000000000000000000503 /* CloudWebGroundingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGroundingTests.swift; sourceTree = "<group>"; };
@@ -1559,6 +1561,7 @@
         A20000000000000000000498 /* GlobalConversationContextJournal.swift */,
         A20000000000000000000528 /* GlobalConversationMergeRebinding.swift */,
         A20000000000000000000500 /* GlobalRealtimeContext.swift */,
+        A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */,
         A20000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift */,
         A20000000000000000000560 /* GlobalLongHorizonGoalGraph.swift */,
         A20000000000000000000562 /* GlobalLongHorizonLifecycle.swift */,
@@ -2351,6 +2354,7 @@
         A10000000000000000000498 /* GlobalConversationContextJournal.swift in Sources */,
         A10000000000000000000528 /* GlobalConversationMergeRebinding.swift in Sources */,
         A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */,
+        A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */,
         A10000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift in Sources */,
         A10000000000000000000560 /* GlobalLongHorizonGoalGraph.swift in Sources */,
         A10000000000000000000562 /* GlobalLongHorizonLifecycle.swift in Sources */,

@@ -5,6 +5,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var parsingContext: AgentModelPlanParsingContext
   var conversationContext: AgentConversationContext
   var executionHistory: [AgentAction]
+  var globalRealtimeContext: String
   var requirements: AgentTaskRequirements
   var hasAttachments: Bool
   var allowsPhoneRuntimeTools: Bool
@@ -19,6 +20,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       privateMode: false
     ),
     executionHistory: [AgentAction] = [],
+    globalRealtimeContext: String = "",
     requirements: AgentTaskRequirements? = nil,
     hasAttachments: Bool? = nil,
     allowsPhoneRuntimeTools: Bool? = nil
@@ -29,6 +31,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.parsingContext = parsingContext
     self.conversationContext = conversationContext
     self.executionHistory = executionHistory
+    self.globalRealtimeContext = String(globalRealtimeContext.prefix(8_000))
     self.requirements = resolvedRequirements
     self.hasAttachments = resolvedHasAttachments
     self.allowsPhoneRuntimeTools = allowsPhoneRuntimeTools ??
@@ -40,9 +43,25 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case parsingContext = "parsing_context"
     case conversationContext = "conversation_context"
     case executionHistory = "execution_history"
+    case globalRealtimeContext = "global_realtime_context"
     case requirements
     case hasAttachments = "has_attachments"
     case allowsPhoneRuntimeTools = "allows_phone_runtime_tools"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      planRequest: try container.decode(AgentPlanRequest.self, forKey: .planRequest),
+      parsingContext: try container.decodeIfPresent(AgentModelPlanParsingContext.self, forKey: .parsingContext) ?? .empty,
+      conversationContext: try container.decodeIfPresent(AgentConversationContext.self, forKey: .conversationContext) ??
+        AgentConversationContext(conversationId: "", summary: "", turns: [], privateMode: false),
+      executionHistory: try container.decodeIfPresent([AgentAction].self, forKey: .executionHistory) ?? [],
+      globalRealtimeContext: try container.decodeIfPresent(String.self, forKey: .globalRealtimeContext) ?? "",
+      requirements: try container.decodeIfPresent(AgentTaskRequirements.self, forKey: .requirements),
+      hasAttachments: try container.decodeIfPresent(Bool.self, forKey: .hasAttachments),
+      allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools)
+    )
   }
 
   private static func infersPhoneRuntimeTools(
