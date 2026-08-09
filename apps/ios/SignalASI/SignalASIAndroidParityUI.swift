@@ -194,6 +194,42 @@ struct AgentHomeView: View {
       !modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
+  private var manualRouteWarning: (title: String, subtitle: String)? {
+    guard hasManualSelection else { return nil }
+    let targetId = modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if targetId == "local-llm" {
+      let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
+      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+        LocalModelInferenceRuntime.shared.ready(profile: profile)
+      guard !ready else {
+        return nil
+      }
+      return (
+        t("signalasi.agent.route.unavailable_title", "Selected route unavailable"),
+        t(
+          "signalasi.agent.route.local_unavailable",
+          "The selected on-device model is not enabled. Choose another route before sending."
+        )
+      )
+    }
+
+    let callableTargets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    guard let target = callableTargets.first(where: { $0.id == targetId }),
+          AgentConnectorRouteSelector.isDeliverable(target) else {
+      return (
+        t("signalasi.agent.route.unavailable_title", "Selected route unavailable"),
+        t(
+          "signalasi.agent.route.remote_unavailable",
+          "The selected Agent or model is offline. Choose another route before sending."
+        )
+      )
+    }
+    return nil
+  }
+
   private var messages: [ChatMessage] {
     let allMessages = store.messages(for: contact.id)
     guard let session = activeAgentSession else {
@@ -865,6 +901,21 @@ struct AgentHomeView: View {
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
         LazyVStack(spacing: 10) {
+          if let routeWarning = manualRouteWarning {
+            SignalASISecurityNavigationRow(
+              title: routeWarning.title,
+              subtitle: routeWarning.subtitle,
+              systemImage: "exclamationmark.triangle.fill",
+              tint: .orange,
+              badge: t("signalasi.agent.model_selection.choose", "Choose")
+            ) {
+              SignalASIAgentModelSelectionView {
+                modelSelection = AgentModelSelectionSettings.selection(
+                  for: store.activeAgentConversationId
+                )
+              }
+            }
+          }
           if let recoverableAgentTask = recoverableAgentTasksFromOtherSessions.first {
             recoverableAgentTaskBanner(recoverableAgentTask)
           }

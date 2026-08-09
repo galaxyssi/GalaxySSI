@@ -3572,6 +3572,10 @@
 "signalasi.agent.model_selection.title" = "选择模型或 Agent";
 "signalasi.agent.model_selection.hero_title" = "Agent 模型";
 "signalasi.agent.model_selection.badge" = "路由";
+"signalasi.agent.model_selection.choose" = "选择";
+"signalasi.agent.route.unavailable_title" = "当前路由不可用";
+"signalasi.agent.route.local_unavailable" = "所选本机模型未启用，请在发送前选择其他路由。";
+"signalasi.agent.route.remote_unavailable" = "所选 Agent 或模型当前离线，请在发送前选择其他路由。";
 "signalasi.agent.model_selection.routing_section" = "路由方式";
 "signalasi.agent.model_selection.automatic" = "自动";
 "signalasi.agent.model_selection.automatic_subtitle" = "根据任务、速度、隐私和可用性自动选择";
