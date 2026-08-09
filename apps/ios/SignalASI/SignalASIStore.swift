@@ -297,6 +297,7 @@ final class SignalASIStore: ObservableObject {
   private let agentMemoryStore: UserDefaultsAgentMemoryStore
   private let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
+  private let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
@@ -311,6 +312,7 @@ final class SignalASIStore: ObservableObject {
     self.agentMemoryStore = memoryStore
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
+    self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -616,6 +618,20 @@ final class SignalASIStore: ObservableObject {
       .map { $0 }
   }
 
+  func recentWorkflowExecutions(limit: Int = AgentWorkflowExecutionHistoryStore.defaultRecentLimit) -> [AgentWorkflowExecutionRecord] {
+    workflowExecutionHistoryStore.recent(limit)
+  }
+
+  func workflowExecutions(taskId: String, limit: Int = 50) -> [AgentWorkflowExecutionRecord] {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return [] }
+    return workflowExecutionHistoryStore.listAll()
+      .filter { $0.workflowId == clean }
+      .sorted { $0.startedAtMillis > $1.startedAtMillis }
+      .prefix(max(limit, 0))
+      .map { $0 }
+  }
+
   func makeAutomationTaskDraft(name: String = "", prompt: String = "") -> AgentProactiveTask {
     let now = Self.nowMillis()
     let taskId = "ios-proactive-\(UUID().uuidString.lowercased())"
@@ -709,6 +725,7 @@ final class SignalASIStore: ObservableObject {
     let before = proactiveTasks.count
     proactiveTasks.removeAll { $0.taskId == clean }
     proactiveRuns.removeAll { $0.taskId == clean }
+    workflowExecutionHistoryStore.deleteForWorkflow(clean)
     return before != proactiveTasks.count
   }
 
@@ -727,6 +744,15 @@ final class SignalASIStore: ObservableObject {
       startedAtMillis: now,
       resultSummary: "Run queued on iOS."
     )
+    try workflowExecutionHistoryStore.upsert(AgentWorkflowExecutionRecord(
+      id: run.runId,
+      workflowId: task.taskId,
+      workflowName: task.name,
+      source: .manual,
+      status: .running,
+      startedAtMillis: now,
+      resultSummary: run.resultSummary
+    ))
     let updatedTask = try AgentProactiveTask(
       taskId: task.taskId,
       name: task.name,
@@ -775,6 +801,18 @@ final class SignalASIStore: ObservableObject {
     var runs = proactiveRuns
     runs[index] = cancelled
     proactiveRuns = runs
+    if let task = automationTask(id: run.taskId) {
+      try? workflowExecutionHistoryStore.upsert(AgentWorkflowExecutionRecord(
+        id: run.runId,
+        workflowId: task.taskId,
+        workflowName: task.name,
+        source: .manual,
+        status: .cancelled,
+        startedAtMillis: run.startedAtMillis,
+        completedAtMillis: cancelled.completedAtMillis,
+        resultSummary: cancelled.resultSummary
+      ))
+    }
     return true
   }
 
@@ -1810,7 +1848,8 @@ final class SignalASIStore: ObservableObject {
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
-        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty || !globalProactiveMessages.isEmpty,
+        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty ||
+          !workflowExecutionHistoryStore.listAll().isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
@@ -1827,6 +1866,7 @@ final class SignalASIStore: ObservableObject {
         taskHistory: recentAgentTasks(limit: 200),
         proactiveTasks: automationTasks(),
         proactiveRuns: Array(proactiveRuns.suffix(500)),
+        workflowExecutions: workflowExecutionHistoryStore.exportRecords(),
         globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
         globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
         agentConversations: agentSessions(includeArchived: true),
@@ -1887,6 +1927,9 @@ final class SignalASIStore: ObservableObject {
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
       proactiveTasks = Array((payload.agentData.proactiveTasks ?? []).suffix(200))
       proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
+      if let workflowExecutions = payload.agentData.workflowExecutions {
+        try workflowExecutionHistoryStore.replaceAll(workflowExecutions)
+      }
       globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
       globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
@@ -2549,6 +2592,7 @@ final class SignalASIStore: ObservableObject {
 
   private func resetToFreshState() {
     UserDefaultsAgentWorkflowStore.shared.clear()
+    workflowExecutionHistoryStore.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
