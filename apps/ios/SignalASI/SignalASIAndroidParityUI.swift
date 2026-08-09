@@ -158,6 +158,22 @@ struct AgentHomeView: View {
     store.agentSession(id: store.activeAgentConversationId)
   }
 
+  private var callableTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
+  private var activeManualTarget: AgentCallableTarget? {
+    guard modelSelection.mode == .manual else { return nil }
+    let targetId = AgentCallableTargetCatalog.preferredTargetId(
+      selection: modelSelection,
+      targets: callableTargets
+    )
+    return callableTargets.first { $0.id == targetId }
+  }
+
   private var messages: [ChatMessage] {
     let allMessages = store.messages(for: contact.id)
     guard let session = activeAgentSession else {
@@ -588,7 +604,7 @@ struct AgentHomeView: View {
   }
 
   private var headerModelLabel: String {
-    guard modelSelection.mode == .manual else {
+    guard modelSelection.mode == .manual, activeManualTarget != nil else {
       let sessionLabel = activeAgentSession?.selectedModelOrAgent
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")

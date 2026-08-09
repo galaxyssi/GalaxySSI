@@ -532,7 +532,11 @@ enum AgentCallableTargetCatalog {
     targets: [AgentCallableTarget]
   ) -> String {
     guard selection.mode == .manual else { return "" }
-    return selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let targetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !targetId.isEmpty else { return "" }
+    return targets.first {
+      $0.id == targetId && AgentConnectorRouteSelector.isDeliverable($0)
+    }?.id ?? ""
   }
 
   private static func target(

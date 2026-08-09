@@ -1613,6 +1613,16 @@ final class MessageCoordinator: ObservableObject {
           selected.trustState == .verified else {
       return nil
     }
+    let callableTargets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    guard AgentCallableTargetCatalog.preferredTargetId(
+      selection: selection,
+      targets: callableTargets
+    ) == selected.id else {
+      return nil
+    }
     let setup = selected.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard setup == "ready" || setup == "verified" else { return nil }
     return selected
