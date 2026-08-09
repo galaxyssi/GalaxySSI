@@ -11,6 +11,7 @@ struct SignalASIAgentActionQueueItem: Identifiable {
 
 struct SignalASIAgentActionQueueCard: View {
   var items: [SignalASIAgentActionQueueItem]
+  var onEditAction: ((SignalASIAgentActionQueueItem) -> Void)? = nil
   var t: (String, String) -> String
 
   var body: some View {
@@ -86,6 +87,18 @@ struct SignalASIAgentActionQueueCard: View {
         .lineLimit(2)
         .multilineTextAlignment(.trailing)
         .frame(minWidth: 48, alignment: .trailing)
+      if AgentPlanEditor.isEditablePending(action), let onEditAction {
+        Button {
+          onEditAction(item)
+        } label: {
+          Image(systemName: "ellipsis.circle")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.signalASITextSecondary)
+            .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_plan_edit_action", "Edit action")))
+      }
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 9)
