@@ -129,6 +129,30 @@ final class LocalModelInferenceRuntime {
     )
   }
 
+  func generateAsync(
+    profile: LocalModelRuntimeProfile,
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int = 768,
+    temperature: Double = 0.3
+  ) async throws -> LocalModelInferenceResult {
+    try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async { [self] in
+        do {
+          continuation.resume(returning: try generate(
+            profile: profile,
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            maximumTokens: maximumTokens,
+            temperature: temperature
+          ))
+        } catch {
+          continuation.resume(throwing: error)
+        }
+      }
+    }
+  }
+
   func releaseForAsr() {
     lock.lock()
     refreshBackendIfNeededLocked()
