@@ -808,63 +808,6 @@ enum LocalModelRuntimePreflight {
 }
 
 enum LocalModelRuntimeSettings {
-  static func enabledProfileIds(defaults: UserDefaults = .standard) -> Set<String> {
-    let knownIds = Set(LocalModelRuntimeCatalog.profiles(defaults: defaults).map(\.id))
-    if defaults.object(forKey: keyEnabledProfiles) != nil {
-      return Set((defaults.stringArray(forKey: keyEnabledProfiles) ?? []).filter { knownIds.contains($0) })
-    }
-
-    let storage = LocalModelRuntimeStorage()
-    let installed = LocalModelRuntimeCatalog.profiles(defaults: defaults)
-      .filter { storage.inspect($0).installed }
-      .map(\.id)
-    if !installed.isEmpty {
-      return Set(installed)
-    }
-    let selected = selectedProfile(defaults: defaults)
-    return storage.inspect(selected).installed ? [selected.id] : []
-  }
-
-  static func isProfileEnabled(
-    _ profile: LocalModelRuntimeProfile,
-    defaults: UserDefaults = .standard
-  ) -> Bool {
-    enabledProfileIds(defaults: defaults).contains(profile.id)
-  }
-
-  static func setProfileEnabled(
-    _ profile: LocalModelRuntimeProfile,
-    enabled: Bool,
-    defaults: UserDefaults = .standard
-  ) {
-    var updated = enabledProfileIds(defaults: defaults)
-    if enabled {
-      updated.insert(profile.id)
-      setSelectedProfile(profile.id, defaults: defaults)
-    } else {
-      updated.remove(profile.id)
-      if selectedProfile(defaults: defaults).id == profile.id {
-        setSelectedProfile(
-          updated.sorted().first ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id,
-          defaults: defaults
-        )
-      }
-    }
-    defaults.set(Array(updated).sorted(), forKey: keyEnabledProfiles)
-  }
-
-  static func activeProfiles(defaults: UserDefaults = .standard) -> [LocalModelRuntimeProfile] {
-    let selectedId = selectedProfile(defaults: defaults).id
-    let storage = LocalModelRuntimeStorage()
-    return LocalModelRuntimeCatalog.profiles(defaults: defaults)
-      .filter { enabledProfileIds(defaults: defaults).contains($0.id) && storage.inspect($0).installed }
-      .sorted { left, right in
-        if left.id == selectedId { return true }
-        if right.id == selectedId { return false }
-        return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
-      }
-  }
-
   static func selectedProfile(defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
     LocalModelRuntimeCatalog.find(
       defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id,
