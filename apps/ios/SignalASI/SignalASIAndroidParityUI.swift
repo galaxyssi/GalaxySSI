@@ -32,6 +32,7 @@ private extension View {
 
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
@@ -360,9 +361,11 @@ struct AgentHomeView: View {
       .onAppear {
         ensureActiveAgentSession()
         store.markContactRead(contact.id)
-        refreshAgentRuntimeAuditRecords()
-        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-        coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
+        refreshAgentRouteState()
+      }
+      .onChange(of: scenePhase) { phase in
+        guard phase == .active else { return }
+        refreshAgentRouteState()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in
         coordinator.updateAgentScreenContext(snapshot.screen)
@@ -1851,6 +1854,14 @@ struct AgentHomeView: View {
       .makePersistentStores()
       .auditStore
       .list(limit: 12, toolId: "", status: nil)
+  }
+
+  private func refreshAgentRouteState() {
+    modelSelection = AgentModelSelectionSettings.selection(
+      for: store.activeAgentConversationId
+    )
+    refreshAgentRuntimeAuditRecords()
+    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
   }
 
   private func resetAgentSessionPresentation() {
