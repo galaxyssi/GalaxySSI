@@ -227,6 +227,48 @@ enum AgentTranscriptLifecyclePolicy {
     }
   }
 
+  static func staleConnectorRecoveries(
+    messages: [ChatMessage],
+    tasks: [AgentTaskRecord],
+    nowMillis: Int64,
+    staleAfterMillis: Int64 = staleConnectorMillis
+  ) -> [AgentStaleConnectorRecovery] {
+    var tasksById: [String: AgentTaskRecord] = [:]
+    tasks.forEach { tasksById[$0.taskId] = $0 }
+    let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]
+    var recoveredTaskIds = Set<String>()
+
+    return messages.compactMap { message in
+      guard message.isMine, !message.isSystem else { return nil }
+      let taskId = message.turnId.ifBlank(message.id.uuidString)
+      guard let task = tasksById[taskId] ?? tasks.first(where: { $0.taskId == message.id.uuidString }),
+            task.routeKind == .desktopAgent,
+            !terminalPhases.contains(task.phase),
+            task.updatedAtMillis > 0,
+            nowMillis - max(
+              Int64((message.createdAt.timeIntervalSince1970 * 1_000).rounded()),
+              task.updatedAtMillis
+            ) >= staleAfterMillis,
+            recoveredTaskIds.insert(task.taskId).inserted else {
+        return nil
+      }
+      let turnId = message.turnId.ifBlank(task.taskId)
+      let hasAssistantReply = messages.contains { candidate in
+        !candidate.isMine &&
+          !candidate.isSystem &&
+          candidate.conversationId == message.conversationId &&
+          candidate.turnId == turnId
+      }
+      guard !hasAssistantReply else { return nil }
+      AgentStaleConnectorRecovery(
+        conversationId: message.conversationId.ifBlank(task.sessionId),
+        turnId: turnId,
+        taskId: task.taskId,
+        result: sanitizeDurableResult(task.result)
+      )
+    }
+  }
+
   private static func sanitizeDurableResult(_ value: String) -> String {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !isInternalPlannerResult(trimmed) else {
