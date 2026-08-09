@@ -2007,6 +2007,25 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func pauseLocalNativeAction(taskId: String) -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          AgentTaskCenterPolicy.pauseable(task) else {
+      return false
+    }
+    if task.pendingAction == nil {
+      task.pendingAction = task.pendingActions.first
+    }
+    task.phase = .paused
+    task.blocked = false
+    task.result = ""
+    task.verification = "User paused native tool execution"
+    task.executionLog.append("Native tool task: paused")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return true
+  }
+
+  @discardableResult
   func resumeLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused,
@@ -2043,7 +2062,14 @@ final class MessageCoordinator: ObservableObject {
 
   func cancelLocalNativeAction(taskId: String) {
     guard var task = store.agentTask(id: taskId),
-          [.waitingConfirmation, .executing, .verifying, .paused].contains(task.phase),
+          [
+            .observing,
+            .waitingConfirmation,
+            .executing,
+            .verifying,
+            .waitingResponse,
+            .paused
+          ].contains(task.phase),
           task.pendingAction != nil || !task.pendingActions.isEmpty else {
       return
     }

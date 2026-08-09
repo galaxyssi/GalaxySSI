@@ -904,13 +904,16 @@ struct AgentHomeView: View {
               goal: blockedAgentTask.goal,
               subtitle: t(
                 "signalasi.agent.blocked.subtitle",
-                "This task could not continue. Retry the original goal."
+                "This task could not continue. Retry or re-plan the original goal."
               ),
               retryTitle: t("signalasi.common.retry", "Retry"),
+              replanTitle: t("signalasi.agent.task_control.replan", "Re-plan task"),
               retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
               isRetrying: retryingAgentTaskIDs.contains(blockedAgentTask.taskId)
             ) {
               retryBlockedAgentTask(blockedAgentTask)
+            } onReplan: {
+              retryAgentTask(blockedAgentTask, mode: .replan)
             }
           }
           if messages.isEmpty &&
@@ -975,14 +978,18 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
-                canResume: AgentTaskCenterPolicy.resumable(activeExecutionTask),
-                resumeTitle: t("signalasi.agent.resume_task", "Resume task"),
-                canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
-                cancelTitle: t("signalasi.common.cancel_task", "Cancel task")
-              ) {
-                resumeActiveAgentTask(activeExecutionTask)
-              } onCancel: {
-                cancelActiveAgentTask(activeExecutionTask)
+                canResume: false,
+                resumeTitle: "",
+                canCancel: false,
+                cancelTitle: "",
+                onResume: {},
+                onCancel: {},
+                timelineActions: agentTimelineActions(for: activeExecutionTask),
+                timelineActionTitle: { agentTimelineActionTitle($0) },
+                timelineActionIcon: { agentTimelineActionIcon($0) },
+                onTimelineAction: { action in
+                  runAgentTimelineAction(action, task: activeExecutionTask)
+                }
               }
             }
             SignalASIAgentScreenContextCard(
@@ -1242,6 +1249,71 @@ struct AgentHomeView: View {
       : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
   }
 
+  private func agentTimelineActions(for task: AgentTaskRecord) -> [AgentExecutionLoopTimelineAction] {
+    AgentExecutionLoopTimelinePolicy.actionsForPhase(task.phase).filter { action in
+      switch action {
+      case .pause:
+        return AgentTaskCenterPolicy.pauseable(task)
+      case .resume:
+        return AgentTaskCenterPolicy.resumable(task)
+      case .cancel:
+        return AgentTaskCenterPolicy.cancellable(task)
+      case .retry, .replan:
+        return AgentTaskCenterPolicy.isReusableGoal(task.goal)
+      }
+    }
+  }
+
+  private func runAgentTimelineAction(
+    _ action: AgentExecutionLoopTimelineAction,
+    task: AgentTaskRecord
+  ) {
+    switch action {
+    case .pause:
+      richActionStatus = coordinator.pauseLocalNativeAction(taskId: task.taskId)
+        ? t("signalasi.agent.task_control.paused", "Task paused")
+        : t("signalasi.agent.task_control.pause_failed", "This task could not be paused")
+    case .resume:
+      resumeActiveAgentTask(task)
+    case .cancel:
+      cancelActiveAgentTask(task)
+    case .retry:
+      retryAgentTask(task, mode: .retry)
+    case .replan:
+      retryAgentTask(task, mode: .replan)
+    }
+  }
+
+  private func agentTimelineActionTitle(_ action: AgentExecutionLoopTimelineAction) -> String {
+    switch action {
+    case .pause:
+      return t("signalasi.agent.task_control.pause", "Pause task")
+    case .resume:
+      return t("signalasi.agent.resume_task", "Resume task")
+    case .retry:
+      return t("signalasi.common.retry", "Retry")
+    case .replan:
+      return t("signalasi.agent.task_control.replan", "Re-plan task")
+    case .cancel:
+      return t("signalasi.common.cancel_task", "Cancel task")
+    }
+  }
+
+  private func agentTimelineActionIcon(_ action: AgentExecutionLoopTimelineAction) -> String {
+    switch action {
+    case .pause:
+      return "pause.fill"
+    case .resume:
+      return "play.fill"
+    case .retry:
+      return "arrow.clockwise"
+    case .replan:
+      return "arrow.triangle.2.circlepath"
+    case .cancel:
+      return "xmark.circle"
+    }
+  }
+
   private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
     coordinator.cancelLocalNativeAction(taskId: task.taskId)
     richActionStatus = t("signalasi.agent.task_control.cancelled", "Task cancelled")
@@ -1455,6 +1527,47 @@ struct AgentHomeView: View {
       }
       _ = await coordinator.send(task.goal, to: contact)
       retryingAgentTaskIDs.remove(task.taskId)
+    }
+  }
+
+  private enum AgentTaskRestartMode {
+    case retry
+    case replan
+  }
+
+  private func retryAgentTask(_ task: AgentTaskRecord, mode: AgentTaskRestartMode) {
+    guard AgentTaskCenterPolicy.isReusableGoal(task.goal),
+          retryingAgentTaskIDs.insert(task.taskId).inserted else {
+      return
+    }
+    let request: String
+    switch mode {
+    case .retry:
+      request = task.goal
+    case .replan:
+      request = String(
+        format: t(
+          "signalasi.agent.task_control.replan_prompt",
+          "Re-plan and continue this Agent task: %@"
+        ),
+        task.goal
+      )
+    }
+    richActionStatus = mode == .replan
+      ? t("signalasi.agent.task_control.replanned", "Task re-planned")
+      : t("signalasi.agent_tasks.retrying", "Retrying task...")
+    Task { @MainActor in
+      if let destination = store.agentSessionDestination(id: task.sessionId) {
+        _ = store.switchAgentSession(destination)
+      }
+      let sent = await coordinator.send(request, to: contact)
+      retryingAgentTaskIDs.remove(task.taskId)
+      if !sent {
+        richActionStatus = t(
+          "signalasi.agent_tasks.retry_failed",
+          "The task could not be sent"
+        )
+      }
     }
   }
 
@@ -1938,9 +2051,11 @@ private struct SignalASIAgentBlockedTaskCard: View {
   var goal: String
   var subtitle: String
   var retryTitle: String
+  var replanTitle: String
   var retryingTitle: String
   var isRetrying: Bool
   var onRetry: () -> Void
+  var onReplan: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -1964,17 +2079,27 @@ private struct SignalASIAgentBlockedTaskCard: View {
         .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
         .fixedSize(horizontal: false, vertical: true)
-      Button(action: onRetry) {
-        Label(
-          isRetrying ? retryingTitle : retryTitle,
-          systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
-        )
-        .font(.system(size: 13, weight: .semibold))
-        .frame(maxWidth: .infinity, minHeight: 38)
+      HStack(spacing: 8) {
+        Button(action: onRetry) {
+          Label(
+            isRetrying ? retryingTitle : retryTitle,
+            systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
+          )
+          .font(.system(size: 13, weight: .semibold))
+          .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.signalASIAccent)
+        .disabled(isRetrying)
+
+        Button(action: onReplan) {
+          Label(replanTitle, systemImage: "arrow.triangle.2.circlepath")
+            .font(.system(size: 13, weight: .semibold))
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.bordered)
+        .disabled(isRetrying)
       }
-      .buttonStyle(.borderedProminent)
-      .tint(.signalASIAccent)
-      .disabled(isRetrying)
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2054,6 +2179,10 @@ private struct SignalASIAgentExecutionStatusCard: View {
   var cancelTitle: String
   var onResume: () -> Void
   var onCancel: () -> Void
+  var timelineActions: [AgentExecutionLoopTimelineAction] = []
+  var timelineActionTitle: (AgentExecutionLoopTimelineAction) -> String = { $0.rawValue }
+  var timelineActionIcon: (AgentExecutionLoopTimelineAction) -> String = { _ in "ellipsis" }
+  var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -2125,7 +2254,7 @@ private struct SignalASIAgentExecutionStatusCard: View {
           .padding(.leading, 4)
         }
       }
-      if canResume || canCancel {
+      if canResume || canCancel || !timelineActions.isEmpty {
         HStack(spacing: 8) {
           if canResume {
             Button(action: onResume) {
@@ -2142,6 +2271,23 @@ private struct SignalASIAgentExecutionStatusCard: View {
                 .frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.bordered)
+          }
+          if !timelineActions.isEmpty {
+            Menu {
+              ForEach(timelineActions) { action in
+                Button {
+                  onTimelineAction(action)
+                } label: {
+                  Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+                }
+              }
+            } label: {
+              Label("", systemImage: "ellipsis.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 42, height: 36)
+            }
+            .menuStyle(.borderedButton)
+            .accessibilityLabel(Text("Task controls"))
           }
         }
       }

@@ -668,7 +668,7 @@
 "signalasi.agent.recovery.title" = "有可继续的 Agent 任务";
 "signalasi.agent.recovery.accessibility" = "打开可继续的 Agent 任务：%@";
 "signalasi.agent.blocked.title" = "Agent 任务已阻止";
-"signalasi.agent.blocked.subtitle" = "任务未能继续，可以重新提交原目标。";
+"signalasi.agent.blocked.subtitle" = "任务未能继续，可以重试或重新规划原目标。";
 "signalasi.agent_tasks.target_phone" = "SignalASI";
 "signalasi.agent_tasks.execution_unknown" = "未知";
 "signalasi.agent_section_recent_tasks" = "最近任务";
@@ -3651,6 +3651,12 @@
 "signalasi.agent.task_control.resumed" = "任务已恢复";
 "signalasi.agent.task_control.resume_failed" = "此任务无法恢复";
 "signalasi.agent.task_control.cancelled" = "任务已取消";
+"signalasi.agent.task_control.paused" = "任务已暂停";
+"signalasi.agent.task_control.pause_failed" = "此任务无法暂停";
+"signalasi.agent.task_control.replanned" = "已重新规划任务";
+"signalasi.agent.task_control.pause" = "暂停任务";
+"signalasi.agent.task_control.replan" = "重新规划任务";
+"signalasi.agent.task_control.replan_prompt" = "重新规划并继续此 Agent 任务：%@";
 "signalasi.agent.form.invalid" = "此 Agent 表单无效。";
 "signalasi.agent.form.response" = "表单响应";
 "signalasi.agent.form.submitted" = "表单已提交给 Agent。";
