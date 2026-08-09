@@ -986,11 +986,29 @@ struct AgentHomeView: View {
               t: t
             )
             ForEach(transcriptMessages) { message in
-              MessageBubble(
-                message: message,
-                onAction: handleRichAction,
-                onFormSubmit: handleAgentRichForm
-              )
+              VStack(alignment: .leading, spacing: 4) {
+                MessageBubble(
+                  message: message,
+                  onAction: handleRichAction,
+                  onFormSubmit: handleAgentRichForm
+                )
+                if !message.isMine,
+                   !message.isSystem,
+                   let task = agentTask(for: message) {
+                  SignalASIAgentExecutionFooterView(
+                    executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
+                    status: agentPhaseLabel(task.phase),
+                    location: agentExecutionLocationSummary(task),
+                    step: agentExecutionStep(task),
+                    duration: executionDuration(
+                      startedAtMillis: task.createdAtMillis,
+                      updatedAtMillis: task.updatedAtMillis
+                    ),
+                    details: task.executionLog,
+                    detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline")
+                  )
+                }
+              }
                 .id(message.id)
                 .contextMenu {
                   Button {
