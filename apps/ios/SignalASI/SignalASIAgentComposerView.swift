@@ -289,7 +289,9 @@ struct SignalASIAgentComposerView: View {
 
   @ViewBuilder
   private var primaryActionButton: some View {
-    if uiState.showSendButton {
+    if !uiState.showPrimaryActionSlot {
+      EmptyView()
+    } else if uiState.showSendButton {
       Button {
         actionTrayPresented = false
         if canSend {
