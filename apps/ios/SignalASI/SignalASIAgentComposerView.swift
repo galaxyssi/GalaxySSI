@@ -20,6 +20,7 @@ struct SignalASIAgentComposerView: View {
   var onAddFile: () -> Void
   var onSend: () -> Void
   var onPendingPrimaryAction: () -> Void
+  var onVoiceStart: () -> Void
   var onVoiceTranscript: (String) -> Void
   var t: (String, String) -> String
 
@@ -179,6 +180,7 @@ struct SignalASIAgentComposerView: View {
             actionTrayPresented = false
             inputFocused = false
             voiceTranscriptionPending = true
+            onVoiceStart()
           },
           onFinish: onVoiceTranscript
         )
