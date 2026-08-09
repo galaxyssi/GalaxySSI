@@ -10,6 +10,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     delegate: AgentActionExecutor,
     recoverableSource: @escaping () -> [AgentRecoverableRun] = { [] },
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
+    healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore()
   ) {
     let provider = ActionExecutorAgentProvider(
@@ -17,6 +18,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       delegate: delegate,
       recoverableSource: recoverableSource,
       runStartReceipts: runStartReceipts,
+      healthLedger: healthLedger,
       runEventStore: runEventStore
     )
     self.provider = provider
@@ -72,6 +74,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       createdAtMillis: AgentControlPlaneClock.nowMillis()
     )
     provider.prepare(agentId: agentId, request: request, action: action, screen: screen)
+    let dispatchStartedAt = AgentControlPlaneClock.nowMillis()
     do {
       guard let adapter = try Self.awaitBlocking({ try await self.directory.resolveAdapter(agentId) }) else {
         provider.discardPrepared(agentId: agentId, runId: runId)
@@ -81,6 +84,11 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       let dispatchResult = provider.result(agentId: agentId, runId: handle.runId)
       provider.discardPrepared(agentId: agentId, runId: runId)
       if var result = dispatchResult {
+        provider.recordDispatchOutcome(
+          agentId: agentId,
+          result: result,
+          latencyMillis: AgentControlPlaneClock.nowMillis() - dispatchStartedAt
+        )
         result.metadata.merge([
           "control_plane_run_id": handle.runId,
           "control_plane_agent_id": handle.agentId,
@@ -108,6 +116,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
         message: "Agent Adapter returned no dispatch receipt"
       )
     } catch {
+      let circuit = error as? AgentProviderCircuitOpenError
       provider.discardPrepared(agentId: agentId, runId: runId)
       return AgentActionResult(
         actionId: action.id,
@@ -116,9 +125,9 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
         metadata: [
           "control_plane_run_id": runId,
           "control_plane_agent_id": agentId,
-          "provider_circuit_open": "false",
+          "provider_circuit_open": circuit == nil ? "false" : "true",
           "provider_health_scope": provider.healthScope(agentId: agentId),
-          "provider_retry_at_millis": ""
+          "provider_retry_at_millis": circuit.map { String($0.retryAtMillis) } ?? ""
         ]
       )
     }
@@ -198,6 +207,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let delegate: AgentActionExecutor
   private let recoverableSource: () -> [AgentRecoverableRun]
   private let runStartReceipts: AgentRunStartReceiptStore
+  private let healthLedger: AgentProviderHealthLedger
   private let runEventStore: AgentRunEventPersistence?
   private let localProtocol: AgentProtocolRange
   private let lock = NSRecursiveLock()
@@ -214,6 +224,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     delegate: AgentActionExecutor,
     recoverableSource: @escaping () -> [AgentRecoverableRun] = { [] },
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
+    healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = nil,
     providerId: String = "signalasi-connectors",
     localProtocol: AgentProtocolRange = AgentProtocolRange(
@@ -227,6 +238,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     self.delegate = delegate
     self.recoverableSource = recoverableSource
     self.runStartReceipts = runStartReceipts
+    self.healthLedger = healthLedger
     self.runEventStore = runEventStore
     self.providerId = providerId
     self.localProtocol = localProtocol
@@ -250,7 +262,26 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   func registrations() async throws -> [AgentRegistration] {
-    registrationSnapshot()
+    registrationSnapshot().map { registration in
+      let health = healthLedger.snapshot(registration: registration)
+      switch health.circuitState(nowMillis: AgentControlPlaneClock.nowMillis()) {
+      case .open:
+        var projected = registration
+        projected.status = .unreachable
+        return projected
+      case .halfOpen:
+        var projected = registration
+        projected.status = .degraded
+        return projected
+      case .closed:
+        if health.consecutiveFailures > 0 && registration.status == .online {
+          var projected = registration
+          projected.status = .degraded
+          return projected
+        }
+        return registration
+      }
+    }
   }
 
   func adapter(agentId: String) async throws -> AgentAdapter? {
@@ -264,11 +295,16 @@ final class ActionExecutorAgentProvider: AgentProvider {
       return nil
     }
     let transport = transport(agentId: agentId)
-    let adapter = TransportBackedAgentAdapter(
+    let transportAdapter = TransportBackedAgentAdapter(
       initialRegistration: registration,
       transport: transport,
       localProtocol: localProtocol,
       runStartReceipts: runStartReceipts
+    )
+    let adapter = HealthIsolatedAgentAdapter(
+      delegate: transportAdapter,
+      family: registration.agentAdapterFamily(),
+      healthLedger: healthLedger
     )
     lock.lock()
     if let existing = adaptersByAgentId[agentId] {
@@ -308,6 +344,27 @@ final class ActionExecutorAgentProvider: AgentProvider {
 
   func result(agentId: String, runId: String) -> AgentActionResult? {
     transportIfPresent(agentId: agentId)?.result(runId: runId)
+  }
+
+  func recordDispatchOutcome(agentId: String, result: AgentActionResult, latencyMillis: Int64) {
+    guard let registration = registration(agentId: agentId) else { return }
+    let now = AgentControlPlaneClock.nowMillis()
+    if result.success {
+      healthLedger.recordSuccess(
+        registration: registration,
+        operation: "start_run",
+        latencyMillis: latencyMillis,
+        nowMillis: now
+      )
+    } else {
+      healthLedger.recordFailure(
+        registration: registration,
+        operation: "start_run",
+        kind: AgentProviderFailureClassifier.from(result: result),
+        latencyMillis: latencyMillis,
+        nowMillis: now
+      )
+    }
   }
 
   @discardableResult
@@ -527,16 +584,11 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   func adapterFamily(agentId: String) -> String {
-    let adapterType = registration(agentId: agentId)?.adapterType.lowercased() ?? ""
-    if adapterType.contains("codex") { return "codex" }
-    if adapterType.contains("claude") { return "claude" }
-    if adapterType.contains("openclaw") { return "openclaw" }
-    return ""
+    registration(agentId: agentId)?.agentAdapterFamily() ?? ""
   }
 
   func healthScope(agentId: String) -> String {
-    let registration = registration(agentId: agentId)
-    return registration?.runtimeFailureDomain.ifBlank(registration?.failureDomain ?? "") ?? ""
+    registration(agentId: agentId)?.runtimeHealthScope() ?? ""
   }
 
   private func transport(agentId: String) -> ActionExecutorAgentTransport {
