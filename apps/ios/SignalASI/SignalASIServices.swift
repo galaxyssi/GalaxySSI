@@ -860,6 +860,29 @@ final class MessageCoordinator: ObservableObject {
     if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
       beginPendingAgentReply(for: outgoing)
     }
+    if contact.deliveryMode == .local,
+       attachments.isEmpty,
+       let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: commandResult.actionId,
+        detail: "Local personal data command",
+        status: .delivered
+      )
+      let response = store.appendIncoming(
+        commandResult.text,
+        from: contact.id,
+        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+        status: .delivered,
+        traceStage: commandResult.actionId,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      onIncomingMessage?(response)
+      finishPendingAgentReply(for: outgoing)
+      return
+    }
     var disclosureTicket: AgentDisclosureTicket?
     do {
       if shouldUseSelectedLocalModel(for: contact) {
