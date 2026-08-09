@@ -581,6 +581,14 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = {
+    try? AgentPhoneNativeToolCatalog.defaultRuntime(
+      actionExecutor: LocalAgentUnsupportedActionExecutor(),
+      screenProvider: { _ in
+        AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+      }
+    )
+  }()
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
@@ -967,6 +975,13 @@ final class MessageCoordinator: ObservableObject {
           excluding: outgoing.id
         )
       )
+      if executeDirectLocalNativeAction(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(
         profile: profile,
         systemPrompt: localModelSystemPrompt,
@@ -1009,6 +1024,58 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       throw error
     }
+  }
+
+  private func executeDirectLocalNativeAction(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let runtime = localNativeToolRuntime else { return false }
+    let request = AgentPlanRequest(
+      goal: requestText,
+      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage
+    )
+    guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
+          let action = plan.actions.first(where: { $0.kind == .callNativeTool }),
+          !action.requiresConfirmation else {
+      return false
+    }
+
+    let result = runtime.actionExecutor.execute(
+      action: action,
+      screen: request.screen
+    )
+    let reply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
+    task.phase = result.success ? .completed : .failed
+    task.result = reply
+    task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
+    let toolId = action.parameters["tool_id"] ?? "unknown"
+    let outcome = result.success ? "completed" : "failed"
+    task.executionLog.append("Native tool \(toolId): \(outcome)")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: result.success ? "local_native_tool_reply" : "local_native_tool_failed",
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: result.success ? .delivered : .failed
+    )
+    _ = store.appendIncoming(
+      reply,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: result.success ? .delivered : .failed,
+      traceStage: result.success ? "local_native_tool_reply_received" : "local_native_tool_error",
+      detail: action.parameters["tool_id"] ?? action.target,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
   }
 
   private func localModelPrompt(
@@ -2657,5 +2724,15 @@ private extension Data {
     let value = (UInt16(self[index]) << 8) | UInt16(self[index + 1])
     index += 2
     return value
+  }
+}
+
+private struct LocalAgentUnsupportedActionExecutor: AgentActionExecutor {
+  func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    AgentActionResult(
+      actionId: action.id,
+      success: false,
+      message: "The local Agent route only executes registered phone-native tools."
+    )
   }
 }
