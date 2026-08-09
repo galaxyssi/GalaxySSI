@@ -32,6 +32,58 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isSMSComposeGoal(lower),
+       let phoneNumber = phoneNumber(in: goal),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsComposeHandoff, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "compose-sms",
+        target: phoneNumber,
+        description: "Open SMS composer",
+        input: [
+          "phone_number": .string(phoneNumber),
+          "message": .string(smsMessage(in: goal))
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isWifiHotspotSettingsGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.wifiHotspotPanelOpen, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "open-hotspot-settings",
+        target: "Personal Hotspot",
+        description: "Open Personal Hotspot settings",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isBiometricEnrollmentGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.biometricEnrollmentOpen, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "open-biometric-settings",
+        target: "Biometrics",
+        description: "Open biometric enrollment settings",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isVPNConsentGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.vpnConsentOpen, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "open-vpn-settings",
+        target: "VPN",
+        description: "Open VPN settings",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isTelephonyCallStateObserveGoal(lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve, in: request) {
       return nativeAction(
@@ -99,6 +151,19 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isContactDeleteGoal(lower),
+       let contactID = contactID(in: goal),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.contactsDelete, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "delete-contact",
+        target: "Contact #\(contactID)",
+        description: "Delete contact",
+        input: ["contact_id": .int(Int64(contactID))],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isCalendarsListGoal(lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.calendarsList, in: request) {
       return nativeAction(
@@ -124,6 +189,19 @@ enum AgentDirectNativeToolPlanner {
           "end_epoch_ms": .int(window.end),
           "limit": .int(50)
         ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isCalendarEventDeleteGoal(lower),
+       let eventID = calendarEventID(in: goal),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.calendarEventDelete, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "delete-calendar-event",
+        target: "Calendar event #\(eventID)",
+        description: "Delete calendar event",
+        input: ["event_id": .int(Int64(eventID))],
         responseLanguage: responseLanguage
       )
     }
@@ -704,6 +782,35 @@ enum AgentDirectNativeToolPlanner {
     containsAny(lower, ["battery level", "battery status", "read battery", "\u{7535}\u{91cf}"])
   }
 
+  private static func isSMSComposeGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "compose sms", "draft sms", "write sms", "compose text", "draft text",
+      "\u{7f16}\u{8f91}\u{77ed}\u{4fe1}", "\u{8d77}\u{8349}\u{77ed}\u{4fe1}", "\u{7f16}\u{5199}\u{77ed}\u{4fe1}"
+    ])
+  }
+
+  private static func isWifiHotspotSettingsGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "open hotspot settings", "open personal hotspot", "hotspot settings", "personal hotspot",
+      "\u{6253}\u{5f00}\u{70ed}\u{70b9}\u{8bbe}\u{7f6e}", "\u{4e2a}\u{4eba}\u{70ed}\u{70b9}\u{8bbe}\u{7f6e}"
+    ])
+  }
+
+  private static func isBiometricEnrollmentGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "open face id settings", "face id settings", "touch id settings", "biometric settings",
+      "set up face id", "set up touch id", "\u{6253}\u{5f00}\u{9762}\u{5bb9}id\u{8bbe}\u{7f6e}",
+      "\u{9762}\u{5bb9}id\u{8bbe}\u{7f6e}", "\u{89e6}\u{63a7}id\u{8bbe}\u{7f6e}", "\u{751f}\u{7269}\u{8bc6}\u{522b}\u{8bbe}\u{7f6e}"
+    ])
+  }
+
+  private static func isVPNConsentGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "set up vpn", "configure vpn", "vpn consent", "vpn settings", "open vpn settings",
+      "\u{914d}\u{7f6evpn", "vpn\u{8bbe}\u{7f6e}", "\u{6253}\u{5f00}vpn\u{8bbe}\u{7f6e}"
+    ])
+  }
+
   private static func isTelephonyStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "phone service status", "telephony status", "carrier status", "手机服务状态", "电话服务状态"
@@ -742,6 +849,17 @@ enum AgentDirectNativeToolPlanner {
     ].contains(lower) ? "" : nil
   }
 
+  private static func isContactDeleteGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "delete contact", "remove contact", "erase contact",
+      "\u{5220}\u{9664}\u{8054}\u{7cfb}\u{4eba}", "\u{79fb}\u{9664}\u{8054}\u{7cfb}\u{4eba}"
+    ])
+  }
+
+  private static func contactID(in goal: String) -> Int? {
+    numericIdentifier(in: goal, pattern: "(?:contact|contact id|\u{8054}\u{7cfb}\u{4eba})[^0-9]{0,24}([0-9]+)")
+  }
+
   private static func isCalendarsListGoal(_ lower: String) -> Bool {
     containsAny(lower, ["list calendars", "calendar list", "show calendars", "日历列表", "查看日历"])
   }
@@ -751,6 +869,35 @@ enum AgentDirectNativeToolPlanner {
       "calendar events", "upcoming events", "today's events", "today events", "my schedule",
       "日历事件", "日程", "今天的日程", "近期日程"
     ])
+  }
+
+  private static func isCalendarEventDeleteGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "delete calendar event", "remove calendar event", "delete event", "remove event",
+      "\u{5220}\u{9664}\u{65e5}\u{5386}\u{4e8b}\u{4ef6}", "\u{5220}\u{9664}\u{65e5}\u{7a0b}"
+    ])
+  }
+
+  private static func calendarEventID(in goal: String) -> Int? {
+    numericIdentifier(
+      in: goal,
+      pattern: "(?:calendar event|event|\u{65e5}\u{5386}\u{4e8b}\u{4ef6}|\u{65e5}\u{7a0b})[^0-9]{0,24}([0-9]+)"
+    )
+  }
+
+  private static func numericIdentifier(in goal: String, pattern: String) -> Int? {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+      return nil
+    }
+    let value = goal as NSString
+    let range = NSRange(location: 0, length: value.length)
+    guard let match = regex.firstMatch(in: goal, range: range),
+          match.numberOfRanges > 1,
+          let identifier = Int(value.substring(with: match.range(at: 1))),
+          identifier > 0 else {
+      return nil
+    }
+    return identifier
   }
 
   private static func calendarEventWindow(for lower: String) -> (start: Int64, end: Int64) {
