@@ -115,6 +115,7 @@
 "agent_recent_status_cancelled" = "已取消";
 "agent_recent_status_running" = "运行中";
 "agent_recent_status_paused" = "已暂停";
+"signalasi.agent_runtime.task_audit_detail" = "%@ / %@ / %@";
 "agent_section_audit_trail" = "审计轨迹";
 "agent_audit_empty" = "暂无 Agent 审计事件";
 "agent_accessibility_status_enabled" = "屏幕访问：已启用";
