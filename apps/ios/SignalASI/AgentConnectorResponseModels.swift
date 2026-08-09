@@ -282,7 +282,7 @@ final class AgentConnectorResponseBus {
 
   init(
     registry: AgentManagedConnectorResponseRegistry = .shared,
-    managedLedger: AgentManagedResponseLedger? = nil,
+    managedLedger: AgentManagedResponseLedger? = UserDefaultsAgentManagedResponseLedger(),
     store: AgentConnectorResponseSink = UserDefaultsAgentConnectorResponseStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
@@ -338,6 +338,7 @@ final class AgentConnectorResponseBus {
   func clear() {
     store.clear()
     registry.clear()
+    managedLedger?.clear()
     lock.lock()
     defer { lock.unlock() }
     listeners.removeAll()

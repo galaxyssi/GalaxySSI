@@ -341,6 +341,7 @@
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
     A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */; };
+    A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */; };
     A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002001 /* AgentConnectorResponseResolver.swift */; };
     A10000000000000000000402 /* AgentReputationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000402 /* AgentReputationModels.swift */; };
     A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000403 /* AgentResourceProfileModels.swift */; };
@@ -953,6 +954,7 @@
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
     A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentConnectorResponseStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentManagedResponseLedger.swift; sourceTree = "<group>"; };
     A20000000000000000002001 /* AgentConnectorResponseResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000402 /* AgentReputationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReputationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000403 /* AgentResourceProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResourceProfileModels.swift; sourceTree = "<group>"; };
@@ -1426,6 +1428,7 @@
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
         A20000000000000000000401 /* AgentConnectorModels.swift */,
         A20000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift */,
+        A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */,
         A20000000000000000002001 /* AgentConnectorResponseResolver.swift */,
         A20000000000000000000402 /* AgentReputationModels.swift */,
         A20000000000000000000403 /* AgentResourceProfileModels.swift */,
@@ -2494,6 +2497,7 @@
         A10000000000000000000200 /* AgentTeamPlanBridgeModels.swift in Sources */,
         A10000000000000000000269 /* AgentConnectorResponseModels.swift in Sources */,
         A10000000000000000000270 /* AgentManagedResponseModels.swift in Sources */,
+        A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
