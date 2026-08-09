@@ -161,6 +161,7 @@ struct AgentHomeView: View {
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
+  @State private var recentTasksShortcutActive = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var composerFocusRequest = 0
@@ -391,6 +392,15 @@ struct AgentHomeView: View {
         NavigationLink(
           destination: AddContactView(autoOpenScanner: true),
           isActive: $scanShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentRecentTasksView(),
+          isActive: $recentTasksShortcutActive
         ) {
           EmptyView()
         }
@@ -1570,6 +1580,9 @@ struct AgentHomeView: View {
       },
       onToggleMemoryCapture: {
         store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
+      },
+      onOpenRecentTasks: {
+        recentTasksShortcutActive = true
       },
       t: t
     )
