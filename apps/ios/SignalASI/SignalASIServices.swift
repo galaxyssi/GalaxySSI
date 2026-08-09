@@ -821,6 +821,55 @@ final class MessageCoordinator: ObservableObject {
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
     startAutomationScheduler()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+      _ = self?.reconcileStaleAgentConnectorReplies()
+    }
+  }
+
+  @discardableResult
+  func reconcileStaleAgentConnectorReplies(
+    nowMillis: Int64 = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  ) -> Int {
+    let messages = store.contacts.flatMap { store.messages(for: $0.id) }
+    let recoveries = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      messages: messages,
+      tasks: store.recentAgentTasks(limit: 200),
+      nowMillis: nowMillis
+    )
+    var appended = 0
+    for recovery in recoveries {
+      guard let outgoing = messages.first(where: { message in
+        message.isMine &&
+          (message.turnId == recovery.turnId || message.id.uuidString == recovery.taskId)
+      }) else {
+        continue
+      }
+      let remoteMessageId = "stale-connector:\(recovery.taskId)"
+      guard !messages.contains(where: { $0.remoteMessageId == remoteMessageId }) else {
+        continue
+      }
+      let result = recovery.result.ifBlank(
+        localReply(
+          english: "The Agent task stopped before a final reply was received. You can retry it from the execution timeline.",
+          chinese: SignalASILocalization.string(
+            "signalasi.agent.stale_connector.fallback",
+            fallback: "Agent 任务在收到最终回复前停止了。你可以从执行时间线重试。",
+            language: store.languagePolicy.responseLanguage
+          )
+        )
+      )
+      _ = store.appendIncoming(
+        result,
+        from: outgoing.contactId,
+        remoteMessageId: remoteMessageId,
+        status: .delivered,
+        traceStage: "stale_connector_recovered",
+        conversationId: recovery.conversationId,
+        turnId: recovery.turnId
+      )
+      appended += 1
+    }
+    return appended
   }
 
   private func startAutomationScheduler() {
