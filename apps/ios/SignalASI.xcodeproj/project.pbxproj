@@ -130,6 +130,7 @@
     A10000000000000000000488 /* AgentPreferenceMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000488 /* AgentPreferenceMode.swift */; };
     A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000704 /* AgentTaskExecutionMode.swift */; };
     A10000000000000000000705 /* AgentSafetySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000705 /* AgentSafetySettings.swift */; };
+    A10000000000000000000707 /* AgentDirectActionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentDirectActionContext.swift */; };
     A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000706 /* CloudModelCredentialPolicy.swift */; };
     A10000000000000000000779 /* CloudModelStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000779 /* CloudModelStreaming.swift */; };
     A10000000000000000000780 /* CloudModelStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000780 /* CloudModelStreamingTests.swift */; };
@@ -804,6 +805,7 @@
     A20000000000000000000488 /* AgentPreferenceMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceMode.swift; sourceTree = "<group>"; };
     A20000000000000000000704 /* AgentTaskExecutionMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskExecutionMode.swift; sourceTree = "<group>"; };
     A20000000000000000000705 /* AgentSafetySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSafetySettings.swift; sourceTree = "<group>"; };
+    A20000000000000000000707 /* AgentDirectActionContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectActionContext.swift; sourceTree = "<group>"; };
     A20000000000000000000706 /* CloudModelCredentialPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelCredentialPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000779 /* CloudModelStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreaming.swift; sourceTree = "<group>"; };
     A20000000000000000000780 /* CloudModelStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamingTests.swift; sourceTree = "<group>"; };
@@ -1408,6 +1410,7 @@
         A20000000000000000000737 /* voice */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
+        A20000000000000000000707 /* AgentDirectActionContext.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
         A20000000000000000000401 /* AgentConnectorModels.swift */,
         A20000000000000000000402 /* AgentReputationModels.swift */,
@@ -2197,6 +2200,7 @@
         A10000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift in Sources */,
         A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */,
         A10000000000000000000705 /* AgentSafetySettings.swift in Sources */,
+        A10000000000000000000707 /* AgentDirectActionContext.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
         A10000000000000000000401 /* AgentConnectorModels.swift in Sources */,
         A10000000000000000000402 /* AgentReputationModels.swift in Sources */,
