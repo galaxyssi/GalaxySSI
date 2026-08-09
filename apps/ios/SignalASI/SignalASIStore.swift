@@ -1699,6 +1699,10 @@ final class SignalASIStore: ObservableObject {
       .map { $0 }
   }
 
+  func refreshAgentRuntimeState() {
+    objectWillChange.send()
+  }
+
   func searchAgentTasks(_ query: String, limit: Int = 50) -> [AgentTaskRecord] {
     let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else {
