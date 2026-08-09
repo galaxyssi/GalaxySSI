@@ -117,6 +117,7 @@ struct SignalASIAndroidIconButton: View {
 }
 
 private struct AgentTranscriptScrollMetrics: Equatable {
+  var contentMinY: CGFloat = 0
   var contentMaxY: CGFloat = 0
   var viewportHeight: CGFloat = 0
 }
@@ -152,6 +153,7 @@ struct AgentHomeView: View {
   @State private var voiceTranscriptionPending = false
   @State private var transcriptAutoFollow = true
   @State private var transcriptShowLatestButton = false
+  @State private var transcriptContentMinY: CGFloat = 0
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
   @State private var fileImporterPresented = false
@@ -467,8 +469,7 @@ struct AgentHomeView: View {
         LazyVStack(spacing: 10) {
           if hasOlderTranscriptMessages {
             Button {
-              olderTranscriptAnchor = transcriptMessages.first?.id
-              visibleAgentMessageLimit += Self.agentTranscriptPageSize
+              loadOlderTranscriptMessages()
             } label: {
               Label(
                 t("signalasi.agent.load_older", "Load earlier messages"),
@@ -561,6 +562,7 @@ struct AgentHomeView: View {
             Color.clear.preference(
               key: AgentTranscriptScrollMetricsKey.self,
               value: AgentTranscriptScrollMetrics(
+                contentMinY: content.frame(in: .named(Self.agentTranscriptCoordinateSpace)).minY,
                 contentMaxY: content.frame(in: .named(Self.agentTranscriptCoordinateSpace)).maxY,
                 viewportHeight: viewport.size.height
               )
@@ -569,6 +571,18 @@ struct AgentHomeView: View {
         )
       }
       .background(Color.signalASIPageBackground)
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 12)
+          .onEnded { value in
+            guard hasOlderTranscriptMessages,
+                  transcriptContentMinY >= -8,
+                  value.translation.height >= 12,
+                  abs(value.translation.height) >= abs(value.translation.width) else {
+              return
+            }
+            loadOlderTranscriptMessages()
+          }
+      )
       .onChange(of: visibleAgentMessageLimit) { _ in
         guard let anchor = olderTranscriptAnchor else { return }
         DispatchQueue.main.async {
@@ -687,6 +701,7 @@ struct AgentHomeView: View {
         }
         .coordinateSpace(name: Self.agentTranscriptCoordinateSpace)
         .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
+          transcriptContentMinY = metrics.contentMinY
           let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 56
           if nearBottom {
             transcriptAutoFollow = true
@@ -698,6 +713,12 @@ struct AgentHomeView: View {
         }
       }
     }
+  }
+
+  private func loadOlderTranscriptMessages() {
+    guard hasOlderTranscriptMessages else { return }
+    olderTranscriptAnchor = transcriptMessages.first?.id
+    visibleAgentMessageLimit += Self.agentTranscriptPageSize
   }
 
   private var header: some View {
