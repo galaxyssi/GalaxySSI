@@ -9,6 +9,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var currentApp: String
   var memorySnapshot: AgentMemorySnapshot
   var knowledgeStats: AgentKnowledgeStats
+  var recentTaskCount: Int = 0
   var permissionMode: AgentPermissionMode = .askBeforeAction
   var highRiskGuard: Bool = true
   var memoryCapture: Bool = true
@@ -16,6 +17,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var onToggleHighRiskGuard: () -> Void = {}
   var onToggleMemoryCapture: () -> Void = {}
   var onToggleExecutionPaused: () -> Void = {}
+  var onOpenRecentTasks: () -> Void = {}
   var t: (String, String) -> String
 
   var body: some View {
@@ -128,6 +130,17 @@ struct SignalASIAgentHomeReadinessView: View {
               0
             ),
             systemImage: "books.vertical"
+          )
+        }
+        .buttonStyle(.plain)
+        separator
+        Button(action: onOpenRecentTasks) {
+          infoNavigationRow(
+            String(
+              format: t("signalasi.agent.recent_tasks_value", "Recent tasks: %d"),
+              recentTaskCount
+            ),
+            systemImage: "clock.arrow.circlepath"
           )
         }
         .buttonStyle(.plain)
