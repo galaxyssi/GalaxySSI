@@ -185,6 +185,17 @@ struct AgentHomeView: View {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
 
+  private var waitingForAgentReply: Bool {
+    guard let latest = messages.last,
+          latest.isMine,
+          !latest.isSystem else {
+      return false
+    }
+    return latest.deliveryStatus != .failed
+  }
+
+  private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
+
   private var agentVoiceSettings: VoiceSettings {
     var settings = store.voiceSettings
     settings.preferredLocaleIdentifier = store.languagePolicy.asrLocaleIdentifier
@@ -284,6 +295,10 @@ struct AgentHomeView: View {
                   }
                 }
             }
+            if waitingForAgentReply {
+              SignalASIAgentReplyWaitingIndicator()
+                .id(Self.replyWaitingViewId)
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -292,13 +307,23 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground)
       .onChange(of: messages.count) { _ in
-        if let last = messages.last {
+        if waitingForAgentReply {
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+          }
+        } else if let last = messages.last {
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(last.id, anchor: .bottom)
           }
         }
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: waitingForAgentReply) { waiting in
+        guard waiting else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+        }
       }
     }
   }
