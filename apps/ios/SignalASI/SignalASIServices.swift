@@ -1235,12 +1235,13 @@ final class MessageCoordinator: ObservableObject {
     )
     if contact.deliveryMode == .local,
        attachments.isEmpty,
-       let commandResult = AgentWorkflowTriggerCommandRouter.handle(displayText) {
+       let commandResult = AgentWorkflowCommandRouter.handle(displayText)
+        ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
         outgoing.id,
         contactId: contact.id,
         stage: commandResult.actionId,
-        detail: "Local workflow trigger command",
+        detail: "Local workflow command",
         status: .delivered
       )
       let response = store.appendIncoming(
