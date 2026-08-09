@@ -862,6 +862,14 @@ struct AgentHomeView: View {
               title: t("signalasi.agent.empty.title", "How can I help?"),
               subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
             )
+            SignalASIAgentHomeReadinessView(
+              runningTasks: activeAgentTasks.count,
+              callableTargets: store.visibleContacts.filter { $0.isCommunicable }.count,
+              nativeToolSummary: nativeToolSummary,
+              screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              t: t
+            )
           } else {
             if let activeRemoteAgentTask {
               SignalASIAgentExecutionStatusCard(
