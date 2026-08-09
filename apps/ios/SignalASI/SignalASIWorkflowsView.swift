@@ -77,6 +77,7 @@ struct SignalASIWorkflowsView: View {
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                   Button(role: .destructive) {
                     _ = workflowStore.delete(name: workflow.name)
+                    _ = UserDefaultsAgentWorkflowTriggerStore.shared.deleteForWorkflow(workflow.id)
                   } label: {
                     Label(t("signalasi.common.delete", "Delete"), systemImage: "trash")
                   }

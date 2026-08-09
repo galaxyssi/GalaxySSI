@@ -7,11 +7,16 @@ import UIKit
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
 
   init() {
     let store = SignalASIStore()
+    let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
-    _coordinator = StateObject(wrappedValue: MessageCoordinator(store: store))
+    _coordinator = StateObject(wrappedValue: coordinator)
+    _workflowTriggerCoordinator = StateObject(
+      wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
+    )
   }
 
   var body: some Scene {
@@ -20,7 +25,10 @@ struct SignalASIApp: App {
         .environmentObject(store)
         .environmentObject(coordinator)
         .signalASITextScale(store.displaySettings)
-        .onAppear { coordinator.start() }
+        .onAppear {
+          coordinator.start()
+          workflowTriggerCoordinator.start()
+        }
     }
   }
 }

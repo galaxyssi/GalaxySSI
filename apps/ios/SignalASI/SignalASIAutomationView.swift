@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIAutomationView: View {
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @ObservedObject private var workflowTriggerStore = UserDefaultsAgentWorkflowTriggerStore.shared
   @State private var creatingTask = false
   @State private var errorMessage = ""
 
@@ -46,6 +47,12 @@ struct SignalASIAutomationView: View {
                 .foregroundColor(.signalASIAccent)
             }
             .accessibilityLabel(t("signalasi.workflow.title", "Workflows"))
+            NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+              Image(systemName: "bolt")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.orange)
+            }
+            .accessibilityLabel(t("signalasi.workflow_trigger.title", "Workflow Trigger"))
             Button {
               creatingTask = true
             } label: {
@@ -194,6 +201,39 @@ struct SignalASIAutomationView: View {
                   badge: triggerBadge(task.trigger),
                   badgeTint: .orange
                 )
+              }
+            }
+          }
+
+          sectionTitle(t("signalasi.workflow_trigger.device_section", "Device Event Triggers"))
+          if workflowTriggerStore.list().isEmpty {
+            NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+              AutomationInfoRow(
+                title: t("signalasi.workflow_trigger.no_triggers", "No device triggers"),
+                subtitle: t("signalasi.workflow_trigger.add_hint", "Run a workflow when power connects or battery becomes low"),
+                icon: "bolt",
+                tint: .orange,
+                badge: t("signalasi.common.add", "Add")
+              )
+            }
+            .buttonStyle(.plain)
+          } else {
+            VStack(spacing: 8) {
+              NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+                AutomationActionRow(
+                  title: t("signalasi.workflow_trigger.add", "Add device trigger"),
+                  subtitle: t("signalasi.workflow_trigger.add_hint", "Run a workflow when power connects or battery becomes low"),
+                  icon: "plus.circle",
+                  tint: .orange,
+                  badge: t("signalasi.common.add", "Add")
+                ) {}
+              }
+              .buttonStyle(.plain)
+              ForEach(workflowTriggerStore.list()) { trigger in
+                NavigationLink(destination: SignalASIWorkflowTriggerEditorView(trigger: trigger)) {
+                  SignalASIWorkflowTriggerRow(trigger: trigger)
+                }
+                .buttonStyle(.plain)
               }
             }
           }
