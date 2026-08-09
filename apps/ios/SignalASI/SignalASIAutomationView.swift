@@ -10,8 +10,8 @@ struct SignalASIAutomationView: View {
     store.automationTasks()
   }
 
-  private var recentRuns: [AgentProactiveRun] {
-    store.recentAutomationRuns(limit: 6)
+  private var recentExecutions: [AgentWorkflowExecutionRecord] {
+    store.recentWorkflowExecutions(limit: 6)
   }
 
   private var savedWorkflowTasks: [AgentProactiveTask] {
@@ -87,7 +87,7 @@ struct SignalASIAutomationView: View {
                 label: t("signalasi.automation.metric_enabled", "Enabled")
               ),
               AutomationMetric(
-                value: "\(recentRuns.count)",
+                value: "\(recentExecutions.count)",
                 label: t("signalasi.automation.metric_runs", "Recent runs")
               )
             ]
@@ -199,7 +199,7 @@ struct SignalASIAutomationView: View {
           }
 
           sectionTitle(t("signalasi.automation.recent_executions", "Recent Executions"))
-          if recentRuns.isEmpty {
+          if recentExecutions.isEmpty {
             AutomationInfoRow(
               title: t("signalasi.automation.no_recent_executions", "No recent workflow executions"),
               subtitle: t("signalasi.automation.run_command_hint", "Use: run workflow Name"),
@@ -209,13 +209,13 @@ struct SignalASIAutomationView: View {
             )
           } else {
             VStack(spacing: 8) {
-              ForEach(recentRuns) { run in
+              ForEach(recentExecutions) { execution in
                 AutomationInfoRow(
-                  title: proactiveRunStatusLabel(run.status),
-                  subtitle: proactiveRunSubtitle(run),
+                  title: workflowExecutionStatusLabel(execution.status),
+                  subtitle: workflowExecutionSubtitle(execution),
                   icon: "clock.arrow.circlepath",
-                  tint: statusTint(run.status),
-                  badge: String(format: t("signalasi.automation.attempt", "Attempt %d"), run.attempt)
+                  tint: workflowExecutionTint(execution.status),
+                  badge: execution.workflowName
                 )
               }
             }
@@ -304,13 +304,35 @@ struct SignalASIAutomationView: View {
     .joined(separator: "\n")
   }
 
-  private func proactiveRunSubtitle(_ run: AgentProactiveRun) -> String {
+  private func workflowExecutionSubtitle(_ execution: AgentWorkflowExecutionRecord) -> String {
     [
-      automationTime(run.scheduledForMillis),
-      run.resultSummary.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+      automationTime(execution.startedAtMillis),
+      execution.resultSummary.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
     ]
     .compactMap { $0 }
     .joined(separator: "\n")
+  }
+
+  private func workflowExecutionStatusLabel(_ status: AgentWorkflowExecutionStatus) -> String {
+    switch status {
+    case .running: return t("signalasi.automation.status_running", "Running")
+    case .waitingConfirmation: return t("signalasi.automation.status_waiting_confirmation", "Waiting confirmation")
+    case .waitingResponse: return t("signalasi.automation.status_waiting_response", "Waiting response")
+    case .completed: return t("signalasi.automation.status_completed", "Completed")
+    case .skipped: return t("signalasi.automation.status_skipped", "Skipped")
+    case .failed: return t("signalasi.automation.status_failed", "Failed")
+    case .cancelled: return t("signalasi.automation.status_cancelled", "Cancelled")
+    case .blocked: return t("signalasi.automation.status_blocked", "Blocked")
+    }
+  }
+
+  private func workflowExecutionTint(_ status: AgentWorkflowExecutionStatus) -> Color {
+    switch status {
+    case .completed: return .green
+    case .failed, .blocked: return .red
+    case .cancelled, .skipped: return .signalASITextSecondary
+    case .running, .waitingConfirmation, .waitingResponse: return .signalASIAccent
+    }
   }
 
   private func proactiveTriggerDescription(_ trigger: AgentProactiveTrigger) -> String {
