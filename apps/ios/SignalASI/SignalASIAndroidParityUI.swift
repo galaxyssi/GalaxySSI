@@ -521,16 +521,23 @@ struct AgentHomeView: View {
         } catch {
           runtimeArtifactError = error.localizedDescription
         }
-      } else if coordinator.requestDesktopArtifactDownload(payload) {
-        runtimeArtifactStatus = t(
-          "runtime_artifact.download_requested",
-          "The Desktop was asked to resend this artifact."
-        )
       } else {
-        runtimeArtifactError = t(
-          "runtime_artifact.download_failed",
-          "The artifact could not be requested from the Desktop."
-        )
+        let block = payload.richBlock
+        Task { @MainActor in
+          if await coordinator.requestDesktopArtifactDownload(block: block) {
+            runtimeArtifactStatus = t(
+              "runtime_artifact.download_requested",
+              "The Desktop was asked to resend this artifact."
+            )
+          } else {
+            runtimeArtifactError = coordinator.lastError.ifBlank(
+              t(
+                "runtime_artifact.download_failed",
+                "The artifact could not be requested from the Desktop."
+              )
+            )
+          }
+        }
       }
     case "preview_runtime_artifact", "save_runtime_artifact":
       guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
