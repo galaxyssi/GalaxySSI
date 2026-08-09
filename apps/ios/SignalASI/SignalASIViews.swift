@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import CoreImage
 import SwiftUI
 import UIKit
@@ -8,6 +9,7 @@ struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
   @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
+  @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
   init() {
     let store = SignalASIStore()
@@ -16,6 +18,9 @@ struct SignalASIApp: App {
     _coordinator = StateObject(wrappedValue: coordinator)
     _workflowTriggerCoordinator = StateObject(
       wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
+    )
+    _backgroundScheduler = StateObject(
+      wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
     )
   }
 
@@ -28,6 +33,7 @@ struct SignalASIApp: App {
         .onAppear {
           coordinator.start()
           workflowTriggerCoordinator.start()
+          backgroundScheduler.start()
         }
     }
   }
