@@ -2020,6 +2020,67 @@ final class MessageCoordinator: ObservableObject {
     return selected
   }
 
+  @discardableResult
+  func updatePendingLocalNativeAction(
+    taskId: String,
+    actionId: String,
+    description: String,
+    input: String
+  ) -> AgentPendingActionEditResult {
+    applyPendingLocalNativeActionEdit(taskId: taskId, actionId: actionId) { task in
+      AgentPendingActionEditor.updatePendingAction(
+        task: task,
+        actionId: actionId,
+        description: description,
+        input: input
+      )
+    }
+  }
+
+  @discardableResult
+  func movePendingLocalNativeAction(
+    taskId: String,
+    actionId: String,
+    offset: Int
+  ) -> AgentPendingActionEditResult {
+    applyPendingLocalNativeActionEdit(taskId: taskId, actionId: actionId) { task in
+      AgentPendingActionEditor.movePendingAction(
+        task: task,
+        actionId: actionId,
+        offset: offset
+      )
+    }
+  }
+
+  @discardableResult
+  func removePendingLocalNativeAction(
+    taskId: String,
+    actionId: String
+  ) -> AgentPendingActionEditResult {
+    applyPendingLocalNativeActionEdit(taskId: taskId, actionId: actionId) { task in
+      AgentPendingActionEditor.removePendingAction(task: task, actionId: actionId)
+    }
+  }
+
+  private func applyPendingLocalNativeActionEdit(
+    taskId: String,
+    actionId: String,
+    edit: (AgentTaskRecord) -> AgentPendingActionEditResult
+  ) -> AgentPendingActionEditResult {
+    guard let task = store.agentTask(id: taskId),
+          [.waitingConfirmation, .paused].contains(task.phase) else {
+      return AgentPendingActionEditResult(error: "Only paused or waiting tasks can be edited")
+    }
+    let result = edit(task)
+    guard var updated = result.task else {
+      return result
+    }
+    updated.executionLog.append("Native action plan: edited \(actionId)")
+    updated.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(updated)
+    return AgentPendingActionEditResult(task: updated)
+  }
+
   func approveLocalNativeAction(
     taskId: String,
     remember: Bool = false,

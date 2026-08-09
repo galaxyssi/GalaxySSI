@@ -1724,6 +1724,27 @@ struct AgentHomeView: View {
       onToggleExecutionPaused: {
         store.updateAgentSafetySettings { $0.executionPaused.toggle() }
       },
+      onUpdatePendingAction: { taskId, actionId, description, input in
+        coordinator.updatePendingLocalNativeAction(
+          taskId: taskId,
+          actionId: actionId,
+          description: description,
+          input: input
+        )
+      },
+      onMovePendingAction: { taskId, actionId, offset in
+        coordinator.movePendingLocalNativeAction(
+          taskId: taskId,
+          actionId: actionId,
+          offset: offset
+        )
+      },
+      onRemovePendingAction: { taskId, actionId in
+        coordinator.removePendingLocalNativeAction(
+          taskId: taskId,
+          actionId: actionId
+        )
+      },
       onOpenRecentTasks: {
         recentTasksShortcutActive = true
       },

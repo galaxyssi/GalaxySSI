@@ -14,11 +14,15 @@ struct SignalASIAgentRuntimePanelView: View {
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
   var onToggleExecutionPaused: () -> Void
+  var onUpdatePendingAction: (String, String, String, String) -> AgentPendingActionEditResult
+  var onMovePendingAction: (String, String, Int) -> AgentPendingActionEditResult
+  var onRemovePendingAction: (String, String) -> AgentPendingActionEditResult
   var onOpenRecentTasks: () -> Void
   var t: (String, String) -> String
 
   @State private var expandedSectionIds: Set<String> = ["requirements", "recent_tasks"]
   @State private var selectedTask: AgentTaskRecord?
+  @State private var selectedAction: SignalASIAgentRuntimeActionSelection?
 
   private var activeTasks: [AgentTaskRecord] {
     recentTasks.filter { task in
@@ -107,6 +111,16 @@ struct SignalASIAgentRuntimePanelView: View {
     }
     .sheet(item: $selectedTask) { task in
       SignalASIAgentRuntimeTaskDetailSheet(task: task, t: t)
+    }
+    .sheet(item: $selectedAction) { selection in
+      SignalASIAgentRuntimeActionEditorSheet(
+        task: selection.task,
+        action: selection.action,
+        t: t,
+        onUpdate: onUpdatePendingAction,
+        onMove: onMovePendingAction,
+        onRemove: onRemovePendingAction
+      )
     }
   }
 
@@ -378,7 +392,10 @@ struct SignalASIAgentRuntimePanelView: View {
           detail: actionQueueDetail(action, target: target),
           badge: actionStatusText(action.status),
           systemImage: action.status == .blocked ? "hand.raised" : "arrow.triangle.2.circlepath",
-          tint: actionStatusTint(action.status)
+          tint: actionStatusTint(action.status),
+          onTap: AgentPlanEditor.isEditablePending(action)
+            ? { selectedAction = SignalASIAgentRuntimeActionSelection(task: entry.task, action: action) }
+            : nil
         )
       }
     }
