@@ -176,6 +176,7 @@ struct AgentHomeView: View {
   @State private var richActionStatus = ""
   @State private var recoveringAgentTaskIDs: Set<String> = []
   @State private var approvalActionsInFlight: Set<String> = []
+  @State private var cancellingRemoteTaskIDs: Set<String> = []
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -288,6 +289,13 @@ struct AgentHomeView: View {
   private var activeExecutionTask: AgentTaskRecord? {
     guard pendingConfirmationTask == nil else { return nil }
     return activeAgentTasks.first
+  }
+
+  private var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot? {
+    guard let session = activeAgentSession else { return nil }
+    return coordinator.remoteAgentTaskStatuses.values
+      .filter { $0.conversationId == session.id && !$0.isTerminal }
+      .max { $0.updatedAtMillis < $1.updatedAtMillis }
   }
 
   private var cancellableAgentTask: AgentTaskRecord? {
@@ -733,7 +741,8 @@ struct AgentHomeView: View {
               !voiceTranscriptionPending &&
               pendingConfirmationTask == nil &&
               blockedAgentTask == nil &&
-              activeExecutionTask == nil {
+              activeExecutionTask == nil &&
+              activeRemoteAgentTask == nil {
             VStack(spacing: 10) {
               SignalASILogoView(size: 48, cornerRadius: 10)
               Text(t("signalasi.agent.empty.title", "How can I help?"))
@@ -746,6 +755,25 @@ struct AgentHomeView: View {
             .frame(maxWidth: .infinity, minHeight: 180)
             .accessibilityElement(children: .combine)
           } else {
+            if let activeRemoteAgentTask {
+              SignalASIAgentExecutionStatusCard(
+                executor: activeRemoteAgentTask.target,
+                status: remoteAgentStatusLabel(activeRemoteAgentTask.status),
+                location: activeRemoteAgentTask.location,
+                step: remoteAgentStep(activeRemoteAgentTask),
+                canResume: false,
+                resumeTitle: "",
+                canCancel: activeRemoteAgentTask.isCancellable &&
+                  !cancellingRemoteTaskIDs.contains(activeRemoteAgentTask.id),
+                cancelTitle: cancellingRemoteTaskIDs.contains(activeRemoteAgentTask.id)
+                  ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                  : t("signalasi.agent.remote_status.cancel", "Cancel task")
+              ) {
+                // Remote tasks resume through the Desktop's next status event.
+              } onCancel: {
+                cancelRemoteAgentTask(activeRemoteAgentTask)
+              }
+            }
             if let activeExecutionTask {
               SignalASIAgentExecutionStatusCard(
                 executor: activeExecutionTask.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
@@ -1031,6 +1059,21 @@ struct AgentHomeView: View {
     richActionStatus = t("signalasi.agent.form.submitted", "Form submitted to Agent.")
   }
 
+  private func cancelRemoteAgentTask(_ snapshot: AgentRemoteTaskStatusSnapshot) {
+    guard cancellingRemoteTaskIDs.insert(snapshot.id).inserted else { return }
+    richActionStatus = t(
+      "signalasi.agent.remote_status.cancelling",
+      "Sending cancellation..."
+    )
+    Task { @MainActor in
+      let sent = await coordinator.cancelRemoteAgentTask(snapshot)
+      cancellingRemoteTaskIDs.remove(snapshot.id)
+      richActionStatus = sent
+        ? t("signalasi.agent.remote_status.cancel_sent", "Cancellation sent.")
+        : t("signalasi.agent.remote_status.cancel_failed", "The cancellation could not be sent.")
+    }
+  }
+
   private func agentPhaseLabel(_ phase: AgentPhase) -> String {
     switch phase {
     case .observing:
@@ -1069,6 +1112,25 @@ struct AgentHomeView: View {
     return pendingStep
       .ifBlank(task.executionLog.last ?? "")
       .ifBlank(agentPhaseLabel(task.phase))
+  }
+
+  private func remoteAgentStatusLabel(_ status: String) -> String {
+    switch AgentRemoteTaskStatusPolicy.normalize(status) {
+    case "accepted", "queued", "starting", "recovering", "running":
+      return t("signalasi.agent.remote_status.running", "Running")
+    case "waiting_input":
+      return t("signalasi.agent.remote_status.waiting_input", "Waiting for input")
+    case "waiting_approval":
+      return t("signalasi.agent.remote_status.waiting_approval", "Waiting for approval")
+    default:
+      return status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  private func remoteAgentStep(_ snapshot: AgentRemoteTaskStatusSnapshot) -> String {
+    snapshot.currentStep
+      .ifBlank(snapshot.detail)
+      .ifBlank(remoteAgentStatusLabel(snapshot.status))
   }
 
   private func locationLabel(_ value: AgentExecutionLocationKind) -> String {
