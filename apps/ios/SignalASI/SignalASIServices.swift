@@ -604,6 +604,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
+  private static let maximumOutboxDeliveryAttempts = 6
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
 
@@ -809,6 +810,43 @@ final class MessageCoordinator: ObservableObject {
     let clean = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return }
     pendingAgentReplyTurnIds.remove(clean)
+  }
+
+  private func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
+    var handled = Set<String>()
+    for failure in failures {
+      let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
+      let key = "\(failure.contactId)|\(sourceId)"
+      guard handled.insert(key).inserted else { continue }
+      _ = deliveryStore.discardClientSourceMessage(sourceId)
+      let detail = "MQTT delivery failed after \(failure.attempts) attempts."
+      if !failure.contactId.isEmpty {
+        store.markMessage(
+          sourceUUID,
+          contactId: failure.contactId,
+          status: .failed,
+          detail: detail
+        )
+      } else {
+        store.markMessage(sourceUUID, status: .failed, detail: detail)
+      }
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing {
+        finishPendingAgentReply(for: outgoing)
+        agentHomeDisplayContactIdsByTurnId.removeValue(
+          forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        store.appendSystem(
+          detail,
+          to: outgoing.contactId,
+          conversationId: outgoing.conversationId
+        )
+      }
+      lastError = detail
+    }
   }
 
   @discardableResult
@@ -2057,10 +2095,17 @@ final class MessageCoordinator: ObservableObject {
         topic: link.routes.upTopic,
         wirePayload: wire.wireText,
         requiresValidatedNetwork: requiresValidatedNetwork,
-        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId)
+        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+        clientSourceMessageId: sourceMessageId,
+        contactId: contact.id
       )
       do {
-        try enqueueOutboundAttachmentTransfers(outboundAttachments, link: link)
+        try enqueueOutboundAttachmentTransfers(
+          outboundAttachments,
+          link: link,
+          sourceMessageId: sourceMessageId,
+          contactId: contact.id
+        )
       } catch {
         _ = deliveryStore.discardBlockedByAttachmentTransfers(outboundAttachments.map(\.transferId))
         throw error
@@ -2079,7 +2124,9 @@ final class MessageCoordinator: ObservableObject {
       messageId: wire.messageId,
       topic: link.routes.upTopic,
       wirePayload: wire.wireText,
-      requiresValidatedNetwork: requiresValidatedNetwork
+      requiresValidatedNetwork: requiresValidatedNetwork,
+      clientSourceMessageId: sourceMessageId,
+      contactId: contact.id
     )
     if requiresValidatedNetwork {
       store.appendDeliveryTrace(
@@ -2123,21 +2170,27 @@ final class MessageCoordinator: ObservableObject {
 
   private func enqueueOutboundAttachmentTransfers(
     _ attachments: [AgentPreparedOutboundAttachment],
-    link: ServerLink
+    link: ServerLink,
+    sourceMessageId: String,
+    contactId: String
   ) throws {
     for attachment in attachments {
       try enqueueLinkPayload(
         attachment.manifestPayload(resume: false),
         link: link,
         topic: link.routes.upTopic,
-        requiresValidatedNetwork: attachment.requiresValidatedNetwork
+        requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+        clientSourceMessageId: sourceMessageId,
+        contactId: contactId
       )
       for index in 0..<attachment.chunkCount {
         try enqueueLinkPayload(
           attachment.chunkPayload(index: index),
           link: link,
           topic: link.routes.upTopic,
-          requiresValidatedNetwork: attachment.requiresValidatedNetwork
+          requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+          clientSourceMessageId: sourceMessageId,
+          contactId: contactId
         )
       }
     }
@@ -2149,7 +2202,9 @@ final class MessageCoordinator: ObservableObject {
     link: ServerLink,
     topic: String,
     requiresValidatedNetwork: Bool? = nil,
-    blockedByAttachmentTransferIds: [String] = []
+    blockedByAttachmentTransferIds: [String] = [],
+    clientSourceMessageId: String = "",
+    contactId: String = ""
   ) throws -> String {
     let wire = try linkWirePayload(payload, link: link)
     deliveryStore.enqueue(
@@ -2157,7 +2212,9 @@ final class MessageCoordinator: ObservableObject {
       topic: topic,
       wirePayload: wire.wireText,
       requiresValidatedNetwork: requiresValidatedNetwork ?? (payload["defer_media_upload"] as? Bool ?? false),
-      blockedByAttachmentTransferIds: blockedByAttachmentTransferIds
+      blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
+      clientSourceMessageId: clientSourceMessageId,
+      contactId: contactId
     )
     return wire.messageId
   }
@@ -2752,7 +2809,9 @@ final class MessageCoordinator: ObservableObject {
         chunkPayload,
         link: link,
         topic: link.routes.upTopic,
-        requiresValidatedNetwork: transfer.requiresValidatedNetwork
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
+        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
+        contactId: transfer.scope.contactId
       )
     }
     scheduleOutboxFlush(after: 0)
@@ -2862,9 +2921,13 @@ final class MessageCoordinator: ObservableObject {
     if !discardedTransfers.isEmpty {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
     }
+    handleExhaustedDeliveries(
+      deliveryStore.discardExhausted(maxAttempts: Self.maximumOutboxDeliveryAttempts)
+    )
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
+      maxAttempts: Self.maximumOutboxDeliveryAttempts
     )
     guard !pending.isEmpty else { return }
     for item in pending {
@@ -2880,7 +2943,8 @@ final class MessageCoordinator: ObservableObject {
   private func scheduleOutboxFlushFromStore() {
     let mediaProfile = mediaNetworkProfileProvider()
     if let delay = deliveryStore.nextRetryDelay(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
+      maxAttempts: Self.maximumOutboxDeliveryAttempts
     ) {
       scheduleOutboxFlush(after: delay)
     }
