@@ -18,6 +18,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var executionLocationTrusted: Bool
   var pendingAction: AgentAction?
   var pendingActions: [AgentAction]
+  var nativeActionResults: [String]
   var result: String
   var verification: String
   var outputFiles: [String]
@@ -44,6 +45,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     executionLocationTrusted: Bool = true,
     pendingAction: AgentAction? = nil,
     pendingActions: [AgentAction] = [],
+    nativeActionResults: [String] = [],
     result: String = "",
     verification: String = "",
     outputFiles: [String] = [],
@@ -67,6 +69,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.executionLocationTrusted = executionLocationTrusted
     self.pendingAction = pendingAction
     self.pendingActions = pendingActions
+    self.nativeActionResults = nativeActionResults
     self.result = result
     self.verification = verification
     self.outputFiles = outputFiles
@@ -92,6 +95,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case executionLocationTrusted = "execution_location_trusted"
     case pendingAction = "pending_action"
     case pendingActions = "pending_actions"
+    case nativeActionResults = "native_action_results"
     case result
     case verification
     case outputFiles = "output_files"
@@ -119,6 +123,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       executionLocationTrusted: try container.decodeIfPresent(Bool.self, forKey: .executionLocationTrusted) ?? true,
       pendingAction: try container.decodeIfPresent(AgentAction.self, forKey: .pendingAction),
       pendingActions: try container.decodeIfPresent([AgentAction].self, forKey: .pendingActions) ?? [],
+      nativeActionResults: try container.decodeIfPresent([String].self, forKey: .nativeActionResults) ?? [],
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
       verification: try container.decodeIfPresent(String.self, forKey: .verification) ?? "",
       outputFiles: try container.decodeIfPresent([String].self, forKey: .outputFiles) ?? [],

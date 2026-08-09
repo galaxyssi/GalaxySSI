@@ -982,10 +982,11 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .cancelled
     task.pendingAction = nil
     task.pendingActions = []
-    task.result = localReply(
+    let denial = localReply(
       english: "The requested phone action was not executed.",
       chinese: "未执行请求的手机操作。"
     )
+    task.result = recordLocalNativeActionResult(denial, task: &task)
     task.verification = "User denied native tool action"
     let toolId = action.parameters["tool_id"] ?? action.target
     task.executionLog.append("Native tool \(toolId): denied")
@@ -1210,6 +1211,7 @@ final class MessageCoordinator: ObservableObject {
   ) -> Bool {
     let nativeActions = actions.filter { $0.kind == .callNativeTool }
     guard !nativeActions.isEmpty else { return false }
+    task.nativeActionResults = []
     task.pendingActions = nativeActions
     task.pendingAction = nativeActions.first
     return advanceLocalNativeActions(outgoing: outgoing, task: &task)
@@ -1334,8 +1336,10 @@ final class MessageCoordinator: ObservableObject {
       action: executionAction,
       screen: screen
     )
-    let reply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
+    let stepReply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
+    let reply = recordLocalNativeActionResult(stepReply, task: &task)
+    let hasRemainingActions = !task.pendingActions.isEmpty
     task.phase = result.success ? .completed : .failed
     task.result = reply
     task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
@@ -1350,20 +1354,24 @@ final class MessageCoordinator: ObservableObject {
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
-      stage: result.success ? "local_native_tool_reply" : "local_native_tool_failed",
+      stage: result.success && hasRemainingActions
+        ? "local_native_tool_progress"
+        : (result.success ? "local_native_tool_reply" : "local_native_tool_failed"),
       detail: action.parameters["tool_id"] ?? action.target,
-      status: result.success ? .delivered : .failed
+      status: result.success && hasRemainingActions ? .sent : (result.success ? .delivered : .failed)
     )
-    _ = store.appendIncoming(
-      reply,
-      from: outgoing.contactId,
-      remoteMessageId: outgoing.turnId,
-      status: result.success ? .delivered : .failed,
-      traceStage: result.success ? "local_native_tool_reply_received" : "local_native_tool_error",
-      detail: action.parameters["tool_id"] ?? action.target,
-      conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId
-    )
+    if !result.success || !hasRemainingActions {
+      _ = store.appendIncoming(
+        reply,
+        from: outgoing.contactId,
+        remoteMessageId: outgoing.turnId,
+        status: result.success ? .delivered : .failed,
+        traceStage: result.success ? "local_native_tool_reply_received" : "local_native_tool_error",
+        detail: action.parameters["tool_id"] ?? action.target,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+    }
     return true
   }
 
@@ -1377,7 +1385,7 @@ final class MessageCoordinator: ObservableObject {
     task.blocked = true
     task.pendingAction = nil
     task.pendingActions = []
-    task.result = reason
+    task.result = recordLocalNativeActionResult(reason, task: &task)
     task.verification = "Native tool action blocked before execution"
     let toolId = action.parameters["tool_id"] ?? action.target
     task.executionLog.append("Native tool \(toolId): blocked")
@@ -1391,7 +1399,7 @@ final class MessageCoordinator: ObservableObject {
       status: .failed
     )
     _ = store.appendIncoming(
-      reason,
+      task.result,
       from: outgoing.contactId,
       remoteMessageId: outgoing.turnId,
       status: .failed,
@@ -1415,6 +1423,27 @@ final class MessageCoordinator: ObservableObject {
     LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
       ? chinese
       : english
+  }
+
+  private func recordLocalNativeActionResult(
+    _ result: String,
+    task: inout AgentTaskRecord
+  ) -> String {
+    let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("The requested phone action completed.")
+    task.nativeActionResults.append(String(normalized.prefix(600)))
+    task.nativeActionResults = Array(task.nativeActionResults.suffix(8))
+    guard task.nativeActionResults.count > 1 else {
+      return task.nativeActionResults[0]
+    }
+    let heading = localReply(
+      english: "Completed phone actions:",
+      chinese: "已完成手机操作："
+    )
+    let lines = task.nativeActionResults.enumerated().map { index, value in
+      "\(index + 1). \(value)"
+    }
+    return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
   }
 
   private func localModelPrompt(
