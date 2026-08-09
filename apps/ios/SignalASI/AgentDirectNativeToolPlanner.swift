@@ -32,6 +32,174 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isTelephonyCallStateObserveGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "observe-call-state",
+        target: "Phone",
+        description: "Observe one call state transition",
+        input: ["timeout_ms": .int(10_000)],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isTelephonyCallStateGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.telephonyCallState, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "call-state",
+        target: "Phone",
+        description: "Read current call state",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isTelephonyStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.telephonyStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "telephony-status",
+        target: "Phone",
+        description: "Read phone service status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isSMSListGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsList, in: request) {
+      var input: AgentMcpJSONObject = ["limit": .int(20)]
+      if let address = phoneNumber(in: goal) {
+        input["address"] = .string(address)
+      }
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "list-sms",
+        target: "SMS",
+        description: "Read recent SMS messages",
+        input: input,
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let query = contactSearchQuery(in: goal, lower: lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.contactsSearch, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "search-contacts",
+        target: "Contacts",
+        description: "Search contacts",
+        input: [
+          "query": .string(query),
+          "limit": .int(30)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isCalendarsListGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.calendarsList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "list-calendars",
+        target: "Calendar",
+        description: "List calendars",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isCalendarEventsQueryGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.calendarEventsQuery, in: request) {
+      let window = calendarEventWindow(for: lower)
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "query-calendar-events",
+        target: "Calendar",
+        description: "Query calendar events",
+        input: [
+          "start_epoch_ms": .int(window.start),
+          "end_epoch_ms": .int(window.end),
+          "limit": .int(50)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isWifiScanStartGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.wifiScanStart, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "start-wifi-scan",
+        target: "Wi-Fi",
+        description: "Start Wi-Fi scan",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isWifiScanResultsGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.wifiScanResults, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "wifi-scan-results",
+        target: "Wi-Fi",
+        description: "Read Wi-Fi scan results",
+        input: ["limit": .int(32)],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isAudioStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.audioStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "audio-status",
+        target: "Audio",
+        description: "Read audio status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isBiometricStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.biometricStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "biometric-status",
+        target: "Biometrics",
+        description: "Read biometric capability",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isVPNStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.vpnStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "vpn-status",
+        target: "VPN",
+        description: "Read VPN status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isDevicePolicyStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.devicePolicyStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "device-policy-status",
+        target: "Device Policy",
+        description: "Read device policy status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isSMSGoal(lower),
        let phoneNumber = phoneNumber(in: goal),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsSend, in: request) {
@@ -417,6 +585,94 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isBatteryStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, ["battery level", "battery status", "read battery", "\u{7535}\u{91cf}"])
+  }
+
+  private static func isTelephonyStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "phone service status", "telephony status", "carrier status", "手机服务状态", "电话服务状态"
+    ])
+  }
+
+  private static func isTelephonyCallStateGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "call state", "current call", "incoming call", "通话状态", "当前通话", "来电状态"
+    ])
+  }
+
+  private static func isTelephonyCallStateObserveGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "observe call", "wait for call", "watch call", "监听通话", "等待来电", "观察通话"
+    ])
+  }
+
+  private static func isSMSListGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "read sms", "list sms", "sms inbox", "recent sms", "read text messages", "读取短信", "短信列表", "短信收件箱"
+    ])
+  }
+
+  private static func contactSearchQuery(in goal: String, lower: String) -> String? {
+    let prefixes = [
+      "search contacts ", "find contacts ", "search contact ", "find contact ",
+      "搜索联系人", "查找联系人"
+    ]
+    for prefix in prefixes where lower.hasPrefix(prefix) {
+      return String(goal.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines).prefixString(160)
+    }
+    return [
+      "search contacts", "find contacts", "search contact", "find contact",
+      "contacts", "contact list", "联系人", "联系人列表"
+    ].contains(lower) ? "" : nil
+  }
+
+  private static func isCalendarsListGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["list calendars", "calendar list", "show calendars", "日历列表", "查看日历"])
+  }
+
+  private static func isCalendarEventsQueryGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "calendar events", "upcoming events", "today's events", "today events", "my schedule",
+      "日历事件", "日程", "今天的日程", "近期日程"
+    ])
+  }
+
+  private static func calendarEventWindow(for lower: String) -> (start: Int64, end: Int64) {
+    let now = Date()
+    let calendar = Calendar.current
+    let start = lower.contains("today") || lower.contains("今天") ? calendar.startOfDay(for: now) : now
+    let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+    return (
+      Int64(start.timeIntervalSince1970 * 1_000),
+      Int64(end.timeIntervalSince1970 * 1_000)
+    )
+  }
+
+  private static func isWifiScanResultsGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["scan wifi", "scan wi-fi", "wifi networks", "nearby wifi", "扫描wifi", "扫描 wi-fi", "附近wifi", "wifi网络"])
+  }
+
+  private static func isWifiScanStartGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["start wifi scan", "start wi-fi scan", "begin wifi scan", "开始扫描wifi", "开始扫描 wi-fi"])
+  }
+
+  private static func isAudioStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["audio status", "sound status", "volume status", "音频状态", "声音状态", "音量状态"])
+  }
+
+  private static func isBiometricStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "biometric status", "face id status", "touch id status", "biometric capability", "生物识别状态", "面容id", "触控id"
+    ])
+  }
+
+  private static func isVPNStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, ["vpn status", "is vpn on", "vpn connection status", "vpn状态", "vpn是否开启"])
+  }
+
+  private static func isDevicePolicyStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "device policy status", "device owner status", "management status", "设备策略状态", "设备管理员状态"
+    ])
   }
 
   private static func isPowerStatusGoal(_ lower: String) -> Bool {
