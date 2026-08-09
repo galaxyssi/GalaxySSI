@@ -534,9 +534,9 @@ enum AgentCallableTargetCatalog {
     guard selection.mode == .manual else { return "" }
     let targetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !targetId.isEmpty else { return "" }
-    return targets.first {
-      $0.id == targetId && AgentConnectorRouteSelector.isDeliverable($0)
-    }?.id ?? ""
+    // Keep the manual choice visible even when it is temporarily unavailable.
+    // The execution boundary decides whether the selected target is deliverable.
+    return targetId
   }
 
   private static func target(
