@@ -1,0 +1,153 @@
+import SwiftUI
+
+struct SignalASIAgentActionQueueItem: Identifiable {
+  var task: AgentTaskRecord
+  var action: AgentAction
+
+  var id: String {
+    "\(task.taskId)-\(action.id)"
+  }
+}
+
+struct SignalASIAgentActionQueueCard: View {
+  var items: [SignalASIAgentActionQueueItem]
+  var t: (String, String) -> String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "list.bullet.rectangle")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.signalASIAccent)
+          .frame(width: 22, height: 22)
+        Text(t("agent_section_action_queue", "Action Queue"))
+          .font(.system(size: 13, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+        Spacer(minLength: 8)
+        Text(String(items.count))
+          .font(.system(size: 12, weight: .bold))
+          .foregroundColor(.signalASIAccent)
+          .padding(.horizontal, 8)
+          .frame(minHeight: 24)
+          .background(Color.signalASIAccent.opacity(0.12))
+          .clipShape(Capsule())
+      }
+      ForEach(Array(items.prefix(6))) { item in
+        actionRow(item)
+      }
+      if items.count > 6 {
+        Text(String(
+          format: t("signalasi.agent_runtime.action_queue_summary", "%d active"),
+          items.count
+        ))
+          .font(.system(size: 11))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    .padding(12)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .contain)
+  }
+
+  private func actionRow(_ item: SignalASIAgentActionQueueItem) -> some View {
+    let action = item.action
+    let target = action.target.ifBlank(item.task.targetTitle)
+      .ifBlank(t("signalasi.agent_tasks.target_phone", "SignalASI"))
+    let status = actionStatusText(action.status)
+    let tint = actionStatusTint(action.status)
+
+    return HStack(alignment: .top, spacing: 9) {
+      Circle()
+        .fill(tint)
+        .frame(width: 8, height: 8)
+        .padding(.top, 5)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(action.description.ifBlank(action.kind.rawValue))
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+        Text(actionDetail(action, target: target))
+          .font(.system(size: 11))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 6)
+      Text(status)
+        .font(.system(size: 10, weight: .bold))
+        .foregroundColor(tint)
+        .lineLimit(2)
+        .multilineTextAlignment(.trailing)
+        .frame(minWidth: 48, alignment: .trailing)
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 9)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func actionDetail(_ action: AgentAction, target: String) -> String {
+    var details = [
+      String(
+        format: t("agent_action_queue_meta", "%@ / %@ risk"),
+        target,
+        riskText(action.risk)
+      )
+    ]
+    let dependencyCount = AgentToolCoordination.dependencyIds(action).count
+    let outputSourceCount = AgentToolCoordination.outputSourceIds(action).count
+    if dependencyCount > 0 || outputSourceCount > 0 {
+      details.append(String(
+        format: t("agent_action_queue_dependencies", "%d dependencies / %d output sources"),
+        dependencyCount,
+        outputSourceCount
+      ))
+    }
+    if !action.result.isBlank {
+      details.append(String(
+        format: t("agent_action_queue_result", "Result: %@"),
+        action.result
+      ))
+    }
+    return details.joined(separator: " / ")
+  }
+
+  private func actionStatusText(_ status: AgentActionStatus) -> String {
+    switch status {
+    case .proposed: return t("agent_task_status_queued", "Queued")
+    case .pendingConfirmation: return t("agent_task_status_waiting_approval", "Waiting for approval")
+    case .running: return t("agent_task_status_running", "Running")
+    case .waitingResponse: return t("agent_task_status_waiting_input", "Waiting for input")
+    case .completed: return t("agent_task_status_completed", "Completed")
+    case .failed: return t("agent_task_status_failed", "Failed")
+    case .blocked: return t("agent_recent_status_blocked", "Blocked")
+    case .rolledBack: return t("agent_recent_status_cancelled", "Rolled back")
+    }
+  }
+
+  private func actionStatusTint(_ status: AgentActionStatus) -> Color {
+    switch status {
+    case .completed: return .signalASIAccent
+    case .failed, .blocked: return .red
+    case .pendingConfirmation, .waitingResponse, .rolledBack: return .orange
+    case .proposed, .running: return .blue
+    }
+  }
+
+  private func riskText(_ risk: AgentRisk) -> String {
+    switch risk {
+    case .low: return t("agent_risk_low", "low")
+    case .medium: return t("agent_risk_medium", "medium")
+    case .high: return t("agent_risk_high", "high")
+    case .blocked: return t("agent_risk_blocked", "blocked")
+    }
+  }
+}
