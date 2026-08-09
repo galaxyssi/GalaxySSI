@@ -23,6 +23,7 @@ struct SignalASIAgentComposerView: View {
   var onSend: () -> Void
   var onPendingPrimaryAction: () -> Void
   var onVoiceStart: () -> Void
+  var onVoiceCancelled: () -> Void
   var onVoiceTranscript: (String) -> Void
   var t: (String, String) -> String
 
@@ -258,7 +259,8 @@ struct SignalASIAgentComposerView: View {
             voiceTranscriptionPending = true
             onVoiceStart()
           },
-          onFinish: onVoiceTranscript
+          onFinish: onVoiceTranscript,
+          onCancel: onVoiceCancelled
         )
       }
       .onEnded { value in

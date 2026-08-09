@@ -44,6 +44,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   private var deferredSessionId = ""
   private var onRecordingStarted: (() -> Void)?
   private var onFinishedTranscript: ((String) -> Void)?
+  private var onCaptureCancelled: (() -> Void)?
 
   private static let holdStartDelayNs: UInt64 = 280_000_000
   private static let cancelThreshold: CGFloat = 56
@@ -55,11 +56,18 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     settings: VoiceSettings,
     messages: SignalASIAgentHoldToTalkMessages,
     onStart: @escaping () -> Void,
-    onFinish: @escaping (String) -> Void
+    onFinish: @escaping (String) -> Void,
+    onCancel: @escaping () -> Void
   ) {
     if !touchActive {
       touchActive = true
-      beginPending(settings: settings, messages: messages, onStart: onStart, onFinish: onFinish)
+      beginPending(
+        settings: settings,
+        messages: messages,
+        onStart: onStart,
+        onFinish: onFinish,
+        onCancel: onCancel
+      )
     }
     updateCancelState(translation: translation)
   }
@@ -105,7 +113,8 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     settings: VoiceSettings,
     messages: SignalASIAgentHoldToTalkMessages,
     onStart: @escaping () -> Void,
-    onFinish: @escaping (String) -> Void
+    onFinish: @escaping (String) -> Void,
+    onCancel: @escaping () -> Void
   ) {
     isPending = true
     cancelPending = false
@@ -121,6 +130,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     lastMessages = messages
     onRecordingStarted = onStart
     onFinishedTranscript = onFinish
+    onCaptureCancelled = onCancel
 
     holdTask = Task { [weak self] in
       try? await Task.sleep(nanoseconds: Self.holdStartDelayNs)
@@ -180,10 +190,16 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     } else {
       speech.stop()
       let finalTranscript = bestTranscript().ifBlank(fallbackTranscript)
-      if send, !deliver(finalTranscript) {
-        statusMessage = lastMessages.noSpeech
-      } else if !status.isEmpty {
-        statusMessage = status
+      if send {
+        if !deliver(finalTranscript) {
+          onCaptureCancelled?()
+          statusMessage = lastMessages.noSpeech
+        }
+      } else {
+        onCaptureCancelled?()
+        if !status.isEmpty {
+          statusMessage = status
+        }
       }
       resetIdle(keepStatus: true)
     }
@@ -196,10 +212,13 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       if !deferredSessionId.isEmpty {
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: deferredSessionId))
       }
-    } else if !deferredSessionId.isEmpty {
-      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
-        .cancelled(sessionId: deferredSessionId, reasonCode: "user_cancelled")
-      )
+    } else {
+      onCaptureCancelled?()
+      if !deferredSessionId.isEmpty {
+        _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+          .cancelled(sessionId: deferredSessionId, reasonCode: "user_cancelled")
+        )
+      }
       statusMessage = status
     }
     resetIdle(keepStatus: true)
@@ -220,6 +239,9 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       }
     case let .cancelLegacyWork(sessionId, _, _):
       if pendingSend {
+        if !deliveredThisCapture {
+          onCaptureCancelled?()
+        }
         statusMessage = lastMessages.noSpeech
       } else if !sessionId.isEmpty {
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -246,6 +268,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     holdTask?.cancel()
     holdTask = nil
     speech.onVoiceCommand = nil
+    onCaptureCancelled?()
     statusMessage = message
     resetIdle(keepStatus: true)
   }
@@ -261,6 +284,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     deferredSessionId = ""
     onRecordingStarted = nil
     onFinishedTranscript = nil
+    onCaptureCancelled = nil
     speech.onVoiceCommand = nil
     stopTimer()
     if !keepStatus {

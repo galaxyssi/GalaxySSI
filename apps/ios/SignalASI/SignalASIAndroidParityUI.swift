@@ -1390,6 +1390,7 @@ struct AgentHomeView: View {
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
+      onVoiceCancelled: { restoreAgentVoiceAttachments() },
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
@@ -1463,6 +1464,7 @@ struct AgentHomeView: View {
     let capturedAttachments = voiceAttachmentSnapshot
     voiceAttachmentSnapshot.removeAll()
     guard !cleanTranscript.isEmpty else {
+      restoreAgentVoiceAttachments(capturedAttachments)
       attachmentError = t("voice_no_speech", "No speech captured.")
       return
     }
@@ -1472,6 +1474,22 @@ struct AgentHomeView: View {
 
   private func beginAgentVoiceCapture() {
     voiceAttachmentSnapshot = attachments
+    let capturedIDs = Set(attachments.map(\.id))
+    attachments.removeAll { capturedIDs.contains($0.id) }
+  }
+
+  private func restoreAgentVoiceAttachments(_ captured: [SignalASIDraftAttachment]? = nil) {
+    let values = captured ?? voiceAttachmentSnapshot
+    guard !values.isEmpty else {
+      voiceAttachmentSnapshot.removeAll()
+      return
+    }
+    let existingIDs = Set(attachments.map(\.id))
+    let restored = values.filter { !existingIDs.contains($0.id) }
+    if !restored.isEmpty {
+      attachments.insert(contentsOf: restored, at: 0)
+    }
+    voiceAttachmentSnapshot.removeAll()
   }
 
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
