@@ -181,6 +181,11 @@
     <string name="local_model_memory_usage">Memory Usage</string>
     <string name="local_model_inference_speed">Inference Speed  28 token/s</string>
     <string name="local_model_section_manage">Model Management</string>
+    <string name="local_model_qnn_section">QNN NPU Models</string>
+    <string name="local_model_qnn_catalog_subtitle">Enable either model or both. SignalASI uses Qwen for fast tasks and coordinates Qwen with Gemma for complex tasks.</string>
+    <string name="local_model_qnn_installed_count">%1$d/%2$d installed</string>
+    <string name="local_model_qwen_automatic_thinking">Fast response and planning; thinking is selected automatically</string>
+    <string name="local_model_gemma_reasoning_role">Complex reasoning and final response</string>
     <string name="local_model_select">Select Model</string>
     <string name="local_model_select_subtitle">Choose the GGUF workload profile used by the preflight</string>
     <string name="local_model_vision">Multimodal Input</string>
@@ -212,6 +217,7 @@
     <string name="local_model_issue_file_invalid">The selected model file is empty or invalid</string>
     <string name="local_model_issue_system_low_memory">Android reports active memory pressure; wait before starting inference</string>
     <string name="local_model_issue_insufficient_memory">The minimum context cannot fit the current safe memory budget</string>
+    <string name="local_model_issue_accelerator_unavailable">The selected accelerator backend is not available on this device</string>
     <string name="local_model_issue_device_hot">The device is too hot for sustained local inference</string>
     <string name="local_model_issue_critical_battery">Charge the device before starting local inference</string>
     <string name="local_model_issue_context_reduced">Reduce the context to %1$d tokens to fit the safe memory budget</string>
@@ -261,6 +267,9 @@
     <string name="local_model_delete_action">Delete</string>
     <string name="local_model_use_action">Use</string>
     <string name="local_model_selected">Current</string>
+    <string name="local_model_enable_action">Enable</string>
+    <string name="local_model_disable_action">Disable</string>
+    <string name="local_model_enabled">Enabled</string>
     <string name="local_model_size_and_quantization">%1$s · %2$s · %3$sB</string>
     <string name="local_model_download_storage_error">This model needs %1$s of free app storage; %2$s is available.</string>
     <string name="local_model_metered_title">Use mobile data?</string>
@@ -2532,4 +2541,14 @@
     <string name="voice_entity_device">Device</string>
     <string name="voice_entity_negation">Negation</string>
     <string name="voice_entity_action">Action</string>
+    <string name="agent_header_session_title">%1$s ›</string>
+    <string name="agent_header_model_auto">‹ Auto</string>
+    <string name="agent_header_model_auto_with_name">‹ Auto · %1$s</string>
+    <string name="agent_header_model_manual">‹ %1$s</string>
+    <string name="agent_model_selection_title">Select model</string>
+    <string name="agent_model_selection_automatic">Auto</string>
+    <string name="agent_model_selection_automatic_subtitle">Choose by task, speed, privacy, and availability</string>
+    <string name="agent_model_selection_local_section">On-device models</string>
+    <string name="agent_model_selection_local_subtitle">Enabled · On device</string>
+    <string name="agent_model_selection_cloud_section">Cloud models</string>
 </resources>

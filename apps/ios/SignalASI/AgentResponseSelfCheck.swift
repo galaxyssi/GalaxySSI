@@ -60,7 +60,8 @@ enum AgentResponseSelfCheck {
       }
       if !hasOutputArtifacts &&
         acknowledgementOnly(reply) &&
-        !acknowledgementRequests.contains(normalized(request)) {
+        !acknowledgementRequests.contains(normalized(request)) &&
+        !explicitlyRequestsShortReply(request, response: reply) {
         reasons.append("acknowledgement_only")
       }
       if actionable && normalized(reply) == normalized(request) {
@@ -103,6 +104,39 @@ enum AgentResponseSelfCheck {
     }
     return regexContains(ackStartPattern, in: clean, caseInsensitive: true) &&
       regexContains(futureOnlyPattern, in: clean, caseInsensitive: true)
+  }
+
+  private static func explicitlyRequestsShortReply(_ request: String, response: String) -> Bool {
+    let requested = normalized(request)
+    let reply = normalized(response)
+    guard !reply.isEmpty,
+          ackExact.contains(where: { normalized($0) == reply }) else {
+      return false
+    }
+
+    let englishPatterns = [
+      "reply only \(reply)",
+      "reply with only \(reply)",
+      "respond only \(reply)",
+      "respond with only \(reply)",
+      "answer only \(reply)",
+      "answer with only \(reply)",
+      "only reply \(reply)",
+      "only respond \(reply)",
+      "only answer \(reply)"
+    ]
+    if englishPatterns.contains(where: { requested.contains($0) }) {
+      return true
+    }
+
+    let compactRequest = requested.replacingOccurrences(of: " ", with: "")
+    let compactReply = reply.replacingOccurrences(of: " ", with: "")
+    return [
+      "\u{53ea}\u{56de}\u{590d}\(compactReply)",
+      "\u{53ea}\u{56de}\u{7b54}\(compactReply)",
+      "\u{56de}\u{590d}\(compactReply)\u{5373}\u{53ef}",
+      "\u{56de}\u{7b54}\(compactReply)\u{5373}\u{53ef}"
+    ].contains(where: { compactRequest.contains($0) })
   }
 
   private static func identityMatches(
