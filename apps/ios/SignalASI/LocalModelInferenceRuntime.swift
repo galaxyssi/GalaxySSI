@@ -55,7 +55,7 @@ final class LocalModelInferenceRuntime {
     lock.unlock()
     guard backendAvailable else { return false }
     let selected = profile ?? LocalModelRuntimeSettings.selectedProfile()
-    return storage.inspect(selected).installed
+    return LocalModelRuntimeSettings.isProfileEnabled(selected) && storage.inspect(selected).installed
   }
 
   func generate(
@@ -67,6 +67,9 @@ final class LocalModelInferenceRuntime {
     thinkingMode: LocalModelThinkingMode = .automatic,
     workClass: LocalModelWorkClass = .interactive
   ) throws -> LocalModelInferenceResult {
+    guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
+      throw LocalModelInferenceError.modelDisabled
+    }
     if workClass == .background && !Self.backgroundSafe(profile) {
       throw LocalModelBackgroundDeferredError(reason: "This local model backend is reserved for interactive inference")
     }
@@ -86,7 +89,6 @@ final class LocalModelInferenceRuntime {
     guard backend.isAvailable else {
       throw LocalModelInferenceError.nativeBackendUnavailable
     }
-
     let modelURL: URL
     do {
       modelURL = try storage.verifyForNativeLoad(profile)
