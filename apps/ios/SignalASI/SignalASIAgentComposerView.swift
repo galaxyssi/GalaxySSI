@@ -132,6 +132,7 @@ struct SignalASIAgentComposerView: View {
       }
     }
     .onChange(of: focusRequest) { _ in
+      actionTrayPresented = false
       inputFocused = true
     }
     .onDisappear {
@@ -317,7 +318,12 @@ struct SignalASIAgentComposerView: View {
           : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
-        actionTrayPresented.toggle()
+        if actionTrayPresented {
+          actionTrayPresented = false
+        } else {
+          inputFocused = false
+          actionTrayPresented = true
+        }
       } label: {
         Image(systemName: "plus")
           .font(.system(size: 22, weight: .semibold))
