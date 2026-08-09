@@ -524,6 +524,9 @@ struct SignalASILocalModelLabView: View {
   private func setProfileEnabled(_ profile: LocalModelRuntimeProfile, enabled: Bool) {
     guard enabled != LocalModelRuntimeSettings.isProfileEnabled(profile) else { return }
     LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: enabled)
+    if !enabled {
+      LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
+    }
     if enabled {
       statusMessage = String(
         format: t("signalasi.local_model.enabled_profile", "%@ enabled"),
