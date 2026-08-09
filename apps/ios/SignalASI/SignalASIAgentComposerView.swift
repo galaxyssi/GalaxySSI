@@ -253,6 +253,8 @@ struct SignalASIAgentComposerView: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
+        // Match Android: text mode owns the composer while the field is focused.
+        guard !inputFocused || holdToTalk.isPending || holdToTalk.isRecording else { return }
         holdToTalk.dragChanged(
           translation: value.translation,
           settings: voiceSettings,
@@ -268,6 +270,7 @@ struct SignalASIAgentComposerView: View {
         )
       }
       .onEnded { value in
+        guard !inputFocused || holdToTalk.isPending || holdToTalk.isRecording else { return }
         let didRecord = holdToTalk.isRecording
         holdToTalk.dragEnded(translation: value.translation)
         if !didRecord {
