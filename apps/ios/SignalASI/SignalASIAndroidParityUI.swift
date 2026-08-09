@@ -251,7 +251,7 @@ struct AgentHomeView: View {
           !latest.isSystem else {
       return false
     }
-    return latest.deliveryStatus != .failed
+    return latest.deliveryStatus != .failed && !waitingMessageIDs.contains(latest.id)
   }
 
   private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
@@ -511,7 +511,14 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground)
       .onChange(of: messages.count) { _ in
-        if waitingForAgentReply {
+        if let last = messages.last, waitingMessageIDs.contains(last.id) {
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(
+              AgentReplyWaitingIndicatorPolicy.viewID(for: last),
+              anchor: .bottom
+            )
+          }
+        } else if waitingForAgentReply {
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
             proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
           }
