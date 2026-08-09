@@ -27,11 +27,11 @@ struct AddContactView: View {
   @State private var scannerAutoOpened = false
 
   private let autoOpenScanner: Bool
-  private let onAgentAdded: (() -> Void)?
+  private let onAgentAdded: (([String]) -> Void)?
 
   init(
     autoOpenScanner: Bool = false,
-    onAgentAdded: (() -> Void)? = nil
+    onAgentAdded: (([String]) -> Void)? = nil
   ) {
     self.autoOpenScanner = autoOpenScanner
     self.onAgentAdded = onAgentAdded
@@ -298,10 +298,18 @@ struct AddContactView: View {
 
   private func importDesktopAgentQRCodeFallback(_ value: String, fallbackError: Error) {
     do {
+      let existingAgentIDs = Set(
+        store.visibleContacts
+          .filter { $0.type == "agent" }
+          .map(\.id)
+      )
       let importedCount = try store.importDesktopAgentQRCodeAsContacts(value)
       guard importedCount > 0 else {
         throw fallbackError
       }
+      let importedAgentIDs = store.visibleContacts
+        .filter { $0.type == "agent" && !existingAgentIDs.contains($0.id) }
+        .map(\.id)
       clearPendingScanResult()
       let message = importedCount == 1
         ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
@@ -310,7 +318,7 @@ struct AddContactView: View {
             importedCount
           )
       setImportStatus(message, isError: false)
-      onAgentAdded?()
+      onAgentAdded?(importedAgentIDs)
     } catch {
       clearPendingScanResult()
       setImportStatus(
@@ -348,7 +356,7 @@ struct AddContactView: View {
         isError: false
       )
       if !pairedDesktopAgentNames.isEmpty {
-        onAgentAdded?()
+        onAgentAdded?([])
         NotificationCenter.default.post(
           name: .signalASIDesktopPairingDidComplete,
           object: nil,
@@ -370,7 +378,7 @@ struct AddContactView: View {
       pendingFriendRequest = pendingScannedRequests.first
       setImportStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"), isError: false)
       if request.type == "agent" {
-        onAgentAdded?()
+        onAgentAdded?([request.signalASIId])
       }
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
@@ -392,9 +400,10 @@ struct AddContactView: View {
 
   private func approvePendingScannedRequests() {
     let requests = pendingScannedAgentRequests
-    let approvedCount = requests.reduce(0) { count, request in
-      store.approveFriendRequest(id: request.id) ? count + 1 : count
+    let approvedAgentIDs = requests.compactMap { request -> String? in
+      store.approveFriendRequest(id: request.id) ? request.signalASIId : nil
     }
+    let approvedCount = approvedAgentIDs.count
     let approvedIDs = Set(requests.map(\.id))
     pendingScannedRequests.removeAll { approvedIDs.contains($0.id) }
     pendingFriendRequest = pendingScannedRequests.first
@@ -406,7 +415,7 @@ struct AddContactView: View {
             approvedCount
           )
       setImportStatus(message, isError: false)
-      onAgentAdded?()
+      onAgentAdded?(approvedAgentIDs)
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
     }
