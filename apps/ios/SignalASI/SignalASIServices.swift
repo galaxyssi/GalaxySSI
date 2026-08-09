@@ -1372,7 +1372,8 @@ final class MessageCoordinator: ObservableObject {
         maximumTokens: 768,
         temperature: 0.3,
         hasAttachments: !attachments.isEmpty,
-        executionProfile: executionProfile
+        executionProfile: executionProfile,
+        preferredProfileId: profile.id
       )
       let response = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
