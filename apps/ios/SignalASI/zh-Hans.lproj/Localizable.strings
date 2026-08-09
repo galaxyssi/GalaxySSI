@@ -3609,4 +3609,5 @@
 "signalasi.workflow.platform" = "平台";
 "signalasi.agent.empty.title" = "我可以帮你做什么？";
 "signalasi.agent.empty.subtitle" = "输入目标，或按住说话";
+"signalasi.agent.load_older" = "加载更早消息";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";
