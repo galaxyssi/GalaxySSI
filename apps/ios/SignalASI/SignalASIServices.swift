@@ -1310,9 +1310,6 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
-      beginPendingAgentReply(for: outgoing)
-    }
     if contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
@@ -1333,8 +1330,10 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId
       )
       onIncomingMessage?(response)
-      finishPendingAgentReply(for: outgoing)
-      return
+      return true
+    }
+    if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
+      beginPendingAgentReply(for: outgoing)
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
