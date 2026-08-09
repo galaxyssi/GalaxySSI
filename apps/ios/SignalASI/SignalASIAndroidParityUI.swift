@@ -807,6 +807,9 @@ struct AgentHomeView: View {
                     ?? activeRemoteAgentTask.updatedAtMillis,
                   updatedAtMillis: activeRemoteAgentTask.updatedAtMillis
                 ),
+                liveDurationStartMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
+                  ?? activeRemoteAgentTask.updatedAtMillis,
+                liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
                 canResume: false,
@@ -832,6 +835,8 @@ struct AgentHomeView: View {
                   startedAtMillis: activeExecutionTask.createdAtMillis,
                   updatedAtMillis: activeExecutionTask.updatedAtMillis
                 ),
+                liveDurationStartMillis: activeExecutionTask.createdAtMillis,
+                liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
                 canResume: AgentTaskCenterPolicy.resumable(activeExecutionTask),
@@ -1211,7 +1216,11 @@ struct AgentHomeView: View {
 
   private func executionDuration(startedAtMillis: Int64, updatedAtMillis: Int64) -> String {
     guard startedAtMillis > 0, updatedAtMillis >= startedAtMillis else { return "" }
-    let totalSeconds = max(0, (updatedAtMillis - startedAtMillis) / 1_000)
+    return executionDuration(elapsedMillis: updatedAtMillis - startedAtMillis)
+  }
+
+  private func executionDuration(elapsedMillis: Int64) -> String {
+    let totalSeconds = max(0, elapsedMillis / 1_000)
     let minutes = totalSeconds / 60
     let seconds = totalSeconds % 60
     if minutes > 0 {
@@ -1799,6 +1808,8 @@ private struct SignalASIAgentExecutionStatusCard: View {
   var location: String
   var step: String
   var duration: String = ""
+  var liveDurationStartMillis: Int64 = 0
+  var liveDurationFormatter: ((Int64) -> String)?
   var detailsTitle: String = ""
   var details: [String] = []
   var canResume: Bool
@@ -1833,7 +1844,16 @@ private struct SignalASIAgentExecutionStatusCard: View {
         .foregroundColor(.signalASITextPrimary)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
-      if !duration.isEmpty {
+      if let liveDurationFormatter, liveDurationStartMillis > 0 {
+        TimelineView(.periodic(from: Date(), by: 1)) { context in
+          Text(liveDurationFormatter(
+            max(0, Int64(context.date.timeIntervalSince1970 * 1_000) - liveDurationStartMillis)
+          ))
+            .font(.system(size: 11))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+        }
+      } else if !duration.isEmpty {
         Text(duration)
           .font(.system(size: 11))
           .foregroundColor(.signalASITextSecondary)
