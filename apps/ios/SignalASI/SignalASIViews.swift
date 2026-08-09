@@ -1504,6 +1504,18 @@ struct VoiceSettingsView: View {
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )
+    let executionTarget = AgentExecutionTargetStatusPolicy.resolveLabel(
+      connectorId: plan.routeDecision.targetId,
+      contactId: plan.contact.id,
+      runtimeTarget: plan.contact.displayName,
+      contacts: store.contacts
+    )
+    if !executionTarget.isBlank {
+      store.setAgentSessionSelectedModelOrAgent(
+        id: store.activeAgentConversationId,
+        label: executionTarget
+      )
+    }
     activeVoiceReplySessionId = plan.sessionId
     activeVoiceReplyContactId = plan.contact.id
     activeVoiceReplyRouteKind = plan.routeDecision.kind

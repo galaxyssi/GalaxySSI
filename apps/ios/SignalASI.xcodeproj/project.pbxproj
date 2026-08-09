@@ -21,6 +21,7 @@
     A10000000000000000001441 /* SignalASIQRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001441 /* SignalASIQRCodeScannerView.swift */; };
     A10000000000000000001434 /* SignalASISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001434 /* SignalASISettingsView.swift */; };
     A10000000000000000001501 /* SignalASIAgentModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001501 /* SignalASIAgentModelSelectionView.swift */; };
+    A10000000000000000001503 /* AgentExecutionTargetStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001503 /* AgentExecutionTargetStatus.swift */; };
     A10000000000000000001436 /* SignalASIContactKindPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001436 /* SignalASIContactKindPresentation.swift */; };
     A10000000000000000000990 /* SignalASIAddContactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000990 /* SignalASIAddContactView.swift */; };
     A10000000000000000000991 /* SignalASICloudModelOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000991 /* SignalASICloudModelOnboardingView.swift */; };
@@ -726,6 +727,7 @@
     A20000000000000000001441 /* SignalASIQRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIQRCodeScannerView.swift; sourceTree = "<group>"; };
     A20000000000000000001434 /* SignalASISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001501 /* SignalASIAgentModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentModelSelectionView.swift; sourceTree = "<group>"; };
+    A20000000000000000001503 /* AgentExecutionTargetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionTargetStatus.swift; sourceTree = "<group>"; };
     A20000000000000000001436 /* SignalASIContactKindPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactKindPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000990 /* SignalASIAddContactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAddContactView.swift; sourceTree = "<group>"; };
     A20000000000000000000991 /* SignalASICloudModelOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICloudModelOnboardingView.swift; sourceTree = "<group>"; };
@@ -1831,6 +1833,7 @@
         A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */,
         A20000000000000000001438 /* SignalASIMainTabView.swift */,
         A20000000000000000001501 /* SignalASIAgentModelSelectionView.swift */,
+        A20000000000000000001503 /* AgentExecutionTargetStatus.swift */,
         A20000000000000000001470 /* SignalASIVoiceTabView.swift */,
         A20000000000000000001437 /* SignalASIAgentHoldToTalkController.swift */,
         A20000000000000000001370 /* SignalASIMessageActionsView.swift */,
@@ -2659,6 +2662,7 @@
         A10000000000000000001440 /* SignalASIAgentRuntimePanelView.swift in Sources */,
         A10000000000000000001438 /* SignalASIMainTabView.swift in Sources */,
         A10000000000000000001501 /* SignalASIAgentModelSelectionView.swift in Sources */,
+        A10000000000000000001503 /* AgentExecutionTargetStatus.swift in Sources */,
         A10000000000000000001470 /* SignalASIVoiceTabView.swift in Sources */,
         A10000000000000000001437 /* SignalASIAgentHoldToTalkController.swift in Sources */,
         A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */,
