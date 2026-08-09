@@ -389,7 +389,7 @@ struct AgentHomeView: View {
       .onChange(of: scenePhase) { phase in
         guard phase == .active else { return }
         refreshAgentRouteState()
-        _ = coordinator.reconcileStaleAgentConnectorReplies()
+        coordinator.refreshAgentHomeState()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in
         coordinator.updateAgentScreenContext(snapshot.screen)

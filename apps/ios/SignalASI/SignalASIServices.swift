@@ -822,7 +822,7 @@ final class MessageCoordinator: ObservableObject {
     scheduleOutboxFlush(after: 0)
     startAutomationScheduler()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-      _ = self?.reconcileStaleAgentConnectorReplies()
+      self?.refreshAgentHomeState()
     }
   }
 
@@ -870,6 +870,11 @@ final class MessageCoordinator: ObservableObject {
       appended += 1
     }
     return appended
+  }
+
+  func refreshAgentHomeState() {
+    _ = requestCapabilityManifestRefresh()
+    _ = reconcileStaleAgentConnectorReplies()
   }
 
   private func startAutomationScheduler() {
