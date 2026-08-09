@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct SignalASIRichContentView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @EnvironmentObject private var store: SignalASIStore
 
   @State private var artifactDocument: SignalASIArtifactDocument?
   @State private var artifactExportPresented = false
@@ -38,7 +39,12 @@ struct SignalASIRichContentView: View {
   var body: some View {
     _ = coordinator.artifactRevision
     let blocks = resolvedBlocks
-    let layout = AgentResponseSectionOrganizer.organize(blocks)
+    let layout = AgentResponseSectionOrganizer.organize(
+      blocks,
+      expandStructuredDetails: AgentPreferenceModePolicy
+        .profile(store.agentPreferenceMode)
+        .expandStructuredDetails
+    )
 
     Group {
       if blocks.isEmpty {

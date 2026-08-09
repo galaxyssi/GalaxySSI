@@ -42,7 +42,24 @@ enum AgentClarificationPolicy {
   static func decide(
     goal: String,
     hasAttachments: Bool = false,
-    hasConversationContext: Bool = false
+    hasConversationContext: Bool = false,
+    preferenceMode: AgentPreferenceMode = .cautious
+  ) -> AgentClarificationDecision {
+    AgentPreferenceModePolicy.resolveClarification(
+      mode: preferenceMode,
+      goal: goal,
+      baseline: decideBaseline(
+        goal: goal,
+        hasAttachments: hasAttachments,
+        hasConversationContext: hasConversationContext
+      )
+    )
+  }
+
+  private static func decideBaseline(
+    goal: String,
+    hasAttachments: Bool,
+    hasConversationContext: Bool
   ) -> AgentClarificationDecision {
     let normalized = normalize(goal)
     if normalized.isEmpty {
