@@ -379,6 +379,16 @@ struct AgentHomeView: View {
       .onChange(of: store.activeAgentConversationId) { _ in
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
+      .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
+        runtimeArtifactStatus = t(
+          "runtime_artifact.download_completed",
+          "Artifact download completed and is ready on this device."
+        )
+      }
+      .onChange(of: coordinator.artifactDownloadFailure) { failure in
+        guard !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        runtimeArtifactError = failure
+      }
       .fileImporter(
         isPresented: $fileImporterPresented,
         allowedContentTypes: [.item],
