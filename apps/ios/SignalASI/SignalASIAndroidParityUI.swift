@@ -116,6 +116,22 @@ struct SignalASIAndroidIconButton: View {
   }
 }
 
+private struct AgentTranscriptScrollMetrics: Equatable {
+  var contentMaxY: CGFloat = 0
+  var viewportHeight: CGFloat = 0
+}
+
+private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
+  static let defaultValue = AgentTranscriptScrollMetrics()
+
+  static func reduce(
+    value: inout AgentTranscriptScrollMetrics,
+    nextValue: () -> AgentTranscriptScrollMetrics
+  ) {
+    value = nextValue()
+  }
+}
+
 private extension View {
   func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
     frame(
@@ -134,6 +150,8 @@ struct AgentHomeView: View {
   @State private var attachments: [SignalASIDraftAttachment] = []
   @State private var actionTrayPresented = false
   @State private var voiceTranscriptionPending = false
+  @State private var transcriptAutoFollow = true
+  @State private var transcriptShowLatestButton = false
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
   @State private var fileImporterPresented = false
@@ -261,6 +279,7 @@ struct AgentHomeView: View {
   }
 
   private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
+  private static let agentTranscriptCoordinateSpace = "signalasi-agent-transcript"
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
@@ -442,7 +461,9 @@ struct AgentHomeView: View {
 
   private var agentOutput: some View {
     ScrollViewReader { proxy in
-      ScrollView {
+      GeometryReader { viewport in
+        ZStack(alignment: .bottomTrailing) {
+          ScrollView {
         LazyVStack(spacing: 10) {
           if hasOlderTranscriptMessages {
             Button {
@@ -535,6 +556,17 @@ struct AgentHomeView: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 16)
+        .background(
+          GeometryReader { content in
+            Color.clear.preference(
+              key: AgentTranscriptScrollMetricsKey.self,
+              value: AgentTranscriptScrollMetrics(
+                contentMaxY: content.frame(in: .named(Self.agentTranscriptCoordinateSpace)).maxY,
+                viewportHeight: viewport.size.height
+              )
+            )
+          }
+        )
       }
       .background(Color.signalASIPageBackground)
       .onChange(of: visibleAgentMessageLimit) { _ in
@@ -549,6 +581,8 @@ struct AgentHomeView: View {
       .onChange(of: store.activeAgentConversationId) { _ in
         visibleAgentMessageLimit = Self.agentTranscriptPageSize
         olderTranscriptAnchor = nil
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
         DispatchQueue.main.async {
           guard let last = messages.last else { return }
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
@@ -556,28 +590,44 @@ struct AgentHomeView: View {
           }
         }
       }
+      .onAppear {
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
+        DispatchQueue.main.async {
+          guard let last = messages.last else { return }
+          proxy.scrollTo(last.id, anchor: .bottom)
+        }
+      }
       .onChange(of: messages.count) { _ in
-        if let last = messages.last, waitingMessageIDs.contains(last.id) {
-          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(
-              AgentReplyWaitingIndicatorPolicy.viewID(for: last),
-              anchor: .bottom
-            )
+        if transcriptAutoFollow {
+          if let last = messages.last, waitingMessageIDs.contains(last.id) {
+            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+              proxy.scrollTo(
+                AgentReplyWaitingIndicatorPolicy.viewID(for: last),
+                anchor: .bottom
+              )
+            }
+          } else if waitingForAgentReply {
+            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+              proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+            }
+          } else if let last = messages.last {
+            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+              proxy.scrollTo(last.id, anchor: .bottom)
+            }
           }
-        } else if waitingForAgentReply {
-          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
-          }
-        } else if let last = messages.last {
-          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(last.id, anchor: .bottom)
-          }
+        } else if !messages.isEmpty {
+          transcriptShowLatestButton = true
         }
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
       }
       .onChange(of: waitingMessageIDs.count) { _ in
         guard let last = messages.last else { return }
+        guard transcriptAutoFollow else {
+          transcriptShowLatestButton = true
+          return
+        }
         withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
           proxy.scrollTo(
             waitingMessageIDs.contains(last.id)
@@ -589,14 +639,62 @@ struct AgentHomeView: View {
       }
       .onChange(of: voiceTranscriptionPending) { pending in
         guard pending else { return }
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
         withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
           proxy.scrollTo(Self.voiceTranscriptionPendingViewId, anchor: .bottom)
         }
       }
       .onChange(of: waitingForAgentReply) { waiting in
         guard waiting else { return }
+        guard transcriptAutoFollow else {
+          transcriptShowLatestButton = true
+          return
+        }
         withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
           proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+        }
+      }
+      if transcriptShowLatestButton, let last = messages.last {
+            Button {
+              transcriptAutoFollow = true
+              transcriptShowLatestButton = false
+              withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+                proxy.scrollTo(last.id, anchor: .bottom)
+              }
+            } label: {
+              Label(
+                t("signalasi.agent.latest", "Back to latest"),
+                systemImage: "arrow.down"
+              )
+              .font(.system(size: 13, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .padding(.horizontal, 12)
+              .frame(minHeight: 40)
+              .background(Color.signalASIBarBackground)
+              .overlay(
+                Capsule(style: .continuous)
+                  .stroke(Color.signalASIInputStroke, lineWidth: 0.8)
+              )
+              .clipShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.agent.latest", "Back to latest")))
+            .padding(.trailing, 16)
+            .padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+          }
+        }
+        .coordinateSpace(name: Self.agentTranscriptCoordinateSpace)
+        .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
+          let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 56
+          if nearBottom {
+            transcriptAutoFollow = true
+            transcriptShowLatestButton = false
+          } else {
+            transcriptAutoFollow = false
+            transcriptShowLatestButton = true
+          }
         }
       }
     }
