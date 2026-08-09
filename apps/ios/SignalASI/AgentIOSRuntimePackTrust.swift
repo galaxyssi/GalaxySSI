@@ -7,8 +7,34 @@ enum AgentIOSRuntimePackTrust {
     manifest: AgentRuntimePackManifest,
     bundle: Bundle = .main
   ) -> Bool {
+    verify(
+      signature: manifest.signature,
+      keyId: manifest.signatureKeyId,
+      payload: manifest.signingPayload(),
+      bundle: bundle
+    )
+  }
+
+  static func verify(
+    catalog: AgentRuntimePackCatalog,
+    bundle: Bundle = .main
+  ) -> Bool {
+    verify(
+      signature: catalog.signature,
+      keyId: catalog.signatureKeyId,
+      payload: catalog.signingPayload(),
+      bundle: bundle
+    )
+  }
+
+  private static func verify(
+    signature rawSignature: String,
+    keyId: String,
+    payload: Data,
+    bundle: Bundle
+  ) -> Bool {
     guard let signature = Data(
-      base64Encoded: manifest.signature,
+      base64Encoded: rawSignature,
       options: [.ignoreUnknownCharacters]
     ), !signature.isEmpty,
     let documentURL = bundle.url(forResource: "trust-anchors", withExtension: "json"),
@@ -24,15 +50,15 @@ enum AgentIOSRuntimePackTrust {
             let publicKey = SecCertificateCopyKey(certificate) else {
         return false
       }
-      let keyId = SHA256.hash(data: Data(SecCertificateCopyData(certificate) as Data))
+      let certificateKeyId = SHA256.hash(data: Data(SecCertificateCopyData(certificate) as Data))
         .map { String(format: "%02x", $0) }
         .joined()
-      guard keyId.caseInsensitiveCompare(manifest.signatureKeyId) == .orderedSame else {
+      guard certificateKeyId.caseInsensitiveCompare(keyId) == .orderedSame else {
         return false
       }
       return verifySignature(
         signature,
-        payload: manifest.signingPayload(),
+        payload: payload,
         with: publicKey
       )
     }

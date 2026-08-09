@@ -54,4 +54,57 @@ final class AgentRuntimePackInstallerTests: XCTestCase {
     ])
     XCTAssertThrowsError(try AgentRuntimePackArchiveReader.inspect(archive))
   }
+
+  func testRuntimePackCatalogBuildsDependencyFirstInstallationPlan() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("runtime-catalog-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let architecture = AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? "x86_64"
+    let linux = AgentRuntimePackCatalogEntry(
+      packId: "linux-base",
+      version: "1.0.0",
+      architecture: architecture,
+      downloadUrl: "https://example.com/linux-base.sarpack",
+      archiveSha256: String(repeating: "a", count: 64),
+      archiveSizeBytes: 1,
+      installedSizeBytes: 1,
+      dependencies: [],
+      license: "Apache-2.0",
+      minimumHostVersionCode: 1,
+      guestApiVersion: 1
+    )
+    let python = AgentRuntimePackCatalogEntry(
+      packId: "python-uv",
+      version: "1.0.0",
+      architecture: architecture,
+      downloadUrl: "https://example.com/python-uv.sarpack",
+      archiveSha256: String(repeating: "b", count: 64),
+      archiveSizeBytes: 1,
+      installedSizeBytes: 1,
+      dependencies: ["linux-base"],
+      license: "Apache-2.0",
+      minimumHostVersionCode: 1,
+      guestApiVersion: 1
+    )
+    let catalog = AgentRuntimePackCatalog(
+      catalogVersion: "1.0.0",
+      generatedAtMillis: 1_000,
+      expiresAtMillis: 10_000,
+      entries: [python, linux],
+      signatureKeyId: String(repeating: "0", count: 64),
+      signature: "test-signature"
+    )
+    try AgentIOSRuntimePackCatalogStore(runtimeRootURL: root).save(catalog)
+    let manager = AgentIOSRuntimePackCatalogManager(
+      runtimeRootURL: root,
+      hostVersionCode: 1,
+      nowMillis: { 5_000 },
+      signatureVerifier: { _ in true }
+    )
+
+    let plan = try manager.installationPlan(for: python)
+    XCTAssertEqual(plan.map(\.packId), ["linux-base", "python-uv"])
+  }
 }
