@@ -36,6 +36,7 @@ data class QnnContextSupportAsset(
 
 enum class QnnContextSupportTransform {
     NONE,
+    MEL_80_NPY_TO_FLOAT32,
     MEL_128_NPY_TO_FLOAT32
 }
 
@@ -81,7 +82,9 @@ data class LargeTurboQnnModelManifest(
     val maxDecoderTokens: Int,
     val vocabularySize: Int,
     val archive: QnnContextArchive,
-    val supportAssets: List<QnnContextSupportAsset>
+    val supportAssets: List<QnnContextSupportAsset>,
+    val metadataModelId: String = "whisper_large_v3_turbo",
+    val precision: String = "float"
 ) {
     init {
         require(modelId.matches(ID_PATTERN))
@@ -91,11 +94,13 @@ data class LargeTurboQnnModelManifest(
         require(targetChipset.isNotBlank() && targetAliases.isNotEmpty())
         require(htpVersion > 0 && socModel > 0)
         require(sampleRateHz == 16_000)
-        require(melBins == 128 && melFrames == 3_000)
+        require(melBins in setOf(80, 128) && melFrames == 3_000)
         require(maxAudioSeconds == 30)
-        require(decoderLayers == 4 && decoderHeads == 20 && decoderHeadSize == 64)
+        require(decoderLayers in 1..64 && decoderHeads in 1..64 && decoderHeadSize == 64)
         require(maxDecoderTokens in 1..200)
-        require(vocabularySize == 51_866)
+        require(vocabularySize in 51_865..51_866)
+        require(metadataModelId.matches(Regex("[a-z0-9][a-z0-9_]{0,95}")))
+        require(precision in setOf("float", "w8a16"))
         require(supportAssets.map(QnnContextSupportAsset::installedName).distinct().size == supportAssets.size)
     }
 

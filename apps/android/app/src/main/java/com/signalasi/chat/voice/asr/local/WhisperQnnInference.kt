@@ -56,7 +56,8 @@ internal data class WhisperQnnTranscription(
 
 internal class WhisperGreedyTranscriber(
     private val network: WhisperQnnNetwork,
-    private val tokenizer: WhisperTiktokenTokenizer
+    private val tokenizer: WhisperTiktokenTokenizer,
+    private val modelContract: QnnWhisperModelContract = WhisperLargeTurboQnnContract.model
 ) {
     fun transcribe(
         melFeatures: FloatArray,
@@ -73,8 +74,7 @@ internal class WhisperGreedyTranscriber(
         maxTokens: Int,
         cancellationRequested: () -> Boolean = { false }
     ): WhisperQnnTranscription {
-        require(melFeatures.remaining() ==
-            WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES)
+        require(melFeatures.remaining() == modelContract.melBins * modelContract.melFrames)
         require(language == "auto" || language in tokenizer.generation.languageTokens)
         require(maxTokens in 1..AsrConfig.MAX_FINAL_TOKENS)
 
@@ -137,7 +137,7 @@ internal class WhisperGreedyTranscriber(
             additionalSuppressedTokens: Set<Int> = emptySet()
         ): Int {
             checkNotCancelled(cancellationRequested)
-            check(position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS)
+            check(position < modelContract.decoderContextTokens)
             val result = network.decode(token, position, selection, additionalSuppressedTokens)
             checkNotCancelled(cancellationRequested)
             position += 1
@@ -177,10 +177,10 @@ internal class WhisperGreedyTranscriber(
         val output = ArrayList<Int>(maxTokens)
         var next = firstTextToken
         while (next != generation.endOfText && output.size < maxTokens &&
-            position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS
+            position < modelContract.decoderContextTokens
         ) {
             output += next
-            if (position < WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS) {
+            if (position < modelContract.decoderContextTokens) {
                 next = step(
                     next,
                     WhisperDecoderSelection.TEXT_TOKEN,
@@ -192,7 +192,7 @@ internal class WhisperGreedyTranscriber(
         val termination = when {
             next == generation.endOfText -> AsrTranscriptTermination.END_OF_TEXT
             output.size >= maxTokens -> AsrTranscriptTermination.TOKEN_LIMIT
-            position >= WhisperLargeTurboQnnContract.DECODER_CONTEXT_TOKENS ->
+            position >= modelContract.decoderContextTokens ->
                 AsrTranscriptTermination.CONTEXT_LIMIT
             else -> AsrTranscriptTermination.UNKNOWN
         }

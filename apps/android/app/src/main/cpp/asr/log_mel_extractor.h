@@ -11,6 +11,7 @@ namespace signalasi::asr {
 class MelFilterBank128 final {
 public:
     static constexpr std::size_t kMelBins = 128;
+    static constexpr std::size_t kCompactMelBins = 80;
     static constexpr std::size_t kFftBins = 201;
     static constexpr std::size_t kValueCount = kMelBins * kFftBins;
 
@@ -22,8 +23,10 @@ public:
 
     const float * row(std::size_t mel_bin) const noexcept;
     const std::vector<float> & values() const noexcept;
+    std::size_t mel_bins() const noexcept;
 
 private:
+    std::size_t mel_bins_ = kMelBins;
     std::vector<float> values_;
 };
 
@@ -42,6 +45,7 @@ public:
                        std::size_t sample_count,
                        std::string * error_message = nullptr) noexcept;
     const std::vector<float> & output() const noexcept;
+    std::size_t output_values() const noexcept;
 
 private:
     void initialize_tables() noexcept;

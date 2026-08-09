@@ -63,6 +63,7 @@ public:
                                         std::chrono::milliseconds timeout,
                                         FeatureWindowMetadata * metadata,
                                         std::string * error_message = nullptr) noexcept;
+    std::size_t feature_value_count() const noexcept;
 
 private:
     struct WindowSlot {
