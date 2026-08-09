@@ -708,12 +708,19 @@ final class MessageCoordinator: ObservableObject {
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
+  private var currentAgentScreenContext = AgentScreenContext(
+    foregroundApp: "SignalASI iOS",
+    pageTitle: "Agent"
+  )
   private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: AgentIOSNativeActionExecutor(),
-      screenProvider: { _ in
-        AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+      screenProvider: { [weak self] _ in
+        self?.currentAgentScreenContext ?? AgentScreenContext(
+          foregroundApp: "SignalASI iOS",
+          pageTitle: "Agent"
+        )
       },
       homeAssistantSettingsProvider: {
         settingsStore.homeAssistantSettings
@@ -793,6 +800,10 @@ final class MessageCoordinator: ObservableObject {
         self.scheduleOutboxFlush(after: 0)
       }
     }
+  }
+
+  func updateAgentScreenContext(_ context: AgentScreenContext) {
+    currentAgentScreenContext = context
   }
 
   func start() {
@@ -961,7 +972,7 @@ final class MessageCoordinator: ObservableObject {
       )
       let result = runtime.actionExecutor.execute(
         action: nativeAction,
-        screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: task.name)
+        screen: currentAgentScreenContext
       )
       AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       guard result.success else {
@@ -2147,7 +2158,7 @@ final class MessageCoordinator: ObservableObject {
     guard let runtime = localNativeToolRuntime else { return false }
     let request = AgentPlanRequest(
       goal: requestText,
-      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
       responseLanguage: store.languagePolicy.responseLanguage
     )
@@ -2190,7 +2201,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let planRequest = AgentPlanRequest(
       goal: requestText,
-      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
       responseLanguage: store.languagePolicy.responseLanguage
     )
@@ -2356,7 +2367,7 @@ final class MessageCoordinator: ObservableObject {
     task: inout AgentTaskRecord
   ) -> Bool {
     guard let runtime = localNativeToolRuntime else { return false }
-    let screen = AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+    let screen = currentAgentScreenContext
 
     var executionAction = action
     executionAction.parameters["_signalasi_task_id"] = task.taskId
