@@ -2031,7 +2031,6 @@
     <string name="rich_output_show_more">展开</string>
     <string name="rich_output_section_plan">计划</string>
     <string name="rich_output_section_execution_log">执行日志</string>
-    <string name="rich_output_section_final_answer">最终答案</string>
     <string name="rich_output_section_evidence">证据</string>
     <string name="rich_output_section_items">%1$d 项</string>
     <string name="rich_output_section_expand">展开分区</string>
@@ -2458,5 +2457,7 @@
     <string name="agent_model_selection_automatic_subtitle">根据任务、速度、隐私与可用性自动选择</string>
     <string name="agent_model_selection_local_section">本机模型</string>
     <string name="agent_model_selection_local_subtitle">已启用 · 本机</string>
+    <string name="agent_model_selection_agent_section">桌面 Agent</string>
+    <string name="agent_model_selection_agent_subtitle">可用 · 已配对电脑</string>
     <string name="agent_model_selection_cloud_section">云端模型</string>
 </resources>

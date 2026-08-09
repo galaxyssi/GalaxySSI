@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
   @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
   @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
@@ -17,6 +18,9 @@ struct SignalASIApp: App {
     let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: coordinator)
+    _voiceAgentRunRecovery = StateObject(
+      wrappedValue: VoiceAgentRunRecoveryCoordinator.shared
+    )
     _workflowTriggerCoordinator = StateObject(
       wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
     )
@@ -30,9 +34,11 @@ struct SignalASIApp: App {
       RootView()
         .environmentObject(store)
         .environmentObject(coordinator)
+        .environmentObject(voiceAgentRunRecovery)
         .signalASITextScale(store.displaySettings)
         .onAppear {
           coordinator.start()
+          voiceAgentRunRecovery.start()
           workflowTriggerCoordinator.start()
           backgroundScheduler.start()
         }
@@ -1321,13 +1327,17 @@ struct VoiceSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @ObservedObject private var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @StateObject private var speech = SpeechCaptureService()
-  @StateObject private var replySpeech = VoiceReplySpeechService()
+  @StateObject private var replySpeech = VoiceProgressiveReplySpeechService()
   @State private var permissionStatus = ""
   @State private var activeVoiceReplySessionId = ""
   @State private var activeVoiceReplyContactId = ""
   @State private var activeVoiceReplyRouteKind: VoiceRouteKind?
   @State private var activeVoiceReplyPlaybackSessionId = ""
+  @State private var progressiveVoiceReplySessionId = ""
+  @State private var progressiveVoiceReplyText = ""
+  @State private var voiceAgentRunListenerId = ""
 
   var body: some View {
     NavigationView {
@@ -1430,6 +1440,18 @@ struct VoiceSettingsView: View {
             }
           }
         }
+        Section(t("voice_settings_section_agent_runs", "Agent runs")) {
+          NavigationLink(destination: SignalASIVoiceAgentRunsView()) {
+            HStack {
+              Image(systemName: "waveform.badge.mic")
+                .foregroundColor(.signalASIAccent)
+              Text(t("signalasi.voice_agent_runs.title", "Voice Agent runs"))
+              Spacer()
+              Text("\(voiceAgentRunRecovery.activeSnapshots.count)")
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section(t("voice_settings_section_recorder", "Recorder")) {
           if speech.isRecording {
             Text(speech.transcript.ifBlank(t("voice_listening", "Listening...")))
@@ -1454,10 +1476,20 @@ struct VoiceSettingsView: View {
       }
       .navigationTitle(t("voice_settings_section_voice", "Voice"))
       .onAppear {
+        voiceAgentRunRecovery.start()
         coordinator.onIncomingMessage = handleIncomingVoiceReply
+        coordinator.onIncomingMessageDelta = handleIncomingVoiceReplyDelta
+        voiceAgentRunListenerId = VoiceAgentRunBridgeRegistry.shared.addListener(
+          handleVoiceAgentRunUpdate
+        )
       }
       .onDisappear {
         coordinator.onIncomingMessage = nil
+        coordinator.onIncomingMessageDelta = nil
+        if !voiceAgentRunListenerId.isEmpty {
+          VoiceAgentRunBridgeRegistry.shared.removeListener(voiceAgentRunListenerId)
+          voiceAgentRunListenerId = ""
+        }
         replySpeech.stop()
         if !activeVoiceReplySessionId.isEmpty {
           _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -1477,6 +1509,7 @@ struct VoiceSettingsView: View {
   }
 
   private func startRecording() async {
+    interruptActiveVoiceReply()
     let granted = await speech.requestAuthorization(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
     permissionStatus = granted ? "" : t("Microphone or speech permission is missing.", "Microphone or speech permission is missing.")
     guard granted else { return }
@@ -1485,6 +1518,20 @@ struct VoiceSettingsView: View {
       try speech.start(settings: store.voiceSettings)
     } catch {
       permissionStatus = error.localizedDescription
+    }
+  }
+
+  private func interruptActiveVoiceReply() {
+    let sessionId = activeVoiceReplySessionId
+    let hadPlayback = replySpeech.stop()
+    guard !sessionId.isEmpty else { return }
+    _ = VoiceAgentRunBridgeRegistry.shared.markCancellationRequested(sessionId: sessionId)
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .cancelled(sessionId: sessionId, reasonCode: "barge_in")
+    )
+    clearActiveVoiceReplySession(sessionId)
+    if hadPlayback {
+      permissionStatus = t("voice_reply_interrupted", "Voice reply interrupted.")
     }
   }
 
@@ -1504,12 +1551,46 @@ struct VoiceSettingsView: View {
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )
+    let executionTarget = AgentExecutionTargetStatusPolicy.resolveLabel(
+      connectorId: plan.routeDecision.targetId,
+      contactId: plan.contact.id,
+      runtimeTarget: plan.contact.displayName,
+      contacts: store.contacts
+    )
+    if !executionTarget.isBlank {
+      store.setAgentSessionSelectedModelOrAgent(
+        id: store.activeAgentConversationId,
+        label: executionTarget
+      )
+    }
     activeVoiceReplySessionId = plan.sessionId
     activeVoiceReplyContactId = plan.contact.id
     activeVoiceReplyRouteKind = plan.routeDecision.kind
     permissionStatus = String(format: t("Sending voice transcript to %@", "Sending voice transcript to %@"), plan.contact.displayName)
+    if plan.routeDecision.kind == .remoteAgent {
+      _ = VoiceAgentRunBridgeRegistry.shared.createRun(
+        VoiceAgentRunRequest(
+          sessionId: plan.sessionId,
+          conversationId: store.activeAgentConversationId,
+          turnId: plan.sessionId,
+          taskId: plan.sessionId,
+          sourceMessageId: plan.sessionId,
+          contactId: plan.contact.id,
+          agentId: plan.contact.signalASIId,
+          agentName: plan.contact.displayName,
+          goal: plan.text,
+          idempotencyKey: "voice:\(plan.sessionId)",
+          traceId: plan.sessionId,
+          createdAtMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+        )
+      )
+    }
     Task {
-      await coordinator.send(plan.text, to: plan.contact)
+      await coordinator.send(
+        plan.text,
+        to: plan.contact,
+        voiceSessionId: plan.routeDecision.kind == .remoteAgent ? plan.sessionId : ""
+      )
       await MainActor.run {
         finishVoiceSendIfNoReplyPlaybackStarted(plan)
       }
@@ -1526,13 +1607,24 @@ struct VoiceSettingsView: View {
     ) else {
       return
     }
+    if activeVoiceReplyRouteKind == .cloudModel,
+       progressiveVoiceReplySessionId == request.sessionId {
+      appendProgressiveVoiceReply(request: request, content: request.text, isFinal: true)
+      return
+    }
     switch activeVoiceReplyRouteKind {
     case .remoteAgent:
+      _ = VoiceAgentRunBridgeRegistry.shared.markFinalResult(
+        sessionId: request.sessionId,
+        content: request.text
+      )
+      let runId = VoiceAgentRunBridgeRegistry.shared.find(sessionId: request.sessionId)?.runId
+        ?? message.id.uuidString
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
-        .agentAccepted(sessionId: request.sessionId, runId: message.id.uuidString)
+        .agentAccepted(sessionId: request.sessionId, runId: runId)
       )
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
-        .agentProgress(sessionId: request.sessionId, runId: message.id.uuidString)
+        .agentProgress(sessionId: request.sessionId, runId: runId)
       )
     case .cloudModel:
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -1547,12 +1639,109 @@ struct VoiceSettingsView: View {
         .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
       )
       permissionStatus = t("Speaking reply", "Speaking reply")
-    } onDone: { done, _, _ in
-      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
-      if activeVoiceReplyPlaybackSessionId == done.sessionId {
-        activeVoiceReplyPlaybackSessionId = ""
+    } onDone: { done, success, _ in
+      completeVoiceReplyPlayback(done, success: success)
+    }
+  }
+
+  private func handleVoiceAgentRunUpdate(_ update: VoiceAgentRunUpdate) {
+    guard update.snapshot.sessionId == activeVoiceReplySessionId else { return }
+    if update.firstAcceptance {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentAccepted(sessionId: update.snapshot.sessionId, runId: update.snapshot.runId)
+      )
+    }
+    if update.firstProgress {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentProgress(sessionId: update.snapshot.sessionId, runId: update.snapshot.runId)
+      )
+    }
+    if !update.message.isEmpty {
+      permissionStatus = update.message
+    }
+    switch update.snapshot.state {
+    case .failed, .timedOut:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .failed(
+          sessionId: update.snapshot.sessionId,
+          failure: VoiceFailure(
+            code: update.snapshot.state.rawValue.lowercased(),
+            recoverable: true,
+            stage: .agentRunning,
+            detail: update.message.ifBlank("The remote Agent run failed.")
+          )
+        )
+      )
+      clearActiveVoiceReplySession(update.snapshot.sessionId)
+    case .cancelled:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .cancelled(sessionId: update.snapshot.sessionId, reasonCode: "remote_cancelled")
+      )
+      clearActiveVoiceReplySession(update.snapshot.sessionId)
+    case .created, .accepted, .queued, .starting, .running, .waitingInput, .waitingApproval, .cancelling, .completed:
+      break
+    }
+  }
+
+  private func handleIncomingVoiceReplyDelta(_ message: ChatMessage) {
+    guard activeVoiceReplyRouteKind == .cloudModel,
+          let request = VoiceReplyPlaybackPolicy.request(
+            message: message,
+            settings: store.voiceSettings,
+            languagePolicy: store.languagePolicy,
+            activeSessionId: activeVoiceReplySessionId,
+            activeTargetContactId: activeVoiceReplyContactId
+          ) else {
+      return
+    }
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .modelDelta(sessionId: request.sessionId, text: request.text)
+    )
+    if progressiveVoiceReplySessionId != request.sessionId {
+      progressiveVoiceReplySessionId = request.sessionId
+      progressiveVoiceReplyText = ""
+      activeVoiceReplyPlaybackSessionId = request.sessionId
+      replySpeech.beginProgressive(request) { started in
+        _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+          .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
+        )
+        permissionStatus = t("Speaking reply", "Speaking reply")
+      } onDone: { done, success, _ in
+        completeVoiceReplyPlayback(done, success: success)
       }
-      clearActiveVoiceReplySession(done.sessionId)
+    }
+    appendProgressiveVoiceReply(request: request, content: request.text, isFinal: false)
+  }
+
+  private func appendProgressiveVoiceReply(
+    request: VoiceReplyPlaybackRequest,
+    content: String,
+    isFinal: Bool
+  ) {
+    guard progressiveVoiceReplySessionId == request.sessionId else { return }
+    let normalized = String(content.prefix(VoiceReplyPlaybackPolicy.maximumSpokenCharacters))
+    let delta: String
+    if normalized.hasPrefix(progressiveVoiceReplyText) {
+      delta = String(normalized.dropFirst(progressiveVoiceReplyText.count))
+    } else {
+      delta = normalized
+    }
+    progressiveVoiceReplyText = normalized
+    replySpeech.appendProgressive(delta, isFinal: isFinal)
+  }
+
+  private func completeVoiceReplyPlayback(_ done: VoiceReplyPlaybackRequest, success: Bool) {
+    let wasActiveSession = activeVoiceReplySessionId == done.sessionId ||
+      activeVoiceReplyPlaybackSessionId == done.sessionId
+    if success {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
+    } else {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .cancelled(sessionId: done.sessionId, reasonCode: "tts_cancelled")
+      )
+    }
+    clearActiveVoiceReplySession(done.sessionId)
+    if wasActiveSession {
       permissionStatus = ""
     }
   }
@@ -1581,12 +1770,17 @@ struct VoiceSettingsView: View {
   }
 
   private func clearActiveVoiceReplySession(_ sessionId: String) {
-    guard activeVoiceReplySessionId == sessionId else { return }
-    activeVoiceReplySessionId = ""
-    activeVoiceReplyContactId = ""
-    activeVoiceReplyRouteKind = nil
+    if activeVoiceReplySessionId == sessionId {
+      activeVoiceReplySessionId = ""
+      activeVoiceReplyContactId = ""
+      activeVoiceReplyRouteKind = nil
+    }
     if activeVoiceReplyPlaybackSessionId == sessionId {
       activeVoiceReplyPlaybackSessionId = ""
+    }
+    if progressiveVoiceReplySessionId == sessionId {
+      progressiveVoiceReplySessionId = ""
+      progressiveVoiceReplyText = ""
     }
   }
 

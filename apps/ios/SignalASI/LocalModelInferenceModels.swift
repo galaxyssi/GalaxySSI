@@ -8,9 +8,33 @@ struct LocalModelInferenceResult: Equatable {
   var elapsedMillis: Int64
 }
 
+enum LocalModelThinkingMode: String, Codable, CaseIterable {
+  case automatic = "AUTOMATIC"
+  case think = "THINK"
+  case noThink = "NO_THINK"
+}
+
+enum LocalModelWorkClass: String, Codable, CaseIterable {
+  case interactive = "INTERACTIVE"
+  case background = "BACKGROUND"
+}
+
+struct LocalModelBackgroundDeferredError: LocalizedError, Equatable {
+  var reason: String = "The private local model is reserved for an interactive request"
+
+  var errorDescription: String? { reason }
+}
+
+struct LocalModelASRPriorityError: LocalizedError, Equatable {
+  var errorDescription: String? {
+    "Local Whisper is being kept ready for instant voice input"
+  }
+}
+
 struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backend: String
   var available: Bool
+  var backgroundReady: Bool
   var loadedProfileId: String
   var loadedContextTokens: Int
 

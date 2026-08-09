@@ -131,7 +131,8 @@ struct SignalASIWorkflowTriggerEditorView: View {
         enabled: enabled,
         cooldownMinutes: Int(cooldownMinutes) ?? 5,
         lastTriggeredAtMillis: original?.lastTriggeredAtMillis ?? 0,
-        createdAtMillis: original?.createdAtMillis ?? Int64(Date().timeIntervalSince1970 * 1_000)
+        createdAtMillis: original?.createdAtMillis ?? Int64(Date().timeIntervalSince1970 * 1_000),
+        conditions: original?.conditions ?? []
       )
       _ = try triggerStore.upsert(trigger)
       presentationMode.wrappedValue.dismiss()
@@ -169,7 +170,9 @@ struct SignalASIWorkflowTriggerRow: View {
   var body: some View {
     AutomationTaskRow(
       title: trigger.workflowName,
-      subtitle: [eventLabel, cooldownLabel, statusLabel].joined(separator: "\n"),
+      subtitle: [eventLabel, cooldownLabel, conditionLabel, statusLabel]
+        .compactMap { $0 }
+        .joined(separator: "\n"),
       icon: "bolt",
       tint: trigger.enabled ? .orange : .signalASITextSecondary,
       badge: trigger.enabled ? t("signalasi.common.on", "On") : t("signalasi.common.off", "Off"),
@@ -190,6 +193,11 @@ struct SignalASIWorkflowTriggerRow: View {
 
   private var cooldownLabel: String {
     String(format: t("signalasi.workflow_trigger.cooldown_value", "Cooldown: %d min"), trigger.cooldownMinutes)
+  }
+
+  private var conditionLabel: String? {
+    guard !trigger.conditions.isEmpty else { return nil }
+    return String(format: t("signalasi.workflow_trigger.condition_count", "%d additional conditions"), trigger.conditions.count)
   }
 
   private var statusLabel: String {
