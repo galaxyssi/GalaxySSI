@@ -718,6 +718,7 @@
 "signalasi.agent_task_status.waiting_input" = "等待输入";
 "signalasi.agent_task_status.waiting_approval" = "等待审批";
 "signalasi.agent_task_center.actions" = "任务操作";
+"signalasi.agent_task_center.log_ready" = "执行日志已显示在下方";
 "signalasi.agent_task_center.view_log" = "查看日志";
 "signalasi.agent_task_center.delete" = "删除任务";
 "signalasi.agent_task_center.copied" = "已复制任务详情";

@@ -5,6 +5,8 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
 
   var task: AgentTaskRecord
   var t: (String, String) -> String
+  var taskActions: [AgentTaskCenterAction] = []
+  var onAction: (AgentTaskCenterAction) -> Void = { _ in }
 
   var body: some View {
     NavigationView {
@@ -62,7 +64,58 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
             dismiss()
           }
         }
+        if !taskActions.isEmpty {
+          ToolbarItem(placement: .primaryAction) {
+            Menu {
+              ForEach(taskActions) { action in
+                Button {
+                  onAction(action)
+                } label: {
+                  Label(taskActionTitle(action), systemImage: taskActionIcon(action))
+                }
+              }
+            } label: {
+              Image(systemName: "ellipsis.circle")
+                .font(.system(size: 18, weight: .semibold))
+            }
+            .accessibilityLabel(Text(t("signalasi.agent_task_center.actions", "Task actions")))
+          }
+        }
       }
+    }
+  }
+
+  private func taskActionTitle(_ action: AgentTaskCenterAction) -> String {
+    switch action {
+    case .cancel:
+      return t("signalasi.common.cancel_task", "Cancel task")
+    case .resume:
+      return t("signalasi.common.resume", "Resume")
+    case .retry:
+      return t("signalasi.common.retry", "Retry")
+    case .copy:
+      return t("signalasi.common.copy", "Copy")
+    case .viewLog:
+      return t("signalasi.agent_task_center.view_log", "View log")
+    case .delete:
+      return t("signalasi.agent_task_center.delete", "Delete task")
+    }
+  }
+
+  private func taskActionIcon(_ action: AgentTaskCenterAction) -> String {
+    switch action {
+    case .cancel:
+      return "xmark.circle"
+    case .resume:
+      return "play.fill"
+    case .retry:
+      return "arrow.clockwise"
+    case .copy:
+      return "doc.on.doc"
+    case .viewLog:
+      return "list.bullet.rectangle"
+    case .delete:
+      return "trash"
     }
   }
 
