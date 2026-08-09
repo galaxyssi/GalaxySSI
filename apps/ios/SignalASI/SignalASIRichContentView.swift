@@ -15,6 +15,7 @@ struct SignalASIRichContentView: View {
   @State private var artifactExportPresented = false
   @State private var artifactExportSourceURI = ""
   @State private var artifactExportFilename = "SignalASI-artifact"
+  @State private var largeOutputExpanded = false
 
   var content: String
   var richOutputJson: String = ""
@@ -47,41 +48,48 @@ struct SignalASIRichContentView: View {
     )
 
     Group {
-      if blocks.isEmpty {
-        Text(content)
-          .font(.body)
-          .textSelection(.enabled)
-      } else if layout.collapsible {
+      if isLargeOutput && !largeOutputExpanded {
+        largeOutputPreview
+      } else {
         VStack(alignment: .leading, spacing: 8) {
-          ForEach(layout.sections) { section in
-            if section.kind == .finalAnswer {
-              SignalASIRichBlockListView(
-                blocks: section.blocks,
-                isOutgoing: isOutgoing,
-                onAction: onAction,
-                onFormSubmit: onFormSubmit,
-                onArtifactSave: { exportArtifact($0) }
-              )
-              .padding(.vertical, 4)
-            } else {
-              SignalASIRichSectionView(
-                section: section,
-                isOutgoing: isOutgoing,
-                onAction: onAction,
-                onFormSubmit: onFormSubmit,
-                onArtifactSave: { exportArtifact($0) }
-              )
+          if blocks.isEmpty {
+            Text(content)
+              .font(.body)
+              .textSelection(.enabled)
+          } else if layout.collapsible {
+            ForEach(layout.sections) { section in
+              if section.kind == .finalAnswer {
+                SignalASIRichBlockListView(
+                  blocks: section.blocks,
+                  isOutgoing: isOutgoing,
+                  onAction: onAction,
+                  onFormSubmit: onFormSubmit,
+                  onArtifactSave: { exportArtifact($0) }
+                )
+                .padding(.vertical, 4)
+              } else {
+                SignalASIRichSectionView(
+                  section: section,
+                  isOutgoing: isOutgoing,
+                  onAction: onAction,
+                  onFormSubmit: onFormSubmit,
+                  onArtifactSave: { exportArtifact($0) }
+                )
+              }
             }
+          } else {
+            SignalASIRichBlockListView(
+              blocks: blocks,
+              isOutgoing: isOutgoing,
+              onAction: onAction,
+              onFormSubmit: onFormSubmit,
+              onArtifactSave: { exportArtifact($0) }
+            )
+          }
+          if isLargeOutput {
+            largeOutputToggle
           }
         }
-      } else {
-        SignalASIRichBlockListView(
-          blocks: blocks,
-          isOutgoing: isOutgoing,
-          onAction: onAction,
-          onFormSubmit: onFormSubmit,
-          onArtifactSave: { exportArtifact($0) }
-        )
       }
     }
     .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
@@ -98,6 +106,52 @@ struct SignalASIRichContentView: View {
         savedURI: "file-export://\(artifactExportFilename)"
       )
     }
+  }
+
+  private var isLargeOutput: Bool {
+    max(content.utf16.count, richOutputJson.utf16.count) > AgentLargeOutputPolicy.chunkThresholdCharacters
+  }
+
+  private var largeOutputPreview: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(largeOutputPreviewText)
+        .font(.body)
+        .foregroundColor(.signalASITextPrimary)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+      largeOutputToggle
+    }
+  }
+
+  private var largeOutputToggle: some View {
+    Button {
+      largeOutputExpanded.toggle()
+    } label: {
+      Label(
+        largeOutputExpanded
+          ? t("rich_output_show_less", "Show less")
+          : t("rich_output_show_more", "Show more"),
+        systemImage: largeOutputExpanded ? "chevron.up" : "chevron.down"
+      )
+      .font(.system(size: 13, weight: .semibold))
+      .foregroundColor(.signalASIAccent)
+      .frame(minHeight: 36)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(
+      Text(
+        largeOutputExpanded
+          ? t("rich_output_show_less", "Show less")
+          : t("rich_output_show_more", "Show more")
+      )
+    )
+  }
+
+  private var largeOutputPreviewText: String {
+    let source = content.ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+      .ifBlank(t("rich_output_load_failed", "Unable to display preview"))
+    let preview = String(source.prefix(AgentLargeOutputPolicy.previewCharacters))
+    return preview.count < source.count ? preview + "..." : preview
   }
 
   fileprivate func exportArtifact(_ block: AgentRichBlock) {
