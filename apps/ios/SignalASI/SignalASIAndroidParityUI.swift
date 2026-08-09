@@ -141,6 +141,13 @@ struct AgentHomeView: View {
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelectionSettings.selection()
+  @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
+  @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
+  @State private var runtimeArtifactExportPresented = false
+  @State private var runtimeArtifactExportFilename = ""
+  @State private var runtimeArtifactExportSourceURI = ""
+  @State private var runtimeArtifactError = ""
+  @State private var runtimeArtifactStatus = ""
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -148,6 +155,13 @@ struct AgentHomeView: View {
 
   private var messages: [ChatMessage] {
     store.messages(for: contact.id)
+  }
+
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: messages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
   }
 
   private var unreadTotal: Int {
@@ -254,8 +268,121 @@ struct AgentHomeView: View {
       .sheet(item: $selectedMessageForDetails) { message in
         MessageDetailView(message: message, contact: contact)
       }
+      .sheet(item: $runtimeArtifactPreview) { preview in
+        SignalASIRuntimeArtifactPreviewView(preview: preview)
+      }
+      .fileExporter(
+        isPresented: $runtimeArtifactExportPresented,
+        document: runtimeArtifactDocument,
+        contentType: .data,
+        defaultFilename: runtimeArtifactExportFilename
+      ) { result in
+        if case .success(let url) = result,
+           !runtimeArtifactExportSourceURI.isEmpty {
+          try? AgentDesktopArtifactStore.shared.markSavedToDownloads(
+            sourceURI: runtimeArtifactExportSourceURI,
+            savedURI: url.absoluteString
+          )
+          runtimeArtifactExportSourceURI = ""
+        } else if case .failure(let error) = result {
+          runtimeArtifactExportSourceURI = ""
+          runtimeArtifactError = error.localizedDescription
+        }
+      }
+      .alert(
+        t("runtime_artifact.error.title", "Artifact unavailable"),
+        isPresented: Binding(
+          get: { !runtimeArtifactError.isEmpty },
+          set: { if !$0 { runtimeArtifactError = "" } }
+        )
+      ) {
+        Button(t("signalasi.common.done", "Done"), role: .cancel) {
+          runtimeArtifactError = ""
+        }
+      } message: {
+        Text(runtimeArtifactError)
+      }
+      .alert(
+        t("runtime_artifact.status.title", "Artifact"),
+        isPresented: Binding(
+          get: { !runtimeArtifactStatus.isEmpty },
+          set: { if !$0 { runtimeArtifactStatus = "" } }
+        )
+      ) {
+        Button(t("signalasi.common.done", "Done"), role: .cancel) {
+          runtimeArtifactStatus = ""
+        }
+      } message: {
+        Text(runtimeArtifactStatus)
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var runtimeArtifactManagedRoots: [URL] {
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    return [
+      root,
+      root.appendingPathComponent("runs", isDirectory: true),
+      root.appendingPathComponent("runs/artifacts", isDirectory: true),
+      root.appendingPathComponent("artifacts", isDirectory: true)
+    ]
+  }
+
+  private func handleRichAction(_ action: AgentRichAction) {
+    if action.verb == "download_desktop_artifact" {
+      guard let payload = AgentDesktopArtifactRequestPayload.decode(action.value) else {
+        runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+        return
+      }
+      if let file = AgentDesktopArtifactStore.shared.localFile(forArtifactURI: payload.artifactURI) {
+        do {
+          runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+          runtimeArtifactExportFilename = payload.displayName
+          runtimeArtifactExportSourceURI = payload.artifactURI
+          runtimeArtifactExportPresented = true
+        } catch {
+          runtimeArtifactError = error.localizedDescription
+        }
+      } else if coordinator.requestDesktopArtifactDownload(payload) {
+        runtimeArtifactStatus = t(
+          "runtime_artifact.download_requested",
+          "The Desktop was asked to resend this artifact."
+        )
+      } else {
+        runtimeArtifactError = t(
+          "runtime_artifact.download_failed",
+          "The artifact could not be requested from the Desktop."
+        )
+      }
+      return
+    }
+    guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
+      return
+    }
+    guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
+      runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+      return
+    }
+    do {
+      let file = try AgentRuntimeArtifactUi.resolve(
+        payload: payload,
+        managedRoots: runtimeArtifactManagedRoots
+      )
+      if action.verb == "preview_runtime_artifact" {
+        runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
+          title: payload.displayName,
+          content: try AgentRuntimeArtifactUi.preview(file: file)
+        )
+      } else {
+        runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+        runtimeArtifactExportFilename = payload.displayName
+        runtimeArtifactExportSourceURI = ""
+        runtimeArtifactExportPresented = true
+      }
+    } catch {
+      runtimeArtifactError = error.localizedDescription
+    }
   }
 
   private var agentOutput: some View {
@@ -307,7 +434,7 @@ struct AgentHomeView: View {
             )
           } else {
             ForEach(messages) { message in
-              MessageBubble(message: message)
+              MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -326,6 +453,11 @@ struct AgentHomeView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
             if voiceTranscriptionPending {
               SignalASIVoiceTranscriptionPendingView()
@@ -354,6 +486,17 @@ struct AgentHomeView: View {
         }
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: waitingMessageIDs.count) { _ in
+        guard let last = messages.last else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(
+            waitingMessageIDs.contains(last.id)
+              ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+              : last.id,
+            anchor: .bottom
+          )
+        }
       }
       .onChange(of: voiceTranscriptionPending) { pending in
         guard pending else { return }

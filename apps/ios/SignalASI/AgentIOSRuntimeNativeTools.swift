@@ -14,12 +14,17 @@ enum AgentIOSOnDeviceRuntimeToolOperation: String, Codable, CaseIterable, Identi
 
 protocol AgentIOSOnDeviceRuntimeToolProviding {
   var implementationId: String { get }
+  var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? { get }
   func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability
   func invoke(
     operation: AgentIOSOnDeviceRuntimeToolOperation,
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult
+}
+
+extension AgentIOSOnDeviceRuntimeToolProviding {
+  var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? { nil }
 }
 
 struct AgentIOSUnavailableOnDeviceRuntimeToolProvider: AgentIOSOnDeviceRuntimeToolProviding {
@@ -393,7 +398,21 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 }
 
 struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
+  private struct WorkspaceTransaction {
+    var workspaceId: String
+    var checkpointId: String
+  }
+
   var provider: AgentIOSOnDeviceRuntimeToolProviding
+  private var workspaceManager: AgentRuntimeProjectWorkspaceManager?
+
+  init(
+    provider: AgentIOSOnDeviceRuntimeToolProviding,
+    workspaceManager: AgentRuntimeProjectWorkspaceManager? = nil
+  ) {
+    self.provider = provider
+    self.workspaceManager = workspaceManager ?? provider.runtimeWorkspaceManager
+  }
 
   func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
     AgentNativeToolExecutableDefinition(
@@ -419,10 +438,50 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
       message: AgentIOSOnDeviceRuntimeNativeToolCatalog.title(operation),
       percent: 10
     )
+    let transaction: WorkspaceTransaction?
+    do {
+      transaction = try beginTransaction(operation: operation, invocation: invocation)
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_workspace_checkpoint_failed",
+        message: error.localizedDescription.ifBlank("iOS runtime workspace checkpoint could not be created"),
+        retryable: true
+      )
+    }
     let execution = provider.invoke(operation: operation, input: invocation.input, invocation: invocation)
-    guard execution.isSuccess else { return execution }
     var output = execution.output
     let workspace = workspaceId(invocation.context)
+    if let transaction {
+      output["checkpoint_id"] = output["checkpoint_id"] ?? .string(transaction.checkpointId)
+      let disposition: AgentRuntimeProjectWorkspaceDisposition
+      if execution.isSuccess {
+        disposition = .committed
+      } else {
+        disposition = rollback(transaction: transaction)
+      }
+      output["workspace_disposition"] = output["workspace_disposition"] ?? .string(disposition.rawValue)
+      if let manager = workspaceManager, let status = try? manager.workspaceStatus(workspace) {
+        output["workspace_file_count"] = output["workspace_file_count"] ?? .int(Int64(status.fileCount))
+        output["workspace_bytes"] = output["workspace_bytes"] ?? .int(status.totalBytes)
+      }
+      if !execution.isSuccess, let error = execution.error {
+        var details = error.details
+        details["checkpoint_id"] = .string(transaction.checkpointId)
+        details["workspace_disposition"] = output["workspace_disposition"] ?? .string(.unchanged.rawValue)
+        return AgentNativeToolExecutionResult(
+          output: output,
+          message: execution.message,
+          metadata: execution.metadata,
+          error: AgentNativeToolError(
+            code: error.code,
+            message: error.message,
+            retryable: error.retryable,
+            details: details
+          )
+        )
+      }
+    }
+    guard execution.isSuccess else { return execution }
     switch operation {
     case .workspaceStatus, .workspaceRollback, .execute:
       output["workspace_id"] = output["workspace_id"] ?? .string(workspace)
@@ -450,6 +509,40 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
     )
   }
 
+  private func beginTransaction(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    invocation: AgentNativeToolInvocation
+  ) throws -> WorkspaceTransaction? {
+    guard operation == .execute,
+          provider.availability(operation: .execute).status == .available,
+          let workspaceManager else { return nil }
+    let workspaceId = workspaceId(invocation.context)
+    let digest = SHA256.hash(data: Data(invocation.context.invocationId.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+    let checkpointId = "pre-\(digest.prefix(24))"
+    _ = try workspaceManager.checkpoint(
+      workspaceId: workspaceId,
+      checkpointId: checkpointId,
+      byteLimit: maxTransactionBytes
+    )
+    return WorkspaceTransaction(workspaceId: workspaceId, checkpointId: checkpointId)
+  }
+
+  private func rollback(transaction: WorkspaceTransaction) -> AgentRuntimeProjectWorkspaceDisposition {
+    guard let workspaceManager else { return .unchanged }
+    do {
+      _ = try workspaceManager.rollback(
+        workspaceId: transaction.workspaceId,
+        checkpointId: transaction.checkpointId,
+        byteLimit: maxTransactionBytes
+      )
+      return .rolledBack
+    } catch {
+      return .rollbackFailed
+    }
+  }
+
   private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
     let values = [
       context.attributes["workspace_id"],
@@ -461,4 +554,6 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
       .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
       .first { !$0.isEmpty } ?? "default"
   }
+
+  private let maxTransactionBytes: Int64 = 512 * 1_024 * 1_024
 }

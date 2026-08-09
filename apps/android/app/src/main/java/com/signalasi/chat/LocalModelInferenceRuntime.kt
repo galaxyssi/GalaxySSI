@@ -2,7 +2,6 @@ package com.signalasi.chat
 
 import android.content.Context
 import com.signalasi.llama.SignalASILlamaRuntime
-import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicInteger
 
 data class LocalModelInferenceResult(
@@ -36,6 +35,10 @@ class LocalModelBackgroundDeferredException : IllegalStateException(
     "The private local model is reserved for an interactive request"
 )
 
+class LocalModelAsrPriorityException : IllegalStateException(
+    "Whisper ASR is being kept ready. Choose another model to preserve instant voice input."
+)
+
 object LocalModelInferenceRuntime {
     private val lock = Any()
     private val processStartedAtElapsed = monotonicMillis()
@@ -59,6 +62,10 @@ object LocalModelInferenceRuntime {
     fun ready(context: Context, profile: LocalModelRuntimeProfile): Boolean {
         if (!LocalModelManager.isInstalled(context, profile)) return false
         if (engineFor(profile) == LocalModelInferenceEngine.LEGACY_LLAMA && !available()) return false
+        if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
+            !LocalModelInferenceProcess.isRuntimeProcess() &&
+            SharedQnnRuntimeResources.arbiter.asrHasPriority()
+        ) return false
         return runCatching {
             profile.preferredAccelerator == LocalModelAcceleratorKind.CPU ||
                 LocalModelAcceleratorDetector.detect(context)[profile.preferredAccelerator].ready
@@ -81,11 +88,33 @@ object LocalModelInferenceRuntime {
         if (workClass == LocalModelWorkClass.BACKGROUND && !backgroundSafe(profile)) {
             throw LocalModelBackgroundDeferredException()
         }
+        if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
+            !LocalModelInferenceProcess.isRuntimeProcess() &&
+            SharedQnnRuntimeResources.arbiter.asrHasPriority()
+        ) throw LocalModelAsrPriorityException()
         if (workClass == LocalModelWorkClass.INTERACTIVE) foregroundWaiters.incrementAndGet()
         return try {
             synchronized(lock) {
                 if (workClass == LocalModelWorkClass.BACKGROUND && !canRunBackground()) {
                     throw LocalModelBackgroundDeferredException()
+                }
+                if (engineFor(profile) == LocalModelInferenceEngine.GENIEX_NPU &&
+                    !LocalModelInferenceProcess.isRuntimeProcess()
+                ) {
+                    SignalASILlamaRuntime.unload()
+                    GenieXLocalModelRuntime.release()
+                    loadedProfile = ""
+                    loadedContextTokens = 0
+                    return@synchronized LocalModelInferenceProcessClient.generate(
+                        context = context.applicationContext,
+                        profile = profile,
+                        systemPrompt = systemPrompt,
+                        userPrompt = userPrompt,
+                        maximumTokens = maximumTokens,
+                        temperature = temperature,
+                        thinkingMode = thinkingMode,
+                        workClass = workClass
+                    )
                 }
                 generateLocked(
                     context = context.applicationContext,
@@ -115,7 +144,6 @@ object LocalModelInferenceRuntime {
         thinkingMode: LocalModelThinkingMode
     ): LocalModelInferenceResult {
         val engine = engineFor(profile)
-        runBlocking { LocalWhisperAsr.release() }
         if (engine == LocalModelInferenceEngine.GENIEX_NPU) {
             SignalASILlamaRuntime.unload()
             loadedProfile = ""
@@ -199,6 +227,9 @@ object LocalModelInferenceRuntime {
         profile.artifactFormat != LocalModelArtifactFormat.QAIRT
 
     fun releaseForAsr() = synchronized(lock) {
+        if (!LocalModelInferenceProcess.isRuntimeProcess()) {
+            LocalModelInferenceProcessClient.release()
+        }
         SignalASILlamaRuntime.unload()
         GenieXLocalModelRuntime.release()
         loadedProfile = ""
@@ -211,7 +242,9 @@ object LocalModelInferenceRuntime {
         }
     }
 
-    fun loadedProfileId(): String = loadedProfile.ifBlank(GenieXLocalModelRuntime::loadedProfileId)
+    fun loadedProfileId(): String = loadedProfile
+        .ifBlank(GenieXLocalModelRuntime::loadedProfileId)
+        .ifBlank(LocalModelInferenceProcessClient::loadedProfileId)
 
     fun backendInfo(context: Context): String = runCatching {
         SignalASILlamaRuntime.initialize(context.applicationContext)

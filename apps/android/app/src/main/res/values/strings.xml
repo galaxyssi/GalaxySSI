@@ -116,6 +116,7 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible custom endpoint</string>
     <string name="cloud_request_failed">Cloud model call failed: %1$s</string>
     <string name="cloud_unknown_error">Unknown error</string>
+    <string name="cloud_image_prepare_failed">Could not prepare %1$s for the cloud model.</string>
     <string name="cloud_empty_response">The model returned an empty response.</string>
     <string name="cloud_streaming_status">Responding</string>
     <string name="cloud_stream_interrupted_status">Interrupted</string>
@@ -2123,7 +2124,6 @@
     <string name="rich_output_show_more">Show more</string>
     <string name="rich_output_section_plan">Plan</string>
     <string name="rich_output_section_execution_log">Execution log</string>
-    <string name="rich_output_section_final_answer">Final answer</string>
     <string name="rich_output_section_evidence">Evidence</string>
     <string name="rich_output_section_items">%1$d items</string>
     <string name="rich_output_section_expand">Expand section</string>

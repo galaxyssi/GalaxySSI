@@ -5,9 +5,10 @@ struct SignalASIResourceRoutingView: View {
   @EnvironmentObject private var store: SignalASIStore
 
   private var targets: [AgentCallableTarget] {
-    store.visibleContacts
-      .map(callableTarget)
-      .filter { $0.id != "phone" && $0.id != "local-system" && $0.id != "cloud-models" }
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
   }
 
   private var resources: [AgentResourceDescriptor] {
@@ -203,30 +204,6 @@ struct SignalASIResourceRoutingView: View {
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
-  private func callableTarget(_ contact: SignalASIContact) -> AgentCallableTarget {
-    let status = connectorStatus(contact)
-    let kind = connectorKind(contact)
-    let resolvedCapabilities = capabilities(contact, kind: kind)
-    let resolvedAdapterType = adapterType(contact)
-    return AgentCallableTarget(
-      id: contact.id,
-      title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
-      kind: kind,
-      status: status,
-      capabilities: resolvedCapabilities,
-      failureDomain: failureDomain(contact, kind: kind),
-      adapterType: resolvedAdapterType,
-      desktopAccessProfile: contact.connectorDesktopAccessProfile,
-      providerProfile: providerProfile(
-        contact,
-        kind: kind,
-        status: status,
-        capabilities: resolvedCapabilities,
-        adapterType: resolvedAdapterType
-      )
-    )
-  }
-
   private func routeContact(for resource: AgentResourceDescriptor) -> SignalASIContact? {
     let candidates = [resource.targetId, resource.id].flatMap { raw in
       let withoutTarget = raw.hasPrefix("target:") ? String(raw.dropFirst("target:".count)) : raw
@@ -238,95 +215,6 @@ struct SignalASIResourceRoutingView: View {
       if let contact = store.contact(id: id), !contact.deleted {
         return contact
       }
-    }
-    return nil
-  }
-
-  private func connectorKind(_ contact: SignalASIContact) -> AgentConnectorKind {
-    if contact.deliveryMode == .cloudAPI { return .model }
-    if contact.type == "device" { return .device }
-    return .agent
-  }
-
-  private func connectorStatus(_ contact: SignalASIContact) -> AgentConnectorStatus {
-    let status = contact.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if contact.deliveryMode == .cloudAPI {
-      guard let model = contact.selectedCloudModel else { return .needsSetup }
-      return CloudModelCredentialPolicy.isAutoRoutable(
-        model: model,
-        apiKey: store.apiKey(for: model),
-        provider: contact.cloudProvider,
-        setupStatus: contact.setupStatus
-      ) ? .available : .needsSetup
-    }
-    if status == "ready" || status == "verified" {
-      return .available
-    }
-    if status.contains("needs") || status == "pairing" || contact.trustState != .verified {
-      return .needsSetup
-    }
-    return .disconnected
-  }
-
-  private func capabilities(_ contact: SignalASIContact, kind: AgentConnectorKind) -> [AgentCapability] {
-    let connectorCapabilities = contact.connectorCapabilitySet
-    if !connectorCapabilities.isEmpty {
-      return connectorCapabilities.sorted { $0.rawValue < $1.rawValue }
-    }
-    switch kind {
-    case .model:
-      return [.chat, .reasoning, .toolUse, .liveData]
-    case .device:
-      return [.deviceControl, .appNavigation]
-    case .knowledge:
-      return [.knowledgeSearch]
-    case .agent:
-      if contact.deliveryMode.isSignalASILinkFamily {
-        return [.chat, .reasoning, .toolUse, .taskExecution]
-      }
-      return [.chat, .reasoning]
-    }
-  }
-
-  private func failureDomain(_ contact: SignalASIContact, kind: AgentConnectorKind) -> String {
-    if kind == .model {
-      return "cloud-model:\(contact.cloudProvider.ifBlank(contact.id))"
-    }
-    if !contact.desktopId.isBlank {
-      return "desktop:\(contact.desktopId)"
-    }
-    return "contact:\(contact.id)"
-  }
-
-  private func adapterType(_ contact: SignalASIContact) -> String {
-    if !contact.connectorAdapterName.isEmpty {
-      return contact.connectorAdapterName
-    }
-    switch contact.deliveryMode {
-    case .cloudAPI: return "cloud-api"
-    case .link: return "signalasi-link"
-    case .pcConnector: return "pc-connector"
-    case .local: return "local"
-    }
-  }
-
-  private func providerProfile(
-    _ contact: SignalASIContact,
-    kind: AgentConnectorKind,
-    status: AgentConnectorStatus,
-    capabilities: [AgentCapability],
-    adapterType: String
-  ) -> ProviderProfile? {
-    if contact.deliveryMode == .cloudAPI {
-      return ProviderProfileCatalog.fromCloudContact(contact, status: status)
-    }
-    if kind == .agent, contact.deliveryMode.isSignalASILinkFamily {
-      return ProviderProfileCatalog.fromConnectorContact(
-        contact,
-        status: status,
-        capabilities: capabilities,
-        adapterType: adapterType
-      )
     }
     return nil
   }

@@ -78,7 +78,8 @@ object CloudModelClient {
         context: Context,
         contact: JSONObject,
         turns: List<ChatMessage>,
-        requestId: String
+        requestId: String,
+        images: List<CloudImagePayload> = emptyList()
     ): PreparedCloudConversationStream {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
@@ -90,6 +91,7 @@ object CloudModelClient {
         return when (style) {
             "anthropic" -> {
                 val messages = anthropicMessages(compiled.messages)
+                CloudVisionPayloadEncoder.attachAnthropic(messages, images)
                 val body = JSONObject()
                     .put("model", contact.getString("cloud_model"))
                     .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
@@ -113,6 +115,7 @@ object CloudModelClient {
             }
             "gemini" -> {
                 val contents = geminiContents(compiled.messages)
+                CloudVisionPayloadEncoder.attachGemini(contents, images)
                 val body = JSONObject()
                     .put(
                         "system_instruction",
@@ -149,6 +152,7 @@ object CloudModelClient {
             }
             else -> {
                 val messages = openAiMessages(compiled, effectiveSystemPrompt)
+                CloudVisionPayloadEncoder.attachOpenAi(messages, images)
                 val body = JSONObject()
                     .put("model", contact.getString("cloud_model"))
                     .put("messages", messages)
@@ -172,8 +176,9 @@ object CloudModelClient {
         context: Context,
         contact: JSONObject,
         turns: List<ChatMessage>,
+        images: List<CloudImagePayload> = emptyList(),
         onToolEvent: ((CloudToolEvent) -> Unit)?
-    ): String = send(context, contact, turns, onToolEvent)
+    ): String = send(context, contact, turns, defaultSystemPrompt(context), onToolEvent, images)
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
         return sendStructuredWithUsage(context, contact, systemPrompt, prompt).text
@@ -359,7 +364,8 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         systemPrompt: String,
-        onToolEvent: ((CloudToolEvent) -> Unit)?
+        onToolEvent: ((CloudToolEvent) -> Unit)?,
+        images: List<CloudImagePayload> = emptyList()
     ): String {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
@@ -369,12 +375,13 @@ object CloudModelClient {
             text = turns.joinToString("\n") { it.content },
             historyCount = turns.size,
             systemInstructions = true,
+            images = images,
             purpose = "Conversation response"
         ) {
             when (style) {
-                "anthropic" -> sendAnthropicWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
-                "gemini" -> sendGeminiWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
-                else -> sendOpenAiCompatibleWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
+                "anthropic" -> sendAnthropicWithUsage(context, contact, turns, systemPrompt, onToolEvent, images).text
+                "gemini" -> sendGeminiWithUsage(context, contact, turns, systemPrompt, onToolEvent, images).text
+                else -> sendOpenAiCompatibleWithUsage(context, contact, turns, systemPrompt, onToolEvent, images).text
             }
         }
     }
@@ -386,6 +393,7 @@ object CloudModelClient {
         historyCount: Int,
         systemInstructions: Boolean,
         toolOutput: Boolean = false,
+        images: List<CloudImagePayload> = emptyList(),
         purpose: String,
         operation: () -> T
     ): T {
@@ -411,6 +419,9 @@ object CloudModelClient {
             historyCount = historyCount,
             systemInstructions = systemInstructions,
             toolOutput = toolOutput,
+            attachmentKinds = if (images.isEmpty()) emptySet() else setOf(AgentDisclosedDataKind.IMAGE),
+            attachmentCount = images.size,
+            attachmentBytes = images.sumOf { it.bytes.size.toLong() },
             purpose = purpose
         )
         if (!disclosure.allowed) {
@@ -459,7 +470,8 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         systemPrompt: String,
-        onToolEvent: ((CloudToolEvent) -> Unit)?
+        onToolEvent: ((CloudToolEvent) -> Unit)?,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse = withContextOverflowRetry(contact) { contextWindow, _ ->
         sendOpenAiCompatibleAttempt(
             context,
@@ -467,7 +479,8 @@ object CloudModelClient {
             turns,
             systemPrompt,
             onToolEvent,
-            contextWindow
+            contextWindow,
+            images
         )
     }
 
@@ -477,7 +490,8 @@ object CloudModelClient {
         turns: List<ChatMessage>,
         systemPrompt: String,
         onToolEvent: ((CloudToolEvent) -> Unit)?,
-        contextWindow: Int
+        contextWindow: Int,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val effectiveSystemPrompt =
             secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
@@ -490,6 +504,7 @@ object CloudModelClient {
         )
         logCompaction(contact, compiled)
         val messages = openAiMessages(compiled, effectiveSystemPrompt)
+        CloudVisionPayloadEncoder.attachOpenAi(messages, images)
         val body = JSONObject()
             .put("model", contact.getString("cloud_model"))
             .put("messages", messages)
@@ -652,9 +667,10 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         systemPrompt: String,
-        onToolEvent: ((CloudToolEvent) -> Unit)? = null
+        onToolEvent: ((CloudToolEvent) -> Unit)? = null,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse = withContextOverflowRetry(contact) { contextWindow, _ ->
-        sendAnthropicAttempt(context, contact, turns, systemPrompt, onToolEvent, contextWindow)
+        sendAnthropicAttempt(context, contact, turns, systemPrompt, onToolEvent, contextWindow, images)
     }
 
     private fun sendAnthropicAttempt(
@@ -663,13 +679,15 @@ object CloudModelClient {
         turns: List<ChatMessage>,
         systemPrompt: String,
         onToolEvent: ((CloudToolEvent) -> Unit)?,
-        contextWindow: Int
+        contextWindow: Int,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val effectiveSystemPrompt =
             secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
+        CloudVisionPayloadEncoder.attachAnthropic(messages, images)
         val body = JSONObject()
             .put("model", contact.getString("cloud_model"))
             .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
@@ -822,9 +840,10 @@ object CloudModelClient {
         contact: JSONObject,
         turns: List<ChatMessage>,
         systemPrompt: String,
-        onToolEvent: ((CloudToolEvent) -> Unit)? = null
+        onToolEvent: ((CloudToolEvent) -> Unit)? = null,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse = withContextOverflowRetry(contact) { contextWindow, _ ->
-        sendGeminiAttempt(context, contact, turns, systemPrompt, onToolEvent, contextWindow)
+        sendGeminiAttempt(context, contact, turns, systemPrompt, onToolEvent, contextWindow, images)
     }
 
     private fun sendGeminiAttempt(
@@ -833,7 +852,8 @@ object CloudModelClient {
         turns: List<ChatMessage>,
         systemPrompt: String,
         onToolEvent: ((CloudToolEvent) -> Unit)?,
-        contextWindow: Int
+        contextWindow: Int,
+        images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
@@ -843,6 +863,7 @@ object CloudModelClient {
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)
+        CloudVisionPayloadEncoder.attachGemini(contents, images)
         val body = JSONObject()
             .put("system_instruction", JSONObject().put("parts", JSONArray()
                 .put(JSONObject().put("text", systemPromptWithContext(effectiveSystemPrompt, compiled.summary)))

@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+extension Notification.Name {
+  static let signalASIDesktopMarketplaceDidUpdate = Notification.Name(
+    "signalasi.desktopMarketplaceDidUpdate"
+  )
+}
+
 enum AgentMcpJSONValue: Codable, Equatable {
   case string(String)
   case int(Int64)
@@ -652,10 +658,26 @@ struct AgentDesktopMarketplaceManifest: Codable, Equatable {
 }
 
 final class AgentDesktopMarketplaceStore {
+  static let shared = AgentDesktopMarketplaceStore()
+
   private static let maxItemsPerDesktop = 512
   private static let maxText = 500
+  private static let persistenceKey = "signalasi.desktopMarketplace.manifests.v1"
   private var manifests: [String: AgentDesktopMarketplaceManifest] = [:]
   private let lock = NSLock()
+  private let userDefaults: UserDefaults
+
+  init(userDefaults: UserDefaults = .standard) {
+    self.userDefaults = userDefaults
+    guard let data = userDefaults.data(forKey: Self.persistenceKey),
+          let stored = try? JSONDecoder().decode(
+            [String: AgentDesktopMarketplaceManifest].self,
+            from: data
+          ) else {
+      return
+    }
+    manifests = stored
+  }
 
   @discardableResult
   func update(payload: AgentMcpJSONObject, nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
@@ -664,14 +686,20 @@ final class AgentDesktopMarketplaceStore {
     }
     lock.lock()
     manifests[manifest.desktopId] = manifest
+    let snapshot = manifests
     lock.unlock()
+    persist(snapshot)
+    NotificationCenter.default.post(name: .signalASIDesktopMarketplaceDidUpdate, object: manifest.desktopId)
     return true
   }
 
   func remove(desktopId: String) {
     lock.lock()
     manifests.removeValue(forKey: desktopId)
+    let snapshot = manifests
     lock.unlock()
+    persist(snapshot)
+    NotificationCenter.default.post(name: .signalASIDesktopMarketplaceDidUpdate, object: desktopId)
   }
 
   func list(
@@ -729,6 +757,11 @@ final class AgentDesktopMarketplaceStore {
       updatedAtMillis: nowMillis,
       items: items
     )
+  }
+
+  private func persist(_ snapshot: [String: AgentDesktopMarketplaceManifest]) {
+    guard let data = try? JSONEncoder().encode(snapshot) else { return }
+    userDefaults.set(data, forKey: Self.persistenceKey)
   }
 
   private static func item(
