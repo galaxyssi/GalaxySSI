@@ -3552,6 +3552,8 @@
 "signalasi.agent.model_selection.agent_section" = "AGENT 连接器";
 "signalasi.agent.model_selection.agent_subtitle" = "已连接且可用的 Agent";
 "signalasi.agent.model_selection.on_agent" = "Agent";
+"signalasi.agent.header.routing.auto" = "自动 · %@";
+"signalasi.agent.header.routing.manual" = "手动 · %@";
 "voice_settings_section_agent_runs" = "Agent 运行";
 "signalasi.voice_agent_runs.title" = "语音 Agent 运行";
 "signalasi.voice_agent_runs.refresh" = "刷新运行记录";
