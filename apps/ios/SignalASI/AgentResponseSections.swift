@@ -23,7 +23,10 @@ struct AgentResponseSectionLayout: Codable, Equatable {
 }
 
 enum AgentResponseSectionOrganizer {
-  static func organize(_ blocks: [AgentRichBlock]) -> AgentResponseSectionLayout {
+  static func organize(
+    _ blocks: [AgentRichBlock],
+    expandStructuredDetails: Bool = false
+  ) -> AgentResponseSectionLayout {
     guard !blocks.isEmpty else {
       return AgentResponseSectionLayout(collapsible: false, sections: [])
     }
@@ -55,7 +58,7 @@ enum AgentResponseSectionOrganizer {
       return AgentResponseSection(
         kind: kind,
         blocks: sectionBlocks,
-        expandedByDefault: kind == .finalAnswer
+        expandedByDefault: kind == .finalAnswer || expandStructuredDetails
       )
     }
 

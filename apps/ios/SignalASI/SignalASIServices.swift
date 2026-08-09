@@ -1443,7 +1443,7 @@ final class MessageCoordinator: ObservableObject {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
-    let requestText = agentGoalOverride
+    var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let outgoing = store.appendOutgoing(
@@ -1451,6 +1451,39 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId
     )
+    if contact.id == "hermes" {
+      let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
+        .filter { $0.id != outgoing.id && !$0.isSystem }
+      let clarification = AgentClarificationPolicy.decide(
+        goal: requestText,
+        hasAttachments: !attachments.isEmpty,
+        hasConversationContext: previousSessionMessages.contains { !$0.content.isBlank },
+        preferenceMode: store.agentPreferenceMode
+      )
+      if clarification.mode == .askLocally {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "local_clarification",
+          detail: clarification.question.rawValue,
+          status: .delivered
+        )
+        let response = store.appendIncoming(
+          localClarificationQuestion(clarification.question),
+          from: contact.id,
+          remoteMessageId: "clarification-\(outgoing.turnId)",
+          status: .delivered,
+          traceStage: "local_clarification_received",
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId
+        )
+        onIncomingMessage?(response)
+        return true
+      }
+      if clarification.mode == .askWithModel {
+        requestText = attachmentClarificationGoal(attachments)
+      }
+    }
     if contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
@@ -2551,6 +2584,55 @@ final class MessageCoordinator: ObservableObject {
     LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
       ? chinese
       : english
+  }
+
+  private func localClarificationQuestion(_ question: AgentClarificationQuestion) -> String {
+    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+    let english: String
+    let chinese: String
+    switch question {
+    case .taskGoal:
+      english = "What specific goal would you like me to complete?"
+      chinese = "你希望我完成什么具体目标？"
+    case .codeOutcome:
+      english = "What result should the code achieve?"
+      chinese = "你希望代码最终实现什么结果？"
+    case .controlAction:
+      english = "Which device should I control, and what action should I perform?"
+      chinese = "你希望我控制哪个设备并执行什么操作？"
+    case .researchTopic:
+      english = "What topic would you like me to research?"
+      chinese = "你希望我研究或搜索哪个主题？"
+    case .fileAction:
+      english = "What would you like me to do with the attached file?"
+      chinese = "你希望我对附件执行什么操作？"
+    case .memoryContent:
+      english = "What should I remember?"
+      chinese = "你希望我记住什么内容？"
+    case .automationDetails:
+      english = "What trigger and action should this automation use?"
+      chinese = "请说明自动化任务的触发条件和要执行的动作。"
+    case .none:
+      english = "What would you like me to do?"
+      chinese = "你希望我做什么？"
+    }
+    return zh ? chinese : english
+  }
+
+  private func attachmentClarificationGoal(_ attachments: [SignalASIDraftAttachment]) -> String {
+    let language = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    let prompt = SignalASILocalization.string(
+      "agent_attachment_default_goal",
+      fallback: "The user attached files without stating a task. Ask one concise question and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.",
+      language: language
+    )
+    let names = attachments
+      .map(\.displayName)
+      .filter { !$0.isBlank }
+      .joined(separator: ", ")
+    guard !names.isEmpty else { return prompt }
+    let label = language.hasPrefix("zh") ? "\u{9644}\u{4ef6}\u{540d}\u{79f0}\u{ff1a}" : "Attachment names: "
+    return prompt + "\n" + label + names
   }
 
   private func recordLocalNativeActionResult(
