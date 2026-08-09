@@ -13,6 +13,7 @@ struct SignalASIAgentComposerView: View {
   var canSend: Bool
   var hasPendingPrimaryAction: Bool
   var pendingPrimaryActionResumesTask: Bool
+  var pendingPrimaryActionApprovesTask: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -301,9 +302,19 @@ struct SignalASIAgentComposerView: View {
           onPendingPrimaryAction()
         }
       } label: {
-        Image(systemName: canSend ? "arrow.up" : (pendingPrimaryActionResumesTask ? "play.fill" : "xmark"))
+        Image(systemName: canSend
+          ? "arrow.up"
+          : pendingPrimaryActionResumesTask
+            ? "play.fill"
+            : pendingPrimaryActionApprovesTask
+              ? "checkmark"
+              : "xmark")
           .font(.system(size: 20, weight: .bold))
-          .foregroundColor(canSend || pendingPrimaryActionResumesTask ? .signalASIAccent : .signalASIAgentVoiceCancel)
+          .foregroundColor(
+            canSend || pendingPrimaryActionResumesTask || pendingPrimaryActionApprovesTask
+              ? .signalASIAccent
+              : .signalASIAgentVoiceCancel
+          )
           .frame(width: 54, height: 54)
           .background(Color.white)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -315,6 +326,8 @@ struct SignalASIAgentComposerView: View {
         ? t("signalasi.common.send", "Send")
         : pendingPrimaryActionResumesTask
           ? t("signalasi.agent.resume_task", "Resume task")
+          : pendingPrimaryActionApprovesTask
+            ? t("signalasi.agent.confirmation.allow_once", "Allow once")
           : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
