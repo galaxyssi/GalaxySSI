@@ -993,17 +993,20 @@ final class MessageCoordinator: ObservableObject {
 
   private func selectedLocalModel(for contact: SignalASIContact) -> LocalModelRuntimeProfile? {
     let selection = AgentModelSelectionSettings.selection()
-    guard contact.id == "hermes",
-          (selection.mode == .manual && selection.targetId == "local-llm" ||
-            !AgentModelSelectionSettings.hasStoredSelection() &&
-            store.modelPlannerSettings.enabled &&
-            store.modelPlannerSettings.cloudContactId == "local-llm") else {
+    guard contact.id == "hermes" else {
       return nil
     }
+    let manualSelection = selection.mode == .manual && selection.targetId == "local-llm"
+    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection() &&
+      store.modelPlannerSettings.enabled &&
+      store.modelPlannerSettings.cloudContactId == "local-llm"
+    guard manualSelection || legacySelection else { return nil }
     let profile = selection.mode == .manual
       ? LocalModelRuntimeCatalog.find(selection.modelId)
       : LocalModelRuntimeSettings.selectedProfile()
-    return LocalModelInferenceRuntime.shared.ready(profile: profile) ? profile : nil
+    let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+      LocalModelInferenceRuntime.shared.ready(profile: profile)
+    return ready ? profile : nil
   }
 
   private func selectedCloudModelContact(for contact: SignalASIContact) -> SignalASIContact? {

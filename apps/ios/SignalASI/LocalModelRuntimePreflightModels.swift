@@ -876,6 +876,56 @@ enum LocalModelRuntimeSettings {
     defaults.set(LocalModelRuntimeCatalog.find(profileId, defaults: defaults).id, forKey: keyProfile)
   }
 
+  static func enabledProfileIds(defaults: UserDefaults = .standard) -> Set<String> {
+    let knownIds = Set(LocalModelRuntimeCatalog.profiles(defaults: defaults).map(\.id))
+    if let stored = defaults.array(forKey: keyEnabledProfiles) as? [String] {
+      return Set(stored).intersection(knownIds)
+    }
+    let selected = selectedProfile(defaults: defaults)
+    return LocalModelRuntimeStorage().inspect(selected).installed ? [selected.id] : []
+  }
+
+  static func isProfileEnabled(
+    _ profile: LocalModelRuntimeProfile,
+    defaults: UserDefaults = .standard
+  ) -> Bool {
+    enabledProfileIds(defaults: defaults).contains(profile.id)
+  }
+
+  static func setProfileEnabled(
+    _ profile: LocalModelRuntimeProfile,
+    enabled: Bool,
+    defaults: UserDefaults = .standard
+  ) {
+    let knownIds = Set(LocalModelRuntimeCatalog.profiles(defaults: defaults).map(\.id))
+    guard knownIds.contains(profile.id) else { return }
+    var updated = enabledProfileIds(defaults: defaults)
+    if enabled {
+      updated.insert(profile.id)
+      setSelectedProfile(profile.id, defaults: defaults)
+    } else {
+      updated.remove(profile.id)
+      if selectedProfile(defaults: defaults).id == profile.id,
+         let fallback = updated.sorted().first {
+        setSelectedProfile(fallback, defaults: defaults)
+      }
+    }
+    defaults.set(Array(updated).sorted(), forKey: keyEnabledProfiles)
+  }
+
+  static func activeProfiles(defaults: UserDefaults = .standard) -> [LocalModelRuntimeProfile] {
+    let selectedId = selectedProfile(defaults: defaults).id
+    let storage = LocalModelRuntimeStorage()
+    return LocalModelRuntimeCatalog.profiles(defaults: defaults)
+      .filter { enabledProfileIds(defaults: defaults).contains($0.id) }
+      .filter { storage.inspect($0).installed }
+      .sorted { left, right in
+        if left.id == selectedId { return true }
+        if right.id == selectedId { return false }
+        return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
+      }
+  }
+
   static func contextTokens(defaults: UserDefaults = .standard) -> Int {
     let stored = defaults.object(forKey: keyContextTokens) as? Int ?? defaultContextTokens
     return stored.clamped(to: minContextTokens...maxContextTokens)
