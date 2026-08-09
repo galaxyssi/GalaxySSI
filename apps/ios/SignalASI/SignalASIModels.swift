@@ -29,3 +29,16 @@ enum SignalASIError: LocalizedError {
     }
   }
 }
+
+struct AgentManualTargetUnavailableError: LocalizedError, Equatable {
+  let targetName: String
+
+  init(targetName: String) {
+    let clean = targetName.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.targetName = clean.isEmpty ? "selected target" : String(clean.prefix(120))
+  }
+
+  var errorDescription: String? {
+    "The manually selected Agent target \"\(targetName)\" is currently unavailable. Choose another target or switch to Automatic."
+  }
+}
