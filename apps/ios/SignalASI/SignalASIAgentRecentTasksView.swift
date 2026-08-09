@@ -199,17 +199,22 @@ struct SignalASIAgentRecentTasksView: View {
       )
       return
     }
-    guard let contact = store.contact(id: "hermes") else {
-      statusText = t("signalasi.agent_tasks.retry_no_agent", "Agent conversation is not available")
-      return
-    }
     let goal = task.goal
     statusText = t("signalasi.agent_tasks.retrying", "Retrying task...")
-    Task {
-      await coordinator.send(goal, to: contact)
-      await MainActor.run {
-        statusText = t("signalasi.agent_tasks.retry_sent", "Task sent to Agent")
+    Task { @MainActor in
+      guard let contact = store.contact(id: "hermes") else {
+        statusText = t("signalasi.agent_tasks.retry_no_agent", "Agent conversation is not available")
+        return
       }
+      if let destination = store.agentSessionDestination(id: task.sessionId) {
+        _ = store.switchAgentSession(destination)
+      } else {
+        _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+      }
+      let sent = await coordinator.send(goal, to: contact)
+      statusText = sent
+        ? t("signalasi.agent_tasks.retry_sent", "Task sent to Agent")
+        : t("signalasi.agent_tasks.retry_failed", "The task could not be sent")
     }
   }
 
