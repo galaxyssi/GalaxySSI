@@ -2541,4 +2541,14 @@
     <string name="voice_entity_device">Device</string>
     <string name="voice_entity_negation">Negation</string>
     <string name="voice_entity_action">Action</string>
+    <string name="agent_header_session_title">%1$s ›</string>
+    <string name="agent_header_model_auto">‹ Auto</string>
+    <string name="agent_header_model_auto_with_name">‹ Auto · %1$s</string>
+    <string name="agent_header_model_manual">‹ %1$s</string>
+    <string name="agent_model_selection_title">Select model</string>
+    <string name="agent_model_selection_automatic">Auto</string>
+    <string name="agent_model_selection_automatic_subtitle">Choose by task, speed, privacy, and availability</string>
+    <string name="agent_model_selection_local_section">On-device models</string>
+    <string name="agent_model_selection_local_subtitle">Enabled · On device</string>
+    <string name="agent_model_selection_cloud_section">Cloud models</string>
 </resources>
