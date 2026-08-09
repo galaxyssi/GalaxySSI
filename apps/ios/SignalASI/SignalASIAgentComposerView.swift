@@ -498,7 +498,14 @@ private struct SignalASIAgentComposerTrayNavigationLink<Destination: View>: View
         minimumTouchSize: minimumTouchSize
       )
     }
-    .simultaneousGesture(TapGesture().onEnded { _ in onNavigate() })
+    .simultaneousGesture(
+      TapGesture().onEnded { _ in
+        // Let NavigationLink activate before removing the tray that owns it.
+        DispatchQueue.main.async {
+          onNavigate()
+        }
+      }
+    )
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
   }
