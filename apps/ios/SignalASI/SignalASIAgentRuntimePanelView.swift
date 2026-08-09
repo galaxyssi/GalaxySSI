@@ -518,7 +518,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var requirementRows: [SignalASIAgentRuntimeRow] {
-    [
+    var rows = [
       requirementRow(
         id: "screen",
         title: t("agent_accessibility_status_enabled", "Screen access: enabled"),
@@ -555,6 +555,29 @@ struct SignalASIAgentRuntimePanelView: View {
         systemImage: "brain"
       )
     ]
+    if let permissions = planTask?.planContext?.requiredPermissions {
+      rows.append(contentsOf: permissions.enumerated().map { index, permission in
+        planPermissionRow(permission, index: index)
+      })
+    }
+    return rows
+  }
+
+  private func planPermissionRow(
+    _ permission: AgentPermissionRequirement,
+    index: Int
+  ) -> SignalASIAgentRuntimeRow {
+    let status = permission.granted
+      ? t("agent_requirement_granted", "Ready")
+      : t("agent_requirement_missing", "Needed")
+    return SignalASIAgentRuntimeRow(
+      id: "plan-permission-\(permission.id)-\(index)",
+      title: permission.title.ifBlank(permission.id),
+      detail: permission.id,
+      badge: status,
+      systemImage: permission.granted ? "checkmark.circle.fill" : "exclamationmark.circle",
+      tint: permission.granted ? .signalASIAccent : .orange
+    )
   }
 
   private var planContextRows: [SignalASIAgentRuntimeRow] {

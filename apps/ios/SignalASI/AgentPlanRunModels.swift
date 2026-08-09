@@ -18,6 +18,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
   var activeCheckpointCount: Int
   var toolGraphDepth: Int
   var requiredPermissionCount: Int
+  var requiredPermissions: [AgentPermissionRequirement]
   var timeoutSeconds: Int
   var confirmationRequired: Bool
 
@@ -38,8 +39,32 @@ struct AgentTaskPlanContext: Codable, Equatable {
     case activeCheckpointCount = "active_checkpoint_count"
     case toolGraphDepth = "tool_graph_depth"
     case requiredPermissionCount = "required_permission_count"
+    case requiredPermissions = "required_permissions"
     case timeoutSeconds = "timeout_seconds"
     case confirmationRequired = "confirmation_required"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    planId = try container.decode(String.self, forKey: .planId)
+    plannerProfile = try container.decode(String.self, forKey: .plannerProfile)
+    selectedAgentOrModel = try container.decode(String.self, forKey: .selectedAgentOrModel)
+    routeKind = try container.decode(AgentRouteKind.self, forKey: .routeKind)
+    routeTargetTitle = try container.decode(String.self, forKey: .routeTargetTitle)
+    routeStatus = try container.decode(String.self, forKey: .routeStatus)
+    routeRationale = try container.decode(String.self, forKey: .routeRationale)
+    expectedResult = try container.decode(String.self, forKey: .expectedResult)
+    rollbackStrategy = try container.decode(String.self, forKey: .rollbackStrategy)
+    revision = try container.decode(Int.self, forKey: .revision)
+    replanCount = try container.decode(Int.self, forKey: .replanCount)
+    actionCount = try container.decode(Int.self, forKey: .actionCount)
+    actionHistoryCount = try container.decode(Int.self, forKey: .actionHistoryCount)
+    activeCheckpointCount = try container.decode(Int.self, forKey: .activeCheckpointCount)
+    toolGraphDepth = try container.decode(Int.self, forKey: .toolGraphDepth)
+    requiredPermissionCount = try container.decode(Int.self, forKey: .requiredPermissionCount)
+    requiredPermissions = try container.decodeIfPresent([AgentPermissionRequirement].self, forKey: .requiredPermissions) ?? []
+    timeoutSeconds = try container.decode(Int.self, forKey: .timeoutSeconds)
+    confirmationRequired = try container.decode(Bool.self, forKey: .confirmationRequired)
   }
 
   init(plan: AgentPlan) {
@@ -59,6 +84,7 @@ struct AgentTaskPlanContext: Codable, Equatable {
     activeCheckpointCount = plan.checkpoints.filter { $0.status == .active }.count
     toolGraphDepth = AgentToolCoordination.toolGraphDepth(plan)
     requiredPermissionCount = plan.requiredPermissions.count
+    requiredPermissions = plan.requiredPermissions
     timeoutSeconds = plan.timeoutSeconds
     confirmationRequired = plan.confirmationRequired
   }
