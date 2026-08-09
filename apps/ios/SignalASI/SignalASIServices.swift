@@ -1119,6 +1119,66 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func publishRemoteAgentConversationDelete(
+    conversationId: String,
+    taskIds: [String]
+  ) async -> Bool {
+    let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanConversationId.isEmpty else { return false }
+    let cleanTaskIds = Array(
+      Set(taskIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    ).sorted()
+    let hermes = store.contact(id: "hermes")
+    let hermesDesktopId = hermes?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let hermesTopic = hermes?.mqttTopic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let pairedLinks = store.serverLinks.filter(\.paired)
+    let link = pairedLinks.first {
+      !hermesDesktopId.isEmpty && $0.desktopId == hermesDesktopId
+    } ?? pairedLinks.first {
+      !hermesTopic.isEmpty && $0.routes.upTopic == hermesTopic
+    } ?? (pairedLinks.count == 1 ? pairedLinks.first : nil)
+    guard let link else {
+      lastError = "No paired Desktop route is available for conversation cleanup"
+      return false
+    }
+    let payload: [String: Any] = [
+      "type": "agent_conversation_delete",
+      "conversation_id": cleanConversationId,
+      "task_ids": cleanTaskIds,
+      "cleanup_scope": "records_and_temporary_files",
+      "contact_id": "hermes",
+      "agent_id": hermes?.connectorAgentId ?? "",
+      "desktop_id": link.desktopId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      lastError = "Conversation cleanup payload could not be encoded"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      clientSourceMessageId: cleanConversationId,
+      contactId: "hermes"
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func requestDesktopArtifactDownload(block: AgentRichBlock) async -> Bool {
     let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
