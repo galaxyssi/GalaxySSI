@@ -13,6 +13,7 @@ struct SignalASIAgentRuntimePanelView: View {
   var onCyclePermissionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
+  var onToggleExecutionPaused: () -> Void
   var onOpenRecentTasks: () -> Void
   var t: (String, String) -> String
 
@@ -149,24 +150,36 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var controlStrip: some View {
-    HStack(spacing: 8) {
+    VStack(spacing: 8) {
+      HStack(spacing: 8) {
+        runtimeControlButton(
+          title: String(
+            format: t("agent_safety_permission_mode_value", "Mode: %@"),
+            permissionModeTitle(safetySettings.permissionMode)
+          ),
+          tint: .signalASITextPrimary,
+          action: onCyclePermissionMode
+        )
+        runtimeControlButton(
+          title: String(format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"), onOff(safetySettings.highRiskGuard)),
+          tint: safetySettings.highRiskGuard ? .signalASIAccent : .orange,
+          action: onToggleHighRiskGuard
+        )
+        runtimeControlButton(
+          title: String(format: t("agent_safety_memory_capture_value", "Memory: %@"), onOff(safetySettings.memoryCapture)),
+          tint: safetySettings.memoryCapture ? .signalASIAccent : .orange,
+          action: onToggleMemoryCapture
+        )
+      }
       runtimeControlButton(
         title: String(
-          format: t("agent_safety_permission_mode_value", "Mode: %@"),
-          permissionModeTitle(safetySettings.permissionMode)
+          format: t("agent_safety_execution_value", "Execution: %@"),
+          safetySettings.executionPaused
+            ? t("signalasi.status.paused", "Paused")
+            : t("common_on", "On")
         ),
-        tint: .signalASITextPrimary,
-        action: onCyclePermissionMode
-      )
-      runtimeControlButton(
-        title: String(format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"), onOff(safetySettings.highRiskGuard)),
-        tint: safetySettings.highRiskGuard ? .signalASIAccent : .orange,
-        action: onToggleHighRiskGuard
-      )
-      runtimeControlButton(
-        title: String(format: t("agent_safety_memory_capture_value", "Memory: %@"), onOff(safetySettings.memoryCapture)),
-        tint: safetySettings.memoryCapture ? .signalASIAccent : .orange,
-        action: onToggleMemoryCapture
+        tint: safetySettings.executionPaused ? .orange : .signalASIAccent,
+        action: onToggleExecutionPaused
       )
     }
   }

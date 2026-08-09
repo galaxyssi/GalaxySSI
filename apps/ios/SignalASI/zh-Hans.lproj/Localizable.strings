@@ -69,6 +69,7 @@
 "agent_safety_permission_mode_value" = "模式：%@";
 "agent_safety_high_risk_guard_value" = "高危保护：%@";
 "agent_safety_memory_capture_value" = "记忆：%@";
+"agent_safety_execution_value" = "执行：%@";
 "agent_section_toolbox" = "工具箱";
 "agent_toolbox_empty" = "暂无可用本机工具";
 "agent_toolbox_meta" = "%@ / %@ 风险";

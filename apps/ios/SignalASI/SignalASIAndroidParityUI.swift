@@ -1721,6 +1721,9 @@ struct AgentHomeView: View {
       onToggleMemoryCapture: {
         store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
       },
+      onToggleExecutionPaused: {
+        store.updateAgentSafetySettings { $0.executionPaused.toggle() }
+      },
       onOpenRecentTasks: {
         recentTasksShortcutActive = true
       },
