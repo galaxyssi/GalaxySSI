@@ -869,25 +869,10 @@ struct AgentHomeView: View {
             recoverableAgentTaskBanner(recoverableAgentTask)
           }
           if hasOlderTranscriptMessages {
-            Button {
-              loadOlderTranscriptMessages()
-            } label: {
-              Label(
-                t("signalasi.agent.load_older", "Load earlier messages"),
-                systemImage: "arrow.up"
-              )
-              .font(.system(size: 13, weight: .semibold))
-              .foregroundColor(.signalASIInsightText)
-              .frame(maxWidth: .infinity, minHeight: 40)
-              .background(Color.signalASIInsightBackground)
-              .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                  .stroke(Color.signalASIInsightStroke, lineWidth: 1)
-              )
-              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(t("signalasi.agent.load_older", "Load earlier messages")))
+            SignalASIAgentLoadOlderButton(
+              title: t("signalasi.agent.load_older", "Load earlier messages"),
+              action: loadOlderTranscriptMessages
+            )
           }
           if let pendingConfirmationTask {
             SignalASIAgentConfirmationCard(
@@ -928,17 +913,10 @@ struct AgentHomeView: View {
               activeExecutionTask == nil &&
               activeRemoteAgentTask == nil &&
               recoverableAgentTasksFromOtherSessions.isEmpty {
-            VStack(spacing: 10) {
-              SignalASILogoView(size: 48, cornerRadius: 10)
-              Text(t("signalasi.agent.empty.title", "How can I help?"))
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.signalASITextPrimary)
-              Text(t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"))
-                .font(.system(size: 13))
-                .foregroundColor(.signalASITextSecondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 180)
-            .accessibilityElement(children: .combine)
+            SignalASIAgentEmptyStateView(
+              title: t("signalasi.agent.empty.title", "How can I help?"),
+              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
+            )
           } else {
             if let activeRemoteAgentTask {
               SignalASIAgentExecutionStatusCard(
@@ -1184,30 +1162,15 @@ struct AgentHomeView: View {
         }
       }
       if transcriptShowLatestButton, let last = messages.last {
-            Button {
+            SignalASIAgentLatestButton(
+              title: t("signalasi.agent.latest", "Back to latest")
+            ) {
               transcriptAutoFollow = true
               transcriptShowLatestButton = false
               withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
                 proxy.scrollTo(last.id, anchor: .bottom)
               }
-            } label: {
-              Label(
-                t("signalasi.agent.latest", "Back to latest"),
-                systemImage: "arrow.down"
-              )
-              .font(.system(size: 13, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-              .padding(.horizontal, 12)
-              .frame(minHeight: 40)
-              .background(Color.signalASIBarBackground)
-              .overlay(
-                Capsule(style: .continuous)
-                  .stroke(Color.signalASIInputStroke, lineWidth: 0.8)
-              )
-              .clipShape(Capsule(style: .continuous))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(t("signalasi.agent.latest", "Back to latest")))
             .padding(.trailing, 16)
             .padding(.bottom, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
