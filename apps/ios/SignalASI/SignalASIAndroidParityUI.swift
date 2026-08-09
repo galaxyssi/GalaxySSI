@@ -152,6 +152,8 @@ struct AgentHomeView: View {
   @State private var voiceTranscriptionPending = false
   @State private var transcriptAutoFollow = true
   @State private var transcriptShowLatestButton = false
+  @State private var visibleAgentMessageLimit = 24
+  @State private var olderTranscriptAnchor: UUID?
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
@@ -205,6 +207,17 @@ struct AgentHomeView: View {
     return allMessages.filter {
       $0.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+  }
+
+  private static let agentTranscriptPageSize = 24
+
+  private var transcriptMessages: [ChatMessage] {
+    guard messages.count > visibleAgentMessageLimit else { return messages }
+    return Array(messages.suffix(visibleAgentMessageLimit))
+  }
+
+  private var hasOlderTranscriptMessages: Bool {
+    messages.count > visibleAgentMessageLimit
   }
 
   private var waitingMessageIDs: Set<UUID> {
@@ -452,6 +465,28 @@ struct AgentHomeView: View {
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
         LazyVStack(spacing: 10) {
+          if hasOlderTranscriptMessages {
+            Button {
+              olderTranscriptAnchor = transcriptMessages.first?.id
+              visibleAgentMessageLimit += Self.agentTranscriptPageSize
+            } label: {
+              Label(
+                t("signalasi.agent.load_older", "Load earlier messages"),
+                systemImage: "arrow.up"
+              )
+              .font(.system(size: 13, weight: .semibold))
+              .foregroundColor(.signalASIInsightText)
+              .frame(maxWidth: .infinity, minHeight: 40)
+              .background(Color.signalASIInsightBackground)
+              .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                  .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+              )
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.agent.load_older", "Load earlier messages")))
+          }
           if let pendingConfirmationTask {
             SignalASIAgentConfirmationCard(
               task: pendingConfirmationTask,
@@ -482,7 +517,7 @@ struct AgentHomeView: View {
             .frame(maxWidth: .infinity, minHeight: 180)
             .accessibilityElement(children: .combine)
           } else {
-            ForEach(messages) { message in
+            ForEach(transcriptMessages) { message in
               MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
                 .contextMenu {
@@ -534,6 +569,27 @@ struct AgentHomeView: View {
         )
       }
       .background(Color.signalASIPageBackground)
+      .onChange(of: visibleAgentMessageLimit) { _ in
+        guard let anchor = olderTranscriptAnchor else { return }
+        DispatchQueue.main.async {
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(anchor, anchor: .top)
+          }
+          olderTranscriptAnchor = nil
+        }
+      }
+      .onChange(of: store.activeAgentConversationId) { _ in
+        visibleAgentMessageLimit = Self.agentTranscriptPageSize
+        olderTranscriptAnchor = nil
+        transcriptAutoFollow = true
+        transcriptShowLatestButton = false
+        DispatchQueue.main.async {
+          guard let last = messages.last else { return }
+          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+            proxy.scrollTo(last.id, anchor: .bottom)
+          }
+        }
+      }
       .onAppear {
         transcriptAutoFollow = true
         transcriptShowLatestButton = false
