@@ -192,7 +192,29 @@ extension SignalASIStoreTests {
     XCTAssertFalse(reply.retryable)
   }
 
-  func testAgentIOSNotificationCatalogDefaultsToBoundaryAvailability() throws {
+  func testAgentIOSOwnedNotificationProviderListsSignalASINotifications() {
+    let store = AgentIOSOwnedNotificationStore()
+    let provider = AgentIOSOwnedNotificationToolProvider(store: store)
+    _ = store.record(
+      identifier: "owned-notification-1",
+      title: "Agent ready",
+      body: "Codex finished the requested task.",
+      category: "agent_action",
+      postedAtMillis: 12_000
+    )
+
+    let snapshot = provider.snapshot(limit: 6)
+
+    XCTAssertTrue(snapshot.hasAccess)
+    XCTAssertEqual(snapshot.totalCount, 1)
+    XCTAssertEqual(snapshot.items.first?.key, "owned-notification-1")
+    XCTAssertEqual(snapshot.items.first?.packageName, "com.signalasi.ios")
+    XCTAssertEqual(snapshot.items.first?.textPreview, "Codex finished the requested task.")
+    XCTAssertFalse(snapshot.items.first?.canReply ?? true)
+    XCTAssertTrue(snapshot.sensitiveFlags.contains("ios_third_party_notification_history_unavailable"))
+  }
+
+  func testAgentIOSNotificationCatalogDefaultsToOwnedNotificationAvailability() throws {
     let definitions = AgentIOSNotificationNativeToolCatalog.definitions()
     let phoneDefinitions = AgentPhoneNativeToolCatalog.definitions(
       capabilityStatuses: readyPhoneCapabilityStatuses()
@@ -204,14 +226,14 @@ extension SignalASIStoreTests {
     XCTAssertEqual(Set(definitions.map(\.id)), AgentIOSNotificationNativeToolCatalog.toolIds)
     definitions.forEach { definition in
       XCTAssertEqual(definition.descriptor.availability.status, .available)
-      XCTAssertTrue(definition.descriptor.availability.reason.contains("third-party notification history"))
-      XCTAssertEqual(definition.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+      XCTAssertTrue(definition.descriptor.availability.reason.contains("SignalASI-owned notification state"))
+      XCTAssertEqual(definition.provenanceMetadata["implementation"], "signalasi.ios.owned_notification_store")
     }
     XCTAssertEqual(phoneNotification.descriptor.availability.status, .available)
-    XCTAssertEqual(phoneNotification.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+    XCTAssertEqual(phoneNotification.provenanceMetadata["implementation"], "signalasi.ios.owned_notification_store")
   }
 
-  func testAgentPhoneNativeToolCatalogDefaultRegistryUsesNotificationBoundaryProvider() throws {
+  func testAgentPhoneNativeToolCatalogDefaultRegistryUsesOwnedNotificationProvider() throws {
     let registry = try AgentPhoneNativeToolCatalog.createRegistry(
       actionExecutor: TestAgentActionExecutor { action, _ in
         AgentActionResult(actionId: action.id, success: true, message: "unused")
@@ -223,8 +245,8 @@ extension SignalASIStoreTests {
     let listDefinition = try XCTUnwrap(registry.lookup(AgentIOSNotificationNativeToolCatalog.notificationsList))
 
     XCTAssertEqual(listDefinition.availabilityProvider.current().status, .available)
-    XCTAssertTrue(listDefinition.availabilityProvider.current().reason.contains("third-party notification history"))
-    XCTAssertEqual(listDefinition.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+    XCTAssertTrue(listDefinition.availabilityProvider.current().reason.contains("SignalASI-owned notification state"))
+    XCTAssertEqual(listDefinition.provenanceMetadata["implementation"], "signalasi.ios.owned_notification_store")
 
     let listContext = AgentNativeToolInvocationContext(
       invocationId: "notification-boundary-list",

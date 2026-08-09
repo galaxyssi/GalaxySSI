@@ -17,7 +17,9 @@ struct SignalASIVoiceTabView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           wakeSurface
-          if !submitStatus.isEmpty || !holdToTalk.statusMessage.isEmpty {
+          if isVoiceProcessing {
+            voiceProcessingStrip(title: voiceProcessingTitle, subtitle: voiceProcessingSubtitle)
+          } else if !submitStatus.isEmpty || !holdToTalk.statusMessage.isEmpty {
             statusStrip
           }
           liveTranscriptSection
@@ -121,7 +123,18 @@ struct SignalASIVoiceTabView: View {
 
   private var holdToTalkSurface: some View {
     VStack(spacing: 8) {
-      if holdToTalk.isRecording {
+      if holdToTalk.isPending {
+        Text(t("signalasi.voice.preparing_title", "Preparing voice input"))
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(.white)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+        AgentVoiceProcessingIndicator(
+          title: t("signalasi.voice.preparing_title", "Preparing voice input"),
+          subtitle: t("signalasi.voice.preparing_subtitle", "Requesting microphone and speech recognition access.")
+        )
+        .padding(.horizontal, 8)
+      } else if holdToTalk.isRecording {
         Text(holdToTalk.cancelPending
           ? t("voice_release_to_cancel", "Release to cancel")
           : t("agent_voice_recording_hint", "Release to send / Swipe up to cancel"))
@@ -192,6 +205,59 @@ struct SignalASIVoiceTabView: View {
       .padding(10)
       .background(Color.signalASISurface)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func voiceProcessingStrip(title: String, subtitle: String) -> some View {
+    AgentVoiceProcessingIndicator(title: title, subtitle: subtitle)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var isVoiceProcessing: Bool {
+    switch voiceState.phase {
+    case .finalizingASR, .routing, .executingLocalAction,
+         .waitingModelFirstToken, .startingAgent, .agentRunning:
+      return true
+    default:
+      return false
+    }
+  }
+
+  private var voiceProcessingTitle: String {
+    switch voiceState.phase {
+    case .finalizingASR:
+      return t("signalasi.voice.processing_transcribing", "Recognizing voice")
+    case .routing:
+      return t("signalasi.voice.processing_routing", "Routing voice task")
+    case .executingLocalAction:
+      return t("signalasi.voice.processing_local_action", "Running phone action")
+    case .waitingModelFirstToken:
+      return t("signalasi.voice.processing_model", "Waiting for model")
+    case .startingAgent, .agentRunning:
+      return t("signalasi.voice.processing_agent", "Waiting for Agent")
+    default:
+      return t("signalasi.voice.processing_title", "Processing voice input")
+    }
+  }
+
+  private var voiceProcessingSubtitle: String {
+    switch voiceState.phase {
+    case .finalizingASR:
+      return t("signalasi.voice.processing_transcribing_detail", "Finalizing the local transcript.")
+    case .routing:
+      return t("signalasi.voice.processing_routing_detail", "Selecting the configured voice destination.")
+    case .executingLocalAction:
+      return t("signalasi.voice.processing_local_action_detail", "The phone Agent is executing the requested action.")
+    case .waitingModelFirstToken:
+      return t("signalasi.voice.processing_model_detail", "The selected model is preparing its first response.")
+    case .startingAgent, .agentRunning:
+      return t("signalasi.voice.processing_agent_detail", "The selected Agent is working on the request.")
+    default:
+      return t("signalasi.voice.processing_detail", "Voice input is being prepared.")
+    }
   }
 
   private var liveTranscriptSection: some View {

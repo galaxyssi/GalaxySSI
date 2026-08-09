@@ -3,11 +3,13 @@ import BackgroundTasks
 import CoreImage
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
   @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
   @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
@@ -16,6 +18,9 @@ struct SignalASIApp: App {
     let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: coordinator)
+    _voiceAgentRunRecovery = StateObject(
+      wrappedValue: VoiceAgentRunRecoveryCoordinator.shared
+    )
     _workflowTriggerCoordinator = StateObject(
       wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
     )
@@ -29,9 +34,11 @@ struct SignalASIApp: App {
       RootView()
         .environmentObject(store)
         .environmentObject(coordinator)
+        .environmentObject(voiceAgentRunRecovery)
         .signalASITextScale(store.displaySettings)
         .onAppear {
           coordinator.start()
+          voiceAgentRunRecovery.start()
           workflowTriggerCoordinator.start()
           backgroundScheduler.start()
         }
@@ -104,7 +111,7 @@ struct ChatListView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: "SignalASI",
-          leading: { Color.clear },
+          leading: { SignalASIBackButton() },
           trailing: { Color.clear }
         )
         VStack(spacing: 10) {
@@ -230,6 +237,11 @@ struct ConversationView: View {
   @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
+  @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
+  @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
+  @State private var runtimeArtifactExportPresented = false
+  @State private var runtimeArtifactExportFilename = ""
+  @State private var runtimeArtifactError = ""
   @State private var agentSessionsShortcutActive = false
   @State private var scanShortcutActive = false
   var contactId: String
@@ -255,6 +267,13 @@ struct ConversationView: View {
       return all
     }
     return all.filter { $0.conversationId == active.id }
+  }
+
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: displayedMessages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
   }
 
   private var contactStatusText: String {
@@ -283,7 +302,7 @@ struct ConversationView: View {
         ScrollView {
           LazyVStack(spacing: 10) {
             ForEach(displayedMessages) { message in
-              MessageBubble(message: message)
+              MessageBubble(message: message, onAction: handleRichAction)
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -302,10 +321,11 @@ struct ConversationView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
-            }
-            if waitingForAgentReply {
-              SignalASIAgentReplyWaitingIndicator()
-                .id(Self.replyWaitingViewId)
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
           }
           .padding(.horizontal, 12)
@@ -314,21 +334,22 @@ struct ConversationView: View {
         }
         .background(Color.signalASIPageBackground)
         .onChange(of: displayedMessages.count) { _ in
-          if waitingForAgentReply {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
-            }
-          } else if let last = displayedMessages.last {
+          if let last = displayedMessages.last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
           }
           store.markContactRead(contact.id)
         }
-        .onChange(of: waitingForAgentReply) { waiting in
-          guard waiting else { return }
+        .onChange(of: waitingMessageIDs.count) { _ in
+          guard let last = displayedMessages.last else { return }
           withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
+            proxy.scrollTo(
+              waitingMessageIDs.contains(last.id)
+                ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+                : last.id,
+              anchor: .bottom
+            )
           }
         }
       }
@@ -438,6 +459,32 @@ struct ConversationView: View {
     }
     .sheet(item: $selectedMessageForDetails) { message in
       SignalASIMessageActionsView(message: message, contact: contact)
+    }
+    .sheet(item: $runtimeArtifactPreview) { preview in
+      SignalASIRuntimeArtifactPreviewView(preview: preview)
+    }
+    .fileExporter(
+      isPresented: $runtimeArtifactExportPresented,
+      document: runtimeArtifactDocument,
+      contentType: .data,
+      defaultFilename: runtimeArtifactExportFilename
+    ) { result in
+      if case .failure(let error) = result {
+        runtimeArtifactError = error.localizedDescription
+      }
+    }
+    .alert(
+      t("runtime_artifact.error.title", "Artifact unavailable"),
+      isPresented: Binding(
+        get: { !runtimeArtifactError.isEmpty },
+        set: { if !$0 { runtimeArtifactError = "" } }
+      )
+    ) {
+      Button(t("signalasi.common.done", "Done"), role: .cancel) {
+        runtimeArtifactError = ""
+      }
+    } message: {
+      Text(runtimeArtifactError)
     }
     .sheet(isPresented: $cloudModelSwitchPresented) {
       NavigationView {
@@ -602,17 +649,43 @@ struct ConversationView: View {
     contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
   }
 
-  private var waitingForAgentReply: Bool {
-    guard isAgentSessionContact,
-          let latest = displayedMessages.last,
-          latest.isMine,
-          !latest.isSystem else {
-      return false
-    }
-    return latest.deliveryStatus != .failed
+  private var runtimeArtifactManagedRoots: [URL] {
+    let root = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    return [
+      root,
+      root.appendingPathComponent("runs", isDirectory: true),
+      root.appendingPathComponent("runs/artifacts", isDirectory: true),
+      root.appendingPathComponent("artifacts", isDirectory: true)
+    ]
   }
 
-  private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
+  private func handleRichAction(_ action: AgentRichAction) {
+    guard action.verb == "preview_runtime_artifact" || action.verb == "save_runtime_artifact" else {
+      return
+    }
+    guard let payload = AgentRuntimeArtifactActionPayload.decode(action.value) else {
+      runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
+      return
+    }
+    do {
+      let file = try AgentRuntimeArtifactUi.resolve(
+        payload: payload,
+        managedRoots: runtimeArtifactManagedRoots
+      )
+      if action.verb == "preview_runtime_artifact" {
+        runtimeArtifactPreview = SignalASIRuntimeArtifactPreview(
+          title: payload.displayName,
+          content: try AgentRuntimeArtifactUi.preview(file: file)
+        )
+      } else {
+        runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
+        runtimeArtifactExportFilename = payload.displayName
+        runtimeArtifactExportPresented = true
+      }
+    } catch {
+      runtimeArtifactError = error.localizedDescription
+    }
+  }
 
   private func dismissAttachmentMenu(then action: @escaping () -> Void) {
     withAnimation(.easeIn(duration: 0.12)) {
@@ -781,6 +854,7 @@ struct MessageDetailView: View {
 
 struct MessageBubble: View {
   var message: ChatMessage
+  var onAction: (AgentRichAction) -> Void = { _ in }
 
   var body: some View {
     HStack {
@@ -789,7 +863,8 @@ struct MessageBubble: View {
         SignalASIRichContentView(
           content: message.content,
           richOutputJson: message.richOutputJson,
-          isOutgoing: message.isMine
+          isOutgoing: message.isMine,
+          onAction: onAction
         )
           .padding(.horizontal, 12)
           .padding(.vertical, 9)
@@ -826,52 +901,80 @@ struct MessageBubble: View {
   }
 }
 
-struct SignalASIAgentReplyWaitingIndicator: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @State private var isAnimating = false
+struct SignalASIRuntimeArtifactPreview: Identifiable {
+  let id = UUID()
+  let title: String
+  let content: String
+}
 
-  var body: some View {
-    HStack(spacing: 8) {
-      Text(t("signalasi.agent.reply_waiting", "Waiting for reply"))
-        .font(.footnote)
-      HStack(spacing: 4) {
-        ForEach(0..<3, id: \.self) { index in
-          Circle()
-            .fill(Color.signalASITextSecondary)
-            .frame(width: 5, height: 5)
-            .scaleEffect(isAnimating ? 1 : 0.55)
-            .opacity(isAnimating ? 1 : 0.35)
-            .animation(
-              .easeInOut(duration: 0.6)
-                .repeatForever()
-                .delay(Double(index) * 0.14),
-              value: isAnimating
-            )
-        }
-      }
-      Spacer(minLength: 0)
-    }
-    .foregroundColor(.signalASITextSecondary)
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.signalASIButtonSoft)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    .onAppear {
-      isAnimating = true
-    }
-    .accessibilityLabel(t("signalasi.agent.reply_waiting", "Waiting for reply"))
+struct SignalASIRuntimeArtifactDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.data] }
+  static var writableContentTypes: [UTType] { [.data] }
+
+  var data: Data
+
+  init(data: Data = Data()) {
+    self.data = data
   }
 
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  init(configuration: ReadConfiguration) throws {
+    data = configuration.file.regularFileContents ?? Data()
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
+  }
+}
+
+struct SignalASIRuntimeArtifactPreviewView: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  let preview: SignalASIRuntimeArtifactPreview
+  @State private var copied = false
+
+  var body: some View {
+    NavigationView {
+      ScrollView {
+        Text(preview.content)
+          .font(.system(size: 13, design: .monospaced))
+          .foregroundColor(.signalASITextPrimary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(14)
+      }
+      .background(Color.signalASIPageBackground)
+      .navigationTitle(preview.title)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(SignalASILocalization.string("signalasi.common.done", fallback: "Done", language: interfaceLanguage)) {
+            dismiss()
+          }
+        }
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            UIPasteboard.general.string = preview.content
+            copied = true
+          } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+          }
+          .accessibilityLabel(
+            SignalASILocalization.string(
+              copied ? "rich_output_copied" : "rich_output_copy",
+              fallback: copied ? "Copied" : "Copy",
+              language: interfaceLanguage
+            )
+          )
+        }
+      }
+    }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 }
 
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @State private var myQRCodePresented = false
   @State private var contactSearchText = ""
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
@@ -930,16 +1033,7 @@ struct ContactsView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.tab.contacts", "Contacts"),
-          leading: {
-            Button {
-              myQRCodePresented = true
-            } label: {
-              Image(systemName: "qrcode")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundColor(.signalASITextPrimary)
-            }
-            .buttonStyle(.plain)
-          },
+          leading: { SignalASIBackButton() },
           trailing: {
             NavigationLink(destination: AddContactView()) {
               Image(systemName: "plus")
@@ -1045,9 +1139,6 @@ struct ContactsView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .sheet(isPresented: $myQRCodePresented) {
-        MyContactQRCodeView()
-      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -1236,13 +1327,17 @@ struct VoiceSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @ObservedObject private var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @StateObject private var speech = SpeechCaptureService()
-  @StateObject private var replySpeech = VoiceReplySpeechService()
+  @StateObject private var replySpeech = VoiceProgressiveReplySpeechService()
   @State private var permissionStatus = ""
   @State private var activeVoiceReplySessionId = ""
   @State private var activeVoiceReplyContactId = ""
   @State private var activeVoiceReplyRouteKind: VoiceRouteKind?
   @State private var activeVoiceReplyPlaybackSessionId = ""
+  @State private var progressiveVoiceReplySessionId = ""
+  @State private var progressiveVoiceReplyText = ""
+  @State private var voiceAgentRunListenerId = ""
 
   var body: some View {
     NavigationView {
@@ -1345,6 +1440,18 @@ struct VoiceSettingsView: View {
             }
           }
         }
+        Section(t("voice_settings_section_agent_runs", "Agent runs")) {
+          NavigationLink(destination: SignalASIVoiceAgentRunsView()) {
+            HStack {
+              Image(systemName: "waveform.badge.mic")
+                .foregroundColor(.signalASIAccent)
+              Text(t("signalasi.voice_agent_runs.title", "Voice Agent runs"))
+              Spacer()
+              Text("\(voiceAgentRunRecovery.activeSnapshots.count)")
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section(t("voice_settings_section_recorder", "Recorder")) {
           if speech.isRecording {
             Text(speech.transcript.ifBlank(t("voice_listening", "Listening...")))
@@ -1369,10 +1476,20 @@ struct VoiceSettingsView: View {
       }
       .navigationTitle(t("voice_settings_section_voice", "Voice"))
       .onAppear {
+        voiceAgentRunRecovery.start()
         coordinator.onIncomingMessage = handleIncomingVoiceReply
+        coordinator.onIncomingMessageDelta = handleIncomingVoiceReplyDelta
+        voiceAgentRunListenerId = VoiceAgentRunBridgeRegistry.shared.addListener(
+          handleVoiceAgentRunUpdate
+        )
       }
       .onDisappear {
         coordinator.onIncomingMessage = nil
+        coordinator.onIncomingMessageDelta = nil
+        if !voiceAgentRunListenerId.isEmpty {
+          VoiceAgentRunBridgeRegistry.shared.removeListener(voiceAgentRunListenerId)
+          voiceAgentRunListenerId = ""
+        }
         replySpeech.stop()
         if !activeVoiceReplySessionId.isEmpty {
           _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -1392,6 +1509,7 @@ struct VoiceSettingsView: View {
   }
 
   private func startRecording() async {
+    interruptActiveVoiceReply()
     let granted = await speech.requestAuthorization(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
     permissionStatus = granted ? "" : t("Microphone or speech permission is missing.", "Microphone or speech permission is missing.")
     guard granted else { return }
@@ -1400,6 +1518,20 @@ struct VoiceSettingsView: View {
       try speech.start(settings: store.voiceSettings)
     } catch {
       permissionStatus = error.localizedDescription
+    }
+  }
+
+  private func interruptActiveVoiceReply() {
+    let sessionId = activeVoiceReplySessionId
+    let hadPlayback = replySpeech.stop()
+    guard !sessionId.isEmpty else { return }
+    _ = VoiceAgentRunBridgeRegistry.shared.markCancellationRequested(sessionId: sessionId)
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .cancelled(sessionId: sessionId, reasonCode: "barge_in")
+    )
+    clearActiveVoiceReplySession(sessionId)
+    if hadPlayback {
+      permissionStatus = t("voice_reply_interrupted", "Voice reply interrupted.")
     }
   }
 
@@ -1419,12 +1551,46 @@ struct VoiceSettingsView: View {
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )
+    let executionTarget = AgentExecutionTargetStatusPolicy.resolveLabel(
+      connectorId: plan.routeDecision.targetId,
+      contactId: plan.contact.id,
+      runtimeTarget: plan.contact.displayName,
+      contacts: store.contacts
+    )
+    if !executionTarget.isBlank {
+      store.setAgentSessionSelectedModelOrAgent(
+        id: store.activeAgentConversationId,
+        label: executionTarget
+      )
+    }
     activeVoiceReplySessionId = plan.sessionId
     activeVoiceReplyContactId = plan.contact.id
     activeVoiceReplyRouteKind = plan.routeDecision.kind
     permissionStatus = String(format: t("Sending voice transcript to %@", "Sending voice transcript to %@"), plan.contact.displayName)
+    if plan.routeDecision.kind == .remoteAgent {
+      _ = VoiceAgentRunBridgeRegistry.shared.createRun(
+        VoiceAgentRunRequest(
+          sessionId: plan.sessionId,
+          conversationId: store.activeAgentConversationId,
+          turnId: plan.sessionId,
+          taskId: plan.sessionId,
+          sourceMessageId: plan.sessionId,
+          contactId: plan.contact.id,
+          agentId: plan.contact.signalASIId,
+          agentName: plan.contact.displayName,
+          goal: plan.text,
+          idempotencyKey: "voice:\(plan.sessionId)",
+          traceId: plan.sessionId,
+          createdAtMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+        )
+      )
+    }
     Task {
-      await coordinator.send(plan.text, to: plan.contact)
+      await coordinator.send(
+        plan.text,
+        to: plan.contact,
+        voiceSessionId: plan.routeDecision.kind == .remoteAgent ? plan.sessionId : ""
+      )
       await MainActor.run {
         finishVoiceSendIfNoReplyPlaybackStarted(plan)
       }
@@ -1441,13 +1607,24 @@ struct VoiceSettingsView: View {
     ) else {
       return
     }
+    if activeVoiceReplyRouteKind == .cloudModel,
+       progressiveVoiceReplySessionId == request.sessionId {
+      appendProgressiveVoiceReply(request: request, content: request.text, isFinal: true)
+      return
+    }
     switch activeVoiceReplyRouteKind {
     case .remoteAgent:
+      _ = VoiceAgentRunBridgeRegistry.shared.markFinalResult(
+        sessionId: request.sessionId,
+        content: request.text
+      )
+      let runId = VoiceAgentRunBridgeRegistry.shared.find(sessionId: request.sessionId)?.runId
+        ?? message.id.uuidString
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
-        .agentAccepted(sessionId: request.sessionId, runId: message.id.uuidString)
+        .agentAccepted(sessionId: request.sessionId, runId: runId)
       )
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
-        .agentProgress(sessionId: request.sessionId, runId: message.id.uuidString)
+        .agentProgress(sessionId: request.sessionId, runId: runId)
       )
     case .cloudModel:
       _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
@@ -1462,12 +1639,109 @@ struct VoiceSettingsView: View {
         .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
       )
       permissionStatus = t("Speaking reply", "Speaking reply")
-    } onDone: { done, _, _ in
-      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
-      if activeVoiceReplyPlaybackSessionId == done.sessionId {
-        activeVoiceReplyPlaybackSessionId = ""
+    } onDone: { done, success, _ in
+      completeVoiceReplyPlayback(done, success: success)
+    }
+  }
+
+  private func handleVoiceAgentRunUpdate(_ update: VoiceAgentRunUpdate) {
+    guard update.snapshot.sessionId == activeVoiceReplySessionId else { return }
+    if update.firstAcceptance {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentAccepted(sessionId: update.snapshot.sessionId, runId: update.snapshot.runId)
+      )
+    }
+    if update.firstProgress {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentProgress(sessionId: update.snapshot.sessionId, runId: update.snapshot.runId)
+      )
+    }
+    if !update.message.isEmpty {
+      permissionStatus = update.message
+    }
+    switch update.snapshot.state {
+    case .failed, .timedOut:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .failed(
+          sessionId: update.snapshot.sessionId,
+          failure: VoiceFailure(
+            code: update.snapshot.state.rawValue.lowercased(),
+            recoverable: true,
+            stage: .agentRunning,
+            detail: update.message.ifBlank("The remote Agent run failed.")
+          )
+        )
+      )
+      clearActiveVoiceReplySession(update.snapshot.sessionId)
+    case .cancelled:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .cancelled(sessionId: update.snapshot.sessionId, reasonCode: "remote_cancelled")
+      )
+      clearActiveVoiceReplySession(update.snapshot.sessionId)
+    case .created, .accepted, .queued, .starting, .running, .waitingInput, .waitingApproval, .cancelling, .completed:
+      break
+    }
+  }
+
+  private func handleIncomingVoiceReplyDelta(_ message: ChatMessage) {
+    guard activeVoiceReplyRouteKind == .cloudModel,
+          let request = VoiceReplyPlaybackPolicy.request(
+            message: message,
+            settings: store.voiceSettings,
+            languagePolicy: store.languagePolicy,
+            activeSessionId: activeVoiceReplySessionId,
+            activeTargetContactId: activeVoiceReplyContactId
+          ) else {
+      return
+    }
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .modelDelta(sessionId: request.sessionId, text: request.text)
+    )
+    if progressiveVoiceReplySessionId != request.sessionId {
+      progressiveVoiceReplySessionId = request.sessionId
+      progressiveVoiceReplyText = ""
+      activeVoiceReplyPlaybackSessionId = request.sessionId
+      replySpeech.beginProgressive(request) { started in
+        _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+          .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
+        )
+        permissionStatus = t("Speaking reply", "Speaking reply")
+      } onDone: { done, success, _ in
+        completeVoiceReplyPlayback(done, success: success)
       }
-      clearActiveVoiceReplySession(done.sessionId)
+    }
+    appendProgressiveVoiceReply(request: request, content: request.text, isFinal: false)
+  }
+
+  private func appendProgressiveVoiceReply(
+    request: VoiceReplyPlaybackRequest,
+    content: String,
+    isFinal: Bool
+  ) {
+    guard progressiveVoiceReplySessionId == request.sessionId else { return }
+    let normalized = String(content.prefix(VoiceReplyPlaybackPolicy.maximumSpokenCharacters))
+    let delta: String
+    if normalized.hasPrefix(progressiveVoiceReplyText) {
+      delta = String(normalized.dropFirst(progressiveVoiceReplyText.count))
+    } else {
+      delta = normalized
+    }
+    progressiveVoiceReplyText = normalized
+    replySpeech.appendProgressive(delta, isFinal: isFinal)
+  }
+
+  private func completeVoiceReplyPlayback(_ done: VoiceReplyPlaybackRequest, success: Bool) {
+    let wasActiveSession = activeVoiceReplySessionId == done.sessionId ||
+      activeVoiceReplyPlaybackSessionId == done.sessionId
+    if success {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
+    } else {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .cancelled(sessionId: done.sessionId, reasonCode: "tts_cancelled")
+      )
+    }
+    clearActiveVoiceReplySession(done.sessionId)
+    if wasActiveSession {
       permissionStatus = ""
     }
   }
@@ -1496,12 +1770,17 @@ struct VoiceSettingsView: View {
   }
 
   private func clearActiveVoiceReplySession(_ sessionId: String) {
-    guard activeVoiceReplySessionId == sessionId else { return }
-    activeVoiceReplySessionId = ""
-    activeVoiceReplyContactId = ""
-    activeVoiceReplyRouteKind = nil
+    if activeVoiceReplySessionId == sessionId {
+      activeVoiceReplySessionId = ""
+      activeVoiceReplyContactId = ""
+      activeVoiceReplyRouteKind = nil
+    }
     if activeVoiceReplyPlaybackSessionId == sessionId {
       activeVoiceReplyPlaybackSessionId = ""
+    }
+    if progressiveVoiceReplySessionId == sessionId {
+      progressiveVoiceReplySessionId = ""
+      progressiveVoiceReplyText = ""
     }
   }
 

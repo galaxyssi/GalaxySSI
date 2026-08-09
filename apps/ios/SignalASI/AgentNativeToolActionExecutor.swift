@@ -6,6 +6,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   var nowMillis: () -> Int64
   var workspaceIdProvider: (AgentAction, AgentScreenContext) -> String
   var eventSink: AgentNativeToolLifecycleEventSink
+  var maxRetries: Int
 
   init(
     registry: AgentNativeToolRegistry,
@@ -16,13 +17,15 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     workspaceIdProvider: @escaping (AgentAction, AgentScreenContext) -> String = { action, _ in
       AgentNativeToolActionExecutor.defaultWorkspaceId(for: action)
     },
-    eventSink: AgentNativeToolLifecycleEventSink = .none
+    eventSink: AgentNativeToolLifecycleEventSink = .none,
+    maxRetries: Int = 1
   ) {
     self.registry = registry
     self.delegate = delegate
     self.nowMillis = nowMillis
     self.workspaceIdProvider = workspaceIdProvider
     self.eventSink = eventSink
+    self.maxRetries = max(0, maxRetries)
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
@@ -47,37 +50,62 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     let workspaceId = Self.clean(workspaceIdProvider(action, screen))
     let scopedInput = Self.bindWorkspaceInput(toolId: toolId, input: input, workspaceId: workspaceId)
     let descriptor = definition.descriptor
+    let requestedVersion = Self.clean(action.parameters["tool_version"] ?? "")
+    guard requestedVersion.isEmpty || requestedVersion == descriptor.version else {
+      return Self.failure(
+        action,
+        "The proposed tool version does not match the phone manifest.",
+        code: "tool_version_mismatch",
+        toolId: toolId
+      )
+    }
     let idempotencyKey = Self.idempotencyKey(for: action, descriptor: descriptor)
-    let context = AgentNativeToolInvocationContext(
-      invocationId: Self.clean(action.parameters["invocation_id"] ?? "").nilIfEmpty ?? action.id,
-      sessionId: Self.clean(action.parameters[Self.sessionIdKey] ?? ""),
-      conversationId: Self.clean(action.parameters[Self.conversationIdKey] ?? ""),
-      turnId: Self.clean(action.parameters[Self.turnIdKey] ?? ""),
-      callerId: "signalasi.mobile_agent.plan",
-      requestedAtEpochMillis: nowMillis(),
-      deadlineEpochMillis: Self.deadlineEpochMillis(action: action, nowMillis: nowMillis()),
-      idempotencyKey: idempotencyKey,
-      grantedPermissions: Set(descriptor.requiredPermissions.filter(\.required).map(\.id)),
-      grantedConsents: Set(descriptor.requiredConsents.filter(\.required).map(\.id)),
-      attributes: Self.attributes(
-        action: action,
-        screen: screen,
-        workspaceId: workspaceId,
-        explicitUserApproval: action.requiresConfirmation
+    let baseInvocationId = Self.clean(action.parameters["invocation_id"] ?? "").nilIfEmpty ?? action.id
+    let deadlineEpochMillis = Self.deadlineEpochMillis(action: action, nowMillis: nowMillis())
+    let maximumAttempts = descriptor.idempotency == .nonIdempotent ? 1 : maxRetries + 1
+    var attempt = 0
+    var result: AgentNativeToolResult
+
+    repeat {
+      attempt += 1
+      let context = AgentNativeToolInvocationContext(
+        invocationId: Self.invocationId(base: baseInvocationId, attempt: attempt),
+        sessionId: Self.clean(action.parameters[Self.sessionIdKey] ?? ""),
+        conversationId: Self.clean(action.parameters[Self.conversationIdKey] ?? ""),
+        turnId: Self.clean(action.parameters[Self.turnIdKey] ?? ""),
+        callerId: "signalasi.mobile_agent.plan",
+        requestedAtEpochMillis: nowMillis(),
+        deadlineEpochMillis: deadlineEpochMillis,
+        idempotencyKey: idempotencyKey,
+        grantedPermissions: Set(descriptor.requiredPermissions.filter(\.required).map(\.id)),
+        grantedConsents: Set(descriptor.requiredConsents.filter(\.required).map(\.id)),
+        attributes: Self.attributes(
+          action: action,
+          screen: screen,
+          workspaceId: workspaceId,
+          explicitUserApproval: action.requiresConfirmation,
+          retryAttempt: attempt - 1
+        )
       )
-    )
-    let result = registry.invoke(
-      toolId,
-      input: scopedInput,
-      context: context,
-      hooks: Self.lifecycleHooks(
-        toolId: toolId,
+      result = registry.invoke(
+        toolId,
+        input: scopedInput,
         context: context,
-        nowMillis: nowMillis,
-        eventSink: eventSink
+        hooks: Self.lifecycleHooks(
+          toolId: toolId,
+          context: context,
+          nowMillis: nowMillis,
+          eventSink: eventSink
+        )
       )
-    )
-    return Self.actionResult(action: action, result: result)
+      guard !result.isSuccess,
+            result.error?.retryable == true,
+            attempt < maximumAttempts else {
+        break
+      }
+    } while true
+
+    return Self.actionResult(action: action, result: result, retryCount: attempt - 1)
   }
 
   static func defaultWorkspaceId(for action: AgentAction) -> String {
@@ -129,11 +157,17 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       return explicit
     }
     switch descriptor.idempotency {
-    case .idempotencyKeyRequired:
+    case .idempotent, .idempotencyKeyRequired:
       return action.id
-    case .idempotent, .nonIdempotent:
+    case .nonIdempotent:
       return nil
     }
+  }
+
+  private static func invocationId(base: String, attempt: Int) -> String {
+    guard attempt > 1 else { return base }
+    let suffix = "-retry-\(attempt - 1)"
+    return String(base.prefix(max(1, 160 - suffix.count))) + suffix
   }
 
   private static func deadlineEpochMillis(action: AgentAction, nowMillis: Int64) -> Int64? {
@@ -146,7 +180,8 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     action: AgentAction,
     screen: AgentScreenContext,
     workspaceId: String,
-    explicitUserApproval: Bool
+    explicitUserApproval: Bool,
+    retryAttempt: Int = 0
   ) -> [String: String] {
     [
       "execution_authority": "signalasi-phone",
@@ -154,6 +189,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       "step_id": action.id,
       "workspace_id": workspaceId,
       "explicit_user_approval": explicitUserApproval.description,
+      "retry_attempt": String(max(0, retryAttempt)),
       "foreground_app": screen.foregroundApp,
       "page_title": screen.pageTitle,
       AgentNativeToolRegistry.legacyActionIdAttribute: action.id
@@ -232,7 +268,11 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     )
   }
 
-  private static func actionResult(action: AgentAction, result: AgentNativeToolResult) -> AgentActionResult {
+  private static func actionResult(
+    action: AgentAction,
+    result: AgentNativeToolResult,
+    retryCount: Int = 0
+  ) -> AgentActionResult {
     let output = String(AgentMcpJSONCodec.stringify(result.output).prefix(maxOutputCharacters))
     let nativeMessage = clean(result.message).nilIfEmpty ?? clean(result.error?.message ?? "")
     return AgentActionResult(
@@ -249,6 +289,8 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "idempotency_key": result.receipt.idempotencyKey ?? "",
         "started_at_millis": String(result.receipt.startedAtEpochMillis),
         "completed_at_millis": String(result.receipt.finishedAtEpochMillis),
+        "native_retry_count": String(max(0, retryCount)),
+        "native_attempt_count": String(max(1, retryCount + 1)),
         "provenance": result.provenance.executorId
       ]
     )

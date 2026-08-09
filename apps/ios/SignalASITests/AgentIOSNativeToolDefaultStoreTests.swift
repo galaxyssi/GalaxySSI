@@ -110,12 +110,14 @@ extension SignalASIStoreTests {
       delegatedAction = action
       return AgentActionResult(actionId: action.id, success: true, message: "delegated")
     }
+    let notificationPublisher = InMemoryAgentActionNotificationPublisher()
     let runtime = try AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: delegate,
       screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
       capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
       storageRootURL: root,
       nowMillis: { 20_000 },
+      actionNotificationPublisher: notificationPublisher,
       nativeToolEventSink: AgentNativeToolLifecycleEventSink { events.append($0) }
     )
     let nativeAction = AgentAction(
@@ -169,5 +171,10 @@ extension SignalASIStoreTests {
     ])
     XCTAssertEqual(events.first?.stepId, "runtime-init")
     XCTAssertEqual(events.last?.status, .succeeded)
+    XCTAssertEqual(notificationPublisher.notifications().map(\.phase), [.running, .succeeded, .running, .succeeded])
+    let notificationIds = notificationPublisher.notifications().map(\.notificationId)
+    XCTAssertEqual(notificationIds[0], notificationIds[1])
+    XCTAssertEqual(notificationIds[2], notificationIds[3])
+    XCTAssertNotEqual(notificationIds[0], notificationIds[2])
   }
 }

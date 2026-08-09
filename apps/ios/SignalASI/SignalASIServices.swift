@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import Foundation
 import Network
 import Speech
@@ -30,13 +31,21 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   @Published private(set) var isConnected = false
   var onMessage: ((String, Data) -> Void)?
   var onConnectionChanged: ((Bool) -> Void)?
+  var onTransportRecovery: (() -> Void)?
 
+  private static let brokerAckTimeoutSeconds: TimeInterval = 12
+  private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
   private let host = NWEndpoint.Host("broker.emqx.io")
   private let port = NWEndpoint.Port(rawValue: 8883)!
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
+  private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: Self.brokerAckTimeoutSeconds)
   private var connection: NWConnection?
+  private var brokerAckWorkItem: DispatchWorkItem?
+  private var reconnectWorkItem: DispatchWorkItem?
+  private var reconnectAttempt = 0
+  private var transportRecoveryInProgress = false
   private var clientId = ""
   private var subscriptions: [String] = []
   private var receiveBuffer = Data()
@@ -56,6 +65,8 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         self.subscribeToCurrentTopics()
         return
       }
+      self.reconnectWorkItem?.cancel()
+      self.reconnectWorkItem = nil
       self.start()
     }
   }
@@ -74,24 +85,26 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 
   private func start() {
+    guard connection == nil else { return }
     let parameters = NWParameters.tls
-    let connection = NWConnection(host: host, port: port, using: parameters)
-    self.connection = connection
-    connection.stateUpdateHandler = { [weak self] state in
-      guard let self else { return }
+    let mqttConnection = NWConnection(host: host, port: port, using: parameters)
+    connection = mqttConnection
+    mqttConnection.stateUpdateHandler = { [weak self, weak mqttConnection] state in
+      guard let self, let mqttConnection, self.connection === mqttConnection else { return }
       switch state {
       case .ready:
+        self.reconnectAttempt = 0
+        self.reconnectWorkItem?.cancel()
+        self.reconnectWorkItem = nil
         self.sendConnect()
-        self.receiveLoop()
+        self.receiveLoop(for: mqttConnection)
       case .failed, .cancelled:
-        self.inboundChunkAssembler.clear()
-        self.setConnected(false)
-        self.connection = nil
+        self.handleTransportFailure(for: mqttConnection)
       default:
         break
       }
     }
-    connection.start(queue: queue)
+    mqttConnection.start(queue: queue)
   }
 
   private func sendConnect() {
@@ -118,13 +131,14 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     sendFrame(typeAndFlags: 0x82, payload)
   }
 
-  private func sendPublish(topic: String, payload: Data) {
+  private func sendPublish(topic: String, payload: Data) -> UInt16 {
     let packetId = nextPacketIdentifier()
     var body = Data()
     body.appendUTF8(topic)
     body.appendUInt16(packetId)
     body.append(payload)
     sendFrame(typeAndFlags: 0x32, body)
+    return packetId
   }
 
   private func sendWirePayload(topic: String, payload: Data) -> Bool {
@@ -133,8 +147,10 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       return false
     }
     packets.forEach { packet in
-      sendPublish(topic: topic, payload: Data(packet.utf8))
+      let packetId = sendPublish(topic: topic, payload: Data(packet.utf8))
+      brokerAckWatchdog.onPublished(packetId: packetId)
     }
+    scheduleBrokerAckWatchdog()
     return true
   }
 
@@ -148,21 +164,28 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     var frame = Data([typeAndFlags])
     frame.appendEncodedRemainingLength(payload.count)
     frame.append(payload)
-    connection?.send(content: frame, completion: .contentProcessed { _ in })
+    guard let connection else { return }
+    connection.send(content: frame, completion: .contentProcessed { [weak self, weak connection] error in
+      guard let self, let connection, error != nil else { return }
+      self.queue.async {
+        guard self.connection === connection else { return }
+        self.handleTransportFailure(for: connection)
+      }
+    })
   }
 
-  private func receiveLoop() {
-    connection?.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, _ in
-      guard let self else { return }
+  private func receiveLoop(for connection: NWConnection) {
+    guard self.connection === connection else { return }
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak connection] data, _, isComplete, _ in
+      guard let self, let connection, self.connection === connection else { return }
       if let data, !data.isEmpty {
         self.receiveBuffer.append(data)
         self.consumePackets()
       }
       if isComplete {
-        self.setConnected(false)
-        self.connection = nil
+        self.handleTransportFailure(for: connection)
       } else {
-        self.receiveLoop()
+        self.receiveLoop(for: connection)
       }
     }
   }
@@ -177,12 +200,19 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     let packetType = packet.header >> 4
     switch packetType {
     case 2:
+      reconnectAttempt = 0
       setConnected(true)
       subscribeToCurrentTopics()
       flushQueuedPublishes()
     case 3:
       handlePublish(packet)
-    case 9, 4, 13:
+    case 4:
+      var index = 0
+      if let packetId = packet.payload.readUInt16(at: &index) {
+        brokerAckWatchdog.onAcknowledged(packetId: packetId)
+        scheduleBrokerAckWatchdog()
+      }
+    case 9, 13:
       break
     default:
       break
@@ -240,6 +270,77 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       self.isConnected = value
       self.onConnectionChanged?(value)
     }
+  }
+
+  private func scheduleBrokerAckWatchdog() {
+    brokerAckWorkItem?.cancel()
+    guard connected, let delay = brokerAckWatchdog.nextCheckDelay() else {
+      brokerAckWorkItem = nil
+      return
+    }
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.brokerAckWorkItem = nil
+      self.checkBrokerAckWatchdog()
+    }
+    brokerAckWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + max(0.1, delay), execute: workItem)
+  }
+
+  private func checkBrokerAckWatchdog() {
+    guard connected else { return }
+    if let age = brokerAckWatchdog.oldestPendingAge(),
+       age >= Self.brokerAckTimeoutSeconds {
+      recoverStalledTransport()
+    } else {
+      scheduleBrokerAckWatchdog()
+    }
+  }
+
+  private func recoverStalledTransport() {
+    guard !transportRecoveryInProgress else { return }
+    transportRecoveryInProgress = true
+    let stalledConnection = connection
+    connection = nil
+    brokerAckWorkItem?.cancel()
+    brokerAckWorkItem = nil
+    brokerAckWatchdog.clear()
+    receiveBuffer.removeAll()
+    inboundChunkAssembler.clear()
+    setConnected(false)
+    stalledConnection?.cancel()
+    onTransportRecovery?()
+    queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+      guard let self else { return }
+      self.transportRecoveryInProgress = false
+      self.scheduleReconnect()
+    }
+  }
+
+  private func handleTransportFailure(for failedConnection: NWConnection) {
+    guard connection === failedConnection else { return }
+    connection = nil
+    inboundChunkAssembler.clear()
+    receiveBuffer.removeAll()
+    brokerAckWorkItem?.cancel()
+    brokerAckWorkItem = nil
+    brokerAckWatchdog.clear()
+    setConnected(false)
+    scheduleReconnect()
+  }
+
+  private func scheduleReconnect() {
+    guard connection == nil, !transportRecoveryInProgress, reconnectWorkItem == nil else { return }
+    let index = min(reconnectAttempt, Self.reconnectDelays.count - 1)
+    let delay = Self.reconnectDelays[index]
+    reconnectAttempt += 1
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.reconnectWorkItem = nil
+      self.start()
+    }
+    reconnectWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 }
 
@@ -568,9 +669,11 @@ struct CloudModelClient {
 final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
+  @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var artifactRevision = 0
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
+  var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
   let desktopArtifactStore: AgentDesktopArtifactStore
@@ -580,14 +683,35 @@ final class MessageCoordinator: ObservableObject {
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
+  private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
+  private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
+    let settingsStore = store
+    return try? AgentPhoneNativeToolCatalog.defaultRuntime(
+      actionExecutor: AgentIOSNativeActionExecutor(),
+      screenProvider: { _ in
+        AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+      },
+      homeAssistantSettingsProvider: {
+        settingsStore.homeAssistantSettings
+      }
+    )
+  }
+  private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
+  private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
+    UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
+  private var automationSchedulerTask: Task<Void, Never>?
+  private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
+  private static let maximumOutboxDeliveryAttempts = 6
+  private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
 
@@ -601,6 +725,7 @@ final class MessageCoordinator: ObservableObject {
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
+    desktopMarketplaceStore: AgentDesktopMarketplaceStore = .shared,
     desktopArtifactStore: AgentDesktopArtifactStore? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
@@ -619,6 +744,7 @@ final class MessageCoordinator: ObservableObject {
     self.diagnosticLedger = diagnosticLedger
     self.disclosureStore = disclosureStore
     self.taskIdentityStore = taskIdentityStore
+    self.desktopMarketplaceStore = desktopMarketplaceStore
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
@@ -634,6 +760,13 @@ final class MessageCoordinator: ObservableObject {
         self?.requestConnectorStatuses()
       }
     }
+    self.mqttClient.onTransportRecovery = { [weak self] in
+      Task { @MainActor in
+        guard let self else { return }
+        self.deliveryStore.makePendingImmediatelyRetryable()
+        self.scheduleOutboxFlush(after: 0)
+      }
+    }
   }
 
   func start() {
@@ -642,6 +775,202 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
+    startAutomationScheduler()
+  }
+
+  private func startAutomationScheduler() {
+    automationSchedulerTask?.cancel()
+    registerAutomationBackgroundTask()
+    automationSchedulerTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        await self.runAutomationSchedulerCycle()
+        try? await Task.sleep(nanoseconds: 30_000_000_000)
+      }
+    }
+  }
+
+  func runAutomationSchedulerCycle() async {
+    _ = store.claimDueAutomationTasks()
+    for run in store.queuedAutomationRuns(limit: 8) {
+      guard let running = store.beginAutomationRun(id: run.runId) else { continue }
+      await executeAutomationRun(running)
+    }
+    scheduleAutomationBackgroundRefresh()
+  }
+
+  private func registerAutomationBackgroundTask() {
+    guard !automationBackgroundTaskRegistered else { return }
+    automationBackgroundTaskRegistered = true
+    BGTaskScheduler.shared.register(
+      forTaskWithIdentifier: Self.automationBackgroundTaskIdentifier,
+      using: nil
+    ) { [weak self] task in
+      guard let refreshTask = task as? BGAppRefreshTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      let work = Task { @MainActor [weak self] in
+        guard let self, !Task.isCancelled else {
+          refreshTask.setTaskCompleted(success: false)
+          return
+        }
+        await self.runAutomationSchedulerCycle()
+        refreshTask.setTaskCompleted(success: !Task.isCancelled)
+      }
+      refreshTask.expirationHandler = {
+        work.cancel()
+      }
+    }
+  }
+
+  private func scheduleAutomationBackgroundRefresh() {
+    let nextRun = store.automationTasks()
+      .filter { $0.enabled && $0.nextRunAtMillis > 0 }
+      .map(\.nextRunAtMillis)
+      .min()
+    guard let nextRun else {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automationBackgroundTaskIdentifier)
+      return
+    }
+    let now = Date()
+    let nextDate = Date(timeIntervalSince1970: Double(nextRun) / 1_000)
+    let request = BGAppRefreshTaskRequest(identifier: Self.automationBackgroundTaskIdentifier)
+    request.earliestBeginDate = max(nextDate, now.addingTimeInterval(60))
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automationBackgroundTaskIdentifier)
+    try? BGTaskScheduler.shared.submit(request)
+  }
+
+  private func executeAutomationRun(_ run: AgentProactiveRun) async {
+    guard let task = store.automationTask(id: run.taskId) else {
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .failed,
+        resultSummary: "The automation task no longer exists.",
+        errorCode: "task_missing"
+      )
+      return
+    }
+    do {
+      let summary = try await executeAutomationAction(task.action, task: task, run: run)
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .completed,
+        resultSummary: summary
+      )
+    } catch {
+      _ = store.finishAutomationRun(
+        id: run.runId,
+        status: .failed,
+        resultSummary: error.localizedDescription,
+        errorCode: "automation_execution_failed"
+      )
+    }
+  }
+
+  private func executeAutomationAction(
+    _ action: AgentProactiveAction,
+    task: AgentProactiveTask,
+    run: AgentProactiveRun
+  ) async throws -> String {
+    switch action.kind {
+    case .agent, .workflow:
+      guard let contact = automationContact(for: action) else {
+        throw AgentProactiveTaskError.invalid("Automation target is not available")
+      }
+      let prompt = action.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("Execute automation: \(task.name)")
+      guard await send(prompt, to: contact) else {
+        throw AgentProactiveTaskError.invalid("Automation Agent request could not be dispatched")
+      }
+      return "Agent request dispatched to \(contact.displayName)."
+
+    case .subagentTeam:
+      let lead = action.team.first(where: { $0.role == .lead }) ?? action.team.first
+      var teamPrompt = action.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("Execute automation: \(task.name)")
+      if !action.team.isEmpty {
+        let roster = action.team.map {
+          "- \($0.role.rawValue): \($0.agentId)\($0.instructions.isEmpty ? "" : " - \($0.instructions)")"
+        }.joined(separator: "\n")
+        teamPrompt += "\n\nCoordinate this Agent team:\n\(roster)"
+      }
+      var leadAction = action
+      leadAction.targetId = lead?.agentId ?? action.targetId
+      guard let contact = automationContact(for: leadAction) else {
+        throw AgentProactiveTaskError.invalid("Automation team lead is not available")
+      }
+      guard await send(teamPrompt, to: contact) else {
+        throw AgentProactiveTaskError.invalid("Automation team request could not be dispatched")
+      }
+      return "Agent team request dispatched to \(contact.displayName)."
+
+    case .nativeTool:
+      guard let runtime = localNativeToolRuntime else {
+        throw AgentProactiveTaskError.invalid("iOS native tool runtime is unavailable")
+      }
+      var parameters: [String: String] = [
+        "tool_id": action.targetId,
+        "input_json": action.argumentsJson,
+        "invocation_id": run.runId,
+        "_signalasi_task_id": run.runId,
+        "conversation_id": action.contactId,
+        "turn_id": run.runId
+      ]
+      if !action.grantedPermissions.isEmpty {
+        parameters["granted_permissions"] = action.grantedPermissions.sorted().joined(separator: ",")
+      }
+      if !action.grantedConsents.isEmpty {
+        parameters["granted_consents"] = action.grantedConsents.sorted().joined(separator: ",")
+      }
+      let nativeAction = AgentAction(
+        id: run.runId,
+        kind: .callNativeTool,
+        target: action.targetId,
+        risk: .medium,
+        status: .running,
+        description: "Scheduled automation native tool \(action.targetId)",
+        parameters: parameters,
+        requiresConfirmation: false
+      )
+      let result = runtime.actionExecutor.execute(
+        action: nativeAction,
+        screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: task.name)
+      )
+      guard result.success else {
+        throw AgentProactiveTaskError.invalid(result.message.ifBlank("Native tool execution failed"))
+      }
+      return result.message.ifBlank("Native tool completed.")
+    }
+  }
+
+  private func automationContact(for action: AgentProactiveAction) -> SignalASIContact? {
+    let candidates = [action.targetId, action.contactId]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    for candidate in candidates {
+      if let contact = store.contact(id: candidate), !contact.deleted {
+        return contact
+      }
+      if let contact = store.contacts.first(where: {
+        !$0.deleted && ($0.signalASIId == candidate || $0.name == candidate)
+      }) {
+        return contact
+      }
+    }
+    return nil
+  }
+
+  func desktopMarketplaceItems(
+    kind: AgentCapabilityCatalogKind? = nil
+  ) -> [AgentDesktopMarketplaceItem] {
+    guard mqttClient.isConnected else { return [] }
+    let pairedDesktopIds = Set(store.serverLinks.filter(\.paired).map(\.desktopId))
+    return desktopMarketplaceStore.list(
+      selectedKind: kind,
+      pairedDesktopIds: pairedDesktopIds,
+      desktopSessionDesktopIds: pairedDesktopIds
+    )
   }
 
   func desktopControlSnapshot(for link: ServerLink) -> AgentDesktopRemoteControlSnapshot {
@@ -777,6 +1106,81 @@ final class MessageCoordinator: ObservableObject {
     return requestConnectorStatuses(forceCapabilityManifest: force, now: now)
   }
 
+  private func beginPendingAgentReply(for message: ChatMessage) {
+    pendingAgentReplyTurnIds.insert(AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+    if pendingAgentReplyTurnIds.count > 256,
+       let oldest = pendingAgentReplyTurnIds.first {
+      pendingAgentReplyTurnIds.remove(oldest)
+    }
+  }
+
+  private func finishPendingAgentReply(for message: ChatMessage) {
+    finishPendingAgentReply(turnId: AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
+  }
+
+  private func finishPendingAgentReply(turnId: String) {
+    let clean = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return }
+    pendingAgentReplyTurnIds.remove(clean)
+  }
+
+  private func updateAgentExecutionTarget(
+    conversationId: String,
+    connectorId: String = "",
+    contactId: String = "",
+    runtimeTarget: String = "",
+    fallbackTarget: String = ""
+  ) {
+    let conversation = conversationId.ifBlank(store.activeAgentConversationId)
+    guard !conversation.isBlank else { return }
+    let label = AgentExecutionTargetStatusPolicy.resolveLabel(
+      connectorId: connectorId,
+      contactId: contactId,
+      runtimeTarget: runtimeTarget,
+      fallbackTarget: fallbackTarget,
+      contacts: store.contacts
+    )
+    guard !label.isBlank else { return }
+    store.setAgentSessionSelectedModelOrAgent(id: conversation, label: label)
+  }
+
+  private func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
+    var handled = Set<String>()
+    for failure in failures {
+      let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
+      let key = "\(failure.contactId)|\(sourceId)"
+      guard handled.insert(key).inserted else { continue }
+      _ = deliveryStore.discardClientSourceMessage(sourceId)
+      let detail = "MQTT delivery failed after \(failure.attempts) attempts."
+      if !failure.contactId.isEmpty {
+        store.markMessage(
+          sourceUUID,
+          contactId: failure.contactId,
+          status: .failed,
+          detail: detail
+        )
+      } else {
+        store.markMessage(sourceUUID, status: .failed, detail: detail)
+      }
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing {
+        finishPendingAgentReply(for: outgoing)
+        agentHomeDisplayContactIdsByTurnId.removeValue(
+          forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        store.appendSystem(
+          detail,
+          to: outgoing.contactId,
+          conversationId: outgoing.conversationId
+        )
+      }
+      lastError = detail
+    }
+  }
+
   @discardableResult
   private func requestConnectorStatuses(
     forceCapabilityManifest: Bool = false,
@@ -815,15 +1219,20 @@ final class MessageCoordinator: ObservableObject {
     _ text: String,
     to contact: SignalASIContact,
     attachments: [SignalASIDraftAttachment] = [],
-    agentGoalOverride: String = ""
-  ) async {
+    agentGoalOverride: String = "",
+    voiceSessionId: String = ""
+  ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+    guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
     let requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
-    let outgoing = store.appendOutgoing(displayText, to: contact.id)
+    let outgoing = store.appendOutgoing(
+      displayText,
+      to: contact.id,
+      turnId: voiceSessionId
+    )
     if contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowTriggerCommandRouter.handle(displayText) {
@@ -844,17 +1253,80 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId
       )
       onIncomingMessage?(response)
-      return
+      return true
+    }
+    if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
+      beginPendingAgentReply(for: outgoing)
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
-      if shouldUseSelectedLocalModel(for: contact) {
+      if let localProfile = selectedLocalModel(for: contact) {
         try await receiveLocalModelReply(
+          profile: localProfile,
           requestText: requestText,
           attachments: attachments,
           outgoing: outgoing
         )
-        return
+        finishPendingAgentReply(for: outgoing)
+        return true
+      }
+      if let cloudContact = selectedCloudModelContact(for: contact) {
+        let cloudText = cloudPrompt(text: requestText, attachments: attachments)
+        var cloudTurns = store.messages(for: contact.id)
+        if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
+          cloudTurns[index].content = cloudText
+        }
+        let modelDetail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
+        let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: outgoing.contactId,
+          stage: "cloud_request",
+          detail: requestDetail,
+          status: .sent
+        )
+        try await receiveCloudStreamReply(
+          contact: cloudContact,
+          turns: cloudTurns,
+          outgoing: outgoing,
+          modelDetail: modelDetail,
+          displayContactId: outgoing.contactId
+        )
+        finishPendingAgentReply(for: outgoing)
+        return true
+      }
+      if let agentContact = selectedAgentContact(for: contact) {
+        let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
+          store: disclosureStore,
+          contactId: agentContact.id,
+          desktopId: agentContact.desktopId,
+          providerId: agentContact.signalASIId,
+          title: agentContact.displayName,
+          text: requestText,
+          attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+          conversationId: outgoing.conversationId,
+          taskId: outgoing.id.uuidString,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        guard disclosureTicket?.allowed == true else {
+          throw AgentDataDisclosureBlockedError(destination: agentContact.displayName)
+        }
+        agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
+        let disclosureStatus = try await publishLinkMessage(
+          requestText,
+          contact: agentContact,
+          outgoing: outgoing,
+          attachments: attachments
+        )
+        if let ticket = disclosureTicket {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
+        }
+        store.setAgentSessionSelectedModelOrAgent(
+          id: outgoing.conversationId,
+          label: agentContact.displayName.ifBlank(agentContact.name).ifBlank(agentContact.id)
+        )
+        return true
       }
       switch contact.deliveryMode {
       case .cloudAPI:
@@ -876,8 +1348,11 @@ final class MessageCoordinator: ObservableObject {
           contact: contact,
           turns: cloudTurns,
           outgoing: outgoing,
-          modelDetail: modelDetail
+          modelDetail: modelDetail,
+          displayContactId: contact.id
         )
+        finishPendingAgentReply(for: outgoing)
+        return true
       case .link, .pcConnector:
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
@@ -911,8 +1386,14 @@ final class MessageCoordinator: ObservableObject {
           detail: "Local conversation",
           status: .delivered
         )
+        finishPendingAgentReply(for: outgoing)
+        return true
       }
     } catch {
+      finishPendingAgentReply(for: outgoing)
+      agentHomeDisplayContactIdsByTurnId.removeValue(
+        forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      )
       if let ticket = disclosureTicket, ticket.allowed {
         AgentDataDisclosureLedger.update(
           store: disclosureStore,
@@ -923,13 +1404,19 @@ final class MessageCoordinator: ObservableObject {
       }
       lastError = error.localizedDescription
       let stage: String
-      switch contact.deliveryMode {
-      case .cloudAPI:
-        stage = "cloud_error"
-      case .link, .pcConnector:
+      if selectedAgentContact(for: contact) != nil {
         stage = "publish_failed"
-      case .local:
-        stage = "failed"
+      } else if selectedCloudModelContact(for: contact) != nil {
+        stage = "cloud_error"
+      } else {
+        switch contact.deliveryMode {
+        case .cloudAPI:
+          stage = "cloud_error"
+        case .link, .pcConnector:
+          stage = "publish_failed"
+        case .local:
+          stage = "failed"
+        }
       }
       store.appendDeliveryTrace(
         outgoing.id,
@@ -939,21 +1426,225 @@ final class MessageCoordinator: ObservableObject {
         status: .failed
       )
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
+      return false
     }
   }
 
-  private func shouldUseSelectedLocalModel(for contact: SignalASIContact) -> Bool {
-    contact.id == "hermes" &&
+  private func selectedLocalModel(for contact: SignalASIContact) -> LocalModelRuntimeProfile? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes" else {
+      return nil
+    }
+    let manualSelection = selection.mode == .manual && selection.targetId == "local-llm"
+    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection() &&
       store.modelPlannerSettings.enabled &&
       store.modelPlannerSettings.cloudContactId == "local-llm"
+    guard manualSelection || legacySelection else { return nil }
+    let profile = selection.mode == .manual
+      ? LocalModelRuntimeCatalog.find(selection.modelId)
+      : LocalModelRuntimeSettings.selectedProfile()
+    let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+      LocalModelInferenceRuntime.shared.ready(profile: profile)
+    return ready ? profile : nil
+  }
+
+  private func selectedCloudModelContact(for contact: SignalASIContact) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes",
+          selection.mode == .manual,
+          selection.targetId != "local-llm",
+          let selected = store.contact(id: selection.targetId),
+          selected.deliveryMode == .cloudAPI,
+          let model = selected.selectedCloudModel,
+          AgentConnectorAvailability.cloudModelReady(
+            model: model,
+            apiKey: store.apiKey(for: model),
+            provider: selected.cloudProvider,
+            setupStatus: selected.setupStatus
+          ) else {
+      return nil
+    }
+    return selected
+  }
+
+  private func selectedAgentContact(for contact: SignalASIContact) -> SignalASIContact? {
+    let selection = AgentModelSelectionSettings.selection()
+    guard contact.id == "hermes",
+          selection.mode == .manual,
+          let selected = store.contact(id: selection.targetId),
+          selected.id != "hermes",
+          !selected.deleted,
+          selected.type == "agent",
+          selected.deliveryMode.isSignalASILinkFamily,
+          selected.trustState == .verified else {
+      return nil
+    }
+    let setup = selected.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard setup == "ready" || setup == "verified" else { return nil }
+    return selected
+  }
+
+  func approveLocalNativeAction(taskId: String, remember: Bool = false) {
+    guard var task = store.agentTask(id: taskId),
+          let action = task.pendingAction,
+          task.phase == .waitingConfirmation else {
+      return
+    }
+    if remember && AgentConfirmationPolicy.tier(for: action) == .confirmOnce {
+      localConfirmationConsentStore.remember(
+        consentKey: AgentConfirmationPolicy.consentKey(for: action)
+      )
+    }
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.phase = .executing
+    task.pendingAction = nil
+    task.result = ""
+    task.verification = "User approval received"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): approved")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else {
+      task.phase = .failed
+      task.result = localReply(
+        english: "The original local Agent request is no longer available.",
+        chinese: "原始本地 Agent 请求已不可用。"
+      )
+      task.executionLog.append("Native tool approval failed: outgoing message missing")
+      task.pendingActions = []
+      task.pendingAction = nil
+      store.upsertAgentTask(task)
+      return
+    }
+    _ = executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
+  }
+
+  func denyLocalNativeAction(taskId: String) {
+    guard var task = store.agentTask(id: taskId),
+          let action = task.pendingAction,
+          task.phase == .waitingConfirmation else {
+      return
+    }
+    task.phase = .cancelled
+    task.pendingAction = nil
+    task.pendingActions = []
+    let denial = localReply(
+      english: "The requested phone action was not executed.",
+      chinese: "未执行请求的手机操作。"
+    )
+    task.result = recordLocalNativeActionResult(denial, task: &task)
+    task.verification = "User denied native tool action"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): denied")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    let reply = task.result
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_denied",
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      reply,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_denied_received",
+      detail: action.parameters["tool_id"] ?? action.target,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
+  @discardableResult
+  func resumeLocalNativeAction(taskId: String) -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          task.phase == .paused,
+          let action = task.pendingAction ?? task.pendingActions.first else {
+      return false
+    }
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingAction = action
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = "User resumed paused native tool execution"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): resumed")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else {
+      task.phase = .failed
+      task.result = localReply(
+        english: "The original local Agent request is no longer available.",
+        chinese: "原始本地 Agent 请求已不可用。"
+      )
+      task.executionLog.append("Native tool resume failed: outgoing message missing")
+      task.pendingActions = []
+      task.pendingAction = nil
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return false
+    }
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
+  func cancelLocalNativeAction(taskId: String) {
+    guard var task = store.agentTask(id: taskId),
+          [.waitingConfirmation, .executing, .verifying, .paused].contains(task.phase),
+          task.pendingAction != nil || !task.pendingActions.isEmpty else {
+      return
+    }
+    let action = task.pendingAction
+    task.phase = .cancelled
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.result = recordLocalNativeActionResult(
+      localReply(
+        english: "The local Agent task was cancelled.",
+        chinese: "本地 Agent 任务已取消。"
+      ),
+      task: &task
+    )
+    task.verification = "User cancelled pending native tool execution"
+    let toolId = action?.parameters["tool_id"] ?? action?.target ?? "queued native actions"
+    task.executionLog.append("Native tool task: cancelled")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_cancelled",
+      detail: toolId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_native_tool_cancelled_received",
+      detail: toolId,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
   }
 
   private func receiveLocalModelReply(
+    profile: LocalModelRuntimeProfile,
     requestText: String,
     attachments: [SignalASIDraftAttachment],
     outgoing: ChatMessage
   ) async throws {
-    let profile = LocalModelRuntimeSettings.selectedProfile()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
     var task = AgentTaskRecord(
@@ -989,12 +1680,34 @@ final class MessageCoordinator: ObservableObject {
           excluding: outgoing.id
         )
       )
-      let result = try await LocalModelInferenceRuntime.shared.generateAsync(
-        profile: profile,
+      if handleDirectLocalNativeAction(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
+      if let actions = await modelPlannedLocalNativeActions(
+        requestText: requestText,
+        attachments: attachments,
+        outgoing: outgoing
+      ) {
+        _ = applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
+        return
+      }
+      let executionProfile = AgentExecutionProfile.forGoal(
+        requestText,
+        hasAttachments: !attachments.isEmpty
+      )
+      let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
+        fallbackProfile: profile,
         systemPrompt: localModelSystemPrompt,
         userPrompt: prompt,
         maximumTokens: 768,
-        temperature: 0.3
+        temperature: 0.3,
+        hasAttachments: !attachments.isEmpty,
+        executionProfile: executionProfile,
+        preferredProfileId: profile.id
       )
       let response = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -1002,6 +1715,8 @@ final class MessageCoordinator: ObservableObject {
       }
       task.phase = .completed
       task.result = response
+      task.executionRuntimeId = result.profileId
+      task.targetTitle = LocalModelRuntimeCatalog.find(result.profileId).displayName
       task.verification = "Local model response received and stored"
       task.executionLog.append("Local model response completed via \(result.backend)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -1031,6 +1746,432 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       throw error
     }
+  }
+
+  private func handleDirectLocalNativeAction(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let runtime = localNativeToolRuntime else { return false }
+    let request = AgentPlanRequest(
+      goal: requestText,
+      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage
+    )
+    guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
+          let action = plan.actions.first(where: { $0.kind == .callNativeTool }) else {
+      return false
+    }
+
+    return applyLocalNativeActions(actions: [action], outgoing: outgoing, task: &task)
+  }
+
+  private func modelPlannedLocalNativeActions(
+    requestText: String,
+    attachments: [SignalASIDraftAttachment],
+    outgoing: ChatMessage
+  ) async -> [AgentAction]? {
+    guard store.modelPlannerSettings.enabled,
+          let runtime = localNativeToolRuntime else {
+      return nil
+    }
+    let requirements = AgentTaskRequirementAnalyzer.analyze(requestText)
+    let nativeIntentCapabilities: Set<AgentCapability> = [
+      .toolUse,
+      .deviceControl,
+      .appNavigation,
+      .liveData,
+      .research,
+      .knowledgeSearch,
+      .mcp,
+      .skill,
+      .code,
+      .taskExecution
+    ]
+    guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
+      return nil
+    }
+    guard let planner = AgentModelPlannerContactResolver(store: store)
+      .makePlanner(settings: store.modelPlannerSettings) else {
+      return nil
+    }
+    let planRequest = AgentPlanRequest(
+      goal: requestText,
+      screen: AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent"),
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage
+    )
+    let conversation = AgentConversationContext(
+      conversationId: outgoing.conversationId,
+      summary: recentLocalConversationContext(
+        contactId: outgoing.contactId,
+        excluding: outgoing.id
+      ),
+      turns: [],
+      privateMode: true
+    )
+    let planningRequest = AgentModelPlanningPromptRequest(
+      planRequest: planRequest,
+      conversationContext: conversation,
+      globalRealtimeContext: globalRealtimeContextProvider.buildNonBlocking(
+        query: requestText,
+        currentConversationId: outgoing.conversationId,
+        excludedConversationIds: Set(
+          store.agentSessions(includeArchived: true)
+            .filter { $0.privateMode || $0.trackingPaused }
+            .map(\.id)
+        )
+      ),
+      hasAttachments: !attachments.isEmpty
+    )
+    let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
+    let plan = await planner.plan(
+      request: planningRequest,
+      settings: store.modelPlannerSettings,
+      safetySettings: store.agentSafetySettings,
+      fallbackPlan: fallbackPlan
+    )
+    guard plan.validation.valid else { return nil }
+    let actions = plan.actions.filter { $0.kind == .callNativeTool }
+    guard !actions.isEmpty, actions.count == plan.actions.count else {
+      return nil
+    }
+    guard actions.allSatisfy({ action in
+      ["depends_on", "use_outputs_from"].allSatisfy { key in
+        action.parameters[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+      }
+    }) else {
+      return nil
+    }
+    return actions
+  }
+
+  private func applyLocalNativeActions(
+    actions: [AgentAction],
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    let nativeActions = actions.filter { $0.kind == .callNativeTool }
+    guard !nativeActions.isEmpty else { return false }
+    task.nativeActionResults = []
+    task.pendingActions = nativeActions
+    task.pendingAction = nativeActions.first
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
+  private func advanceLocalNativeActions(
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let action = task.pendingActions.first else {
+      task.pendingAction = nil
+      return false
+    }
+    task.pendingAction = action
+    return applyLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+  }
+
+  private func applyLocalNativeAction(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingAction = action
+    task.risk = action.risk
+    if action.risk == .blocked {
+      markLocalNativeActionBlocked(
+        action: action,
+        outgoing: outgoing,
+        task: &task,
+        reason: localReply(
+          english: "This phone action is blocked by the local safety policy.",
+          chinese: "此手机操作已被本地安全策略阻止。"
+        )
+      )
+      return true
+    }
+    switch store.agentSafetySettings.permissionMode {
+    case .observeOnly, .suggestOnly:
+      markLocalNativeActionBlocked(
+        action: action,
+        outgoing: outgoing,
+        task: &task,
+        reason: localReply(
+          english: "The current Agent permission mode does not allow phone actions.",
+          chinese: "当前 Agent 权限模式不允许执行手机操作。"
+        )
+      )
+      return true
+    case .askBeforeAction, .autoLowRisk:
+      break
+    }
+    let decision = AgentConfirmationDecisionPolicy.decision(
+      actions: [action],
+      permissionMode: store.agentSafetySettings.permissionMode,
+      consentStore: localConfirmationConsentStore
+    )
+    if decision.requiresConfirmation {
+      task.phase = .waitingConfirmation
+      task.result = ""
+      task.verification = "Waiting for user approval"
+      let toolId = action.parameters["tool_id"] ?? action.target
+      task.executionLog.append("Native tool \(toolId): waiting for confirmation")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: outgoing.contactId,
+        stage: "local_native_tool_waiting_confirmation",
+        detail: action.parameters["tool_id"] ?? action.target,
+        status: .sent
+      )
+      return true
+    }
+    return executeLocalNativeActionAndAdvance(action: action, outgoing: outgoing, task: &task)
+  }
+
+  private func executeLocalNativeActionAndAdvance(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [action]
+    }
+    task.pendingActions.removeAll { $0.id == action.id }
+    task.pendingAction = task.pendingActions.first
+    let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
+    guard handled, task.phase == .completed, !task.pendingActions.isEmpty else {
+      if task.phase != .completed {
+        task.pendingActions = []
+        task.pendingAction = nil
+      }
+      return handled
+    }
+    task.phase = .executing
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return advanceLocalNativeActions(outgoing: outgoing, task: &task)
+  }
+
+  private func executeLocalNativeAction(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let runtime = localNativeToolRuntime else { return false }
+    let screen = AgentScreenContext(foregroundApp: "SignalASI iOS", pageTitle: "Agent")
+
+    var executionAction = action
+    executionAction.parameters["_signalasi_task_id"] = task.taskId
+    executionAction.parameters["_signalasi_session_id"] = task.sessionId
+    executionAction.parameters["_signalasi_conversation_id"] = outgoing.conversationId
+    executionAction.parameters["_signalasi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    executionAction.parameters["_signalasi_workspace_id"] = AgentWorkspaceScope.id(
+      conversationId: outgoing.conversationId,
+      sessionId: task.sessionId
+    )
+    let result = runtime.actionExecutor.execute(
+      action: executionAction,
+      screen: screen
+    )
+    let stepReply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
+    let reply = recordLocalNativeActionResult(stepReply, task: &task)
+    let hasRemainingActions = !task.pendingActions.isEmpty
+    task.phase = result.success ? .completed : .failed
+    task.result = reply
+    task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
+    let toolId = action.parameters["tool_id"] ?? "unknown"
+    let outcome = result.success ? "completed" : "failed"
+    task.executionLog.append("Native tool \(toolId): \(outcome)")
+    if let retryCount = Int(result.metadata["native_retry_count"] ?? ""), retryCount > 0 {
+      task.executionLog.append("Native tool \(toolId): retried \(retryCount) time(s)")
+    }
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: result.success && hasRemainingActions
+        ? "local_native_tool_progress"
+        : (result.success ? "local_native_tool_reply" : "local_native_tool_failed"),
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: result.success && hasRemainingActions ? .sent : (result.success ? .delivered : .failed)
+    )
+    if !result.success || !hasRemainingActions {
+      let richOutput = localNativeRichOutput(result: result, responseText: reply)
+      _ = store.appendIncoming(
+        reply,
+        from: outgoing.contactId,
+        remoteMessageId: outgoing.turnId,
+        status: result.success ? .delivered : .failed,
+        traceStage: result.success ? "local_native_tool_reply_received" : "local_native_tool_error",
+        detail: action.parameters["tool_id"] ?? action.target,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId,
+        richOutputJson: richOutput
+      )
+    }
+    return true
+  }
+
+  private func markLocalNativeActionBlocked(
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord,
+    reason: String
+  ) {
+    task.phase = .blocked
+    task.blocked = true
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.result = recordLocalNativeActionResult(reason, task: &task)
+    task.verification = "Native tool action blocked before execution"
+    let toolId = action.parameters["tool_id"] ?? action.target
+    task.executionLog.append("Native tool \(toolId): blocked")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_native_tool_blocked",
+      detail: action.parameters["tool_id"] ?? action.target,
+      status: .failed
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .failed,
+      traceStage: "local_native_tool_blocked_received",
+      detail: action.parameters["tool_id"] ?? action.target,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+  }
+
+  private func localOutgoingMessage(for task: AgentTaskRecord) -> ChatMessage? {
+    store.messages(for: "hermes").first { message in
+      message.isMine && (
+        message.turnId == task.taskId ||
+          message.id.uuidString == task.taskId
+      )
+    }
+  }
+
+  private func localReply(english: String, chinese: String) -> String {
+    LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+      ? chinese
+      : english
+  }
+
+  private func recordLocalNativeActionResult(
+    _ result: String,
+    task: inout AgentTaskRecord
+  ) -> String {
+    let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank("The requested phone action completed.")
+    task.nativeActionResults.append(String(normalized.prefix(600)))
+    task.nativeActionResults = Array(task.nativeActionResults.suffix(8))
+    guard task.nativeActionResults.count > 1 else {
+      return task.nativeActionResults[0]
+    }
+    let heading = localReply(
+      english: "Completed phone actions:",
+      chinese: "已完成手机操作："
+    )
+    let lines = task.nativeActionResults.enumerated().map { index, value in
+      "\(index + 1). \(value)"
+    }
+    return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
+  }
+
+  private func localNativeRichOutput(
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard result.success else { return "" }
+    let toolId = result.metadata["native_tool_id"] ?? ""
+    if AgentIOSVisibleCaptureNativeToolCatalog.toolIds.contains(toolId) {
+      return visibleCaptureRichOutput(
+        toolId: toolId,
+        result: result,
+        responseText: responseText
+      )
+    }
+    return runtimeArtifactRichOutput(result: result, responseText: responseText)
+  }
+
+  private func runtimeArtifactRichOutput(
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard result.success,
+          let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          let artifacts = output["artifacts"]?.arrayValue,
+          let preferredFileName = artifacts
+            .compactMap(\.objectValue)
+            .compactMap({ $0["relative_path"]?.stringValue })
+            .first(where: { !$0.isBlank }) else {
+      return ""
+    }
+    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+    return AgentRuntimeArtifactUi.richOutput(
+      output: output,
+      responseText: responseText,
+      preferredFileName: preferredFileName,
+      zh: zh
+    )
+  }
+
+  private func visibleCaptureRichOutput(
+    toolId: String,
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          let contentURI = output["content_uri"]?.stringValue,
+          let contentURL = URL(string: contentURI),
+          contentURL.isFileURL else {
+      return ""
+    }
+    let isPhoto = toolId == AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture
+    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+    let title = isPhoto
+      ? (zh ? "已拍摄照片" : "Captured photo")
+      : (zh ? "已录制语音" : "Recorded audio")
+    let message = isPhoto
+      ? (zh ? "已拍摄照片并添加到当前会话。" : "Photo captured and attached.")
+      : (zh ? "已录制语音并添加到当前会话。" : "Audio recorded and attached.")
+    let kind: AgentRichBlockType = isPhoto ? .image : .audio
+    let mediaBlock = AgentRichBlock(
+      id: "visible-capture-\(contentURI.hashValue)",
+      type: kind,
+      title: title,
+      uri: contentURL.absoluteString,
+      mimeType: output["mime_type"]?.stringValue ?? "",
+      fallbackText: title,
+      metadata: [
+        "user_visible": "true",
+        "size_bytes": String(output["size_bytes"]?.intValue ?? 0),
+        "width_px": String(output["width_px"]?.intValue ?? 0),
+        "height_px": String(output["height_px"]?.intValue ?? 0),
+        "duration_ms": String(output["duration_ms"]?.intValue ?? 0)
+      ]
+    )
+    return AgentRichContentCodec.encode(
+      AgentRichContentCodec.fromText(message) + [mediaBlock]
+    )
   }
 
   private func localModelPrompt(
@@ -1151,9 +2292,11 @@ final class MessageCoordinator: ObservableObject {
     contact: SignalASIContact,
     turns: [ChatMessage],
     outgoing: ChatMessage,
-    modelDetail: String
+    modelDetail: String,
+    displayContactId: String
   ) async throws {
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let destinationId = displayContactId.ifBlank(contact.id)
     var accumulated = ""
     var incoming: ChatMessage?
     var completed = false
@@ -1174,20 +2317,23 @@ final class MessageCoordinator: ObservableObject {
         if let current = incoming {
           incoming = store.updateMessageContent(
             current.id,
-            contactId: contact.id,
+            contactId: destinationId,
             content: content,
             status: .sent
           ) ?? current
         } else {
           incoming = store.appendIncoming(
             content,
-            from: contact.id,
+            from: destinationId,
             remoteMessageId: event.requestId,
             status: .sent,
             traceStage: "cloud_reply",
             conversationId: outgoing.conversationId,
             turnId: outgoing.turnId
           )
+        }
+        if let partial = incoming {
+          onIncomingMessageDelta?(partial)
         }
 
       case .completed:
@@ -1198,14 +2344,14 @@ final class MessageCoordinator: ObservableObject {
         completed = true
         store.appendDeliveryTrace(
           outgoing.id,
-          contactId: contact.id,
+          contactId: destinationId,
           stage: "cloud_reply",
           detail: modelDetail,
           status: .delivered
         )
         let final = store.updateMessageContent(
           current.id,
-          contactId: contact.id,
+          contactId: destinationId,
           content: clean,
           status: .delivered,
           traceStage: "cloud_reply_received",
@@ -1217,7 +2363,7 @@ final class MessageCoordinator: ObservableObject {
         if let current = incoming {
           store.appendDeliveryTrace(
             current.id,
-            contactId: contact.id,
+            contactId: destinationId,
             stage: "cloud_error",
             detail: failure.error.message,
             status: .failed
@@ -1279,7 +2425,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     attachments: [SignalASIDraftAttachment]
   ) async throws -> AgentDisclosureStatus {
-    guard let link = store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first else {
+    let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let link = requestedDesktopId.isEmpty
+      ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
+      : store.serverLinks.first(where: { $0.desktopId == requestedDesktopId })
+    guard let link else {
       throw SignalASIError.notPaired
     }
     let sourceMessageId = outgoing.id.uuidString
@@ -1367,10 +2517,17 @@ final class MessageCoordinator: ObservableObject {
         topic: link.routes.upTopic,
         wirePayload: wire.wireText,
         requiresValidatedNetwork: requiresValidatedNetwork,
-        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId)
+        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+        clientSourceMessageId: sourceMessageId,
+        contactId: contact.id
       )
       do {
-        try enqueueOutboundAttachmentTransfers(outboundAttachments, link: link)
+        try enqueueOutboundAttachmentTransfers(
+          outboundAttachments,
+          link: link,
+          sourceMessageId: sourceMessageId,
+          contactId: contact.id
+        )
       } catch {
         _ = deliveryStore.discardBlockedByAttachmentTransfers(outboundAttachments.map(\.transferId))
         throw error
@@ -1389,7 +2546,9 @@ final class MessageCoordinator: ObservableObject {
       messageId: wire.messageId,
       topic: link.routes.upTopic,
       wirePayload: wire.wireText,
-      requiresValidatedNetwork: requiresValidatedNetwork
+      requiresValidatedNetwork: requiresValidatedNetwork,
+      clientSourceMessageId: sourceMessageId,
+      contactId: contact.id
     )
     if requiresValidatedNetwork {
       store.appendDeliveryTrace(
@@ -1433,21 +2592,27 @@ final class MessageCoordinator: ObservableObject {
 
   private func enqueueOutboundAttachmentTransfers(
     _ attachments: [AgentPreparedOutboundAttachment],
-    link: ServerLink
+    link: ServerLink,
+    sourceMessageId: String,
+    contactId: String
   ) throws {
     for attachment in attachments {
       try enqueueLinkPayload(
         attachment.manifestPayload(resume: false),
         link: link,
         topic: link.routes.upTopic,
-        requiresValidatedNetwork: attachment.requiresValidatedNetwork
+        requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+        clientSourceMessageId: sourceMessageId,
+        contactId: contactId
       )
       for index in 0..<attachment.chunkCount {
         try enqueueLinkPayload(
           attachment.chunkPayload(index: index),
           link: link,
           topic: link.routes.upTopic,
-          requiresValidatedNetwork: attachment.requiresValidatedNetwork
+          requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+          clientSourceMessageId: sourceMessageId,
+          contactId: contactId
         )
       }
     }
@@ -1459,7 +2624,9 @@ final class MessageCoordinator: ObservableObject {
     link: ServerLink,
     topic: String,
     requiresValidatedNetwork: Bool? = nil,
-    blockedByAttachmentTransferIds: [String] = []
+    blockedByAttachmentTransferIds: [String] = [],
+    clientSourceMessageId: String = "",
+    contactId: String = ""
   ) throws -> String {
     let wire = try linkWirePayload(payload, link: link)
     deliveryStore.enqueue(
@@ -1467,7 +2634,9 @@ final class MessageCoordinator: ObservableObject {
       topic: topic,
       wirePayload: wire.wireText,
       requiresValidatedNetwork: requiresValidatedNetwork ?? (payload["defer_media_upload"] as? Bool ?? false),
-      blockedByAttachmentTransferIds: blockedByAttachmentTransferIds
+      blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
+      clientSourceMessageId: clientSourceMessageId,
+      contactId: contactId
     )
     return wire.messageId
   }
@@ -1563,6 +2732,9 @@ final class MessageCoordinator: ObservableObject {
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
       return
+    }
+    if appPayload.string("type") == "agent_task_event" {
+      _ = VoiceAgentRunBridgeRegistry.shared.consumeRemoteEnvelope(appPayload)
     }
     let messageId = appPayload.string("message_id")
     if appPayload.string("type") == "delivery_ack" {
@@ -1665,9 +2837,29 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
+    let responseTurnId = appPayload.string("turn_id")
+      .ifBlank(appPayload.string("source_message_id"))
+      .ifBlank(appPayload.string("message_id"))
+    let displayContactId = agentHomeDisplayContactIdsByTurnId[responseTurnId] ?? contactId
+    updateAgentExecutionTarget(
+      conversationId: appPayload.string("conversation_id"),
+      connectorId: appPayload.string("connector_id").ifBlank(appPayload.string("agent_id")),
+      contactId: contactId,
+      runtimeTarget: appPayload.string("runtime_target").ifBlank(appPayload.string("target")),
+      fallbackTarget: appPayload.string("agent_name").ifBlank(appPayload.string("provider"))
+    )
     let richOutputJson = AgentRichContentCodec.normalize(
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
+    let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) ||
+        ["waiting_input", "waiting_approval"].contains(remoteTaskStatus) {
+      finishPendingAgentReply(
+        turnId: appPayload.string("turn_id")
+          .ifBlank(appPayload.string("source_message_id"))
+          .ifBlank(appPayload.string("message_id"))
+      )
+    }
     let content = appPayload.string("content")
       .ifBlank(appPayload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
@@ -1677,9 +2869,14 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    finishPendingAgentReply(
+      turnId: appPayload.string("turn_id")
+        .ifBlank(appPayload.string("source_message_id"))
+        .ifBlank(appPayload.string("message_id"))
+    )
     let incoming = store.appendIncoming(
       content,
-      from: contactId,
+      from: displayContactId,
       remoteMessageId: appPayload.string("message_id"),
       conversationId: appPayload.string("conversation_id"),
       turnId: appPayload.string("turn_id"),
@@ -1689,8 +2886,11 @@ final class MessageCoordinator: ObservableObject {
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
+    if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) {
+      agentHomeDisplayContactIdsByTurnId.removeValue(forKey: responseTurnId)
+    }
     NotificationService.notify(
-      title: store.contact(id: contactId)?.displayName ?? "SignalASI",
+      title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
   }
@@ -1984,6 +3184,10 @@ final class MessageCoordinator: ObservableObject {
       }
     }
 
+    if type == "capability_manifest" {
+      updateDesktopMarketplace(from: payload)
+    }
+
     if hasConnectorAgents {
       _ = store.updateDesktopAgentContacts(from: payload, link: link)
     }
@@ -2003,6 +3207,15 @@ final class MessageCoordinator: ObservableObject {
     onIncomingMessage?(systemMessage)
     NotificationService.notify(title: "SignalASI", body: content)
     return true
+  }
+
+  private func updateDesktopMarketplace(from payload: [String: Any]) {
+    guard JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload),
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return
+    }
+    _ = desktopMarketplaceStore.update(payload: object)
   }
 
   private func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
@@ -2041,7 +3254,9 @@ final class MessageCoordinator: ObservableObject {
         chunkPayload,
         link: link,
         topic: link.routes.upTopic,
-        requiresValidatedNetwork: transfer.requiresValidatedNetwork
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
+        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
+        contactId: transfer.scope.contactId
       )
     }
     scheduleOutboxFlush(after: 0)
@@ -2151,9 +3366,13 @@ final class MessageCoordinator: ObservableObject {
     if !discardedTransfers.isEmpty {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
     }
+    handleExhaustedDeliveries(
+      deliveryStore.discardExhausted(maxAttempts: Self.maximumOutboxDeliveryAttempts)
+    )
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
+      maxAttempts: Self.maximumOutboxDeliveryAttempts
     )
     guard !pending.isEmpty else { return }
     for item in pending {
@@ -2169,7 +3388,8 @@ final class MessageCoordinator: ObservableObject {
   private func scheduleOutboxFlushFromStore() {
     let mediaProfile = mediaNetworkProfileProvider()
     if let delay = deliveryStore.nextRetryDelay(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
+      maxAttempts: Self.maximumOutboxDeliveryAttempts
     ) {
       scheduleOutboxFlush(after: delay)
     }
@@ -2233,11 +3453,18 @@ enum NotificationService {
   }
 
   static func notify(title: String, body: String) {
+    let identifier = UUID().uuidString
+    AgentIOSOwnedNotificationStore.shared.record(
+      identifier: identifier,
+      title: title,
+      body: body,
+      postedAtMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    )
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = String(body.prefix(160))
     content.sound = .default
-    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+    let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
   }
 }

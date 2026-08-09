@@ -7,6 +7,11 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   private let workspaceManager: AgentRuntimeProjectWorkspaceManager
   private let fileManager: FileManager
   private let nowMillis: () -> Int64
+  private let catalogManager: AgentIOSRuntimePackCatalogManager
+
+  var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? {
+    workspaceManager
+  }
 
   init(
     runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
@@ -22,6 +27,10 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       projectRoot: runtimeRootURL.appendingPathComponent("projects", isDirectory: true),
       nowMillis: nowMillis
     )
+    self.catalogManager = AgentIOSRuntimePackCatalogManager(
+      runtimeRootURL: runtimeRootURL,
+      nowMillis: nowMillis
+    )
   }
 
   static func defaultRuntimeRootURL(
@@ -35,10 +44,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     case .status, .workspaceStatus, .workspaceRollback, .listPacks:
       return .available
     case .installPack:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "Signed iOS runtime pack installer is not connected"
-      )
+      return .available
     case .execute:
       return AgentNativeToolAvailability(
         status: .requiresSetup,
@@ -73,10 +79,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         metadata: baseMetadata()
       )
     case .installPack:
-      return requiresSetup(
-        code: "runtime_pack_install_requires_setup",
-        message: "Signed iOS runtime pack installer is not connected"
-      )
+      return installPack(input: input, invocation: invocation)
     case .execute:
       return requiresSetup(
         code: "runtime_execute_requires_setup",
@@ -109,6 +112,74 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "runtime_store": .string("app_private_application_support"),
       "execution_target": .string("ios")
     ]
+  }
+
+  private func installPack(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let packId = (input["pack_id"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(packId) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_runtime_pack",
+        message: "Runtime pack is invalid"
+      )
+    }
+    do {
+      try invocation.reportProgress(
+        stage: "catalog",
+        message: "Refreshing the trusted runtime catalog",
+        percent: 10
+      )
+      let installed = try catalogManager.install(
+        packId: packId,
+        checkpoint: { try invocation.checkpoint() },
+        onDownloadProgress: { progress in
+          let percent = progress.totalBytes > 0
+            ? min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
+            : nil
+          try? invocation.reportProgress(
+            stage: "download",
+            message: "Downloading \(packId)",
+            percent: percent
+          )
+        },
+        onInstallProgress: { progress in
+          try? invocation.reportProgress(
+            stage: "install",
+            message: "Installing \(packId): \(progress.stage.rawValue.lowercased())"
+          )
+        }
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "requested_pack": .string(packId),
+          "installed": .array(installed.map { result in
+            .object([
+              "pack_id": .string(result.packId),
+              "version": .string(result.version),
+              "state": .string(result.state.rawValue),
+              "installed_bytes": .int(result.installedBytes),
+              "reason": .string(result.reason)
+            ])
+          })
+        ],
+        message: "Trusted runtime pack is ready",
+        metadata: baseMetadata(["operation": .string("signed_catalog_download_install")])
+      )
+    } catch let error as AgentNativeToolInvocationError {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_pack_install_cancelled",
+        message: error.localizedDescription,
+        retryable: true
+      )
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_pack_install_failed",
+        message: error.localizedDescription.ifBlank("Runtime pack installation failed")
+      )
+    }
   }
 
   private func workspaceStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
