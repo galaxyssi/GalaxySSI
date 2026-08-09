@@ -2123,7 +2123,6 @@
     <string name="rich_output_show_more">Show more</string>
     <string name="rich_output_section_plan">Plan</string>
     <string name="rich_output_section_execution_log">Execution log</string>
-    <string name="rich_output_section_final_answer">Final answer</string>
     <string name="rich_output_section_evidence">Evidence</string>
     <string name="rich_output_section_items">%1$d items</string>
     <string name="rich_output_section_expand">Expand section</string>
