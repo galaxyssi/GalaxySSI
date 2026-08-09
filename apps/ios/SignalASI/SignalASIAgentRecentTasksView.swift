@@ -497,10 +497,12 @@ private struct AgentTaskDetailSheet: View {
               Label(t("signalasi.common.cancel_task", "Cancel task"), systemImage: "xmark.circle")
             }
           }
-          Button {
-            onRetry()
-          } label: {
-            Label(t("signalasi.common.retry", "Retry"), systemImage: "arrow.clockwise")
+          if AgentTaskCenterPolicy.actions(task).contains(where: { $0.id == AgentTaskCenterAction.retry.id }) {
+            Button {
+              onRetry()
+            } label: {
+              Label(t("signalasi.common.retry", "Retry"), systemImage: "arrow.clockwise")
+            }
           }
           Spacer()
           Button {
@@ -508,14 +510,16 @@ private struct AgentTaskDetailSheet: View {
           } label: {
             Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
           }
-          Spacer()
-          Button(role: .destructive) {
-            dismiss()
-            DispatchQueue.main.async {
-              onDelete()
+          if AgentTaskCenterPolicy.actions(task).contains(where: { $0.id == AgentTaskCenterAction.delete.id }) {
+            Spacer()
+            Button(role: .destructive) {
+              dismiss()
+              DispatchQueue.main.async {
+                onDelete()
+              }
+            } label: {
+              Label(t("signalasi.common.delete", "Delete"), systemImage: "trash")
             }
-          } label: {
-            Label(t("signalasi.common.delete", "Delete"), systemImage: "trash")
           }
         }
       }
