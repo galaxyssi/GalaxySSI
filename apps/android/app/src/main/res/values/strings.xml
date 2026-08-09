@@ -2550,5 +2550,7 @@
     <string name="agent_model_selection_automatic_subtitle">Choose by task, speed, privacy, and availability</string>
     <string name="agent_model_selection_local_section">On-device models</string>
     <string name="agent_model_selection_local_subtitle">Enabled · On device</string>
+    <string name="agent_model_selection_agent_section">Desktop Agents</string>
+    <string name="agent_model_selection_agent_subtitle">Available · Paired Desktop</string>
     <string name="agent_model_selection_cloud_section">Cloud models</string>
 </resources>

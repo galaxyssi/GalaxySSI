@@ -2026,6 +2026,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         liveAgentConnectorStreams.remove(response.sourceMessageId)
         agentConnectorResponsesInFlight.remove(responseKey)
         cancelConnectorTimeouts(response.sourceMessageId)
+        updateAgentExecutionTarget(
+            conversationId = conversationId,
+            contactId = response.contactId
+        )
         agentTranscriptStore.recordUsage(
             conversationId, response.inputTokens, response.outputTokens, response.costMicros
         )
@@ -5823,6 +5827,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .orEmpty()
                 .ifBlank { "signalasi-mobile" }
             if (selectedRouteAction != null) {
+                if (selectedAgentId != "signalasi-mobile") {
+                    updateAgentExecutionTarget(
+                        conversationId = conversationId,
+                        connectorId = selectedAgentId,
+                        fallbackTarget = selectedRouteAction.target
+                    )
+                }
                 selectVoiceCoordinatorRoute(
                     voiceTraceId,
                     if (selectedAgentId == "signalasi-mobile") {
@@ -7173,6 +7184,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         turnId: String,
         result: AgentActionResult
     ) {
+        if (action.kind == AgentActionKind.CALL_CONNECTOR) {
+            updateAgentExecutionTarget(
+                conversationId = conversationId,
+                connectorId = action.parameters["connector_id"].orEmpty(),
+                contactId = result.metadata["contact_id"].orEmpty(),
+                runtimeTarget = result.metadata["target"].orEmpty(),
+                fallbackTarget = action.target
+            )
+        }
         if (result.metadata["awaiting_response"] == "true") {
             pendingDirectConnectorActions[turnId] = action
             result.metadata["source_message_id"]
@@ -7249,7 +7269,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
         val selection = AgentModelSelectionSettings.selection(this)
         val preferredTarget = AgentModelSelectionPolicy.selectedTarget(selection, targets)
-        val manualSelectionAvailable = selection.mode == AgentModelSelectionMode.MANUAL && preferredTarget != null
+        val manualSelectionAvailable = selection.mode == AgentModelSelectionMode.MANUAL &&
+            selection.targetId.isNotBlank()
         val modelName = if (manualSelectionAvailable) {
             when (preferredTarget?.id) {
                 "local-llm" -> selection.modelId
@@ -7355,6 +7376,50 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun updateAgentExecutionTarget(
+        conversationId: String,
+        connectorId: String = "",
+        contactId: String = "",
+        runtimeTarget: String = "",
+        fallbackTarget: String = ""
+    ) {
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+        val target = AgentExecutionTargetStatusPolicy.resolveTarget(
+            connectorId = connectorId,
+            contactId = contactId,
+            targets = targets
+        )
+        val genericLabels = setOf(
+            "agent or model",
+            "cloud models",
+            "signalasi",
+            "mobile executor"
+        )
+        val label = target?.let(::agentModelTargetDisplayName)
+            .orEmpty()
+            .ifBlank {
+                runtimeTarget.trim().takeUnless { it.lowercase(Locale.US) in genericLabels }.orEmpty()
+            }
+            .ifBlank {
+                fallbackTarget.trim().takeUnless { it.lowercase(Locale.US) in genericLabels }.orEmpty()
+            }
+        if (label.isBlank()) return
+        agentTranscriptStore.setSelectedModelOrAgent(conversationId, label)
+        if (conversationId == agentTranscriptStore.activeConversation().id) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                refreshAgentConversationHeader()
+            } else {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed &&
+                        conversationId == agentTranscriptStore.activeConversation().id
+                    ) {
+                        refreshAgentConversationHeader()
+                    }
+                }
+            }
+        }
+    }
+
     private fun foregroundAgentTurnInProgress(): Boolean {
         val entries = agentTranscriptStore.list()
         val latestUser = entries.lastOrNull { it.role == AgentTranscriptRole.USER } ?: return false
@@ -7443,6 +7508,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 targetId = "local-llm",
                                 modelId = profile.id,
                                 displayName = profile.displayName
+                            )
+                            refreshAgentConversationHeader()
+                            hideFeaturePage()
+                        }
+                    }
+                )
+            }
+        }
+
+        val agentTargets = AgentModelSelectionPolicy.selectableAgentTargets(targets)
+        if (agentTargets.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_model_selection_agent_section))
+            agentTargets.forEach { target ->
+                val agentName = agentModelTargetDisplayName(target)
+                featureContent.addView(
+                    agentModelSelectionRow(
+                        title = agentName,
+                        subtitle = getString(R.string.agent_model_selection_agent_subtitle),
+                        iconRes = controlCenterTargetIcon(target),
+                        iconColor = featureIconColor(controlCenterTargetIcon(target)),
+                        selected = preferredTargetId == target.id
+                    ).apply {
+                        setOnClickListener {
+                            AgentModelSelectionSettings.selectManual(
+                                this@MainActivity,
+                                targetId = target.id,
+                                modelId = "",
+                                displayName = agentName
                             )
                             refreshAgentConversationHeader()
                             hideFeaturePage()
