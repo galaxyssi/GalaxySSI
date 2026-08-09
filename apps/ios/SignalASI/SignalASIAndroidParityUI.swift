@@ -437,6 +437,10 @@ struct AgentHomeView: View {
         : t("signalasi.agent.model_selection.automatic", "Automatic")
     }
     if let contact = store.contact(id: modelSelection.targetId),
+       contact.type == "agent" {
+      return modelSelection.displayName.ifBlank(contact.displayName).ifBlank(contact.id)
+    }
+    if let contact = store.contact(id: modelSelection.targetId),
        let model = contact.selectedCloudModel,
        AgentConnectorAvailability.cloudModelReady(
          contact: contact,

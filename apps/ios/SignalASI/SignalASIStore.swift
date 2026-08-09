@@ -1182,6 +1182,14 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func setAgentSessionSelectedModelOrAgent(id conversationId: String, label: String) -> Bool {
+    mutateAgentConversation(id: conversationId) { conversation in
+      conversation.selectedModelOrAgent = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("Automatic")
+    }
+  }
+
+  @discardableResult
   func updateAgentSessionSummary(id conversationId: String, summary: String) -> Bool {
     mutateAgentConversation(id: conversationId) { $0.summary = summary.trimmingCharacters(in: .whitespacesAndNewlines) }
   }
