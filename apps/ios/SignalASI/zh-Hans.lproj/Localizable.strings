@@ -1264,6 +1264,10 @@
 "signalasi.scanner.access_unavailable" = "此设备上的相机访问不可用。";
 "signalasi.scanner.photo_action" = "从相册";
 "signalasi.scanner.photo_scan_failed" = "照片中未找到 SignalASI 二维码。";
+"signalasi.agent.scan.selecting" = "Agent 已添加，正在为当前会话选择路由……";
+"signalasi.agent.scan.selected" = "Agent 已添加，并已选为当前会话路由。";
+"signalasi.agent.scan.not_ready" = "Agent 已添加，但暂时无法通信。请在通讯录中检查 Agent 连接。";
+"signalasi.agent.scan.dismiss" = "关闭";
 "signalasi.message.actions" = "消息操作";
 "signalasi.message.delete" = "删除消息";
 "signalasi.message.details" = "详情";
