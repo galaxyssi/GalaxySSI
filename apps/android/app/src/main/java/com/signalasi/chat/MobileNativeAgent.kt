@@ -7737,7 +7737,14 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 nativeTools = request.runtimeContext.nativeTools
             )
         }
-        val selection = AgentConnectorRouteSelector.select(request.targets, routing) ?: return null
+        val preferredTargetId = context?.let { appContext ->
+            AgentModelSelectionSettings.preferredTargetId(appContext, request.targets)
+        }.orEmpty()
+        val selection = AgentConnectorRouteSelector.select(
+            targets = request.targets,
+            decision = routing,
+            preferredTargetId = preferredTargetId
+        ) ?: return null
         val currentInformation = selection.decision?.requirements?.liveDataRequired == true
         return connectorAction(
             request,
@@ -9594,7 +9601,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             )
         }
-        val profile = LocalModelRuntimeSettings.selectedProfile(context)
+        val profile = LocalModelCooperativeRuntime.displayProfile(context)
         if (!LocalModelInferenceRuntime.ready(context)) {
             return AgentActionResult(
                 action.id,
@@ -9615,11 +9622,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         LOCAL_MODEL_EXECUTOR.execute {
             val appContext = context.applicationContext
             val result = runCatching {
-                LocalModelInferenceRuntime.generate(
+                LocalModelCooperativeRuntime.generate(
                     context = appContext,
-                    profile = profile,
                     systemPrompt = CodexStyleResponsePolicy.prompt(appContext),
-                    userPrompt = promptWithLocalModelContext(action, requestPrompt)
+                    userPrompt = promptWithLocalModelContext(action, requestPrompt),
+                    hasAttachments = action.id.startsWith("attachment-") ||
+                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
                 )
             }
             val inference = result.getOrNull()

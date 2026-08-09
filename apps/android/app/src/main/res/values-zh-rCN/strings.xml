@@ -181,6 +181,11 @@
     <string name="local_model_memory_usage">内存占用</string>
     <string name="local_model_inference_speed">推理速度  28 token/s</string>
     <string name="local_model_section_manage">模型管理</string>
+    <string name="local_model_qnn_section">QNN NPU 模型</string>
+    <string name="local_model_qnn_catalog_subtitle">可启用任意一个或同时启用。简单任务使用 Qwen，复杂任务由 Qwen 与 Gemma 协作完成。</string>
+    <string name="local_model_qnn_installed_count">已安装 %1$d/%2$d</string>
+    <string name="local_model_qwen_automatic_thinking">快速回复与任务规划；自动选择思考模式</string>
+    <string name="local_model_gemma_reasoning_role">复杂推理与最终回复</string>
     <string name="local_model_select">选择模型</string>
     <string name="local_model_select_subtitle">选择用于运行预检的 GGUF 工作负载配置</string>
     <string name="local_model_vision">多模态输入</string>
@@ -212,6 +217,7 @@
     <string name="local_model_issue_file_invalid">所选模型文件为空或无效</string>
     <string name="local_model_issue_system_low_memory">Android 正处于内存压力状态，请稍后再启动推理</string>
     <string name="local_model_issue_insufficient_memory">最小上下文也无法放入当前安全内存预算</string>
+    <string name="local_model_issue_accelerator_unavailable">鎵€閫夌殑鍔犻€熷悗绔湪褰撳墠璁惧涓婁笉鍙敤</string>
     <string name="local_model_issue_device_hot">设备温度过高，暂不适合持续本地推理</string>
     <string name="local_model_issue_critical_battery">请先充电再启动本地推理</string>
     <string name="local_model_issue_context_reduced">将上下文降到 %1$d tokens 后可符合安全内存预算</string>
@@ -261,6 +267,9 @@
     <string name="local_model_delete_action">删除</string>
     <string name="local_model_use_action">使用</string>
     <string name="local_model_selected">当前</string>
+    <string name="local_model_enable_action">启用</string>
+    <string name="local_model_disable_action">关闭</string>
+    <string name="local_model_enabled">已启用</string>
     <string name="local_model_size_and_quantization">%1$s · %2$s · %3$sB</string>
     <string name="local_model_download_storage_error">此模型需要 %1$s 可用应用存储空间，当前只有 %2$s。</string>
     <string name="local_model_metered_title">使用移动数据？</string>
@@ -2439,4 +2448,14 @@
     <string name="voice_entity_device">设备</string>
     <string name="voice_entity_negation">否定词</string>
     <string name="voice_entity_action">动作</string>
+    <string name="agent_header_session_title">%1$s ›</string>
+    <string name="agent_header_model_auto">‹ Auto</string>
+    <string name="agent_header_model_auto_with_name">‹ Auto · %1$s</string>
+    <string name="agent_header_model_manual">‹ %1$s</string>
+    <string name="agent_model_selection_title">选择模型</string>
+    <string name="agent_model_selection_automatic">自动</string>
+    <string name="agent_model_selection_automatic_subtitle">根据任务、速度、隐私与可用性自动选择</string>
+    <string name="agent_model_selection_local_section">本机模型</string>
+    <string name="agent_model_selection_local_subtitle">已启用 · 本机</string>
+    <string name="agent_model_selection_cloud_section">云端模型</string>
 </resources>
