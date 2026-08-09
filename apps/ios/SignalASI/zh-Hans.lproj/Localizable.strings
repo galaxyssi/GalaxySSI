@@ -2085,6 +2085,9 @@
 "signalasi.local_model.hub_source" = "Hugging Face 模型";
 "signalasi.local_model.section_profiles" = "工作负载配置";
 "signalasi.local_model.selected" = "当前";
+"signalasi.local_model.enabled" = "已启用";
+"signalasi.local_model.enabled_profile" = "%@ 已启用";
+"signalasi.local_model.disabled_profile" = "%@ 已停用";
 "signalasi.local_model.use_action" = "使用";
 "signalasi.local_model.import_action" = "导入";
 "signalasi.local_model.imported" = "已导入 %@";
