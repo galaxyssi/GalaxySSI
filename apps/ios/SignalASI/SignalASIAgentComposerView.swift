@@ -104,7 +104,10 @@ struct SignalASIAgentComposerView: View {
           .foregroundColor(.signalASITextSecondary)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if holdToTalk.isRecording {
+      if holdToTalk.isPending {
+        voicePreparingSurface
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      } else if holdToTalk.isRecording {
         recordingSurface
           .transition(.move(edge: .bottom).combined(with: .opacity))
       } else {
@@ -119,6 +122,7 @@ struct SignalASIAgentComposerView: View {
     .padding(.vertical, 8)
     .background(Color.signalASIBarBackground)
     .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: trayVisible)
+    .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: holdToTalk.isPending)
     .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: holdToTalk.isRecording)
     .onChange(of: canSend) { hasInput in
       if hasInput {
@@ -140,6 +144,27 @@ struct SignalASIAgentComposerView: View {
       primaryActionButton
     }
     .frame(minHeight: 72)
+  }
+
+  private var voicePreparingSurface: some View {
+    AgentVoiceProcessingIndicator(
+      title: t("signalasi.voice.preparing_title", "Preparing voice input"),
+      subtitle: t(
+        "signalasi.voice.preparing_subtitle",
+        "Requesting microphone and speech recognition access."
+      )
+    )
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, minHeight: 72)
+    .background(Color.signalASISurface)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityLabel(
+      Text(t("signalasi.voice.preparing_title", "Preparing voice input"))
+    )
   }
 
   private var inputShell: some View {
