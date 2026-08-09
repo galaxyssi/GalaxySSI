@@ -149,6 +149,13 @@ struct AgentHomeView: View {
     store.messages(for: contact.id)
   }
 
+  private var waitingMessageIDs: Set<UUID> {
+    AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: messages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
+  }
+
   private var unreadTotal: Int {
     store.visibleContacts.reduce(0) { total, contact in
       total + store.conversationSummary(for: contact.id).unreadCount
@@ -312,6 +319,11 @@ struct AgentHomeView: View {
                     Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
                   }
                 }
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView()
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
             }
           }
         }
@@ -328,6 +340,17 @@ struct AgentHomeView: View {
         }
         store.markContactRead(contact.id)
         refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: waitingMessageIDs.count) { _ in
+        guard let last = messages.last else { return }
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(
+            waitingMessageIDs.contains(last.id)
+              ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+              : last.id,
+            anchor: .bottom
+          )
+        }
       }
     }
   }
