@@ -2,13 +2,19 @@ import Foundation
 
 enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
   case pending = "PENDING"
+  case queued = "QUEUED"
   case running = "RUNNING"
   case succeeded = "SUCCEEDED"
   case failed = "FAILED"
   case cancelled = "CANCELLED"
+  case skipped = "SKIPPED"
   case interrupted = "INTERRUPTED"
 
   var id: String { rawValue }
+
+  var isTerminal: Bool {
+    [.succeeded, .failed, .cancelled, .skipped, .interrupted].contains(self)
+  }
 }
 
 enum AgentTeamExecutionState: String, Codable, CaseIterable, Identifiable {

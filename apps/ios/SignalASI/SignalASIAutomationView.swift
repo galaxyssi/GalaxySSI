@@ -3,6 +3,8 @@ import SwiftUI
 struct SignalASIAutomationView: View {
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @ObservedObject private var remoteProactiveEventStore = UserDefaultsAgentRemoteProactiveEventStore.shared
+  @ObservedObject private var workflowTriggerStore = UserDefaultsAgentWorkflowTriggerStore.shared
   @State private var creatingTask = false
   @State private var errorMessage = ""
 
@@ -10,8 +12,8 @@ struct SignalASIAutomationView: View {
     store.automationTasks()
   }
 
-  private var recentRuns: [AgentProactiveRun] {
-    store.recentAutomationRuns(limit: 6)
+  private var recentExecutions: [AgentWorkflowExecutionRecord] {
+    store.recentWorkflowExecutions(limit: 6)
   }
 
   private var savedWorkflowTasks: [AgentProactiveTask] {
@@ -39,14 +41,28 @@ struct SignalASIAutomationView: View {
         title: t("signalasi.automation.title", "Automation"),
         leading: { SignalASIBackButton() },
         trailing: {
-          Button {
-            creatingTask = true
-          } label: {
-            Image(systemName: "plus")
-              .font(.system(size: 18, weight: .bold))
-              .foregroundColor(.signalASIAccent)
+          HStack(spacing: 16) {
+            NavigationLink(destination: SignalASIWorkflowsView()) {
+              Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.signalASIAccent)
+            }
+            .accessibilityLabel(t("signalasi.workflow.title", "Workflows"))
+            NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+              Image(systemName: "bolt")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.orange)
+            }
+            .accessibilityLabel(t("signalasi.workflow_trigger.title", "Workflow Trigger"))
+            Button {
+              creatingTask = true
+            } label: {
+              Image(systemName: "plus")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.signalASIAccent)
+            }
+            .accessibilityLabel(t("signalasi.automation.new_task", "New proactive task"))
           }
-          .accessibilityLabel(t("signalasi.automation.new_task", "New proactive task"))
         }
       )
 
@@ -79,7 +95,7 @@ struct SignalASIAutomationView: View {
                 label: t("signalasi.automation.metric_enabled", "Enabled")
               ),
               AutomationMetric(
-                value: "\(recentRuns.count)",
+                value: "\(recentExecutions.count)",
                 label: t("signalasi.automation.metric_runs", "Recent runs")
               )
             ]
@@ -117,6 +133,22 @@ struct SignalASIAutomationView: View {
                   )
                 }
                 .buttonStyle(.plain)
+              }
+            }
+          }
+
+          if !remoteProactiveEventStore.events.isEmpty {
+            sectionTitle(t("signalasi.automation.remote_activity", "Remote Activity"))
+            VStack(spacing: 8) {
+              ForEach(remoteProactiveEventStore.recent(limit: 30)) { event in
+                let status = AgentProactiveRunStatus.fromWireValue(event.status)
+                AutomationInfoRow(
+                  title: event.desktopName.ifBlank(t("signalasi.automation.remote_desktop", "SignalASI Desktop")),
+                  subtitle: remoteProactiveEventSubtitle(event),
+                  icon: "arrow.down.circle",
+                  tint: statusTint(status),
+                  badge: proactiveRunStatusLabel(status)
+                )
               }
             }
           }
@@ -190,8 +222,41 @@ struct SignalASIAutomationView: View {
             }
           }
 
+          sectionTitle(t("signalasi.workflow_trigger.device_section", "Device Event Triggers"))
+          if workflowTriggerStore.list().isEmpty {
+            NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+              AutomationInfoRow(
+                title: t("signalasi.workflow_trigger.no_triggers", "No device triggers"),
+                subtitle: t("signalasi.workflow_trigger.add_hint", "Run a workflow when power connects or battery becomes low"),
+                icon: "bolt",
+                tint: .orange,
+                badge: t("signalasi.common.add", "Add")
+              )
+            }
+            .buttonStyle(.plain)
+          } else {
+            VStack(spacing: 8) {
+              NavigationLink(destination: SignalASIWorkflowTriggerEditorView()) {
+                AutomationActionRow(
+                  title: t("signalasi.workflow_trigger.add", "Add device trigger"),
+                  subtitle: t("signalasi.workflow_trigger.add_hint", "Run a workflow when power connects or battery becomes low"),
+                  icon: "plus.circle",
+                  tint: .orange,
+                  badge: t("signalasi.common.add", "Add")
+                ) {}
+              }
+              .buttonStyle(.plain)
+              ForEach(workflowTriggerStore.list()) { trigger in
+                NavigationLink(destination: SignalASIWorkflowTriggerEditorView(trigger: trigger)) {
+                  SignalASIWorkflowTriggerRow(trigger: trigger)
+                }
+                .buttonStyle(.plain)
+              }
+            }
+          }
+
           sectionTitle(t("signalasi.automation.recent_executions", "Recent Executions"))
-          if recentRuns.isEmpty {
+          if recentExecutions.isEmpty {
             AutomationInfoRow(
               title: t("signalasi.automation.no_recent_executions", "No recent workflow executions"),
               subtitle: t("signalasi.automation.run_command_hint", "Use: run workflow Name"),
@@ -201,13 +266,13 @@ struct SignalASIAutomationView: View {
             )
           } else {
             VStack(spacing: 8) {
-              ForEach(recentRuns) { run in
+              ForEach(recentExecutions) { execution in
                 AutomationInfoRow(
-                  title: proactiveRunStatusLabel(run.status),
-                  subtitle: proactiveRunSubtitle(run),
+                  title: workflowExecutionStatusLabel(execution.status),
+                  subtitle: workflowExecutionSubtitle(execution),
                   icon: "clock.arrow.circlepath",
-                  tint: statusTint(run.status),
-                  badge: String(format: t("signalasi.automation.attempt", "Attempt %d"), run.attempt)
+                  tint: workflowExecutionTint(execution.status),
+                  badge: execution.workflowName
                 )
               }
             }
@@ -296,13 +361,45 @@ struct SignalASIAutomationView: View {
     .joined(separator: "\n")
   }
 
-  private func proactiveRunSubtitle(_ run: AgentProactiveRun) -> String {
+  private func workflowExecutionSubtitle(_ execution: AgentWorkflowExecutionRecord) -> String {
     [
-      automationTime(run.scheduledForMillis),
-      run.resultSummary.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+      automationTime(execution.startedAtMillis),
+      execution.resultSummary.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
     ]
     .compactMap { $0 }
     .joined(separator: "\n")
+  }
+
+  private func remoteProactiveEventSubtitle(_ event: AgentRemoteProactiveEvent) -> String {
+    [
+      event.taskId.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+      event.detail.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+      automationTime(event.timestampMillis)
+    ]
+    .compactMap { $0 }
+    .joined(separator: "\n")
+  }
+
+  private func workflowExecutionStatusLabel(_ status: AgentWorkflowExecutionStatus) -> String {
+    switch status {
+    case .running: return t("signalasi.automation.status_running", "Running")
+    case .waitingConfirmation: return t("signalasi.automation.status_waiting_confirmation", "Waiting confirmation")
+    case .waitingResponse: return t("signalasi.automation.status_waiting_response", "Waiting response")
+    case .completed: return t("signalasi.automation.status_completed", "Completed")
+    case .skipped: return t("signalasi.automation.status_skipped", "Skipped")
+    case .failed: return t("signalasi.automation.status_failed", "Failed")
+    case .cancelled: return t("signalasi.automation.status_cancelled", "Cancelled")
+    case .blocked: return t("signalasi.automation.status_blocked", "Blocked")
+    }
+  }
+
+  private func workflowExecutionTint(_ status: AgentWorkflowExecutionStatus) -> Color {
+    switch status {
+    case .completed: return .green
+    case .failed, .blocked: return .red
+    case .cancelled, .skipped: return .signalASITextSecondary
+    case .running, .waitingConfirmation, .waitingResponse: return .signalASIAccent
+    }
   }
 
   private func proactiveTriggerDescription(_ trigger: AgentProactiveTrigger) -> String {
@@ -647,12 +744,16 @@ struct SignalASIAutomationEditorView: View {
               minHeight: 96
             )
           } else {
-            AutomationTextInputRow(
-              title: t("signalasi.automation.target", "Target"),
-              icon: actionIcon(draft.actionKind),
-              tint: .signalASIAccent,
-              text: $draft.targetId
-            )
+            if draft.actionKind == .workflow {
+              WorkflowTargetPickerRow(targetId: $draft.targetId, language: interfaceLanguage)
+            } else {
+              AutomationTextInputRow(
+                title: t("signalasi.automation.target", "Target"),
+                icon: actionIcon(draft.actionKind),
+                tint: .signalASIAccent,
+                text: $draft.targetId
+              )
+            }
           }
           if draft.actionKind != .workflow {
             AutomationTextEditorRow(

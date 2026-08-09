@@ -21,6 +21,9 @@ class _ProbeMqtt:
         self.publishes.append((topic, json.loads(payload), kwargs))
         return _PublishInfo(self.rc)
 
+    def is_connected(self):
+        return True
+
 
 class MqttTransportProbeStateTests(unittest.TestCase):
     def test_probe_is_inactive_until_connect_completes(self):
@@ -59,6 +62,7 @@ class MqttTransportProbeStateTests(unittest.TestCase):
 
 class MqttTransportProbeIntegrationTests(unittest.TestCase):
     def setUp(self):
+        mqtt_bridge._clear_transport_reconnect()
         self.state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
         self.state_patch = patch.object(mqtt_bridge, "transport_probe_state", self.state)
         self.topic_patch = patch.object(
@@ -70,6 +74,7 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         self.topic_patch.start()
 
     def tearDown(self):
+        mqtt_bridge._clear_transport_reconnect()
         self.topic_patch.stop()
         self.state_patch.stop()
 
@@ -111,6 +116,50 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
             self.assertFalse(mqtt_bridge._publish_transport_probe(mqttc, now=100.0))
 
         recover.assert_called_once_with(mqttc, "probe_publish_rc_4")
+
+    def test_disconnect_releases_reconnect_guard(self):
+        self.assertTrue(mqtt_bridge._begin_transport_reconnect(now=100.0))
+
+        with patch.object(mqtt_bridge, "_clear_mqtt_wire_transport_state"):
+            mqtt_bridge.on_disconnect(_ProbeMqtt(), None, 0)
+
+        self.assertIsNone(mqtt_bridge._transport_reconnect_age(now=101.0))
+        self.assertTrue(mqtt_bridge._begin_transport_reconnect(now=101.0))
+
+    def test_expired_reconnect_guard_retries_recovery(self):
+        mqttc = _ProbeMqtt()
+        self.assertTrue(mqtt_bridge._begin_transport_reconnect(now=100.0))
+
+        with (
+            patch.object(mqtt_bridge, "client", mqttc),
+            patch.object(mqtt_bridge.time, "monotonic", return_value=116.0),
+            patch.object(mqtt_bridge, "_request_transport_reconnect") as recover,
+        ):
+            mqtt_bridge._transport_probe_tick()
+
+        recover.assert_called_once_with(mqttc, "reconnect_guard_timeout")
+
+    def test_probe_loop_survives_iteration_failure(self):
+        class _StopAfterTwoIterations:
+            def __init__(self):
+                self.calls = 0
+
+            def wait(self, _timeout):
+                self.calls += 1
+                return self.calls > 2
+
+        stop_event = _StopAfterTwoIterations()
+        with (
+            patch.object(mqtt_bridge, "transport_probe_stop_event", stop_event),
+            patch.object(
+                mqtt_bridge,
+                "_transport_probe_tick",
+                side_effect=[RuntimeError("probe failure"), None],
+            ) as tick,
+        ):
+            mqtt_bridge._transport_probe_loop()
+
+        self.assertEqual(2, tick.call_count)
 
 
 if __name__ == "__main__":

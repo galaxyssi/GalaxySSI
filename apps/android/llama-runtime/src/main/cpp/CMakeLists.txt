@@ -41,6 +41,10 @@ endif()
 
 add_subdirectory("${LLAMA_SOURCE_DIR}" llama-build)
 
+# GenieX ships a newer llama.cpp/GGML ABI for Hexagon and QAIRT execution.
+# This module is statically linked into libsignalasi-llama so it cannot publish
+# generic libggml*.so SONAMEs or satisfy GenieX dependencies by accident.
+
 add_library(signalasi-llama SHARED signalasi_llama.cpp)
 target_include_directories(signalasi-llama PRIVATE
     "${LLAMA_SOURCE_DIR}/include"

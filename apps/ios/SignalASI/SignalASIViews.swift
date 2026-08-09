@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import CoreImage
 import SwiftUI
 import UIKit
@@ -7,11 +8,20 @@ import UIKit
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var workflowTriggerCoordinator: AgentWorkflowTriggerCoordinator
+  @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
   init() {
     let store = SignalASIStore()
+    let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
-    _coordinator = StateObject(wrappedValue: MessageCoordinator(store: store))
+    _coordinator = StateObject(wrappedValue: coordinator)
+    _workflowTriggerCoordinator = StateObject(
+      wrappedValue: AgentWorkflowTriggerCoordinator(coordinator: coordinator)
+    )
+    _backgroundScheduler = StateObject(
+      wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
+    )
   }
 
   var body: some Scene {
@@ -20,7 +30,11 @@ struct SignalASIApp: App {
         .environmentObject(store)
         .environmentObject(coordinator)
         .signalASITextScale(store.displaySettings)
-        .onAppear { coordinator.start() }
+        .onAppear {
+          coordinator.start()
+          workflowTriggerCoordinator.start()
+          backgroundScheduler.start()
+        }
     }
   }
 }
@@ -597,6 +611,18 @@ struct ConversationView: View {
     contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
   }
 
+  private var waitingForAgentReply: Bool {
+    guard isAgentSessionContact,
+          let latest = displayedMessages.last,
+          latest.isMine,
+          !latest.isSystem else {
+      return false
+    }
+    return latest.deliveryStatus != .failed
+  }
+
+  private static let replyWaitingViewId = "signalasi-agent-reply-waiting"
+
   private func dismissAttachmentMenu(then action: @escaping () -> Void) {
     withAnimation(.easeIn(duration: 0.12)) {
       attachmentMenuPresented = false
@@ -806,6 +832,48 @@ struct MessageBubble: View {
 
   private var bubbleMaxWidth: CGFloat {
     min(UIScreen.main.bounds.width * 0.74, 520)
+  }
+}
+
+struct SignalASIAgentReplyWaitingIndicator: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var isAnimating = false
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text(t("signalasi.agent.reply_waiting", "Waiting for reply"))
+        .font(.footnote)
+      HStack(spacing: 4) {
+        ForEach(0..<3, id: \.self) { index in
+          Circle()
+            .fill(Color.signalASITextSecondary)
+            .frame(width: 5, height: 5)
+            .scaleEffect(isAnimating ? 1 : 0.55)
+            .opacity(isAnimating ? 1 : 0.35)
+            .animation(
+              .easeInOut(duration: 0.6)
+                .repeatForever()
+                .delay(Double(index) * 0.14),
+              value: isAnimating
+            )
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .foregroundColor(.signalASITextSecondary)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASIButtonSoft)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .onAppear {
+      isAnimating = true
+    }
+    .accessibilityLabel(t("signalasi.agent.reply_waiting", "Waiting for reply"))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 

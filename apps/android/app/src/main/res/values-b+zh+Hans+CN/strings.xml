@@ -230,6 +230,9 @@
     <string name="local_model_delete_action">删除</string>
     <string name="local_model_use_action">使用</string>
     <string name="local_model_selected">当前</string>
+    <string name="local_model_enable_action">启用</string>
+    <string name="local_model_disable_action">关闭</string>
+    <string name="local_model_enabled">已启用</string>
     <string name="local_model_size_and_quantization">%1$s · %2$s · %3$sB</string>
     <string name="local_model_download_storage_error">此模型需要 %1$s 可用应用存储空间，当前只有 %2$s。</string>
     <string name="local_model_metered_title">使用移动数据？</string>
@@ -1317,4 +1320,14 @@
     <string name="voice_entity_device">设备</string>
     <string name="voice_entity_negation">否定词</string>
     <string name="voice_entity_action">动作</string>
+    <string name="agent_header_session_title">%1$s ›</string>
+    <string name="agent_header_model_auto">‹ Auto</string>
+    <string name="agent_header_model_auto_with_name">‹ Auto · %1$s</string>
+    <string name="agent_header_model_manual">‹ %1$s</string>
+    <string name="agent_model_selection_title">选择模型</string>
+    <string name="agent_model_selection_automatic">自动</string>
+    <string name="agent_model_selection_automatic_subtitle">根据任务、速度、隐私与可用性自动选择</string>
+    <string name="agent_model_selection_local_section">本机模型</string>
+    <string name="agent_model_selection_local_subtitle">已启用 · 本机</string>
+    <string name="agent_model_selection_cloud_section">云端模型</string>
 </resources>
