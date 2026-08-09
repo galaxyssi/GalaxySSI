@@ -2029,6 +2029,7 @@ final class SignalASIStore: ObservableObject {
     guard CloudModelCredentialPolicy.isStoredCredential(cleanAPIKey) else {
       throw SignalASIError.missingAPIKey
     }
+    let now = Date()
     let providerSlug = SignalASIStore.slug(providerName)
     let contactId = "cloud:\(providerSlug)"
     let account = "cloud.\(providerSlug).\(SignalASIStore.slug(cleanModelId))"
@@ -2041,9 +2042,8 @@ final class SignalASIStore: ObservableObject {
       endpoint: cleanEndpoint,
       apiStyle: apiStyle,
       keychainAccount: account,
-      updatedAt: Date()
+      updatedAt: now
     )
-    let now = Date()
     var contact = contacts.first { $0.id == contactId } ?? SignalASIContact(
       id: contactId,
       signalASIId: contactId,
@@ -2070,10 +2070,12 @@ final class SignalASIStore: ObservableObject {
     } else {
       contact.cloudModels.append(model)
     }
-    if contact.selectedCloudModelId.isEmpty ||
-       !contact.cloudModels.contains(where: { $0.modelId == contact.selectedCloudModelId }) {
-      contact.selectedCloudModelId = contact.cloudModels.first?.modelId ?? model.modelId
+    for index in contact.cloudModels.indices {
+      let existingModel = contact.cloudModels[index]
+      try secrets.setString(cleanAPIKey, account: existingModel.keychainAccount)
+      contact.cloudModels[index].updatedAt = now
     }
+    contact.selectedCloudModelId = model.modelId
     contact.deleted = false
     contact.deletedAt = nil
     contact.trustState = .verified
