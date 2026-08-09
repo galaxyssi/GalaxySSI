@@ -1519,6 +1519,7 @@ struct AgentHomeView: View {
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
       ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
       : ""
+    let draftForRecovery = cleanDraft
     draft = ""
     if let voiceAttachmentSnapshot {
       let consumedIDs = Set(outgoingAttachments.map(\.id))
@@ -1535,9 +1536,14 @@ struct AgentHomeView: View {
         attachments: outgoingAttachments,
         agentGoalOverride: agentGoal
       )
-      if isVoiceSubmission && !sent {
-        voiceTranscriptionPending = false
+      if !sent {
+        if !draftForRecovery.isEmpty {
+          draft = draftForRecovery
+        }
         restoreAgentVoiceAttachments(outgoingAttachments)
+        if isVoiceSubmission {
+          voiceTranscriptionPending = false
+        }
         attachmentError = coordinator.lastError
       }
     }
