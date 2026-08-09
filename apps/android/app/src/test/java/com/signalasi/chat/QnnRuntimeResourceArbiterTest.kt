@@ -5,20 +5,19 @@ import org.junit.Test
 
 class QnnRuntimeResourceArbiterTest {
     @Test
-    fun `latest ASR runtime owns the release callback`() {
+    fun `latest ASR runtime owns the QNN priority lease`() {
         val arbiter = QnnRuntimeResourceArbiter()
-        var firstCalls = 0
-        var secondCalls = 0
-        val first = arbiter.registerAsr { firstCalls += 1 }
-        val second = arbiter.registerAsr { secondCalls += 1 }
+        var firstReady = true
+        var secondReady = true
+        val first = arbiter.registerAsr { firstReady }
+        val second = arbiter.registerAsr { secondReady }
 
-        arbiter.releaseAsrForLocalModel()
+        assertEquals(true, arbiter.asrHasPriority())
         first.close()
-        arbiter.releaseAsrForLocalModel()
+        secondReady = false
+        assertEquals(false, arbiter.asrHasPriority())
         second.close()
-        arbiter.releaseAsrForLocalModel()
-
-        assertEquals(0, firstCalls)
-        assertEquals(2, secondCalls)
+        assertEquals(false, arbiter.asrHasPriority())
+        firstReady = false
     }
 }

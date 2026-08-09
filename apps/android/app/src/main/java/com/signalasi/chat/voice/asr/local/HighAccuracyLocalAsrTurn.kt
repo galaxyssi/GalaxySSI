@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -52,7 +51,7 @@ class HighAccuracyLocalAsrController internal constructor(
     private var activeTurn: HighAccuracyLocalAsrTurn? = null
     private var runtimeMonitor: LocalAsrRuntimeMonitor? = null
     private val mutablePreparationStatus = MutableStateFlow(QnnAsrPreparationStatus.IDLE)
-    private val resourceRegistration = resourceArbiter?.registerAsr(::releaseForLocalModel)
+    private val resourceRegistration = resourceArbiter?.registerAsr(::reservesQnnRuntime)
 
     val preparationStatus: StateFlow<QnnAsrPreparationStatus> = mutablePreparationStatus.asStateFlow()
 
@@ -151,17 +150,10 @@ class HighAccuracyLocalAsrController internal constructor(
         synchronized(turnLock) { runtimeMonitor }?.onMicrophonePermissionChanged(granted)
     }
 
-    internal fun releaseForLocalModel() {
-        if (closed.get()) return
-        cancelActive()
-        prepareJob?.cancel()
-        runBlocking {
-            prepareMutex.withLock {
-                if (engine.isInitialized()) engine.value.releasePreparedModel()
-                mutablePreparationStatus.value = QnnAsrPreparationStatus.IDLE
-            }
-        }
-    }
+    internal fun reservesQnnRuntime(): Boolean =
+        prepareJob?.isActive == true ||
+            mutablePreparationStatus.value.phase == QnnAsrPreparationPhase.PREPARING ||
+            isReady()
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return

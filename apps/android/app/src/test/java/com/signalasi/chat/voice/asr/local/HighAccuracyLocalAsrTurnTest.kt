@@ -26,7 +26,7 @@ import kotlin.io.path.createTempDirectory
 
 class HighAccuracyLocalAsrTurnTest {
     @Test
-    fun localModelLeaseReleasesQnnAsrAndAllowsLazyPreparationAgain() = runBlocking {
+    fun preparedAsrKeepsQnnPriorityUntilControllerCloses() = runBlocking {
         val engine = FakeEngine()
         val arbiter = QnnRuntimeResourceArbiter()
         val controller = HighAccuracyLocalAsrController(
@@ -37,13 +37,10 @@ class HighAccuracyLocalAsrTurnTest {
         )
 
         assertTrue(controller.prepareNow())
-        arbiter.releaseAsrForLocalModel()
-
-        assertFalse(controller.isReady())
-        assertEquals(1, engine.releasePreparedModelCalls)
-        assertTrue(controller.prepareNow())
-        assertEquals(2, engine.prepareCalls)
+        assertTrue(controller.isReady())
+        assertTrue(arbiter.asrHasPriority())
         controller.close()
+        assertFalse(arbiter.asrHasPriority())
     }
 
     @Test
@@ -233,7 +230,6 @@ class HighAccuracyLocalAsrTurnTest {
         private val mutableState = MutableStateFlow<LocalAsrState>(LocalAsrState.Unprepared)
         private val mutableEvents = MutableSharedFlow<AsrEvent>(extraBufferCapacity = 32)
         var prepareCalls = 0
-        var releasePreparedModelCalls = 0
         var startCalls = 0
         var stopText = "hello world"
         var stopTermination = AsrTranscriptTermination.END_OF_TEXT
@@ -248,11 +244,6 @@ class HighAccuracyLocalAsrTurnTest {
         override suspend fun prepare(modelDirectory: String) {
             prepareCalls += 1
             transition(LocalAsrState.Ready(modelDirectory, 1L))
-        }
-
-        override suspend fun releasePreparedModel() {
-            releasePreparedModelCalls += 1
-            transition(LocalAsrState.Unprepared)
         }
 
         override fun start(config: AsrConfig) {

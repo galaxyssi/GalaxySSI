@@ -235,7 +235,6 @@ interface LocalAsrEngine : AutoCloseable {
     fun pause(reason: LocalAsrPauseReason)
     fun resume(reason: LocalAsrPauseReason)
     fun updateRuntimePolicy(policy: AsrRuntimePolicy) = Unit
-    suspend fun releasePreparedModel() = Unit
     override fun close()
 }
 
