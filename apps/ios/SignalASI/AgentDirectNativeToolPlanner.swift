@@ -20,6 +20,18 @@ enum AgentDirectNativeToolPlanner {
     let lower = goal.lowercased()
     let responseLanguage = responseLanguageCode(for: request)
 
+    if isNotificationReadGoal(lower),
+       let descriptor = descriptor(AgentIOSNotificationNativeToolCatalog.notificationsList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "list-notifications",
+        target: "Notifications",
+        description: "Read current notifications",
+        input: ["limit": .int(Int64(AgentIOSNotificationNativeToolCatalog.defaultLimit))],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isSMSGoal(lower),
        let phoneNumber = phoneNumber(in: goal),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.smsSend, in: request) {
@@ -320,6 +332,23 @@ enum AgentDirectNativeToolPlanner {
     request.nativeTools.first {
       $0.id == id && $0.availability.status == .available && $0.risk != .blocked
     }
+  }
+
+  private static func isNotificationReadGoal(_ lower: String) -> Bool {
+    let normalized = lower.trimmingCharacters(in: .whitespacesAndNewlines)
+    return [
+      "notifications",
+      "notification inbox",
+      "read notifications",
+      "list notifications",
+      "show notifications",
+      "show notification inbox",
+      "读取通知",
+      "查看通知",
+      "显示通知",
+      "通知列表",
+      "通知收件箱"
+    ].contains(normalized)
   }
 
   private static func firstPercent(in value: String) -> Int? {
