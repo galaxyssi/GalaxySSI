@@ -1550,6 +1550,10 @@ final class MessageCoordinator: ObservableObject {
     var disclosureTicket: AgentDisclosureTicket?
     do {
       if let localProfile = selectedLocalModel(for: contact, conversationId: outgoing.conversationId) {
+        updateAgentExecutionTarget(
+          conversationId: outgoing.conversationId,
+          runtimeTarget: localProfile.displayName
+        )
         if attachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
@@ -1588,6 +1592,14 @@ final class MessageCoordinator: ObservableObject {
         return true
       }
       if let cloudContact = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId) {
+        let cloudModelLabel = cloudContact.selectedCloudModel.map {
+          $0.displayName.ifBlank($0.modelId)
+        } ?? ""
+        updateAgentExecutionTarget(
+          conversationId: outgoing.conversationId,
+          contactId: cloudContact.id,
+          runtimeTarget: cloudModelLabel.ifBlank(cloudContact.displayName)
+        )
         let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
         let cloudText = cloudPrompt(text: requestText, attachments: attachments)
         var cloudTurns = store.messages(for: contact.id)
@@ -1615,6 +1627,13 @@ final class MessageCoordinator: ObservableObject {
         return true
       }
       if let agentContact = selectedAgentContact(for: contact, conversationId: outgoing.conversationId) {
+        updateAgentExecutionTarget(
+          conversationId: outgoing.conversationId,
+          contactId: agentContact.id,
+          fallbackTarget: agentContact.displayName
+            .ifBlank(agentContact.name)
+            .ifBlank(agentContact.id)
+        )
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
