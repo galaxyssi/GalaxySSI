@@ -50,6 +50,37 @@ class RecordingMqtt:
         return True
 
 
+class RacingPublishMqtt:
+    """Dispatch the broker ACK while durable publish registration is in flight."""
+
+    def __init__(self) -> None:
+        self.ack_started = threading.Event()
+        self.ack_finished = threading.Event()
+        self.ack_thread: threading.Thread | None = None
+
+    def publish(self, _topic: str, _payload: str, qos: int = 0) -> FakePublishInfo:
+        del qos
+        info = FakePublishInfo(71)
+
+        def acknowledge() -> None:
+            self.ack_started.set()
+            mqtt_bridge.on_publish(self, None, info.mid)
+            self.ack_finished.set()
+
+        self.ack_thread = threading.Thread(target=acknowledge)
+        self.ack_thread.start()
+        self.assert_ack_started()
+        return info
+
+    def assert_ack_started(self) -> None:
+        if not self.ack_started.wait(1):
+            raise AssertionError("broker ACK thread did not start")
+
+    @staticmethod
+    def is_connected() -> bool:
+        return True
+
+
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
         mqtt_bridge._stop_inbound_route_workers()
@@ -124,6 +155,36 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         mark_published.assert_called_once_with("route", "message")
         self.assertNotIn(AlreadyPublishedInfo.mid, mqtt_bridge.pending_outbound_acks)
+
+    def test_flush_registers_durable_message_before_early_broker_ack(self) -> None:
+        mqttc = RacingPublishMqtt()
+        pending = [{
+            "client_route_id": "client",
+            "message_id": "second-result",
+            "topic": "topic/down",
+            "wire_payload": "wire-result",
+        }]
+        with (
+            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
+            patch.object(
+                mqtt_bridge,
+                "list_clients",
+                return_value=[{"client_route_id": "client", "last_seen_at": 1}],
+            ),
+            patch.object(mqtt_bridge, "pending_outbound", return_value=pending),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
+            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
+            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "mark_outbound_published") as mark_published,
+        ):
+            published = mqtt_bridge.flush_outbound_messages(mqttc)
+            self.assertTrue(mqttc.ack_finished.wait(1))
+
+        if mqttc.ack_thread is not None:
+            mqttc.ack_thread.join(timeout=1)
+        self.assertEqual({("client", "second-result")}, set(published))
+        mark_published.assert_called_once_with("client", "second-result")
+        self.assertNotIn(71, mqtt_bridge.pending_outbound_acks)
 
     def test_durable_flush_never_exceeds_available_application_ack_window(self) -> None:
         mqttc = RecordingMqtt()

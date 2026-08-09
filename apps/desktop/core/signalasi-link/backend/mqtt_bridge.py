@@ -135,7 +135,7 @@ CODEX_WARM_INTERVAL_SECONDS = 30.0
 pending_delivery_acks: dict[int, dict] = {}
 pending_delivery_acks_lock = threading.Lock()
 pending_outbound_acks: dict[int, tuple[str, str]] = {}
-pending_outbound_acks_lock = threading.Lock()
+pending_outbound_acks_lock = threading.RLock()
 MAX_MQTT_WIRE_BYTES = MAX_MQTT_PACKET_BYTES
 MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
 MAX_READABLE_PROGRESS_REPLAY_EVENTS = 64
@@ -6676,11 +6676,18 @@ def flush_outbound_messages(
                 continue
             mark_outbound_sending(client_route_id, message_id)
             try:
-                info = _publish_mqtt_wire_payload(
-                    mqttc,
-                    pending["topic"],
-                    pending["wire_payload"],
-                )
+                # Paho may dispatch on_publish on its network thread before
+                # publish() returns to this worker. Keep registration atomic
+                # with publish so an early broker ACK cannot be lost and leave
+                # the durable message stuck in the sending state.
+                with pending_outbound_acks_lock:
+                    info = _publish_mqtt_wire_payload(
+                        mqttc,
+                        pending["topic"],
+                        pending["wire_payload"],
+                    )
+                    if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                        track_outbound_publish(info, client_route_id, message_id)
             except Exception as exc:
                 mark_outbound_retryable(client_route_id, message_id)
                 log.warning(
@@ -6699,7 +6706,6 @@ def flush_outbound_messages(
                     message_id[:12],
                 )
                 continue
-            track_outbound_publish(info, client_route_id, message_id)
             published[(client_route_id, message_id)] = info
     return published
 
