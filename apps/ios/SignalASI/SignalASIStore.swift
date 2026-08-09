@@ -749,6 +749,112 @@ final class SignalASIStore: ObservableObject {
     return run
   }
 
+  func claimDueAutomationTasks(
+    nowMillis: Int64 = Self.nowMillis()
+  ) -> [AgentProactiveBackgroundExecution] {
+    var executions: [AgentProactiveBackgroundExecution] = []
+    let candidates = proactiveTasks.filter {
+      $0.enabled && $0.nextRunAtMillis > 0 && $0.nextRunAtMillis <= nowMillis
+    }
+    for task in candidates {
+      guard let due = try? AgentProactiveTaskScheduler.dueOccurrences(
+        task: task,
+        nowMillis: nowMillis
+      ), !due.occurrences.isEmpty else {
+        continue
+      }
+
+      let queuedCount = due.occurrences.filter { $0.status == .queued }.count
+      let updated = try? AgentProactiveTask(
+        taskId: task.taskId,
+        name: task.name,
+        trigger: task.trigger,
+        action: task.action,
+        policy: task.policy,
+        enabled: task.enabled,
+        nextRunAtMillis: due.nextRunAtMillis,
+        lastRunAtMillis: task.lastRunAtMillis,
+        lastStatus: queuedCount > 0 ? .queued : .skipped,
+        runCount: task.runCount,
+        consecutiveFailures: task.consecutiveFailures,
+        revision: task.revision,
+        createdAtMillis: task.createdAtMillis,
+        updatedAtMillis: nowMillis
+      )
+      guard let updated else { continue }
+      proactiveTasks.removeAll { $0.taskId == task.taskId }
+      proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updated]).prefix(200))
+
+      for occurrence in due.occurrences {
+        guard let run = try? AgentProactiveRun(
+          runId: "ios-proactive-run-\(UUID().uuidString.lowercased())",
+          taskId: task.taskId,
+          scheduledForMillis: occurrence.scheduledForMillis,
+          status: occurrence.status,
+          causeJson: "{\"source\":\"background\"}",
+          startedAtMillis: nowMillis,
+          resultSummary: occurrence.status == .queued
+            ? "Background Agent request queued."
+            : "Occurrence skipped by proactive policy."
+        ) else { continue }
+        proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+        if occurrence.status == .queued {
+          executions.append(AgentProactiveBackgroundExecution(
+            task: task,
+            runId: run.runId,
+            scheduledForMillis: occurrence.scheduledForMillis
+          ))
+        }
+      }
+    }
+    return executions
+  }
+
+  @discardableResult
+  func finishAutomationRun(
+    id runId: String,
+    status: AgentProactiveRunStatus,
+    resultSummary: String,
+    errorCode: String = ""
+  ) -> Bool {
+    let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let index = proactiveRuns.firstIndex(where: { $0.runId == clean }) else {
+      return false
+    }
+    let now = Self.nowMillis()
+    let run = proactiveRuns[index]
+    guard !run.status.terminal else { return false }
+    guard let finished = try? AgentProactiveRun(
+      runId: run.runId,
+      taskId: run.taskId,
+      scheduledForMillis: run.scheduledForMillis,
+      status: status,
+      attempt: run.attempt,
+      causeJson: run.causeJson,
+      startedAtMillis: run.startedAtMillis,
+      completedAtMillis: now,
+      resultSummary: resultSummary,
+      errorCode: errorCode,
+      linkedExecutionId: run.linkedExecutionId,
+      teamRunId: run.teamRunId
+    ) else { return false }
+    var runs = proactiveRuns
+    runs[index] = finished
+    proactiveRuns = runs
+
+    guard let task = automationTask(id: run.taskId),
+          let updated = try? AgentProactiveTaskScheduler.recordOutcome(
+            task: task,
+            status: status,
+            completedAtMillis: now
+          ) else {
+      return true
+    }
+    proactiveTasks.removeAll { $0.taskId == updated.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updated]).prefix(200))
+    return true
+  }
+
   @discardableResult
   func cancelAutomationRun(id runId: String) -> Bool {
     let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)

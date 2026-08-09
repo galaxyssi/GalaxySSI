@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import CoreImage
 import SwiftUI
 import UIKit
@@ -7,11 +8,16 @@ import UIKit
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var backgroundScheduler: AgentProactiveBackgroundScheduler
 
   init() {
     let store = SignalASIStore()
+    let coordinator = MessageCoordinator(store: store)
     _store = StateObject(wrappedValue: store)
-    _coordinator = StateObject(wrappedValue: MessageCoordinator(store: store))
+    _coordinator = StateObject(wrappedValue: coordinator)
+    _backgroundScheduler = StateObject(
+      wrappedValue: AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
+    )
   }
 
   var body: some Scene {
@@ -20,7 +26,10 @@ struct SignalASIApp: App {
         .environmentObject(store)
         .environmentObject(coordinator)
         .signalASITextScale(store.displaySettings)
-        .onAppear { coordinator.start() }
+        .onAppear {
+          coordinator.start()
+          backgroundScheduler.start()
+        }
     }
   }
 }

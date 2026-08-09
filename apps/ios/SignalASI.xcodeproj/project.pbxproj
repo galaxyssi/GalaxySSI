@@ -433,6 +433,7 @@
     A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* AgentPlanRunModels.swift */; };
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
+    A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
     A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
     A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
@@ -1047,6 +1048,7 @@
     A20000000000000000000117 /* AgentPlanRunModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanRunModels.swift; sourceTree = "<group>"; };
     A20000000000000000000671 /* AgentTaskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenter.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProactiveBackgroundScheduler.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
@@ -1512,6 +1514,7 @@
         A20000000000000000000671 /* AgentTaskCenter.swift */,
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
+        A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
         A20000000000000000000695 /* AgentTaskIdentity.swift */,
         A20000000000000000000696 /* AgentTaskIntent.swift */,
@@ -2292,6 +2295,7 @@
         A10000000000000000000671 /* AgentTaskCenter.swift in Sources */,
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
+        A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
         A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */,
         A10000000000000000000696 /* AgentTaskIntent.swift in Sources */,
@@ -3018,6 +3022,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh";
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
@@ -3070,6 +3075,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.signalasi.chat.ios.agent-refresh";
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes and attach photos to Agent tasks.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
