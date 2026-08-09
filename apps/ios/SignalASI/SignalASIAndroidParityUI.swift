@@ -803,6 +803,12 @@ struct AgentHomeView: View {
                 cancelActiveAgentTask(activeExecutionTask)
               }
             }
+            SignalASIAgentScreenContextCard(
+              screen: agentScreenSnapshot.screen,
+              sections: agentScreenSnapshot.sections,
+              onCommand: prefillAgentScreenCommand,
+              t: t
+            )
             ForEach(transcriptMessages) { message in
               MessageBubble(
                 message: message,
