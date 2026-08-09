@@ -201,6 +201,17 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
     lifecycleLock.unlock()
   }
 
+  func reservesQnn() -> Bool {
+    lifecycleLock.lock()
+    defer { lifecycleLock.unlock() }
+    switch state {
+    case .loading, .ready, .decoding:
+      return true
+    case .unloaded, .unloading, .failed:
+      return false
+    }
+  }
+
   func close() {
     lifecycleLock.lock()
     if closed {
