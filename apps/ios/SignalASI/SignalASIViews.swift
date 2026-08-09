@@ -4,6 +4,7 @@ import CoreImage
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import UserNotifications
 
 @main
 struct SignalASIApp: App {
@@ -41,7 +42,17 @@ struct SignalASIApp: App {
           voiceAgentRunRecovery.start()
           workflowTriggerCoordinator.start()
           backgroundScheduler.start()
+          requestNotificationPermissionIfNeeded()
         }
+    }
+  }
+
+  private func requestNotificationPermissionIfNeeded() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      guard settings.authorizationStatus == .notDetermined else { return }
+      Task { @MainActor in
+        _ = await NotificationService.requestAuthorization()
+      }
     }
   }
 }
