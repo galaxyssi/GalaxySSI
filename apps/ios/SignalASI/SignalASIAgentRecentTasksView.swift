@@ -106,6 +106,9 @@ struct SignalASIAgentRecentTasksView: View {
         onRetry: {
           retryTask(task)
         },
+        onCancel: {
+          cancelTask(task)
+        },
         onDelete: {
           deletingTask = task
         }
@@ -155,6 +158,8 @@ struct SignalASIAgentRecentTasksView: View {
 
   private func handleAction(_ action: AgentTaskCenterAction, task: AgentTaskRecord) {
     switch action {
+    case .cancel:
+      cancelTask(task)
     case .retry:
       retryTask(task)
     case .copy:
@@ -186,6 +191,19 @@ struct SignalASIAgentRecentTasksView: View {
         statusText = t("signalasi.agent_tasks.retry_sent", "Task sent to Agent")
       }
     }
+  }
+
+  private func cancelTask(_ task: AgentTaskRecord) {
+    guard AgentTaskCenterPolicy.cancellable(task) else {
+      statusText = t(
+        "signalasi.agent_tasks.cancel_unavailable",
+        "This task cannot be cancelled now"
+      )
+      return
+    }
+    coordinator.cancelLocalNativeAction(taskId: task.taskId)
+    statusText = t("signalasi.agent_tasks.cancelled", "Task cancelled")
+    selectedTask = nil
   }
 
   private func copyTask(_ task: AgentTaskRecord) {
@@ -299,6 +317,8 @@ struct SignalASIAgentRecentTasksView: View {
 
   private func actionLabel(_ action: AgentTaskCenterAction) -> String {
     switch action {
+    case .cancel:
+      return t("signalasi.common.cancel_task", "Cancel task")
     case .retry:
       return t("signalasi.common.retry", "Retry")
     case .copy:
@@ -395,6 +415,7 @@ private struct AgentTaskDetailSheet: View {
   var execution: String
   var onCopy: () -> Void
   var onRetry: () -> Void
+  var onCancel: () -> Void
   var onDelete: () -> Void
 
   var body: some View {
@@ -444,6 +465,16 @@ private struct AgentTaskDetailSheet: View {
           }
         }
         ToolbarItemGroup(placement: .bottomBar) {
+          if AgentTaskCenterPolicy.cancellable(task) {
+            Button(role: .destructive) {
+              dismiss()
+              DispatchQueue.main.async {
+                onCancel()
+              }
+            } label: {
+              Label(t("signalasi.common.cancel_task", "Cancel task"), systemImage: "xmark.circle")
+            }
+          }
           Button {
             onRetry()
           } label: {

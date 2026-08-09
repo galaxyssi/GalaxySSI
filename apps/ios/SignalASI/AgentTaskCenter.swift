@@ -1,6 +1,7 @@
 import Foundation
 
 enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
+  case cancel = "CANCEL"
   case retry = "RETRY"
   case copy = "COPY"
   case viewLog = "VIEW_LOG"
@@ -24,6 +25,9 @@ protocol AgentTaskStore: AnyObject {
 enum AgentTaskCenterPolicy {
   static func actions(_ task: AgentTaskRecord) -> [AgentTaskCenterAction] {
     var actions: [AgentTaskCenterAction] = []
+    if cancellable(task) {
+      actions.append(.cancel)
+    }
     if terminalPhases.contains(task.phase), isReusableGoal(task.goal) {
       actions.append(.retry)
     }
@@ -35,12 +39,18 @@ enum AgentTaskCenterPolicy {
     return actions
   }
 
+  static func cancellable(_ task: AgentTaskRecord) -> Bool {
+    cancellablePhases.contains(task.phase) &&
+      (task.pendingAction != nil || !task.pendingActions.isEmpty)
+  }
+
   static func isReusableGoal(_ goal: String) -> Bool {
     let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
     return !clean.isEmpty && clean != sensitiveGoalPlaceholder
   }
 
   private static let terminalPhases: Set<AgentPhase> = [.completed, .failed, .cancelled, .blocked]
+  private static let cancellablePhases: Set<AgentPhase> = [.waitingConfirmation, .executing, .verifying, .paused]
   private static let sensitiveGoalPlaceholder = "Sensitive goal withheld"
 }
 
