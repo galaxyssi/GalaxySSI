@@ -3640,4 +3640,12 @@
 "signalasi.agent.approval_status.failed" = "审批决定发送失败。";
 "signalasi.agent.approval_status.approved" = "Agent 操作已批准。";
 "signalasi.agent.approval_status.denied" = "Agent 操作已拒绝。";
+"signalasi.agent.execution.remote" = "桌面端";
+"signalasi.agent.remote_status.running" = "运行中";
+"signalasi.agent.remote_status.waiting_input" = "等待输入";
+"signalasi.agent.remote_status.waiting_approval" = "等待审批";
+"signalasi.agent.remote_status.cancel" = "取消任务";
+"signalasi.agent.remote_status.cancelling" = "正在取消……";
+"signalasi.agent.remote_status.cancel_sent" = "取消请求已发送。";
+"signalasi.agent.remote_status.cancel_failed" = "取消请求发送失败。";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";

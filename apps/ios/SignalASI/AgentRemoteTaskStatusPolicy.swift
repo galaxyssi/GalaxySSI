@@ -1,5 +1,29 @@
 import Foundation
 
+struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
+  let taskId: String
+  let clientRouteId: String
+  let contactId: String
+  let conversationId: String
+  let turnId: String
+  let sourceMessageId: Int64
+  let status: String
+  let target: String
+  let location: String
+  let currentStep: String
+  let advertisedCancellable: Bool
+  let detail: String
+  let updatedAtMillis: Int64
+
+  var id: String {
+    "\(conversationId):\(taskId.ifBlank(turnId))"
+  }
+
+  var isCancellable: Bool {
+    advertisedCancellable && !AgentRemoteTaskStatusPolicy.isTerminal(status)
+  }
+}
+
 enum AgentRemoteTaskStatusPolicy {
   static let remoteTimeoutStage = "REMOTE_TASK"
 

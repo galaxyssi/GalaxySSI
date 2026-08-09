@@ -693,6 +693,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var artifactRevision = 0
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
+  @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
   var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
@@ -1045,6 +1046,61 @@ final class MessageCoordinator: ObservableObject {
       wirePayload: wire.wireText,
       clientSourceMessageId: String(decision.sourceMessageId),
       contactId: decision.contactId
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
+  func cancelRemoteAgentTask(_ snapshot: AgentRemoteTaskStatusSnapshot) async -> Bool {
+    guard !snapshot.taskId.isEmpty,
+          !snapshot.clientRouteId.isEmpty,
+          !snapshot.conversationId.isEmpty,
+          !snapshot.turnId.isEmpty,
+          !snapshot.contactId.isEmpty else {
+      return false
+    }
+    let contact = store.contact(id: snapshot.contactId)
+    guard let link = store.serverLinks.first(where: {
+      $0.paired && $0.routes.clientRouteId == snapshot.clientRouteId
+    }) else {
+      lastError = "No paired Desktop route is available for this cancellation"
+      return false
+    }
+    let payload: [String: Any] = [
+      "type": "agent_task_cancel",
+      "task_id": snapshot.taskId,
+      "client_route_id": snapshot.clientRouteId,
+      "conversation_id": snapshot.conversationId,
+      "turn_id": snapshot.turnId,
+      "contact_id": snapshot.contactId,
+      "source_message_id": snapshot.sourceMessageId,
+      "agent_id": contact?.connectorAgentId ?? "",
+      "desktop_id": link.desktopId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      lastError = "Agent cancellation payload could not be encoded"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      clientSourceMessageId: String(snapshot.sourceMessageId),
+      contactId: snapshot.contactId
     )
     deliveryStore.markAttempt(messageId: wire.messageId)
     let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
@@ -3191,6 +3247,18 @@ final class MessageCoordinator: ObservableObject {
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
     let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    if !remoteTaskStatus.isEmpty {
+      recordRemoteAgentTaskStatus(
+        payload: appPayload,
+        status: remoteTaskStatus,
+        contactId: contactId,
+        turnId: responseTurnId,
+        target: appPayload.string("agent_name")
+          .ifBlank(appPayload.string("provider"))
+          .ifBlank(appPayload.string("agent_id"))
+          .ifBlank("Agent")
+      )
+    }
     let streamKey = AgentConnectorStreamUpdate.streamKey(
       sourceMessageId: appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))),
       turnId: responseTurnId
@@ -3256,6 +3324,69 @@ final class MessageCoordinator: ObservableObject {
       title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
+  }
+
+  private func recordRemoteAgentTaskStatus(
+    payload: [String: Any],
+    status: String,
+    contactId: String,
+    turnId: String,
+    target: String
+  ) {
+    guard payload.string("type") == "agent_task_event" else { return }
+    let taskId = payload.string("task_id")
+    let clientRouteId = payload.string("client_route_id")
+    let conversationId = payload.string("conversation_id")
+    guard !taskId.isEmpty, !clientRouteId.isEmpty, !conversationId.isEmpty else { return }
+    let sourceMessageId = Int64(
+      payload.string("source_message_id").ifBlank(String(payload.int("source_message_id")))
+    ) ?? 0
+    let updatedAtMillis = Int64(
+      payload.string("updated_at")
+        .ifBlank(String(payload.int("updated_at")))
+        .ifBlank(payload.string("time"))
+        .ifBlank(String(payload.int("time")))
+    ) ?? Int64(Date().timeIntervalSince1970 * 1_000)
+    let executionView = payload.dictionary("execution_view")
+    let resolvedTarget = executionView?.string("executor_label")
+      .ifBlank(executionView?.string("executor_id") ?? "")
+      .ifBlank(target)
+    let location = executionView?.string("location_name")
+      .ifBlank(payload.string("desktop_name"))
+      .ifBlank("Desktop") ?? "Desktop"
+    let currentStep = payload.string("current_step")
+    let advertisedCancellable = executionView == nil ||
+      executionView?["cancellable"] == nil ||
+      executionView?.bool("cancellable") == true
+    let detail = payload.string("status_detail")
+      .ifBlank(payload.string("detail"))
+      .ifBlank(payload.string("content"))
+      .ifBlank(payload.string("text"))
+    let snapshot = AgentRemoteTaskStatusSnapshot(
+      taskId: taskId,
+      clientRouteId: clientRouteId,
+      contactId: contactId,
+      conversationId: conversationId,
+      turnId: turnId,
+      sourceMessageId: sourceMessageId,
+      status: status,
+      target: resolvedTarget,
+      location: location,
+      currentStep: currentStep,
+      advertisedCancellable: advertisedCancellable,
+      detail: detail,
+      updatedAtMillis: updatedAtMillis
+    )
+    if snapshot.isTerminal {
+      remoteAgentTaskStatuses.removeValue(forKey: snapshot.id)
+      return
+    }
+    remoteAgentTaskStatuses[snapshot.id] = snapshot
+    if remoteAgentTaskStatuses.count > 32 {
+      let oldest = remoteAgentTaskStatuses
+        .min { $0.value.updatedAtMillis < $1.value.updatedAtMillis }?.key
+      if let oldest { remoteAgentTaskStatuses.removeValue(forKey: oldest) }
+    }
   }
 
   private func applyAgentConnectorStreamUpdate(_ update: AgentConnectorStreamUpdate) {
