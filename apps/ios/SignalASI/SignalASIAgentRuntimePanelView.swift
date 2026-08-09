@@ -572,11 +572,10 @@ struct SignalASIAgentRuntimePanelView: View {
       .filter { !$0.verification.isBlank || !$0.result.isBlank || $0.phase == .completed || $0.phase == .failed }
       .prefix(3)
       .map { task in
-        let detail = task.verification.ifBlank(task.result).ifBlank(statusText(task))
         return SignalASIAgentRuntimeRow(
           id: "verification-\(task.taskId)",
           title: task.goal.ifBlank(t("agent_section_verification", "Verification")),
-          detail: detail,
+          detail: verificationDetail(task),
           badge: task.phase == .completed
             ? t("agent_verification_success", "Verified")
             : t("agent_verification_failed", "Check"),
@@ -584,6 +583,19 @@ struct SignalASIAgentRuntimePanelView: View {
           tint: task.phase == .completed ? .signalASIAccent : .orange
         )
       }
+  }
+
+  private func verificationDetail(_ task: AgentTaskRecord) -> String {
+    String(
+      format: t(
+        "signalasi.agent_runtime.verification_evidence_detail",
+        "%@ / %d timeline events / %d files / %d native results"
+      ),
+      task.verification.ifBlank(task.result).ifBlank(statusText(task)),
+      task.executionLog.count,
+      task.outputFiles.count,
+      task.nativeActionResults.count
+    )
   }
 
   private var recentTaskRows: [SignalASIAgentRuntimeRow] {
