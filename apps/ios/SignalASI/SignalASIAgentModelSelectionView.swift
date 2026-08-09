@@ -229,28 +229,67 @@ struct SignalASIAgentModelSelectionView: View {
   }
 
   private var isAutomatic: Bool {
-    selection.mode == .automatic || selectedManualTarget == nil
+    selection.mode == .automatic ||
+      selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private var selectedManualTarget: (title: String, subtitle: String)? {
     guard selection.mode == .manual else { return nil }
-    if selection.targetId == "local-llm",
-       let profile = localProfiles.first(where: { $0.id == selection.modelId }) {
-      return (profile.displayName, t("signalasi.agent.model_selection.on_device", "On device"))
-    }
-    if let contact = cloudContacts.first(where: { $0.id == selection.targetId }),
-       let model = contact.selectedCloudModel {
-      return (model.displayName.ifBlank(model.modelId), contact.displayName)
-    }
-    if let contact = store.contact(id: selection.targetId),
-       contact.type == "agent",
-       preferredTargetId == selection.targetId {
+    let targetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !targetId.isEmpty else { return nil }
+
+    if targetId == "local-llm" {
+      let profile = LocalModelRuntimeCatalog.find(selection.modelId)
+      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+        LocalModelInferenceRuntime.shared.ready(profile: profile)
+      let title = profile.displayName
+        .ifBlank(selection.displayName)
+        .ifBlank(selection.modelId)
+        .ifBlank(targetId)
       return (
-        contact.displayName.ifBlank(contact.name).ifBlank(selection.displayName).ifBlank(contact.id),
-        t("signalasi.agent.model_selection.on_agent", "Agent")
+        title,
+        ready
+          ? t("signalasi.agent.model_selection.on_device", "On device")
+          : t("signalasi.agent.model_selection.unavailable", "Unavailable")
       )
     }
-    return nil
+
+    if let contact = store.contact(id: targetId) {
+      if contact.type == "agent" {
+        let title = contact.displayName
+          .ifBlank(contact.name)
+          .ifBlank(selection.displayName)
+          .ifBlank(contact.id)
+        let ready = preferredTargetId == targetId
+        return (
+          title,
+          ready
+            ? t("signalasi.agent.model_selection.on_agent", "Agent")
+            : t("signalasi.agent.model_selection.unavailable", "Unavailable")
+        )
+      }
+
+      if let model = contact.selectedCloudModel {
+        let ready = AgentConnectorAvailability.cloudModelReady(
+          contact: contact,
+          apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
+        )
+        return (
+          model.displayName
+            .ifBlank(model.modelId)
+            .ifBlank(selection.displayName)
+            .ifBlank(targetId),
+          ready
+            ? contact.displayName
+            : t("signalasi.agent.model_selection.unavailable", "Unavailable")
+        )
+      }
+    }
+
+    return (
+      selection.displayName.ifBlank(targetId),
+      t("signalasi.agent.model_selection.unavailable", "Unavailable")
+    )
   }
 
   private var selectionSubtitle: String {
