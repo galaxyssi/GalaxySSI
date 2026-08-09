@@ -360,7 +360,8 @@ struct SignalASIVoiceTabView: View {
           onStart: {
             submitStatus = ""
           },
-          onFinish: submitVoiceTranscript
+          onFinish: submitVoiceTranscript,
+          onCancel: {}
         )
       }
       .onEnded { value in
