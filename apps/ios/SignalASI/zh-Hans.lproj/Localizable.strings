@@ -743,6 +743,9 @@
 "signalasi.agent_sessions.updated" = "会话已更新";
 "signalasi.agent_sessions.update_failed" = "会话未更改";
 "signalasi.agent_sessions.deleted" = "会话已删除";
+"signalasi.agent_sessions.deleted_remote_pending" = "会话已删除，正在清理配对的桌面端……";
+"signalasi.agent_sessions.deleted_remote_sent" = "远程清理请求已发送";
+"signalasi.agent_sessions.deleted_remote_failed" = "会话已删除，但远程清理请求发送失败";
 "signalasi.agent_sessions.delete_failed" = "会话未删除";
 "signalasi.agent_sessions.context_updated" = "上下文策略已更新";
 "signalasi.agent_session.new" = "新会话";

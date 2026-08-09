@@ -14,6 +14,7 @@ struct AgentSessionMetrics: Equatable {
 struct SignalASIAgentSessionsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var searchText = ""
   @State private var showArchived = false
   @State private var editDraft: AgentSessionEditDraft?
@@ -296,10 +297,30 @@ struct SignalASIAgentSessionsView: View {
 
   private func confirmDelete() {
     guard let session = deletingSession else { return }
+    let shouldNotifyRemote = session.mergedIntoConversationId.isBlank
+    let taskIds = shouldNotifyRemote
+      ? store.agentTasks(forSession: session.id, limit: 256).map(\.taskId)
+      : []
     let deleted = store.deleteAgentSession(id: session.id)
-    statusText = deleted
-      ? t("signalasi.agent_sessions.deleted", "Session deleted")
-      : t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+    if deleted && shouldNotifyRemote {
+      statusText = t(
+        "signalasi.agent_sessions.deleted_remote_pending",
+        "Session deleted; cleaning up the paired Desktop..."
+      )
+      Task { @MainActor in
+        let sent = await coordinator.publishRemoteAgentConversationDelete(
+          conversationId: session.id,
+          taskIds: taskIds
+        )
+        statusText = sent
+          ? t("signalasi.agent_sessions.deleted_remote_sent", "Remote cleanup request sent")
+          : t("signalasi.agent_sessions.deleted_remote_failed", "Session deleted; remote cleanup could not be sent")
+      }
+    } else {
+      statusText = deleted
+        ? t("signalasi.agent_sessions.deleted", "Session deleted")
+        : t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+    }
     deletingSession = nil
   }
 
