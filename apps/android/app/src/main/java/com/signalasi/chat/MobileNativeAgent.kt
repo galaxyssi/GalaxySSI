@@ -10072,6 +10072,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             .ifBlank { "cloud-models" }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
         val connectorTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+        val cloudImageAttachments = AgentTurnAttachmentRegistry.get(connectorTurnId)
+            .filter(AgentInputAttachment::isImage)
         val connectorTaskId = action.parameters["_signalasi_task_id"].orEmpty()
             .ifBlank { connectorTurnId }
         if (deliveryMode == AgentDeliveryMode.IGNORE) {
@@ -10147,11 +10149,28 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val appContext = context.applicationContext
             val turnId = connectorTurnId
             val modelPrompt = promptWithConversationContext(action, requestPrompt, cloud = true)
+            val cloudImages = runCatching {
+                CloudImagePayloadFactory.prepare(appContext, cloudImageAttachments)
+            }
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()
             var successfulModel: JSONObject? = null
-            var lastError: Throwable? = null
-            modelCandidates.forEach { candidate ->
+            var lastError: Throwable? = cloudImages.exceptionOrNull()
+            cloudImages.getOrNull()?.forEach { image ->
+                Log.i(
+                    "SignalASILatency",
+                    "agent_cloud stage=image_prepared source=$messageId name=${image.displayName.take(80)} " +
+                        "bytes=${image.bytes.size} limit=${CloudImagePayload.MAX_BYTES}"
+                )
+            }
+            if (cloudImages.isFailure) {
+                Log.w(
+                    "SignalASILatency",
+                    "agent_cloud stage=image_prepare_failed source=$messageId " +
+                        "reason=${lastError?.message.orEmpty().take(160)}"
+                )
+            }
+            modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty().forEach { candidate ->
                 if (successfulModel != null) return@forEach
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
                 val model = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate
@@ -10181,6 +10200,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 )
                             ),
                             requestId = requestId,
+                            images = cloudImages.getOrThrow(),
                             onToolEvent = { event ->
                                 Log.i(
                                     "SignalASILatency",
