@@ -1482,6 +1482,10 @@ final class MessageCoordinator: ObservableObject {
       handleRemoteProactiveWebhook(appPayload, link: link, messageId: messageId)
       return
     }
+    if appPayload.string("type") == "proactive_task_event" {
+      handleRemoteProactiveEvent(appPayload, link: link, messageId: messageId)
+      return
+    }
     if handleDesktopControlPayload(appPayload, link: link) {
       if appPayload.string("type") == "capability_manifest" {
         _ = handleConnectorAgentStatus(appPayload, link: link)
@@ -1554,6 +1558,23 @@ final class MessageCoordinator: ObservableObject {
           errorCode: completed ? "" : "remote_webhook_execution_failed"
         )
       }
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func handleRemoteProactiveEvent(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    if let link = incomingLink, link.paired {
+      _ = UserDefaultsAgentRemoteProactiveEventStore.shared.ingest(
+        payload: payload,
+        trustedDesktopId: link.desktopId,
+        trustedDesktopName: link.desktopName
+      )
     }
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)

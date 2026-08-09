@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIAutomationView: View {
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @ObservedObject private var remoteProactiveEventStore = UserDefaultsAgentRemoteProactiveEventStore.shared
   @ObservedObject private var workflowTriggerStore = UserDefaultsAgentWorkflowTriggerStore.shared
   @State private var creatingTask = false
   @State private var errorMessage = ""
@@ -132,6 +133,22 @@ struct SignalASIAutomationView: View {
                   )
                 }
                 .buttonStyle(.plain)
+              }
+            }
+          }
+
+          if !remoteProactiveEventStore.events.isEmpty {
+            sectionTitle(t("signalasi.automation.remote_activity", "Remote Activity"))
+            VStack(spacing: 8) {
+              ForEach(remoteProactiveEventStore.recent(limit: 30)) { event in
+                let status = AgentProactiveRunStatus.fromWireValue(event.status)
+                AutomationInfoRow(
+                  title: event.desktopName.ifBlank(t("signalasi.automation.remote_desktop", "SignalASI Desktop")),
+                  subtitle: remoteProactiveEventSubtitle(event),
+                  icon: "arrow.down.circle",
+                  tint: statusTint(status),
+                  badge: proactiveRunStatusLabel(status)
+                )
               }
             }
           }
@@ -348,6 +365,16 @@ struct SignalASIAutomationView: View {
     [
       automationTime(execution.startedAtMillis),
       execution.resultSummary.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+    ]
+    .compactMap { $0 }
+    .joined(separator: "\n")
+  }
+
+  private func remoteProactiveEventSubtitle(_ event: AgentRemoteProactiveEvent) -> String {
+    [
+      event.taskId.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+      event.detail.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+      automationTime(event.timestampMillis)
     ]
     .compactMap { $0 }
     .joined(separator: "\n")

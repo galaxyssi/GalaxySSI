@@ -2786,6 +2786,7 @@ final class SignalASIStore: ObservableObject {
 
   private func resetToFreshState() {
     UserDefaultsAgentWorkflowStore.shared.clear()
+    UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
     UserDefaultsAgentWorkflowTriggerStore.shared.clear()
     UserDefaultsAgentRemoteProactiveWebhookStore.shared.clear()
     workflowExecutionHistoryStore.clear()
