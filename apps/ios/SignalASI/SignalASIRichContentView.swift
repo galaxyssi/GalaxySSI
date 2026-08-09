@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftUI
 import UIKit
@@ -241,6 +242,8 @@ private struct SignalASIRichBlockView: View {
       tableBlock
     case .image:
       imageBlock
+    case .audio:
+      audioBlock
     case .gallery:
       galleryBlock
     case .chart:
@@ -447,7 +450,7 @@ private struct SignalASIRichBlockView: View {
           .font(.subheadline.weight(.semibold))
       }
 
-      if let image = inlineImage {
+      if let image = inlineImage ?? localImage {
         Image(uiImage: image)
           .resizable()
           .scaledToFit()
@@ -477,6 +480,17 @@ private struct SignalASIRichBlockView: View {
         resourceBlock
       }
       }
+    }
+  }
+
+  private var audioBlock: some View {
+    if let url = localURL {
+      SignalASIAudioArtifactView(
+        url: url,
+        title: block.title.isEmpty ? t("rich_output_type_audio", "Audio") : block.title
+      )
+    } else {
+      resourceBlock
     }
   }
 
@@ -917,6 +931,16 @@ private struct SignalASIRichBlockView: View {
     return UIImage(data: data)
   }
 
+  private var localImage: UIImage? {
+    guard let url = localURL else { return nil }
+    return UIImage(contentsOfFile: url.path)
+  }
+
+  private var localURL: URL? {
+    guard let url = URL(string: block.uri), url.isFileURL else { return nil }
+    return url
+  }
+
   private var remoteURL: URL? {
     guard block.type == .image || block.type == .gallery,
           let url = SignalASIRichContentLink.safeURL(block.uri),
@@ -1187,6 +1211,156 @@ private struct SignalASIRichBarChartView: View {
     .orange,
     .purple
   ]
+}
+
+private struct SignalASIAudioArtifactView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @StateObject private var player: SignalASIAudioArtifactPlayer
+  let url: URL
+  let title: String
+
+  init(url: URL, title: String) {
+    self.url = url
+    self.title = title
+    _player = StateObject(wrappedValue: SignalASIAudioArtifactPlayer(url: url))
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "waveform")
+          .foregroundColor(.signalASIAccent)
+        Text(title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(2)
+        Spacer(minLength: 8)
+        Button {
+          player.togglePlayback()
+        } label: {
+          Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(Color.signalASIAccent))
+            .foregroundColor(.white)
+        }
+        .buttonStyle(.plain)
+          .accessibilityLabel(
+            SignalASILocalization.string(
+              player.isPlaying ? "rich_output_pause" : "rich_output_play",
+              fallback: player.isPlaying
+                ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
+                : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
+              language: interfaceLanguage
+            )
+          )
+      }
+      Slider(
+        value: Binding(
+          get: { player.currentTime },
+          set: { player.seek(to: $0) }
+        ),
+        in: 0...max(player.duration, 1)
+      )
+      HStack {
+        Text(formatTime(player.currentTime))
+        Spacer()
+        Text(formatTime(player.duration))
+      }
+      .font(.caption2.monospacedDigit())
+      .foregroundColor(.signalASITextSecondary)
+    }
+    .padding(10)
+    .background(Color.signalASISearchBackground.opacity(0.45))
+    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .onDisappear {
+      player.stop()
+    }
+  }
+
+  private func formatTime(_ value: TimeInterval) -> String {
+    let totalSeconds = max(0, Int(value.rounded()))
+    return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+  }
+}
+
+private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+  @Published private(set) var isPlaying = false
+  @Published private(set) var currentTime: TimeInterval = 0
+  @Published private(set) var duration: TimeInterval = 0
+
+  private let url: URL
+  private var player: AVAudioPlayer?
+  private var timer: Timer?
+
+  init(url: URL) {
+    self.url = url
+    super.init()
+  }
+
+  func togglePlayback() {
+    if isPlaying {
+      player?.pause()
+      isPlaying = false
+      stopTimer()
+      return
+    }
+    do {
+      if player == nil {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try AVAudioSession.sharedInstance().setActive(true)
+        let audioPlayer = try AVAudioPlayer(contentsOf: url)
+        audioPlayer.delegate = self
+        audioPlayer.prepareToPlay()
+        player = audioPlayer
+        duration = audioPlayer.duration
+      }
+      guard player?.play() == true else { return }
+      isPlaying = true
+      startTimer()
+    } catch {
+      player = nil
+      duration = 0
+      currentTime = 0
+    }
+  }
+
+  func seek(to value: TimeInterval) {
+    let resolved = min(max(0, value), max(duration, 0))
+    player?.currentTime = resolved
+    currentTime = resolved
+  }
+
+  func stop() {
+    player?.stop()
+    player?.currentTime = 0
+    currentTime = 0
+    isPlaying = false
+    stopTimer()
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    currentTime = 0
+    isPlaying = false
+    stopTimer()
+  }
+
+  deinit {
+    stopTimer()
+  }
+
+  private func startTimer() {
+    stopTimer()
+    timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+      guard let self, let player = self.player else { return }
+      self.currentTime = player.currentTime
+    }
+  }
+
+  private func stopTimer() {
+    timer?.invalidate()
+    timer = nil
+  }
 }
 
 private struct SignalASIArtifactDocument: FileDocument {

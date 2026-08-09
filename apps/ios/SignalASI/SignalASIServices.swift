@@ -1434,7 +1434,7 @@ final class MessageCoordinator: ObservableObject {
       status: result.success && hasRemainingActions ? .sent : (result.success ? .delivered : .failed)
     )
     if !result.success || !hasRemainingActions {
-      let richOutput = runtimeArtifactRichOutput(result: result, responseText: reply)
+      let richOutput = localNativeRichOutput(result: result, responseText: reply)
       _ = store.appendIncoming(
         reply,
         from: outgoing.contactId,
@@ -1521,6 +1521,22 @@ final class MessageCoordinator: ObservableObject {
     return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
   }
 
+  private func localNativeRichOutput(
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard result.success else { return "" }
+    let toolId = result.metadata["native_tool_id"] ?? ""
+    if AgentIOSVisibleCaptureNativeToolCatalog.toolIds.contains(toolId) {
+      return visibleCaptureRichOutput(
+        toolId: toolId,
+        result: result,
+        responseText: responseText
+      )
+    }
+    return runtimeArtifactRichOutput(result: result, responseText: responseText)
+  }
+
   private func runtimeArtifactRichOutput(
     result: AgentActionResult,
     responseText: String
@@ -1542,6 +1558,48 @@ final class MessageCoordinator: ObservableObject {
       responseText: responseText,
       preferredFileName: preferredFileName,
       zh: zh
+    )
+  }
+
+  private func visibleCaptureRichOutput(
+    toolId: String,
+    result: AgentActionResult,
+    responseText: String
+  ) -> String {
+    guard let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          let contentURI = output["content_uri"]?.stringValue,
+          let contentURL = URL(string: contentURI),
+          contentURL.isFileURL else {
+      return ""
+    }
+    let isPhoto = toolId == AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture
+    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
+    let title = isPhoto
+      ? (zh ? "已拍摄照片" : "Captured photo")
+      : (zh ? "已录制语音" : "Recorded audio")
+    let message = isPhoto
+      ? (zh ? "已拍摄照片并添加到当前会话。" : "Photo captured and attached.")
+      : (zh ? "已录制语音并添加到当前会话。" : "Audio recorded and attached.")
+    let kind: AgentRichBlockType = isPhoto ? .image : .audio
+    let mediaBlock = AgentRichBlock(
+      id: "visible-capture-\(contentURI.hashValue)",
+      type: kind,
+      title: title,
+      uri: contentURL.absoluteString,
+      mimeType: output["mime_type"]?.stringValue ?? "",
+      fallbackText: title,
+      metadata: [
+        "user_visible": "true",
+        "size_bytes": String(output["size_bytes"]?.intValue ?? 0),
+        "width_px": String(output["width_px"]?.intValue ?? 0),
+        "height_px": String(output["height_px"]?.intValue ?? 0),
+        "duration_ms": String(output["duration_ms"]?.intValue ?? 0)
+      ]
+    )
+    return AgentRichContentCodec.encode(
+      AgentRichContentCodec.fromText(message) + [mediaBlock]
     )
   }
 
