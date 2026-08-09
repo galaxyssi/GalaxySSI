@@ -103,6 +103,8 @@
 "agent_accessibility_status_enabled" = "屏幕访问：已启用";
 "agent_accessibility_status_disabled" = "屏幕访问：需要权限";
 "agent_running_tasks_targets_value" = "运行任务：%d / 目标：%d";
+"signalasi.agent.readiness.title" = "Agent 已就绪";
+"signalasi.agent.readiness.targets" = "目标";
 "agent_risk_low" = "低";
 "agent_risk_medium" = "中";
 "agent_risk_high" = "高";
