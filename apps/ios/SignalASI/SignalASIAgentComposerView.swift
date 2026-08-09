@@ -12,6 +12,7 @@ struct SignalASIAgentComposerView: View {
   var attachmentError: String
   var canSend: Bool
   var hasPendingPrimaryAction: Bool
+  var pendingPrimaryActionResumesTask: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -268,9 +269,9 @@ struct SignalASIAgentComposerView: View {
           onPendingPrimaryAction()
         }
       } label: {
-        Image(systemName: canSend ? "arrow.up" : "xmark")
+        Image(systemName: canSend ? "arrow.up" : (pendingPrimaryActionResumesTask ? "play.fill" : "xmark"))
           .font(.system(size: 20, weight: .bold))
-          .foregroundColor(canSend ? .signalASIAccent : .signalASIAgentVoiceCancel)
+          .foregroundColor(canSend || pendingPrimaryActionResumesTask ? .signalASIAccent : .signalASIAgentVoiceCancel)
           .frame(width: 54, height: 54)
           .background(Color.white)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -280,7 +281,9 @@ struct SignalASIAgentComposerView: View {
       .contentShape(Rectangle())
       .accessibilityLabel(Text(canSend
         ? t("signalasi.common.send", "Send")
-        : t("signalasi.agent.cancel_task", "Cancel task")))
+        : pendingPrimaryActionResumesTask
+          ? t("signalasi.agent.resume_task", "Resume task")
+          : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
         actionTrayPresented.toggle()

@@ -252,6 +252,14 @@ struct AgentHomeView: View {
     activeAgentTasks.first(where: AgentTaskCenterPolicy.cancellable)
   }
 
+  private var primaryAgentTask: AgentTaskRecord? {
+    activeAgentTasks.first(where: AgentTaskCenterPolicy.resumable) ?? cancellableAgentTask
+  }
+
+  private var primaryActionResumesTask: Bool {
+    primaryAgentTask?.phase == .paused
+  }
+
   private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
@@ -722,7 +730,8 @@ struct AgentHomeView: View {
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,
-      hasPendingPrimaryAction: cancellableAgentTask != nil,
+      hasPendingPrimaryAction: primaryAgentTask != nil,
+      pendingPrimaryActionResumesTask: primaryActionResumesTask,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -735,16 +744,20 @@ struct AgentHomeView: View {
         fileImporterPresented = true
       },
       onSend: { sendAgentMessage() },
-      onPendingPrimaryAction: cancelPendingAgentTask,
+      onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
       onVoiceTranscript: sendAgentVoiceTranscript,
       t: t
     )
   }
 
-  private func cancelPendingAgentTask() {
-    guard let task = cancellableAgentTask else { return }
-    coordinator.cancelLocalNativeAction(taskId: task.taskId)
+  private func handlePendingAgentTaskAction() {
+    guard let task = primaryAgentTask else { return }
+    if task.phase == .paused {
+      _ = coordinator.resumeLocalNativeAction(taskId: task.taskId)
+    } else {
+      coordinator.cancelLocalNativeAction(taskId: task.taskId)
+    }
   }
 
   private var agentRuntimePanel: some View {
