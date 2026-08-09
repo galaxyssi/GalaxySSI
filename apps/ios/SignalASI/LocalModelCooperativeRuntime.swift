@@ -147,13 +147,18 @@ final class LocalModelCooperativeRuntime {
     temperature: Double = 0.3,
     hasAttachments: Bool = false,
     executionProfile: AgentExecutionProfile? = nil,
-    workClass: LocalModelWorkClass = .interactive
+    workClass: LocalModelWorkClass = .interactive,
+    preferredProfileId: String = ""
   ) async throws -> LocalModelInferenceResult {
+    let preferredId = preferredProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
     let resolvedExecutionProfile = executionProfile ?? AgentExecutionProfile.forGoal(
       userPrompt,
       hasAttachments: hasAttachments
     )
-    let available = readyProfiles(workClass: workClass)
+    let available = readyProfiles(
+      workClass: workClass,
+      preferredProfileId: preferredId
+    )
     let selectedProfile = LocalModelRuntimeSettings.selectedProfile()
     let resolvedFallback = available.first { $0.id == selectedProfile.id } ??
       available.first { $0.id == fallbackProfile.id } ??
@@ -250,13 +255,17 @@ final class LocalModelCooperativeRuntime {
   }
 
   private func readyProfiles(
-    workClass: LocalModelWorkClass = .interactive
+    workClass: LocalModelWorkClass = .interactive,
+    preferredProfileId: String = ""
   ) -> [LocalModelRuntimeProfile] {
-    LocalModelRuntimeSettings.activeProfiles().filter { profile in
+    let activeProfiles = LocalModelRuntimeSettings.activeProfiles().filter { profile in
       workClass == .background
         ? runtime.readyForBackground(profile: profile)
         : runtime.ready(profile: profile)
     }
+    let preferredId = preferredProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !preferredId.isEmpty else { return activeProfiles }
+    return activeProfiles.filter { $0.id == preferredId }
   }
 
   private static let plannerSystemPrompt =
