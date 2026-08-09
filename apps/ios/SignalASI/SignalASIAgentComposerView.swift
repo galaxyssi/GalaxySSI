@@ -136,6 +136,7 @@ struct SignalASIAgentComposerView: View {
     }
     .onDisappear {
       voiceTranscriptionPending = false
+      onVoiceCancelled()
       holdToTalk.cancelFromView()
     }
   }
