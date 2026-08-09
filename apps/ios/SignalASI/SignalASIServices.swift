@@ -1666,6 +1666,12 @@ final class MessageCoordinator: ObservableObject {
         )
         return true
       }
+      if let unavailable = manualSelectionUnavailableError(
+        for: contact,
+        conversationId: outgoing.conversationId
+      ) {
+        throw unavailable
+      }
       switch contact.deliveryMode {
       case .cloudAPI:
         let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
@@ -1744,7 +1750,9 @@ final class MessageCoordinator: ObservableObject {
       }
       lastError = error.localizedDescription
       let stage: String
-      if selectedAgentContact(for: contact, conversationId: outgoing.conversationId) != nil {
+      if manualSelection(for: contact, conversationId: outgoing.conversationId) != nil {
+        stage = "manual_target_unavailable"
+      } else if selectedAgentContact(for: contact, conversationId: outgoing.conversationId) != nil {
         stage = "publish_failed"
       } else if selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId) != nil {
         stage = "cloud_error"
@@ -1768,6 +1776,35 @@ final class MessageCoordinator: ObservableObject {
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
       return false
     }
+  }
+
+  private func manualSelection(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> AgentModelSelection? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    guard contact.id == "hermes",
+          selection.mode == .manual,
+          !selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return selection
+  }
+
+  private func manualSelectionUnavailableError(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> Error? {
+    guard let selection = manualSelection(for: contact, conversationId: conversationId) else { return nil }
+    let targetName = selection.displayName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(selection.modelId)
+      .ifBlank(selection.targetId)
+    if selection.targetId == "local-llm",
+       LocalModelWhisperResourceArbiter.shared.asrHasPriority() {
+      return LocalModelASRPriorityError()
+    }
+    return AgentManualTargetUnavailableError(targetName: targetName)
   }
 
   private func selectedLocalModel(
