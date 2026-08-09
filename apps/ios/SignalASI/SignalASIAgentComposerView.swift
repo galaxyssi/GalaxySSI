@@ -136,6 +136,14 @@ struct SignalASIAgentComposerView: View {
       actionTrayPresented = false
       inputFocused = true
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
+    ) { _ in
+      guard inputFocused, !holdToTalk.isPending, !holdToTalk.isRecording else { return }
+      // Match Android: dismissing the keyboard exits text mode so voice input is available again.
+      inputFocused = false
+      actionTrayPresented = false
+    }
     .onDisappear {
       voiceTranscriptionPending = false
       onVoiceCancelled()
@@ -181,6 +189,7 @@ struct SignalASIAgentComposerView: View {
         .focused($inputFocused)
         .onSubmit {
           guard canSend else { return }
+          inputFocused = false
           actionTrayPresented = false
           onSend()
         }
@@ -298,6 +307,7 @@ struct SignalASIAgentComposerView: View {
       EmptyView()
     } else if uiState.showSendButton {
       Button {
+        inputFocused = false
         actionTrayPresented = false
         if canSend {
           onSend()
