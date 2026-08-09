@@ -692,6 +692,8 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var artifactRevision = 0
+  @Published private(set) var artifactDownloadCompletedRevision = 0
+  @Published private(set) var artifactDownloadFailure = ""
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
@@ -1196,6 +1198,7 @@ final class MessageCoordinator: ObservableObject {
     guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactURI),
       digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
       lastError = "Artifact metadata is incomplete"
+      artifactDownloadFailure = lastError
       return false
     }
     let desktopId = block.metadata["desktop_id"] ?? ""
@@ -1215,6 +1218,7 @@ final class MessageCoordinator: ObservableObject {
     }
     guard let link, link.paired else {
       lastError = "No paired Desktop is available for this artifact"
+      artifactDownloadFailure = lastError
       return false
     }
     if pendingArtifactDownloads.contains(artifactURI) {
@@ -1237,6 +1241,7 @@ final class MessageCoordinator: ObservableObject {
     guard let wire = try? linkWirePayload(payload, link: link) else {
       pendingArtifactDownloads.remove(artifactURI)
       lastError = "Unable to prepare artifact request"
+      artifactDownloadFailure = lastError
       return false
     }
     deliveryStore.enqueue(
@@ -1250,6 +1255,7 @@ final class MessageCoordinator: ObservableObject {
       pendingArtifactDownloads.remove(artifactURI)
       scheduleOutboxFlush(after: 0)
       lastError = "Artifact download request could not be sent"
+      artifactDownloadFailure = lastError
     }
     return result.accepted
   }
@@ -3638,6 +3644,8 @@ final class MessageCoordinator: ObservableObject {
         if result.completed {
           pendingArtifactDownloads.remove(result.artifactURI)
           artifactRevision &+= 1
+          artifactDownloadFailure = ""
+          artifactDownloadCompletedRevision &+= 1
           let link = incomingLink ?? store.serverLinks.first { $0.desktopId == payload.string("desktop_id") }
           publishDesktopArtifactControl(
             [
@@ -3656,6 +3664,7 @@ final class MessageCoordinator: ObservableObject {
         }
       } catch {
         lastError = error.localizedDescription
+        artifactDownloadFailure = lastError
       }
     } else if type == "artifact_redelivery_result",
       payload.string("status") != "stored" {
@@ -3663,6 +3672,7 @@ final class MessageCoordinator: ObservableObject {
       lastError = payload.string("error_message")
         .ifBlank(payload.string("error"))
         .ifBlank("Artifact redelivery failed")
+      artifactDownloadFailure = lastError
     }
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
