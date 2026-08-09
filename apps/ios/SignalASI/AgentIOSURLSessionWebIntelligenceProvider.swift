@@ -5,13 +5,16 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
   var engineCatalogSize: Int = AgentIOSWebIntelligenceSourceCatalog.sourceCount
   var rankerId: String = "ios-urlsession-evidence-ranker-v1"
   var webMediaProvider: AgentIOSWebMediaToolProviding
+  var cacheStore: AgentIOSWebIntelligenceCacheStore
   var nowMillis: () -> Int64
 
   init(
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
+    cacheStore: AgentIOSWebIntelligenceCacheStore = AgentIOSWebIntelligenceCacheStore(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.webMediaProvider = webMediaProvider
+    self.cacheStore = cacheStore
     self.nowMillis = nowMillis
   }
 
@@ -28,10 +31,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     case .research, .agent:
       return combinedAvailability([.webSearch])
     case .cache, .findSimilar, .watch:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "iOS encrypted web intelligence cache is not connected"
-      )
+      return .available
     }
   }
 
@@ -53,13 +53,200 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       return research(input: input, invocation: invocation, operation: operation)
     case .diff:
       return diff(input: input, invocation: invocation)
-    case .cache, .findSimilar, .watch:
-      return failure(
-        "web_intelligence_cache_unavailable",
-        "iOS encrypted web intelligence cache is not connected",
-        retryable: false
-      )
+    case .cache:
+      return cache(input: input, invocation: invocation)
+    case .findSimilar:
+      return findSimilar(input: input, invocation: invocation)
+    case .watch:
+      return watch(input: input, invocation: invocation)
     }
+  }
+
+  private func cache(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let action = string(input, "action", limit: 32).ifBlank("status")
+    var documents: [AgentMcpJSONObject] = []
+    var results: [AgentMcpJSONObject] = []
+    var metadata = cacheStore.stats()
+    switch action {
+    case "status":
+      break
+    case "query":
+      documents = cacheStore.search(
+        query: string(input, "query", limit: 4_096),
+        limit: int(input, "limit", defaultValue: 10, minimum: 1, maximum: 100)
+      ).map { $0.value(includeContent: false) }
+      results = documents
+    case "get":
+      let url = string(input, "url", limit: 4_096)
+      guard let document = cacheStore.document(url: url, allowStale: true) else {
+        return failure("cache_miss", "The requested URL is not in the iOS web cache")
+      }
+      documents = [document.value()]
+    case "clear", "clear_expired":
+      let cleared = cacheStore.clear(expiredOnly: action == "clear_expired")
+      metadata.merge(cleared) { _, next in next }
+    default:
+      return failure("invalid_cache_action", "Unsupported iOS web cache action")
+    }
+    var output = baseOutput(operation: .cache, invocation: invocation, status: "completed")
+    output["query"] = .string(string(input, "query", limit: 4_096))
+    output["documents"] = .array(documents.map { .object($0) })
+    output["results"] = .array(results.map { .object($0) })
+    output["cache"] = .object(metadata)
+    output["metadata"] = .object([
+      "action": .string(action),
+      "encryption": .string("ios_keychain_aes_gcm")
+    ])
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "iOS encrypted web cache operation completed",
+      metadata: metadata(operation: .cache)
+    )
+  }
+
+  private func findSimilar(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let requestedURL = string(input, "url", limit: 4_096)
+    var query = string(input, "query", limit: 4_096)
+    if query.isEmpty, !requestedURL.isEmpty {
+      if let document = cacheStore.document(url: requestedURL, allowStale: true) {
+        query = "\(document.title) \(document.content.prefix(32_000))"
+      } else {
+        let fetched = fetch(input: ["url": .string(requestedURL)], invocation: invocation, operation: .fetch)
+        guard fetched.isSuccess else { return fetched }
+        query = fetched.output["text"]?.stringValue ?? ""
+      }
+    }
+    guard !query.isEmpty else {
+      return failure("similar_query_required", "Similar web intelligence requires a query or cached URL")
+    }
+    let limit = int(input, "limit", defaultValue: 10, minimum: 1, maximum: 100)
+    let excluded = requestedURL.isEmpty ? "" : canonicalURL(requestedURL)
+    var matches = cacheStore.search(query: query, limit: limit + 1)
+      .filter { canonicalURL($0.url) != excluded }
+      .prefix(limit)
+      .map { $0.value(includeContent: false) }
+    if matches.count < min(3, limit), input["search_web"]?.boolValue ?? true {
+      let searched = search(
+        input: [
+          "query": .string(String(query.prefix(4_096))),
+          "limit": .int(Int64(limit))
+        ],
+        invocation: invocation,
+        operation: .findSimilar
+      )
+      if searched.isSuccess {
+        let existing = Set(matches.compactMap { $0["url"]?.stringValue })
+        let additional = (searched.output["results"]?.arrayValue ?? [])
+          .compactMap(\.objectValue)
+          .filter { value in
+            guard let url = value["url"]?.stringValue else { return false }
+            return !existing.contains(url) && url != excluded
+          }
+        matches.append(contentsOf: additional.prefix(max(0, limit - matches.count)))
+      }
+    }
+    var output = baseOutput(operation: .findSimilar, invocation: invocation, status: matches.isEmpty ? "partial" : "completed")
+    output["query"] = .string(String(query.prefix(4_096)))
+    output["results"] = .array(matches.map { .object($0) })
+    output["cache"] = .object(cacheStore.stats().merging([
+      "hit": .bool(!cacheStore.search(query: query, limit: 1).isEmpty)
+    ]) { _, next in next })
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "Similar web intelligence sources collected",
+      metadata: metadata(operation: .findSimilar)
+    )
+  }
+
+  private func watch(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let action = string(input, "action", limit: 32).ifBlank("list")
+    let now = max(0, nowMillis())
+    var metadata: AgentMcpJSONObject = ["action": .string(action)]
+    var watchValue: AgentMcpJSONObject = [:]
+    var diffValue: AgentMcpJSONObject?
+    switch action {
+    case "create":
+      let url = canonicalURL(string(input, "url", limit: 4_096))
+      guard !url.isEmpty else { return failure("watch_url_required", "Web watch creation requires a URL") }
+      guard URL(string: url)?.scheme?.lowercased() == "https" else {
+        return failure("watch_url_invalid", "Web watch creation requires an HTTPS URL")
+      }
+      let watch = AgentIOSWebIntelligenceCacheWatch(
+        id: watchID(string(input, "watch_id", limit: 96)),
+        url: url,
+        intervalMinutes: int(input, "interval_minutes", defaultValue: 60, minimum: 15, maximum: 10_080),
+        enabled: input["enabled"]?.boolValue ?? true,
+        lastCheckedAtMillis: 0,
+        lastChangedAtMillis: 0,
+        lastSHA256: cacheStore.document(url: url, allowStale: true)?.contentSHA256 ?? "",
+        createdAtMillis: now,
+        updatedAtMillis: now
+      )
+      cacheStore.putWatch(watch)
+      watchValue = watch.value()
+    case "list":
+      metadata["watches"] = .array(cacheStore.watches().map { .object($0.value()) })
+    case "remove":
+      metadata["removed"] = .bool(cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)))
+    case "check", "check_due":
+      let selected: [AgentIOSWebIntelligenceCacheWatch]
+      if action == "check" {
+        selected = [cacheStore.watch(id: string(input, "watch_id", limit: 96))].compactMap { $0 }
+      } else {
+        selected = cacheStore.watches().filter { watch in
+          watch.enabled && (watch.lastCheckedAtMillis == 0 || now - watch.lastCheckedAtMillis >= Int64(watch.intervalMinutes) * 60_000)
+        }.prefix(int(input, "limit", defaultValue: 20, minimum: 1, maximum: 100)).map { $0 }
+      }
+      var checked: [AgentMcpJSONValue] = []
+      for item in selected {
+        try? invocation.checkpoint()
+        let result = diff(
+          input: ["url": .string(item.url)],
+          invocation: invocation
+        )
+        guard result.isSuccess else { continue }
+        let currentHash = result.output["current_sha256"]?.stringValue ?? ""
+        let changed = !item.lastSHA256.isEmpty && item.lastSHA256 != currentHash
+        let updated = AgentIOSWebIntelligenceCacheWatch(
+          id: item.id,
+          url: item.url,
+          intervalMinutes: item.intervalMinutes,
+          enabled: item.enabled,
+          lastCheckedAtMillis: now,
+          lastChangedAtMillis: changed ? now : item.lastChangedAtMillis,
+          lastSHA256: currentHash,
+          createdAtMillis: item.createdAtMillis,
+          updatedAtMillis: now
+        )
+        cacheStore.putWatch(updated)
+        var value = updated.value()
+        value["changed"] = .bool(changed)
+        checked.append(.object(value))
+        diffValue = result.output["diff"]?.objectValue
+      }
+      metadata["checked"] = .array(checked)
+    default:
+      return failure("invalid_watch_action", "Unsupported iOS web watch action")
+    }
+    var output = baseOutput(operation: .watch, invocation: invocation, status: "completed")
+    output["watch"] = .object(watchValue)
+    output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(false)]) { _, next in next })
+    output["metadata"] = .object(metadata)
+    if let diffValue { output["diff"] = .object(diffValue) }
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "iOS web watch operation completed",
+      metadata: metadata(operation: .watch)
+    )
   }
 
   private func search(
@@ -115,7 +302,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation
     )
     guard webResult.isSuccess else { return webResult }
-    return readableFetchResult(
+    let result = readableFetchResult(
       operation: operation,
       requestedURL: url,
       webResult: webResult,
@@ -123,6 +310,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       status: "completed",
       message: "Web intelligence public content fetched"
     )
+    cacheFetchedDocument(webResult, requestedURL: url, input: input)
+    return result
   }
 
   private func diff(
@@ -133,12 +322,14 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     guard !url.isEmpty else {
       return failure("invalid_url", "Web intelligence diff requires a URL")
     }
+    let previous = cacheStore.document(url: url, allowStale: true)
     let webResult = webMediaProvider.invoke(
       operation: .webOpen,
       input: webFetchInput(input, url: url, invocation: invocation),
       invocation: invocation
     )
     guard webResult.isSuccess else { return webResult }
+    cacheFetchedDocument(webResult, requestedURL: url, input: input)
     var result = readableFetchOutput(
       operation: .diff,
       requestedURL: url,
@@ -146,15 +337,24 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation,
       status: "partial"
     )
-    result["comparison"] = .string("no_prior_snapshot")
-    result["changed"] = .null
-    result["current_sha256"] = webResult.output["html_sha256"] ?? .string(AgentMcpJSONCodec.sha256([
+    let currentSHA256 = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256([
       "url": .string(url),
       "text": webResult.output["text"] ?? .string("")
     ]))
+    let changed = previous?.contentSHA256 != currentSHA256.stringValue
+    result["comparison"] = .string(previous == nil ? "no_prior_snapshot" : "cached_snapshot")
+    result["changed"] = .bool(changed)
+    result["previous_sha256"] = .string(previous?.contentSHA256 ?? "")
+    result["current_sha256"] = currentSHA256
+    result["diff"] = .object([
+      "changed": .bool(changed),
+      "previous_sha256": .string(previous?.contentSHA256 ?? ""),
+      "current_sha256": currentSHA256,
+      "summary": .string(changed ? "Cached page content changed" : "Cached page content did not change")
+    ])
     return AgentNativeToolExecutionResult.success(
       output: result,
-      message: "Fetched current public page state; no prior iOS cache snapshot is connected",
+      message: changed ? "Fetched current public page state; cached content changed" : "Fetched current public page state; cached content did not change",
       metadata: metadata(operation: .diff, webResult: webResult)
     )
   }
@@ -320,6 +520,39 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     )
   }
 
+  private func cacheFetchedDocument(
+    _ webResult: AgentNativeToolExecutionResult,
+    requestedURL: String,
+    input: AgentMcpJSONObject
+  ) {
+    let finalURL = finalURL(from: webResult.output, fallback: requestedURL)
+    let content = boundedText(
+      webResult.output["text"]?.stringValue ?? "",
+      maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters)
+    )
+    let hash = webResult.output["html_sha256"]?.stringValue
+      ?? webResult.output["sha256"]?.stringValue
+      ?? AgentMcpJSONCodec.sha256(["url": .string(finalURL), "text": .string(content)])
+    let retrievedAt = webResult.output["retrieved_at_epoch_ms"]?.intValue ?? nowMillis()
+    let ttl = max(
+      60_000,
+      min(
+        input["cache_ttl_ms"]?.intValue ?? AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis,
+        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
+      )
+    )
+    cacheStore.putDocument(
+      url: finalURL,
+      title: titleFromHTML(content),
+      content: content,
+      contentType: webResult.output["content_type"]?.stringValue ?? "",
+      contentSHA256: hash,
+      retrievedAtMillis: retrievedAt,
+      expiresAtMillis: retrievedAt + ttl,
+      links: []
+    )
+  }
+
   private func readableFetchOutput(
     operation: AgentIOSWebIntelligenceOperation,
     requestedURL: String,
@@ -395,7 +628,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       "source_isolation": .bool(true),
       "evidence_is_untrusted": .bool(true),
       "cookies": .string("none"),
-      "cache": .string("not_connected"),
+      "cache": .string("ios_keychain_aes_gcm"),
       "network_policy": .string("public_https_urlsession_revalidated_v1")
     ]
     if let webResult {
@@ -489,6 +722,16 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     if components.path.isEmpty { components.path = "/" }
     components.fragment = nil
     return components.string ?? value.lowercased()
+  }
+
+  private func watchID(_ value: String) -> String {
+    let cleaned = value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .filter { $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" }
+    if !cleaned.isEmpty {
+      return String(cleaned.prefix(96))
+    }
+    return "watch-\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(20))"
   }
 
   private func urlAllowed(

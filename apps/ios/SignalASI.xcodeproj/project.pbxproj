@@ -562,6 +562,7 @@
     A10000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */; };
     A10000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */; };
     A10000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */; };
+    A10000000000000000000901 /* AgentIOSWebIntelligenceCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */; };
     A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */; };
     A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */; };
     A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */; };
@@ -1236,6 +1237,7 @@
     A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaOCRProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSAVFoundationMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebIntelligenceProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceCache.swift; sourceTree = "<group>"; };
     A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDefaultOnDeviceRuntimeProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionStore.swift; sourceTree = "<group>"; };
@@ -1468,6 +1470,7 @@
         A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */,
         A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */,
         A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */,
+        A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */,
         A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */,
         A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */,
         A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */,
@@ -2558,6 +2561,7 @@
         A10000000000000000000444 /* AgentIOSWebMediaContentReader.swift in Sources */,
         A10000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift in Sources */,
         A10000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift in Sources */,
+        A10000000000000000000901 /* AgentIOSWebIntelligenceCache.swift in Sources */,
         A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */,
         A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */,
         A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */,
