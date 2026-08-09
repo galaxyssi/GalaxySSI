@@ -4,6 +4,10 @@ final class LocalModelInferenceRuntime {
   static let shared = LocalModelInferenceRuntime()
 
   private let lock = NSLock()
+  private let idleReleaseQueue = DispatchQueue(
+    label: "com.signalasi.ios.local-model-idle-release",
+    qos: .utility
+  )
   private let storage: LocalModelRuntimeStorage
   private let followsRegistry: Bool
   private var backend: LocalModelInferenceBackend
@@ -11,6 +15,7 @@ final class LocalModelInferenceRuntime {
   private var loadedContextTokens = 0
   private var foregroundWaiters = 0
   private var foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + Self.backgroundStartupGraceSeconds
+  private var idleReleaseWorkItem: DispatchWorkItem?
 
   init(
     storage: LocalModelRuntimeStorage = LocalModelRuntimeStorage(),
@@ -197,6 +202,8 @@ final class LocalModelInferenceRuntime {
 
   func releaseForResourcePressure() {
     lock.lock()
+    idleReleaseWorkItem?.cancel()
+    idleReleaseWorkItem = nil
     refreshBackendIfNeededLocked()
     backend.unload()
     loadedProfile = ""
@@ -246,6 +253,8 @@ final class LocalModelInferenceRuntime {
 
   private func beginInteractiveWork() {
     lock.lock()
+    idleReleaseWorkItem?.cancel()
+    idleReleaseWorkItem = nil
     foregroundWaiters += 1
     lock.unlock()
   }
@@ -254,7 +263,32 @@ final class LocalModelInferenceRuntime {
     lock.lock()
     foregroundWaiters = max(0, foregroundWaiters - 1)
     foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + Self.foregroundIdleGraceSeconds
+    let shouldScheduleRelease = foregroundWaiters == 0
+    let releaseWorkItem = shouldScheduleRelease
+      ? DispatchWorkItem { [weak self] in self?.releaseIfIdle() }
+      : nil
+    idleReleaseWorkItem = releaseWorkItem
     lock.unlock()
+    if let releaseWorkItem {
+      idleReleaseQueue.asyncAfter(
+        deadline: .now() + Self.foregroundIdleGraceSeconds,
+        execute: releaseWorkItem
+      )
+    }
+  }
+
+  private func releaseIfIdle() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard foregroundWaiters == 0,
+          ProcessInfo.processInfo.systemUptime >= foregroundLeaseUntilUptime else {
+      return
+    }
+    refreshBackendIfNeededLocked()
+    backend.unload()
+    loadedProfile = ""
+    loadedContextTokens = 0
+    idleReleaseWorkItem = nil
   }
 
   private func canRunBackgroundLocked() -> Bool {
