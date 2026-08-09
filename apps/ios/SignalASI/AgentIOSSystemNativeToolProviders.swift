@@ -183,14 +183,27 @@ struct AgentIOSDefaultContactsSearchProvider: AgentIOSContactsSearchProviding {
           }
         }
       } else {
-        let contacts = try store.unifiedContacts(
+        let nameMatches = try store.unifiedContacts(
           matching: CNContact.predicateForContacts(matchingName: normalizedQuery),
           keysToFetch: keys
         )
-        for contact in contacts {
+        for contact in nameMatches {
           self.append(contact, rows: &rows, seen: &seen, limit: clampedLimit)
           if rows.count >= clampedLimit {
             break
+          }
+        }
+        if rows.count < clampedLimit {
+          let request = CNContactFetchRequest(keysToFetch: keys)
+          request.sortOrder = .userDefault
+          try store.enumerateContacts(with: request) { contact, stop in
+            guard self.matches(contact, query: normalizedQuery) else {
+              return
+            }
+            self.append(contact, rows: &rows, seen: &seen, limit: clampedLimit)
+            if rows.count >= clampedLimit {
+              stop.pointee = true
+            }
           }
         }
       }
@@ -262,6 +275,22 @@ struct AgentIOSDefaultContactsSearchProvider: AgentIOSContactsSearchProviding {
     }
     let organization = contact.organizationName.trimmingCharacters(in: .whitespacesAndNewlines)
     return organization.isEmpty ? "Contact" : organization
+  }
+
+  private func matches(_ contact: CNContact, query: String) -> Bool {
+    let normalizedQuery = query.localizedLowercase
+    let name = contactDisplayName(contact).localizedLowercase
+    let organization = contact.organizationName.localizedLowercase
+    if name.contains(normalizedQuery) || organization.contains(normalizedQuery) {
+      return true
+    }
+    let queryDigits = query.filter { $0.isNumber }
+    guard !queryDigits.isEmpty else {
+      return false
+    }
+    return contact.phoneNumbers.contains { phone in
+      phone.value.stringValue.filter { $0.isNumber }.contains(queryDigits)
+    }
   }
 
   private func syntheticContactId(_ identifier: String) -> Int64 {
