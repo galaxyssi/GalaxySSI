@@ -137,6 +137,7 @@
 "agent_running_tasks_targets_value" = "运行任务：%d / 目标：%d";
 "signalasi.agent.readiness.title" = "Agent 已就绪";
 "signalasi.agent.readiness.targets" = "目标";
+"signalasi.agent.recent_tasks_value" = "最近任务：%d";
 "agent_risk_low" = "低";
 "agent_risk_medium" = "中";
 "agent_risk_high" = "高";

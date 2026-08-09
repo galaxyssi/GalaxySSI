@@ -914,6 +914,7 @@ struct AgentHomeView: View {
                 .ifBlank("SignalASI"),
               memorySnapshot: store.agentMemorySnapshot(),
               knowledgeStats: store.agentKnowledgeStats,
+              recentTaskCount: store.recentAgentTasks(limit: 200).count,
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
@@ -926,6 +927,9 @@ struct AgentHomeView: View {
               },
               onToggleExecutionPaused: {
                 store.updateAgentSafetySettings { $0.executionPaused.toggle() }
+              },
+              onOpenRecentTasks: {
+                recentTasksShortcutActive = true
               },
               t: t
             )
