@@ -1318,12 +1318,18 @@ final class MessageCoordinator: ObservableObject {
         _ = applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
         return
       }
-      let result = try await LocalModelInferenceRuntime.shared.generateAsync(
-        profile: profile,
+      let executionProfile = AgentExecutionProfile.forGoal(
+        requestText,
+        hasAttachments: !attachments.isEmpty
+      )
+      let result = try await LocalModelCooperativeRuntime.shared.generateAsync(
+        fallbackProfile: profile,
         systemPrompt: localModelSystemPrompt,
         userPrompt: prompt,
         maximumTokens: 768,
-        temperature: 0.3
+        temperature: 0.3,
+        hasAttachments: !attachments.isEmpty,
+        executionProfile: executionProfile
       )
       let response = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -1331,6 +1337,8 @@ final class MessageCoordinator: ObservableObject {
       }
       task.phase = .completed
       task.result = response
+      task.executionRuntimeId = result.profileId
+      task.targetTitle = LocalModelRuntimeCatalog.find(result.profileId).displayName
       task.verification = "Local model response received and stored"
       task.executionLog.append("Local model response completed via \(result.backend)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)

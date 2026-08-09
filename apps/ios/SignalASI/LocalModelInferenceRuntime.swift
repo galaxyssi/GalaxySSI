@@ -54,7 +54,8 @@ final class LocalModelInferenceRuntime {
     systemPrompt: String,
     userPrompt: String,
     maximumTokens: Int = 768,
-    temperature: Double = 0.3
+    temperature: Double = 0.3,
+    thinkingMode: LocalModelThinkingMode = .automatic
   ) throws -> LocalModelInferenceResult {
     guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
       throw LocalModelInferenceError.modelDisabled
@@ -106,7 +107,11 @@ final class LocalModelInferenceRuntime {
     }
 
     let startedAt = Date()
-    let prompt = Self.prepareUserPrompt(profile: profile, userPrompt: userPrompt)
+    let prompt = Self.prepareUserPrompt(
+      profile: profile,
+      userPrompt: userPrompt,
+      thinkingMode: thinkingMode
+    )
     let response: String
     do {
       response = try backend.generate(
@@ -134,7 +139,8 @@ final class LocalModelInferenceRuntime {
     systemPrompt: String,
     userPrompt: String,
     maximumTokens: Int = 768,
-    temperature: Double = 0.3
+    temperature: Double = 0.3,
+    thinkingMode: LocalModelThinkingMode = .automatic
   ) async throws -> LocalModelInferenceResult {
     try await withCheckedThrowingContinuation { continuation in
       DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -144,7 +150,8 @@ final class LocalModelInferenceRuntime {
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
             maximumTokens: maximumTokens,
-            temperature: temperature
+            temperature: temperature,
+            thinkingMode: thinkingMode
           ))
         } catch {
           continuation.resume(throwing: error)
@@ -191,18 +198,42 @@ final class LocalModelInferenceRuntime {
     loadedContextTokens = 0
   }
 
-  private static func prepareUserPrompt(profile: LocalModelRuntimeProfile, userPrompt: String) -> String {
-    guard profile.defaultNoThink, !noThinkCommand.matches(userPrompt) else { return userPrompt }
-    return "\(userPrompt)\n/no_think"
+  static func prepareUserPrompt(
+    profile: LocalModelRuntimeProfile,
+    userPrompt: String,
+    thinkingMode: LocalModelThinkingMode = .automatic
+  ) -> String {
+    guard profile.isQwenFamily else { return userPrompt }
+    if thinkingMode == .automatic {
+      guard profile.defaultNoThink, !thinkingCommand.matches(userPrompt) else { return userPrompt }
+      return "\(userPrompt)\n/no_think"
+    }
+    let withoutCommand = thinkingCommand.stringByReplacingMatches(
+      in: userPrompt,
+      range: NSRange(userPrompt.startIndex..., in: userPrompt),
+      withTemplate: " "
+    )
+      .replacingOccurrences(of: #"[ \t]+(?=\r?$)"#, with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let command = thinkingMode == .think ? "/think" : "/no_think"
+    return withoutCommand.isEmpty ? command : "\(withoutCommand)\n\(command)"
   }
 
-  private static let noThinkCommand = try! NSRegularExpression(
-    pattern: "(?m)(^|\\s)/no_think(?=\\s|$)"
+  private static let thinkingCommand = try! NSRegularExpression(
+    pattern: "(?m)(^|\\s)/(?:no_)?think(?=\\s|$)"
   )
+
 }
 
 private extension NSRegularExpression {
   func matches(_ string: String) -> Bool {
     firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) != nil
+  }
+}
+
+private extension LocalModelRuntimeProfile {
+  var isQwenFamily: Bool {
+    id.lowercased().hasPrefix("qwen") ||
+      repositoryId.split(separator: "/").last?.lowercased().hasPrefix("qwen") == true
   }
 }
