@@ -19,6 +19,7 @@ struct LocalModelInferenceRuntimeSnapshot: Equatable {
 
 enum LocalModelInferenceError: LocalizedError, Equatable {
   case nativeBackendUnavailable
+  case modelDisabled
   case modelNotReady
   case modelLoadFailed(String)
   case generationFailed(String)
@@ -28,6 +29,8 @@ enum LocalModelInferenceError: LocalizedError, Equatable {
     switch self {
     case .nativeBackendUnavailable:
       return "The native local model backend is not bundled in this build"
+    case .modelDisabled:
+      return "The selected local model is installed but disabled"
     case .modelNotReady:
       return "The selected local model is not installed or failed verification"
     case let .modelLoadFailed(message):
