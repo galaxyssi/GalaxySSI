@@ -1177,11 +1177,6 @@ final class MessageCoordinator: ObservableObject {
     }
     let setup = selected.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard setup == "ready" || setup == "verified" else { return nil }
-    let target = AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    ).first { $0.id == selected.id }
-    guard AgentConnectorRouteSelector.isDeliverable(target) else { return nil }
     return selected
   }
 
@@ -2016,7 +2011,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     attachments: [SignalASIDraftAttachment]
   ) async throws -> AgentDisclosureStatus {
-    guard let link = store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first else {
+    let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let link = requestedDesktopId.isEmpty
+      ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
+      : store.serverLinks.first(where: { $0.desktopId == requestedDesktopId })
+    guard let link else {
       throw SignalASIError.notPaired
     }
     let sourceMessageId = outgoing.id.uuidString
