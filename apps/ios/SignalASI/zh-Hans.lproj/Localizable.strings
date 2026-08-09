@@ -3611,5 +3611,7 @@
 "signalasi.agent.empty.subtitle" = "输入目标，或按住说话";
 "signalasi.agent.latest" = "回到最新消息";
 "signalasi.agent.load_older" = "加载更早消息";
+"signalasi.agent.retry.title" = "Agent 请求失败";
+"signalasi.agent.retry.subtitle" = "可以重试最近一次 Agent 请求。";
 "signalasi.agent.resume_task" = "恢复任务";
 "agent_global_new_insights" = "SignalASI 有 %d 条新发现";

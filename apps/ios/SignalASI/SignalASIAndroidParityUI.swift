@@ -156,6 +156,7 @@ struct AgentHomeView: View {
   @State private var transcriptContentMinY: CGFloat = 0
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
+  @State private var retryingAgentMessageIDs: Set<UUID> = []
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
@@ -543,6 +544,20 @@ struct AgentHomeView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
               }
+              if message.isMine && message.deliveryStatus == .failed {
+                SignalASIAgentRetryCard(
+                  title: t("signalasi.agent.retry.title", "Agent request failed"),
+                  subtitle: t(
+                    "signalasi.agent.retry.subtitle",
+                    "Retry the most recent Agent request."
+                  ),
+                  retryTitle: t("signalasi.common.retry", "Retry"),
+                  retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
+                  isRetrying: retryingAgentMessageIDs.contains(message.id)
+                ) {
+                  retryAgentMessage(message)
+                }
+              }
             }
             if voiceTranscriptionPending {
               SignalASIVoiceTranscriptionPendingView()
@@ -719,6 +734,19 @@ struct AgentHomeView: View {
     guard hasOlderTranscriptMessages else { return }
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize
+  }
+
+  private func retryAgentMessage(_ message: ChatMessage) {
+    guard message.isMine,
+          message.deliveryStatus == .failed,
+          !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          retryingAgentMessageIDs.insert(message.id).inserted else {
+      return
+    }
+    Task { @MainActor in
+      _ = await coordinator.send(message.content, to: contact)
+      retryingAgentMessageIDs.remove(message.id)
+    }
   }
 
   private var header: some View {
@@ -1059,6 +1087,55 @@ struct AgentHomeView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIAgentRetryCard: View {
+  var title: String
+  var subtitle: String
+  var retryTitle: String
+  var retryingTitle: String
+  var isRetrying: Bool
+  var onRetry: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.triangle")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.orange)
+          .frame(width: 20, height: 20)
+        Text(title)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(2)
+        Spacer(minLength: 0)
+      }
+      Text(subtitle)
+        .font(.system(size: 12))
+        .foregroundColor(.signalASITextSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Button(action: onRetry) {
+        Label(
+          isRetrying ? retryingTitle : retryTitle,
+          systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
+        )
+        .font(.system(size: 13, weight: .semibold))
+        .frame(maxWidth: .infinity, minHeight: 38)
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(.signalASIAccent)
+      .disabled(isRetrying)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.orange.opacity(0.55), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .contain)
   }
 }
 
