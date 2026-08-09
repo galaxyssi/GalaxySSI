@@ -244,7 +244,7 @@ struct AgentHomeView: View {
   }
 
   private var activeAgentTasks: [AgentTaskRecord] {
-    store.recentAgentTasks(limit: 24).filter { task in
+    activeSessionTasks.filter { task in
       guard taskBelongsToActiveSession(task) else { return false }
       switch task.phase {
       case .observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused:
@@ -253,6 +253,16 @@ struct AgentHomeView: View {
         return false
       }
     }
+  }
+
+  private var activeSessionTasks: [AgentTaskRecord] {
+    let sessionID = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sessionID.isEmpty else {
+      return store.recentAgentTasks(limit: 24)
+    }
+    let scopedTasks = store.agentTasks(forSession: sessionID, limit: 24)
+    return scopedTasks.isEmpty ? store.recentAgentTasks(limit: 24) : scopedTasks
   }
 
   private func taskBelongsToActiveSession(_ task: AgentTaskRecord) -> Bool {
@@ -332,7 +342,7 @@ struct AgentHomeView: View {
 
   private var blockedAgentTask: AgentTaskRecord? {
     let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return store.recentAgentTasks(limit: 24).first { task in
+    return activeSessionTasks.first { task in
       let taskSessionId = task.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
       let belongsToSession = sessionId.isEmpty || taskSessionId.isEmpty || taskSessionId == sessionId
       return belongsToSession &&
