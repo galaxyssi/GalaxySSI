@@ -456,6 +456,7 @@
     A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */; };
     A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */; };
     A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */; };
+    A10000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */; };
     A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */; };
     A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
@@ -1104,6 +1105,7 @@
     A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowTriggerView.swift; sourceTree = "<group>"; };
     A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProactiveBackgroundScheduler.swift; sourceTree = "<group>"; };
     A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveWebhookStore.swift; sourceTree = "<group>"; };
+    A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowRunScheduleCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggerCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
@@ -1592,6 +1594,7 @@
         A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */,
         A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */,
         A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */,
+        A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */,
         A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */,
         A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
@@ -2405,6 +2408,7 @@
         A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */,
         A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */,
         A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */,
+        A10000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift in Sources */,
         A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */,
         A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,

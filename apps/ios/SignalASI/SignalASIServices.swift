@@ -1235,6 +1235,33 @@ final class MessageCoordinator: ObservableObject {
     )
     if contact.deliveryMode == .local,
        attachments.isEmpty,
+       let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: commandResult.actionId,
+        detail: "Local workflow execution command",
+        status: .delivered
+      )
+      let response = store.appendIncoming(
+        commandResult.text,
+        from: contact.id,
+        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+        status: .delivered,
+        traceStage: commandResult.actionId,
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      onIncomingMessage?(response)
+      if let workflow = commandResult.workflowToRun {
+        Task { @MainActor [weak self] in
+          _ = await self?.executeWorkflowManually(workflow)
+        }
+      }
+      return true
+    }
+    if contact.deliveryMode == .local,
+       attachments.isEmpty,
        let commandResult = AgentWorkflowCommandRouter.handle(displayText)
         ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
@@ -2245,6 +2272,36 @@ final class MessageCoordinator: ObservableObject {
       id: executionId,
       status: .completed,
       resultSummary: "Workflow request submitted from a device event."
+    )
+    return true
+  }
+
+  @discardableResult
+  func executeWorkflowManually(
+    _ workflow: AgentWorkflow,
+    workflowStore: UserDefaultsAgentWorkflowStore = .shared
+  ) async -> Bool {
+    guard let contact = store.visibleContacts.first(where: { !$0.deleted && $0.id != "system" }) else {
+      lastError = "The workflow target is unavailable."
+      return false
+    }
+    workflowStore.markRun(id: workflow.id)
+    let executionId = "ios-workflow-manual-\(UUID().uuidString.lowercased())"
+    if let record = try? AgentWorkflowExecutionRecord(
+      id: executionId,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      source: .manual,
+      status: .running,
+      resultSummary: "Manual workflow request started."
+    ) {
+      store.recordWorkflowExecution(record)
+    }
+    await send(workflow.goal, to: contact, agentGoalOverride: workflow.goal)
+    store.completeWorkflowExecution(
+      id: executionId,
+      status: .completed,
+      resultSummary: "Workflow request submitted manually."
     )
     return true
   }
