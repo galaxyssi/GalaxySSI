@@ -119,10 +119,19 @@ struct SignalASIPermissionsAuditView: View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("feature_audit_log", "Audit Log"))
       SignalASISecurityNavigationRow(
-        title: t("cc_recent_operations_title", "Recent Operations"),
-        subtitle: t("cc_recent_operations_subtitle", "Review native tools, Agent actions, and confirmation decisions"),
+        title: t("cc_audit_operations_title", "Audit Operations"),
+        subtitle: t("cc_audit_operations_subtitle", "Review native tool execution and recent Agent tasks on this phone"),
         systemImage: "clock.arrow.circlepath",
         tint: .purple,
+        badge: t("common_view", "View")
+      ) {
+        SignalASIAgentAuditOperationsView()
+      }
+      SignalASISecurityNavigationRow(
+        title: t("advanced_agent_permission_audit", "Agent Permission Audit"),
+        subtitle: t("advanced_agent_permission_audit_subtitle", "Check native tool availability, permissions, and consent boundaries"),
+        systemImage: "checkmark.shield",
+        tint: .orange,
         badge: t("common_view", "View")
       ) {
         SignalASIAgentPermissionAuditView()
