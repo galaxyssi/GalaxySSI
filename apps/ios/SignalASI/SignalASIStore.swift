@@ -1277,6 +1277,22 @@ final class SignalASIStore: ObservableObject {
     return mergedAgentConversations().first { $0.id == clean }
   }
 
+  func agentSessionDestination(id conversationId: String) -> String? {
+    let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+
+    var currentID = clean
+    var visited: Set<String> = []
+    while visited.insert(currentID).inserted,
+          let conversation = agentConversations.first(where: { $0.id == currentID }),
+          !conversation.mergedIntoConversationId.isBlank {
+      currentID = conversation.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !currentID.isEmpty else { return nil }
+    }
+
+    return agentSession(id: currentID)?.id
+  }
+
   @discardableResult
   func createAgentSession(title: String = "") -> AgentConversation {
     let now = Self.nowMillis()

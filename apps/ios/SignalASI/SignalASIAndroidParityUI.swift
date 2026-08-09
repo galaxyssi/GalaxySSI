@@ -1321,6 +1321,11 @@ struct AgentHomeView: View {
       return
     }
     Task { @MainActor in
+      if let destination = store.agentSessionDestination(id: task.sessionId) {
+        _ = store.switchAgentSession(destination)
+      } else {
+        _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+      }
       _ = await coordinator.send(task.goal, to: contact)
       retryingAgentTaskIDs.remove(task.taskId)
     }
