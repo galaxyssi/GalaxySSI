@@ -1,5 +1,16 @@
 import Foundation
 
+struct AgentRemoteTaskStatusEvent: Equatable, Identifiable {
+  let status: String
+  let currentStep: String
+  let detail: String
+  let updatedAtMillis: Int64
+
+  var id: String {
+    "\(status):\(updatedAtMillis):\(currentStep):\(detail)"
+  }
+}
+
 struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
   let taskId: String
   let clientRouteId: String
@@ -14,6 +25,7 @@ struct AgentRemoteTaskStatusSnapshot: Equatable, Identifiable {
   let advertisedCancellable: Bool
   let detail: String
   let updatedAtMillis: Int64
+  let history: [AgentRemoteTaskStatusEvent]
 
   var id: String {
     "\(conversationId):\(taskId.ifBlank(turnId))"
