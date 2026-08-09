@@ -2,6 +2,23 @@ import Foundation
 
 protocol CloudConversationLegacySending {
   func send(contact: SignalASIContact, store: SignalASIStore, turns: [ChatMessage]) async throws -> String
+  func send(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload]
+  ) async throws -> String
+}
+
+extension CloudConversationLegacySending {
+  func send(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload]
+  ) async throws -> String {
+    try await send(contact: contact, store: store, turns: turns)
+  }
 }
 
 extension CloudModelClient: CloudConversationLegacySending {}
@@ -13,6 +30,25 @@ protocol CloudConversationStreaming {
     turns: [ChatMessage],
     requestId: String
   ) -> AsyncThrowingStream<ModelStreamEvent, Error>
+  func streamConversation(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload],
+    requestId: String
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error>
+}
+
+extension CloudConversationStreaming {
+  func streamConversation(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload],
+    requestId: String
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+    streamConversation(contact: contact, store: store, turns: turns, requestId: requestId)
+  }
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
@@ -52,6 +88,22 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     turns: [ChatMessage],
     requestId: String = UUID().uuidString
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+    streamConversation(
+      contact: contact,
+      store: store,
+      turns: turns,
+      images: [],
+      requestId: requestId
+    )
+  }
+
+  func streamConversation(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload],
+    requestId: String = UUID().uuidString
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
       let worker = Task {
@@ -59,6 +111,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           contact: contact,
           store: store,
           turns: turns,
+          images: images,
           requestId: conversationRequestId,
           continuation: continuation
         )
@@ -93,6 +146,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     contact: SignalASIContact,
     store: SignalASIStore,
     turns: [ChatMessage],
+    images: [CloudImagePayload],
     requestId: String,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
@@ -104,6 +158,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       systemInstructions: true,
       toolOutput: false,
       purpose: "Streaming conversation response",
+      attachments: images.map {
+        AgentDataDisclosureAttachment(
+          displayName: $0.displayName,
+          mimeType: $0.mimeType,
+          sizeBytes: Int64($0.data.count)
+        )
+      },
       conversationId: turns.last?.conversationId ?? "",
       taskId: requestId,
       turnId: turns.last?.turnId.ifBlank(requestId) ?? requestId
@@ -136,6 +197,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         contact: contact,
         store: store,
         turns: turns,
+        images: images,
         requestId: requestId
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
@@ -214,6 +276,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               contact: contact,
               store: store,
               turns: turns,
+              images: images,
               requestId: requestId,
               sequence: &emittedSequence,
               ticket: ticket,
@@ -344,13 +407,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     contact: SignalASIContact,
     store: SignalASIStore,
     turns: [ChatMessage],
+    images: [CloudImagePayload],
     requestId: String,
     sequence: inout Int64,
     ticket: AgentDisclosureTicket,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     do {
-      let text = try await legacySender.send(contact: contact, store: store, turns: turns)
+      let text = try await legacySender.send(
+        contact: contact,
+        store: store,
+        turns: turns,
+        images: images
+      )
       let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !cleanText.isEmpty else {
         throw SignalASIError.unsupportedResponse

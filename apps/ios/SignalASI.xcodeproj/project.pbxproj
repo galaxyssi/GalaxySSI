@@ -161,6 +161,7 @@
     A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */; };
     A10000000000000000000792 /* CloudModelConversationContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000792 /* CloudModelConversationContext.swift */; };
     A10000000000000000009997 /* SignalASIAnimatedImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009997 /* SignalASIAnimatedImageView.swift */; };
+    A10000000000000000009998 /* CloudImagePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009998 /* CloudImagePayload.swift */; };
     A10000000000000000000793 /* CloudModelConversationContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000793 /* CloudModelConversationContextTests.swift */; };
     A10000000000000000000794 /* CloudModelContextOverflowRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */; };
     A10000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */; };
@@ -886,6 +887,7 @@
     A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationStreamToolRounds.swift; sourceTree = "<group>"; };
     A20000000000000000000792 /* CloudModelConversationContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelConversationContext.swift; sourceTree = "<group>"; };
     A20000000000000000009997 /* SignalASIAnimatedImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAnimatedImageView.swift; sourceTree = "<group>"; };
+    A20000000000000000009998 /* CloudImagePayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudImagePayload.swift; sourceTree = "<group>"; };
     A20000000000000000000793 /* CloudModelConversationContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelConversationContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelContextOverflowRetry.swift; sourceTree = "<group>"; };
     A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolDefaultStoreTests.swift; sourceTree = "<group>"; };
@@ -1484,6 +1486,7 @@
         A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */,
         A20000000000000000000792 /* CloudModelConversationContext.swift */,
         A20000000000000000009997 /* SignalASIAnimatedImageView.swift */,
+        A20000000000000000009998 /* CloudImagePayload.swift */,
         A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */,
         A20000000000000000000707 /* AgentExecutionPolicy.swift */,
         A20000000000000000000708 /* AgentModelPlannerSettings.swift */,
@@ -2608,6 +2611,7 @@
         A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */,
         A10000000000000000000792 /* CloudModelConversationContext.swift in Sources */,
         A10000000000000000009997 /* SignalASIAnimatedImageView.swift in Sources */,
+        A10000000000000000009998 /* CloudImagePayload.swift in Sources */,
         A10000000000000000000794 /* CloudModelContextOverflowRetry.swift in Sources */,
         A10000000000000000000164 /* AgentModelPlannerContactResolver.swift in Sources */,
         A10000000000000000000165 /* SignalASILinkTransportDiagnostics.swift in Sources */,
