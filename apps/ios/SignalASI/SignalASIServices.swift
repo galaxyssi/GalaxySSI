@@ -1004,6 +1004,65 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func publishRemoteAgentApproval(_ decision: AgentRemoteApprovalDecision) async -> Bool {
+    guard !decision.taskId.isEmpty,
+          !decision.clientRouteId.isEmpty,
+          !decision.conversationId.isEmpty,
+          !decision.turnId.isEmpty,
+          !decision.contactId.isEmpty else {
+      return false
+    }
+    let contact = store.contact(id: decision.contactId)
+    guard let link = store.serverLinks.first(where: {
+      $0.paired && $0.routes.clientRouteId == decision.clientRouteId
+    }) else {
+      lastError = "No paired Desktop route is available for this approval"
+      return false
+    }
+    let payload: [String: Any] = [
+      "type": "agent_task_approval",
+      "task_id": decision.taskId,
+      "client_route_id": decision.clientRouteId,
+      "conversation_id": decision.conversationId,
+      "turn_id": decision.turnId,
+      "contact_id": decision.contactId,
+      "source_message_id": decision.sourceMessageId,
+      "approval_id": decision.approvalId,
+      "action_hash": decision.actionHash,
+      "decision_scope": decision.choice.wireValue,
+      "approved": decision.approved,
+      "agent_id": contact?.connectorAgentId ?? "",
+      "desktop_id": link.desktopId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      lastError = "Agent approval payload could not be encoded"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      clientSourceMessageId: String(decision.sourceMessageId),
+      contactId: decision.contactId
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func requestDesktopArtifactDownload(block: AgentRichBlock) async -> Bool {
     let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
