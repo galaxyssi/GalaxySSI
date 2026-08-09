@@ -301,8 +301,9 @@ struct AgentHomeView: View {
         NavigationLink(
           destination: AddContactView(
             autoOpenScanner: true,
-            onAgentAdded: {
+            onAgentAdded: { agentIDs in
               scanShortcutActive = false
+              focusScannedAgent(agentIDs.first)
             }
           ),
           isActive: $scanShortcutActive
@@ -1829,6 +1830,23 @@ struct AgentHomeView: View {
   private func createAgentConversation() {
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
+  }
+
+  private func focusScannedAgent(_ targetId: String?) {
+    guard let targetId,
+          let target = store.contact(id: targetId),
+          target.type == "agent",
+          target.isCommunicable else {
+      return
+    }
+    let conversationId = store.activeAgentConversationId
+    AgentModelSelectionSettings.selectManual(
+      for: conversationId,
+      targetId: target.id,
+      modelId: target.selectedCloudModel?.modelId ?? "",
+      displayName: target.displayName
+    )
+    modelSelection = AgentModelSelectionSettings.selection(for: conversationId)
   }
 
   private func ensureActiveAgentSession() {
