@@ -595,15 +595,18 @@ struct SignalASIAgentRuntimePanelView: View {
     granted: Bool,
     systemImage: String
   ) -> SignalASIAgentRuntimeRow {
+    let status = granted
+      ? t("agent_requirement_granted", "Ready")
+      : t("agent_requirement_missing", "Needed")
     SignalASIAgentRuntimeRow(
       id: "requirement-\(id)",
       title: granted ? title : missingTitle,
-      detail: granted
-        ? t("agent_requirement_granted", "Ready")
-        : t("agent_requirement_missing", "Needed"),
-      badge: granted
-        ? t("agent_requirement_granted", "Ready")
-        : t("agent_requirement_missing", "Needed"),
+      detail: String(
+        format: t("signalasi.agent_runtime.requirement_detail", "%@ / %@"),
+        status,
+        id
+      ),
+      badge: status,
       systemImage: systemImage,
       tint: granted ? .signalASIAccent : .orange
     )
