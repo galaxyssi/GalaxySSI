@@ -186,20 +186,9 @@ struct AgentHomeView: View {
     store.agentSession(id: store.activeAgentConversationId)
   }
 
-  private var callableTargets: [AgentCallableTarget] {
-    AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
-  }
-
-  private var activeManualTarget: AgentCallableTarget? {
-    guard modelSelection.mode == .manual else { return nil }
-    let targetId = AgentCallableTargetCatalog.preferredTargetId(
-      selection: modelSelection,
-      targets: callableTargets
-    )
-    return callableTargets.first { $0.id == targetId }
+  private var hasManualSelection: Bool {
+    modelSelection.mode == .manual &&
+      !modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private var messages: [ChatMessage] {
@@ -1303,7 +1292,7 @@ struct AgentHomeView: View {
   }
 
   private var headerModelLabel: String {
-    guard modelSelection.mode == .manual, activeManualTarget != nil else {
+    guard hasManualSelection else {
       if let liveExecutionTargetLabel {
         return liveExecutionTargetLabel
       }
@@ -1347,7 +1336,7 @@ struct AgentHomeView: View {
   private var headerModelStatusLabel: String {
     let key: String
     let fallback: String
-    if modelSelection.mode == .manual, activeManualTarget != nil {
+    if hasManualSelection {
       key = "signalasi.agent.header.routing.manual"
       fallback = "Manual · %@"
     } else {
