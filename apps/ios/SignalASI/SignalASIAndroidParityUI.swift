@@ -54,6 +54,7 @@ struct AgentHomeView: View {
   @State private var recentTasksShortcutActive = false
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
+  @State private var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelection()
@@ -459,6 +460,34 @@ struct AgentHomeView: View {
       }
       .sheet(item: $selectedMessageForDetails) { message in
         MessageDetailView(message: message, contact: contact)
+      }
+      .sheet(item: $homeActionEditorSelection) { selection in
+        SignalASIAgentRuntimeActionEditorSheet(
+          task: selection.task,
+          action: selection.action,
+          t: t,
+          onUpdate: { taskId, actionId, description, input in
+            coordinator.updatePendingLocalNativeAction(
+              taskId: taskId,
+              actionId: actionId,
+              description: description,
+              input: input
+            )
+          },
+          onMove: { taskId, actionId, offset in
+            coordinator.movePendingLocalNativeAction(
+              taskId: taskId,
+              actionId: actionId,
+              offset: offset
+            )
+          },
+          onRemove: { taskId, actionId in
+            coordinator.removePendingLocalNativeAction(
+              taskId: taskId,
+              actionId: actionId
+            )
+          }
+        )
       }
       .sheet(item: $runtimeArtifactPreview) { preview in
         SignalASIRuntimeArtifactPreviewView(preview: preview)
@@ -1019,6 +1048,12 @@ struct AgentHomeView: View {
             if !agentActionQueueItems.isEmpty {
               SignalASIAgentActionQueueCard(
                 items: agentActionQueueItems,
+                onEditAction: { item in
+                  homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
+                    task: item.task,
+                    action: item.action
+                  )
+                },
                 t: t
               )
             }
