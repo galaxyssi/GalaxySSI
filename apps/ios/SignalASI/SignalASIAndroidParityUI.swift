@@ -1537,6 +1537,8 @@ struct AgentHomeView: View {
       )
       if isVoiceSubmission && !sent {
         voiceTranscriptionPending = false
+        restoreAgentVoiceAttachments(outgoingAttachments)
+        attachmentError = coordinator.lastError
       }
     }
   }
