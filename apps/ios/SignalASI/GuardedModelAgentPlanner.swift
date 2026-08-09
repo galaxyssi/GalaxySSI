@@ -30,7 +30,10 @@ struct GuardedModelAgentPlanner {
     if safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
        let directNativeToolPlan = AgentDirectNativeToolPlanner.plan(request: request.planRequest) {
-      return directNativeToolPlan
+      return directNativeToolPlan.withDirectConversationContext(
+        request: request,
+        executionMode: fallback.executionMode
+      )
     }
     if !normalizedSettings.enabled || !safetySettings.connectorCallsAllowed {
       return fallback.copyForGuardedPlanner(profile: "rule-based-local")

@@ -568,10 +568,12 @@ struct CloudModelClient {
 final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
+  @Published private(set) var artifactRevision = 0
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
+  let desktopArtifactStore: AgentDesktopArtifactStore
   private let deliveryStore: SignalASILinkDeliveryStore
   private let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
@@ -582,6 +584,7 @@ final class MessageCoordinator: ObservableObject {
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
+  private var pendingArtifactDownloads: Set<String> = []
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
@@ -598,12 +601,19 @@ final class MessageCoordinator: ObservableObject {
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
+    desktopArtifactStore: AgentDesktopArtifactStore? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
     mqttClient: SignalASIMqttClient? = nil
   ) {
     self.store = store
+    self.desktopArtifactStore = desktopArtifactStore ?? AgentDesktopArtifactStore(
+      applicationSupportDirectory: FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+      ).first ?? FileManager.default.temporaryDirectory
+    )
     self.deliveryStore = deliveryStore ?? SignalASILinkDeliveryStore()
     self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
@@ -636,6 +646,80 @@ final class MessageCoordinator: ObservableObject {
 
   func desktopControlSnapshot(for link: ServerLink) -> AgentDesktopRemoteControlSnapshot {
     desktopControlSnapshots[link.desktopId] ?? .initial(for: link)
+  }
+
+  @discardableResult
+  func requestDesktopArtifactDownload(block: AgentRichBlock) async -> Bool {
+    let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
+    let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactURI),
+      digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+      lastError = "Artifact metadata is incomplete"
+      return false
+    }
+    let desktopId = block.metadata["desktop_id"] ?? ""
+    let clientRouteId = block.metadata["client_route_id"] ?? ""
+    let pairedLinks = store.serverLinks.filter(\.paired)
+    let link: ServerLink?
+    if !desktopId.isEmpty, !clientRouteId.isEmpty {
+      link = store.serverLinks.first {
+        $0.desktopId == desktopId && $0.routes.clientRouteId == clientRouteId
+      }
+    } else if !desktopId.isEmpty {
+      link = store.serverLinks.first { $0.desktopId == desktopId }
+    } else if pairedLinks.count == 1 {
+      link = pairedLinks.first
+    } else {
+      link = nil
+    }
+    guard let link, link.paired else {
+      lastError = "No paired Desktop is available for this artifact"
+      return false
+    }
+    if pendingArtifactDownloads.contains(artifactURI) {
+      return true
+    }
+    pendingArtifactDownloads.insert(artifactURI)
+    let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
+      AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
+    )
+    let payload: [String: Any] = [
+      "type": "artifact_redelivery_request",
+      "desktop_id": link.desktopId,
+      "artifact_id": artifactId,
+      "artifact_uri": artifactURI,
+      "task_id": block.metadata["task_id"] ?? "",
+      "sha256": digest,
+      "client_route_id": link.routes.clientRouteId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      pendingArtifactDownloads.remove(artifactURI)
+      lastError = "Unable to prepare artifact request"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.controlTopic,
+      wirePayload: wire.wireText
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    if !result.accepted {
+      pendingArtifactDownloads.remove(artifactURI)
+      scheduleOutboxFlush(after: 0)
+      lastError = "Artifact download request could not be sent"
+    }
+    return result.accepted
+  }
+
+  func markDesktopArtifactSaved(sourceURI: String, savedURI: String) {
+    do {
+      try desktopArtifactStore.markSavedToDownloads(sourceURI: sourceURI, savedURI: savedURI)
+      artifactRevision &+= 1
+    } catch {
+      lastError = error.localizedDescription
+    }
   }
 
   @discardableResult
@@ -1317,6 +1401,11 @@ final class MessageCoordinator: ObservableObject {
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
     }
+    if appPayload.string("type") == "artifact_chunk" ||
+      appPayload.string("type") == "artifact_redelivery_result" {
+      handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
+      return
+    }
     if handleDesktopControlPayload(appPayload, link: link) {
       if appPayload.string("type") == "capability_manifest" {
         _ = handleConnectorAgentStatus(appPayload, link: link)
@@ -1361,6 +1450,68 @@ final class MessageCoordinator: ObservableObject {
       title: store.contact(id: contactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
+  }
+
+  private func handleDesktopArtifactPayload(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    let type = payload.string("type")
+    if type == "artifact_chunk" {
+      do {
+        let result = try desktopArtifactStore.ingest(payload)
+        if result.completed {
+          pendingArtifactDownloads.remove(result.artifactURI)
+          artifactRevision &+= 1
+          let link = incomingLink ?? store.serverLinks.first { $0.desktopId == payload.string("desktop_id") }
+          publishDesktopArtifactControl(
+            [
+              "type": "artifact_receipt",
+              "desktop_id": link?.desktopId ?? payload.string("desktop_id"),
+              "artifact_id": result.artifactId,
+              "artifact_uri": result.artifactURI,
+              "task_id": result.taskId,
+              "sha256": result.sha256,
+              "status": "stored",
+              "client_route_id": payload.string("client_route_id"),
+              "time": Int64(Date().timeIntervalSince1970 * 1_000)
+            ],
+            link: link
+          )
+        }
+      } catch {
+        lastError = error.localizedDescription
+      }
+    } else if type == "artifact_redelivery_result",
+      payload.string("status") != "stored" {
+      pendingArtifactDownloads.remove(payload.string("artifact_uri"))
+      lastError = payload.string("error_message")
+        .ifBlank(payload.string("error"))
+        .ifBlank("Artifact redelivery failed")
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) {
+    guard let link, link.paired, let wire = try? linkWirePayload(payload, link: link) else {
+      return
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.controlTopic,
+      wirePayload: wire.wireText
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+      if !result.accepted {
+        scheduleOutboxFlush(after: 0)
+      }
+    }
   }
 
   private func handleDesktopControlPayload(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
@@ -1743,13 +1894,17 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func serverLink(for topic: String, payload: [String: Any]) -> ServerLink? {
+    let clientRouteId = payload.string("client_route_id")
     store.serverLinks.first { link in
-      topic == link.routes.downTopic ||
-        topic == link.routes.controlTopic ||
-        topic == link.routes.upTopic ||
-        topic == link.routes.pairingTopic ||
-        payload.string("desktop_id") == link.desktopId ||
-        payload.string("from") == link.desktopId
+      let routeMatches = clientRouteId.isEmpty || link.routes.clientRouteId == clientRouteId
+      return routeMatches && (
+        topic == link.routes.downTopic ||
+          topic == link.routes.controlTopic ||
+          topic == link.routes.upTopic ||
+          topic == link.routes.pairingTopic ||
+          payload.string("desktop_id") == link.desktopId ||
+          payload.string("from") == link.desktopId
+      )
     }
   }
 
@@ -1775,6 +1930,7 @@ final class MessageCoordinator: ObservableObject {
     "agent_task_approval_result",
     "text",
     "artifact_chunk",
+    "artifact_redelivery_result",
     AgentAttachmentRecoveryRequest.requestType
   ]
 }
