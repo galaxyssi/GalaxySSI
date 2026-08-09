@@ -1,5 +1,6 @@
 package com.signalasi.chat.voice.asr.local
 
+import com.signalasi.chat.QnnRuntimeResourceArbiter
 import com.signalasi.chat.voice.audio.DirectPcmFramePacket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,24 @@ import java.nio.ByteOrder
 import kotlin.io.path.createTempDirectory
 
 class HighAccuracyLocalAsrTurnTest {
+    @Test
+    fun preparedAsrKeepsQnnPriorityUntilControllerCloses() = runBlocking {
+        val engine = FakeEngine()
+        val arbiter = QnnRuntimeResourceArbiter()
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() },
+            engineFactory = { engine },
+            resourceArbiter = arbiter
+        )
+
+        assertTrue(controller.prepareNow())
+        assertTrue(controller.isReady())
+        assertTrue(arbiter.asrHasPriority())
+        controller.close()
+        assertFalse(arbiter.asrHasPriority())
+    }
+
     @Test
     fun controllerPreparesOnceAndStreamsStartupAudioToFinalResult() = runBlocking {
         val directory = temporaryModelDirectory()

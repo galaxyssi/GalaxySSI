@@ -251,55 +251,97 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
       let endpoints = try searchEndpoints(query: query, maxResults: maxResults)
-      var lastError: AgentIOSURLSessionWebError?
-
+      let accumulator = AgentIOSWebSearchAccumulator()
+      let group = DispatchGroup()
       for (index, endpoint) in endpoints.enumerated() {
-        if invocation.isCancellationRequested {
-          throw AgentIOSURLSessionWebError.cancelled
-        }
-        let remaining = min(deadline - nowMillis(), invocation.remainingTimeMillis)
-        guard remaining >= 250 else { break }
-        do {
-          let resource = try requestResource(
-            requestedURL: endpoint.url,
-            method: .get,
-            maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
-            timeoutMillis: min(4_000, remaining),
-            invocation: invocation
-          )
-          let charset = charsetName(from: resource.selectedHeaders)
-          let html = decode(resource.body, charset: charset)
-          let results = parseSearchResults(html, maxResults: maxResults)
-          if !results.isEmpty {
-            var output = commonOutput(resource)
-            output["query"] = .string(query)
-            output["results"] = .array(results.map { result in
-              .object([
-                "title": .string(result.title),
-                "url": .string(result.url)
-              ])
-            })
-            output["result_count"] = .int(Int64(results.count))
-            var resultMetadata = metadata(operation: .webSearch, method: .get)
-            resultMetadata["provider"] = .string(endpoint.provider)
-            resultMetadata["fallback_count"] = .int(Int64(index))
-            return AgentNativeToolExecutionResult.success(
-              output: output,
-              message: message(.webSearch, method: .get),
-              metadata: resultMetadata
-            )
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+          defer { group.leave() }
+          if invocation.isCancellationRequested {
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .cancelled))
+            return
           }
-        } catch let error as AgentIOSURLSessionWebError {
-          lastError = error
+          let remaining = min(deadline - nowMillis(), invocation.remainingTimeMillis)
+          guard remaining >= 250 else {
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .timeout))
+            return
+          }
+          do {
+            let resource = try requestResource(
+              requestedURL: endpoint.url,
+              method: .get,
+              maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
+              timeoutMillis: min(4_000, remaining),
+              invocation: invocation
+            )
+            let charset = charsetName(from: resource.selectedHeaders)
+            let html = decode(resource.body, charset: charset)
+            accumulator.append(
+              AgentIOSWebSearchAttempt(
+                index: index,
+                provider: endpoint.provider,
+                resource: resource,
+                results: parseSearchResults(html, maxResults: maxResults)
+              )
+            )
+          } catch let error as AgentIOSURLSessionWebError {
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: error))
+          }
         }
       }
-      if let lastError {
-        return failure(lastError)
+
+      let waitMillis = max(0, min(timeoutMillis, invocation.remainingTimeMillis))
+      let completed = group.wait(timeout: .now() + .milliseconds(Int(waitMillis))) == .success
+      if invocation.isCancellationRequested {
+        throw AgentIOSURLSessionWebError.cancelled
       }
-      return failure(
-        "search_no_results",
-        "Public search providers returned no readable results",
-        retryable: true
+      let attempts = accumulator.snapshot().sorted { $0.index < $1.index }
+      guard let first = attempts.first(where: { !$0.results.isEmpty }),
+            let resource = first.resource else {
+        if !completed {
+          return failure(.timeout)
+        }
+        if let lastError = attempts.compactMap(\.error).last {
+          return failure(lastError)
+        }
+        return failure(
+          "search_no_results",
+          "Public search providers returned no readable results",
+          retryable: true
+        )
+      }
+
+      var merged: [AgentIOSWebSearchResult] = []
+      var seenURLs: Set<String> = []
+      for attempt in attempts where attempt.resource != nil {
+        for result in attempt.results {
+          let key = canonicalURL(result.url)
+          guard !key.isEmpty, seenURLs.insert(key).inserted else { continue }
+          merged.append(result)
+          if merged.count >= maxResults { break }
+        }
+        if merged.count >= maxResults { break }
+      }
+      var output = commonOutput(resource)
+      output["query"] = .string(query)
+      output["results"] = .array(merged.map { result in
+        .object([
+          "title": .string(result.title),
+          "url": .string(result.url)
+        ])
+      })
+      output["result_count"] = .int(Int64(merged.count))
+      var resultMetadata = metadata(operation: .webSearch, method: .get)
+      let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
+      resultMetadata["provider"] = .string(first.provider)
+      resultMetadata["providers"] = .array(successfulProviders.map(AgentMcpJSONValue.string))
+      resultMetadata["engine_fanout"] = .int(Int64(endpoints.count))
+      resultMetadata["parallel"] = .bool(true)
+      resultMetadata["partial"] = .bool(!completed)
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: message(.webSearch, method: .get),
+        metadata: resultMetadata
       )
     } catch let error as AgentIOSURLSessionWebError {
       return failure(error)
@@ -1272,6 +1314,45 @@ private struct AgentIOSURLSessionWebRedirect {
 private struct AgentIOSWebSearchResult {
   var title: String
   var url: String
+}
+
+private struct AgentIOSWebSearchAttempt {
+  var index: Int
+  var provider: String
+  var resource: AgentIOSURLSessionWebResource?
+  var results: [AgentIOSWebSearchResult]
+  var error: AgentIOSURLSessionWebError?
+
+  init(
+    index: Int,
+    provider: String,
+    resource: AgentIOSURLSessionWebResource? = nil,
+    results: [AgentIOSWebSearchResult] = [],
+    error: AgentIOSURLSessionWebError? = nil
+  ) {
+    self.index = index
+    self.provider = provider
+    self.resource = resource
+    self.results = results
+    self.error = error
+  }
+}
+
+private final class AgentIOSWebSearchAccumulator {
+  private let lock = NSLock()
+  private var attempts: [AgentIOSWebSearchAttempt] = []
+
+  func append(_ attempt: AgentIOSWebSearchAttempt) {
+    lock.lock()
+    attempts.append(attempt)
+    lock.unlock()
+  }
+
+  func snapshot() -> [AgentIOSWebSearchAttempt] {
+    lock.lock()
+    defer { lock.unlock() }
+    return attempts
+  }
 }
 
 private struct AgentIOSURLSessionWebResource {

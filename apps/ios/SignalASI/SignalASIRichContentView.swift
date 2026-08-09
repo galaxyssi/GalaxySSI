@@ -48,13 +48,24 @@ struct SignalASIRichContentView: View {
       } else if layout.collapsible {
         VStack(alignment: .leading, spacing: 8) {
           ForEach(layout.sections) { section in
-            SignalASIRichSectionView(
-              section: section,
-              isOutgoing: isOutgoing,
-              onAction: onAction,
-              onFormSubmit: onFormSubmit,
-              onArtifactSave: { exportArtifact($0) }
-            )
+            if section.kind == .finalAnswer {
+              SignalASIRichBlockListView(
+                blocks: section.blocks,
+                isOutgoing: isOutgoing,
+                onAction: onAction,
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
+              )
+              .padding(.vertical, 4)
+            } else {
+              SignalASIRichSectionView(
+                section: section,
+                isOutgoing: isOutgoing,
+                onAction: onAction,
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
+              )
+            }
           }
         }
       } else {
@@ -175,7 +186,7 @@ private struct SignalASIRichSectionView: View {
     case .executionLog:
       return t("rich_output_section_execution_log", "Execution log")
     case .finalAnswer:
-      return t("rich_output_section_final_answer", "Final answer")
+      return ""
     case .evidence:
       return t("rich_output_section_evidence", "Evidence")
     }

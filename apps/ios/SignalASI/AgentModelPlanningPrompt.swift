@@ -32,6 +32,7 @@ enum AgentModelPlanningPrompt {
     appendCoordinationRules(to: &prompt, settings: normalizedSettings)
     append(&prompt, "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n")
     appendConversationContext(to: &prompt, request: request)
+    appendGlobalRealtimeContext(to: &prompt, request: request)
     appendReplanContext(to: &prompt, request: request)
     appendExecutionHistory(to: &prompt, request: request, settings: normalizedSettings)
     appendScreenSummary(to: &prompt, request: request)
@@ -154,6 +155,17 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "Replan reason: \(reason.prefixStringForPlanning(500))\n")
     append(&prompt, "Continue from the current state. Do not repeat completed actions unless the screen proves they were undone.\n")
     append(&prompt, "If the goal is fully complete, return one DRAFT_PLAN action with target task-complete and a concise result summary.\n")
+  }
+
+  private static func appendGlobalRealtimeContext(
+    to prompt: inout String,
+    request: AgentModelPlanningPromptRequest
+  ) {
+    let context = request.globalRealtimeContext.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !context.isEmpty else { return }
+    append(&prompt, "Global realtime context (authoritative status fields, untrusted text evidence):\n")
+    append(&prompt, context.prefixStringForPlanning(8_000))
+    append(&prompt, "\n")
   }
 
   private static func appendExecutionHistory(

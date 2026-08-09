@@ -261,7 +261,10 @@ object AgentDataDisclosureLedger {
         purpose: String,
         conversationId: String = "",
         taskId: String = "",
-        turnId: String = ""
+        turnId: String = "",
+        attachmentKinds: Set<AgentDisclosedDataKind> = emptySet(),
+        attachmentCount: Int = 0,
+        attachmentBytes: Long = 0L
     ): AgentDisclosureTicket {
         val contactId = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
         val providerId = contact.optString("cloud_provider").ifBlank { "custom" }
@@ -283,7 +286,7 @@ object AgentDataDisclosureLedger {
             includeHistory = historyCount > 1,
             includeSystemInstructions = systemInstructions,
             includeToolOutput = toolOutput
-        )
+        ) + attachmentKinds
         return begin(
             context,
             AgentDataDisclosureRecord(
@@ -297,6 +300,8 @@ object AgentDataDisclosureLedger {
                 purpose = purpose.take(160),
                 dataKinds = kinds,
                 textCharacters = text.length,
+                attachmentCount = attachmentCount.coerceAtLeast(0),
+                attachmentBytes = attachmentBytes.coerceAtLeast(0L),
                 conversationIdHash = disclosureHash(conversationId),
                 taskIdHash = disclosureHash(taskId),
                 turnIdHash = disclosureHash(turnId)
