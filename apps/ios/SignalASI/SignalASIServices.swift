@@ -945,7 +945,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func executeProactiveTask(_ task: AgentProactiveTask) async -> Bool {
+  func executeProactiveTask(_ task: AgentProactiveTask, causeJson: String = "") async -> Bool {
     let action = task.action
     let targetId: String
     if action.contactId != "system" {
@@ -972,11 +972,15 @@ final class MessageCoordinator: ObservableObject {
     case .nativeTool:
       prompt = "Run native tool \(action.targetId) with arguments \(action.argumentsJson).\n\(action.prompt)"
     }
-    guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    var enrichedPrompt = prompt
+    if !causeJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      enrichedPrompt += "\n\nProactive event context:\n\(String(causeJson.prefix(8_192)))"
+    }
+    guard !enrichedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       lastError = "The proactive task has no prompt."
       return false
     }
-    await send(prompt, to: contact, agentGoalOverride: prompt)
+    await send(enrichedPrompt, to: contact, agentGoalOverride: enrichedPrompt)
     return true
   }
 
@@ -1474,6 +1478,10 @@ final class MessageCoordinator: ObservableObject {
       handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
       return
     }
+    if appPayload.string("type") == "proactive_webhook_event" {
+      handleRemoteProactiveWebhook(appPayload, link: link, messageId: messageId)
+      return
+    }
     if appPayload.string("type") == "proactive_task_event" {
       handleRemoteProactiveEvent(appPayload, link: link, messageId: messageId)
       return
@@ -1522,6 +1530,38 @@ final class MessageCoordinator: ObservableObject {
       title: store.contact(id: contactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
+  }
+
+  private func handleRemoteProactiveWebhook(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    let result = incomingLink.flatMap { link in
+      store.acceptRemoteWebhook(
+        taskId: payload.string("task_id"),
+        eventId: payload.string("event_id"),
+        payload: payload.dictionary("payload") ?? [:],
+        sourceDesktopId: link.paired ? link.desktopId : ""
+      )
+    }
+    if let result, result.accepted {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        let completed = await executeProactiveTask(result.task, causeJson: result.run.causeJson)
+        store.finishAutomationRun(
+          id: result.run.runId,
+          status: completed ? .completed : .failed,
+          resultSummary: completed
+            ? "Remote webhook Agent request submitted."
+            : "Remote webhook Agent request failed.",
+          errorCode: completed ? "" : "remote_webhook_execution_failed"
+        )
+      }
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
   }
 
   private func handleRemoteProactiveEvent(

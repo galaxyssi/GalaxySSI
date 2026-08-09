@@ -800,6 +800,64 @@ final class SignalASIStore: ObservableObject {
     return run
   }
 
+  func acceptRemoteWebhook(
+    taskId: String,
+    eventId: String,
+    payload: [String: Any],
+    sourceDesktopId: String
+  ) -> (task: AgentProactiveTask, run: AgentProactiveRun, accepted: Bool)? {
+    let desktopId = sourceDesktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanEventId = eventId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !desktopId.isEmpty,
+          !cleanEventId.isEmpty,
+          (try? AgentProactiveTaskScheduler.requireIdentifier(cleanEventId, label: "Event id")) != nil,
+          serverLinks.contains(where: { $0.desktopId == desktopId && $0.paired }),
+          let task = automationTask(id: taskId),
+          task.enabled,
+          task.trigger.kind == .webhook,
+          AgentProactiveTaskScheduler.remoteWebhookEventMatches(
+            filter: task.trigger.eventFilter,
+            payload: payload
+          ) else {
+      return nil
+    }
+
+    let runId = AgentProactiveTaskScheduler.stableRunId(
+      taskId: task.taskId,
+      occurrence: cleanEventId
+    )
+    let webhookStore = UserDefaultsAgentRemoteProactiveWebhookStore.shared
+    guard webhookStore.consume(taskId: task.taskId, eventId: cleanEventId) else {
+      guard let existing = proactiveRuns.first(where: { $0.runId == runId }) else {
+        return nil
+      }
+      return (task: task, run: existing, accepted: false)
+    }
+
+    let cause: [String: Any] = [
+      "type": "webhook",
+      "event_id": cleanEventId,
+      "source_desktop_id": desktopId,
+      "payload": payload
+    ]
+    let causeJson = (try? JSONSerialization.data(withJSONObject: cause))
+      .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    let now = Self.nowMillis()
+    guard let run = try? AgentProactiveRun(
+      runId: runId,
+      taskId: task.taskId,
+      scheduledForMillis: now,
+      status: .queued,
+      causeJson: causeJson,
+      startedAtMillis: now,
+      resultSummary: "Remote webhook queued."
+    ) else {
+      return nil
+    }
+    proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+    return (task: task, run: run, accepted: true)
+  }
+
   func claimDueAutomationTasks(
     nowMillis: Int64 = Self.nowMillis()
   ) -> [AgentProactiveBackgroundExecution] {
@@ -2730,6 +2788,7 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsAgentWorkflowStore.shared.clear()
     UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
     UserDefaultsAgentWorkflowTriggerStore.shared.clear()
+    UserDefaultsAgentRemoteProactiveWebhookStore.shared.clear()
     workflowExecutionHistoryStore.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
