@@ -6,6 +6,9 @@ struct SignalASIAgentHomeReadinessView: View {
   var nativeToolSummary: (total: Int, available: Int)
   var screenObservationAllowed: Bool
   var executionPaused: Bool
+  var currentApp: String
+  var memorySnapshot: AgentMemorySnapshot
+  var knowledgeStats: AgentKnowledgeStats
   var permissionMode: AgentPermissionMode = .askBeforeAction
   var highRiskGuard: Bool = true
   var memoryCapture: Bool = true
@@ -95,6 +98,42 @@ struct SignalASIAgentHomeReadinessView: View {
           action: onToggleExecutionPaused
         )
       }
+
+      VStack(spacing: 0) {
+        infoValueRow(
+          String(
+            format: t("agent_current_app_value", "Current app: %@"),
+            currentApp.ifBlank(t("agent_current_app_unknown", "Unknown"))
+          )
+        )
+        separator
+        NavigationLink(destination: SignalASIAgentMemoryView()) {
+          infoNavigationRow(
+            String(
+              format: t("agent_memory_value", "Memory: %d / conflicts: %d"),
+              memorySnapshot.activeCount,
+              memorySnapshot.conflicts.count
+            ),
+            systemImage: "brain"
+          )
+        }
+        .buttonStyle(.plain)
+        separator
+        NavigationLink(destination: SignalASIAgentKnowledgeView()) {
+          infoNavigationRow(
+            String(
+              format: t("agent_knowledge_value", "Knowledge: %d items / %d sources / %d hits"),
+              knowledgeStats.itemCount,
+              knowledgeStats.sourceCount,
+              0
+            ),
+            systemImage: "books.vertical"
+          )
+        }
+        .buttonStyle(.plain)
+      }
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
       if !screenObservationAllowed {
         NavigationLink(destination: OnDeviceAgentPermissionsView()) {
@@ -187,5 +226,42 @@ struct SignalASIAgentHomeReadinessView: View {
 
   private func onOff(_ value: Bool) -> String {
     value ? t("common_on", "On") : t("common_off", "Off")
+  }
+
+  private var separator: some View {
+    Rectangle()
+      .fill(Color.signalASISeparator)
+      .frame(height: 0.5)
+      .padding(.leading, 14)
+  }
+
+  private func infoValueRow(_ value: String) -> some View {
+    Text(value)
+      .font(.system(size: 13))
+      .foregroundColor(.signalASITextPrimary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.75)
+      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+      .padding(.horizontal, 14)
+  }
+
+  private func infoNavigationRow(_ value: String, systemImage: String) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: systemImage)
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundColor(.signalASIAccent)
+        .frame(width: 18)
+      Text(value)
+        .font(.system(size: 13))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 11, weight: .bold))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+    .padding(.horizontal, 14)
   }
 }

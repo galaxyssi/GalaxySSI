@@ -871,6 +871,11 @@ struct AgentHomeView: View {
               nativeToolSummary: nativeToolSummary,
               screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
               executionPaused: store.agentSafetySettings.executionPaused,
+              currentApp: agentScreenSnapshot.screen.foregroundApp
+                .ifBlank(agentScreenSnapshot.screen.pageTitle)
+                .ifBlank("SignalASI"),
+              memorySnapshot: store.agentMemorySnapshot(),
+              knowledgeStats: store.agentKnowledgeStats,
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
@@ -885,6 +890,10 @@ struct AgentHomeView: View {
                 store.updateAgentSafetySettings { $0.executionPaused.toggle() }
               },
               t: t
+            )
+            AgentProcessCard(
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused
             )
           } else {
             if let activeRemoteAgentTask {
