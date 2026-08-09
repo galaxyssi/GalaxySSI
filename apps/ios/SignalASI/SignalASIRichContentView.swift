@@ -1,11 +1,19 @@
 import AVKit
 import AVFoundation
+import Foundation
 import SwiftUI
 import UIKit
 import WebKit
+import UniformTypeIdentifiers
 
 struct SignalASIRichContentView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var coordinator: MessageCoordinator
+
+  @State private var artifactDocument: SignalASIArtifactDocument?
+  @State private var artifactExportPresented = false
+  @State private var artifactExportSourceURI = ""
+  @State private var artifactExportFilename = "SignalASI-artifact"
 
   var content: String
   var richOutputJson: String = ""
@@ -18,17 +26,17 @@ struct SignalASIRichContentView: View {
     if !richSource.isEmpty {
       let explicit = AgentRichContentCodec.decode(richSource)
       if !explicit.isEmpty {
-        return explicit.map(AgentDesktopArtifactStore.shared.resolveBlock)
+        return explicit.map { coordinator.desktopArtifactStore.resolveBlock($0) }
       }
     }
 
     let explicit = AgentRichContentCodec.decode(content)
-    return explicit.isEmpty
-      ? AgentRichContentCodec.fromText(content)
-      : explicit.map(AgentDesktopArtifactStore.shared.resolveBlock)
+    let blocks = explicit.isEmpty ? AgentRichContentCodec.fromText(content) : explicit
+    return blocks.map { coordinator.desktopArtifactStore.resolveBlock($0) }
   }
 
   var body: some View {
+    _ = coordinator.artifactRevision
     let blocks = resolvedBlocks
     let layout = AgentResponseSectionOrganizer.organize(blocks)
 
@@ -45,7 +53,8 @@ struct SignalASIRichContentView: View {
                 blocks: section.blocks,
                 isOutgoing: isOutgoing,
                 onAction: onAction,
-                onFormSubmit: onFormSubmit
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
               )
               .padding(.vertical, 4)
             } else {
@@ -53,7 +62,8 @@ struct SignalASIRichContentView: View {
                 section: section,
                 isOutgoing: isOutgoing,
                 onAction: onAction,
-                onFormSubmit: onFormSubmit
+                onFormSubmit: onFormSubmit,
+                onArtifactSave: { exportArtifact($0) }
               )
             }
           }
@@ -63,12 +73,38 @@ struct SignalASIRichContentView: View {
           blocks: blocks,
           isOutgoing: isOutgoing,
           onAction: onAction,
-          onFormSubmit: onFormSubmit
+          onFormSubmit: onFormSubmit,
+          onArtifactSave: { exportArtifact($0) }
         )
       }
     }
     .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
     .textSelection(.enabled)
+    .fileExporter(
+      isPresented: $artifactExportPresented,
+      document: artifactDocument,
+      contentType: .data,
+      defaultFilename: artifactExportFilename
+    ) { result in
+      guard case .success = result else { return }
+      coordinator.markDesktopArtifactSaved(
+        sourceURI: artifactExportSourceURI,
+        savedURI: "file-export://\(artifactExportFilename)"
+      )
+    }
+  }
+
+  fileprivate func exportArtifact(_ block: AgentRichBlock) {
+    guard let file = coordinator.desktopArtifactStore.localFile(for: block),
+      let data = try? Data(contentsOf: file) else {
+      return
+    }
+    artifactExportSourceURI = block.metadata["artifact_source_uri"] ?? block.uri
+    artifactExportFilename = AgentDesktopArtifactStore.safeFileName(
+      block.title.ifBlank(file.lastPathComponent)
+    )
+    artifactDocument = SignalASIArtifactDocument(data: data)
+    artifactExportPresented = true
   }
 }
 
@@ -79,6 +115,7 @@ private struct SignalASIRichSectionView: View {
   var isOutgoing: Bool
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
+  var onArtifactSave: (AgentRichBlock) -> Void
 
   @State private var expanded: Bool
 
@@ -86,12 +123,14 @@ private struct SignalASIRichSectionView: View {
     section: AgentResponseSection,
     isOutgoing: Bool,
     onAction: @escaping (AgentRichAction) -> Void,
-    onFormSubmit: @escaping (AgentRichBlock, [String: String]) -> Void
+    onFormSubmit: @escaping (AgentRichBlock, [String: String]) -> Void,
+    onArtifactSave: @escaping (AgentRichBlock) -> Void
   ) {
     self.section = section
     self.isOutgoing = isOutgoing
     self.onAction = onAction
     self.onFormSubmit = onFormSubmit
+    self.onArtifactSave = onArtifactSave
     _expanded = State(initialValue: section.expandedByDefault)
   }
 
@@ -132,7 +171,8 @@ private struct SignalASIRichSectionView: View {
           blocks: section.blocks,
           isOutgoing: isOutgoing,
           onAction: onAction,
-          onFormSubmit: onFormSubmit
+          onFormSubmit: onFormSubmit,
+          onArtifactSave: onArtifactSave
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
       }
@@ -162,6 +202,7 @@ private struct SignalASIRichBlockListView: View {
   var isOutgoing: Bool
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
+  var onArtifactSave: (AgentRichBlock) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -170,7 +211,8 @@ private struct SignalASIRichBlockListView: View {
           block: block,
           isOutgoing: isOutgoing,
           onAction: onAction,
-          onFormSubmit: onFormSubmit
+          onFormSubmit: onFormSubmit,
+          onArtifactSave: onArtifactSave
         )
       }
     }
@@ -179,11 +221,13 @@ private struct SignalASIRichBlockListView: View {
 
 private struct SignalASIRichBlockView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var coordinator: MessageCoordinator
 
   var block: AgentRichBlock
   var isOutgoing: Bool
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
+  var onArtifactSave: (AgentRichBlock) -> Void
 
   @State private var expandedCode = false
   @State private var expandedTable = false
@@ -416,7 +460,10 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var imageBlock: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    if isDesktopArtifact {
+      desktopArtifactBlock
+    } else {
+      VStack(alignment: .leading, spacing: 6) {
       if !block.title.isEmpty {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
@@ -450,6 +497,7 @@ private struct SignalASIRichBlockView: View {
         }
       } else {
         resourceBlock
+      }
       }
     }
   }
@@ -729,29 +777,56 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var resourceBlock: some View {
-    let artifactRequest = AgentDesktopArtifactRequestPayload.from(block: block)
-    let artifactAction = artifactRequest.map { request in
-      AgentRichAction(
-        id: "download-desktop-artifact",
-        label: block.metadata["saved_to_downloads"] == "true"
-          ? t("rich_output_saved", "Saved")
-          : (AgentDesktopArtifactStore.shared.localFile(forArtifactURI: request.artifactURI) == nil
-            ? t("rich_output_download", "Download")
-            : t("rich_output_save", "Save")),
-        verb: "download_desktop_artifact",
-        value: request.encode(),
-        style: "primary"
+    if isDesktopArtifact {
+      desktopArtifactBlock
+    } else {
+      SignalASIRichResourceRow(
+        icon: resourceIcon,
+        title: resourceTitle,
+        subtitle: resourceSubtitle,
+        url: SignalASIRichContentLink.safeURL(block.uri),
+        typeLabel: resourceTypeLabel
       )
     }
-    SignalASIRichResourceRow(
-      icon: resourceIcon,
-      title: resourceTitle,
-      subtitle: resourceSubtitle,
-      url: SignalASIRichContentLink.safeURL(block.uri),
-      typeLabel: resourceTypeLabel,
-      action: artifactAction,
-      onAction: onAction
-    )
+  }
+
+  private var desktopArtifactBlock: some View {
+    let available = coordinator.desktopArtifactStore.localFile(for: block) != nil
+    return VStack(alignment: .leading, spacing: 8) {
+      SignalASIRichResourceRow(
+        icon: "doc.richtext",
+        title: resourceTitle,
+        subtitle: resourceSubtitle,
+        url: nil,
+        typeLabel: resourceTypeLabel
+      )
+      HStack(spacing: 8) {
+        if available {
+          Button {
+            onArtifactSave(block)
+          } label: {
+            Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.borderedProminent)
+        } else {
+          Button {
+            Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
+          } label: {
+            Label(t("rich_output_download", "Download"), systemImage: "arrow.down.circle")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.borderedProminent)
+        }
+      }
+    }
+  }
+
+  private var isDesktopArtifact: Bool {
+    let sourceURI = block.metadata["artifact_source_uri"] ?? block.uri
+    return block.isArtifactBlock && AgentDesktopArtifactStore.isSignalASIArtifactURI(sourceURI)
   }
 
   private func actionsBlock(title: String) -> some View {
@@ -1077,36 +1152,10 @@ private struct SignalASIRichResourceRow: View {
   var subtitle: String
   var url: URL?
   var typeLabel: String
-  var action: AgentRichAction?
-  var onAction: (AgentRichAction) -> Void
-
-  init(
-    icon: String,
-    title: String,
-    subtitle: String,
-    url: URL?,
-    typeLabel: String,
-    action: AgentRichAction? = nil,
-    onAction: @escaping (AgentRichAction) -> Void = { _ in }
-  ) {
-    self.icon = icon
-    self.title = title
-    self.subtitle = subtitle
-    self.url = url
-    self.typeLabel = typeLabel
-    self.action = action
-    self.onAction = onAction
-  }
 
   var body: some View {
     Group {
-      if let action {
-        Button {
-          onAction(action)
-        } label: {
-          rowBody
-        }
-      } else if let url {
+      if let url {
         Link(destination: url) {
           rowBody
         }
@@ -1140,15 +1189,7 @@ private struct SignalASIRichResourceRow: View {
         }
       }
       Spacer(minLength: 8)
-      if let action {
-        Text(action.label)
-          .font(.caption.weight(.semibold))
-          .foregroundColor(.white)
-          .padding(.horizontal, 9)
-          .padding(.vertical, 6)
-          .background(Color.signalASIAccent)
-          .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-      } else if url != nil {
+      if url != nil {
         Image(systemName: "arrow.up.right.square")
           .font(.caption.weight(.semibold))
           .foregroundColor(.signalASITextSecondary)
@@ -1520,6 +1561,24 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
   func stop() {
     player.pause()
     player.seek(to: .zero)
+  }
+}
+
+private struct SignalASIArtifactDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.data] }
+
+  var data: Data
+
+  init(data: Data) {
+    self.data = data
+  }
+
+  init(configuration: ReadConfiguration) throws {
+    data = configuration.file.regularFileContents ?? Data()
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
   }
 }
 

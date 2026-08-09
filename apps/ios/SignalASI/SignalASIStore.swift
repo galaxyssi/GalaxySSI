@@ -297,6 +297,7 @@ final class SignalASIStore: ObservableObject {
   private let agentMemoryStore: UserDefaultsAgentMemoryStore
   private let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
+  private let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
@@ -311,6 +312,7 @@ final class SignalASIStore: ObservableObject {
     self.agentMemoryStore = memoryStore
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
+    self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -774,6 +776,45 @@ final class SignalASIStore: ObservableObject {
     return true
   }
 
+  func recentWorkflowExecutions(limit: Int = AgentWorkflowExecutionHistoryStore.defaultRecentLimit) -> [AgentWorkflowExecutionRecord] {
+    workflowExecutionHistoryStore.recent(limit)
+  }
+
+  func workflowExecutions(taskId: String, limit: Int = 50) -> [AgentWorkflowExecutionRecord] {
+    let clean = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return [] }
+    return workflowExecutionHistoryStore.listAll()
+      .filter { $0.workflowId == clean }
+      .sorted { $0.startedAtMillis > $1.startedAtMillis }
+      .prefix(max(limit, 0))
+      .map { $0 }
+  }
+
+  func recordWorkflowExecution(_ record: AgentWorkflowExecutionRecord) {
+    try? workflowExecutionHistoryStore.upsert(record)
+  }
+
+  func completeWorkflowExecution(
+    id: String,
+    status: AgentWorkflowExecutionStatus,
+    resultSummary: String
+  ) {
+    guard let current = workflowExecutionHistoryStore.findById(id),
+      let updated = try? AgentWorkflowExecutionRecord(
+        id: current.id,
+        workflowId: current.workflowId,
+        workflowName: current.workflowName,
+        source: current.source,
+        status: status,
+        startedAtMillis: current.startedAtMillis,
+        completedAtMillis: Int64(Date().timeIntervalSince1970 * 1_000),
+        resultSummary: resultSummary
+      ) else {
+      return
+    }
+    try? workflowExecutionHistoryStore.upsert(updated)
+  }
+
   func makeAutomationTaskDraft(name: String = "", prompt: String = "") -> AgentProactiveTask {
     let now = Self.nowMillis()
     let taskId = "ios-proactive-\(UUID().uuidString.lowercased())"
@@ -867,6 +908,7 @@ final class SignalASIStore: ObservableObject {
     let before = proactiveTasks.count
     proactiveTasks.removeAll { $0.taskId == clean }
     proactiveRuns.removeAll { $0.taskId == clean }
+    workflowExecutionHistoryStore.deleteForWorkflow(clean)
     return before != proactiveTasks.count
   }
 
@@ -884,6 +926,15 @@ final class SignalASIStore: ObservableObject {
       causeJson: "{\"source\":\"manual\"}",
       resultSummary: "Run queued on iOS scheduler."
     )
+    try workflowExecutionHistoryStore.upsert(AgentWorkflowExecutionRecord(
+      id: run.runId,
+      workflowId: task.taskId,
+      workflowName: task.name,
+      source: .manual,
+      status: .running,
+      startedAtMillis: now,
+      resultSummary: run.resultSummary
+    ))
     let updatedTask = try AgentProactiveTask(
       taskId: task.taskId,
       name: task.name,
@@ -903,6 +954,170 @@ final class SignalASIStore: ObservableObject {
     proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
     replaceAutomationTask(updatedTask)
     return run
+  }
+
+  func acceptRemoteWebhook(
+    taskId: String,
+    eventId: String,
+    payload: [String: Any],
+    sourceDesktopId: String
+  ) -> (task: AgentProactiveTask, run: AgentProactiveRun, accepted: Bool)? {
+    let desktopId = sourceDesktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanEventId = eventId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !desktopId.isEmpty,
+          !cleanEventId.isEmpty,
+          (try? AgentProactiveTaskScheduler.requireIdentifier(cleanEventId, label: "Event id")) != nil,
+          serverLinks.contains(where: { $0.desktopId == desktopId && $0.paired }),
+          let task = automationTask(id: taskId),
+          task.enabled,
+          task.trigger.kind == .webhook,
+          AgentProactiveTaskScheduler.remoteWebhookEventMatches(
+            filter: task.trigger.eventFilter,
+            payload: payload
+          ) else {
+      return nil
+    }
+
+    let runId = AgentProactiveTaskScheduler.stableRunId(
+      taskId: task.taskId,
+      occurrence: cleanEventId
+    )
+    let webhookStore = UserDefaultsAgentRemoteProactiveWebhookStore.shared
+    guard webhookStore.consume(taskId: task.taskId, eventId: cleanEventId) else {
+      guard let existing = proactiveRuns.first(where: { $0.runId == runId }) else {
+        return nil
+      }
+      return (task: task, run: existing, accepted: false)
+    }
+
+    let cause: [String: Any] = [
+      "type": "webhook",
+      "event_id": cleanEventId,
+      "source_desktop_id": desktopId,
+      "payload": payload
+    ]
+    let causeJson = (try? JSONSerialization.data(withJSONObject: cause))
+      .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    let now = Self.nowMillis()
+    guard let run = try? AgentProactiveRun(
+      runId: runId,
+      taskId: task.taskId,
+      scheduledForMillis: now,
+      status: .queued,
+      causeJson: causeJson,
+      startedAtMillis: now,
+      resultSummary: "Remote webhook queued."
+    ) else {
+      return nil
+    }
+    proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+    return (task: task, run: run, accepted: true)
+  }
+
+  func claimDueAutomationTasks(
+    nowMillis: Int64 = Self.nowMillis()
+  ) -> [AgentProactiveBackgroundExecution] {
+    var executions: [AgentProactiveBackgroundExecution] = []
+    let candidates = proactiveTasks.filter {
+      $0.enabled && $0.nextRunAtMillis > 0 && $0.nextRunAtMillis <= nowMillis
+    }
+    for task in candidates {
+      guard let due = try? AgentProactiveTaskScheduler.dueOccurrences(
+        task: task,
+        nowMillis: nowMillis
+      ), !due.occurrences.isEmpty else {
+        continue
+      }
+
+      let queuedCount = due.occurrences.filter { $0.status == .queued }.count
+      let updated = try? AgentProactiveTask(
+        taskId: task.taskId,
+        name: task.name,
+        trigger: task.trigger,
+        action: task.action,
+        policy: task.policy,
+        enabled: task.enabled,
+        nextRunAtMillis: due.nextRunAtMillis,
+        lastRunAtMillis: task.lastRunAtMillis,
+        lastStatus: queuedCount > 0 ? .queued : .skipped,
+        runCount: task.runCount,
+        consecutiveFailures: task.consecutiveFailures,
+        revision: task.revision,
+        createdAtMillis: task.createdAtMillis,
+        updatedAtMillis: nowMillis
+      )
+      guard let updated else { continue }
+      proactiveTasks.removeAll { $0.taskId == task.taskId }
+      proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updated]).prefix(200))
+
+      for occurrence in due.occurrences {
+        guard let run = try? AgentProactiveRun(
+          runId: "ios-proactive-run-\(UUID().uuidString.lowercased())",
+          taskId: task.taskId,
+          scheduledForMillis: occurrence.scheduledForMillis,
+          status: occurrence.status,
+          causeJson: "{\"source\":\"background\"}",
+          startedAtMillis: nowMillis,
+          resultSummary: occurrence.status == .queued
+            ? "Background Agent request queued."
+            : "Occurrence skipped by proactive policy."
+        ) else { continue }
+        proactiveRuns = Array((proactiveRuns + [run]).suffix(500))
+        if occurrence.status == .queued {
+          executions.append(AgentProactiveBackgroundExecution(
+            task: task,
+            runId: run.runId,
+            scheduledForMillis: occurrence.scheduledForMillis
+          ))
+        }
+      }
+    }
+    return executions
+  }
+
+  @discardableResult
+  func finishAutomationRun(
+    id runId: String,
+    status: AgentProactiveRunStatus,
+    resultSummary: String,
+    errorCode: String = ""
+  ) -> Bool {
+    let clean = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let index = proactiveRuns.firstIndex(where: { $0.runId == clean }) else {
+      return false
+    }
+    let now = Self.nowMillis()
+    let run = proactiveRuns[index]
+    guard !run.status.terminal else { return false }
+    guard let finished = try? AgentProactiveRun(
+      runId: run.runId,
+      taskId: run.taskId,
+      scheduledForMillis: run.scheduledForMillis,
+      status: status,
+      attempt: run.attempt,
+      causeJson: run.causeJson,
+      startedAtMillis: run.startedAtMillis,
+      completedAtMillis: now,
+      resultSummary: resultSummary,
+      errorCode: errorCode,
+      linkedExecutionId: run.linkedExecutionId,
+      teamRunId: run.teamRunId
+    ) else { return false }
+    var runs = proactiveRuns
+    runs[index] = finished
+    proactiveRuns = runs
+
+    guard let task = automationTask(id: run.taskId),
+          let updated = try? AgentProactiveTaskScheduler.recordOutcome(
+            task: task,
+            status: status,
+            completedAtMillis: now
+          ) else {
+      return true
+    }
+    proactiveTasks.removeAll { $0.taskId == updated.taskId }
+    proactiveTasks = Array(Self.sortedAutomationTasks(proactiveTasks + [updated]).prefix(200))
+    return true
   }
 
   @discardableResult
@@ -931,6 +1146,18 @@ final class SignalASIStore: ObservableObject {
     var runs = proactiveRuns
     runs[index] = cancelled
     proactiveRuns = runs
+    if let task = automationTask(id: run.taskId) {
+      try? workflowExecutionHistoryStore.upsert(AgentWorkflowExecutionRecord(
+        id: run.runId,
+        workflowId: task.taskId,
+        workflowName: task.name,
+        source: .manual,
+        status: .cancelled,
+        startedAtMillis: run.startedAtMillis,
+        completedAtMillis: cancelled.completedAtMillis,
+        resultSummary: cancelled.resultSummary
+      ))
+    }
     return true
   }
 
@@ -1997,7 +2224,9 @@ final class SignalASIStore: ObservableObject {
         includesAgentTaskBudget: true,
         includesAgentKnowledge: !agentKnowledgeItems.isEmpty || !agentKnowledgeAccessAudit.isEmpty,
         includesAgentTaskHistory: !recentAgentTasks(limit: 1).isEmpty,
-        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty || !globalProactiveMessages.isEmpty,
+        includesAutomationTasks: !proactiveTasks.isEmpty || !proactiveRuns.isEmpty ||
+          !UserDefaultsAgentWorkflowTriggerStore.shared.list().isEmpty ||
+          !workflowExecutionHistoryStore.listAll().isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
@@ -2014,6 +2243,8 @@ final class SignalASIStore: ObservableObject {
         taskHistory: recentAgentTasks(limit: 200),
         proactiveTasks: automationTasks(),
         proactiveRuns: Array(proactiveRuns.suffix(500)),
+        workflowExecutions: workflowExecutionHistoryStore.exportRecords(),
+        workflowTriggers: UserDefaultsAgentWorkflowTriggerStore.shared.list(),
         globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
         globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
         agentConversations: agentSessions(includeArchived: true),
@@ -2074,6 +2305,12 @@ final class SignalASIStore: ObservableObject {
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
       proactiveTasks = Array((payload.agentData.proactiveTasks ?? []).suffix(200))
       proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
+      if let workflowExecutions = payload.agentData.workflowExecutions {
+        try workflowExecutionHistoryStore.replaceAll(workflowExecutions)
+      }
+      if let workflowTriggers = payload.agentData.workflowTriggers {
+        try UserDefaultsAgentWorkflowTriggerStore.shared.replaceAll(workflowTriggers)
+      }
       globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
       globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
@@ -2344,7 +2581,7 @@ final class SignalASIStore: ObservableObject {
         displayName: displayName,
         type: "agent",
         agentKind: kind,
-        deliveryMode: .link,
+        deliveryMode: .pcConnector,
         trustState: isPaired ? .verified : .unverified,
         desktopId: desktopId,
         desktopName: desktopName,
@@ -2364,7 +2601,7 @@ final class SignalASIStore: ObservableObject {
       contact.type = "agent"
       contact.agentKind = kind
       contact.agentId = agentId
-      contact.deliveryMode = .link
+      contact.deliveryMode = .pcConnector
       contact.trustState = isPaired ? .verified : .unverified
       contact.desktopId = desktopId
       contact.desktopName = desktopName
@@ -2735,6 +2972,11 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func resetToFreshState() {
+    UserDefaultsAgentWorkflowStore.shared.clear()
+    UserDefaultsAgentRemoteProactiveEventStore.shared.clear()
+    UserDefaultsAgentWorkflowTriggerStore.shared.clear()
+    UserDefaultsAgentRemoteProactiveWebhookStore.shared.clear()
+    workflowExecutionHistoryStore.clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
