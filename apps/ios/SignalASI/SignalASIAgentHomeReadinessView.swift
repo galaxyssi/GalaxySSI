@@ -10,6 +10,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var memorySnapshot: AgentMemorySnapshot
   var knowledgeStats: AgentKnowledgeStats
   var recentTaskCount: Int = 0
+  var recentTasks: [AgentTaskRecord] = []
   var permissionMode: AgentPermissionMode = .askBeforeAction
   var highRiskGuard: Bool = true
   var memoryCapture: Bool = true
@@ -144,6 +145,13 @@ struct SignalASIAgentHomeReadinessView: View {
           )
         }
         .buttonStyle(.plain)
+        ForEach(Array(recentTasks.prefix(3))) { task in
+          separator
+          Button(action: onOpenRecentTasks) {
+            recentTaskRow(task)
+          }
+          .buttonStyle(.plain)
+        }
       }
       .background(Color.signalASISurface)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -276,6 +284,65 @@ struct SignalASIAgentHomeReadinessView: View {
     }
     .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
     .padding(.horizontal, 14)
+  }
+
+  private func recentTaskRow(_ task: AgentTaskRecord) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: "clock.arrow.circlepath")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundColor(recentTaskTint(task.phase))
+        .frame(width: 18)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(task.goal.ifBlank(t("signalasi.agent_tasks.title", "Agent task")))
+          .font(.system(size: 12.5, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+        Text(recentTaskStatus(task.phase))
+          .font(.system(size: 10.5, weight: .semibold))
+          .foregroundColor(recentTaskTint(task.phase))
+          .lineLimit(1)
+      }
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 10, weight: .bold))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+    .padding(.horizontal, 14)
+  }
+
+  private func recentTaskStatus(_ phase: AgentPhase) -> String {
+    switch phase {
+    case .observing, .planning, .executing, .verifying:
+      return t("agent_task_status_running", "Running")
+    case .waitingConfirmation:
+      return t("agent_task_status_waiting_approval", "Waiting for approval")
+    case .waitingResponse:
+      return t("agent_task_status_waiting_input", "Waiting for input")
+    case .paused:
+      return t("agent_recent_status_paused", "Paused")
+    case .blocked:
+      return t("agent_recent_status_blocked", "Blocked")
+    case .completed:
+      return t("agent_task_status_completed", "Completed")
+    case .failed:
+      return t("agent_task_status_failed", "Failed")
+    case .cancelled:
+      return t("agent_task_status_cancelled", "Cancelled")
+    }
+  }
+
+  private func recentTaskTint(_ phase: AgentPhase) -> Color {
+    switch phase {
+    case .waitingConfirmation, .blocked, .paused:
+      return .orange
+    case .failed, .cancelled:
+      return .red
+    case .completed:
+      return .signalASIAccent
+    case .observing, .planning, .executing, .verifying, .waitingResponse:
+      return .signalASITextSecondary
+    }
   }
 }
 

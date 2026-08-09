@@ -936,6 +936,7 @@ struct AgentHomeView: View {
               memorySnapshot: store.agentMemorySnapshot(),
               knowledgeStats: store.agentKnowledgeStats,
               recentTaskCount: store.recentAgentTasks(limit: 200).count,
+              recentTasks: store.recentAgentTasks(limit: 3),
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
