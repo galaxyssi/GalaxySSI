@@ -569,9 +569,12 @@ final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
+  @Published private(set) var artifactRevision = 0
+  @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
+  let desktopArtifactStore: AgentDesktopArtifactStore
   private let deliveryStore: SignalASILinkDeliveryStore
   private let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
@@ -595,6 +598,8 @@ final class MessageCoordinator: ObservableObject {
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
+  private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
+  private var pendingArtifactDownloads: Set<String> = []
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
@@ -611,12 +616,19 @@ final class MessageCoordinator: ObservableObject {
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
+    desktopArtifactStore: AgentDesktopArtifactStore? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
     mqttClient: SignalASIMqttClient? = nil
   ) {
     self.store = store
+    self.desktopArtifactStore = desktopArtifactStore ?? AgentDesktopArtifactStore(
+      applicationSupportDirectory: FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+      ).first ?? FileManager.default.temporaryDirectory
+    )
     self.deliveryStore = deliveryStore ?? SignalASILinkDeliveryStore()
     self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
@@ -645,6 +657,129 @@ final class MessageCoordinator: ObservableObject {
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
     scheduleOutboxFlush(after: 0)
+  }
+
+  func desktopControlSnapshot(for link: ServerLink) -> AgentDesktopRemoteControlSnapshot {
+    desktopControlSnapshots[link.desktopId] ?? .initial(for: link)
+  }
+
+  @discardableResult
+  func requestDesktopArtifactDownload(block: AgentRichBlock) async -> Bool {
+    let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
+    let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactURI),
+      digest.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+      lastError = "Artifact metadata is incomplete"
+      return false
+    }
+    let desktopId = block.metadata["desktop_id"] ?? ""
+    let clientRouteId = block.metadata["client_route_id"] ?? ""
+    let pairedLinks = store.serverLinks.filter(\.paired)
+    let link: ServerLink?
+    if !desktopId.isEmpty, !clientRouteId.isEmpty {
+      link = store.serverLinks.first {
+        $0.desktopId == desktopId && $0.routes.clientRouteId == clientRouteId
+      }
+    } else if !desktopId.isEmpty {
+      link = store.serverLinks.first { $0.desktopId == desktopId }
+    } else if pairedLinks.count == 1 {
+      link = pairedLinks.first
+    } else {
+      link = nil
+    }
+    guard let link, link.paired else {
+      lastError = "No paired Desktop is available for this artifact"
+      return false
+    }
+    if pendingArtifactDownloads.contains(artifactURI) {
+      return true
+    }
+    pendingArtifactDownloads.insert(artifactURI)
+    let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
+      AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
+    )
+    let payload: [String: Any] = [
+      "type": "artifact_redelivery_request",
+      "desktop_id": link.desktopId,
+      "artifact_id": artifactId,
+      "artifact_uri": artifactURI,
+      "task_id": block.metadata["task_id"] ?? "",
+      "sha256": digest,
+      "client_route_id": link.routes.clientRouteId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      pendingArtifactDownloads.remove(artifactURI)
+      lastError = "Unable to prepare artifact request"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.controlTopic,
+      wirePayload: wire.wireText
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    if !result.accepted {
+      pendingArtifactDownloads.remove(artifactURI)
+      scheduleOutboxFlush(after: 0)
+      lastError = "Artifact download request could not be sent"
+    }
+    return result.accepted
+  }
+
+  func markDesktopArtifactSaved(sourceURI: String, savedURI: String) {
+    do {
+      try desktopArtifactStore.markSavedToDownloads(sourceURI: sourceURI, savedURI: savedURI)
+      artifactRevision &+= 1
+    } catch {
+      lastError = error.localizedDescription
+    }
+  }
+
+  @discardableResult
+  func sendDesktopControl(
+    _ request: AgentDesktopControlActionRequest,
+    link: ServerLink
+  ) async -> Bool {
+    guard link.paired,
+          link.desktopId == request.desktopId,
+          mqttClient.isConnected else {
+      return false
+    }
+    guard let payload = jsonObject(from: request.payload),
+          let wire = try? linkWirePayload(payload, link: link) else {
+      return false
+    }
+    desktopControlPendingRequests[request.actionId] = request.pendingRequest
+    var snapshot = desktopControlSnapshot(for: link)
+    snapshot.lastActionStatus = "pending"
+    snapshot.lastActionSummary = request.toolId
+    snapshot.lastActionAt = request.pendingRequest.expiresAt - AgentDesktopControlRequestFactory.actionTTLMillis
+    snapshot.streamActive = request.pendingRequest.streamFrame
+    if request.resetsSurfaceState {
+      snapshot.screenshot = nil
+      snapshot.perception = nil
+    }
+    desktopControlSnapshots[link.desktopId] = snapshot
+
+    if request.durable {
+      deliveryStore.enqueue(
+        messageId: wire.messageId,
+        topic: link.routes.controlTopic,
+        wirePayload: wire.wireText
+      )
+      deliveryStore.markAttempt(messageId: wire.messageId)
+    }
+    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    if result.accepted {
+      return true
+    }
+    desktopControlPendingRequests.removeValue(forKey: request.actionId)
+    snapshot.lastActionStatus = "failed"
+    snapshot.lastActionSummary = "publish_failed"
+    desktopControlSnapshots[link.desktopId] = snapshot
+    return false
   }
 
   @discardableResult
@@ -1510,6 +1645,78 @@ final class MessageCoordinator: ObservableObject {
     "You are SignalASI's private on-device assistant. Answer the user directly and concisely in the user's language. " +
     "Do not claim that you executed phone, desktop, network, or file actions. If an action requires a capability that is not available in this chat, explain the next safe step."
 
+  @discardableResult
+  func executeWorkflowTrigger(
+    _ trigger: AgentWorkflowTrigger,
+    workflowStore: UserDefaultsAgentWorkflowStore = .shared
+  ) async -> Bool {
+    guard let workflow = workflowStore.findById(trigger.workflowId)
+      ?? workflowStore.find(trigger.workflowName),
+      let contact = store.visibleContacts.first(where: { !$0.deleted && $0.id != "system" }) else {
+      lastError = "The workflow trigger target is unavailable."
+      return false
+    }
+    workflowStore.markRun(id: workflow.id)
+    let executionId = "ios-workflow-event-\(UUID().uuidString.lowercased())"
+    if let record = try? AgentWorkflowExecutionRecord(
+      id: executionId,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      source: .event,
+      status: .running,
+      resultSummary: "Device event received."
+    ) {
+      store.recordWorkflowExecution(record)
+    }
+    await send(workflow.goal, to: contact, agentGoalOverride: workflow.goal)
+    store.completeWorkflowExecution(
+      id: executionId,
+      status: .completed,
+      resultSummary: "Workflow request submitted from a device event."
+    )
+    return true
+  }
+
+  @discardableResult
+  func executeProactiveTask(_ task: AgentProactiveTask, causeJson: String = "") async -> Bool {
+    let action = task.action
+    let targetId: String
+    if action.contactId != "system" {
+      targetId = action.contactId
+    } else if let target = store.contact(id: action.targetId) {
+      targetId = target.id
+    } else {
+      targetId = store.visibleContacts.first?.id ?? ""
+    }
+    guard let contact = store.contact(id: targetId), !contact.deleted else {
+      lastError = "The proactive task target is unavailable."
+      return false
+    }
+    let prompt: String
+    switch action.kind {
+    case .agent:
+      prompt = action.prompt
+    case .workflow:
+      let workflow = AgentWorkflowResolver.resolve(action.targetId)
+      prompt = "Run the workflow \(workflow?.name ?? action.targetId).\n\(workflow?.goal ?? action.prompt)"
+    case .subagentTeam:
+      let members = action.team.map(\.agentId).joined(separator: ", ")
+      prompt = "Run this proactive team task with agents \(members).\n\(action.prompt)"
+    case .nativeTool:
+      prompt = "Run native tool \(action.targetId) with arguments \(action.argumentsJson).\n\(action.prompt)"
+    }
+    var enrichedPrompt = prompt
+    if !causeJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      enrichedPrompt += "\n\nProactive event context:\n\(String(causeJson.prefix(8_192)))"
+    }
+    guard !enrichedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      lastError = "The proactive task has no prompt."
+      return false
+    }
+    await send(enrichedPrompt, to: contact, agentGoalOverride: enrichedPrompt)
+    return true
+  }
+
   private func receiveCloudStreamReply(
     contact: SignalASIContact,
     turns: [ChatMessage],
@@ -1856,6 +2063,15 @@ final class MessageCoordinator: ObservableObject {
     return (messageId, String(decoding: wireData, as: UTF8.self), wireData)
   }
 
+  private func jsonObject(from payload: AgentMcpJSONObject) -> [String: Any]? {
+    guard let object = try? JSONSerialization.jsonObject(
+      with: Data(AgentMcpJSONCodec.stringify(payload).utf8)
+    ) as? [String: Any] else {
+      return nil
+    }
+    return object
+  }
+
   private func publishConnectorStatusRequests(
     links: [ServerLink],
     forceCapabilityManifest: Bool,
@@ -1990,6 +2206,28 @@ final class MessageCoordinator: ObservableObject {
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
     }
+    if appPayload.string("type") == "artifact_chunk" ||
+      appPayload.string("type") == "artifact_redelivery_result" {
+      handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
+      return
+    }
+    if appPayload.string("type") == "proactive_webhook_event" {
+      handleRemoteProactiveWebhook(appPayload, link: link, messageId: messageId)
+      return
+    }
+    if appPayload.string("type") == "proactive_task_event" {
+      handleRemoteProactiveEvent(appPayload, link: link, messageId: messageId)
+      return
+    }
+    if handleDesktopControlPayload(appPayload, link: link) {
+      if appPayload.string("type") == "capability_manifest" {
+        _ = handleConnectorAgentStatus(appPayload, link: link)
+      }
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     if handleConnectorAgentStatus(appPayload, link: link) {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
@@ -2039,6 +2277,258 @@ final class MessageCoordinator: ObservableObject {
       title: store.contact(id: contactId)?.displayName ?? "SignalASI",
       body: content.ifBlank("Rich content")
     )
+  }
+
+  private func handleRemoteProactiveWebhook(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    let result = incomingLink.flatMap { link in
+      store.acceptRemoteWebhook(
+        taskId: payload.string("task_id"),
+        eventId: payload.string("event_id"),
+        payload: payload.dictionary("payload") ?? [:],
+        sourceDesktopId: link.paired ? link.desktopId : ""
+      )
+    }
+    if let result, result.accepted {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        let completed = await executeProactiveTask(result.task, causeJson: result.run.causeJson)
+        store.finishAutomationRun(
+          id: result.run.runId,
+          status: completed ? .completed : .failed,
+          resultSummary: completed
+            ? "Remote webhook Agent request submitted."
+            : "Remote webhook Agent request failed.",
+          errorCode: completed ? "" : "remote_webhook_execution_failed"
+        )
+      }
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func handleRemoteProactiveEvent(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    if let link = incomingLink, link.paired {
+      _ = UserDefaultsAgentRemoteProactiveEventStore.shared.ingest(
+        payload: payload,
+        trustedDesktopId: link.desktopId,
+        trustedDesktopName: link.desktopName
+      )
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func handleDesktopArtifactPayload(
+    _ payload: [String: Any],
+    link incomingLink: ServerLink?,
+    messageId: String
+  ) {
+    let type = payload.string("type")
+    if type == "artifact_chunk" {
+      do {
+        let result = try desktopArtifactStore.ingest(payload)
+        if result.completed {
+          pendingArtifactDownloads.remove(result.artifactURI)
+          artifactRevision &+= 1
+          let link = incomingLink ?? store.serverLinks.first { $0.desktopId == payload.string("desktop_id") }
+          publishDesktopArtifactControl(
+            [
+              "type": "artifact_receipt",
+              "desktop_id": link?.desktopId ?? payload.string("desktop_id"),
+              "artifact_id": result.artifactId,
+              "artifact_uri": result.artifactURI,
+              "task_id": result.taskId,
+              "sha256": result.sha256,
+              "status": "stored",
+              "client_route_id": payload.string("client_route_id"),
+              "time": Int64(Date().timeIntervalSince1970 * 1_000)
+            ],
+            link: link
+          )
+        }
+      } catch {
+        lastError = error.localizedDescription
+      }
+    } else if type == "artifact_redelivery_result",
+      payload.string("status") != "stored" {
+      pendingArtifactDownloads.remove(payload.string("artifact_uri"))
+      lastError = payload.string("error_message")
+        .ifBlank(payload.string("error"))
+        .ifBlank("Artifact redelivery failed")
+    }
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
+  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) {
+    guard let link, link.paired, let wire = try? linkWirePayload(payload, link: link) else {
+      return
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.controlTopic,
+      wirePayload: wire.wireText
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+      if !result.accepted {
+        scheduleOutboxFlush(after: 0)
+      }
+    }
+  }
+
+  private func handleDesktopControlPayload(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
+    let type = payload.string("type")
+    guard [
+      "capability_manifest",
+      "desktop_control_authorizations",
+      "desktop_control_authorization_changed",
+      "desktop_executor_event",
+      "desktop_action_receipt"
+    ].contains(type),
+    let source = mcpObject(from: payload) else {
+      return false
+    }
+    let desktopId = source.string("desktop_id").ifBlank(incomingLink?.desktopId ?? "")
+    guard !desktopId.isBlank else { return true }
+    let link = incomingLink ?? store.serverLinks.first { $0.desktopId == desktopId }
+    var snapshot = link.map(desktopControlSnapshot(for:))
+      ?? desktopControlSnapshots[desktopId]
+      ?? AgentDesktopRemoteControlSnapshot(
+        desktopId: desktopId,
+        desktopName: source.string("desktop_name").ifBlank("SignalASI Desktop"),
+        desktopFingerprint: source.string("desktop_fingerprint"),
+        serverRouteId: source.string("server_route_id"),
+        fullDesktopExecutor: source.bool("full_desktop_executor"),
+        enabled: source.bool("enabled"),
+        requireUnlocked: source.bool("require_unlocked"),
+        currentAuthorization: nil,
+        authorizations: [],
+        recentAudit: [],
+        recentReceipts: [],
+        activeRuns: [],
+        lastActionStatus: "",
+        lastActionSummary: "",
+        lastActionAt: 0,
+        screenshot: nil,
+        perception: nil,
+        surfaceCatalog: nil,
+        streamFps: 0,
+        streamActive: false
+      )
+
+    switch type {
+    case "capability_manifest":
+      guard let control = source.object("desktop_control") else { return false }
+      var merged = control
+      merged["desktop_id"] = .string(desktopId)
+      merged["desktop_name"] = .string(source.object("server")?.string("name") ?? snapshot.desktopName)
+      let parsed = AgentDesktopRemoteControlSnapshot.parse(merged)
+      if let parsed {
+        snapshot = mergedSnapshot(parsed, preserving: snapshot)
+      }
+    case "desktop_control_authorizations":
+      var authorizationPayload = source
+      authorizationPayload["authorizations"] = source["items"] ?? .array([])
+      authorizationPayload["desktop_id"] = .string(desktopId)
+      authorizationPayload["desktop_name"] = .string(source.string("desktop_name").ifBlank(snapshot.desktopName))
+      authorizationPayload["desktop_fingerprint"] = .string(snapshot.desktopFingerprint)
+      authorizationPayload["server_route_id"] = .string(snapshot.serverRouteId)
+      authorizationPayload["full_desktop_executor"] = .bool(snapshot.fullDesktopExecutor)
+      authorizationPayload["enabled"] = .bool(snapshot.enabled)
+      authorizationPayload["require_unlocked"] = .bool(snapshot.requireUnlocked)
+      let parsed = AgentDesktopRemoteControlSnapshot.parse(authorizationPayload)
+      if let parsed {
+        snapshot = mergedSnapshot(parsed, preserving: snapshot)
+      }
+    case "desktop_control_authorization_changed":
+      if let authorization = source.object("authorization"),
+         let parsedAuthorization = AgentDesktopControlAuthorization.parse(authorization) {
+        snapshot.currentAuthorization = parsedAuthorization
+        snapshot.authorizations.removeAll { $0.authorizationId == parsedAuthorization.authorizationId }
+        snapshot.authorizations.insert(parsedAuthorization, at: 0)
+        snapshot.lastActionStatus = parsedAuthorization.status
+        snapshot.lastActionSummary = source.string("reason")
+        snapshot.lastActionAt = source.int64("updated_at") > 0
+          ? source.int64("updated_at")
+          : Int64(Date().timeIntervalSince1970 * 1000)
+        if parsedAuthorization.status != "active" {
+          snapshot.streamActive = false
+        }
+      }
+    case "desktop_executor_event":
+      snapshot.lastActionStatus = source.string("status")
+      snapshot.lastActionSummary = source.string("summary")
+      snapshot.lastActionAt = source.int64("timestamp") > 0
+        ? source.int64("timestamp")
+        : Int64(Date().timeIntervalSince1970 * 1000)
+    case "desktop_action_receipt":
+      let receipt = AgentDesktopControlReceipt.parse(source)
+      if let receipt {
+        snapshot.recentReceipts.removeAll { $0.receiptId == receipt.receiptId }
+        snapshot.recentReceipts.insert(receipt, at: 0)
+        snapshot.recentReceipts = Array(snapshot.recentReceipts.prefix(20))
+        snapshot.lastActionStatus = "unverified"
+        snapshot.lastActionSummary = receipt.summary.ifBlank("desktop_action_receipt_unverified")
+        snapshot.lastActionAt = receipt.completedAt
+        snapshot.streamActive = false
+        desktopControlPendingRequests.removeValue(forKey: receipt.actionId)
+        let output = source.object("output") ?? [:]
+        if let screenshot = AgentDesktopControlScreenshot.parse(
+          source.object("post_screenshot") ?? output.object("screenshot"),
+          defaultCapturedAt: receipt.completedAt
+        ), shouldApplyDesktopScreenshot(current: snapshot.screenshot, candidate: screenshot) {
+          snapshot.screenshot = screenshot
+        }
+        snapshot.perception = AgentDesktopPerceptionSnapshot.parse(output)
+          ?? snapshot.perception
+        snapshot.surfaceCatalog = AgentDesktopSurfaceCatalog.parseOutput(output)
+          ?? snapshot.surfaceCatalog
+      }
+    default:
+      break
+    }
+    desktopControlSnapshots[desktopId] = snapshot
+    return true
+  }
+
+  private func mergedSnapshot(
+    _ parsed: AgentDesktopRemoteControlSnapshot,
+    preserving previous: AgentDesktopRemoteControlSnapshot
+  ) -> AgentDesktopRemoteControlSnapshot {
+    var merged = parsed
+    merged.screenshot = parsed.screenshot ?? previous.screenshot
+    merged.perception = parsed.perception ?? previous.perception
+    merged.surfaceCatalog = parsed.surfaceCatalog ?? previous.surfaceCatalog
+    merged.recentReceipts = parsed.recentReceipts.isEmpty ? previous.recentReceipts : parsed.recentReceipts
+    merged.recentAudit = parsed.recentAudit.isEmpty ? previous.recentAudit : parsed.recentAudit
+    merged.activeRuns = parsed.activeRuns.isEmpty ? previous.activeRuns : parsed.activeRuns
+    merged.lastActionStatus = parsed.lastActionStatus.ifBlank(previous.lastActionStatus)
+    merged.lastActionSummary = parsed.lastActionSummary.ifBlank(previous.lastActionSummary)
+    merged.lastActionAt = parsed.lastActionAt > 0 ? parsed.lastActionAt : previous.lastActionAt
+    merged.streamFps = parsed.streamFps > 0 ? parsed.streamFps : previous.streamFps
+    merged.streamActive = parsed.streamActive || previous.streamActive
+    return merged
+  }
+
+  private func mcpObject(from payload: [String: Any]) -> AgentMcpJSONObject? {
+    guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
   }
 
   private func handleConnectorAgentStatus(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
@@ -2280,13 +2770,17 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func serverLink(for topic: String, payload: [String: Any]) -> ServerLink? {
+    let clientRouteId = payload.string("client_route_id")
     store.serverLinks.first { link in
-      topic == link.routes.downTopic ||
-        topic == link.routes.controlTopic ||
-        topic == link.routes.upTopic ||
-        topic == link.routes.pairingTopic ||
-        payload.string("desktop_id") == link.desktopId ||
-        payload.string("from") == link.desktopId
+      let routeMatches = clientRouteId.isEmpty || link.routes.clientRouteId == clientRouteId
+      return routeMatches && (
+        topic == link.routes.downTopic ||
+          topic == link.routes.controlTopic ||
+          topic == link.routes.upTopic ||
+          topic == link.routes.pairingTopic ||
+          payload.string("desktop_id") == link.desktopId ||
+          payload.string("from") == link.desktopId
+      )
     }
   }
 
@@ -2312,6 +2806,7 @@ final class MessageCoordinator: ObservableObject {
     "agent_task_approval_result",
     "text",
     "artifact_chunk",
+    "artifact_redelivery_result",
     AgentAttachmentRecoveryRequest.requestType
   ]
 }
