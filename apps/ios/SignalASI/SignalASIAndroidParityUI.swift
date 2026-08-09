@@ -228,6 +228,22 @@ struct AgentHomeView: View {
     activeAgentTasks.first?.phase
   }
 
+  private var agentActionQueueItems: [SignalASIAgentActionQueueItem] {
+    var seen = Set<String>()
+    return activeAgentTasks.flatMap { task in
+      let actions = task.pendingActions.isEmpty
+        ? task.pendingAction.map { [$0] } ?? []
+        : task.pendingActions
+      return actions.compactMap { action in
+        let actionID = action.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !actionID.isEmpty, seen.insert("\(task.taskId)-\(actionID)").inserted else {
+          return nil
+        }
+        return SignalASIAgentActionQueueItem(task: task, action: action)
+      }
+    }
+  }
+
   private var pendingConfirmationTask: AgentTaskRecord? {
     activeAgentTasks.first { task in
       task.phase == .waitingConfirmation && task.pendingAction != nil
@@ -952,6 +968,12 @@ struct AgentHomeView: View {
                   runAgentTimelineAction(action, task: activeExecutionTask)
                 }
               }
+            }
+            if !agentActionQueueItems.isEmpty {
+              SignalASIAgentActionQueueCard(
+                items: agentActionQueueItems,
+                t: t
+              )
             }
             SignalASIAgentScreenContextCard(
               screen: agentScreenSnapshot.screen,
