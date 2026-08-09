@@ -750,6 +750,12 @@ final class MessageCoordinator: ObservableObject {
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
 
+  private struct ActiveAgentTurnCandidate {
+    var goal: String
+    var localTask: AgentTaskRecord?
+    var remoteTask: AgentRemoteTaskStatusSnapshot?
+  }
+
   init(
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore? = nil,
@@ -1446,6 +1452,7 @@ final class MessageCoordinator: ObservableObject {
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
+    let originalRequestText = requestText
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
@@ -1482,6 +1489,48 @@ final class MessageCoordinator: ObservableObject {
       }
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(attachments)
+      }
+      if let active = activeAgentTurn(for: outgoing.conversationId) {
+        let decision = AgentActiveTurnPolicy.decide(
+          request: originalRequestText,
+          activeGoal: active.goal,
+          hasNewAttachments: !attachments.isEmpty
+        )
+        switch decision.disposition {
+        case .independent:
+          break
+        case .interrupt:
+          await cancelActiveAgentTurn(active)
+          let response = store.appendIncoming(
+            localReply(
+              english: "The active Agent task was cancelled.",
+              chinese: "当前 Agent 任务已取消。"
+            ),
+            from: contact.id,
+            remoteMessageId: "active-agent-interrupted-" + outgoing.turnId,
+            status: .delivered,
+            traceStage: "active_agent_interrupted",
+            detail: active.goal,
+            conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId
+          )
+          store.appendDeliveryTrace(
+            outgoing.id,
+            contactId: contact.id,
+            stage: "active_agent_interrupted",
+            detail: active.goal,
+            status: .delivered
+          )
+          onIncomingMessage?(response)
+          return true
+        case .steer:
+          await cancelActiveAgentTurn(active)
+          requestText = AgentActiveTurnPolicy.supersedingGoal(
+            activeGoal: active.goal,
+            intervention: originalRequestText,
+            kind: decision.interventionKind
+          )
+        }
       }
     }
     if contact.deliveryMode == .local,
@@ -1817,6 +1866,56 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func activeAgentTurn(for conversationId: String) -> ActiveAgentTurnCandidate? {
+    let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanConversationId.isEmpty else { return nil }
+    let activePhases: Set<AgentPhase> = [
+      .observing,
+      .planning,
+      .waitingConfirmation,
+      .executing,
+      .verifying,
+      .waitingResponse,
+      .paused
+    ]
+    let localTask = store.agentTasks(forSession: cleanConversationId, limit: 50)
+      .filter { activePhases.contains($0.phase) && !$0.goal.isBlank }
+      .max { left, right in
+        if left.updatedAtMillis != right.updatedAtMillis {
+          return left.updatedAtMillis < right.updatedAtMillis
+        }
+        return left.taskId < right.taskId
+      }
+    let remoteTask = remoteAgentTaskStatuses.values
+      .filter {
+        $0.conversationId == cleanConversationId &&
+          !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+      }
+      .max { left, right in
+        if left.updatedAtMillis != right.updatedAtMillis {
+          return left.updatedAtMillis < right.updatedAtMillis
+        }
+        return left.id < right.id
+      }
+    guard localTask != nil || remoteTask != nil else { return nil }
+    let fallbackGoal = store.agentSessionMessages(cleanConversationId)
+      .last { !$0.isSystem && $0.isMine }?.content ?? ""
+    let goal = (localTask?.goal ?? "")
+      .ifBlank(fallbackGoal)
+      .ifBlank(remoteTask?.currentStep ?? "")
+    guard !goal.isBlank else { return nil }
+    return ActiveAgentTurnCandidate(goal: goal, localTask: localTask, remoteTask: remoteTask)
+  }
+
+  private func cancelActiveAgentTurn(_ candidate: ActiveAgentTurnCandidate) async {
+    if let localTask = candidate.localTask {
+      _ = cancelLocalAgentTask(taskId: localTask.taskId)
+    }
+    if let remoteTask = candidate.remoteTask {
+      _ = await cancelRemoteAgentTask(remoteTask)
+    }
+  }
+
   private func manualSelection(
     for contact: SignalASIContact,
     conversationId: String
@@ -2041,9 +2140,66 @@ final class MessageCoordinator: ObservableObject {
     return advanceLocalNativeActions(outgoing: outgoing, task: &task)
   }
 
+  @discardableResult
+  func cancelLocalAgentTask(taskId: String) -> Bool {
+    guard let task = store.agentTask(id: taskId),
+          [
+            .observing,
+            .planning,
+            .waitingConfirmation,
+            .executing,
+            .verifying,
+            .waitingResponse,
+            .paused
+          ].contains(task.phase) else {
+      return false
+    }
+    if task.pendingAction != nil || !task.pendingActions.isEmpty {
+      cancelLocalNativeAction(taskId: taskId)
+      return store.agentTask(id: taskId)?.phase == .cancelled
+    }
+    guard var cancelled = store.agentTask(id: taskId) else { return false }
+    cancelled.phase = .cancelled
+    cancelled.blocked = false
+    cancelled.result = localReply(
+      english: "The local Agent task was cancelled.",
+      chinese: "本地 Agent 任务已取消。"
+    )
+    cancelled.verification = "User cancelled local Agent execution"
+    cancelled.executionLog.append("Agent task: cancelled")
+    cancelled.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(cancelled)
+    guard let outgoing = localOutgoingMessage(for: cancelled) else { return true }
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_task_cancelled",
+      detail: cancelled.taskId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      cancelled.result,
+      from: outgoing.contactId,
+      remoteMessageId: "local-agent-cancelled-" + outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_task_cancelled_received",
+      detail: cancelled.taskId,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
   func cancelLocalNativeAction(taskId: String) {
     guard var task = store.agentTask(id: taskId),
-          [.waitingConfirmation, .executing, .verifying, .paused].contains(task.phase),
+          [
+            .observing,
+            .waitingConfirmation,
+            .executing,
+            .verifying,
+            .waitingResponse,
+            .paused
+          ].contains(task.phase),
           task.pendingAction != nil || !task.pendingActions.isEmpty else {
       return
     }
@@ -2125,6 +2281,7 @@ final class MessageCoordinator: ObservableObject {
           excluding: outgoing.id
         )
       )
+      guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
       if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
@@ -2144,6 +2301,7 @@ final class MessageCoordinator: ObservableObject {
         attachments: attachments,
         outgoing: outgoing
       ) {
+        guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
         _ = applyLocalNativeActions(actions: actions, outgoing: outgoing, task: &task)
         return
       }
@@ -2165,6 +2323,7 @@ final class MessageCoordinator: ObservableObject {
       guard !response.isEmpty else {
         throw LocalModelInferenceError.emptyResponse
       }
+      guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
       task.phase = .completed
       task.result = response
       task.executionRuntimeId = result.profileId
@@ -2191,6 +2350,9 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId
       )
     } catch {
+      if store.agentTask(id: task.taskId)?.phase == .cancelled {
+        return
+      }
       task.phase = .failed
       task.result = error.localizedDescription
       task.executionLog.append("Local model request failed: \(error.localizedDescription)")
