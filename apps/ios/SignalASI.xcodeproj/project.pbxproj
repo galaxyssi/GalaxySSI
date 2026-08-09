@@ -389,6 +389,8 @@
     A10000000000000000000111 /* AgentObservationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000111 /* AgentObservationModels.swift */; };
     A10000000000000000000697 /* AgentPrivateDataInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000697 /* AgentPrivateDataInventory.swift */; };
     A10000000000000000000698 /* AgentRunRecoveryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000698 /* AgentRunRecoveryPolicy.swift */; };
+    A10000000000000000000902 /* AgentRunEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000902 /* AgentRunEventStore.swift */; };
+    A10000000000000000000903 /* VoiceAgentRunBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000903 /* VoiceAgentRunBridge.swift */; };
     A10000000000000000000532 /* GlobalAgentObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000532 /* GlobalAgentObservations.swift */; };
     A10000000000000000000112 /* AgentMcpCoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000112 /* AgentMcpCoreModels.swift */; };
     A10000000000000000000113 /* AgentMcpPackageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000113 /* AgentMcpPackageModels.swift */; };
@@ -994,6 +996,8 @@
     A20000000000000000000111 /* AgentObservationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentObservationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000697 /* AgentPrivateDataInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPrivateDataInventory.swift; sourceTree = "<group>"; };
     A20000000000000000000698 /* AgentRunRecoveryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000902 /* AgentRunEventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunEventStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000903 /* VoiceAgentRunBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgentRunBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000532 /* GlobalAgentObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000112 /* AgentMcpCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpCoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000113 /* AgentMcpPackageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpPackageModels.swift; sourceTree = "<group>"; };
@@ -1462,6 +1466,8 @@
         A20000000000000000000116 /* AgentWorkspaceModels.swift */,
         A20000000000000000000673 /* AgentWorkspaceStore.swift */,
         A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */,
+        A20000000000000000000902 /* AgentRunEventStore.swift */,
+        A20000000000000000000903 /* VoiceAgentRunBridge.swift */,
         A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */,
         A20000000000000000000679 /* AgentTaskSupervisor.swift */,
         A20000000000000000000681 /* AgentActionNotificationModels.swift */,
@@ -2235,6 +2241,8 @@
         A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */,
         A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */,
         A10000000000000000000675 /* AgentRunRecoveryCoordinator.swift in Sources */,
+        A10000000000000000000902 /* AgentRunEventStore.swift in Sources */,
+        A10000000000000000000903 /* VoiceAgentRunBridge.swift in Sources */,
         A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */,
         A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */,
         A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */,
