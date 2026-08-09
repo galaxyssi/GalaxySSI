@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIGlobalAgentControlView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var cognitionTasks: [GlobalCognitionTask] = []
   @State private var autonomousRuns: [GlobalAutonomousRun] = []
   @State private var longHorizonGoals: [GlobalLongHorizonGoal] = []
@@ -561,6 +562,9 @@ struct SignalASIGlobalAgentControlView: View {
       if (try? store.triggerAutomationTaskNow(id: task.taskId)) != nil {
         queued += 1
       }
+    }
+    Task {
+      await coordinator.runAutomationSchedulerCycle()
     }
     refreshRuntime()
     statusMessage = String(format: t("cc_global_processed_result", "Processed %d events"), queued)

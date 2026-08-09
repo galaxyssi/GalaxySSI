@@ -47,6 +47,7 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
     self.markModelUnloaded = markModelUnloaded
     self.clockMillis = clockMillis
     self.elapsedMillis = elapsedMillis
+    LocalModelWhisperResourceArbiter.shared.register(whisperRuntime: self)
   }
 
   func transcribe(_ request: VoiceLocalWhisperRuntimeRequest) async throws -> String {
@@ -75,6 +76,7 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
     profile: VoiceWhisperModelProfile,
     options: VoiceWhisperLoadOptions
   ) async throws -> VoiceWhisperLoadedModel {
+    LocalModelWhisperResourceArbiter.shared.releaseLocalModelForWhisper()
     lifecycleLock.lock()
     defer { lifecycleLock.unlock() }
     if closed { throw VoiceWhisperRuntimeFailure.closed }
@@ -191,6 +193,23 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
 
   func release() {
     close()
+  }
+
+  func releaseForResourcePressure() {
+    lifecycleLock.lock()
+    unloadLocked(reason: .memoryPressure)
+    lifecycleLock.unlock()
+  }
+
+  func reservesQnn() -> Bool {
+    lifecycleLock.lock()
+    defer { lifecycleLock.unlock() }
+    switch state {
+    case .loading, .ready, .decoding:
+      return true
+    case .unloaded, .unloading, .failed:
+      return false
+    }
   }
 
   func close() {

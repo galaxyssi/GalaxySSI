@@ -119,6 +119,7 @@ protocol AgentRunStartReceiptStore: AnyObject {
 class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
   private let lock = NSRecursiveLock()
   private let clock: () -> Int64
+  private var cachedReceipts: [AgentRunStartReceipt]?
 
   init(clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }) {
     self.clock = clock
@@ -137,7 +138,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     defer { lock.unlock() }
     let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
     let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    return readPersisted().first { receipt in
+    return loadReceipts().first { receipt in
       receipt.agentId == agentId && receipt.idempotencyKey == idempotencyKey
     }
   }
@@ -149,7 +150,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     let installationId = try required(registration.installationId, label: "installation id")
     let key = try required(request.idempotencyKey, label: "idempotency key")
     let digest = AgentRunStartIdentity.requestDigest(request)
-    var receipts = readPersisted()
+    var receipts = loadReceipts()
     if let existing = receipts.first(where: { $0.agentId == agentId && $0.idempotencyKey == key }) {
       guard existing.installationId == installationId else {
         throw AgentRunStartReceiptError(message: "Run idempotency key belongs to a different Agent installation")
@@ -172,7 +173,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
       updatedAtMillis: now
     )
     receipts.append(receipt)
-    writePersisted(bound(receipts))
+    persist(bound(receipts))
     return receipt
   }
 
@@ -181,7 +182,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     defer { lock.unlock() }
     let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
     let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    var receipts = readPersisted()
+    var receipts = loadReceipts()
     guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
       throw AgentRunStartReceiptError(message: "Run start was not reserved")
     }
@@ -206,7 +207,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
       updatedAtMillis: now()
     )
     receipts[index] = accepted
-    writePersisted(bound(receipts))
+    persist(bound(receipts))
     return accepted
   }
 
@@ -230,7 +231,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     let runId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
     let now = self.now()
     var changed = 0
-    let receipts = readPersisted().map { receipt -> AgentRunStartReceipt in
+    let receipts = loadReceipts().map { receipt -> AgentRunStartReceipt in
       guard receipt.agentId == agentId && receipt.runId == runId && receipt.status != .cancelled else {
         return receipt
       }
@@ -241,7 +242,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
       return copy
     }
     if changed > 0 {
-      writePersisted(bound(receipts))
+      persist(bound(receipts))
     }
     return changed
   }
@@ -249,7 +250,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
   final func list() -> [AgentRunStartReceipt] {
     lock.lock()
     defer { lock.unlock() }
-    return readPersisted().sorted {
+    return loadReceipts().sorted {
       if $0.updatedAtMillis != $1.updatedAtMillis {
         return $0.updatedAtMillis > $1.updatedAtMillis
       }
@@ -261,6 +262,7 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     lock.lock()
     defer { lock.unlock() }
     clearPersisted()
+    cachedReceipts = []
   }
 
   private func update(
@@ -272,14 +274,28 @@ class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
     defer { lock.unlock() }
     let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
     let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    var receipts = readPersisted()
+    var receipts = loadReceipts()
     guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
       return nil
     }
     let updated = transform(receipts[index])
     receipts[index] = updated
-    writePersisted(bound(receipts))
+    persist(bound(receipts))
     return updated
+  }
+
+  private func loadReceipts() -> [AgentRunStartReceipt] {
+    if let cachedReceipts {
+      return cachedReceipts
+    }
+    let persisted = readPersisted()
+    cachedReceipts = persisted
+    return persisted
+  }
+
+  private func persist(_ receipts: [AgentRunStartReceipt]) {
+    writePersisted(receipts)
+    cachedReceipts = receipts
   }
 
   private func required(_ value: String, label: String) throws -> String {

@@ -160,6 +160,8 @@ struct SignalASIAgentRecentTasksView: View {
     switch action {
     case .cancel:
       cancelTask(task)
+    case .resume:
+      resumeTask(task)
     case .retry:
       retryTask(task)
     case .copy:
@@ -169,6 +171,24 @@ struct SignalASIAgentRecentTasksView: View {
     case .delete:
       deletingTask = task
     }
+  }
+
+  private func resumeTask(_ task: AgentTaskRecord) {
+    guard AgentTaskCenterPolicy.resumable(task) else {
+      statusText = t(
+        "signalasi.agent_tasks.resume_unavailable",
+        "This task cannot be resumed now"
+      )
+      return
+    }
+    guard coordinator.resumeLocalNativeAction(taskId: task.taskId) else {
+      statusText = t(
+        "signalasi.agent_tasks.resume_failed",
+        "The paused task could not be resumed"
+      )
+      return
+    }
+    statusText = t("signalasi.agent_tasks.resumed", "Task resumed")
   }
 
   private func retryTask(_ task: AgentTaskRecord) {
@@ -319,6 +339,8 @@ struct SignalASIAgentRecentTasksView: View {
     switch action {
     case .cancel:
       return t("signalasi.common.cancel_task", "Cancel task")
+    case .resume:
+      return t("signalasi.common.resume", "Resume")
     case .retry:
       return t("signalasi.common.retry", "Retry")
     case .copy:
