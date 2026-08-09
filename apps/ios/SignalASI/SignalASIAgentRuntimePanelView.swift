@@ -458,10 +458,10 @@ struct SignalASIAgentRuntimePanelView: View {
 
   private var planContextRows: [SignalASIAgentRuntimeRow] {
     let draftGoal = currentGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-    let activeGoal = activeTasks.first?.goal.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let activeGoal = planTask?.goal.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let cleanGoal = draftGoal.isEmpty ? activeGoal : draftGoal
     guard !cleanGoal.isEmpty else { return [] }
-    return [
+    var rows = [
       SignalASIAgentRuntimeRow(
         id: "goal",
         title: t("agent_plan_context_goal", "Goal"),
@@ -483,7 +483,7 @@ struct SignalASIAgentRuntimePanelView: View {
       SignalASIAgentRuntimeRow(
         id: "route",
         title: t("agent_plan_context_route", "Route"),
-        detail: routeDetail,
+        detail: planTask.map(taskRouteDetail) ?? routeDetail,
         badge: permissionModeTitle(safetySettings.permissionMode),
         systemImage: "arrow.triangle.branch",
         tint: .signalASIInsightText
@@ -502,6 +502,46 @@ struct SignalASIAgentRuntimePanelView: View {
         tint: .signalASITextPrimary
       )
     ]
+    if let task = planTask {
+      rows.append(contentsOf: [
+        SignalASIAgentRuntimeRow(
+          id: "execution-location",
+          title: t("agent_plan_context_execution", "Execution"),
+          detail: executionLocationDetail(task),
+          badge: task.executionLocationTrusted
+            ? t("agent_plan_context_trusted", "Trusted")
+            : t("agent_plan_context_untrusted", "Review"),
+          systemImage: "iphone.and.arrow.forward",
+          tint: task.executionLocationTrusted ? .signalASIAccent : .orange
+        ),
+        SignalASIAgentRuntimeRow(
+          id: "execution-progress",
+          title: t("agent_plan_context_progress", "Progress"),
+          detail: String(
+            format: t("signalasi.agent_runtime.plan_progress_detail", "%d pending / %d native results / %d files"),
+            pendingActionCount(task),
+            task.nativeActionResults.count,
+            task.outputFiles.count
+          ),
+          badge: statusText(task),
+          systemImage: "chart.bar.xaxis",
+          tint: statusTint(task)
+        ),
+        SignalASIAgentRuntimeRow(
+          id: "execution-updated",
+          title: t("agent_plan_context_updated", "Updated"),
+          detail: String(
+            format: t("signalasi.agent_runtime.plan_updated_detail", "%@ ago / %@"),
+            relativeTime(task.updatedAtMillis),
+            task.verification.ifBlank(task.result).ifBlank(t("agent_plan_context_no_result", "No result yet"))
+          ),
+          badge: statusText(task),
+          systemImage: "arrow.clockwise",
+          tint: .signalASITextSecondary
+        )
+      ])
+    }
+    return rows
   }
 
   private var verificationRows: [SignalASIAgentRuntimeRow] {
@@ -645,12 +685,83 @@ struct SignalASIAgentRuntimePanelView: View {
       : t("signalasi.agent_runtime.local_deterministic_planner", "Local deterministic planner")
   }
 
+  private var planTask: AgentTaskRecord? {
+    activeTasks.first ?? recentTasks.first
+  }
+
   private var routeDetail: String {
     let route = modelPlannerSettings.enabled && taskBudget.allowCloud
       ? t("signalasi.agent_runtime.route_model", "model planner / phone native execution")
       : t("signalasi.agent_runtime.route_local", "local planner / phone native execution")
     return String(format: t("agent_running_tasks_targets_value", "Running tasks: %d / targets: %d"), activeTasks.count, callableTargets)
       + " / " + route
+  }
+
+  private func taskRouteDetail(_ task: AgentTaskRecord) -> String {
+    let route = routeLabel(task.routeKind)
+    let target = task.targetTitle.ifBlank(t("signalasi.agent_tasks.target_phone", "SignalASI"))
+    return [route, target].filter { !$0.isBlank }.joined(separator: " / ")
+  }
+
+  private func routeLabel(_ route: AgentRouteKind) -> String {
+    switch route {
+    case .localSystem:
+      return t("signalasi.agent_route.local_system", "Local system")
+    case .cloudModel:
+      return t("signalasi.agent_route.cloud_model", "Cloud model")
+    case .localModel:
+      return t("signalasi.agent_route.local_model", "Local model")
+    case .desktopAgent:
+      return t("signalasi.agent_route.desktop_agent", "Desktop Agent")
+    case .deviceConnector:
+      return t("signalasi.agent_route.device_connector", "Device connector")
+    case .knowledge:
+      return t("signalasi.agent_route.knowledge", "Knowledge")
+    case .unknown:
+      return t("signalasi.agent_route.unknown", "Unknown route")
+    }
+  }
+
+  private func executionLocationDetail(_ task: AgentTaskRecord) -> String {
+    let location = AgentExecutionPresentationPolicy.location(record: task)
+    return [
+      executionLocationLabel(location.locationKind),
+      executionRuntimeLabel(location.runtimeKind),
+      location.locationName
+    ]
+      .filter { !$0.isBlank }
+      .joined(separator: " / ")
+      .ifBlank(t("signalasi.agent_tasks.execution_unknown", "Execution location unavailable"))
+  }
+
+  private func pendingActionCount(_ task: AgentTaskRecord) -> Int {
+    task.pendingActions.isEmpty
+      ? (task.pendingAction == nil ? 0 : 1)
+      : task.pendingActions.count
+  }
+
+  private func executionLocationLabel(_ value: AgentExecutionLocationKind) -> String {
+    switch value {
+    case .phone: return t("signalasi.agent_execution.location.phone", "Phone")
+    case .desktop: return t("signalasi.agent_execution.location.desktop", "Desktop")
+    case .cloud: return t("signalasi.agent_execution.location.cloud", "Cloud")
+    case .connectedDevice: return t("signalasi.agent_execution.location.device", "Connected device")
+    case .unknown: return ""
+    }
+  }
+
+  private func executionRuntimeLabel(_ value: AgentExecutionRuntimeKind) -> String {
+    switch value {
+    case .phoneNative: return t("signalasi.agent_execution.runtime.phone_native", "Phone native")
+    case .phoneLinux: return t("signalasi.agent_execution.runtime.phone_linux", "Phone Linux")
+    case .phoneLocalModel: return t("signalasi.agent_execution.runtime.local_model", "Local model")
+    case .phoneCloudAPI: return t("signalasi.agent_execution.runtime.cloud_api", "Cloud API")
+    case .desktopAgent: return t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent")
+    case .desktopTool: return t("signalasi.agent_execution.runtime.desktop_tool", "Desktop tool")
+    case .connectedDevice: return t("signalasi.agent_execution.runtime.connected_device", "Connected device")
+    case .knowledge: return t("signalasi.agent_execution.runtime.knowledge", "Knowledge")
+    case .unknown: return ""
+    }
   }
 
   private func requirementRow(
