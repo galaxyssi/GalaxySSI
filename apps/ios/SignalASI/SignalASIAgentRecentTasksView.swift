@@ -192,6 +192,14 @@ struct SignalASIAgentRecentTasksView: View {
   }
 
   private func retryTask(_ task: AgentTaskRecord) {
+    if coordinator.retryFailedLocalNativeAction(taskId: task.taskId) {
+      statusText = t(
+        "signalasi.agent.task_control.action_retrying",
+        "Retrying the failed action..."
+      )
+      selectedTask = nil
+      return
+    }
     guard AgentTaskCenterPolicy.isReusableGoal(task.goal) else {
       statusText = t(
         "signalasi.agent_task_center.retry_unavailable",

@@ -3697,6 +3697,7 @@
 "signalasi.agent.resume_task" = "恢复任务";
 "signalasi.agent.task_control.resumed" = "任务已恢复";
 "signalasi.agent.task_control.resume_failed" = "此任务无法恢复";
+"signalasi.agent.task_control.action_retrying" = "正在重试失败的动作……";
 "signalasi.agent.task_control.cancelled" = "任务已取消";
 "signalasi.agent.task_control.paused" = "任务已暂停";
 "signalasi.agent.task_control.pause_failed" = "此任务无法暂停";

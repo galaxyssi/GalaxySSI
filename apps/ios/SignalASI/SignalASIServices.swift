@@ -2167,6 +2167,44 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func retryFailedLocalNativeAction(taskId: String) -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          task.phase == .failed,
+          let failedAction = task.pendingAction ?? task.pendingActions.first,
+          failedAction.status == .failed,
+          let outgoing = localOutgoingMessage(for: task) else {
+      return false
+    }
+    var retryAction = failedAction
+    retryAction.status = .pendingConfirmation
+    retryAction.result = ""
+    retryAction.evidence = ""
+    if task.pendingActions.isEmpty {
+      task.pendingActions = [retryAction]
+    } else {
+      var replaced = false
+      task.pendingActions = task.pendingActions.map { action in
+        guard action.id == retryAction.id else { return action }
+        replaced = true
+        return retryAction
+      }
+      if !replaced {
+        task.pendingActions.insert(retryAction, at: 0)
+      }
+    }
+    task.pendingAction = retryAction
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = "Retrying failed native tool action"
+    let toolId = retryAction.parameters["tool_id"] ?? retryAction.target
+    task.executionLog.append("Native tool \(toolId): retry requested")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return applyLocalNativeAction(action: retryAction, outgoing: outgoing, task: &task)
+  }
+
+  @discardableResult
   func pauseLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
           AgentTaskCenterPolicy.pauseable(task) else {
@@ -2696,9 +2734,16 @@ final class MessageCoordinator: ObservableObject {
     task.pendingAction = task.pendingActions.first
     let handled = executeLocalNativeAction(action: action, outgoing: outgoing, task: &task)
     guard handled, task.phase == .completed, !task.pendingActions.isEmpty else {
-      if task.phase != .completed {
-        task.pendingActions = []
-        task.pendingAction = nil
+      if task.phase == .failed {
+        var retryableAction = action
+        retryableAction.status = .failed
+        retryableAction.result = task.result
+        retryableAction.evidence = task.verification
+        task.pendingActions.insert(retryableAction, at: 0)
+        task.pendingAction = retryableAction
+        task.executionLog.append("Native tool \(action.parameters[\"tool_id\"] ?? action.target): retained for retry")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
       }
       return handled
     }

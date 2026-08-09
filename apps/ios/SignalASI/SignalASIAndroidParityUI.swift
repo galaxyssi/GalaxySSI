@@ -1460,6 +1460,14 @@ struct AgentHomeView: View {
   }
 
   private func retryAgentTask(_ task: AgentTaskRecord, mode: AgentTaskRestartMode) {
+    if mode == .retry,
+       coordinator.retryFailedLocalNativeAction(taskId: task.taskId) {
+      richActionStatus = t(
+        "signalasi.agent.task_control.action_retrying",
+        "Retrying the failed action..."
+      )
+      return
+    }
     guard AgentTaskCenterPolicy.isReusableGoal(task.goal),
           retryingAgentTaskIDs.insert(task.taskId).inserted else {
       return
