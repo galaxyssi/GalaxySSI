@@ -3707,6 +3707,9 @@
 "signalasi.agent.task_control.pause" = "暂停任务";
 "signalasi.agent.task_control.replan" = "重新规划任务";
 "signalasi.agent.task_control.replan_prompt" = "重新规划并继续此 Agent 任务：%@";
+"signalasi.agent.task_control.rollback" = "回滚上一个动作";
+"signalasi.agent.task_control.rollback_requested" = "已请求回滚上一个动作";
+"signalasi.agent.task_control.rollback_failed" = "当前没有可回滚的动作";
 "signalasi.agent.form.invalid" = "此 Agent 表单无效。";
 "signalasi.agent.form.response" = "表单响应";
 "signalasi.agent.form.submitted" = "表单已提交给 Agent。";

@@ -106,6 +106,9 @@ struct SignalASIAgentRecentTasksView: View {
         onRetry: {
           retryTask(task)
         },
+        onRollback: {
+          rollbackTask(task)
+        },
         onCancel: {
           cancelTask(task)
         },
@@ -164,6 +167,8 @@ struct SignalASIAgentRecentTasksView: View {
       resumeTask(task)
     case .retry:
       retryTask(task)
+    case .rollback:
+      rollbackTask(task)
     case .copy:
       copyTask(task)
     case .viewLog:
@@ -224,6 +229,13 @@ struct SignalASIAgentRecentTasksView: View {
         ? t("signalasi.agent_tasks.retry_sent", "Task sent to Agent")
         : t("signalasi.agent_tasks.retry_failed", "The task could not be sent")
     }
+  }
+
+  private func rollbackTask(_ task: AgentTaskRecord) {
+    statusText = coordinator.rollbackLastLocalNativeAction(taskId: task.taskId)
+      ? t("signalasi.agent.task_control.rollback_requested", "Rollback requested")
+      : t("signalasi.agent.task_control.rollback_failed", "This action cannot be rolled back")
+    selectedTask = nil
   }
 
   private func cancelTask(_ task: AgentTaskRecord) {
@@ -356,6 +368,8 @@ struct SignalASIAgentRecentTasksView: View {
       return t("signalasi.common.resume", "Resume")
     case .retry:
       return t("signalasi.common.retry", "Retry")
+    case .rollback:
+      return t("signalasi.agent.task_control.rollback", "Rollback last action")
     case .copy:
       return t("signalasi.common.copy", "Copy")
     case .viewLog:
@@ -450,6 +464,7 @@ private struct AgentTaskDetailSheet: View {
   var execution: String
   var onCopy: () -> Void
   var onRetry: () -> Void
+  var onRollback: () -> Void
   var onCancel: () -> Void
   var onDelete: () -> Void
 
@@ -515,6 +530,16 @@ private struct AgentTaskDetailSheet: View {
               onRetry()
             } label: {
               Label(t("signalasi.common.retry", "Retry"), systemImage: "arrow.clockwise")
+            }
+          }
+          if AgentTaskCenterPolicy.rollbackAvailable(task) {
+            Button {
+              onRollback()
+            } label: {
+              Label(
+                t("signalasi.agent.task_control.rollback", "Rollback last action"),
+                systemImage: "arrow.uturn.backward.circle"
+              )
             }
           }
           Spacer()

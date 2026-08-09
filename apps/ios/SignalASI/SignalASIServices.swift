@@ -2243,6 +2243,28 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func rollbackLastLocalNativeAction(taskId: String) -> Bool {
+    guard var task = store.agentTask(id: taskId),
+          [.completed, .failed, .cancelled, .blocked].contains(task.phase),
+          var rollbackAction = task.nativeRollbackAction,
+          let outgoing = localOutgoingMessage(for: task) else {
+      return false
+    }
+    rollbackAction.status = .pendingConfirmation
+    task.pendingActions = [rollbackAction]
+    task.pendingAction = rollbackAction
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = "Rolling back the last native tool action"
+    let toolId = rollbackAction.parameters["tool_id"] ?? rollbackAction.target
+    task.executionLog.append("Native tool \(toolId): rollback requested")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    return applyLocalNativeAction(action: rollbackAction, outgoing: outgoing, task: &task)
+  }
+
+  @discardableResult
   func pauseLocalNativeAction(taskId: String) -> Bool {
     guard var task = store.agentTask(id: taskId),
           AgentTaskCenterPolicy.pauseable(task) else {
@@ -2798,6 +2820,9 @@ final class MessageCoordinator: ObservableObject {
   ) -> Bool {
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = currentAgentScreenContext
+    let rollbackAction = AgentExecutionContinuity
+      .checkpointBefore(action: action, screen: screen, planRevision: 1)
+      .rollbackAction
 
     var executionAction = action
     executionAction.parameters["_signalasi_task_id"] = task.taskId
@@ -2825,6 +2850,10 @@ final class MessageCoordinator: ObservableObject {
       final: !hasRemainingActions
     )
     task.phase = result.success ? .completed : .failed
+    if result.success {
+      task.lastCompletedNativeAction = action
+      task.nativeRollbackAction = rollbackAction
+    }
     task.result = reply
     task.verification = result.success ? "Native tool receipt returned" : "Native tool execution failed"
     let toolId = action.parameters["tool_id"] ?? "unknown"

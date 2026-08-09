@@ -93,6 +93,8 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
       return t("signalasi.common.resume", "Resume")
     case .retry:
       return t("signalasi.common.retry", "Retry")
+    case .rollback:
+      return t("signalasi.agent.task_control.rollback", "Rollback last action")
     case .copy:
       return t("signalasi.common.copy", "Copy")
     case .viewLog:
@@ -110,6 +112,8 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
       return "play.fill"
     case .retry:
       return "arrow.clockwise"
+    case .rollback:
+      return "arrow.uturn.backward.circle"
     case .copy:
       return "doc.on.doc"
     case .viewLog:
