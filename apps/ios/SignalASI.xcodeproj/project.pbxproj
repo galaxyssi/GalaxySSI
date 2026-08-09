@@ -431,6 +431,7 @@
     A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */; };
     A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */; };
     A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */; };
+    A10000000000000000000350 /* AgentProviderHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000350 /* AgentProviderHealth.swift */; };
     A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* AgentPlanRunModels.swift */; };
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
@@ -1390,6 +1391,7 @@
     A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDesktopRemoteNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMcpNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOnDeviceRuntimeNativeToolTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000350 /* AgentProviderHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealth.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1662,6 +1664,7 @@
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
+        A20000000000000000000350 /* AgentProviderHealth.swift */,
         A20000000000000000000137 /* AgentMediaNetworkPolicyModels.swift */,
         A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */,
         A20000000000000000000139 /* AgentDeviceProfileModels.swift */,
@@ -2453,6 +2456,7 @@
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,
+        A10000000000000000000350 /* AgentProviderHealth.swift in Sources */,
         A10000000000000000000137 /* AgentMediaNetworkPolicyModels.swift in Sources */,
         A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */,
         A10000000000000000000139 /* AgentDeviceProfileModels.swift in Sources */,
