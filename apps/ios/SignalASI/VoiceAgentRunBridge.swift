@@ -315,10 +315,12 @@ final class VoiceAgentRunBridge {
   @discardableResult
   func consumeRemoteEnvelope(_ envelope: [String: Any]) -> VoiceAgentRunUpdate? {
     let update: VoiceAgentRunUpdate? = locked {
-      let taskId = string(envelope, "task_id")
-      let turnId = string(envelope, "turn_id")
-      let sourceMessageId = string(envelope, "source_message_id")
-      let runId = string(envelope, "run_id")
+      let normalizedEnvelope = flatten(envelope)
+      let taskId = string(normalizedEnvelope, "task_id")
+      let turnId = string(normalizedEnvelope, "turn_id")
+      let sourceMessageId = string(normalizedEnvelope, "source_message_id")
+        .ifBlank(string(normalizedEnvelope, "message_id"))
+      let runId = string(normalizedEnvelope, "run_id")
       guard let current = repository.list().first(where: { snapshot in
         (!runId.isEmpty && snapshot.runId == runId) ||
           (!taskId.isEmpty && snapshot.taskId == taskId) ||
@@ -327,33 +329,36 @@ final class VoiceAgentRunBridge {
       }) else {
         return nil
       }
-      let statusSequence = int64(envelope, "status_seq")
+      guard !current.state.isTerminal else { return nil }
+      let statusSequence = int64(normalizedEnvelope, "status_seq")
       if statusSequence > 0 && statusSequence < current.lastStatusSequence {
         return nil
       }
-      let status = string(envelope, "task_status").lowercased()
-      let rawEventKind = string(envelope, "event_type").lowercased()
-      let eventKind = ["agent_task_event", "task_event"].contains(rawEventKind)
-        ? status
-        : rawEventKind.ifBlank(status)
-      let eventId = string(envelope, "event_id").ifBlank(
-        "status:\(current.taskId):\(statusSequence):\(eventKind)"
+      let status = string(normalizedEnvelope, "task_status").lowercased()
+      let eventKind = normalizedEventKind(
+        string(normalizedEnvelope, "event_type"),
+        fallback: status
+      )
+      let progressPayload = object(normalizedEnvelope["progress_event"])
+      let partialPayload = object(normalizedEnvelope["partial_result"])
+      let approvalPayload = object(normalizedEnvelope["approval_request"])
+      let partialSequence = int64(partialPayload, "sequence")
+        .ifZero(int64(normalizedEnvelope, "partial_sequence"))
+      let eventId = string(normalizedEnvelope, "event_id").ifBlank(
+        "status:\(current.taskId):\(max(statusSequence, partialSequence)):\(eventKind)"
       )
       if current.seenEventIds.contains(eventId) {
         return nil
       }
-
-      let progressPayload = envelope["progress_event"] as? [String: Any] ?? [:]
-      let partialPayload = envelope["partial_result"] as? [String: Any] ?? [:]
-      let approvalPayload = envelope["approval_request"] as? [String: Any] ?? [:]
       let progressMessage = string(progressPayload, "message")
-        .ifBlank(string(envelope, "progress_message"))
-        .ifBlank(string(envelope, "message"))
+        .ifBlank(string(normalizedEnvelope, "progress_message"))
+        .ifBlank(string(normalizedEnvelope, "message"))
       let partialText = string(partialPayload, "text")
         .ifBlank(string(partialPayload, "content"))
-        .ifBlank(string(envelope, "partial_text"))
+        .ifBlank(string(normalizedEnvelope, "partial_text"))
       let approvalId = string(approvalPayload, "approval_id")
-        .ifBlank(string(envelope, "approval_id"))
+        .ifBlank(string(approvalPayload, "request_id"))
+        .ifBlank(string(normalizedEnvelope, "approval_id"))
       let nextState = state(status: status, eventKind: eventKind)
       let now = max(clock(), current.updatedAtMillis)
       let acceptedAt = current.acceptedAtMillis > 0 || !isAcceptance(status: status, eventKind: eventKind)
@@ -377,16 +382,21 @@ final class VoiceAgentRunBridge {
         idempotencyKey: current.idempotencyKey,
         traceId: current.traceId,
         state: nextStateValue,
-        stage: string(envelope, "stage").ifBlank(current.stage),
+        stage: string(normalizedEnvelope, "stage")
+          .ifBlank(string(normalizedEnvelope, "current_step"))
+          .ifBlank(current.stage),
         progressMessage: nextProgressMessage,
-        progressPercent: double(envelope, "progress_percent") ?? current.progressPercent,
+        progressPercent: double(normalizedEnvelope, "progress_percent")
+          ?? double(progressPayload, "percent")
+          ?? current.progressPercent,
         partialResult: nextPartial,
-        resultSummary: string(envelope, "result_summary")
-          .ifBlank(string(envelope, "content"))
+        resultSummary: string(normalizedEnvelope, "result_summary")
+          .ifBlank(string(normalizedEnvelope, "result"))
+          .ifBlank(string(normalizedEnvelope, "content"))
           .ifBlank(current.resultSummary),
         approvalId: approvalId.ifBlank(current.approvalId),
         lastStatusSequence: max(current.lastStatusSequence, statusSequence),
-        lastPartialSequence: max(current.lastPartialSequence, int64(partialPayload, "sequence")),
+        lastPartialSequence: max(current.lastPartialSequence, partialSequence),
         seenEventIds: Array((current.seenEventIds + [eventId]).suffix(256)),
         createdAtMillis: current.createdAtMillis,
         acceptedAtMillis: acceptedAt,
@@ -517,6 +527,84 @@ final class VoiceAgentRunBridge {
     return result.snapshot
   }
 
+  @discardableResult
+  func markTimedOut(runId: String, reason: String = "The remote Agent run did not finish before cancellation expired.") -> VoiceAgentRunSnapshot? {
+    let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
+      guard let current = repository.list().first(where: { $0.runId == clean(runId) }),
+            !current.state.isTerminal else {
+        return (nil, nil)
+      }
+      let now = max(clock(), current.updatedAtMillis)
+      let next = VoiceAgentRunSnapshot(
+        runId: current.runId,
+        sessionId: current.sessionId,
+        conversationId: current.conversationId,
+        turnId: current.turnId,
+        taskId: current.taskId,
+        sourceMessageId: current.sourceMessageId,
+        contactId: current.contactId,
+        agentId: current.agentId,
+        agentName: current.agentName,
+        goal: current.goal,
+        idempotencyKey: current.idempotencyKey,
+        traceId: current.traceId,
+        state: .timedOut,
+        stage: "timed_out",
+        progressMessage: current.progressMessage,
+        progressPercent: current.progressPercent,
+        partialResult: current.partialResult,
+        resultSummary: String(reason.prefix(8_000)),
+        approvalId: current.approvalId,
+        lastStatusSequence: current.lastStatusSequence,
+        lastPartialSequence: current.lastPartialSequence,
+        seenEventIds: current.seenEventIds,
+        createdAtMillis: current.createdAtMillis,
+        acceptedAtMillis: current.acceptedAtMillis,
+        updatedAtMillis: now,
+        completedAtMillis: now
+      )
+      repository.save(next)
+      return (
+        next,
+        VoiceAgentRunUpdate(
+          snapshot: next,
+          eventId: "local-timeout:\(next.runId):\(now)",
+          eventKind: "timed_out",
+          message: String(reason.prefix(2_000)),
+          firstAcceptance: false,
+          firstProgress: false,
+          firstPartialResult: false
+        )
+      )
+    }
+    if let update = result.update { notify(update) }
+    return result.snapshot
+  }
+
+  @discardableResult
+  func reconcileStaleCancellations(
+    nowMillis: Int64? = nil,
+    timeoutMillis: Int64 = 5 * 60 * 1_000
+  ) -> [VoiceAgentRunSnapshot] {
+    let now = max(nowMillis ?? clock(), 0)
+    let staleIds = locked {
+      repository.list()
+        .filter {
+          $0.state == .cancelling &&
+            now >= $0.updatedAtMillis &&
+            now - $0.updatedAtMillis >= max(timeoutMillis, 1)
+        }
+        .map(\.runId)
+    }
+    return staleIds.compactMap {
+      markTimedOut(runId: $0)
+    }
+  }
+
+  func find(runId: String) -> VoiceAgentRunSnapshot? {
+    locked { repository.list().first { $0.runId == clean(runId) } }
+  }
+
   func find(sessionId: String) -> VoiceAgentRunSnapshot? {
     locked { repository.list().first { $0.sessionId == clean(sessionId) } }
   }
@@ -554,12 +642,14 @@ final class VoiceAgentRunBridge {
     case "starting", "started", "run_started": return .starting
     case "running", "progress", "agent_progress", "run_progress": return .running
     case "waiting_input", "waiting_for_user": return .waitingInput
-    case "waiting_approval", "approval_required", "tool_permission_required": return .waitingApproval
+    case "waiting_approval", "approval_required", "permission_required", "tool_permission_required":
+      return .waitingApproval
     case "cancelling", "cancel_requested": return .cancelling
-    case "completed", "succeeded", "success", "run_completed": return .completed
-    case "cancelled", "canceled", "run_cancelled": return .cancelled
-    case "timed_out", "timeout": return .timedOut
-    case "failed", "error", "run_failed": return .failed
+    case "completed", "succeeded", "success", "run_completed", "task_completed", "final":
+      return .completed
+    case "cancelled", "canceled", "run_cancelled", "task_cancelled": return .cancelled
+    case "timed_out", "timeout", "task_timeout": return .timedOut
+    case "failed", "error", "run_failed", "task_failed": return .failed
     default: return nil
     }
   }
@@ -599,6 +689,36 @@ final class VoiceAgentRunBridge {
     return ""
   }
 
+  private func object(_ value: Any?) -> [String: Any] {
+    if let dictionary = value as? [String: Any] {
+      return dictionary
+    }
+    return [:]
+  }
+
+  private func flatten(_ envelope: [String: Any]) -> [String: Any] {
+    guard let payload = envelope["payload"] as? [String: Any] else {
+      return envelope
+    }
+    var merged = payload
+    envelope.forEach { key, value in
+      merged[key] = value
+    }
+    return merged
+  }
+
+  private func normalizedEventKind(_ rawValue: String, fallback: String) -> String {
+    let normalized = clean(rawValue)
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: "/", with: ".")
+    let suffix = normalized.split(separator: ".").last.map(String.init) ?? ""
+    if ["agent_task_event", "task_event"].contains(suffix) {
+      return fallback
+    }
+    return suffix.ifBlank(fallback)
+  }
+
   private func int64(_ object: [String: Any], _ key: String) -> Int64 {
     if let value = object[key] as? Int64 { return max(value, 0) }
     if let value = object[key] as? Int { return max(Int64(value), 0) }
@@ -610,6 +730,12 @@ final class VoiceAgentRunBridge {
     if let value = object[key] as? Double { return value.clamped(to: 0...100) }
     if let value = object[key] as? NSNumber { return value.doubleValue.clamped(to: 0...100) }
     return Double(string(object, key))?.clamped(to: 0...100)
+  }
+}
+
+private extension Int64 {
+  func ifZero(_ fallback: Int64) -> Int64 {
+    self == 0 ? fallback : self
   }
 }
 

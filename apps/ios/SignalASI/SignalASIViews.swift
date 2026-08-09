@@ -8,11 +8,15 @@ import UniformTypeIdentifiers
 struct SignalASIApp: App {
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
+  @StateObject private var voiceAgentRunRecovery: VoiceAgentRunRecoveryCoordinator
 
   init() {
     let store = SignalASIStore()
     _store = StateObject(wrappedValue: store)
     _coordinator = StateObject(wrappedValue: MessageCoordinator(store: store))
+    _voiceAgentRunRecovery = StateObject(
+      wrappedValue: VoiceAgentRunRecoveryCoordinator.shared
+    )
   }
 
   var body: some Scene {
@@ -20,8 +24,12 @@ struct SignalASIApp: App {
       RootView()
         .environmentObject(store)
         .environmentObject(coordinator)
+        .environmentObject(voiceAgentRunRecovery)
         .signalASITextScale(store.displaySettings)
-        .onAppear { coordinator.start() }
+        .onAppear {
+          coordinator.start()
+          voiceAgentRunRecovery.start()
+        }
     }
   }
 }
@@ -1358,6 +1366,7 @@ struct VoiceSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @ObservedObject private var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @StateObject private var speech = SpeechCaptureService()
   @StateObject private var replySpeech = VoiceProgressiveReplySpeechService()
   @State private var permissionStatus = ""
@@ -1470,6 +1479,18 @@ struct VoiceSettingsView: View {
             }
           }
         }
+        Section(t("voice_settings_section_agent_runs", "Agent runs")) {
+          NavigationLink(destination: SignalASIVoiceAgentRunsView()) {
+            HStack {
+              Image(systemName: "waveform.badge.mic")
+                .foregroundColor(.signalASIAccent)
+              Text(t("signalasi.voice_agent_runs.title", "Voice Agent runs"))
+              Spacer()
+              Text("\(voiceAgentRunRecovery.activeSnapshots.count)")
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section(t("voice_settings_section_recorder", "Recorder")) {
           if speech.isRecording {
             Text(speech.transcript.ifBlank(t("voice_listening", "Listening...")))
@@ -1494,6 +1515,7 @@ struct VoiceSettingsView: View {
       }
       .navigationTitle(t("voice_settings_section_voice", "Voice"))
       .onAppear {
+        voiceAgentRunRecovery.start()
         coordinator.onIncomingMessage = handleIncomingVoiceReply
         coordinator.onIncomingMessageDelta = handleIncomingVoiceReplyDelta
         voiceAgentRunListenerId = VoiceAgentRunBridgeRegistry.shared.addListener(
