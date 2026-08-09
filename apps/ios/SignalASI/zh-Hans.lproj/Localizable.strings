@@ -3616,6 +3616,9 @@
 "signalasi.agent.retry.title" = "Agent 请求失败";
 "signalasi.agent.retry.subtitle" = "可以重试最近一次 Agent 请求。";
 "signalasi.agent.resume_task" = "恢复任务";
+"signalasi.agent.task_control.resumed" = "任务已恢复";
+"signalasi.agent.task_control.resume_failed" = "此任务无法恢复";
+"signalasi.agent.task_control.cancelled" = "任务已取消";
 "signalasi.agent.action_status.title" = "Agent 操作";
 "signalasi.agent.action_status.empty" = "此操作没有可用内容。";
 "signalasi.agent.action_status.invalid" = "此 Agent 操作无效。";
