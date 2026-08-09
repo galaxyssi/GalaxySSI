@@ -14,6 +14,20 @@ struct AgentPlanEditResult: Equatable {
   }
 }
 
+struct AgentPendingActionEditResult: Equatable {
+  var task: AgentTaskRecord?
+  var error: String
+
+  var success: Bool {
+    task != nil && error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  init(task: AgentTaskRecord? = nil, error: String = "") {
+    self.task = task
+    self.error = error
+  }
+}
+
 enum AgentPlanEditor {
   static func inputKey(action: AgentAction) -> String? {
     switch action.kind {
@@ -133,7 +147,7 @@ enum AgentPlanEditor {
     return failure(candidate.validation.issues.joined(separator: ", ").clamped(to: 300))
   }
 
-  private static func isEditablePending(_ action: AgentAction) -> Bool {
+  static func isEditablePending(_ action: AgentAction) -> Bool {
     [.proposed, .pendingConfirmation].contains(action.status)
   }
 
@@ -148,7 +162,7 @@ enum AgentPlanEditor {
       .filter { !$0.isEmpty }
   }
 
-  private static func maxInputCharacters(_ kind: AgentActionKind) -> Int {
+  static func maxInputCharacters(_ kind: AgentActionKind) -> Int {
     switch kind {
     case .typeText:
       return 2_000
@@ -165,7 +179,110 @@ enum AgentPlanEditor {
     AgentPlanEditResult(error: message)
   }
 
-  private static let maxDescriptionCharacters = 300
+  static let maxDescriptionCharacters = 300
+}
+
+enum AgentPendingActionEditor {
+  static func updatePendingAction(
+    task: AgentTaskRecord,
+    actionId: String,
+    description: String,
+    input: String
+  ) -> AgentPendingActionEditResult {
+    var actions = pendingActions(in: task)
+    guard let index = actions.firstIndex(where: { $0.id == actionId }) else {
+      return failure("Action is no longer in the active task")
+    }
+    let action = actions[index]
+    guard AgentPlanEditor.isEditablePending(action) else {
+      return failure("Only pending actions can be edited")
+    }
+    let cleanDescription = description.trimmed().clamped(to: AgentPlanEditor.maxDescriptionCharacters)
+    guard !cleanDescription.isEmpty else {
+      return failure("Action description cannot be empty")
+    }
+    let key = AgentPlanEditor.inputKey(action: action)
+    let cleanInput = input.trimmed().clamped(to: AgentPlanEditor.maxInputCharacters(action.kind))
+    if key != nil && cleanInput.isEmpty {
+      return failure("Action input cannot be empty")
+    }
+    var updatedAction = action
+    updatedAction.description = cleanDescription
+    if let key {
+      updatedAction.parameters[key] = cleanInput
+    }
+    actions[index] = updatedAction
+    return success(with: updatedTask(task, actions: actions))
+  }
+
+  static func removePendingAction(
+    task: AgentTaskRecord,
+    actionId: String
+  ) -> AgentPendingActionEditResult {
+    let actions = pendingActions(in: task)
+    guard let action = actions.first(where: { $0.id == actionId }) else {
+      return failure("Action is no longer in the active task")
+    }
+    guard AgentPlanEditor.isEditablePending(action) else {
+      return failure("Only pending actions can be removed")
+    }
+    guard actions.count > 1 else {
+      return failure("A task must contain at least one action")
+    }
+    if let dependent = actions.first(where: {
+      $0.id != actionId && AgentToolCoordination.dependencyIds($0).contains(actionId)
+    }) {
+      return failure("Remove dependent action \(dependent.description) first")
+    }
+    return success(with: updatedTask(task, actions: actions.filter { $0.id != actionId }))
+  }
+
+  static func movePendingAction(
+    task: AgentTaskRecord,
+    actionId: String,
+    offset: Int
+  ) -> AgentPendingActionEditResult {
+    guard [-1, 1].contains(offset) else {
+      return failure("Unsupported move")
+    }
+    var actions = pendingActions(in: task)
+    guard let currentIndex = actions.firstIndex(where: { $0.id == actionId }) else {
+      return failure("Action is no longer in the active task")
+    }
+    guard AgentPlanEditor.isEditablePending(actions[currentIndex]) else {
+      return failure("Only pending actions can be moved")
+    }
+    let targetIndex = currentIndex + offset
+    guard actions.indices.contains(targetIndex) else {
+      return failure("Action is already at the task boundary")
+    }
+    guard AgentPlanEditor.isEditablePending(actions[targetIndex]) else {
+      return failure("Completed or running actions cannot be reordered")
+    }
+    actions.swapAt(currentIndex, targetIndex)
+    return success(with: updatedTask(task, actions: actions))
+  }
+
+  private static func pendingActions(in task: AgentTaskRecord) -> [AgentAction] {
+    task.pendingActions.isEmpty
+      ? task.pendingAction.map { [$0] } ?? []
+      : task.pendingActions
+  }
+
+  private static func updatedTask(_ task: AgentTaskRecord, actions: [AgentAction]) -> AgentTaskRecord {
+    var updated = task
+    updated.pendingActions = actions
+    updated.pendingAction = actions.first
+    return updated
+  }
+
+  private static func success(with task: AgentTaskRecord) -> AgentPendingActionEditResult {
+    AgentPendingActionEditResult(task: task)
+  }
+
+  private static func failure(_ message: String) -> AgentPendingActionEditResult {
+    AgentPendingActionEditResult(error: message)
+  }
 }
 
 private extension Optional where Wrapped == String {
