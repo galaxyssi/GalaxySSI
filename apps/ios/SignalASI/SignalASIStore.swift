@@ -2133,6 +2133,7 @@ final class SignalASIStore: ObservableObject {
     let requestAgentKind = request.agentKind.ifBlank(agentKind(forFriendRequestType: requestType))
     let requestDesktopId = request.desktopId.ifBlank(request.deviceId)
     let setupDetail = approvedContactSetupDetail(for: request)
+    let deliveryMode = approvedDeliveryMode(for: request, type: requestType)
     var next = contact(id: contactId) ?? SignalASIContact(
       id: contactId,
       signalASIId: request.signalASIId,
@@ -2140,7 +2141,7 @@ final class SignalASIStore: ObservableObject {
       displayName: request.name,
       type: requestType,
       agentKind: requestAgentKind,
-      deliveryMode: .link,
+      deliveryMode: deliveryMode,
       trustState: .verified,
       desktopId: requestDesktopId,
       desktopName: request.desktopName,
@@ -2159,7 +2160,7 @@ final class SignalASIStore: ObservableObject {
     next.displayName = request.name
     next.type = requestType
     next.agentKind = requestAgentKind
-    next.deliveryMode = .link
+    next.deliveryMode = deliveryMode
     next.trustState = .verified
     next.desktopId = requestDesktopId
     next.desktopName = request.desktopName
@@ -2186,6 +2187,19 @@ final class SignalASIStore: ObservableObject {
     upsert(next)
     save()
     return true
+  }
+
+  private func approvedDeliveryMode(
+    for request: SignalASIFriendRequest,
+    type: String
+  ) -> SignalASIDeliveryMode {
+    guard type == "agent" else { return .link }
+    let hasDesktopContext = !request.desktopId.isEmpty ||
+      !request.desktopName.isEmpty ||
+      !request.desktopAccessProfile.isEmpty ||
+      !request.connectorAdapterType.isEmpty ||
+      !request.connectorCapabilities.isEmpty
+    return hasDesktopContext ? .pcConnector : .link
   }
 
   @discardableResult

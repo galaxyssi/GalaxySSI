@@ -266,7 +266,7 @@ enum SignalASIContactExchange {
 
   static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
     let object = try decodeQRCodeObject(contents, label: "QR")
-    let type = object.string("type")
+    let type = normalized(object.string("type"))
     let isPairingQRCode = type == verifyType &&
       (
         object.string("protocol") == SignalASILinkProtocol.name ||
@@ -333,7 +333,7 @@ enum SignalASIContactExchange {
   }
 
   private static func importContactQRCodeObject(_ object: [String: Any], now: Date) throws -> SignalASIFriendRequest {
-    let type = object.string("type")
+    let type = normalized(object.string("type"))
     guard isContactQRCodeObject(object) else {
       throw SignalASIError.invalidPayload("Contact QR type is not supported.")
     }
@@ -377,7 +377,7 @@ enum SignalASIContactExchange {
     } else if isAgentQRCodeObject(object) {
       requestType = "agent"
     } else {
-      requestType = object.string("contact_type").ifBlank("person")
+      requestType = normalized(object.string("contact_type")).ifBlank("person")
     }
     let agentKind = object.string("agent_kind")
       .ifBlank(object.string("kind"))
