@@ -1972,6 +1972,10 @@ def _reason_code_value(reason_code):
 def on_connect(mqttc, userdata, flags, reason_code, properties=None):
     if _reason_code_value(reason_code) == 0:
         log.info(f"MQTT connected {BROKER}:{PORT}")
+        # A FastAPI/Electron lifecycle can stop and restart the bridge in the
+        # same process. Re-establish the durable worker here so a completed
+        # task cannot remain stranded after the transport reconnects.
+        _ensure_outbound_retry_thread()
         _subscribe_all_routes(mqttc)
         recovered_tasks = agent_task_manager.drain_recovered()
         resumed_count = 0
@@ -3202,6 +3206,7 @@ def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict) -> b
         dict(wire_payload),
         persisted_payload,
     )
+    _ensure_outbound_retry_thread()
     try:
         published = bool(
             mqttc is not None and mqttc.is_connected()
@@ -6707,6 +6712,11 @@ def _outbound_retry_loop() -> None:
             if mqttc is None or not mqttc.is_connected():
                 continue
             try:
+                # Task results are persisted before their encrypted MQTT
+                # envelope is prepared. Retry that preparation as well as the
+                # transport queue; otherwise one transient publish failure can
+                # leave a completed task invisible until Desktop reconnects.
+                flush_pending_task_results(mqttc)
                 flush_outbound_messages(mqttc)
             except Exception as exc:
                 log.debug("MQTT durable replay deferred: %s", exc)
@@ -6717,8 +6727,14 @@ def _outbound_retry_loop() -> None:
 
 def _ensure_outbound_retry_thread() -> None:
     global outbound_retry_thread
-    if outbound_retry_thread is not None and outbound_retry_thread.is_alive():
-        return
+    existing = outbound_retry_thread
+    if existing is not None and existing.is_alive():
+        if not outbound_retry_stop_event.is_set():
+            return
+        if existing is not threading.current_thread():
+            existing.join(timeout=OUTBOUND_RETRY_POLL_SECONDS + 0.5)
+        if existing.is_alive():
+            return
     outbound_retry_stop_event.clear()
     outbound_retry_thread = threading.Thread(
         target=_outbound_retry_loop,
@@ -7220,6 +7236,11 @@ def stop():
     if client:
         client.disconnect()
         client = None
+    retry_thread = outbound_retry_thread
+    if retry_thread is not None and retry_thread is not threading.current_thread():
+        retry_thread.join(timeout=OUTBOUND_RETRY_POLL_SECONDS + 0.5)
+    if retry_thread is None or not retry_thread.is_alive():
+        outbound_retry_thread = None
     if codex_app_server is not None:
         codex_app_server.close()
         codex_app_server = None
