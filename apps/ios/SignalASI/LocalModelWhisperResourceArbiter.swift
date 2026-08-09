@@ -12,6 +12,7 @@ final class LocalModelWhisperResourceArbiter {
   )
   private weak var localModelRuntime: LocalModelInferenceRuntime?
   private weak var whisperRuntime: DefaultVoiceLocalWhisperRuntime?
+  private var asrReservesQnn: (() -> Bool)?
   private var pressureObserverTokens: [NSObjectProtocol] = []
 
   private init() {
@@ -48,15 +49,20 @@ final class LocalModelWhisperResourceArbiter {
     lock.lock()
     if self.whisperRuntime == nil {
       self.whisperRuntime = whisperRuntime
+      self.asrReservesQnn = { [weak whisperRuntime] in
+        whisperRuntime?.reservesQnn() ?? false
+      }
     }
     lock.unlock()
   }
 
-  func releaseWhisperForLocalModel() {
+  /// Whisper keeps the native accelerator reserved while it is hot or preparing.
+  /// Local model routing uses this non-blocking snapshot to yield instead of evicting ASR.
+  func asrHasPriority() -> Bool {
     lock.lock()
-    let runtime = whisperRuntime
+    let reservesQnn = asrReservesQnn
     lock.unlock()
-    runtime?.releaseForResourcePressure()
+    return reservesQnn?() ?? false
   }
 
   func releaseLocalModelForWhisper() {

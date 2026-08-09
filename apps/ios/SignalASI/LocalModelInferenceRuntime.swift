@@ -49,6 +49,7 @@ final class LocalModelInferenceRuntime {
   }
 
   func ready(profile: LocalModelRuntimeProfile? = nil) -> Bool {
+    guard !LocalModelWhisperResourceArbiter.shared.asrHasPriority() else { return false }
     lock.lock()
     refreshBackendIfNeededLocked()
     let backendAvailable = backend.isAvailable
@@ -73,11 +74,16 @@ final class LocalModelInferenceRuntime {
     if workClass == .background && !Self.backgroundSafe(profile) {
       throw LocalModelBackgroundDeferredError(reason: "This local model backend is reserved for interactive inference")
     }
+    guard !LocalModelWhisperResourceArbiter.shared.asrHasPriority() else {
+      throw LocalModelASRPriorityError()
+    }
     if workClass == .interactive {
       beginInteractiveWork()
       defer { endInteractiveWork() }
     }
-    LocalModelWhisperResourceArbiter.shared.releaseWhisperForLocalModel()
+    guard !LocalModelWhisperResourceArbiter.shared.asrHasPriority() else {
+      throw LocalModelASRPriorityError()
+    }
     lock.lock()
     defer { lock.unlock() }
     refreshBackendIfNeededLocked()

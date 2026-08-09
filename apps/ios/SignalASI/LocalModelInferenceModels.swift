@@ -25,6 +25,12 @@ struct LocalModelBackgroundDeferredError: LocalizedError, Equatable {
   var errorDescription: String? { reason }
 }
 
+struct LocalModelASRPriorityError: LocalizedError, Equatable {
+  var errorDescription: String? {
+    "Local Whisper is being kept ready for instant voice input"
+  }
+}
+
 struct LocalModelInferenceRuntimeSnapshot: Equatable {
   var backend: String
   var available: Bool
