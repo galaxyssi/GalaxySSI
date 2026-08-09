@@ -55,7 +55,7 @@ struct SignalASIAgentRuntimePanelView: View {
       runtimeSection(
         id: "action_queue",
         title: t("agent_section_action_queue", "Action Queue"),
-        subtitle: String(format: t("signalasi.agent_runtime.action_queue_summary", "%d active"), activeTasks.count),
+        subtitle: String(format: t("signalasi.agent_runtime.action_queue_summary", "%d active"), actionQueueItemCount),
         systemImage: "list.bullet.rectangle",
         rows: actionQueueRows,
         emptyTitle: t("agent_action_queue_empty", "No active Agent plan")
@@ -335,6 +335,31 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var actionQueueRows: [SignalASIAgentRuntimeRow] {
+    if !queuedActionEntries.isEmpty {
+      return queuedActionEntries.prefix(6).map { entry in
+        let action = entry.action
+        let target = action.target.ifBlank(entry.task.targetTitle)
+          .ifBlank(t("signalasi.agent_tasks.target_phone", "SignalASI"))
+        let kind = action.kind.rawValue
+          .lowercased()
+          .replacingOccurrences(of: "_", with: " ")
+        let detail = action.result.ifBlank(
+          String(
+            format: t("agent_action_queue_meta", "%@ / %@ risk"),
+            target,
+            riskText(action.risk)
+          )
+        )
+        return SignalASIAgentRuntimeRow(
+          id: "queue-action-\(action.id)",
+          title: action.description.ifBlank(kind),
+          detail: detail,
+          badge: actionStatusText(action.status),
+          systemImage: action.status == .blocked ? "hand.raised" : "arrow.triangle.2.circlepath",
+          tint: actionStatusTint(action.status)
+        )
+      }
+    }
     activeTasks.prefix(4).map { task in
       SignalASIAgentRuntimeRow(
         id: "queue-\(task.taskId)",
@@ -348,6 +373,46 @@ struct SignalASIAgentRuntimePanelView: View {
         systemImage: task.blocked ? "hand.raised" : "arrow.triangle.2.circlepath",
         tint: statusTint(task)
       )
+    }
+  }
+
+  private var queuedActionEntries: [(task: AgentTaskRecord, action: AgentAction)] {
+    var seen = Set<String>()
+    return activeTasks.flatMap { task in
+      let actions = task.pendingActions.isEmpty
+        ? task.pendingAction.map { [$0] } ?? []
+        : task.pendingActions
+      return actions.compactMap { action -> (task: AgentTaskRecord, action: AgentAction)? in
+        let actionID = action.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !actionID.isEmpty, seen.insert(actionID).inserted else { return nil }
+        return (task: task, action: action)
+      }
+    }
+  }
+
+  private var actionQueueItemCount: Int {
+    queuedActionEntries.isEmpty ? activeTasks.count : queuedActionEntries.count
+  }
+
+  private func actionStatusText(_ status: AgentActionStatus) -> String {
+    switch status {
+    case .proposed: return t("agent_task_status_queued", "Queued")
+    case .pendingConfirmation: return t("agent_task_status_waiting_approval", "Waiting for approval")
+    case .running: return t("agent_task_status_running", "Running")
+    case .waitingResponse: return t("agent_task_status_waiting_input", "Waiting for input")
+    case .completed: return t("agent_task_status_completed", "Completed")
+    case .failed: return t("agent_task_status_failed", "Failed")
+    case .blocked: return t("agent_recent_status_blocked", "Blocked")
+    case .rolledBack: return t("agent_recent_status_cancelled", "Rolled back")
+    }
+  }
+
+  private func actionStatusTint(_ status: AgentActionStatus) -> Color {
+    switch status {
+    case .completed: return .signalASIAccent
+    case .failed, .blocked: return .red
+    case .pendingConfirmation, .waitingResponse, .rolledBack: return .orange
+    case .proposed, .running: return .blue
     }
   }
 
