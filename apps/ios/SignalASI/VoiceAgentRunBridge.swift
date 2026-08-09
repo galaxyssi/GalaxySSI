@@ -244,17 +244,20 @@ final class VoiceAgentRunBridge {
   typealias Listener = (VoiceAgentRunUpdate) -> Void
 
   private let repository: VoiceAgentRunRepository
+  private let controlStore: AgentRunControlStore
   private let clock: () -> Int64
   private let lock = NSRecursiveLock()
   private var listeners: [String: Listener] = [:]
 
   init(
     repository: VoiceAgentRunRepository = UserDefaultsVoiceAgentRunRepository(),
+    controlStore: AgentRunControlStore = UserDefaultsAgentRunEventStore(),
     clock: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
   ) {
     self.repository = repository
+    self.controlStore = controlStore
     self.clock = clock
   }
 
@@ -295,6 +298,12 @@ final class VoiceAgentRunBridge {
         updatedAtMillis: now
       )
       repository.save(snapshot)
+      appendControlEvent(
+        snapshot: snapshot,
+        eventId: "voice-run-created:\(snapshot.runId)",
+        type: .runCreated,
+        payload: ["voice_event": .string("created")]
+      )
       return (
         snapshot,
         VoiceAgentRunUpdate(
@@ -405,6 +414,16 @@ final class VoiceAgentRunBridge {
       )
       guard next != current else { return nil }
       repository.save(next)
+      appendControlEvent(
+        snapshot: next,
+        eventId: eventId,
+        type: controlEventType(state: nextStateValue, eventKind: eventKind),
+        payload: controlPayload(
+          eventKind: eventKind,
+          message: progressMessage.ifBlank(partialText),
+          percent: next.progressPercent
+        )
+      )
       return VoiceAgentRunUpdate(
         snapshot: next,
         eventId: eventId,
@@ -456,6 +475,15 @@ final class VoiceAgentRunBridge {
         completedAtMillis: current.completedAtMillis
       )
       repository.save(next)
+      appendControlEvent(
+        snapshot: next,
+        eventId: "local-cancelling:\(next.runId):\(now)",
+        type: .paused,
+        payload: [
+          "voice_event": .string("cancelling"),
+          "reason": .string("user_requested_cancellation")
+        ]
+      )
       return (
         next,
         VoiceAgentRunUpdate(
@@ -510,6 +538,15 @@ final class VoiceAgentRunBridge {
         completedAtMillis: now
       )
       repository.save(next)
+      appendControlEvent(
+        snapshot: next,
+        eventId: "legacy-final:\(next.runId):\(now)",
+        type: .runCompleted,
+        payload: [
+          "voice_event": .string("completed"),
+          "result": .string(String(content.prefix(8_000)))
+        ]
+      )
       return (
         next,
         VoiceAgentRunUpdate(
@@ -564,6 +601,15 @@ final class VoiceAgentRunBridge {
         completedAtMillis: now
       )
       repository.save(next)
+      appendControlEvent(
+        snapshot: next,
+        eventId: "local-timeout:\(next.runId):\(now)",
+        type: .runFailed,
+        payload: [
+          "voice_event": .string("timed_out"),
+          "reason": .string(String(reason.prefix(2_000)))
+        ]
+      )
       return (
         next,
         VoiceAgentRunUpdate(
@@ -632,6 +678,77 @@ final class VoiceAgentRunBridge {
         callback(update)
       }
     }
+  }
+
+  private func appendControlEvent(
+    snapshot: VoiceAgentRunSnapshot,
+    eventId: String,
+    type: AgentRunControlEventType,
+    payload: AgentRunControlPayload
+  ) {
+    _ = controlStore.appendNext(AgentRunControlEvent(
+      eventId: eventId,
+      conversationId: snapshot.conversationId,
+      messageId: snapshot.sourceMessageId.ifBlank(snapshot.turnId),
+      taskId: snapshot.taskId.ifBlank(snapshot.runId),
+      runId: snapshot.runId,
+      agentId: snapshot.agentId,
+      deviceId: "ios",
+      type: type,
+      sequence: 0,
+      timestampMillis: snapshot.updatedAtMillis,
+      payload: payload
+    ))
+  }
+
+  private func controlEventType(
+    state: VoiceAgentRunState,
+    eventKind: String
+  ) -> AgentRunControlEventType {
+    let normalized = eventKind
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+    if normalized.contains("progress") || normalized.contains("partial") {
+      return .toolProgress
+    }
+    switch state {
+    case .created:
+      return .runCreated
+    case .accepted:
+      return .agentConnected
+    case .queued:
+      return .runQueued
+    case .starting:
+      return .runStarted
+    case .running:
+      return .stepStarted
+    case .waitingInput:
+      return .waitingForUser
+    case .waitingApproval:
+      return .toolPermissionRequired
+    case .cancelling:
+      return .paused
+    case .completed:
+      return .runCompleted
+    case .failed, .timedOut:
+      return .runFailed
+    case .cancelled:
+      return .runCancelled
+    }
+  }
+
+  private func controlPayload(
+    eventKind: String,
+    message: String,
+    percent: Double?
+  ) -> AgentRunControlPayload {
+    var payload: AgentRunControlPayload = [
+      "voice_event": .string(eventKind)
+    ]
+    if !message.isEmpty { payload["message"] = .string(String(message.prefix(2_000))) }
+    if let percent { payload["progress_percent"] = .int(Int64(percent.rounded())) }
+    return payload
   }
 
   private func state(status: String, eventKind: String) -> VoiceAgentRunState? {

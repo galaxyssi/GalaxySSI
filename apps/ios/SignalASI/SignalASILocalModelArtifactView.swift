@@ -115,6 +115,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
           profile: profile,
           downloadURL: artifact.downloadURL
         )
+        LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: true)
         self.progress[artifact.id] = LocalModelArtifactProgress(
           bytesDownloaded: artifact.sizeBytes,
           totalBytes: artifact.sizeBytes
@@ -159,6 +160,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   func delete(_ artifact: LocalModelHubArtifact) {
     tasks[artifact.id]?.cancel()
     let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: false)
     LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
     try? storage.delete(profile)
     LocalModelRuntimeCatalog.removeHubProfile(profile)
