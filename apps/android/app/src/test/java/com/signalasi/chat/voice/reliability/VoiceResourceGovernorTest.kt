@@ -119,9 +119,9 @@ class VoiceResourceGovernorTest {
     }
 
     @Test
-    fun `critical battery blocks sustained local inference but not online work`() {
+    fun `critical battery does not block local or online voice work`() {
         val constrained = snapshot().copy(batteryPercent = 5, charging = false)
-        assertFalse(governor.evaluate(constrained, localWorkload(certifiedPeakMb = 400)).allowed)
+        assertTrue(governor.evaluate(constrained, localWorkload(certifiedPeakMb = 400)).allowed)
         assertTrue(governor.evaluate(
             constrained,
             VoiceWorkloadProfile(VoicePipelineFeature.ONLINE_REALTIME_ASR, requiresNetwork = true)

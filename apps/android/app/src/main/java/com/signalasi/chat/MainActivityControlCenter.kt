@@ -935,9 +935,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "global.toggle_notifications" -> updateGlobalAgentSettings {
             it.copy(notificationsEnabled = !it.notificationsEnabled)
         }
-        "global.toggle_battery_protection" -> updateGlobalAgentSettings {
-            it.copy(protectBatteryForBackgroundWork = !it.protectBatteryForBackgroundWork)
-        }
         "global.toggle_metered_research" -> updateGlobalAgentSettings {
             it.copy(allowMeteredBackgroundResearch = !it.allowMeteredBackgroundResearch)
         }

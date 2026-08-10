@@ -315,6 +315,17 @@ class MqttTransportProbeState:
             self._next_probe_at = float(now) + self.interval_seconds
             return elapsed
 
+    def observe_transport_activity(self, now: float) -> bool:
+        """Treat authenticated-route traffic or broker ACKs as transport liveness."""
+        with self._lock:
+            if not self._connected:
+                return False
+            had_pending_probe = bool(self._pending_nonce)
+            self._pending_nonce = ""
+            self._sent_at = 0.0
+            self._next_probe_at = float(now) + self.interval_seconds
+            return had_pending_probe
+
     def stalled(self, now: float) -> tuple[bool, float, int]:
         with self._lock:
             elapsed = max(0.0, float(now) - self._sent_at) if self._pending_nonce else 0.0
@@ -2188,6 +2199,7 @@ def on_disconnect(mqttc, userdata, *args):
 
 def on_publish(mqttc, userdata, mid, reason_code=None, properties=None):
     log.debug(f"MQTT broker publish ack mid={mid} rc={reason_code}")
+    transport_probe_state.observe_transport_activity(time.monotonic())
     handled, logical_mid = _complete_fragment_publish(mqttc, int(mid))
     if handled:
         if logical_mid is None:
@@ -6129,6 +6141,7 @@ def on_mqtt_message(mqttc, userdata, msg):
     if route is None or route[0] != server_route_id():
         log.warning("MQTT message rejected: invalid SignalASI Link route")
         return
+    transport_probe_state.observe_transport_activity(time.monotonic())
     _, client_route_id, channel = route
     route_key = client_route_id or f"pair:{channel}"
     _queue_inbound_message(

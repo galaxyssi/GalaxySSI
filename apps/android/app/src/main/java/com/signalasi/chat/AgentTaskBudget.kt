@@ -42,11 +42,11 @@ enum class AgentTaskNetworkPolicy(val wireValue: String) {
 data class AgentTaskBudget(
     val profile: AgentTaskBudgetProfile = AgentTaskBudgetProfile.ADAPTIVE,
     val maxElapsedSeconds: Long = 0L,
-    val maxCostMicros: Long = 5_000_000L,
-    val maxInputTokens: Long = 1_000_000L,
-    val maxOutputTokens: Long = 256_000L,
-    val maxNetworkBytes: Long = 256L * MIB,
-    val minimumBatteryPercent: Int = 5,
+    val maxCostMicros: Long = 0L,
+    val maxInputTokens: Long = 0L,
+    val maxOutputTokens: Long = 0L,
+    val maxNetworkBytes: Long = 0L,
+    val minimumBatteryPercent: Int = 0,
     val maxMemoryBytes: Long = 0L,
     val networkPolicy: AgentTaskNetworkPolicy = AgentTaskNetworkPolicy.ANY,
     val allowCloud: Boolean = true,
@@ -73,32 +73,10 @@ data class AgentTaskBudget(
 
         fun forProfile(profile: AgentTaskBudgetProfile): AgentTaskBudget = when (profile) {
             AgentTaskBudgetProfile.ADAPTIVE -> AgentTaskBudget(profile = profile)
-            AgentTaskBudgetProfile.FAST -> AgentTaskBudget(
-                profile = profile,
-                maxElapsedSeconds = 5L * 60L,
-                maxCostMicros = 2_000_000L,
-                maxInputTokens = 256_000L,
-                maxOutputTokens = 64_000L,
-                maxNetworkBytes = 128L * MIB,
-                minimumBatteryPercent = 10,
-                maxMemoryBytes = 1_536L * MIB
-            )
-            AgentTaskBudgetProfile.ECONOMY -> AgentTaskBudget(
-                profile = profile,
-                maxCostMicros = 250_000L,
-                maxInputTokens = 64_000L,
-                maxOutputTokens = 16_000L,
-                maxNetworkBytes = 32L * MIB,
-                minimumBatteryPercent = 15,
-                maxMemoryBytes = 768L * MIB
-            )
+            AgentTaskBudgetProfile.FAST -> AgentTaskBudget(profile = profile)
+            AgentTaskBudgetProfile.ECONOMY -> AgentTaskBudget(profile = profile)
             AgentTaskBudgetProfile.PRIVATE -> AgentTaskBudget(
                 profile = profile,
-                maxInputTokens = 128_000L,
-                maxOutputTokens = 32_000L,
-                maxNetworkBytes = 64L * MIB,
-                minimumBatteryPercent = 10,
-                maxMemoryBytes = 1_024L * MIB,
                 networkPolicy = AgentTaskNetworkPolicy.TRUSTED_ONLY,
                 allowCloud = false,
                 allowPaidProviders = false
@@ -185,32 +163,8 @@ object AgentTaskBudgetPolicy {
         paidProvider: Boolean = false
     ): AgentTaskBudgetDecision {
         val limits = budget.normalized()
-        if (limits.maxElapsedSeconds > 0L &&
-            usage.elapsedMillis > limits.maxElapsedSeconds * 1_000L
-        ) {
-            return denied(AgentTaskBudgetLimit.TIME, "Task time budget exhausted")
-        }
-        if (limits.maxCostMicros > 0L && usage.costMicros > limits.maxCostMicros) {
-            return denied(AgentTaskBudgetLimit.COST, "Task cost budget exhausted")
-        }
-        if (limits.maxInputTokens > 0L && usage.inputTokens > limits.maxInputTokens) {
-            return denied(AgentTaskBudgetLimit.INPUT_TOKENS, "Task input token budget exhausted")
-        }
-        if (limits.maxOutputTokens > 0L && usage.outputTokens > limits.maxOutputTokens) {
-            return denied(AgentTaskBudgetLimit.OUTPUT_TOKENS, "Task output token budget exhausted")
-        }
-        if (limits.maxNetworkBytes > 0L && usage.networkBytes > limits.maxNetworkBytes) {
-            return denied(AgentTaskBudgetLimit.NETWORK, "Task network budget exhausted")
-        }
-        if (environment.batteryPercent in 0 until limits.minimumBatteryPercent &&
-            !environment.charging
-        ) {
-            return denied(AgentTaskBudgetLimit.BATTERY, "Phone battery is below the task minimum")
-        }
-        val observedMemory = maxOf(usage.peakMemoryBytes, environment.appMemoryBytes)
-        if (limits.maxMemoryBytes > 0L && observedMemory > limits.maxMemoryBytes) {
-            return denied(AgentTaskBudgetLimit.MEMORY, "Task memory budget exhausted")
-        }
+        // Resource counters are telemetry. They must never reject or terminate a user task.
+        // Actual memory, thermal and connectivity failures are handled by their runtime owners.
         if (cloudProvider && !limits.allowCloud) {
             return denied(AgentTaskBudgetLimit.CLOUD, "Cloud resources are disabled for this task")
         }

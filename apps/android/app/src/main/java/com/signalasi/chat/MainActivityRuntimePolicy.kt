@@ -721,7 +721,6 @@ internal fun MainActivity.renderControlCenterExecutionPolicyPage() {
                     listOf(
                         ControlCenterRowSpec("agent.permission_mode", getString(R.string.on_device_agent_permission_mode), getString(R.string.on_device_agent_permission_mode_subtitle), R.drawable.ic_security_shield, permissionModeLabel(safety.permissionMode), ControlCenterTone.BLUE),
                         ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("agent.task_budget", getString(R.string.cc_task_budget_title), getString(R.string.cc_task_budget_subtitle), R.drawable.ic_agent_history, taskBudgetProfileLabel(taskBudget.profile), ControlCenterTone.VIOLET),
                         ControlCenterRowSpec("security.toggle_guard", getString(R.string.on_device_agent_high_risk_guard), getString(R.string.on_device_agent_high_risk_guard_subtitle), R.drawable.ic_security_shield, switchValue = safety.highRiskGuard, showChevron = false)
                     )
                 ),

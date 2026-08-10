@@ -433,9 +433,7 @@ object LocalModelRuntimeEstimator {
         } else {
             minOf(DEFAULT_MAX_THREADS, device.cpuCoreCount.coerceAtLeast(1))
         }
-        if (device.powerSaveMode || device.thermalStatus.orDefaultThermal() >= THERMAL_STATUS_MODERATE ||
-            (!device.charging && (device.batteryPercent ?: 100) < LOW_BATTERY_PERCENT)
-        ) {
+        if (device.thermalStatus.orDefaultThermal() >= THERMAL_STATUS_MODERATE) {
             threads = minOf(threads, CONSERVATIVE_MAX_THREADS)
         }
 
@@ -470,19 +468,6 @@ object LocalModelRuntimeEstimator {
                 issues += LocalModelRuntimeIssue.THERMAL_PRESSURE
         }
 
-        val batteryPercent = device.batteryPercent
-        if (!device.charging && batteryPercent != null) {
-            when {
-                batteryPercent < CRITICAL_BATTERY_PERCENT ->
-                    issues += LocalModelRuntimeIssue.CRITICAL_BATTERY
-                batteryPercent < LOW_BATTERY_PERCENT ->
-                    issues += LocalModelRuntimeIssue.LOW_BATTERY
-            }
-        }
-        if (device.powerSaveMode) {
-            issues += LocalModelRuntimeIssue.POWER_SAVE_MODE
-        }
-
         val blocking = issues.any { issue ->
             when (issue) {
                 LocalModelRuntimeIssue.INSUFFICIENT_MEMORY ->
@@ -492,8 +477,7 @@ object LocalModelRuntimeEstimator {
                     LocalModelRuntimeIssue.MODEL_FILE_INVALID,
                     LocalModelRuntimeIssue.ACCELERATOR_UNAVAILABLE,
                     LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
-                    LocalModelRuntimeIssue.DEVICE_TOO_HOT,
-                    LocalModelRuntimeIssue.CRITICAL_BATTERY
+                    LocalModelRuntimeIssue.DEVICE_TOO_HOT
                 )
             }
         }

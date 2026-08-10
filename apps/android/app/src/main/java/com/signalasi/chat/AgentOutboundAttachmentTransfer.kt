@@ -184,6 +184,12 @@ internal object AgentAttachmentTransferProtocol {
 }
 
 internal object AgentOutboundAttachmentTransferStore {
+    data class StoredAcknowledgement(
+        val transferId: String,
+        val matchedMessages: Int,
+        val releasedMessages: Int
+    )
+
     const val CHUNK_BYTES = 256 * 1024
     const val MAX_ATTACHMENT_BYTES = 64L * 1024L * 1024L
     const val MAX_CHUNKS = (MAX_ATTACHMENT_BYTES / CHUNK_BYTES).toInt()
@@ -225,9 +231,22 @@ internal object AgentOutboundAttachmentTransferStore {
     }
 
     @Synchronized
-    fun acknowledgeStored(context: Context, payload: JSONObject): Boolean {
-        if (payload.optString("status") != "stored") return false
-        val transfer = find(context, payload.optString("transfer_id").lowercase()) ?: return false
+    fun discard(context: Context, transferIds: Collection<String>) {
+        val normalized = transferIds
+            .map(String::lowercase)
+            .filter { it.matches(SHA256) }
+            .toSet()
+        if (normalized.isEmpty()) return
+        normalized.forEach { transferId ->
+            transferDirectory(context, transferId).deleteRecursively()
+        }
+        SignalASILinkDeliveryStore.discardBlockedByAttachmentTransfers(context, normalized)
+    }
+
+    @Synchronized
+    fun acknowledgeStored(context: Context, payload: JSONObject): StoredAcknowledgement? {
+        if (payload.optString("status") != "stored") return null
+        val transfer = find(context, payload.optString("transfer_id").lowercase()) ?: return null
         if (
             payload.optString("sha256").lowercase() != transfer.sha256 ||
             payload.optString("client_route_id") != transfer.scope.clientRouteId ||
@@ -240,10 +259,18 @@ internal object AgentOutboundAttachmentTransferStore {
                     payload.optString("source_message_id") !=
                     transfer.scope.clientMessageId.toString()
             )
-        ) return false
-        SignalASILinkDeliveryStore.releaseAttachmentDependency(context, transfer.transferId)
+        ) return null
+        val release = SignalASILinkDeliveryStore.releaseAttachmentDependencyResult(
+            context,
+            transfer.transferId
+        )
+        if (release.matchedMessages == 0) return null
         transferDirectory(context, transfer.transferId).deleteRecursively()
-        return true
+        return StoredAcknowledgement(
+            transferId = transfer.transferId,
+            matchedMessages = release.matchedMessages,
+            releasedMessages = release.releasedMessages
+        )
     }
 
     private fun prepareOne(

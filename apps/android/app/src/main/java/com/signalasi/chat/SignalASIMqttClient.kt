@@ -244,6 +244,7 @@ object SignalASIMqttClient {
     private val listeners = CopyOnWriteArraySet<Listener>()
     private val deliveryMessageIds = ConcurrentHashMap<Int, String>()
     private val pendingArtifactDownloads = ConcurrentHashMap.newKeySet<String>()
+    private val outboxDispatchLock = Any()
     private val fragmentTransferLock = Any()
     private val fragmentTransfers = LinkedHashMap<String, OutboundFragmentTransfer>()
     private val fragmentTransferKeysByMid = HashMap<Int, String>()
@@ -875,32 +876,37 @@ object SignalASIMqttClient {
         }
         val topic = topicOverride ?: outgoingTopic(contactId)
         if (outboundAttachments.isNotEmpty()) {
-            val queuedTask = publishJsonResult(
-                payload,
-                topic,
-                contactId,
-                queueOnly = true,
-                blockedByAttachmentTransferIds = outboundAttachments.map { it.transferId }
-            )
-            if (!queuedTask.accepted) return disclosureFailed("Agent task could not be queued")
-            for (attachment in outboundAttachments) {
-                if (!publishJsonResult(
-                        attachment.manifestPayload(resume = false),
-                        topic,
-                        contactId,
-                        queueOnly = true
-                    ).accepted
-                ) return disclosureFailed("Attachment manifest could not be queued")
-                for (chunkIndex in 0 until attachment.chunkCount) {
+            val activeContext = context
+                ?: return disclosureFailed("Attachment transfer context is unavailable")
+            val queuedTask = synchronized(outboxDispatchLock) {
+                for (attachmentStep in AgentAttachmentPublishOrder.steps(outboundAttachments)) {
                     if (!publishJsonResult(
-                            attachment.chunkPayload(chunkIndex),
+                            attachmentStep.payload(),
                             topic,
                             contactId,
-                            queueOnly = true
+                            queueOnly = true,
+                            deferQueuedDispatch = true
                         ).accepted
-                    ) return disclosureFailed("Attachment chunk could not be queued")
+                    ) return@synchronized MqttPublishResult.FAILED
                 }
+                publishJsonResult(
+                    payload,
+                    topic,
+                    contactId,
+                    queueOnly = true,
+                    blockedByAttachmentTransferIds = outboundAttachments.map { it.transferId },
+                    deferQueuedDispatch = true
+                )
             }
+            if (!queuedTask.accepted) {
+                AgentOutboundAttachmentTransferStore.discard(
+                    activeContext,
+                    outboundAttachments.map { it.transferId }
+                )
+                return disclosureFailed("Attachment transfer and Agent task could not be queued")
+            }
+            if (client?.isConnected != true) connect(activeContext)
+            scheduleOutboxRetries()
             return disclosureCompleted(queuedTask).also {
                 recordPublishStage("queued_with_attachments", "result=${it.name}")
             }
@@ -1221,7 +1227,8 @@ object SignalASIMqttClient {
         topic: String?,
         contactId: String = "hermes",
         queueOnly: Boolean = false,
-        blockedByAttachmentTransferIds: Collection<String> = emptyList()
+        blockedByAttachmentTransferIds: Collection<String> = emptyList(),
+        deferQueuedDispatch: Boolean = false
     ): MqttPublishResult {
         if (SignalASITransportPrivacyPolicy.isLocalOnly(payload)) {
             Log.w(
@@ -1341,8 +1348,10 @@ object SignalASIMqttClient {
             contactId = contactId
         )
         if (queueOnly) {
-            if (client?.isConnected != true) connect(context)
-            scheduleOutboxRetries()
+            if (!deferQueuedDispatch) {
+                if (client?.isConnected != true) connect(context)
+                scheduleOutboxRetries()
+            }
             return MqttPublishResult.QUEUED
         }
         if (deferMediaUpload) {
@@ -1380,7 +1389,7 @@ object SignalASIMqttClient {
         return MqttOutboxDispatchPolicy.result(connected = true, published = true)
     }
 
-    private fun retryPendingMessages() {
+    private fun retryPendingMessages() = synchronized(outboxDispatchLock) {
         val context = appContext ?: return
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
@@ -2160,7 +2169,18 @@ object SignalASIMqttClient {
             payload.optString("client_route_id") != transfer.scope.clientRouteId
         ) return
         if (payload.optString("status") == "stored") {
-            if (AgentOutboundAttachmentTransferStore.acknowledgeStored(context, payload)) {
+            val acknowledgement = AgentOutboundAttachmentTransferStore.acknowledgeStored(
+                context,
+                payload
+            ) ?: return
+            Log.i(
+                TAG,
+                "Stored input attachment acknowledged transfer=${acknowledgement.transferId.take(12)} " +
+                    "matched=${acknowledgement.matchedMessages} " +
+                    "released=${acknowledgement.releasedMessages}"
+            )
+            retryHandler.post {
+                retryPendingMessages()
                 scheduleOutboxRetries()
             }
             return

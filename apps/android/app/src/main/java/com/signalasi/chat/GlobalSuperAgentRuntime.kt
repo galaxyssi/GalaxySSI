@@ -1576,7 +1576,6 @@ class GlobalAgentRepository(context: Context) {
         .put("auto_create_conversations_enabled", settings.autoCreateConversationsEnabled)
         .put("notifications_enabled", settings.notificationsEnabled)
         .put("adaptive_learning_enabled", settings.adaptiveLearningEnabled)
-        .put("protect_battery_for_background_work", settings.protectBatteryForBackgroundWork)
         .put("allow_metered_background_research", settings.allowMeteredBackgroundResearch)
         .put("daily_background_model_call_budget", settings.dailyBackgroundModelCallBudget)
         .put("max_concurrent_background_model_calls", settings.maxConcurrentBackgroundModelCalls)
@@ -1606,7 +1605,6 @@ class GlobalAgentRepository(context: Context) {
             autoCreateConversationsEnabled = json.optBoolean("auto_create_conversations_enabled", true),
             notificationsEnabled = json.optBoolean("notifications_enabled", true),
             adaptiveLearningEnabled = json.optBoolean("adaptive_learning_enabled", true),
-            protectBatteryForBackgroundWork = json.optBoolean("protect_battery_for_background_work", true),
             allowMeteredBackgroundResearch = json.optBoolean("allow_metered_background_research", false),
             dailyBackgroundModelCallBudget = json.optInt("daily_background_model_call_budget", 48)
                 .coerceIn(

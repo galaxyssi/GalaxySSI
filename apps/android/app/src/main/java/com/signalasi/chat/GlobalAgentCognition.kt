@@ -1314,7 +1314,6 @@ data class GlobalAgentSettings(
     val autoCreateConversationsEnabled: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val adaptiveLearningEnabled: Boolean = true,
-    val protectBatteryForBackgroundWork: Boolean = true,
     val allowMeteredBackgroundResearch: Boolean = false,
     val dailyBackgroundModelCallBudget: Int = 48,
     val maxConcurrentBackgroundModelCalls: Int = 3,

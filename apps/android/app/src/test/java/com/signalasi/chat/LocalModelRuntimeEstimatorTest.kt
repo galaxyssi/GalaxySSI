@@ -62,19 +62,19 @@ class LocalModelRuntimeEstimatorTest {
     }
 
     @Test
-    fun batteryAndPowerSaverPoliciesAreApplied() {
+    fun batteryAndPowerSaverNeverBlockOrThrottleLocalModels() {
         val low = estimate(device = device(batteryPercent = 15, charging = false))
         val critical = estimate(device = device(batteryPercent = 5, charging = false))
         val charging = estimate(device = device(batteryPercent = 5, charging = true))
         val saver = estimate(device = device(powerSaveMode = true))
 
-        assertEquals(LocalModelRuntimeReadiness.CAUTION, low.readiness)
-        assertEquals(2, low.recommendedThreads)
-        assertTrue(LocalModelRuntimeIssue.LOW_BATTERY in low.issues)
-        assertEquals(LocalModelRuntimeReadiness.BLOCKED, critical.readiness)
+        assertEquals(LocalModelRuntimeReadiness.READY, low.readiness)
+        assertEquals(6, low.recommendedThreads)
+        assertFalse(LocalModelRuntimeIssue.LOW_BATTERY in low.issues)
+        assertEquals(LocalModelRuntimeReadiness.READY, critical.readiness)
         assertFalse(LocalModelRuntimeIssue.CRITICAL_BATTERY in charging.issues)
-        assertEquals(LocalModelRuntimeReadiness.CAUTION, saver.readiness)
-        assertEquals(2, saver.recommendedThreads)
+        assertEquals(LocalModelRuntimeReadiness.READY, saver.readiness)
+        assertEquals(6, saver.recommendedThreads)
     }
 
     @Test
