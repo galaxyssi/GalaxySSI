@@ -210,32 +210,37 @@ struct SignalASIAgentHomeReadinessView: View {
           )
         }
         .buttonStyle(.plain)
-        ForEach(Array(recentTasks.prefix(3).enumerated()), id: \.element.id) { index, task in
+        if recentTasks.isEmpty {
           separator
-          HStack(spacing: 0) {
-            Button(action: { onOpenRecentTask(task) }) {
-              recentTaskRow(task, index: index)
-                .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            Menu {
-              ForEach(AgentTaskCenterPolicy.actions(task)) { action in
-                Button(role: action == .delete ? .destructive : nil) {
-                  onTaskAction(action, task)
-                } label: {
-                  Label(
-                    AgentTaskCenterActionPresentation.title(action, t: t),
-                    systemImage: AgentTaskCenterActionPresentation.icon(action)
-                  )
-                }
+          infoValueRow(t("agent_recent_empty", "No recent Agent tasks yet"))
+        } else {
+          ForEach(Array(recentTasks.prefix(3).enumerated()), id: \.element.id) { index, task in
+            separator
+            HStack(spacing: 0) {
+              Button(action: { onOpenRecentTask(task) }) {
+                recentTaskRow(task, index: index)
+                  .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
               }
-            } label: {
-              Image(systemName: "ellipsis.circle")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.signalASITextSecondary)
-                .frame(width: 42, height: 42)
+              .buttonStyle(.plain)
+              Menu {
+                ForEach(AgentTaskCenterPolicy.actions(task)) { action in
+                  Button(role: action == .delete ? .destructive : nil) {
+                    onTaskAction(action, task)
+                  } label: {
+                    Label(
+                      AgentTaskCenterActionPresentation.title(action, t: t),
+                      systemImage: AgentTaskCenterActionPresentation.icon(action)
+                    )
+                  }
+                }
+              } label: {
+                Image(systemName: "ellipsis.circle")
+                  .font(.system(size: 16, weight: .semibold))
+                  .foregroundColor(.signalASITextSecondary)
+                  .frame(width: 42, height: 42)
+              }
+              .accessibilityLabel(Text(t("signalasi.agent_task_center.actions", "Task actions")))
             }
-            .accessibilityLabel(Text(t("signalasi.agent_task_center.actions", "Task actions")))
           }
         }
       }
