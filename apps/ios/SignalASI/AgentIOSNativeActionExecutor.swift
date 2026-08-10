@@ -161,6 +161,25 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         message: "Read \(screen.notifications.items.count) notifications from \(packages); categories=\(categorySummary); sensitive=\(sensitiveCount)"
       )
 
+    case "read-device-status":
+      let status = screen.deviceStatus
+      let battery = status.batteryPercent >= 0 ? "\(status.batteryPercent)" : "unknown"
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Battery \(battery) / charging=\(status.charging) / powerSave=\(status.powerSaveMode) / network=\(status.network) / storage=\(status.freeStorageMb)MB free",
+        metadata: [
+          "battery_percent": String(status.batteryPercent),
+          "charging": status.charging.description,
+          "power_save_mode": status.powerSaveMode.description,
+          "network": status.network,
+          "free_storage_mb": String(status.freeStorageMb),
+          "total_storage_mb": String(status.totalStorageMb),
+          "thermal_state": status.thermalState,
+          "completion_verified": "true"
+        ]
+      )
+
     case "read-clipboard":
       let clipboard = screen.clipboard
       let message: String
