@@ -118,6 +118,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       return openApp(action)
     case .setAlarm:
       return scheduleAlarmOrTimer(action)
+    case .createNotification:
+      return createNotification(action)
     default:
       return AgentActionResult(
         actionId: action.id,
@@ -369,6 +371,52 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         "package": package,
         "url_scheme": url.scheme ?? "",
         "completion_verified": "false"
+      ]
+    )
+  }
+
+  private func createNotification(_ action: AgentAction) -> AgentActionResult {
+    let title = String(
+      clean(action.parameters["title"] ?? "").ifBlank("SignalASI Agent").prefix(160)
+    )
+    let body = String(
+      clean(action.parameters["text"] ?? "").ifBlank(action.description).prefix(1_000)
+    )
+    guard !body.isEmpty else {
+      return failure(action, "Notification text is required.", code: "empty_notification_text")
+    }
+
+    let identifier = "signalasi.agent.notification.\(clean(action.id).ifBlank(UUID().uuidString))"
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+    content.sound = .default
+    content.categoryIdentifier = "signalasi.agent.local"
+    content.threadIdentifier = "signalasi.agent"
+    content.userInfo = [
+      "signalasi_action_id": action.id,
+      "signalasi_destination": "main_app"
+    ]
+
+    AgentIOSOwnedNotificationStore.shared.record(
+      identifier: identifier,
+      title: title,
+      body: body,
+      category: "agent",
+      postedAtMillis: max(0, nowMillis())
+    )
+    notificationCenter.removeDeliveredNotifications(withIdentifiers: [identifier])
+    notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
+    notificationCenter.add(
+      UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+    )
+    return success(
+      action,
+      message: "Created local notification",
+      metadata: [
+        "notification_id": identifier,
+        "completion_verified": "false",
+        "notification_permission_required": "true"
       ]
     )
   }
