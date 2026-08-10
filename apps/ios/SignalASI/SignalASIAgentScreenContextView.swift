@@ -268,18 +268,29 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     }
     return notifications.items.prefix(3).enumerated().map { index, item in
       let sensitive = !item.sensitiveFlags.isEmpty
+      let replyAvailable = item.canReply && !sensitive
       let title = sensitive
         ? t("agent_screen_notification_sensitive_ios", "Sensitive notification / content hidden")
         : item.title.ifBlank(item.packageName.ifBlank(t("agent_screen_notifications", "Notification")))
-      let detail = sensitive
+      let baseDetail = sensitive
         ? String(format: t("agent_screen_notification_sensitive_detail_ios", "%d sensitive flags"), item.sensitiveFlags.count)
         : [item.packageName, item.textPreview].filter { !$0.isEmpty }.joined(separator: " / ")
+      let detail = replyAvailable
+        ? [
+            baseDetail,
+            t("agent_screen_notification_reply_available_ios", "Reply available")
+          ].filter { !$0.isEmpty }.joined(separator: " / ")
+        : baseDetail
       return SignalASIAgentScreenDetailRow(
         id: "notification-\(index)-\(item.key)",
         title: title,
         detail: detail,
         systemImage: sensitive ? "bell.badge" : "bell",
-        command: sensitive ? nil : "read current notifications",
+        command: sensitive
+          ? nil
+          : replyAvailable
+            ? "reply notification \(item.packageName.ifBlank(\"SignalASI\")) :: "
+            : "read notifications",
         isNotice: sensitive
       )
     }
