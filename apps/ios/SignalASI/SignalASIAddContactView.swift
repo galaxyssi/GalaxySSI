@@ -279,12 +279,20 @@ struct AddContactView: View {
           isError: false
         )
       case .contact(let request):
+        if request.type == "agent" {
+          importScannedAgentContacts(cleaned, requests: [request])
+          return
+        }
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
         pendingFriendRequest = stored
         pendingScannedRequests = [stored]
         setImportStatus(requestReceivedStatus(stored), isError: false)
       case .contacts(let requests):
+        if requests.allSatisfy({ $0.type == "agent" }) {
+          importScannedAgentContacts(cleaned, requests: requests)
+          return
+        }
         let stored = requests.map { store.addFriendRequest($0) }
         pendingPairing = nil
         pendingFriendRequest = stored.first
@@ -293,6 +301,52 @@ struct AddContactView: View {
       }
     } catch {
       importDesktopAgentQRCodeFallback(cleaned, fallbackError: error)
+    }
+  }
+
+  private func importScannedAgentContacts(
+    _ value: String,
+    requests: [SignalASIFriendRequest]
+  ) {
+    let existingAgentIDs = Set(
+      store.visibleContacts
+        .filter { $0.type == "agent" }
+        .map(\.id)
+    )
+    do {
+      let importedCount = try store.importDesktopAgentQRCodeAsContacts(value)
+      guard importedCount > 0 else {
+        let stored = requests.map { store.addFriendRequest($0) }
+        pendingPairing = nil
+        pendingFriendRequest = stored.first
+        pendingScannedRequests = stored
+        setImportStatus(requestsReceivedStatus(stored), isError: false)
+        return
+      }
+      let importedAgentIDs = importedAgentIDsFromQRCode(
+        value,
+        fallback: store.visibleContacts
+          .filter { $0.type == "agent" && !existingAgentIDs.contains($0.id) }
+          .map(\.id)
+      )
+      clearPendingScanResult()
+      pendingPairing = nil
+      pendingFriendRequest = nil
+      pendingScannedRequests = []
+      let message = importedCount == 1
+        ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
+        : String(
+            format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
+            importedCount
+          )
+      setImportStatus(message, isError: false)
+      onAgentAdded?(importedAgentIDs)
+    } catch {
+      let stored = requests.map { store.addFriendRequest($0) }
+      pendingPairing = nil
+      pendingFriendRequest = stored.first
+      pendingScannedRequests = stored
+      setImportStatus(requestsReceivedStatus(stored), isError: false)
     }
   }
 
