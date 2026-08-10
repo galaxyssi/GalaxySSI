@@ -32,6 +32,72 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isHomeAssistantStatusGoal(lower),
+       let descriptor = descriptorAllowingSetup(AgentIOSHomeAssistantNativeToolCatalog.connectionStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "home-assistant-status",
+        target: "Home Assistant",
+        description: "Check Home Assistant connection status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let collection = homeAssistantCollection(in: lower),
+       let descriptor = descriptorAllowingSetup(AgentIOSHomeAssistantNativeToolCatalog.entitiesList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "home-assistant-\(collection.domain)",
+        target: "Home Assistant \(collection.label)",
+        description: "List Home Assistant \(collection.label)",
+        input: [
+          "domains": .array([.string(collection.domain)]),
+          "limit": .int(40)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let query = homeAssistantEntitySearchQuery(in: goal, lower: lower),
+       let descriptor = descriptorAllowingSetup(AgentIOSHomeAssistantNativeToolCatalog.entitiesList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "home-assistant-search",
+        target: "Home Assistant",
+        description: "Search Home Assistant entities",
+        input: [
+          "query": .string(query),
+          "limit": .int(40)
+        ],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if isHomeAssistantEntitiesGoal(lower),
+       let descriptor = descriptorAllowingSetup(AgentIOSHomeAssistantNativeToolCatalog.entitiesList, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "home-assistant-entities",
+        target: "Home Assistant",
+        description: "List Home Assistant entities",
+        input: ["limit": .int(40)],
+        responseLanguage: responseLanguage
+      )
+    }
+
+    if let entityID = homeAssistantEntityReadID(in: goal, lower: lower),
+       let descriptor = descriptorAllowingSetup(AgentIOSHomeAssistantNativeToolCatalog.entityRead, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "home-assistant-entity",
+        target: entityID,
+        description: "Read Home Assistant entity state",
+        input: ["entity_id": .string(entityID)],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if let url = downloadURL(in: goal, lower: lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.downloadEnqueue, in: request) {
       return nativeAction(
@@ -739,6 +805,15 @@ enum AgentDirectNativeToolPlanner {
     }
   }
 
+  private static func descriptorAllowingSetup(
+    _ id: String,
+    in request: AgentPlanRequest
+  ) -> AgentNativeToolDescriptor? {
+    request.nativeTools.first {
+      $0.id == id && $0.risk != .blocked
+    }
+  }
+
   private static func isNotificationReadGoal(_ lower: String) -> Bool {
     let normalized = lower.trimmingCharacters(in: .whitespacesAndNewlines)
     return [
@@ -754,6 +829,87 @@ enum AgentDirectNativeToolPlanner {
       "通知列表",
       "通知收件箱"
     ].contains(normalized)
+  }
+
+  private static func isHomeAssistantStatusGoal(_ lower: String) -> Bool {
+    [
+      "home assistant status",
+      "check home assistant",
+      "test home assistant",
+      "test home assistant connection",
+      "\u{68c0}\u{67e5} home assistant",
+      "home assistant \u{72b6}\u{6001}"
+    ].contains(lower.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func isHomeAssistantEntitiesGoal(_ lower: String) -> Bool {
+    [
+      "home assistant entities",
+      "list home assistant entities",
+      "show home assistant entities",
+      "list smart devices",
+      "show smart devices",
+      "\u{5217}\u{51fa} home assistant \u{5b9e}\u{4f53}",
+      "\u{663e}\u{793a}\u{667a}\u{80fd}\u{8bbe}\u{5907}"
+    ].contains(lower.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func homeAssistantCollection(
+    in lower: String
+  ) -> (label: String, domain: String)? {
+    switch lower.trimmingCharacters(in: .whitespacesAndNewlines) {
+    case "home assistant scenes", "list home assistant scenes", "show home assistant scenes",
+         "list scenes", "show scenes", "\u{5217}\u{51fa}\u{573a}\u{666f}":
+      return ("scenes", "scene")
+    case "home assistant automations", "list home assistant automations", "show home assistant automations",
+         "list automations", "show automations", "\u{5217}\u{51fa}\u{81ea}\u{52a8}\u{5316}":
+      return ("automations", "automation")
+    case "home assistant scripts", "list home assistant scripts", "show home assistant scripts",
+         "list scripts", "show scripts", "\u{5217}\u{51fa}\u{811a}\u{672c}":
+      return ("scripts", "script")
+    default:
+      return nil
+    }
+  }
+
+  private static func homeAssistantEntitySearchQuery(
+    in goal: String,
+    lower: String
+  ) -> String? {
+    let prefixes = [
+      "search home assistant entities ",
+      "find home assistant entity ",
+      "search smart devices ",
+      "find smart device ",
+      "\u{641c}\u{7d22} home assistant \u{5b9e}\u{4f53} ",
+      "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{8bbe}\u{5907} "
+    ]
+    guard let prefix = prefixes.first(where: { lower.hasPrefix($0) }) else {
+      return nil
+    }
+    let value = String(goal.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : String(value.prefix(200))
+  }
+
+  private static func homeAssistantEntityReadID(
+    in goal: String,
+    lower: String
+  ) -> String? {
+    let prefixes = [
+      "read home assistant entity ",
+      "get home assistant entity ",
+      "read sensor ",
+      "get sensor ",
+      "\u{8bfb}\u{53d6} home assistant \u{5b9e}\u{4f53} ",
+      "\u{8bfb}\u{53d6}\u{4f20}\u{611f}\u{5668} "
+    ]
+    guard let prefix = prefixes.first(where: { lower.hasPrefix($0) }) else {
+      return nil
+    }
+    let value = String(goal.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : String(value.prefix(160))
   }
 
   private static func firstPercent(in value: String) -> Int? {
