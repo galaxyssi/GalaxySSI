@@ -205,9 +205,29 @@ struct AgentHomeView: View {
 
   private var waitingMessageIDs: Set<UUID> {
     AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
-      messages: messages,
+      messages: transcriptMessages,
       pendingTurnIds: coordinator.pendingAgentReplyTurnIds
     )
+  }
+
+  private var unboundWaitingTurnIDs: [String] {
+    AgentReplyWaitingIndicatorPolicy.unboundTurnIDs(
+      messages: transcriptMessages,
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+    )
+  }
+
+  private var waitingIndicatorCount: Int {
+    waitingMessageIDs.count + unboundWaitingTurnIDs.count
+  }
+
+  private var latestWaitingIndicatorID: String? {
+    if let last = transcriptMessages.last, waitingMessageIDs.contains(last.id) {
+      return AgentReplyWaitingIndicatorPolicy.viewID(for: last)
+    }
+    return unboundWaitingTurnIDs.last.map { turnID in
+      AgentReplyWaitingIndicatorPolicy.viewID(forTurnID: turnID)
+    }
   }
 
   private var unreadTotal: Int {
@@ -1594,6 +1614,11 @@ struct AgentHomeView: View {
                 }
               }
             }
+            ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
+              AgentReplyWaitingIndicatorView()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .id(AgentReplyWaitingIndicatorPolicy.viewID(forTurnID: turnID))
+            }
             if voiceTranscriptionPending {
               SignalASIVoiceTranscriptionPendingView()
                 .id(Self.voiceTranscriptionPendingViewId)
@@ -1676,12 +1701,9 @@ struct AgentHomeView: View {
           voiceTranscriptionPending = false
         }
         if transcriptAutoFollow {
-          if let last = messages.last, waitingMessageIDs.contains(last.id) {
+          if let waitingID = latestWaitingIndicatorID {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(
-                AgentReplyWaitingIndicatorPolicy.viewID(for: last),
-                anchor: .bottom
-              )
+              proxy.scrollTo(waitingID, anchor: .bottom)
             }
           } else if waitingForAgentReply {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
@@ -1704,19 +1726,14 @@ struct AgentHomeView: View {
       .onChange(of: activeAgentTasks) { _ in
         refreshAgentRuntimeAuditRecords()
       }
-      .onChange(of: waitingMessageIDs.count) { _ in
-        guard let last = messages.last else { return }
+      .onChange(of: waitingIndicatorCount) { _ in
+        guard let last = transcriptMessages.last else { return }
         guard transcriptAutoFollow else {
           transcriptShowLatestButton = true
           return
         }
         withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(
-            waitingMessageIDs.contains(last.id)
-              ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
-              : last.id,
-            anchor: .bottom
-          )
+          proxy.scrollTo(latestWaitingIndicatorID ?? last.id, anchor: .bottom)
         }
       }
       .onChange(of: voiceTranscriptionPending) { pending in
