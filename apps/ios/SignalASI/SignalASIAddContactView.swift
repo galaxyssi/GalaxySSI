@@ -307,9 +307,9 @@ struct AddContactView: View {
       guard importedCount > 0 else {
         throw fallbackError
       }
-      let importedAgentIDs = store.visibleContacts
+      let importedAgentIDs = importedAgentIDsFromQRCode(value, fallback: store.visibleContacts
         .filter { $0.type == "agent" && !existingAgentIDs.contains($0.id) }
-        .map(\.id)
+        .map(\.id))
       clearPendingScanResult()
       let message = importedCount == 1
         ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
@@ -326,6 +326,46 @@ struct AddContactView: View {
         isError: true
       )
     }
+  }
+
+  private func importedAgentIDsFromQRCode(_ value: String, fallback: [String]) -> [String] {
+    guard let object = try? SignalASIQRCodePayload.decodeObject(from: value, label: "Agent QR") else {
+      return fallback
+    }
+    let source = SignalASIContactExchange.connectorAgentSource(from: object)
+    let agentObjects = source?.agents ?? [object]
+    let requestedIDs = Set(
+      agentObjects.flatMap { agent in
+        [
+          agent.string("agent_id"),
+          agent.string("mobile_contact_id"),
+          agent.string("id")
+        ]
+      }
+      .flatMap { rawID in
+        let cleanID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanID.isEmpty else { return [] }
+        return [cleanID, cleanID.split(separator: ":").last.map(String.init) ?? cleanID]
+      }
+    )
+    let parent = source?.parentPayload ?? object
+    let requestedDesktopID = parent.string("desktop_id")
+      .ifBlank(parent.dictionary("server")?.string("desktop_id") ?? "")
+      .ifBlank(parent.dictionary("desktop")?.string("desktop_id") ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let matches = store.visibleContacts
+      .filter { contact in
+        guard contact.type == "agent" else { return false }
+        let knownIDs = [contact.id, contact.signalASIId, contact.connectorAgentId]
+          .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+          .filter { !$0.isEmpty }
+        if !requestedIDs.isEmpty && knownIDs.contains(where: requestedIDs.contains) {
+          return true
+        }
+        return !requestedDesktopID.isEmpty && contact.desktopId == requestedDesktopID
+      }
+      .map(\.id)
+    return matches.isEmpty ? fallback : matches
   }
 
   private func confirmDesktopPairing() async {
