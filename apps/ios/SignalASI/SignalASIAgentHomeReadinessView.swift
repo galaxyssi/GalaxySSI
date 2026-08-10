@@ -112,6 +112,11 @@ struct SignalASIAgentHomeReadinessView: View {
         )
       }
 
+      Text(t("agent_section_info", "Info"))
+        .font(.system(size: 13, weight: .bold))
+        .foregroundColor(.signalASITextPrimary)
+        .padding(.top, 2)
+
       VStack(spacing: 0) {
         infoValueRow(
           String(
