@@ -36,6 +36,7 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
   var latestWaitingIndicatorID: String?
   var waitingIndicatorCount: Int
   var voiceTranscriptionPending: Bool
+  var voicePendingAttachments: [SignalASIDraftAttachment]
   var waitingForAgentReply: Bool
   var activeAgentPhase: AgentPhase?
   var activeAgentTasks: [AgentTaskRecord]
@@ -65,6 +66,7 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
     latestWaitingIndicatorID: String?,
     waitingIndicatorCount: Int,
     voiceTranscriptionPending: Bool,
+    voicePendingAttachments: [SignalASIDraftAttachment],
     waitingForAgentReply: Bool,
     activeAgentPhase: AgentPhase?,
     activeAgentTasks: [AgentTaskRecord],
@@ -93,6 +95,7 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
     self.latestWaitingIndicatorID = latestWaitingIndicatorID
     self.waitingIndicatorCount = waitingIndicatorCount
     self.voiceTranscriptionPending = voiceTranscriptionPending
+    self.voicePendingAttachments = voicePendingAttachments
     self.waitingForAgentReply = waitingForAgentReply
     self.activeAgentPhase = activeAgentPhase
     self.activeAgentTasks = activeAgentTasks

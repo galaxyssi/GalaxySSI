@@ -472,6 +472,61 @@ struct SignalASIAgentComposerView: View {
   }
 }
 
+struct SignalASIAgentVoiceAttachmentSummaryView: View {
+  var attachments: [SignalASIDraftAttachment]
+  var t: (String, String) -> String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 6) {
+        Image(systemName: "paperclip")
+          .font(.system(size: 12, weight: .semibold))
+        Text(String(
+          format: t("agent_attachment_count", "%d attachments"),
+          attachments.count
+        ))
+          .font(.system(size: 12, weight: .semibold))
+        Spacer(minLength: 0)
+      }
+      .foregroundColor(.signalASITextSecondary)
+
+      ForEach(attachments) { attachment in
+        HStack(spacing: 8) {
+          Image(systemName: attachment.isImage ? "photo" : "doc")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .frame(width: 22, height: 22)
+          Text(attachment.displayName)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+          Spacer(minLength: 8)
+          Text(attachment.humanSize)
+            .font(.system(size: 11))
+            .foregroundColor(.signalASITextSecondary)
+        }
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASISurface)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASISeparator, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(Text(
+      String(
+        format: t("agent_attachment_count", "%d attachments"),
+        attachments.count
+      )
+    ))
+  }
+}
+
 struct SignalASIVoiceTranscriptionPendingView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var isPulsing = false

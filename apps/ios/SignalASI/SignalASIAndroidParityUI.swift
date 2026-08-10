@@ -50,6 +50,7 @@ struct AgentHomeView: View {
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelection()
   @State private var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
+  @State private var voicePendingAttachments: [SignalASIDraftAttachment] = []
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
@@ -978,6 +979,7 @@ struct AgentHomeView: View {
       latestWaitingIndicatorID: latestWaitingIndicatorID,
       waitingIndicatorCount: waitingIndicatorCount,
       voiceTranscriptionPending: voiceTranscriptionPending,
+      voicePendingAttachments: voicePendingAttachments,
       waitingForAgentReply: waitingForAgentReply,
       activeAgentPhase: activeAgentPhase,
       activeAgentTasks: activeAgentTasks,
@@ -1534,6 +1536,12 @@ struct AgentHomeView: View {
                 .id(AgentReplyWaitingIndicatorPolicy.viewID(forTurnID: turnID))
             }
             if voiceTranscriptionPending {
+              if !voicePendingAttachments.isEmpty {
+                SignalASIAgentVoiceAttachmentSummaryView(
+                  attachments: voicePendingAttachments,
+                  t: t
+                )
+              }
               SignalASIVoiceTranscriptionPendingView()
                 .id(Self.voiceTranscriptionPendingViewId)
             }
@@ -2188,6 +2196,7 @@ struct AgentHomeView: View {
       onVoiceStart: beginAgentVoiceCapture,
       onVoiceCancelled: {
         voiceTranscriptionPending = false
+        voicePendingAttachments.removeAll()
         restoreAgentVoiceAttachments()
       },
       onVoiceTranscript: sendAgentVoiceTranscript,
@@ -2445,6 +2454,7 @@ struct AgentHomeView: View {
         attachments: outgoingAttachments,
         agentGoalOverride: agentGoal
       )
+      voicePendingAttachments.removeAll()
       if !sent {
         if !draftForRecovery.isEmpty {
           draft = draftForRecovery
@@ -2464,11 +2474,13 @@ struct AgentHomeView: View {
     voiceAttachmentSnapshot.removeAll()
     guard !cleanTranscript.isEmpty else {
       voiceTranscriptionPending = false
+      voicePendingAttachments.removeAll()
       restoreAgentVoiceAttachments(capturedAttachments)
       attachmentError = t("voice_no_speech", "No speech captured.")
       return
     }
     voiceTranscriptionPending = true
+    voicePendingAttachments = capturedAttachments
     draft = cleanTranscript
     sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
   }
@@ -2603,6 +2615,7 @@ struct AgentHomeView: View {
     draft = ""
     attachments.removeAll()
     voiceAttachmentSnapshot.removeAll()
+    voicePendingAttachments.removeAll()
     voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError = ""
