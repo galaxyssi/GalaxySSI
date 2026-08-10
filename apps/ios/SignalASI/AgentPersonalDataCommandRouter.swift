@@ -25,6 +25,9 @@ enum AgentPersonalDataCommandRouter {
     if knowledgeOverviewCommands.contains(normalized) {
       return knowledgeOverview(store: store)
     }
+    if let query = prefixedValue(command, prefixes: knowledgeAnswerPrefixes) {
+      return answerKnowledge(query, store: store)
+    }
     if let value = AgentMemoryCommandParser.memoryValue(fromGoal: command) {
       return saveMemory(value, store: store)
     }
@@ -39,7 +42,7 @@ enum AgentPersonalDataCommandRouter {
     }
     if isManagementCommand(normalized) {
       return Result(
-        text: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; forget knowledge <query>.",
+        text: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; ask knowledge <query>; forget knowledge <query>.",
         actionId: "personal_data_syntax"
       )
     }
@@ -62,6 +65,13 @@ enum AgentPersonalDataCommandRouter {
     "list knowledge",
     "recent knowledge",
     "show recent knowledge"
+  ]
+
+  private static let knowledgeAnswerPrefixes: [String] = [
+    "ask knowledge ",
+    "answer from knowledge ",
+    "use knowledge to answer ",
+    "ask my knowledge "
   ]
 
   private static func memoryOverview(store: SignalASIStore) -> Result {
@@ -149,6 +159,28 @@ enum AgentPersonalDataCommandRouter {
     )
   }
 
+  private static func answerKnowledge(_ query: String, store: SignalASIStore) -> Result {
+    let hits = store.searchAgentKnowledge(query, limit: 6)
+    store.recordAgentKnowledgeSearch(query: query, hits: hits, targetId: "agent-knowledge-answer")
+    guard !hits.isEmpty else {
+      return Result(
+        text: "No knowledge evidence for \"\(query)\"",
+        actionId: "knowledge_answer"
+      )
+    }
+    let lines = hits.enumerated().flatMap { index, hit in
+      [
+        "[\(index + 1)] \(compact(hit.item.title, limit: 100))",
+        "Source: \(sourceLabel(hit.item.source))",
+        "Evidence: \(compact(hit.excerpt, limit: 420))"
+      ]
+    }
+    return Result(
+      text: "Knowledge answer from local evidence for \"\(compact(query, limit: 160))\":\n\(lines.joined(separator: "\n"))",
+      actionId: "knowledge_answer"
+    )
+  }
+
   private static func memoryMatches(_ item: AgentMemoryItem, query: String) -> Bool {
     let haystack = "\(item.kind.rawValue) \(item.key) \(item.value)".lowercased()
     let tokens = query.lowercased().split(whereSeparator: { $0.isWhitespace })
@@ -192,6 +224,10 @@ enum AgentPersonalDataCommandRouter {
       "find knowledge",
       "search memory",
       "find memory",
+      "ask knowledge",
+      "answer from knowledge",
+      "use knowledge to answer",
+      "ask my knowledge",
       "pause memory",
       "stop memory",
       "disable memory capture",
