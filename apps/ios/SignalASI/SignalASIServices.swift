@@ -1512,21 +1512,6 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId
     )
-    var stagedAttachments: [AgentStagedAttachment] = []
-    if !attachments.isEmpty {
-      stagedAttachments = await stageAgentAttachments(
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-        attachments: attachments
-      )
-      store.appendDeliveryTrace(
-        outgoing.id,
-        contactId: contact.id,
-        stage: stagedAttachments.isEmpty ? "agent_attachment_staging_failed" : "agent_attachment_staged",
-        detail: "\(stagedAttachments.count)/\(attachments.count) attachment(s)",
-        status: stagedAttachments.isEmpty ? .failed : .delivered
-      )
-    }
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
@@ -1601,16 +1586,6 @@ final class MessageCoordinator: ObservableObject {
           )
         }
       }
-    }
-    if !attachments.isEmpty {
-      requestText = agentAttachmentExecutionGoal(
-        baseGoal: requestText,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-        attachments: attachments,
-        staged: stagedAttachments,
-        hasUserGoal: !trimmed.isEmpty
-      )
     }
     if contact.deliveryMode == .local,
        attachments.isEmpty,
@@ -3214,51 +3189,6 @@ final class MessageCoordinator: ObservableObject {
     guard !names.isEmpty else { return prompt }
     let label = language.hasPrefix("zh") ? "\u{9644}\u{4ef6}\u{540d}\u{79f0}\u{ff1a}" : "Attachment names: "
     return prompt + "\n" + label + names
-  }
-
-  private func stageAgentAttachments(
-    conversationId: String,
-    turnId: String,
-    attachments: [SignalASIDraftAttachment]
-  ) async -> [AgentStagedAttachment] {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .userInitiated).async {
-        let staged = (try? AgentAttachmentWorkspaceStager.stage(
-          conversationId: conversationId,
-          turnId: turnId,
-          attachments: attachments
-        )) ?? []
-        continuation.resume(returning: staged)
-      }
-    }
-  }
-
-  private func agentAttachmentExecutionGoal(
-    baseGoal: String,
-    conversationId: String,
-    turnId: String,
-    attachments: [SignalASIDraftAttachment],
-    staged: [AgentStagedAttachment],
-    hasUserGoal: Bool
-  ) -> String {
-    var manifest = attachments.map { attachment in
-      "- \(attachment.displayName) (\(attachment.mimeType), \(attachment.humanSize))"
-    }
-    if !staged.isEmpty {
-      manifest.append("iOS project paths:")
-      manifest.append(contentsOf: staged.map { attachment in
-        "- \(attachment.relativePath) | sha256=\(attachment.sha256)"
-      })
-    }
-    let evidence = AgentUntrustedEvidenceBoundary.wrapText(
-      sourceType: "attachment_manifest",
-      sourceId: "\(conversationId)/\(turnId)",
-      content: manifest.joined(separator: "\n")
-    )
-    let instruction = hasUserGoal
-      ? "Use the attached content when completing the request."
-      : "Do not inspect the attached content until the user provides a task."
-    return "\(baseGoal)\n\nAttached input:\n\(evidence)\n\(instruction)"
   }
 
   private func recordLocalNativeActionResult(
