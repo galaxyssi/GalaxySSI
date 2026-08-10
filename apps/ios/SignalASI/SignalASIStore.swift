@@ -1679,7 +1679,13 @@ final class SignalASIStore: ObservableObject {
       .map { $0 }
   }
 
-  func recordAgentKnowledgeSearch(query: String, hits: [AgentKnowledgeHit], targetId: String = "agent-knowledge-local") {
+  func recordAgentKnowledgeSearch(
+    query: String,
+    hits: [AgentKnowledgeHit],
+    targetId: String = "agent-knowledge-local",
+    evidenceModes: [AgentKnowledgeEvidenceMode]? = nil,
+    blockedMatchCount: Int = 0
+  ) {
     guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     let sourceCount = Set(hits.map { agentKnowledgeSourceKey($0.item) }).count
     let entry = AgentKnowledgeAccessAuditEntry(
@@ -1687,8 +1693,8 @@ final class SignalASIStore: ObservableObject {
       targetId: targetId,
       itemIdHashes: hits.map { deterministicHash($0.item.id) },
       sourceCount: sourceCount,
-      evidenceModes: hits.isEmpty ? [] : [.full],
-      blockedMatchCount: 0
+      evidenceModes: evidenceModes ?? (hits.isEmpty ? [] : [.full]),
+      blockedMatchCount: max(blockedMatchCount, 0)
     )
     agentKnowledgeAccessAudit = Array((agentKnowledgeAccessAudit + [entry]).suffix(100))
   }

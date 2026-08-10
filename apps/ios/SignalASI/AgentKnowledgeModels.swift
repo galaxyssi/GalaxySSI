@@ -80,7 +80,7 @@ enum AgentKnowledgeAgentAccess: String, Codable, CaseIterable, Identifiable {
   }
 }
 
-enum AgentKnowledgeEvidenceMode: String, Codable, CaseIterable, Identifiable {
+enum AgentKnowledgeEvidenceMode: String, Codable, CaseIterable, Identifiable, Equatable, Hashable {
   case full = "FULL"
   case summary = "SUMMARY"
 
@@ -212,6 +212,106 @@ struct AgentKnowledgeHit: Codable, Equatable {
     case excerpt
     case matchedTerms = "matched_terms"
   }
+}
+
+struct AgentKnowledgeCitation: Codable, Equatable {
+  var index: Int
+  var itemId: String
+  var title: String
+  var source: String
+  var excerpt: String
+  var score: Double
+  var evidenceMode: AgentKnowledgeEvidenceMode
+}
+
+struct AgentKnowledgeRAGContext: Equatable {
+  var query: String
+  var targetId: String
+  var citations: [AgentKnowledgeCitation]
+  var blockedMatchCount: Int
+  var matchedHits: [AgentKnowledgeHit]
+
+  var sourceCount: Int {
+    Set(citations.map(\.source)).count
+  }
+}
+
+enum AgentKnowledgeRetriever {
+  static func retrieve(
+    hits: [AgentKnowledgeHit],
+    query: String,
+    targetId: String,
+    limit: Int = 8
+  ) -> AgentKnowledgeRAGContext {
+    var allowed: [(AgentKnowledgeHit, AgentKnowledgeEvidenceMode)] = []
+    var blocked = 0
+    for hit in hits {
+      guard let mode = evidenceMode(for: hit.item, targetId: targetId) else {
+        blocked += 1
+        continue
+      }
+      allowed.append((hit, mode))
+    }
+    let selected = allowed.prefix(max(1, min(limit, maxCitations)))
+    let citations = selected.enumerated().map { index, entry in
+      let (hit, mode) = entry
+      let excerpt = mode == .full
+        ? hit.excerpt
+        : String(hit.item.summary.ifBlank(hit.excerpt).prefix(maxSummaryEvidence))
+      return AgentKnowledgeCitation(
+        index: index + 1,
+        itemId: hit.item.id,
+        title: hit.item.title,
+        source: sourceLabel(hit.item.source),
+        excerpt: String(excerpt),
+        score: hit.score,
+        evidenceMode: mode
+      )
+    }
+    return AgentKnowledgeRAGContext(
+      query: query,
+      targetId: targetId,
+      citations: citations,
+      blockedMatchCount: blocked,
+      matchedHits: selected.map { $0.0 }
+    )
+  }
+
+  private static func evidenceMode(
+    for item: AgentKnowledgeItem,
+    targetId: String
+  ) -> AgentKnowledgeEvidenceMode? {
+    if targetId == "agent-knowledge-local" || targetId == "local-llm" {
+      return .full
+    }
+    if targetId == "cloud-models" || targetId.hasPrefix("cloud-model:") {
+      switch item.cloudAccess {
+      case .deny: return nil
+      case .summaryOnly: return .summary
+      case .full: return .full
+      }
+    }
+    switch item.agentAccess {
+    case .localOnly:
+      return nil
+    case .anyPairedAgent:
+      return .full
+    case .selectedAgents:
+      return item.allowedAgentIds.contains(targetId) ? .full : nil
+    }
+  }
+
+  private static func sourceLabel(_ source: String) -> String {
+    let clean = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    if clean.isEmpty { return "Local knowledge" }
+    if clean.hasPrefix("http://") || clean.hasPrefix("https://") {
+      return String(clean.prefix(240))
+    }
+    return String(clean.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(180))
+  }
+
+  private static let maxCitations = 10
+  private static let maxSummaryEvidence = 700
 }
 
 struct AgentKnowledgeStats: Codable, Equatable {

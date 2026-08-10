@@ -160,19 +160,38 @@ enum AgentPersonalDataCommandRouter {
   }
 
   private static func answerKnowledge(_ query: String, store: SignalASIStore) -> Result {
-    let hits = store.searchAgentKnowledge(query, limit: 6)
-    store.recordAgentKnowledgeSearch(query: query, hits: hits, targetId: "agent-knowledge-answer")
-    guard !hits.isEmpty else {
+    let rankedHits = store.searchAgentKnowledge(query, limit: 24)
+    let rag = AgentKnowledgeRetriever.retrieve(
+      hits: rankedHits,
+      query: query,
+      targetId: "agent-knowledge-local",
+      limit: 6
+    )
+    var modes: [AgentKnowledgeEvidenceMode] = []
+    rag.citations.forEach { citation in
+      if !modes.contains(citation.evidenceMode) { modes.append(citation.evidenceMode) }
+    }
+    store.recordAgentKnowledgeSearch(
+      query: query,
+      hits: rag.matchedHits,
+      targetId: rag.targetId,
+      evidenceModes: modes,
+      blockedMatchCount: rag.blockedMatchCount
+    )
+    guard !rag.citations.isEmpty else {
+      let text = rag.blockedMatchCount > 0
+        ? "Matching knowledge exists, but its access policy does not allow this local answer."
+        : "No knowledge evidence for \"\(query)\""
       return Result(
-        text: "No knowledge evidence for \"\(query)\"",
+        text: text,
         actionId: "knowledge_answer"
       )
     }
-    let lines = hits.enumerated().flatMap { index, hit in
+    let lines = rag.citations.flatMap { citation in
       [
-        "[\(index + 1)] \(compact(hit.item.title, limit: 100))",
-        "Source: \(sourceLabel(hit.item.source))",
-        "Evidence: \(compact(hit.excerpt, limit: 420))"
+        "[\(citation.index)] \(compact(citation.title, limit: 100))",
+        "Source: \(citation.source)",
+        "Evidence (\(citation.evidenceMode.rawValue.lowercased())): \(compact(citation.excerpt, limit: 420))"
       ]
     }
     return Result(
