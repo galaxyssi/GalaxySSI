@@ -4,6 +4,7 @@ enum AgentPhoneCapabilityId: String, Codable, CaseIterable, Identifiable {
   case accessibilityUITree = "ACCESSIBILITY_UI_TREE"
   case accessibilityGestures = "ACCESSIBILITY_GESTURES"
   case ownedAgentInput = "OWNED_AGENT_INPUT"
+  case ownedAgentControls = "OWNED_AGENT_CONTROLS"
   case mediaProjectionOCR = "MEDIA_PROJECTION_OCR"
   case notificationRead = "NOTIFICATION_READ"
   case notificationReply = "NOTIFICATION_REPLY"
@@ -279,6 +280,7 @@ enum AgentPhoneCapabilityNativeCoverage {
 
   static func isImplemented(_ id: AgentPhoneCapabilityId) -> Bool {
     if id == .ownedAgentInput { return true }
+    if id == .ownedAgentControls { return true }
     return !toolIdsByCapability[id, default: []].isEmpty
   }
 
@@ -330,6 +332,14 @@ enum AgentPhoneCapabilityPolicy {
 
 enum AgentPhoneCapabilityCatalog {
   static let capabilities: [AgentPhoneCapabilityBoundary] = [
+    boundary(
+      .ownedAgentControls,
+      location: .appProcess,
+      availability: .ready,
+      risk: .low,
+      normalAppCanExecute: true,
+      limitation: "Tap actions are limited to visible SignalASI-owned Agent home controls and cannot inject gestures into other apps or protected system surfaces."
+    ),
     boundary(
       .ownedAgentInput,
       location: .appProcess,
