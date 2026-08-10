@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIAgentHomeToolboxView: View {
   var tools: [AgentNativeToolDescriptor]
   var t: (String, String) -> String
+  var onCommand: (String) -> Void = { _ in }
 
   private var availableTools: [AgentNativeToolDescriptor] {
     tools
@@ -47,7 +48,23 @@ struct SignalASIAgentHomeToolboxView: View {
     }
   }
 
+  @ViewBuilder
   private func toolRow(_ tool: AgentNativeToolDescriptor) -> some View {
+    if let example = example(for: tool) {
+      Button(action: { onCommand(example) }) {
+        toolRowContent(tool, example: example)
+      }
+      .buttonStyle(.plain)
+      .accessibilityHint(Text(t("agent_toolbox_action_hint", "Tap to use this example")))
+    } else {
+      toolRowContent(tool, example: nil)
+    }
+  }
+
+  private func toolRowContent(
+    _ tool: AgentNativeToolDescriptor,
+    example: String?
+  ) -> some View {
     HStack(spacing: 9) {
       Image(systemName: locationIcon(tool.location))
         .font(.system(size: 14, weight: .semibold))
@@ -58,7 +75,7 @@ struct SignalASIAgentHomeToolboxView: View {
           .font(.system(size: 12.5, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
           .lineLimit(1)
-        Text(String(format: t("agent_toolbox_meta", "%@ / %@ risk"), tool.id, riskText(tool.risk)))
+        Text(example ?? String(format: t("agent_toolbox_meta", "%@ / %@ risk"), tool.id, riskText(tool.risk)))
           .font(.system(size: 10.5))
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
@@ -67,12 +84,47 @@ struct SignalASIAgentHomeToolboxView: View {
       Text(t("common_on", "On"))
         .font(.system(size: 10.5, weight: .bold))
         .foregroundColor(.signalASIAccent)
+      if example != nil {
+        Image(systemName: "arrow.up.right")
+          .font(.system(size: 10, weight: .bold))
+          .foregroundColor(.signalASITextSecondary)
+      }
     }
     .padding(.horizontal, 12)
     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .combine)
+  }
+
+  private func example(for tool: AgentNativeToolDescriptor) -> String? {
+    let id = tool.id.lowercased()
+    switch true {
+    case id.hasSuffix(".read.screen"):
+      return t("agent_toolbox_example_read_screen", "summarize screen")
+    case id.hasSuffix(".copy.screen.text"):
+      return t("agent_toolbox_example_copy_screen", "copy screen text")
+    case id.hasSuffix(".paste.text"):
+      return t("agent_toolbox_example_paste", "paste clipboard")
+    case id.hasSuffix(".delete.text"):
+      return t("agent_toolbox_example_delete", "clear text")
+    case id.hasSuffix(".back"):
+      return t("agent_toolbox_example_back", "go back")
+    case id.hasSuffix(".home"):
+      return t("agent_toolbox_example_home", "go home")
+    case id.hasSuffix(".recents"):
+      return t("agent_toolbox_example_recents", "show recents")
+    case id.hasSuffix(".lock.screen"):
+      return t("agent_toolbox_example_lock", "lock screen")
+    case id.hasSuffix(".open.app"):
+      return t("agent_toolbox_example_open_app", "open phone")
+    case id.hasSuffix(".open.url"):
+      return t("agent_toolbox_example_open_url", "open url https://example.com")
+    case id.hasSuffix(".set.alarm"):
+      return t("agent_toolbox_example_set_alarm", "set alarm 07:30")
+    default:
+      return nil
+    }
   }
 
   private func locationIcon(_ location: AgentNativeToolLocation) -> String {
