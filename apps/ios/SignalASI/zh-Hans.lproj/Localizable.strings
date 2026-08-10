@@ -1083,6 +1083,8 @@
 "agent_screen_action_knowledge_detail" = "打开 Agent 知识库";
 "agent_screen_action_screen_context" = "屏幕上下文";
 "agent_screen_action_screen_context_detail" = "查看当前屏幕上下文";
+"agent_screen_action_insights" = "新发现";
+"agent_screen_action_insights_detail" = "打开 Agent 的新发现";
 "agent_screen_action_recent_tasks" = "最近任务";
 "agent_screen_action_recent_tasks_detail" = "打开最近 Agent 任务";
 "agent_screen_action_permission_mode" = "权限模式";

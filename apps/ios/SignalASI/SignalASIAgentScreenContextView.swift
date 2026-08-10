@@ -452,6 +452,13 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: "show screen context"
       ),
       commandRow(
+        id: "insights",
+        title: t("agent_screen_action_insights", "New insights"),
+        detail: t("agent_screen_action_insights_detail", "open new Agent findings"),
+        systemImage: "sparkles",
+        command: "show new Agent insights"
+      ),
+      commandRow(
         id: "recent-tasks",
         title: t("agent_screen_action_recent_tasks", "Recent tasks"),
         detail: t("agent_screen_action_recent_tasks_detail", "open recent Agent tasks"),
