@@ -590,6 +590,7 @@ struct AgentHomeView: View {
             "Agent added. Selecting it for this session..."
           )
           scanStatusIsError = false
+          _ = coordinator.requestCapabilityManifestRefresh(force: true)
           focusScannedAgents(agentIDs)
         },
         onAddAttachment: addAttachment,
