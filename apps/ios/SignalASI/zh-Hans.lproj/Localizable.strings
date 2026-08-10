@@ -3840,6 +3840,7 @@
 "runtime_artifact.download_failed" = "无法从桌面请求此工件。";
 "signalasi.common.cancel_task" = "取消任务";
 "signalasi.agent.execution.unknown" = "执行位置不可用";
+"signalasi.agent.session.merged_from" = "来自合并会话：%@";
 "signalasi.agent.input.text_missing" = "未提供文本。";
 "signalasi.agent.input.text_entered" = "文本已输入到 Agent 输入框。";
 "signalasi.agent.input.text_cleared" = "Agent 输入框内容已清空。";

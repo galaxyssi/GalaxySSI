@@ -1412,6 +1412,8 @@ final class SignalASIStore: ObservableObject {
       copy.id = UUID()
       copy.conversationId = target.id
       copy.remoteMessageId = ""
+      copy.sourceConversationId = source.id
+      copy.sourceConversationTitle = source.title
       messagesByContact[copy.contactId, default: []].append(copy)
     }
 
