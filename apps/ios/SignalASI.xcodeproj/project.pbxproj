@@ -132,6 +132,10 @@
     A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */; };
     A10000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */; };
     A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */; };
+    A10000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */; };
+    A10000000000000000001840 /* SignalASIAgentHomeNavigationRoutesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001840 /* SignalASIAgentHomeNavigationRoutesView.swift */; };
+    A10000000000000000001830 /* SignalASIAgentTranscriptScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001830 /* SignalASIAgentTranscriptScrollView.swift */; };
+    A10000000000000000001820 /* SignalASIAgentTranscriptMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001820 /* SignalASIAgentTranscriptMessagesView.swift */; };
     A10000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */; };
     A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001435 /* SignalASIAgentComposerView.swift */; };
     A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */; };
@@ -890,6 +894,10 @@
     A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeReadinessView.swift; sourceTree = "<group>"; };
     A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeEmptyStatePanel.swift; sourceTree = "<group>"; };
     A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeQuickActionsView.swift; sourceTree = "<group>"; };
+    A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomePresentationRoutesView.swift; sourceTree = "<group>"; };
+    A20000000000000000001840 /* SignalASIAgentHomeNavigationRoutesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeNavigationRoutesView.swift; sourceTree = "<group>"; };
+    A20000000000000000001830 /* SignalASIAgentTranscriptScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentTranscriptScrollView.swift; sourceTree = "<group>"; };
+    A20000000000000000001820 /* SignalASIAgentTranscriptMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentTranscriptMessagesView.swift; sourceTree = "<group>"; };
     A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentExecutionOverviewView.swift; sourceTree = "<group>"; };
     A20000000000000000001435 /* SignalASIAgentComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerView.swift; sourceTree = "<group>"; };
     A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerUiPolicy.swift; sourceTree = "<group>"; };
@@ -1973,6 +1981,10 @@
         A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */,
         A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */,
         A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */,
+        A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */,
+        A20000000000000000001840 /* SignalASIAgentHomeNavigationRoutesView.swift */,
+        A20000000000000000001830 /* SignalASIAgentTranscriptScrollView.swift */,
+        A20000000000000000001820 /* SignalASIAgentTranscriptMessagesView.swift */,
         A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */,
         A20000000000000000001435 /* SignalASIAgentComposerView.swift */,
         A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */,
@@ -2854,6 +2866,10 @@
         A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */,
         A10000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift in Sources */,
         A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */,
+        A10000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift in Sources */,
+        A10000000000000000001840 /* SignalASIAgentHomeNavigationRoutesView.swift in Sources */,
+        A10000000000000000001830 /* SignalASIAgentTranscriptScrollView.swift in Sources */,
+        A10000000000000000001820 /* SignalASIAgentTranscriptMessagesView.swift in Sources */,
         A10000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift in Sources */,
         A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */,
         A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */,

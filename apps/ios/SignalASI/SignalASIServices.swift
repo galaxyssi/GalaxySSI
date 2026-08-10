@@ -1610,6 +1610,10 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let originalRequestText = requestText
+    let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+      request: originalRequestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
     let richOutputJson = outgoingAttachmentRichOutput(attachments)
     let outgoing = store.appendOutgoing(
       displayText,
@@ -1679,7 +1683,8 @@ final class MessageCoordinator: ObservableObject {
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(attachments)
       }
-      if let active = activeAgentTurn(for: outgoing.conversationId) {
+      if taskExecutionMode != .planOnly,
+         let active = activeAgentTurn(for: outgoing.conversationId) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
           activeGoal: active.goal,
@@ -1732,7 +1737,8 @@ final class MessageCoordinator: ObservableObject {
         hasUserGoal: !trimmed.isEmpty
       )
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -1759,7 +1765,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowCommandRouter.handle(displayText)
         ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
@@ -1782,7 +1789,8 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
@@ -1809,7 +1817,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -1832,6 +1841,7 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     if contact.id == "hermes",
+       taskExecutionMode != .planOnly,
        let fastReply = AgentFastLocalResponse.reply(
          goal: requestText,
          context: AgentConversationContext(
@@ -1889,7 +1899,8 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if attachments.isEmpty,
+        if taskExecutionMode != .planOnly,
+           attachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
              store: store,
@@ -1990,7 +2001,9 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: agentContact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          voiceSessionId: voiceSessionId,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -2054,7 +2067,9 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: contact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          voiceSessionId: voiceSessionId,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -2786,89 +2801,91 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if handleDirectAgentScreenOverview(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentClearTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentSecurityStatus(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentAuditTrail(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentNotificationCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionModeCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentHighRiskGuardCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentScreenSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionChecklist(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableInventory(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
+      if executionMode != .planOnly {
+        if handleDirectAgentScreenOverview(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentClearTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentSecurityStatus(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentAuditTrail(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentNotificationCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionModeCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentHighRiskGuardCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentScreenSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionChecklist(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableInventory(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
       }
       if handleDirectLocalNativeAction(
         requestText: requestText,
@@ -5071,7 +5088,9 @@ final class MessageCoordinator: ObservableObject {
     _ text: String,
     contact: SignalASIContact,
     outgoing: ChatMessage,
-    attachments: [SignalASIDraftAttachment]
+    attachments: [SignalASIDraftAttachment],
+    voiceSessionId: String = "",
+    executionMode: AgentTaskExecutionMode
   ) async throws -> AgentDisclosureStatus {
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
@@ -5100,6 +5119,34 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    let normalizedVoiceSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let voiceRun = normalizedVoiceSessionId.isEmpty
+      ? nil
+      : VoiceAgentRunBridgeRegistry.shared.find(sessionId: normalizedVoiceSessionId)
+    let traceCandidate = (voiceRun?.traceId ?? normalizedVoiceSessionId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let voiceTraceId = traceCandidate.range(
+      of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#,
+      options: .regularExpression
+    ) == nil ? "" : traceCandidate
+    let messageTraceId = voiceTraceId.isEmpty ? UUID().uuidString : voiceTraceId
+    let publishStartedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+    var deliveryTrace = outgoing.deliveryTrace.map { event in
+      [
+        "stage": event.stage,
+        "detail": event.detail,
+        "at": Int64(event.createdAt.timeIntervalSince1970 * 1_000)
+      ] as [String: Any]
+    }
+    deliveryTrace.append([
+      "stage": "phone_publish_started",
+      "detail": contact.id,
+      "at": publishStartedAt
+    ])
+    let responseLanguagePreference = LanguagePolicySettings.normalizeVoice(
+      store.languagePolicy.responseLanguage
+    )
+    let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
       "type": "text",
       "message_id": sourceMessageId,
@@ -5114,8 +5161,34 @@ final class MessageCoordinator: ObservableObject {
       "agent_id": contact.connectorAgentId,
       "desktop_id": contact.desktopId,
       "desktop_name": contact.desktopName,
-      "time": Int64(Date().timeIntervalSince1970 * 1000)
+      "trace_id": messageTraceId,
+      "client_sent_at_ms": publishStartedAt,
+      "delivery_trace": deliveryTrace,
+      "response_language": responseLanguage,
+      "response_language_preference": responseLanguagePreference,
+      "execution_mode": executionMode.rawValue,
+      "time": publishStartedAt
     ]
+    if !voiceTraceId.isEmpty {
+      payload["voice_session_id"] = voiceTraceId
+      if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {
+        payload["run_id"] = runId
+      }
+      let agentProvider = contact.id.split(separator: ":").last.map(String.init) ?? "remote_agent"
+      VoiceLatencyTelemetry.record(
+        traceId: voiceTraceId,
+        event: VoiceTraceEvents.agentRunCreateStarted,
+        attributes: [
+          "agent_provider": agentProvider,
+          "transport": "signalasi_link"
+        ],
+        once: true
+      )
+    }
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
+       let taskBudget = try? JSONSerialization.jsonObject(with: data) {
+      payload["task_budget"] = taskBudget
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     AgentMediaLinkPayloadPolicy.payloadMetadata(
       attachments: attachments,
@@ -5150,6 +5223,40 @@ final class MessageCoordinator: ObservableObject {
       )
       if !attachmentDescriptors.isEmpty {
         payload["attachments"] = attachmentDescriptors
+      }
+    }
+    if payload["task_budget"] != nil {
+      let estimatedBytes = Int64((try? SignalASILinkProtocol.jsonData(payload).count) ?? 0)
+      let taskBudgetUsage = AgentTaskBudgetUsage(
+        networkBytes: estimatedBytes,
+        usageEstimated: true
+      )
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      let environment = AgentTaskBudgetEnvironment(
+        networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated,
+        networkMetered: probe.metered
+      )
+      let decision = AgentTaskBudgetPolicy.evaluate(
+        budget: store.agentTaskBudget,
+        usage: taskBudgetUsage,
+        environment: environment,
+        networkRequired: true,
+        trustedNetworkTarget: link.paired
+      )
+      guard decision.allowed else {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "task_budget_blocked",
+          detail: decision.reason,
+          status: .failed
+        )
+        throw SignalASIError.invalidPayload("Agent task budget blocked: \(decision.reason)")
+      }
+      if let data = try? JSONEncoder().encode(taskBudgetUsage),
+         let encodedUsage = try? JSONSerialization.jsonObject(with: data) {
+        payload["task_budget_usage"] = encodedUsage
       }
     }
     taskIdentityStore.register(
