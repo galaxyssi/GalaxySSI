@@ -2262,8 +2262,7 @@ struct AgentHomeView: View {
 
   private func focusScannedAgentIfAvailable(_ targetID: String) -> Bool {
     guard let target = store.contact(id: targetID),
-          target.type == "agent",
-          target.isCommunicable else {
+          target.type == "agent" else {
       return false
     }
     let conversationId = store.activeAgentConversationId

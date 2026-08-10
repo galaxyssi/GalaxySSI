@@ -356,11 +356,12 @@ struct AddContactView: View {
         isError: false
       )
       if !pairedDesktopAgentNames.isEmpty {
-        onAgentAdded?([])
+        let agentIDs = Self.desktopAgentIDs(from: pairing)
+        onAgentAdded?(agentIDs)
         NotificationCenter.default.post(
           name: .signalASIDesktopPairingDidComplete,
           object: nil,
-          userInfo: ["agentIDs": Self.desktopAgentIDs(from: pairing)]
+          userInfo: ["agentIDs": agentIDs]
         )
       }
     } catch {
