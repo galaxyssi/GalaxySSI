@@ -373,13 +373,14 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var listBlock: some View {
-    let values = listRows
+    let values = listItems
     return VStack(alignment: .leading, spacing: 5) {
-      ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+      ForEach(Array(values.prefix(Self.visibleListItems).enumerated()), id: \.offset) { _, item in
         HStack(alignment: .top, spacing: 7) {
-          Text("•")
-            .foregroundColor(.signalASITextSecondary)
-          selectableText(value)
+          Text(listMarkerLabel(item.marker))
+            .foregroundColor(item.marker.lowercased() == "checked" ? .signalASIAccent : .signalASITextSecondary)
+            .frame(width: 24, alignment: .trailing)
+          selectableText(item.text)
         }
       }
     }
@@ -1029,6 +1030,54 @@ private struct SignalASIRichBlockView: View {
       .filter { !$0.isEmpty }
   }
 
+  private var listItems: [(marker: String, text: String)] {
+    if !block.rows.isEmpty {
+      return block.rows.compactMap { row in
+        guard let marker = row.first else { return nil }
+        let text = row.dropFirst().joined(separator: " ")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return (marker: marker.ifBlank("bullet"), text: text)
+      }
+    }
+    return block.text
+      .components(separatedBy: .newlines)
+      .compactMap { parseListItem($0) }
+  }
+
+  private func parseListItem(_ line: String) -> (marker: String, text: String)? {
+    let clean = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    if let range = clean.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) {
+      let prefix = String(clean[..<range.upperBound])
+      let marker = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: ".)"))
+      return (marker: marker, text: String(clean[range.upperBound...]))
+    }
+    if clean.range(of: #"^[-+*]\s+\[[ xX]\]\s*"#, options: .regularExpression) != nil {
+      let checked = clean.range(of: #"^[-+*]\s+\[[xX]\]"#, options: .regularExpression) != nil
+      let text = clean.replacingOccurrences(
+        of: #"^[-+*]\s+\[[ xX]\]\s*"#,
+        with: "",
+        options: .regularExpression
+      )
+      return (marker: checked ? "checked" : "unchecked", text: text)
+    }
+    if let range = clean.range(of: #"^[-+*]\s+"#, options: .regularExpression) {
+      return (marker: "bullet", text: String(clean[range.upperBound...]))
+    }
+    return (marker: "bullet", text: clean)
+  }
+
+  private func listMarkerLabel(_ marker: String) -> String {
+    switch marker.lowercased() {
+    case "checked": return "✓"
+    case "unchecked": return "○"
+    case "bullet": return "•"
+    default: return marker.hasSuffix(".") ? marker : "\(marker)."
+    }
+  }
+
   private var keyValuePairs: [(key: String, value: String)] {
     if !block.rows.isEmpty {
       let rowPairs = block.rows.compactMap { row -> (String, String)? in
@@ -1263,6 +1312,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private static let collapsedCodeLines = 12
+  private static let visibleListItems = 100
   private static let visibleTableRows = 6
 }
 
