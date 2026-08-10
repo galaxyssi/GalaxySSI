@@ -190,6 +190,11 @@ MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
 MAX_DURABLE_OUTBOUND_INFLIGHT = 4
 MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT = 2
 MAX_DURABLE_OUTBOUND_BATCH = 4
+OUTBOUND_PRIORITY_PROGRESS = 10
+OUTBOUND_PRIORITY_NORMAL = 50
+OUTBOUND_PRIORITY_INTERACTIVE = 80
+OUTBOUND_PRIORITY_TERMINAL = 100
+OUTBOUND_TERMINAL_RESERVE_THRESHOLD = 90
 OUTBOUND_RETRY_POLL_SECONDS = 1.0
 CAPABILITY_MANIFEST_VERSION = 2
 durable_outbound_lock = threading.RLock()
@@ -1944,30 +1949,6 @@ def _task_event_is_coalescible(task: dict) -> bool:
     )
 
 
-def _task_event_requires_reliable_delivery(task: dict) -> bool:
-    """Persist meaningful progress without turning status heartbeats into backlog."""
-    events = task.get("events") if isinstance(task.get("events"), list) else []
-    if not events:
-        return False
-    latest = events[-1] if isinstance(events[-1], dict) else {}
-    event_id = str(latest.get("event_id") or "").strip()
-    kind = str(latest.get("kind") or "").strip().lower()
-    title = str(latest.get("title") or "").strip()
-    detail = str(latest.get("detail") or "").strip()
-    if not event_id or not (title or detail):
-        return False
-    return kind in {
-        "narration",
-        "reasoning",
-        "plan",
-        "command",
-        "file",
-        "network",
-        "mcp",
-        "tool",
-    }
-
-
 def _schedule_task_event_locked(task_id: str, delay_seconds: float) -> None:
     if delay_seconds <= 0:
         task_event_publish_queue.put(task_id)
@@ -3146,7 +3127,7 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
     status = str(pending.task.get("status") or "").strip().lower()
     durable = status in TERMINAL_STATES or status in {
         "waiting_approval", "waiting_input", "paused", "interrupted",
-    } or _task_event_requires_reliable_delivery(pending.task)
+    }
     return bool(
         _publish_phone_payload(
             mqttc,
@@ -6681,7 +6662,13 @@ def _publish_to_registered_client(
         wire_payload = json.dumps(encrypted, ensure_ascii=False)
         if not durable:
             return _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
-        queue_outbound(client_route_id, message_id, topic, wire_payload)
+        queue_outbound(
+            client_route_id,
+            message_id,
+            topic,
+            wire_payload,
+            priority=_outbound_delivery_priority(payload),
+        )
         published = flush_outbound_messages(
             mqttc,
             preferred_client_route_id=client_route_id,
@@ -6701,6 +6688,29 @@ def _ordered_outbound_clients(preferred_client_route_id: str = "") -> list[dict]
     )
 
 
+def _outbound_delivery_priority(payload: dict) -> int:
+    payload_type = str(payload.get("type") or "").strip().lower()
+    status = str(payload.get("status") or "").strip().lower()
+    if payload_type == "agent_task_event":
+        if status in TERMINAL_STATES:
+            return OUTBOUND_PRIORITY_TERMINAL
+        if status in {"waiting_approval", "waiting_input", "paused", "interrupted"}:
+            return OUTBOUND_PRIORITY_INTERACTIVE
+        return OUTBOUND_PRIORITY_PROGRESS
+    if str(payload.get("task_id") or "").strip() and payload_type in {
+        "text", "error", "rich_output",
+    }:
+        return OUTBOUND_PRIORITY_TERMINAL
+    if payload_type in {
+        "agent_task_approval_result",
+        "desktop_tool_call_result",
+        "desktop_action_receipt",
+        "unified_command_result",
+    }:
+        return OUTBOUND_PRIORITY_INTERACTIVE
+    return OUTBOUND_PRIORITY_NORMAL
+
+
 def flush_outbound_messages(
     mqttc,
     *,
@@ -6709,6 +6719,7 @@ def flush_outbound_messages(
     if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
         return {}
     published: dict[tuple[str, str], object] = {}
+    selected: list[dict] = []
     with durable_outbound_lock:
         for exhausted in fail_exhausted_outbound():
             log.error(
@@ -6717,13 +6728,11 @@ def flush_outbound_messages(
                 str(exhausted["message_id"])[:12],
                 exhausted["attempts"],
             )
-        available = max(
+        global_available = max(
             0,
             MAX_DURABLE_OUTBOUND_INFLIGHT - outbound_inflight_count(),
         )
-        batch_size = min(MAX_DURABLE_OUTBOUND_BATCH, available)
-        if batch_size <= 0:
-            return published
+        terminal_emergency_available = 1 if global_available <= 0 else 0
         route_candidates: list[list[dict]] = []
         for paired_client in _ordered_outbound_clients(preferred_client_route_id):
             client_route_id = str(paired_client.get("client_route_id") or "")
@@ -6733,22 +6742,43 @@ def flush_outbound_messages(
                     client_route_id=client_route_id,
                 ),
             )
-            if route_available <= 0:
-                continue
             candidates = pending_outbound(
-                limit=min(route_available, batch_size),
+                limit=MAX_DURABLE_OUTBOUND_BATCH,
                 client_route_id=client_route_id,
             )
-            if candidates:
-                route_candidates.append(candidates)
-        selected: list[dict] = []
-        while route_candidates and len(selected) < batch_size:
+            accepted: list[dict] = []
+            terminal_reserve_used = False
+            for candidate in candidates:
+                priority = int(candidate.get("priority") or OUTBOUND_PRIORITY_NORMAL)
+                if (
+                    priority >= OUTBOUND_TERMINAL_RESERVE_THRESHOLD
+                    and not terminal_reserve_used
+                ):
+                    if global_available > 0:
+                        global_available -= 1
+                    elif terminal_emergency_available > 0:
+                        terminal_emergency_available -= 1
+                    else:
+                        continue
+                    accepted.append(candidate)
+                    terminal_reserve_used = True
+                    if route_available > 0:
+                        route_available -= 1
+                    continue
+                if global_available <= 0 or route_available <= 0:
+                    continue
+                accepted.append(candidate)
+                global_available -= 1
+                route_available -= 1
+            if accepted:
+                route_candidates.append(accepted)
+        while route_candidates and len(selected) < MAX_DURABLE_OUTBOUND_BATCH:
             next_round: list[list[dict]] = []
             for candidates in route_candidates:
                 selected.append(candidates.pop(0))
                 if candidates:
                     next_round.append(candidates)
-                if len(selected) >= batch_size:
+                if len(selected) >= MAX_DURABLE_OUTBOUND_BATCH:
                     break
             route_candidates = next_round
         for pending in selected:
@@ -6758,38 +6788,45 @@ def flush_outbound_messages(
                 acknowledge_outbound(client_route_id, message_id)
                 continue
             mark_outbound_sending(client_route_id, message_id)
-            try:
-                # Paho may dispatch on_publish on its network thread before
-                # publish() returns to this worker. Keep registration atomic
-                # with publish so an early broker ACK cannot be lost and leave
-                # the durable message stuck in the sending state.
-                with pending_outbound_acks_lock:
-                    info = _publish_mqtt_wire_payload(
-                        mqttc,
-                        pending["topic"],
-                        pending["wire_payload"],
-                    )
-                    if info.rc == mqtt.MQTT_ERR_SUCCESS:
-                        track_outbound_publish(info, client_route_id, message_id)
-            except Exception as exc:
-                mark_outbound_retryable(client_route_id, message_id)
-                log.warning(
-                    "MQTT durable publish failed client=%s message=%s error=%s",
-                    client_route_id[-8:],
-                    message_id[:12],
-                    exc,
+
+    # MQTT is external I/O. Never hold the durable queue lock while calling it:
+    # a delayed broker callback must not block terminal results or replay APIs.
+    for pending in selected:
+        client_route_id = str(pending["client_route_id"])
+        message_id = str(pending["message_id"])
+        if not get_client(client_route_id):
+            continue
+        try:
+            # Paho may invoke on_publish on its network thread before
+            # publish() returns. Keep only the small acknowledgement-map lock
+            # across registration; the durable queue lock remains released.
+            with pending_outbound_acks_lock:
+                info = _publish_mqtt_wire_payload(
+                    mqttc,
+                    pending["topic"],
+                    pending["wire_payload"],
                 )
-                continue
-            if info.rc != mqtt.MQTT_ERR_SUCCESS:
-                mark_outbound_retryable(client_route_id, message_id)
-                log.warning(
-                    "MQTT durable publish deferred rc=%s client=%s message=%s",
-                    info.rc,
-                    client_route_id[-8:],
-                    message_id[:12],
-                )
-                continue
-            published[(client_route_id, message_id)] = info
+                if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    track_outbound_publish(info, client_route_id, message_id)
+        except Exception as exc:
+            mark_outbound_retryable(client_route_id, message_id)
+            log.warning(
+                "MQTT durable publish failed client=%s message=%s error=%s",
+                client_route_id[-8:],
+                message_id[:12],
+                exc,
+            )
+            continue
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            mark_outbound_retryable(client_route_id, message_id)
+            log.warning(
+                "MQTT durable publish deferred rc=%s client=%s message=%s",
+                info.rc,
+                client_route_id[-8:],
+                message_id[:12],
+            )
+            continue
+        published[(client_route_id, message_id)] = info
     return published
 
 
