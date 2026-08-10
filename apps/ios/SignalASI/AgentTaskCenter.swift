@@ -12,6 +12,35 @@ enum AgentTaskCenterAction: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentTaskCenterActionPresentation {
+  static func title(
+    _ action: AgentTaskCenterAction,
+    t: (String, String) -> String
+  ) -> String {
+    switch action {
+    case .cancel: return t("signalasi.common.cancel_task", "Cancel task")
+    case .resume: return t("signalasi.common.resume", "Resume")
+    case .retry: return t("signalasi.common.retry", "Retry")
+    case .rollback: return t("signalasi.agent.task_control.rollback", "Rollback last action")
+    case .copy: return t("signalasi.common.copy", "Copy")
+    case .viewLog: return t("signalasi.agent_task_center.view_log", "View log")
+    case .delete: return t("signalasi.agent_task_center.delete", "Delete task")
+    }
+  }
+
+  static func icon(_ action: AgentTaskCenterAction) -> String {
+    switch action {
+    case .cancel: return "xmark.circle"
+    case .resume: return "play.fill"
+    case .retry: return "arrow.clockwise"
+    case .rollback: return "arrow.uturn.backward.circle"
+    case .copy: return "doc.on.doc"
+    case .viewLog: return "list.bullet.rectangle"
+    case .delete: return "trash"
+    }
+  }
+}
+
 protocol AgentTaskStore: AnyObject {
   func upsert(_ record: AgentTaskRecord)
   func recent(limit: Int) -> [AgentTaskRecord]

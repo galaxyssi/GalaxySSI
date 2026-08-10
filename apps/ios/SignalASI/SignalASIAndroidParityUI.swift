@@ -72,6 +72,7 @@ struct AgentHomeView: View {
   @State private var approvalActionsInFlight: Set<String> = []
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
+  @State private var homeTaskPendingDeletion: AgentTaskRecord?
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -610,6 +611,24 @@ struct AgentHomeView: View {
           secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
         )
       }
+      .alert(item: $homeTaskPendingDeletion) { task in
+        Alert(
+          title: Text(t("signalasi.agent_task_center.delete_title", "Delete task?")),
+          message: Text(
+            String(
+              format: t(
+                "signalasi.agent_task_center.delete_message",
+                "Delete the task record for \"%@\"? The conversation will remain available."
+              ),
+              task.goal
+            )
+          ),
+          primaryButton: .destructive(Text(t("signalasi.common.delete", "Delete"))) {
+            handleAgentRuntimeTaskAction(.delete, task: task)
+          },
+          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
+        )
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -1046,6 +1065,7 @@ struct AgentHomeView: View {
                 recentTaskForDetails = task
                 recentTasksShortcutActive = true
               },
+              onTaskAction: handleHomeTaskAction,
               onScreenCommand: prefillAgentScreenCommand,
               t: t
             )
@@ -2016,6 +2036,17 @@ struct AgentHomeView: View {
         deleted ? "signalasi.agent_task_center.deleted" : "signalasi.agent_task_center.delete_failed",
         deleted ? "Task deleted" : "The task could not be deleted"
       )
+    }
+  }
+
+  private func handleHomeTaskAction(
+    _ action: AgentTaskCenterAction,
+    task: AgentTaskRecord
+  ) {
+    if action == .delete {
+      homeTaskPendingDeletion = task
+    } else {
+      handleAgentRuntimeTaskAction(action, task: task)
     }
   }
 
