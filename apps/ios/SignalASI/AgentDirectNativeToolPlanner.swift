@@ -1724,6 +1724,18 @@ enum AgentScreenSearchCommand {
   }
 }
 
+enum AgentSecurityStatusCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "security status", "permission status", "agent security status",
+         "agent permission status", "safety status", "privacy status":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))

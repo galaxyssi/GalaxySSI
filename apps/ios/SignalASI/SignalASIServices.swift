@@ -2696,6 +2696,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentSecurityStatus(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentScreenSearch(
         requestText: requestText,
         outgoing: outgoing,
@@ -3075,6 +3082,63 @@ final class MessageCoordinator: ObservableObject {
     default:
       return task.phase.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
     }
+  }
+
+  private func handleDirectAgentSecurityStatus(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentSecurityStatusCommand.matches(requestText) else {
+      return false
+    }
+    let result = agentSecurityStatusReply()
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Security"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-security-status"
+    task.result = result
+    task.verification = "Local Agent security status read"
+    task.executionLog.append("Local Agent security status read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_security_status_reply",
+      detail: "agent_security",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_security_status_reply_received",
+      detail: "agent_security",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentSecurityStatusReply() -> String {
+    let settings = store.agentSafetySettings
+    let screen = currentAgentScreenContext
+    let clipboard = screen.clipboard
+    let notifications = screen.notifications
+    let mode = settings.permissionMode.rawValue.lowercased()
+    let boolean = { (value: Bool) in value ? "true" : "false" }
+    return localReply(
+      english: "mode=\(mode); high_risk_guard=\(boolean(settings.highRiskGuard)); memory_capture=\(boolean(settings.memoryCapture)); accessibility=\(boolean(screen.isAccessibilityEnabled)); notifications=\(boolean(notifications.hasAccess)); clipboard=\(boolean(clipboard.hasText)); sensitive_screen_flags=\(screen.sensitiveFlagCount); sensitive_notifications=\(notifications.sensitiveFlags.count); sensitive_clipboard=\(clipboard.sensitiveFlags.count)",
+      chinese: "模式=\(mode)；高风险保护=\(boolean(settings.highRiskGuard))；记忆捕获=\(boolean(settings.memoryCapture))；屏幕权限=\(boolean(screen.isAccessibilityEnabled))；通知访问=\(boolean(notifications.hasAccess))；剪贴板=\(boolean(clipboard.hasText))；屏幕敏感标记=\(screen.sensitiveFlagCount)；通知敏感标记=\(notifications.sensitiveFlags.count)；剪贴板敏感标记=\(clipboard.sensitiveFlags.count)"
+    )
   }
 
   private func handleDirectAgentScreenSearch(
