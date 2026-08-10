@@ -128,6 +128,7 @@
     A10000000000000000000899 /* SignalASIAgentHomeSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000899 /* SignalASIAgentHomeSupportViews.swift */; };
     A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */; };
     A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */; };
+    A10000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */; };
     A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001435 /* SignalASIAgentComposerView.swift */; };
     A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */; };
     A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */; };
@@ -881,6 +882,7 @@
     A20000000000000000000899 /* SignalASIAgentHomeSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeSupportViews.swift; sourceTree = "<group>"; };
     A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeReadinessView.swift; sourceTree = "<group>"; };
     A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeQuickActionsView.swift; sourceTree = "<group>"; };
+    A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomePresentationRoutesView.swift; sourceTree = "<group>"; };
     A20000000000000000001435 /* SignalASIAgentComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerView.swift; sourceTree = "<group>"; };
     A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerUiPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScreenContextView.swift; sourceTree = "<group>"; };
@@ -1959,6 +1961,7 @@
         A20000000000000000000899 /* SignalASIAgentHomeSupportViews.swift */,
         A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */,
         A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */,
+        A20000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift */,
         A20000000000000000001435 /* SignalASIAgentComposerView.swift */,
         A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */,
         A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */,
@@ -2835,6 +2838,7 @@
         A10000000000000000000899 /* SignalASIAgentHomeSupportViews.swift in Sources */,
         A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */,
         A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */,
+        A10000000000000000001850 /* SignalASIAgentHomePresentationRoutesView.swift in Sources */,
         A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */,
         A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */,
         A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */,

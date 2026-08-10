@@ -494,20 +494,6 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .sheet(isPresented: $scanShortcutActive) {
-        AddContactView(
-          autoOpenScanner: true,
-          onAgentAdded: { agentIDs in
-            scanShortcutActive = false
-            scanStatus = t(
-              "signalasi.agent.scan.selecting",
-              "Agent added. Selecting it for this session..."
-            )
-            scanStatusIsError = false
-            focusScannedAgents(agentIDs)
-          }
-        )
-      }
       .background(
         NavigationLink(
           destination: SignalASIAgentRecentTasksView(initialTask: recentTaskForDetails),
@@ -695,151 +681,73 @@ struct AgentHomeView: View {
         guard !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         runtimeArtifactError = failure
       }
-      .fileImporter(
-        isPresented: $fileImporterPresented,
-        allowedContentTypes: [.item],
-        allowsMultipleSelection: true
-      ) { result in
-        switch result {
-        case .success(let urls):
-          urls.forEach(addAttachment)
-        case .failure(let error):
-          attachmentError = error.localizedDescription
-        }
-      }
-      .fullScreenCover(isPresented: $cameraPickerPresented) {
-        CameraAttachmentPickerView { attachment in
-          appendAttachment(attachment)
-        }
-      }
-      .sheet(item: $selectedMessageForDetails) { message in
-        MessageDetailView(message: message, contact: contact)
-      }
-      .sheet(item: $homeActionEditorSelection) { selection in
-        SignalASIAgentRuntimeActionEditorSheet(
-          task: selection.task,
-          action: selection.action,
-          t: t,
-          onUpdate: { taskId, actionId, description, input in
-            coordinator.updatePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId,
-              description: description,
-              input: input
-            )
-          },
-          onMove: { taskId, actionId, offset in
-            coordinator.movePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId,
-              offset: offset
-            )
-          },
-          onRemove: { taskId, actionId in
-            coordinator.removePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId
-            )
-          }
-        )
-      }
-      .sheet(item: $runtimeArtifactPreview) { preview in
-        SignalASIRuntimeArtifactPreviewView(preview: preview)
-      }
-      .fileExporter(
-        isPresented: $runtimeArtifactExportPresented,
-        document: runtimeArtifactDocument,
-        contentType: .data,
-        defaultFilename: runtimeArtifactExportFilename
-      ) { result in
-        if case .success(let url) = result,
-           !runtimeArtifactExportSourceURI.isEmpty {
-          coordinator.markDesktopArtifactSaved(
-            sourceURI: runtimeArtifactExportSourceURI,
-            savedURI: url.absoluteString
+      .signalASIAgentHomePresentationRoutes(
+        scanShortcutActive: $scanShortcutActive,
+        fileImporterPresented: $fileImporterPresented,
+        cameraPickerPresented: $cameraPickerPresented,
+        attachmentError: $attachmentError,
+        selectedMessageForDetails: $selectedMessageForDetails,
+        homeActionEditorSelection: $homeActionEditorSelection,
+        runtimeArtifactPreview: $runtimeArtifactPreview,
+        runtimeArtifactDocument: $runtimeArtifactDocument,
+        runtimeArtifactExportPresented: $runtimeArtifactExportPresented,
+        runtimeArtifactExportFilename: $runtimeArtifactExportFilename,
+        runtimeArtifactError: $runtimeArtifactError,
+        runtimeArtifactStatus: $runtimeArtifactStatus,
+        richActionStatus: $richActionStatus,
+        pendingHighRiskApprovalTask: $pendingHighRiskApprovalTask,
+        homeTaskPendingDeletion: $homeTaskPendingDeletion,
+        contact: contact,
+        t: t,
+        onAgentAdded: { agentIDs in
+          scanStatus = t(
+            "signalasi.agent.scan.selecting",
+            "Agent added. Selecting it for this session..."
           )
-          runtimeArtifactExportSourceURI = ""
-        } else if case .failure(let error) = result {
-          runtimeArtifactExportSourceURI = ""
-          runtimeArtifactError = error.localizedDescription
-        }
-      }
-      .alert(
-        t("runtime_artifact.error.title", "Artifact unavailable"),
-        isPresented: Binding(
-          get: { !runtimeArtifactError.isEmpty },
-          set: { if !$0 { runtimeArtifactError = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          runtimeArtifactError = ""
-        }
-      } message: {
-        Text(runtimeArtifactError)
-      }
-      .alert(
-        t("runtime_artifact.status.title", "Artifact"),
-        isPresented: Binding(
-          get: { !runtimeArtifactStatus.isEmpty },
-          set: { if !$0 { runtimeArtifactStatus = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          runtimeArtifactStatus = ""
-        }
-      } message: {
-        Text(runtimeArtifactStatus)
-      }
-      .alert(
-        t("signalasi.agent.action_status.title", "Agent action"),
-        isPresented: Binding(
-          get: { !richActionStatus.isEmpty },
-          set: { if !$0 { richActionStatus = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          richActionStatus = ""
-        }
-      } message: {
-        Text(richActionStatus)
-      }
-      .alert(item: $pendingHighRiskApprovalTask) { task in
-        let action = task.pendingAction
-        let fallbackDescription = t("signalasi.agent.confirmation.untitled", "Phone action")
-        let description = action.map {
-          $0.description.ifBlank(fallbackDescription)
-        } ?? fallbackDescription
-        let target = action?.target.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let detail = target.isEmpty ? description : "\(description)\n\(target)"
-        return Alert(
-          title: Text(t("signalasi.agent.high_risk_confirmation.title", "Confirm high-risk action")),
-          message: Text(detail),
-          primaryButton: .default(
-            Text(t("signalasi.agent.high_risk_confirmation.execute", "Execute"))
-          ) {
-            approveHighRiskTask(task)
-          },
-          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
-        )
-      }
-      .alert(item: $homeTaskPendingDeletion) { task in
-        Alert(
-          title: Text(t("signalasi.agent_task_center.delete_title", "Delete task?")),
-          message: Text(
-            String(
-              format: t(
-                "signalasi.agent_task_center.delete_message",
-                "Delete the task record for \"%@\"? The conversation will remain available."
-              ),
-              task.goal
+          scanStatusIsError = false
+          focusScannedAgents(agentIDs)
+        },
+        onAddAttachment: addAttachment,
+        onAppendAttachment: appendAttachment,
+        onUpdatePendingAction: { taskId, actionId, description, input in
+          coordinator.updatePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId,
+            description: description,
+            input: input
+          )
+        },
+        onMovePendingAction: { taskId, actionId, offset in
+          coordinator.movePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId,
+            offset: offset
+          )
+        },
+        onRemovePendingAction: { taskId, actionId in
+          coordinator.removePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId
+          )
+        },
+        onArtifactExport: { result in
+          if case .success(let url) = result,
+             !runtimeArtifactExportSourceURI.isEmpty {
+            coordinator.markDesktopArtifactSaved(
+              sourceURI: runtimeArtifactExportSourceURI,
+              savedURI: url.absoluteString
             )
-          ),
-          primaryButton: .destructive(Text(t("signalasi.common.delete", "Delete"))) {
-            handleAgentRuntimeTaskAction(.delete, task: task)
-          },
-          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
-        )
-      }
+            runtimeArtifactExportSourceURI = ""
+          } else if case .failure(let error) = result {
+            runtimeArtifactExportSourceURI = ""
+            runtimeArtifactError = error.localizedDescription
+          }
+        },
+        onApproveHighRisk: approveHighRiskTask,
+        onDeleteTask: { task in
+          handleAgentRuntimeTaskAction(.delete, task: task)
+        }
+      )
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
