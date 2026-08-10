@@ -247,6 +247,7 @@
     A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */; };
     A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */; };
     A10000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */; };
+    A1000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */; };
     A10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */; };
     A10000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift */; };
     A10000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */; };
@@ -996,6 +997,7 @@
     A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperDecodeScheduler.swift; sourceTree = "<group>"; };
     A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperDecodeSchedulerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperTranscriptionSession.swift; sourceTree = "<group>"; };
+    A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperFinalAudioChunker.swift; sourceTree = "<group>"; };
     A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperTranscriptCompletenessPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperTranscriptionSessionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperCoordinatorBridge.swift; sourceTree = "<group>"; };
@@ -1757,6 +1759,7 @@
         A20000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift */,
         A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */,
         A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */,
+        A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */,
         A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */,
         A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */,
         A20000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift */,
@@ -2597,6 +2600,7 @@
         A10000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift in Sources */,
         A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */,
         A10000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift in Sources */,
+        A1000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift in Sources */,
         A10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */,
         A10000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift in Sources */,
         A10000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift in Sources */,
