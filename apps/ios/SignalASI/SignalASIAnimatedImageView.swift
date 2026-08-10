@@ -105,7 +105,7 @@ struct SignalASIAnimatedImageView: UIViewRepresentable {
   let data: Data
 
   func makeUIView(context: Context) -> UIImageView {
-    let imageView = UIImageView()
+    let imageView = SignalASIRichAnimatedImageView()
     imageView.contentMode = .scaleAspectFit
     imageView.clipsToBounds = true
     imageView.accessibilityTraits = .image
@@ -116,13 +116,15 @@ struct SignalASIAnimatedImageView: UIViewRepresentable {
     let identity = String(data.base64EncodedString().hashValue)
     guard imageView.accessibilityIdentifier != identity else { return }
     imageView.accessibilityIdentifier = identity
-    imageView.stopAnimating()
+    SignalASIRichAnimatedImagePlaybackCoordinator.shared.deactivate(imageView)
     if let frames = SignalASIImageResourceDecoder.frames(from: data) {
       imageView.animationImages = frames.images
       imageView.animationDuration = frames.duration
       imageView.animationRepeatCount = 0
       imageView.image = frames.images.first
-      imageView.startAnimating()
+      if imageView.window != nil {
+        SignalASIRichAnimatedImagePlaybackCoordinator.shared.activate(imageView)
+      }
     } else {
       imageView.animationImages = nil
       imageView.image = SignalASIImageResourceDecoder.staticImage(from: data)

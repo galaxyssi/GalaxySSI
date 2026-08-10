@@ -15,6 +15,7 @@
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A00 /* SignalASIRichContentView.swift */; };
     A10000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */; };
+    A10000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */; };
     A10000000000000000001370 /* SignalASIMessageActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001370 /* SignalASIMessageActionsView.swift */; };
     A10000000000000000001433 /* SignalASIPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001433 /* SignalASIPairingView.swift */; };
     A10000000000000000001431 /* SignalASIFriendRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */; };
@@ -763,6 +764,7 @@
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000A00 /* SignalASIRichContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichContentView.swift; sourceTree = "<group>"; };
     A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAsyncAnimatedImageView.swift; sourceTree = "<group>"; };
+    A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichAnimatedImagePlayback.swift; sourceTree = "<group>"; };
     A20000000000000000001370 /* SignalASIMessageActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMessageActionsView.swift; sourceTree = "<group>"; };
     A20000000000000000001433 /* SignalASIPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPairingView.swift; sourceTree = "<group>"; };
 		A20000000000000000001431 /* SignalASIFriendRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIFriendRequestDetailView.swift; sourceTree = "<group>"; };
@@ -1534,6 +1536,7 @@
         A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */,
         A20000000000000000000792 /* CloudModelConversationContext.swift */,
         A20000000000000000009997 /* SignalASIAnimatedImageView.swift */,
+        A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */,
         A20000000000000000009998 /* CloudImagePayload.swift */,
         A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */,
         A20000000000000000000707 /* AgentExecutionPolicy.swift */,
@@ -2689,6 +2692,7 @@
         A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */,
         A10000000000000000000792 /* CloudModelConversationContext.swift in Sources */,
         A10000000000000000009997 /* SignalASIAnimatedImageView.swift in Sources */,
+        A10000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift in Sources */,
         A10000000000000000009998 /* CloudImagePayload.swift in Sources */,
         A10000000000000000000794 /* CloudModelContextOverflowRetry.swift in Sources */,
         A10000000000000000000164 /* AgentModelPlannerContactResolver.swift in Sources */,
