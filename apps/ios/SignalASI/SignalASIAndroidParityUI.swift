@@ -2063,6 +2063,12 @@ struct AgentHomeView: View {
       taskBudget: store.agentTaskBudget,
       callableTargets: availableCallableTargetCount,
       currentGoal: draft,
+      currentApp: agentScreenSnapshot.screen.foregroundApp
+        .ifBlank(agentScreenSnapshot.screen.pageTitle)
+        .ifBlank("SignalASI iOS"),
+      memorySnapshot: store.agentMemorySnapshot(),
+      knowledgeStats: store.agentKnowledgeStats,
+      knowledgeHitCount: store.agentKnowledgeAccessAudit.count,
       recentTasks: agentRuntimeTasks,
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
       auditRecords: agentRuntimeAuditRecords,

@@ -7,6 +7,10 @@ struct SignalASIAgentRuntimePanelView: View {
   var taskBudget: AgentTaskBudget
   var callableTargets: Int
   var currentGoal: String
+  var currentApp: String
+  var memorySnapshot: AgentMemorySnapshot
+  var knowledgeStats: AgentKnowledgeStats
+  var knowledgeHitCount: Int
   var recentTasks: [AgentTaskRecord]
   var nativeTools: [AgentNativeToolDescriptor]
   var auditRecords: [AgentNativeToolAuditRecord]
@@ -21,10 +25,12 @@ struct SignalASIAgentRuntimePanelView: View {
   var onOpenRecentTasks: () -> Void
   var t: (String, String) -> String
 
-  @State private var expandedSectionIds: Set<String> = ["requirements", "recent_tasks"]
+  @State private var expandedSectionIds: Set<String> = ["info", "requirements", "recent_tasks"]
   @State private var selectedTask: AgentTaskRecord?
   @State private var selectedAction: SignalASIAgentRuntimeActionSelection?
   @State private var deletingTask: AgentTaskRecord?
+  @State private var memoryViewActive = false
+  @State private var knowledgeViewActive = false
 
   private var activeTasks: [AgentTaskRecord] {
     recentTasks.filter { task in
@@ -52,6 +58,18 @@ struct SignalASIAgentRuntimePanelView: View {
     VStack(alignment: .leading, spacing: 10) {
       statusHeader
       controlStrip
+      runtimeSection(
+        id: "info",
+        title: t("agent_section_info", "Info"),
+        subtitle: String(
+          format: t("signalasi.agent_runtime.info_summary", "%d targets / %d running tasks"),
+          callableTargets,
+          activeTasks.count
+        ),
+        systemImage: "info.circle",
+        rows: infoRows,
+        emptyTitle: t("agent_info_empty", "No Agent runtime information")
+      )
       runtimeSection(
         id: "toolbox",
         title: t("agent_section_toolbox", "Toolbox"),
@@ -154,6 +172,24 @@ struct SignalASIAgentRuntimePanelView: View {
         onRemove: onRemovePendingAction
       )
     }
+    .background(
+      NavigationLink(
+        destination: SignalASIAgentMemoryView(),
+        isActive: $memoryViewActive
+      ) {
+        EmptyView()
+      }
+      .hidden()
+    )
+    .background(
+      NavigationLink(
+        destination: SignalASIAgentKnowledgeView(),
+        isActive: $knowledgeViewActive
+      ) {
+        EmptyView()
+      }
+      .hidden()
+    )
   }
 
   @ViewBuilder
@@ -407,6 +443,71 @@ struct SignalASIAgentRuntimePanelView: View {
         tint: nativeRiskTint(tool.risk)
       )
     }
+  }
+
+  private var infoRows: [SignalASIAgentRuntimeRow] {
+    [
+      SignalASIAgentRuntimeRow(
+        id: "info-current-app",
+        title: String(
+          format: t("agent_current_app_value", "Current app: %@"),
+          currentApp.ifBlank(t("agent_current_app_unknown", "Unknown"))
+        ),
+        detail: "",
+        badge: "",
+        systemImage: "app",
+        tint: .signalASIAccent
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "info-callable-targets",
+        title: String(
+          format: t("agent_callable_targets_value", "Callable targets: %d"),
+          callableTargets
+        ),
+        detail: "",
+        badge: "",
+        systemImage: "person.2",
+        tint: .signalASIAccent
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "info-running-tasks",
+        title: String(
+          format: t("agent_running_tasks_value", "Running tasks: %d"),
+          activeTasks.count
+        ),
+        detail: "",
+        badge: "",
+        systemImage: "bolt.circle",
+        tint: .signalASIAccent
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "info-memory",
+        title: String(
+          format: t("agent_memory_value", "Memory: %d / conflicts: %d"),
+          memorySnapshot.activeCount,
+          memorySnapshot.conflicts.count
+        ),
+        detail: t("agent_runtime.open_memory_detail", "Open Agent memory"),
+        badge: "",
+        systemImage: "brain",
+        tint: .signalASIAccent,
+        onTap: { memoryViewActive = true }
+      ),
+      SignalASIAgentRuntimeRow(
+        id: "info-knowledge",
+        title: String(
+          format: t("agent_knowledge_value", "Knowledge: %d items / %d sources / %d hits"),
+          knowledgeStats.itemCount,
+          knowledgeStats.sourceCount,
+          knowledgeHitCount
+        ),
+        detail: t("agent_runtime.open_knowledge_detail", "Open Agent knowledge"),
+        badge: "",
+        systemImage: "books.vertical",
+        tint: .signalASIAccent,
+        onTap: { knowledgeViewActive = true }
+      )
+    ]
   }
 
   private var actionQueueRows: [SignalASIAgentRuntimeRow] {
