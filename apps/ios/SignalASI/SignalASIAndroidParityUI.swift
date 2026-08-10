@@ -1384,6 +1384,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
+                statusTint: remoteAgentStatusTint(activeRemoteAgentTask.status),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: activeRemoteAgentTask.isCancellable &&
@@ -1411,6 +1412,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
+                statusTint: agentPhaseTint(activeExecutionTask.phase),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
@@ -1479,6 +1481,7 @@ struct AgentHomeView: View {
                       ),
                       details: task.executionLog,
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: agentPhaseTint(task.phase),
                       timelineActions: agentTimelineActions(for: task),
                       timelineActionTitle: { agentTimelineActionTitle($0) },
                       timelineActionIcon: { agentTimelineActionIcon($0) },
@@ -1510,6 +1513,7 @@ struct AgentHomeView: View {
                       ),
                       details: remoteTask.history.map(remoteAgentTimelineLine),
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(remoteTask.status),
                       canCancel: remoteTask.isCancellable &&
                         !cancellingRemoteTaskIDs.contains(remoteTask.id),
                       cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
@@ -1537,6 +1541,7 @@ struct AgentHomeView: View {
                       details: [run.progressMessage, run.partialResult, run.resultSummary]
                         .filter { !$0.isBlank },
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(run.state.rawValue),
                       canCancel: run.cancellable && !cancellingVoiceRunIDs.contains(run.runId),
                       cancelTitle: cancellingVoiceRunIDs.contains(run.runId)
                         ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
@@ -2095,6 +2100,18 @@ struct AgentHomeView: View {
     }
   }
 
+  private func agentPhaseTint(_ phase: AgentPhase) -> Color {
+    switch phase {
+    case .blocked, .failed:
+      return .red
+    case .cancelled, .paused:
+      return .signalASITextSecondary
+    case .observing, .planning, .waitingConfirmation, .executing, .verifying,
+         .waitingResponse, .completed:
+      return .signalASIAccent
+    }
+  }
+
   private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
     let location = AgentExecutionPresentationPolicy.location(record: task)
     let summary = [
@@ -2145,6 +2162,17 @@ struct AgentHomeView: View {
       return t("agent_task_status_cancelling", "Cancelling")
     default:
       return status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  private func remoteAgentStatusTint(_ status: String) -> Color {
+    switch AgentRemoteTaskStatusPolicy.normalize(status) {
+    case "failed", "timed_out", "not_found":
+      return .red
+    case "cancelled", "cancelling":
+      return .signalASITextSecondary
+    default:
+      return .signalASIAccent
     }
   }
 
@@ -2302,9 +2330,11 @@ struct AgentHomeView: View {
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_sessions_title", "Agent sessions")))
         NavigationLink(
           destination: SignalASIAgentModelSelectionView {
             modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
@@ -2327,9 +2357,11 @@ struct AgentHomeView: View {
           }
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+          .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
+          .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_model_selection_title", "Agent model selection")))
       }
       .frame(width: 128, minHeight: 44, alignment: .trailing)
       NavigationLink(destination: SettingsView()) {
@@ -2339,6 +2371,7 @@ struct AgentHomeView: View {
           .frame(width: 44, height: 44)
       }
       .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("agent_more_actions", "More actions")))
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)

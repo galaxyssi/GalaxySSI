@@ -6304,6 +6304,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
   private let liveWhisperController: VoiceLiveWhisperCaptureController
   private let audioEngine = AVAudioEngine()
+  private let audioLevelLock = NSLock()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
@@ -6315,6 +6316,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var pcmTapSpeechEnded = false
   private var pcmTapEndpointRequested = false
   private var liveWhisperActive = false
+  private var latestAudioLevel: Float = 0
+
+  var currentAudioLevel: Float {
+    audioLevelLock.lock()
+    defer { audioLevelLock.unlock() }
+    return latestAudioLevel
+  }
 
   init(
     coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge(),
@@ -6392,6 +6400,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     stableTranscript = ""
     unstableTranscript = ""
     currentIOSSpeechTranscript = ""
+    updateAudioLevel(0)
     currentRecognitionModelProfileId = localeIdentifier
     request = SFSpeechAudioBufferRecognitionRequest()
     guard let request = request else {
@@ -6541,6 +6550,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     currentIOSSpeechTranscript = ""
     stableTranscript = ""
     unstableTranscript = ""
+    updateAudioLevel(0)
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
@@ -6614,6 +6624,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
     guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
+    updateAudioLevel(Float(update.decision.peak) / Float(Int16.max))
     coordinatorBridge.dispatchAudioLevel(update.decision.rms)
     if update.endpoint.speechStarted, !pcmTapSpeechStarted {
       pcmTapSpeechStarted = true
@@ -6652,6 +6663,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         self.stop()
       }
     }
+  }
+
+  private func updateAudioLevel(_ value: Float) {
+    audioLevelLock.lock()
+    latestAudioLevel = min(max(value, 0), 1)
+    audioLevelLock.unlock()
   }
 
   private func emitCommands(_ transition: VoiceInteractionTransition) {
