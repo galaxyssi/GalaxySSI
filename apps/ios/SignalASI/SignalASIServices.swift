@@ -1568,6 +1568,34 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func outgoingAttachmentRichOutput(
+    _ attachments: [SignalASIDraftAttachment]
+  ) -> String {
+    var remainingInlineBytes = SignalASIAttachmentPayloadBuilder.maximumInlineBytes
+    let blocks = attachments.prefix(SignalASIAttachmentPayloadBuilder.maximumAttachmentCount).map { attachment in
+      var dataB64 = ""
+      if attachment.isImage,
+         attachment.data.count <= remainingInlineBytes {
+        dataB64 = attachment.data.base64EncodedString()
+        remainingInlineBytes -= attachment.data.count
+      }
+      return AgentRichBlock(
+        id: attachment.id,
+        type: attachment.isImage ? .image : .file,
+        title: attachment.displayName,
+        text: attachment.isImage ? "" : attachment.humanSize,
+        dataB64: dataB64,
+        mimeType: attachment.mimeType,
+        fallbackText: attachment.displayName,
+        metadata: [
+          "size_bytes": String(attachment.sizeBytes),
+          "source": "user_attachment"
+        ]
+      )
+    }
+    return AgentRichContentCodec.encode(Array(blocks))
+  }
+
   func send(
     _ text: String,
     to contact: SignalASIContact,
@@ -1582,10 +1610,12 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let originalRequestText = requestText
+    let richOutputJson = outgoingAttachmentRichOutput(attachments)
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
-      turnId: voiceSessionId
+      turnId: voiceSessionId,
+      richOutputJson: richOutputJson
     )
     if !voiceSessionId.isEmpty {
       _ = VoiceAgentRunBridgeRegistry.shared.bindTransportIdentity(
