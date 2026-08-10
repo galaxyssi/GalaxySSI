@@ -2569,6 +2569,7 @@ struct AgentHomeView: View {
   private var agentRuntimePanel: some View {
     SignalASIAgentRuntimePanelView(
       safetySettings: store.agentSafetySettings,
+      taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
       modelPlannerSettings: store.modelPlannerSettings,
       taskBudget: store.agentTaskBudget,
       callableTargets: availableCallableTargetCount,
@@ -2583,6 +2584,7 @@ struct AgentHomeView: View {
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
       auditRecords: agentRuntimeAuditRecords,
       onCyclePermissionMode: cycleAgentPermissionMode,
+      onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
       onToggleHighRiskGuard: {
         store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
       },
@@ -2893,6 +2895,15 @@ struct AgentHomeView: View {
       return
     }
     store.updateAgentSafetySettings { $0.permissionMode = modes[(index + 1) % modes.count] }
+  }
+
+  private func cycleAgentTaskExecutionMode() {
+    let modes = AgentTaskExecutionMode.allCases
+    guard let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) else {
+      store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
+      return
+    }
+    store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
   }
 
   private func refreshAgentRuntimeAuditRecords() {
