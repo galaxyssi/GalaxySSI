@@ -1,5 +1,10 @@
 import SwiftUI
 
+struct AgentReplyWaitingIndicatorState: Equatable {
+  var messageIDs: Set<UUID>
+  var unboundTurnIDs: [String]
+}
+
 enum AgentReplyWaitingIndicatorPolicy {
   static let dedupePrefix = "ui-reply-waiting:"
 
@@ -22,28 +27,61 @@ enum AgentReplyWaitingIndicatorPolicy {
   }
 
   static func viewID(for message: ChatMessage) -> String {
-    "\(dedupePrefix)\(turnKey(for: message))"
+    viewID(forTurnID: turnKey(for: message))
+  }
+
+  static func viewID(forTurnID turnID: String) -> String {
+    "\(dedupePrefix)\(turnID)"
+  }
+
+  static func state(
+    messages: [ChatMessage],
+    pendingTurnIds: Set<String>
+  ) -> AgentReplyWaitingIndicatorState {
+    guard !pendingTurnIds.isEmpty else {
+      return AgentReplyWaitingIndicatorState(messageIDs: [], unboundTurnIDs: [])
+    }
+    let assistantTurnIds = Set(
+      messages
+        .filter { !$0.isMine && !$0.isSystem }
+        .map { turnKey(for: $0) }
+    )
+    let userTurnIds = Set(
+      messages
+        .filter { $0.isMine && !$0.isSystem }
+        .map { turnKey(for: $0) }
+    )
+    let messageIDs = Set(
+      messages
+        .filter { message in
+          message.isMine &&
+            !message.isSystem &&
+            pendingTurnIds.contains(turnKey(for: message)) &&
+            !assistantTurnIds.contains(turnKey(for: message))
+        }
+        .map(\.id)
+    )
+    let unboundTurnIDs = pendingTurnIds
+      .filter { !assistantTurnIds.contains($0) && !userTurnIds.contains($0) }
+      .sorted()
+    return AgentReplyWaitingIndicatorState(
+      messageIDs: messageIDs,
+      unboundTurnIDs: unboundTurnIDs
+    )
   }
 
   static func waitingMessageIDs(
     messages: [ChatMessage],
     pendingTurnIds: Set<String>
   ) -> Set<UUID> {
-    guard !pendingTurnIds.isEmpty else { return [] }
-    let assistantTurnIds = Set(
-      messages
-        .filter { !$0.isMine && !$0.isSystem }
-        .map { turnKey(for: $0) }
-    )
-    return Set(
-      messages
-        .filter { message in
-          message.isMine &&
-            pendingTurnIds.contains(turnKey(for: message)) &&
-            !assistantTurnIds.contains(turnKey(for: message))
-        }
-        .map(\.id)
-    )
+    state(messages: messages, pendingTurnIds: pendingTurnIds).messageIDs
+  }
+
+  static func unboundTurnIDs(
+    messages: [ChatMessage],
+    pendingTurnIds: Set<String>
+  ) -> [String] {
+    state(messages: messages, pendingTurnIds: pendingTurnIds).unboundTurnIDs
   }
 }
 
