@@ -1022,6 +1022,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func actionsBlock(title: String) -> some View {
+    let isStandalone = block.type == .actions
     VStack(alignment: .leading, spacing: 8) {
       if !title.isEmpty {
         selectableText(title)
@@ -1055,6 +1056,17 @@ private struct SignalASIRichBlockView: View {
         }
       }
     }
+    .padding(.horizontal, isStandalone ? 12 : 0)
+    .padding(.vertical, isStandalone ? 11 : 0)
+    .background(isStandalone ? Color.signalASISearchBackground : Color.clear)
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(
+          isStandalone ? Color.signalASISeparator : Color.clear,
+          lineWidth: isStandalone ? 0.5 : 0
+        )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 
   @ViewBuilder
