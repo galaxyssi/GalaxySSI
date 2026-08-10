@@ -3714,6 +3714,7 @@
 "signalasi.agent.model_selection.on_device" = "本机";
 "signalasi.agent.model_selection.cloud_section" = "云模型";
 "signalasi.agent.model_selection.current" = "当前";
+"signalasi.agent.model_selection.unavailable" = "不可用";
 "signalasi.agent.model_selection.no_models" = "没有就绪模型";
 "signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型、安装本机模型或连接 Agent。";
 "signalasi.agent.cancel_task" = "取消任务";
