@@ -1694,6 +1694,24 @@ enum AgentTaskHistoryCommand: Equatable {
   }
 }
 
+enum AgentScreenSearchCommand {
+  static func query(_ goal: String) -> String? {
+    let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+    let prefixes = [
+      "search screen elements ", "find screen element ",
+      "search screen ", "find on screen ",
+      "搜索屏幕元素 ", "查找屏幕元素 ", "搜索屏幕 "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    let value = String(clean.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))
