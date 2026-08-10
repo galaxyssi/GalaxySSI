@@ -1145,6 +1145,10 @@ struct AgentHomeView: View {
               onScan: {
                 scanShortcutActive = true
               },
+              onTakePhoto: openCameraAttachmentPicker,
+              onAddFile: {
+                fileImporterPresented = true
+              },
               onOpenSettings: {
                 agentSettingsShortcutActive = true
               },
