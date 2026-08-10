@@ -198,6 +198,25 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "Current app: \(screen.foregroundApp.prefixStringForPlanning(160))\n")
     append(&prompt, "Current page: \(screen.pageTitle.prefixStringForPlanning(160))\n")
     append(&prompt, "Screen counts: text=\(visibleTextCount), actions=\(clickableCount), fields=\(inputCount)\n")
+    append(
+      &prompt,
+      "Structured elements: clickable=\(screen.clickableElements.count), inputs=\(screen.inputFields.count), scrollable=\(screen.scrollableRegions.count), focused=\(screen.focusedInputField != nil)\n"
+    )
+    for element in screen.clickableElements.prefix(12) {
+      append(
+        &prompt,
+        "- action id=\(element.viewId.prefixStringForPlanning(160)) | label=\(element.label.ifBlankForPlanning(element.className).prefixStringForPlanning(160)) | role=\(element.visualRole.rawValue) | confidence=\(formatConfidence(element.confidence))\n"
+      )
+    }
+    for element in screen.inputFields.prefix(8) {
+      append(
+        &prompt,
+        "- input id=\(element.viewId.prefixStringForPlanning(160)) | label=\(element.label.ifBlankForPlanning(element.className).prefixStringForPlanning(160)) | role=\(element.visualRole.rawValue) | confidence=\(formatConfidence(element.confidence))\n"
+      )
+    }
+    if !screen.sensitiveFlags.isEmpty {
+      append(&prompt, "Screen sensitive flags: \(screen.sensitiveFlags.prefix(8).joined(separator: ","))\n")
+    }
     if screen.notifications.hasAccess {
       append(&prompt, "Notifications: total=\(screen.notifications.totalCount), visible=\(screen.notifications.items.count)\n")
       for item in screen.notifications.items.prefix(6) {

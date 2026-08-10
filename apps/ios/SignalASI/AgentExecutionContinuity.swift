@@ -145,7 +145,11 @@ enum AgentExecutionContinuity {
       }.joined(separator: "\u{001d}"),
       screen.clipboard.textHash,
       String(screen.clipboard.textLength),
-      screen.clipboard.sensitiveFlags.joined(separator: ",")
+      screen.clipboard.sensitiveFlags.joined(separator: ","),
+      screen.sensitiveFlags.joined(separator: ","),
+      screen.clickableElements.prefix(12).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
+      screen.inputFields.prefix(8).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
+      screen.scrollableRegions.prefix(6).map(\.viewId).joined(separator: "\u{001d}")
     ].joined(separator: "\u{001e}")
     return String(javaStringHash(payload))
   }

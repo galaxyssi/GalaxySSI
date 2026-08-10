@@ -237,6 +237,11 @@ struct AgentScreenContext: Codable, Equatable {
   var selectedText: String
   var notifications: AgentNotificationContext
   var clipboard: AgentClipboardContext
+  var focusedInputField: AgentScreenElement?
+  var clickableElements: [AgentScreenElement]
+  var inputFields: [AgentScreenElement]
+  var scrollableRegions: [AgentScreenElement]
+  var sensitiveFlags: [String]
   var isAccessibilityEnabled: Bool
   var snapshotAgeMillis: Int64
 
@@ -253,6 +258,11 @@ struct AgentScreenContext: Codable, Equatable {
     selectedText: String = "",
     notifications: AgentNotificationContext = AgentNotificationContext(),
     clipboard: AgentClipboardContext = AgentClipboardContext(),
+    focusedInputField: AgentScreenElement? = nil,
+    clickableElements: [AgentScreenElement] = [],
+    inputFields: [AgentScreenElement] = [],
+    scrollableRegions: [AgentScreenElement] = [],
+    sensitiveFlags: [String] = [],
     isAccessibilityEnabled: Bool = false,
     snapshotAgeMillis: Int64 = 0
   ) {
@@ -272,6 +282,16 @@ struct AgentScreenContext: Codable, Equatable {
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
     self.notifications = notifications
     self.clipboard = clipboard
+    self.focusedInputField = focusedInputField
+    self.clickableElements = Array(clickableElements.prefix(Self.maximumScreenElements))
+    self.inputFields = Array(inputFields.prefix(Self.maximumScreenElements))
+    self.scrollableRegions = Array(scrollableRegions.prefix(Self.maximumScreenElements))
+    self.sensitiveFlags = Array(
+      sensitiveFlags
+        .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)) }
+        .filter { !$0.isEmpty }
+        .prefix(Self.maximumSensitiveFlags)
+    )
     self.isAccessibilityEnabled = isAccessibilityEnabled
     self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
   }
@@ -289,6 +309,11 @@ struct AgentScreenContext: Codable, Equatable {
     case selectedText = "selected_text"
     case notifications
     case clipboard
+    case focusedInputField = "focused_input_field"
+    case clickableElements = "clickable_elements"
+    case inputFields = "input_fields"
+    case scrollableRegions = "scrollable_regions"
+    case sensitiveFlags = "sensitive_flags"
     case isAccessibilityEnabled = "is_accessibility_enabled"
     case snapshotAgeMillis = "snapshot_age_millis"
   }
@@ -306,8 +331,13 @@ struct AgentScreenContext: Codable, Equatable {
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
       visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
-    notifications: try container.decodeIfPresent(AgentNotificationContext.self, forKey: .notifications) ?? AgentNotificationContext(),
-    clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
+      notifications: try container.decodeIfPresent(AgentNotificationContext.self, forKey: .notifications) ?? AgentNotificationContext(),
+      clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
+      focusedInputField: try container.decodeIfPresent(AgentScreenElement.self, forKey: .focusedInputField),
+      clickableElements: try container.decodeIfPresent([AgentScreenElement].self, forKey: .clickableElements) ?? [],
+      inputFields: try container.decodeIfPresent([AgentScreenElement].self, forKey: .inputFields) ?? [],
+      scrollableRegions: try container.decodeIfPresent([AgentScreenElement].self, forKey: .scrollableRegions) ?? [],
+      sensitiveFlags: try container.decodeIfPresent([String].self, forKey: .sensitiveFlags) ?? [],
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
       snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
     )
@@ -316,6 +346,8 @@ struct AgentScreenContext: Codable, Equatable {
   private static let maximumVisibleTextItems = 80
   private static let maximumVisibleTextLength = 300
   private static let maximumSelectedTextLength = 1_000
+  private static let maximumScreenElements = 80
+  private static let maximumSensitiveFlags = 12
 }
 
 struct AgentObservationOutcome: Codable, Equatable {

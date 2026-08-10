@@ -60,12 +60,13 @@ struct GuardedModelAgentPlanner {
     }
 
     let nativeSafeRequest = request.withNativeTools(safeNativeTools(for: request))
+    let screenEnrichedRequest = nativeSafeRequest.withScreenElements()
     let safeRequest = voiceCorrectionJournal.map {
       VoiceCorrectionContextProvider.merge(
-        request: nativeSafeRequest,
+        request: screenEnrichedRequest,
         correctionJournal: $0
       ).request
-    } ?? nativeSafeRequest
+    } ?? screenEnrichedRequest
     let prompt = AgentModelPlanningPrompt.build(request: safeRequest, settings: normalizedSettings)
     let raw: String
     do {
@@ -123,6 +124,7 @@ struct GuardedModelAgentPlanner {
 
   private func hasSensitivePlannerContext(_ screen: AgentScreenContext) -> Bool {
     screen.sensitiveFlagCount > 0 ||
+      !screen.sensitiveFlags.isEmpty ||
       !screen.clipboard.sensitiveFlags.isEmpty ||
       !screen.notifications.sensitiveFlags.isEmpty ||
       screen.notifications.items.contains { !$0.sensitiveFlags.isEmpty }
@@ -148,6 +150,29 @@ private extension AgentModelPlanningPromptRequest {
     return AgentModelPlanningPromptRequest(
       planRequest: nextPlanRequest,
       parsingContext: parsingContext,
+      conversationContext: conversationContext,
+      executionHistory: executionHistory,
+      globalRealtimeContext: globalRealtimeContext,
+      requirements: requirements,
+      hasAttachments: hasAttachments,
+      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
+    )
+  }
+
+  func withScreenElements() -> AgentModelPlanningPromptRequest {
+    var nextContext = parsingContext
+    if nextContext.clickableElements.isEmpty {
+      nextContext.clickableElements = planRequest.screen.clickableElements
+    }
+    if nextContext.inputFields.isEmpty {
+      nextContext.inputFields = planRequest.screen.inputFields
+    }
+    if nextContext.focusedInputField == nil {
+      nextContext.focusedInputField = planRequest.screen.focusedInputField
+    }
+    return AgentModelPlanningPromptRequest(
+      planRequest: planRequest,
+      parsingContext: nextContext,
       conversationContext: conversationContext,
       executionHistory: executionHistory,
       globalRealtimeContext: globalRealtimeContext,
