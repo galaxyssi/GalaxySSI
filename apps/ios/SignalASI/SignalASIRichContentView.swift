@@ -265,8 +265,8 @@ private struct SignalASIRichBlockListView: View {
   var onArtifactSave: (AgentRichBlock) -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ForEach(blocks) { block in
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
         SignalASIRichBlockView(
           block: block,
           isOutgoing: isOutgoing,
@@ -274,7 +274,21 @@ private struct SignalASIRichBlockListView: View {
           onFormSubmit: onFormSubmit,
           onArtifactSave: onArtifactSave
         )
+        .padding(.top, index == 0 ? 0 : Self.blockSpacing(for: block))
       }
+    }
+  }
+
+  private static func blockSpacing(for block: AgentRichBlock) -> CGFloat {
+    switch block.type {
+    case .heading:
+      return 12
+    case .divider:
+      return 10
+    case .text, .list, .quote:
+      return 6
+    default:
+      return 10
     }
   }
 }
