@@ -204,6 +204,7 @@ struct SignalASIAgentModelSelectionView: View {
                   "Connected and ready Agent"
                 ),
                 systemImage: selected ? "checkmark.circle.fill" : "person.2.fill",
+                assetImage: agentLogoAssetName(for: target),
                 tint: selected ? .signalASIAccent : .indigo,
                 badge: selected
                   ? t("signalasi.agent.model_selection.current", "Current")
@@ -225,6 +226,7 @@ struct SignalASIAgentModelSelectionView: View {
                   title: model.displayName.ifBlank(model.modelId),
                   subtitle: "\(contact.displayName) - \(model.modelId)",
                   systemImage: selected ? "checkmark.circle.fill" : "cloud.fill",
+                  assetImage: cloudLogoAssetName(for: contact.cloudProvider),
                   tint: selected ? .signalASIAccent : cloudModelTint(contact.cloudProvider),
                   badge: selected
                     ? t("signalasi.agent.model_selection.current", "Current")
@@ -411,6 +413,30 @@ struct SignalASIAgentModelSelectionView: View {
     case "qwen": return .teal
     default: return .signalASIInsightText
     }
+  }
+
+  private func agentLogoAssetName(for target: AgentCallableTarget) -> String? {
+    logoAssetName(for: "\(target.id) \(target.title)")
+  }
+
+  private func cloudLogoAssetName(for provider: String) -> String? {
+    switch provider.lowercased() {
+    case "openai": return "CloudProviderOpenAI"
+    case "deepseek": return "CloudProviderDeepSeek"
+    case "anthropic", "claude": return "CloudProviderAnthropic"
+    case "gemini", "google gemini": return "CloudProviderGemini"
+    case "qwen": return "CloudProviderQwen"
+    case "openrouter", "open-router": return "CloudProviderOpenRouter"
+    default: return nil
+    }
+  }
+
+  private func logoAssetName(for value: String) -> String? {
+    let normalized = value.lowercased()
+    if normalized.contains("codex") { return "CodexLogo" }
+    if normalized.contains("claude") { return "ClaudeLogo" }
+    if normalized.contains("hermes") { return "HermesLogo" }
+    return nil
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

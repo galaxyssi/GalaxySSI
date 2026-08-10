@@ -162,6 +162,7 @@ struct SignalASISecurityActionRow: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImage: String? = nil
   var tint: Color
   var badge: String
   var monospacedSubtitle: Bool = false
@@ -173,6 +174,7 @@ struct SignalASISecurityActionRow: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImage: assetImage,
         tint: tint,
         badge: badge,
         monospacedSubtitle: monospacedSubtitle,
@@ -233,6 +235,7 @@ struct SignalASISecurityRowContent: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImage: String? = nil
   var tint: Color
   var badge: String
   var monospacedSubtitle: Bool
@@ -243,9 +246,17 @@ struct SignalASISecurityRowContent: View {
       ZStack {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .fill(tint.opacity(0.16))
-        Image(systemName: systemImage)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(tint)
+        if let assetImage, !assetImage.isEmpty {
+          Image(assetImage)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 29, height: 29)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+          Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(tint)
+        }
       }
       .frame(width: 42, height: 42)
       VStack(alignment: .leading, spacing: 3) {
