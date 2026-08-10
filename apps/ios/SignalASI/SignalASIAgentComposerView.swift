@@ -7,6 +7,7 @@ struct SignalASIAgentComposerView: View {
   @Binding var voiceTranscriptionPending: Bool
   @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
   @FocusState private var inputFocused: Bool
+  @State private var emptySubmitMessage = ""
 
   var attachments: [SignalASIDraftAttachment]
   var attachmentError: String
@@ -103,6 +104,12 @@ struct SignalASIAgentComposerView: View {
           .foregroundColor(.red)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+      if !emptySubmitMessage.isEmpty {
+        Text(emptySubmitMessage)
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
       if !holdToTalk.statusMessage.isEmpty {
         Text(holdToTalk.statusMessage)
           .font(.caption)
@@ -130,6 +137,7 @@ struct SignalASIAgentComposerView: View {
     .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: holdToTalk.isPending)
     .animation(deviceInputPolicy.reduceMotion ? nil : .easeOut(duration: 0.16), value: holdToTalk.isRecording)
     .onChange(of: canSend) { hasInput in
+      emptySubmitMessage = ""
       if hasInput {
         actionTrayPresented = false
       }
@@ -190,7 +198,13 @@ struct SignalASIAgentComposerView: View {
         .lineLimit(2)
         .focused($inputFocused)
         .onSubmit {
-          guard canSend else { return }
+          guard canSend else {
+            emptySubmitMessage = t(
+              "agent_empty_goal",
+              "Enter a goal or attach a file."
+            )
+            return
+          }
           inputFocused = false
           actionTrayPresented = false
           onSend()
@@ -339,8 +353,12 @@ struct SignalASIAgentComposerView: View {
                   : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
-          .background(Color.white)
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .background(
+            canSend
+              ? Color(red: 0.655, green: 0.906, blue: 0.847)
+              : Color(red: 0.565, green: 0.569, blue: 0.588)
+          )
+          .clipShape(Circle())
       }
       .buttonStyle(.plain)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)

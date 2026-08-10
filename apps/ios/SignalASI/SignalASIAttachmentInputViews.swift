@@ -18,8 +18,10 @@ struct AttachmentPreviewStrip: View {
             .id(attachment.id)
           }
         }
-        .padding(.vertical, 2)
+        .frame(height: 74, alignment: .center)
+        .padding(.top, 8)
       }
+      .frame(height: 82, alignment: .top)
       .onAppear {
         scrollToLatest(using: proxy)
       }
