@@ -127,6 +127,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       return scheduleAlarmOrTimer(action)
     case .createNotification:
       return createNotification(action)
+    case .typeText, .deleteText, .pasteText:
+      return composerInput(action, screen: screen)
     default:
       return AgentActionResult(
         actionId: action.id,
@@ -140,6 +142,39 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         ]
       )
     }
+  }
+
+  private func composerInput(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    let composerField = screen.inputFields.first { field in
+      field.viewId == "ios.agent.agent-goal-input"
+    } ?? screen.focusedInputField
+    guard let composerField,
+          composerField.viewId == "ios.agent.agent-goal-input",
+          composerField.origin == .manual else {
+      return failure(
+        action,
+        "This iOS input action requires the SignalASI Agent composer.",
+        code: "IOS_AGENT_COMPOSER_ONLY"
+      )
+    }
+
+    let requestedOrigin = clean(action.parameters["field_origin"] ?? "")
+    guard requestedOrigin.isEmpty || requestedOrigin == AgentElementOrigin.manual.rawValue else {
+      return failure(
+        action,
+        "iOS can edit only the SignalASI Agent composer input on this device.",
+        code: "IOS_AGENT_COMPOSER_ONLY"
+      )
+    }
+    let requestedBounds = clean(action.parameters["field_bounds"] ?? "")
+    guard requestedBounds.isEmpty || requestedBounds == composerField.bounds else {
+      return failure(
+        action,
+        "The requested input field is not the SignalASI Agent composer.",
+        code: "IOS_AGENT_COMPOSER_FIELD_MISMATCH"
+      )
+    }
+    return AgentIOSComposerInputBridge.shared.execute(action: action)
   }
 
   private func importWebKnowledge(_ action: AgentAction) -> AgentActionResult {
