@@ -1141,6 +1141,10 @@ async function backendStatus() {
       && payload?.connector === "SignalASI Desktop";
     return {
       running: response.ok && identityMatches,
+      messageBridgeConnected: payload?.message_bridge?.connected === true,
+      messageBridgeRunning: payload?.message_bridge?.running === true,
+      messageBridgeSupervised: payload?.message_bridge?.supervised === true,
+      messageBridgeError: payload?.message_bridge?.last_error || "",
       status: response.status,
       identityMatches,
       origin: BACKEND_ORIGIN,
@@ -1153,6 +1157,9 @@ async function backendStatus() {
   } catch (error) {
     return {
       running: false,
+      messageBridgeConnected: false,
+      messageBridgeRunning: false,
+      messageBridgeSupervised: false,
       status: 0,
       origin: BACKEND_ORIGIN,
       pairingUrl: PAIRING_URL,

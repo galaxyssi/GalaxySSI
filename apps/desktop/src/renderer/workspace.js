@@ -1111,10 +1111,15 @@ async function refreshBackend() {
   } catch (error) {
     state.backend = { running: false, error: error.message || String(error) };
   }
-  const online = Boolean(state.backend?.running);
+  const backendRunning = Boolean(state.backend?.running);
+  const online = backendRunning && Boolean(state.backend?.messageBridgeConnected);
   elements.backendBadge.className = `state-badge ${online ? "ok" : "bad"}`;
   elements.backendBadge.textContent = t(online ? "Online" : "Offline");
-  elements.backendDetail.textContent = online ? state.backend.origin : (state.backend?.error || t("Backend unavailable"));
+  elements.backendDetail.textContent = online
+    ? state.backend.origin
+    : backendRunning
+      ? (state.backend?.messageBridgeError || t("Message bridge reconnecting"))
+      : (state.backend?.error || t("Backend unavailable"));
 }
 
 function renderAgentMemoryGroup(selector, values) {

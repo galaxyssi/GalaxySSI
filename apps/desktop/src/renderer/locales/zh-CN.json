@@ -278,6 +278,7 @@
 , "Online": "在线"
 , "Offline": "离线"
 , "Backend unavailable": "后端不可用"
+, "Message bridge reconnecting": "消息桥正在重新连接"
 , "{count} Agents": "{count} 个 Agent"
 , "No agents detected.": "未检测到 Agent。"
 , "Setup": "设置"
