@@ -208,6 +208,15 @@ enum AgentModelPlanningPrompt {
         }
       }
     }
+    if screen.clipboard.hasText {
+      let sensitivity = screen.clipboard.sensitiveFlags.isEmpty
+        ? "none"
+        : screen.clipboard.sensitiveFlags.joined(separator: ",")
+      append(
+        &prompt,
+        "Clipboard: chars=\(screen.clipboard.textLength), hash=\(screen.clipboard.textHash.prefixStringForPlanning(128)), sensitive=\(sensitivity)\n"
+      )
+    }
     let visualActions = request.parsingContext.clickableElements.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     let visualFields = request.parsingContext.inputFields.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     if visualActions > 0 || visualFields > 0 {
