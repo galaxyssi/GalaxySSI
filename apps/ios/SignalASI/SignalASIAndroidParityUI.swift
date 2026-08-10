@@ -1096,6 +1096,7 @@ struct AgentHomeView: View {
               runningTasks: activeAgentTasks.count,
               callableTargets: availableCallableTargetCount,
               nativeToolSummary: nativeToolSummary,
+              nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
               screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
               executionPaused: store.agentSafetySettings.executionPaused,
               currentApp: agentScreenSnapshot.screen.foregroundApp
