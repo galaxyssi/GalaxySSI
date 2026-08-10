@@ -28,6 +28,16 @@ enum AgentWorkflowTriggerCommandRouter {
     if listCommands.contains(normalized) {
       return listTriggers(triggerStore: triggerStore)
     }
+    if let request = parseCondition(command) {
+      return addCondition(
+        request.condition,
+        triggerID: request.triggerID,
+        triggerStore: triggerStore
+      )
+    }
+    if let triggerID = parseClearConditions(command) {
+      return clearConditions(triggerID, triggerStore: triggerStore)
+    }
     if let triggerId = capture(
       #"^(?:delete|remove)\s+(?:workflow\s+)?trigger\s+(\S+)$"#,
       in: command
@@ -67,6 +77,210 @@ enum AgentWorkflowTriggerCommandRouter {
         actionId: "workflow_trigger_create"
       )
     }
+  }
+
+  private struct ConditionRequest {
+    let triggerID: String
+    let condition: AgentWorkflowCondition
+  }
+
+  private static func parseCondition(_ command: String) -> ConditionRequest? {
+    let patterns = [
+      #"^(?:add|attach)\s+(?:workflow\s+)?trigger\s+condition\s+(\S+)\s*(?:::|when|if)\s*(.+)$"#,
+      #"^(?:add|attach)\s+condition\s+to\s+(?:workflow\s+)?trigger\s+(\S+)\s*(?:::|when|if)\s*(.+)$"#
+    ]
+    for pattern in patterns {
+      guard let values = captures(pattern, in: command), values.count == 2 else { continue }
+      let triggerID = values[0].trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !triggerID.isEmpty, let condition = parseConditionValue(values[1]) else { continue }
+      return ConditionRequest(triggerID: triggerID, condition: condition)
+    }
+    return nil
+  }
+
+  private static func parseConditionValue(_ value: String) -> AgentWorkflowCondition? {
+    let normalized = value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    switch normalized {
+    case "charging", "device charging", "is charging", "charging required":
+      return .deviceCharging(required: true)
+    case "not charging", "device not charging", "is not charging":
+      return .deviceCharging(required: false)
+    case "network available", "network availability", "online", "connected":
+      return .networkAvailable(required: true)
+    case "network unavailable", "offline", "no network", "disconnected":
+      return .networkAvailable(required: false)
+    default:
+      break
+    }
+
+    let batteryPattern = #"^battery(?:\s+threshold)?\s+(below|under|at most|at least|above|over|<=|>=|<|>)\s*(\d{1,3})%?$"#
+    if let values = captures(batteryPattern, in: normalized),
+       values.count == 2,
+       let percent = Int(values[1]),
+       (0...100).contains(percent) {
+      let comparison: AgentWorkflowBatteryComparison
+      switch values[0] {
+      case "below", "under", "<":
+        comparison = .below
+      case "at most", "<=":
+        comparison = .atMost
+      case "at least", ">=":
+        comparison = .atLeast
+      case "above", "over", ">":
+        comparison = .above
+      default:
+        return nil
+      }
+      return .batteryThreshold(percent: percent, comparison: comparison)
+    }
+
+    let timePattern = #"^(?:time(?:\s+window)?|between)\s+(\d{1,2}):(\d{2})\s*(?:-|to|and)\s*(\d{1,2}):(\d{2})$"#
+    if let values = captures(timePattern, in: normalized),
+       values.count == 4,
+       let start = minuteOfDay(hour: values[0], minute: values[1]),
+       let end = minuteOfDay(hour: values[2], minute: values[3]) {
+      return .timeWindow(startMinuteOfDay: start, endMinuteOfDay: end)
+    }
+    return nil
+  }
+
+  private static func minuteOfDay(hour: String, minute: String) -> Int? {
+    guard let hour = Int(hour), (0...23).contains(hour),
+          let minute = Int(minute), (0...59).contains(minute) else {
+      return nil
+    }
+    return hour * 60 + minute
+  }
+
+  private static func parseClearConditions(_ command: String) -> String? {
+    let patterns = [
+      #"^(?:clear|remove)\s+(?:workflow\s+)?trigger\s+conditions\s+(\S+)$"#,
+      #"^(?:clear|remove)\s+(?:all\s+)?conditions\s+from\s+(?:workflow\s+)?trigger\s+(\S+)$"#
+    ]
+    for pattern in patterns {
+      if let triggerID = capture(pattern, in: command)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+         !triggerID.isEmpty {
+        return triggerID
+      }
+    }
+    return nil
+  }
+
+  private static func addCondition(
+    _ condition: AgentWorkflowCondition,
+    triggerID: String,
+    triggerStore: UserDefaultsAgentWorkflowTriggerStore
+  ) -> Result {
+    guard let trigger = triggerStore.findById(triggerID) else {
+      return Result(
+        text: "Workflow trigger not found: \(triggerID)",
+        actionId: "workflow_trigger_condition_add"
+      )
+    }
+    guard !trigger.conditions.contains(condition) else {
+      return Result(
+        text: "Workflow trigger condition already exists: \(conditionLabel(condition))",
+        actionId: "workflow_trigger_condition_add"
+      )
+    }
+    do {
+      let updated = try AgentWorkflowTrigger(
+        id: trigger.id,
+        workflowId: trigger.workflowId,
+        workflowName: trigger.workflowName,
+        kind: trigger.kind,
+        condition: trigger.condition,
+        enabled: trigger.enabled,
+        cooldownMinutes: trigger.cooldownMinutes,
+        lastTriggeredAtMillis: trigger.lastTriggeredAtMillis,
+        createdAtMillis: trigger.createdAtMillis,
+        conditions: trigger.conditions + [condition]
+      )
+      _ = try triggerStore.upsert(updated)
+      return Result(
+        text: "Workflow trigger condition added: \(conditionLabel(condition))",
+        actionId: "workflow_trigger_condition_add"
+      )
+    } catch {
+      return Result(
+        text: "Unable to add workflow trigger condition: \(error.localizedDescription)",
+        actionId: "workflow_trigger_condition_add"
+      )
+    }
+  }
+
+  private static func clearConditions(
+    _ triggerID: String,
+    triggerStore: UserDefaultsAgentWorkflowTriggerStore
+  ) -> Result {
+    guard let trigger = triggerStore.findById(triggerID) else {
+      return Result(
+        text: "Workflow trigger not found: \(triggerID)",
+        actionId: "workflow_trigger_condition_clear"
+      )
+    }
+    guard !trigger.conditions.isEmpty else {
+      return Result(
+        text: "Workflow trigger has no additional conditions: \(triggerID)",
+        actionId: "workflow_trigger_condition_clear"
+      )
+    }
+    do {
+      let updated = try AgentWorkflowTrigger(
+        id: trigger.id,
+        workflowId: trigger.workflowId,
+        workflowName: trigger.workflowName,
+        kind: trigger.kind,
+        condition: trigger.condition,
+        enabled: trigger.enabled,
+        cooldownMinutes: trigger.cooldownMinutes,
+        lastTriggeredAtMillis: trigger.lastTriggeredAtMillis,
+        createdAtMillis: trigger.createdAtMillis,
+        conditions: []
+      )
+      _ = try triggerStore.upsert(updated)
+      return Result(
+        text: "Workflow trigger conditions cleared: \(triggerID)",
+        actionId: "workflow_trigger_condition_clear"
+      )
+    } catch {
+      return Result(
+        text: "Unable to clear workflow trigger conditions: \(error.localizedDescription)",
+        actionId: "workflow_trigger_condition_clear"
+      )
+    }
+  }
+
+  private static func conditionLabel(_ condition: AgentWorkflowCondition) -> String {
+    switch condition {
+    case .deviceCharging(let required):
+      return required ? "charging" : "not charging"
+    case .networkAvailable(let required):
+      return required ? "network available" : "network unavailable"
+    case .batteryThreshold(let percent, let comparison):
+      let operatorLabel: String
+      switch comparison {
+      case .below: operatorLabel = "<"
+      case .atMost: operatorLabel = "<="
+      case .atLeast: operatorLabel = ">="
+      case .above: operatorLabel = ">"
+      }
+      return "battery \(operatorLabel) \(percent)%"
+    case .timeWindow(let start, let end):
+      return "time \(clockLabel(start))-\(clockLabel(end))"
+    case .text(let expected, _, _):
+      return "text contains \(expected)"
+    case .packageName(let expected, _, _):
+      return "package \(expected)"
+    }
+  }
+
+  private static func clockLabel(_ minute: Int) -> String {
+    String(format: "%02d:%02d", minute / 60, minute % 60)
   }
 
   private struct CreateCommand {
