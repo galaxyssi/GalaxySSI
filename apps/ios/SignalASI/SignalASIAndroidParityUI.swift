@@ -3,33 +3,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct AgentTranscriptScrollMetrics: Equatable {
-  var contentMinY: CGFloat = 0
-  var contentMaxY: CGFloat = 0
-  var viewportHeight: CGFloat = 0
-}
-
-private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
-  static let defaultValue = AgentTranscriptScrollMetrics()
-
-  static func reduce(
-    value: inout AgentTranscriptScrollMetrics,
-    nextValue: () -> AgentTranscriptScrollMetrics
-  ) {
-    value = nextValue()
-  }
-}
-
-private extension View {
-  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
-    frame(
-      minWidth: CGFloat(policy.minimumTouchTargetDp),
-      minHeight: CGFloat(policy.minimumTouchTargetDp)
-    )
-    .contentShape(Rectangle())
-  }
-}
-
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
@@ -1383,6 +1356,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
+                statusTint: remoteAgentStatusTint(activeRemoteAgentTask.status),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: activeRemoteAgentTask.isCancellable &&
@@ -1410,6 +1384,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
+                statusTint: agentPhaseTint(activeExecutionTask.phase),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
@@ -1478,6 +1453,7 @@ struct AgentHomeView: View {
                       ),
                       details: task.executionLog,
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: agentPhaseTint(task.phase),
                       timelineActions: agentTimelineActions(for: task),
                       timelineActionTitle: { agentTimelineActionTitle($0) },
                       timelineActionIcon: { agentTimelineActionIcon($0) },
@@ -1509,6 +1485,7 @@ struct AgentHomeView: View {
                       ),
                       details: remoteTask.history.map(remoteAgentTimelineLine),
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(remoteTask.status),
                       canCancel: remoteTask.isCancellable &&
                         !cancellingRemoteTaskIDs.contains(remoteTask.id),
                       cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
@@ -1536,6 +1513,7 @@ struct AgentHomeView: View {
                       details: [run.progressMessage, run.partialResult, run.resultSummary]
                         .filter { !$0.isBlank },
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(run.state.rawValue),
                       canCancel: run.cancellable && !cancellingVoiceRunIDs.contains(run.runId),
                       cancelTitle: cancellingVoiceRunIDs.contains(run.runId)
                         ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
@@ -2094,6 +2072,18 @@ struct AgentHomeView: View {
     }
   }
 
+  private func agentPhaseTint(_ phase: AgentPhase) -> Color {
+    switch phase {
+    case .blocked, .failed:
+      return .red
+    case .cancelled, .paused:
+      return .signalASITextSecondary
+    case .observing, .planning, .waitingConfirmation, .executing, .verifying,
+         .waitingResponse, .completed:
+      return .signalASIAccent
+    }
+  }
+
   private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
     let location = AgentExecutionPresentationPolicy.location(record: task)
     let summary = [
@@ -2144,6 +2134,17 @@ struct AgentHomeView: View {
       return t("agent_task_status_cancelling", "Cancelling")
     default:
       return status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  private func remoteAgentStatusTint(_ status: String) -> Color {
+    switch AgentRemoteTaskStatusPolicy.normalize(status) {
+    case "failed", "timed_out", "not_found":
+      return .red
+    case "cancelled", "cancelling":
+      return .signalASITextSecondary
+    default:
+      return .signalASIAccent
     }
   }
 
@@ -2348,6 +2349,41 @@ struct AgentHomeView: View {
       fallback = "Automatic · %@"
     }
     return String(format: t(key, fallback), headerModelLabel)
+  }
+
+  private var headerModelAssetName: String? {
+    let candidates = [
+      modelSelection.targetId,
+      modelSelection.displayName,
+      modelSelection.modelId,
+      headerModelLabel,
+      liveExecutionTargetLabel ?? ""
+    ]
+    for candidate in candidates {
+      if let assetName = routeLogoAssetName(for: candidate) {
+        return assetName
+      }
+    }
+    return nil
+  }
+
+  private func routeLogoAssetName(for value: String) -> String? {
+    let normalized = value.lowercased()
+    if normalized.contains("codex") { return "CodexLogo" }
+    if normalized.contains("claude") || normalized.contains("anthropic") {
+      return "ClaudeLogo"
+    }
+    if normalized.contains("hermes") { return "HermesLogo" }
+    if normalized.contains("deepseek") { return "CloudProviderDeepSeek" }
+    if normalized.contains("openrouter") { return "CloudProviderOpenRouter" }
+    if normalized.contains("qwen") { return "CloudProviderQwen" }
+    if normalized.contains("gemini") || normalized.contains("google") {
+      return "CloudProviderGemini"
+    }
+    if normalized.contains("openai") || normalized.contains("gpt") {
+      return "CloudProviderOpenAI"
+    }
+    return nil
   }
 
   private var headerSessionTitle: String {
@@ -3351,96 +3387,5 @@ struct AgentHomeView: View {
       ),
       sourceTitle
     )
-  }
-}
-
-private struct AgentInsightBanner: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  var unreadTotal: Int
-  var runningTasks: Int
-  var callableTargets: Int
-  var executionPaused: Bool
-  var nativeToolSummary: (total: Int, available: Int)
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 10) {
-        SignalASILogoView(size: 34, cornerRadius: 7)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("SignalASI Agent")
-            .font(.system(size: 15, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
-          Text(summaryText)
-            .font(.system(size: 12))
-            .foregroundColor(.signalASIInsightText)
-            .lineLimit(2)
-        }
-        Spacer()
-      }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
-          AgentStatusChip(title: t("signalasi.agent.status", "Agent"), value: agentStatusText)
-          AgentStatusChip(title: t("cc_metric_native_tools", "Native tools"), value: nativeToolsText)
-        }
-      }
-    }
-    .padding(12)
-    .background(Color.signalASIInsightBackground)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-  }
-
-  private var summaryText: String {
-    if unreadTotal > 0 {
-      return String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
-    }
-    if executionPaused {
-      return t("agent_status_paused_subtitle", "Execution is paused. Resume when you are ready.")
-    }
-    return String(
-      format: t("agent_running_tasks_targets_value", "Running tasks: %d / targets: %d"),
-      runningTasks,
-      callableTargets
-    )
-  }
-
-  private var agentStatusText: String {
-    executionPaused
-      ? t("on_device_agent_status_paused", "Paused")
-      : t("on_device_agent_status_running", "Running")
-  }
-
-  private var nativeToolsText: String {
-    "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct AgentStatusChip: View {
-  var title: String
-  var value: String
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Text(title)
-        .foregroundColor(.signalASITextSecondary)
-      Text(value)
-        .fontWeight(.bold)
-        .foregroundColor(.signalASITextPrimary)
-    }
-    .font(.system(size: 11))
-    .lineLimit(1)
-    .minimumScaleFactor(0.85)
-    .padding(.horizontal, 9)
-    .padding(.vertical, 6)
-    .background(Color.signalASISurface)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }

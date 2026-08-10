@@ -237,7 +237,7 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             [event["event_id"] for event in published_payloads[0]["events"]],
         )
 
-    def test_live_readable_progress_uses_reliable_phone_delivery(self):
+    def test_live_readable_progress_uses_best_effort_phone_delivery(self):
         task = {
             "task_id": "task-live-progress",
             "status": "running",
@@ -268,7 +268,7 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             )
 
         self.assertTrue(published)
-        self.assertTrue(publish.call_args.kwargs["durable"])
+        self.assertFalse(publish.call_args.kwargs["durable"])
 
     def test_status_only_heartbeat_does_not_enter_reliable_backlog(self):
         task = {
