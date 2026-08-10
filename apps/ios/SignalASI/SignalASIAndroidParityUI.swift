@@ -1463,8 +1463,9 @@ struct AgentHomeView: View {
   }
 
   private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
-    coordinator.cancelLocalNativeAction(taskId: task.taskId)
-    richActionStatus = t("signalasi.agent.task_control.cancelled", "Task cancelled")
+    richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
+      ? t("signalasi.agent.task_control.cancelled", "Task cancelled")
+      : t("signalasi.agent.task_control.cancel_failed", "This task could not be cancelled")
   }
 
   private func agentTask(for message: ChatMessage) -> AgentTaskRecord? {
