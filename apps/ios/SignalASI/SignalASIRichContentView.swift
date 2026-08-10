@@ -1029,17 +1029,12 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var inlineImageData: Data? {
-    var value = block.dataB64.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let comma = value.firstIndex(of: ",") {
-      value = String(value[value.index(after: comma)...])
-    }
-    guard !value.isEmpty, let data = Data(base64Encoded: value) else { return nil }
-    return data
+    SignalASIImageResourceDecoder.base64Data(block.dataB64)
   }
 
   private var localImageData: Data? {
     guard let url = localURL else { return nil }
-    return try? Data(contentsOf: url)
+    return SignalASIImageResourceDecoder.fileData(url)
   }
 
   private var localURL: URL? {
