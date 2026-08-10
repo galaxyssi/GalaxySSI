@@ -4,6 +4,8 @@ struct SignalASIAgentScanStatusView: View {
   var message: String
   var isError: Bool
   var dismissTitle: String
+  var retryTitle: String
+  var onRetry: () -> Void
   var onDismiss: () -> Void
 
   private var tint: Color {
@@ -21,6 +23,16 @@ struct SignalASIAgentScanStatusView: View {
         .foregroundColor(.signalASITextPrimary)
         .lineLimit(3)
         .fixedSize(horizontal: false, vertical: true)
+      if isError {
+        Button(action: onRetry) {
+          Image(systemName: "qrcode.viewfinder")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(tint)
+            .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(retryTitle))
+      }
       Spacer(minLength: 4)
       Button(action: onDismiss) {
         Image(systemName: "xmark")

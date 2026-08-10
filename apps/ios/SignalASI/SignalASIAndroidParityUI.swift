@@ -977,6 +977,11 @@ struct AgentHomeView: View {
               message: scanStatus,
               isError: scanStatusIsError,
               dismissTitle: t("signalasi.agent.scan.dismiss", "Dismiss"),
+              retryTitle: t("signalasi.agent.scan.retry", "Scan again"),
+              onRetry: {
+                scanStatus = ""
+                scanShortcutActive = true
+              },
               onDismiss: { scanStatus = "" }
             )
           }
@@ -2356,7 +2361,14 @@ struct AgentHomeView: View {
     let normalizedIDs = targetIDs
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-    guard !normalizedIDs.isEmpty else { return }
+    guard !normalizedIDs.isEmpty else {
+      scanStatus = t(
+        "signalasi.agent.scan.no_agent",
+        "The scanned result did not contain an Agent."
+      )
+      scanStatusIsError = true
+      return
+    }
 
     Task { @MainActor in
       for delay in [UInt64(0), 300_000_000, 900_000_000, 1_800_000_000] {
