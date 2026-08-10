@@ -414,6 +414,7 @@ struct SignalASIAppAdapterDetailView: View {
     case .ownedAgentInput: return t("signalasi.capability.owned_agent_input", "Agent Composer Input")
     case .ownedAgentTranscript: return t("signalasi.capability.owned_agent_transcript", "Agent Transcript Navigation")
     case .ownedAgentControls: return t("signalasi.capability.owned_agent_controls", "Agent Home Controls")
+    case .ownedAgentLongPress: return t("signalasi.capability.owned_agent_long_press", "Agent Home Long Press")
     case .mediaProjectionOCR: return t("signalasi.capability.screen_capture", "Screen Capture OCR")
     case .notificationRead: return t("signalasi.capability.notification_read", "Notification Read")
     case .notificationReply: return t("signalasi.capability.notification_reply", "Notification Reply")
@@ -504,6 +505,8 @@ private func capabilityIcon(_ id: AgentPhoneCapabilityId) -> String {
     return "arrow.up.and.down.text.horizontal"
   case .ownedAgentControls:
     return "hand.tap"
+  case .ownedAgentLongPress:
+    return "hand.tap.fill"
   case .notificationRead, .notificationReply:
     return "bell.badge"
   case .clipboard:

@@ -6,6 +6,7 @@ enum AgentPhoneCapabilityId: String, Codable, CaseIterable, Identifiable {
   case ownedAgentInput = "OWNED_AGENT_INPUT"
   case ownedAgentTranscript = "OWNED_AGENT_TRANSCRIPT"
   case ownedAgentControls = "OWNED_AGENT_CONTROLS"
+  case ownedAgentLongPress = "OWNED_AGENT_LONG_PRESS"
   case mediaProjectionOCR = "MEDIA_PROJECTION_OCR"
   case notificationRead = "NOTIFICATION_READ"
   case notificationReply = "NOTIFICATION_REPLY"
@@ -283,6 +284,7 @@ enum AgentPhoneCapabilityNativeCoverage {
     if id == .ownedAgentInput { return true }
     if id == .ownedAgentTranscript { return true }
     if id == .ownedAgentControls { return true }
+    if id == .ownedAgentLongPress { return true }
     return !toolIdsByCapability[id, default: []].isEmpty
   }
 
@@ -341,6 +343,14 @@ enum AgentPhoneCapabilityCatalog {
       risk: .low,
       normalAppCanExecute: true,
       limitation: "Tap actions are limited to visible SignalASI-owned Agent home controls and cannot inject gestures into other apps or protected system surfaces."
+    ),
+    boundary(
+      .ownedAgentLongPress,
+      location: .appProcess,
+      availability: .ready,
+      risk: .low,
+      normalAppCanExecute: true,
+      limitation: "Long-press actions are limited to visible SignalASI-owned Agent home controls and cannot inject gestures into other apps or protected system surfaces."
     ),
     boundary(
       .ownedAgentInput,

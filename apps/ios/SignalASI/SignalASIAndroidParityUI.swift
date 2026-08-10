@@ -546,11 +546,13 @@ struct AgentHomeView: View {
         refreshAgentRouteState()
         installComposerInputBridge()
         installAgentHomeTapBridge()
+        installAgentHomeLongPressBridge()
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
+        AgentIOSAgentHomeActionBridge.shared.removeLongPressHandler()
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
@@ -2687,6 +2689,12 @@ struct AgentHomeView: View {
     }
   }
 
+  private func installAgentHomeLongPressBridge() {
+    AgentIOSAgentHomeActionBridge.shared.installLongPressHandler { action in
+      applyAgentHomeLongPressAction(action)
+    }
+  }
+
   private func applyAgentHomeTapAction(_ action: AgentAction) -> AgentActionResult {
     let bounds = action.parameters["bounds"] ?? ""
     let matchedLabel = action.parameters["matched_label"] ?? ""
@@ -2781,6 +2789,20 @@ struct AgentHomeView: View {
         "target_id": targetID,
         "completion_verified": "true"
       ]
+    )
+  }
+
+  private func applyAgentHomeLongPressAction(_ action: AgentAction) -> AgentActionResult {
+    let tapResult = applyAgentHomeTapAction(action)
+    var metadata = tapResult.metadata
+    metadata["interaction"] = "long_press"
+    return AgentActionResult(
+      actionId: tapResult.actionId,
+      success: tapResult.success,
+      message: tapResult.success
+        ? t("signalasi.agent.long_press.completed", "SignalASI home control long-pressed.")
+        : tapResult.message,
+      metadata: metadata
     )
   }
 

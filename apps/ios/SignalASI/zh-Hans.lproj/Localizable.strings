@@ -3814,3 +3814,5 @@
 "signalasi.agent.tap.invalid_target" = "SignalASI 主页面控件目标无效。";
 "signalasi.agent.tap.unknown_target" = "此 SignalASI 主页面控件当前不可用。";
 "signalasi.agent.tap.completed" = "SignalASI 主页面控件已执行。";
+"signalasi.agent.long_press.completed" = "SignalASI 主页面控件已长按执行。";
+"signalasi.capability.owned_agent_long_press" = "Agent 主页面长按";

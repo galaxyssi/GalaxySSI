@@ -5,6 +5,7 @@ final class AgentIOSAgentHomeActionBridge {
 
   private let lock = NSLock()
   private var tapHandler: ((AgentAction) -> AgentActionResult)?
+  private var longPressHandler: ((AgentAction) -> AgentActionResult)?
 
   private init() {}
 
@@ -17,6 +18,18 @@ final class AgentIOSAgentHomeActionBridge {
   func removeTapHandler() {
     lock.lock()
     tapHandler = nil
+    lock.unlock()
+  }
+
+  func installLongPressHandler(_ handler: @escaping (AgentAction) -> AgentActionResult) {
+    lock.lock()
+    longPressHandler = handler
+    lock.unlock()
+  }
+
+  func removeLongPressHandler() {
+    lock.lock()
+    longPressHandler = nil
     lock.unlock()
   }
 
@@ -50,6 +63,44 @@ final class AgentIOSAgentHomeActionBridge {
       actionId: action.id,
       success: false,
       message: "The SignalASI Agent home action did not complete.",
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_home",
+        "completion_verified": "false"
+      ]
+    )
+  }
+
+  func executeLongPress(action: AgentAction) -> AgentActionResult {
+    lock.lock()
+    let handler = longPressHandler
+    lock.unlock()
+
+    guard let handler else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "The SignalASI Agent home page is not currently visible.",
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    if Thread.isMainThread {
+      return handler(action)
+    }
+
+    var result: AgentActionResult?
+    DispatchQueue.main.sync {
+      result = handler(action)
+    }
+    return result ?? AgentActionResult(
+      actionId: action.id,
+      success: false,
+      message: "The SignalASI Agent home long-press action did not complete.",
       metadata: [
         "platform": "ios",
         "surface": "signalasi_agent_home",
