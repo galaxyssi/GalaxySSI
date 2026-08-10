@@ -1779,6 +1779,30 @@ enum AgentNotificationCommand: Equatable {
   }
 }
 
+enum AgentHighRiskGuardCommand {
+  static func enabled(_ goal: String) -> Bool? {
+    let normalized = goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      .replacingOccurrences(of: "-", with: " ")
+      .replacingOccurrences(of: "_", with: " ")
+    let prefixes = [
+      "set high risk guard ", "high risk guard ",
+      "\u{8bbe}\u{7f6e}\u{9ad8}\u{98ce}\u{9669}\u{4fdd}\u{62a4} ",
+      "\u{9ad8}\u{98ce}\u{9669}\u{4fdd}\u{62a4} "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    switch String(normalized.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines) {
+    case "on", "enable", "enabled", "\u{5f00}\u{542f}", "\u{542f}\u{7528}":
+      return true
+    case "off", "disable", "disabled", "\u{5173}\u{95ed}", "\u{7981}\u{7528}":
+      return false
+    default:
+      return nil
+    }
+  }
+}
+
 enum AgentPermissionChecklistCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {

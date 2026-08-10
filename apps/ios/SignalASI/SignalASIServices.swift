@@ -2717,6 +2717,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentHighRiskGuardCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentCallableSearch(
         requestText: requestText,
         outgoing: outgoing,
@@ -3362,6 +3369,55 @@ final class MessageCoordinator: ObservableObject {
       return "\(app) [\(category)] \(title)\(preview)"
     }
     return String(([heading] + rows).joined(separator: "\n").prefix(3_000))
+  }
+
+  private func handleDirectAgentHighRiskGuardCommand(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let enabled = AgentHighRiskGuardCommand.enabled(requestText) else {
+      return false
+    }
+    store.updateAgentSafetySettings { $0.highRiskGuard = enabled }
+    let state = localReply(english: enabled ? "enabled" : "disabled", chinese: enabled ? "已开启" : "已关闭")
+    let result = localReply(
+      english: "Agent high-risk guard \(state)",
+      chinese: "Agent 高风险保护\(state)"
+    )
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Security"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-agent-security"
+    task.result = result
+    task.verification = "Local Agent high-risk guard updated"
+    task.executionLog.append("Local Agent high-risk guard: \(enabled ? "enabled" : "disabled")")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_high_risk_guard_reply",
+      detail: enabled ? "enabled" : "disabled",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_high_risk_guard_reply_received",
+      detail: enabled ? "enabled" : "disabled",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
   }
 
   private func handleDirectAgentCallableSearch(
