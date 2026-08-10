@@ -4,6 +4,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var runningTasks: Int
   var callableTargets: Int
   var nativeToolSummary: (total: Int, available: Int)
+  var nativeTools: [AgentNativeToolDescriptor]
   var screenObservationAllowed: Bool
   var executionPaused: Bool
   var currentApp: String
@@ -74,6 +75,8 @@ struct SignalASIAgentHomeReadinessView: View {
         }
         .buttonStyle(.plain)
       }
+
+      SignalASIAgentHomeToolboxView(tools: nativeTools, t: t)
 
       HStack(spacing: 8) {
         controlButton(
