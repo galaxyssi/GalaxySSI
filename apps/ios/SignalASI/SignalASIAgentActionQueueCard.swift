@@ -33,17 +33,8 @@ struct SignalASIAgentActionQueueCard: View {
           .background(Color.signalASIAccent.opacity(0.12))
           .clipShape(Capsule())
       }
-      ForEach(Array(items.prefix(6))) { item in
+      ForEach(items) { item in
         actionRow(item)
-      }
-      if items.count > 6 {
-        Text(String(
-          format: t("signalasi.agent_runtime.action_queue_summary", "%d active"),
-          items.count
-        ))
-          .font(.system(size: 11))
-          .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
     .padding(12)

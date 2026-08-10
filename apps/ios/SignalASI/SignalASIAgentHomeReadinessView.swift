@@ -23,6 +23,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var onOpenRecentTasks: () -> Void = {}
   var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
   var onTaskAction: (AgentTaskCenterAction, AgentTaskRecord) -> Void = { _, _ in }
+  var onModelSelectionChanged: () -> Void = {}
   var onScreenCommand: (String) -> Void = { _ in }
   var t: (String, String) -> String
 
@@ -52,7 +53,11 @@ struct SignalASIAgentHomeReadinessView: View {
       }
 
       HStack(spacing: 8) {
-        NavigationLink(destination: SignalASIAgentModelSelectionView()) {
+        NavigationLink(
+          destination: SignalASIAgentModelSelectionView(
+            onSelectionChanged: onModelSelectionChanged
+          )
+        ) {
           metric(
             title: t("signalasi.agent.readiness.targets", "Targets"),
             value: "\(callableTargets)",
