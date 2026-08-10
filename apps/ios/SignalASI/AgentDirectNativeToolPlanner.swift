@@ -1664,6 +1664,18 @@ enum AgentDirectNativeToolPlanner {
   }
 }
 
+enum AgentScreenOverviewCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "screen status", "inspect screen", "screen elements", "show screen elements",
+         "screen structure", "show screen structure":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 enum AgentTaskHistoryCommand: Equatable {
   case recent
   case search(String)
@@ -1691,6 +1703,24 @@ enum AgentTaskHistoryCommand: Equatable {
     let query = String(clean.dropFirst(prefix.count))
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return query.isEmpty ? nil : .search(query)
+  }
+}
+
+enum AgentScreenSearchCommand {
+  static func query(_ goal: String) -> String? {
+    let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+    let prefixes = [
+      "search screen elements ", "find screen element ",
+      "search screen ", "find on screen ",
+      "搜索屏幕元素 ", "查找屏幕元素 ", "搜索屏幕 "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    let value = String(clean.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
   }
 }
 

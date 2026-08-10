@@ -2682,7 +2682,21 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
+      if handleDirectAgentScreenOverview(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentTaskHistoryCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
+      if handleDirectAgentScreenSearch(
         requestText: requestText,
         outgoing: outgoing,
         task: &task
@@ -2864,6 +2878,110 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func handleDirectAgentScreenOverview(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentScreenOverviewCommand.matches(requestText) else {
+      return false
+    }
+    let screen = currentAgentScreenContext
+    let result = agentScreenOverviewReply(screen)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Screen Context"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-screen-context"
+    task.result = result
+    task.verification = "Local screen context read"
+    task.executionLog.append("Local screen overview read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_screen_overview_reply",
+      detail: "screen_context",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_screen_overview_reply_received",
+      detail: "screen_context",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentScreenOverviewReply(_ screen: AgentScreenContext) -> String {
+    guard screen.isAccessibilityEnabled else {
+      return localReply(
+        english: "Screen Agent permission is disabled.",
+        chinese: "屏幕 Agent 权限未开启。"
+      )
+    }
+    let app = screen.foregroundApp.ifBlank("iOS")
+    let title = screen.pageTitle.ifBlank(app)
+    let sensitive = screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty
+    let counts = localReply(
+      english: "Elements: text=\(screen.visibleTextCount), actions=\(screen.clickableNodeCount), fields=\(screen.inputFieldCount), scroll_regions=\(screen.scrollableRegionCount)",
+      chinese: "元素：文本 \(screen.visibleTextCount)，操作 \(screen.clickableNodeCount)，输入框 \(screen.inputFieldCount)，滚动区域 \(screen.scrollableRegionCount)"
+    )
+    if sensitive {
+      return localReply(
+        english: "Screen: \(title)\nApp: \(app)\n\(counts)\nSensitive values hidden.",
+        chinese: "屏幕：\(title)\n应用：\(app)\n\(counts)\n敏感内容已隐藏。"
+      )
+    }
+
+    var lines = [
+      localReply(english: "Screen: \(title)", chinese: "屏幕：\(title)"),
+      localReply(english: "App: \(app)", chinese: "应用：\(app)"),
+      counts
+    ]
+    if !screen.activityName.isBlank {
+      lines.append(localReply(english: "Activity: \(screen.activityName)", chinese: "页面：\(screen.activityName)"))
+    }
+    if !screen.selectedText.isBlank {
+      let selected = normalizedAgentScreenText(screen.selectedText, limit: 160)
+      lines.append(localReply(english: "Selected: \(selected)", chinese: "已选文本：\(selected)"))
+    }
+    lines.append(contentsOf: screen.visibleTexts
+      .map { "text: \(normalizedAgentScreenText($0, limit: 140))" }
+      .prefix(12))
+    lines.append(contentsOf: screen.clickableElements
+      .prefix(12)
+      .map { "action: \(screenElementSummary($0))" })
+    lines.append(contentsOf: screen.inputFields
+      .prefix(8)
+      .map { "field: \(screenElementSummary($0))" })
+    lines.append(contentsOf: screen.scrollableRegions
+      .prefix(6)
+      .map { "scroll: \(screenElementSummary($0))" })
+    return String(lines.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func normalizedAgentScreenText(_ value: String, limit: Int) -> String {
+    String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(limit))
+  }
+
+  private func screenElementSummary(_ element: AgentScreenElement) -> String {
+    let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(element.className)
+      .ifBlank("element")
+    return String(label.prefix(140))
+  }
+
   private func handleDirectAgentTaskHistoryCommand(
     requestText: String,
     outgoing: ChatMessage,
@@ -2964,6 +3082,106 @@ final class MessageCoordinator: ObservableObject {
     default:
       return task.phase.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
     }
+  }
+
+  private func handleDirectAgentScreenSearch(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let query = AgentScreenSearchCommand.query(requestText) else {
+      return false
+    }
+    let screen = currentAgentScreenContext
+    let result = agentScreenSearchReply(screen, query: query)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Screen Context"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-screen-context"
+    task.result = result
+    task.verification = "Local screen context search completed"
+    task.executionLog.append("Local screen search: \(query)")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_screen_search_reply",
+      detail: query,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_screen_search_reply_received",
+      detail: query,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentScreenSearchReply(_ screen: AgentScreenContext, query: String) -> String {
+    guard screen.isAccessibilityEnabled else {
+      return localReply(
+        english: "Screen Agent permission is disabled.",
+        chinese: "\u{5c4f}\u{5e55} Agent \u{6743}\u{9650}\u{672a}\u{5f00}\u{542f}\u{3002}"
+      )
+    }
+    let sensitive = screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty
+    if sensitive {
+      return localReply(
+        english: "Screen contains sensitive content; element values are hidden.",
+        chinese: "\u{5c4f}\u{5e55}\u{5305}\u{542b}\u{654f}\u{611f}\u{5185}\u{5bb9}\u{ff0c}\u{5143}\u{7d20}\u{503c}\u{5df2}\u{9690}\u{85cf}\u{3002}"
+      )
+    }
+    let normalizedQuery = query.lowercased()
+    let candidates: [(kind: String, value: String)] =
+      screen.visibleTexts.map { ("text", $0) } +
+      screen.clickableElements.map { ("action", screenSearchElementTitle($0)) } +
+      screen.inputFields.map { ("field", screenSearchElementTitle($0)) } +
+      screen.scrollableRegions.map { ("scroll", screenSearchElementTitle($0)) }
+    var matches: [(kind: String, value: String)] = []
+    for candidate in candidates {
+      let value = normalizedAgentScreenSearchText(candidate.value)
+      guard value.lowercased().contains(normalizedQuery),
+            !matches.contains(where: { $0.kind == candidate.kind && $0.value == value }) else {
+        continue
+      }
+      matches.append((candidate.kind, value))
+      if matches.count == 20 { break }
+    }
+    guard !matches.isEmpty else {
+      return localReply(
+        english: "No current screen elements match '\(query)'",
+        chinese: "\u{5f53}\u{524d}\u{5c4f}\u{5e55}\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{5143}\u{7d20}\u{3002}"
+      )
+    }
+    let heading = localReply(
+      english: "Screen matches: \(matches.count)",
+      chinese: "\u{5c4f}\u{5e55}\u{5339}\u{914d}\u{9879}\u{ff1a}\(matches.count)"
+    )
+    let rows = [heading] + matches.map { "\($0.kind): \($0.value)" }
+    return String(rows.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func normalizedAgentScreenSearchText(_ value: String) -> String {
+    String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(160))
+  }
+
+  private func screenSearchElementTitle(_ element: AgentScreenElement) -> String {
+    element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(element.viewId)
+      .ifBlank(element.className)
+      .ifBlank("Unnamed element")
   }
 
   private func handleDirectAgentPermissionChecklist(
