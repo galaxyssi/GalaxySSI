@@ -94,6 +94,7 @@ struct SignalASIAgentModelSelectionView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
 
   var onSelectionChanged: (() -> Void)?
 
@@ -287,6 +288,9 @@ struct SignalASIAgentModelSelectionView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      _ = coordinator.requestCapabilityManifestRefresh()
+    }
   }
 
   private var isAutomatic: Bool {
