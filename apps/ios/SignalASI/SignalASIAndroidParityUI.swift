@@ -32,6 +32,7 @@ private extension View {
 
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -2241,7 +2242,7 @@ struct AgentHomeView: View {
 
   private var header: some View {
     HStack(spacing: 8) {
-      SignalASILogoView(size: 39, cornerRadius: 8)
+      SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
       VStack(alignment: .center, spacing: 2) {
         Text("SignalASI")
           .font(.system(size: 14.5, weight: .bold))
@@ -2299,6 +2300,29 @@ struct AgentHomeView: View {
     .padding(.vertical, 8)
     .frame(height: 76)
     .background(Color.signalASIPageBackground)
+  }
+
+  private var headerLogoSize: CGFloat {
+    let scale: CGFloat
+    switch dynamicTypeSize {
+    case .xSmall:
+      scale = 0.82
+    case .small:
+      scale = 0.90
+    case .medium:
+      scale = 1.00
+    case .large:
+      scale = 1.10
+    case .xLarge:
+      scale = 1.20
+    case .xxLarge:
+      scale = 1.30
+    case .xxxLarge:
+      scale = 1.40
+    default:
+      scale = 1.45
+    }
+    return min(56, max(32, 39 * scale))
   }
 
   private var headerModelLabel: String {
