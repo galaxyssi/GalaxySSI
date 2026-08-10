@@ -393,7 +393,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var toolboxRows: [SignalASIAgentRuntimeRow] {
-    availableTools.prefix(4).map { tool in
+    availableTools.prefix(6).map { tool in
       SignalASIAgentRuntimeRow(
         id: "tool-\(tool.id)",
         title: tool.title,
