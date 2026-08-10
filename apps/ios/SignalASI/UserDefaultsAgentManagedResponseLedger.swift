@@ -1,7 +1,7 @@
 import Foundation
 
 final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
-  static let defaultStorageKey = "signalasi_managed_connector_responses_v2"
+  static let defaultStorageKey = "signalasi_managed_connector_responses_v3"
   static let maxRecords = 512
 
   private let defaults: UserDefaults
@@ -56,6 +56,9 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
       deliveryMode: current.deliveryMode,
       sourceMessageId: current.sourceMessageId,
       contactId: current.contactId,
+      conversationId: current.conversationId,
+      turnId: current.turnId,
+      taskId: current.taskId,
       state: .completed,
       response: response,
       createdAtMillis: current.createdAtMillis,
@@ -83,6 +86,9 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
       deliveryMode: current.deliveryMode,
       sourceMessageId: current.sourceMessageId,
       contactId: current.contactId,
+      conversationId: current.conversationId,
+      turnId: current.turnId,
+      taskId: current.taskId,
       state: .applied,
       response: response,
       createdAtMillis: current.createdAtMillis,

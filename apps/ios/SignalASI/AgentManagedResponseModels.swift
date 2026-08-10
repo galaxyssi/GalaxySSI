@@ -15,6 +15,9 @@ struct AgentManagedResponseRecord: Codable, Equatable {
   var deliveryMode: AgentDeliveryMode
   var sourceMessageId: Int64
   var contactId: String
+  var conversationId: String
+  var turnId: String
+  var taskId: String
   var state: AgentManagedResponseState
   var response: AgentConnectorResponse?
   var createdAtMillis: Int64
@@ -27,6 +30,9 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     deliveryMode: AgentDeliveryMode,
     sourceMessageId: Int64,
     contactId: String,
+    conversationId: String = "",
+    turnId: String = "",
+    taskId: String = "",
     state: AgentManagedResponseState = .pending,
     response: AgentConnectorResponse? = nil,
     createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
@@ -38,6 +44,9 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     self.deliveryMode = deliveryMode
     self.sourceMessageId = max(sourceMessageId, 0)
     self.contactId = contactId
+    self.conversationId = conversationId
+    self.turnId = turnId
+    self.taskId = taskId
     self.state = state
     self.response = response
     self.createdAtMillis = max(createdAtMillis, 0)
@@ -51,15 +60,45 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     case deliveryMode = "delivery_mode"
     case sourceMessageId = "source_message_id"
     case contactId = "contact_id"
+    case conversationId = "conversation_id"
+    case turnId = "turn_id"
+    case taskId = "task_id"
     case state
     case response
     case createdAtMillis = "created_at_millis"
     case completedAtMillis = "completed_at_millis"
   }
 
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      ownerRunId: try container.decodeIfPresent(String.self, forKey: .ownerRunId) ?? "",
+      supervisorRunId: try container.decodeIfPresent(String.self, forKey: .supervisorRunId) ?? "",
+      agentId: try container.decodeIfPresent(String.self, forKey: .agentId) ?? "",
+      deliveryMode: try container.decodeIfPresent(AgentDeliveryMode.self, forKey: .deliveryMode) ?? .observe,
+      sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
+      contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      state: try container.decodeIfPresent(AgentManagedResponseState.self, forKey: .state) ?? .pending,
+      response: try container.decodeIfPresent(AgentConnectorResponse.self, forKey: .response),
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+    )
+  }
+
   func correlates(_ response: AgentConnectorResponse) -> Bool {
     sourceMessageId == response.sourceMessageId &&
-      (contactId.isEmpty || response.contactId.isEmpty || contactId == response.contactId)
+      (contactId.isEmpty || response.contactId.isEmpty || contactId == response.contactId) &&
+      AgentTaskIdentityPolicy.matchesResponseIdentity(
+        expectedConversationId: conversationId,
+        expectedTurnId: turnId,
+        expectedTaskId: taskId,
+        actualConversationId: response.conversationId,
+        actualTurnId: response.turnId,
+        actualTaskId: response.taskId
+      )
   }
 
   func isStale(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
@@ -111,6 +150,9 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       deliveryMode: current.deliveryMode,
       sourceMessageId: current.sourceMessageId,
       contactId: current.contactId,
+      conversationId: current.conversationId,
+      turnId: current.turnId,
+      taskId: current.taskId,
       state: .completed,
       response: response,
       createdAtMillis: current.createdAtMillis,
@@ -135,6 +177,9 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       deliveryMode: current.deliveryMode,
       sourceMessageId: current.sourceMessageId,
       contactId: current.contactId,
+      conversationId: current.conversationId,
+      turnId: current.turnId,
+      taskId: current.taskId,
       state: .applied,
       response: response,
       createdAtMillis: current.createdAtMillis,
@@ -246,6 +291,9 @@ enum AgentManagedResponseCodec {
         deliveryMode: AgentDeliveryMode(rawValue: object.string("delivery_mode")) ?? .observe,
         sourceMessageId: sourceMessageId,
         contactId: object.string("contact_id"),
+        conversationId: object.string("conversation_id"),
+        turnId: object.string("turn_id"),
+        taskId: object.string("task_id"),
         state: AgentManagedResponseState(rawValue: object.string("state")) ?? .pending,
         response: decodeResponse(object.object("response")),
         createdAtMillis: object.int64("created_at_millis"),
@@ -262,6 +310,9 @@ enum AgentManagedResponseCodec {
       "delivery_mode": .string(record.deliveryMode.rawValue),
       "source_message_id": .int(record.sourceMessageId),
       "contact_id": .string(record.contactId),
+      "conversation_id": .string(record.conversationId),
+      "turn_id": .string(record.turnId),
+      "task_id": .string(record.taskId),
       "state": .string(record.state.rawValue),
       "response": record.response.map { .object(responseObject($0)) } ?? .null,
       "created_at_millis": .int(record.createdAtMillis),

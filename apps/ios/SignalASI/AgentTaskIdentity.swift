@@ -144,6 +144,31 @@ enum AgentTaskIdentityPolicy {
     superseded || hasRuntime || !isBlank(resolvedConversationId)
   }
 
+  static func matchesResponseIdentity(
+    expectedConversationId: String,
+    expectedTurnId: String,
+    expectedTaskId: String,
+    actualConversationId: String,
+    actualTurnId: String,
+    actualTaskId: String
+  ) -> Bool {
+    let expectedConversationId = trim(expectedConversationId)
+    let expectedTurnId = trim(expectedTurnId)
+    let expectedTaskId = trim(expectedTaskId)
+    let actualConversationId = trim(actualConversationId)
+    let actualTurnId = trim(actualTurnId)
+    let actualTaskId = trim(actualTaskId)
+    let expectedHasTurnIdentity = !expectedConversationId.isEmpty || !expectedTurnId.isEmpty
+    let actualHasTurnIdentity = !actualConversationId.isEmpty || !actualTurnId.isEmpty
+    if !expectedHasTurnIdentity && !actualHasTurnIdentity { return true }
+    if !expectedHasTurnIdentity || !actualHasTurnIdentity { return false }
+    guard expectedConversationId == actualConversationId,
+          expectedTurnId == actualTurnId else {
+      return false
+    }
+    return expectedTaskId.isEmpty || actualTaskId.isEmpty || expectedTaskId == actualTaskId
+  }
+
   private static func nameBasedUUID(_ value: String) -> UUID {
     var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
     bytes[6] = (bytes[6] & 0x0f) | 0x30
