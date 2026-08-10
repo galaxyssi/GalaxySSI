@@ -2682,6 +2682,13 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
+      if handleDirectAgentTaskHistoryCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
@@ -2848,6 +2855,108 @@ final class MessageCoordinator: ObservableObject {
       turnId: outgoing.turnId
     )
     return true
+  }
+
+  private func handleDirectAgentTaskHistoryCommand(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let command = AgentTaskHistoryCommand.parse(requestText) else {
+      return false
+    }
+    let query: String?
+    let tasks: [AgentTaskRecord]
+    switch command {
+    case .recent:
+      query = nil
+      tasks = store.recentAgentTasks(limit: 8)
+    case .search(let value):
+      query = value
+      tasks = store.searchAgentTasks(value, limit: 8)
+    }
+
+    let result = agentTaskHistoryReply(tasks: tasks, query: query)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Task History"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-task-history"
+    task.result = result
+    task.verification = "Local Agent task history read"
+    task.executionLog.append(
+      query.map { "Local task history search: \($0)" } ?? "Local recent task history read"
+    )
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_task_history_reply",
+      detail: query ?? "recent",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_task_history_reply_received",
+      detail: query ?? "recent",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentTaskHistoryReply(
+    tasks: [AgentTaskRecord],
+    query: String?
+  ) -> String {
+    let heading = query.map {
+      localReply(
+        english: "Task history results for \"\($0)\":",
+        chinese: "“\($0)”的任务历史结果："
+      )
+    } ?? localReply(
+      english: "Recent Agent tasks:",
+      chinese: "最近的 Agent 任务："
+    )
+    guard !tasks.isEmpty else {
+      return heading + "\n" + localReply(
+        english: query == nil ? "No recent Agent tasks." : "No task history matches.",
+        chinese: query == nil ? "没有最近的 Agent 任务。" : "没有匹配的任务历史。"
+      )
+    }
+    let rows = tasks.enumerated().map { index, task in
+      let goal = String(task.goal.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+        .ifBlank("Agent task")
+      let target = task.targetTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank("iOS")
+      return "\(index + 1). \(goal) - \(agentTaskHistoryStatus(task)) - \(target)"
+    }
+    return String(([heading] + rows).joined(separator: "\n").prefix(3_000))
+  }
+
+  private func agentTaskHistoryStatus(_ task: AgentTaskRecord) -> String {
+    if task.blocked || task.phase == .blocked {
+      return localReply(english: "blocked", chinese: "已阻止")
+    }
+    switch task.phase {
+    case .completed:
+      return localReply(english: "done", chinese: "已完成")
+    case .failed:
+      return localReply(english: "failed", chinese: "失败")
+    case .cancelled:
+      return localReply(english: "cancelled", chinese: "已取消")
+    default:
+      return task.phase.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
+    }
   }
 
   private func handleDirectLocalNativeAction(
