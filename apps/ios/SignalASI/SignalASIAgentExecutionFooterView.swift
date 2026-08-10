@@ -17,6 +17,7 @@ struct SignalASIAgentExecutionFooterView: View {
   var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
   var canCancel: Bool = false
   var cancelTitle: String = "Cancel task"
+  var statusTint: Color = .signalASIAccent
   var onCancel: () -> Void = {}
 
   var body: some View {
@@ -30,7 +31,7 @@ struct SignalASIAgentExecutionFooterView: View {
         Spacer(minLength: 4)
         Text(status)
           .font(.system(size: 10, weight: .semibold))
-          .foregroundColor(.signalASIAccent)
+          .foregroundColor(statusTint)
           .lineLimit(1)
       }
 
