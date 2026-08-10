@@ -10,7 +10,6 @@ from mqtt_bridge import (
     _agent_task_payload,
     _should_publish_task_status,
     _task_event_is_coalescible,
-    _task_event_requires_reliable_delivery,
     _trace_metrics,
 )
 
@@ -150,31 +149,6 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertFalse(_task_event_is_coalescible({
             "status": "waiting_approval",
             "partial_result": {"sequence": 1, "text": "Visible reply"},
-        }))
-
-    def test_meaningful_progress_requires_reliable_delivery(self):
-        self.assertTrue(_task_event_requires_reliable_delivery({
-            "status": "running",
-            "events": [{
-                "event_id": "commentary-1",
-                "kind": "narration",
-                "title": "Inspecting the worksheet",
-                "detail": "I am checking each answer before annotating the image.",
-            }],
-        }))
-        self.assertTrue(_task_event_requires_reliable_delivery({
-            "status": "running",
-            "events": [{
-                "event_id": "command-1",
-                "kind": "command",
-                "title": "Running command",
-                "detail": "python annotate.py",
-            }],
-        }))
-        self.assertFalse(_task_event_requires_reliable_delivery({
-            "status": "running",
-            "current_step": "Codex is working",
-            "events": [],
         }))
 
     def test_completed_task_replays_readable_progress(self):

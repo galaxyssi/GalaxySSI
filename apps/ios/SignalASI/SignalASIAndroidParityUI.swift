@@ -3,36 +3,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct AgentTranscriptScrollMetrics: Equatable {
-  var contentMinY: CGFloat = 0
-  var contentMaxY: CGFloat = 0
-  var viewportHeight: CGFloat = 0
-}
-
-private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
-  static let defaultValue = AgentTranscriptScrollMetrics()
-
-  static func reduce(
-    value: inout AgentTranscriptScrollMetrics,
-    nextValue: () -> AgentTranscriptScrollMetrics
-  ) {
-    value = nextValue()
-  }
-}
-
-private extension View {
-  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
-    frame(
-      minWidth: CGFloat(policy.minimumTouchTargetDp),
-      minHeight: CGFloat(policy.minimumTouchTargetDp)
-    )
-    .contentShape(Rectangle())
-  }
-}
-
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -468,6 +440,13 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        if store.globalProactiveInboxNewCount() > 0 {
+          SignalASIAgentHomeInsightBarView(
+            count: store.globalProactiveInboxNewCount()
+          )
+          .padding(.horizontal, 10)
+          .padding(.top, 6)
+        }
         if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
           SignalASIAgentHomeSafetyStrip(
             permissionMode: store.agentSafetySettings.permissionMode,
@@ -1384,6 +1363,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
+                statusTint: remoteAgentStatusTint(activeRemoteAgentTask.status),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: activeRemoteAgentTask.isCancellable &&
@@ -1411,6 +1391,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
+                statusTint: agentPhaseTint(activeExecutionTask.phase),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
@@ -1479,6 +1460,7 @@ struct AgentHomeView: View {
                       ),
                       details: task.executionLog,
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: agentPhaseTint(task.phase),
                       timelineActions: agentTimelineActions(for: task),
                       timelineActionTitle: { agentTimelineActionTitle($0) },
                       timelineActionIcon: { agentTimelineActionIcon($0) },
@@ -1510,6 +1492,7 @@ struct AgentHomeView: View {
                       ),
                       details: remoteTask.history.map(remoteAgentTimelineLine),
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(remoteTask.status),
                       canCancel: remoteTask.isCancellable &&
                         !cancellingRemoteTaskIDs.contains(remoteTask.id),
                       cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
@@ -1537,6 +1520,7 @@ struct AgentHomeView: View {
                       details: [run.progressMessage, run.partialResult, run.resultSummary]
                         .filter { !$0.isBlank },
                       detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(run.state.rawValue),
                       canCancel: run.cancellable && !cancellingVoiceRunIDs.contains(run.runId),
                       cancelTitle: cancellingVoiceRunIDs.contains(run.runId)
                         ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
@@ -2095,6 +2079,18 @@ struct AgentHomeView: View {
     }
   }
 
+  private func agentPhaseTint(_ phase: AgentPhase) -> Color {
+    switch phase {
+    case .blocked, .failed:
+      return .red
+    case .cancelled, .paused:
+      return .signalASITextSecondary
+    case .observing, .planning, .waitingConfirmation, .executing, .verifying,
+         .waitingResponse, .completed:
+      return .signalASIAccent
+    }
+  }
+
   private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
     let location = AgentExecutionPresentationPolicy.location(record: task)
     let summary = [
@@ -2145,6 +2141,17 @@ struct AgentHomeView: View {
       return t("agent_task_status_cancelling", "Cancelling")
     default:
       return status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  private func remoteAgentStatusTint(_ status: String) -> Color {
+    switch AgentRemoteTaskStatusPolicy.normalize(status) {
+    case "failed", "timed_out", "not_found":
+      return .red
+    case "cancelled", "cancelling":
+      return .signalASITextSecondary
+    default:
+      return .signalASIAccent
     }
   }
 
@@ -2285,88 +2292,15 @@ struct AgentHomeView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
-      SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
-      VStack(alignment: .center, spacing: 2) {
-        Text("SignalASI")
-          .font(.system(size: 14.5, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-        Text(t("signalasi.agent.brand.subtitle", "Superintelligent agent"))
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
+    SignalASIAgentHomeHeaderView(
+      sessionTitle: headerSessionTitle,
+      modelStatusLabel: headerModelStatusLabel,
+      modelLogoLabel: headerModelLabel,
+      brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
+      modelSelectionDestination: SignalASIAgentModelSelectionView {
+        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
-      Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 2) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
-          Text(headerSessionTitle)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundColor(.signalASIAgentSessionTitle)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .buttonStyle(.plain)
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView {
-            modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-          }
-        ) {
-          HStack(spacing: 3) {
-            Image(systemName: "chevron.down")
-              .font(.system(size: 8, weight: .bold))
-            if let assetName = headerModelAssetName {
-              Image(assetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .accessibilityHidden(true)
-            }
-            Text(headerModelStatusLabel)
-              .lineLimit(1)
-              .minimumScaleFactor(0.72)
-          }
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .buttonStyle(.plain)
-      }
-      .frame(width: 128, minHeight: 44, alignment: .trailing)
-      NavigationLink(destination: SettingsView()) {
-        Image(systemName: "ellipsis.horizontal")
-          .font(.system(size: 22, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-          .frame(width: 44, height: 44)
-      }
-      .buttonStyle(.plain)
-    }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(height: 76)
-    .background(Color.signalASIPageBackground)
-  }
-
-  private var headerLogoSize: CGFloat {
-    let scale: CGFloat
-    switch dynamicTypeSize {
-    case .xSmall:
-      scale = 0.82
-    case .small:
-      scale = 0.90
-    case .medium:
-      scale = 1.00
-    case .large:
-      scale = 1.10
-    case .xLarge:
-      scale = 1.20
-    case .xxLarge:
-      scale = 1.30
-    case .xxxLarge:
-      scale = 1.40
-    default:
-      scale = 1.45
-    }
-    return min(56, max(32, 39 * scale))
+    )
   }
 
   private var headerModelLabel: String {
