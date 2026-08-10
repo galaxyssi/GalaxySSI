@@ -46,6 +46,7 @@ struct AgentHomeView: View {
   @State private var olderTranscriptAnchor: UUID?
   @State private var retryingAgentMessageIDs: Set<UUID> = []
   @State private var retryingAgentTaskIDs: Set<String> = []
+  @State private var timelineActionTaskIDsInFlight: Set<String> = []
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
@@ -1463,6 +1464,18 @@ struct AgentHomeView: View {
     _ action: AgentExecutionLoopTimelineAction,
     task: AgentTaskRecord
   ) {
+    guard timelineActionTaskIDsInFlight.insert(task.taskId).inserted else { return }
+    defer { timelineActionTaskIDsInFlight.remove(task.taskId) }
+
+    let currentTask = store.agentTask(id: task.taskId) ?? task
+    guard agentTimelineActions(for: currentTask).contains(where: { $0.rawValue == action.rawValue }) else {
+      richActionStatus = t(
+        "signalasi.agent.task_control.unavailable",
+        "This task action is no longer available"
+      )
+      return
+    }
+
     switch action {
     case .pause:
       richActionStatus = coordinator.pauseLocalNativeAction(taskId: task.taskId)
