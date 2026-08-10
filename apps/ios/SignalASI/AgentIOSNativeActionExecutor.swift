@@ -108,6 +108,10 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
     switch action.kind {
     case .saveScreenKnowledge:
       return saveScreenKnowledge(action, screen: screen)
+    case .readScreen:
+      return readScreen(action, screen: screen)
+    case .copyScreenText:
+      return copyScreenText(action, screen: screen)
     case .openURL:
       return openURL(action)
     case .openApp:
@@ -219,6 +223,108 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       lines += screen.visibleTexts.prefix(40).map { "- \($0)" }
     }
     return lines.joined(separator: "\n")
+  }
+
+  private func readScreen(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    switch clean(action.id).lowercased() {
+    case "read-notifications":
+      guard screen.notifications.hasAccess else {
+        return AgentActionResult(
+          actionId: action.id,
+          success: false,
+          message: "Notification access is not enabled."
+        )
+      }
+      let packages = uniqueStrings(screen.notifications.items
+        .map { clean($0.packageName) }
+        .filter { !$0.isEmpty }
+      )
+        .prefix(4)
+        .joined(separator: ", ")
+        .ifBlank("none")
+      let sensitiveCount = screen.notifications.items.filter { !$0.sensitiveFlags.isEmpty }.count
+      let categories = Dictionary(
+        grouping: screen.notifications.items.map { clean($0.category).ifBlank("app") },
+        by: { $0 }
+      )
+      let categorySummary = categories
+        .map { "\($0.key)=\($0.value.count)" }
+        .sorted()
+        .joined(separator: ", ")
+        .ifBlank("none")
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Read \(screen.notifications.items.count) notifications from \(packages); categories=\(categorySummary); sensitive=\(sensitiveCount)"
+      )
+
+    case "read-clipboard":
+      let clipboard = screen.clipboard
+      let message: String
+      if !clipboard.hasText {
+        message = "Clipboard is empty"
+      } else if !clipboard.sensitiveFlags.isEmpty {
+        message = "Clipboard has \(clipboard.textLength) chars and sensitive flags=\(clipboard.sensitiveFlags.joined(separator: ","))"
+      } else {
+        message = "Clipboard has \(clipboard.textLength) chars: \(clipboard.preview.ifBlank(clipboard.textHash))"
+      }
+      return AgentActionResult(actionId: action.id, success: true, message: message)
+
+    case "summarize-screen":
+      let page = clean(screen.pageTitle).ifBlank(clean(screen.foregroundApp)).ifBlank("Current screen")
+      if screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty {
+        return AgentActionResult(
+          actionId: action.id,
+          success: true,
+          message: "Screen \(page) has \(screen.visibleTextCount) text items and sensitive flags=\(screen.sensitiveFlags.joined(separator: ","))"
+        )
+      }
+      let visible = uniqueStrings(screen.visibleTexts
+        .map { $0.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+      )
+        .prefix(6)
+        .map { String($0.prefix(80)) }
+        .joined(separator: " | ")
+      let focused = screen.selectedText.ifBlank("")
+      let suffix = [visible.isEmpty ? "" : "visible=\(visible)", focused.isEmpty ? "" : "selected=\(String(focused.prefix(80)))"]
+        .filter { !$0.isEmpty }
+        .joined(separator: " / ")
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Screen: \(page) / app=\(clean(screen.foregroundApp).ifBlank("unknown")) / text=\(screen.visibleTextCount) / actions=\(screen.clickableNodeCount) / fields=\(screen.inputFieldCount)\(suffix.isEmpty ? "" : " / \(suffix)")"
+      )
+
+    default:
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Read \(screen.visibleTextCount) text items, \(screen.clickableNodeCount) actions, \(screen.inputFieldCount) fields, and \(screen.scrollableRegionCount) scroll regions"
+      )
+    }
+  }
+
+  private func copyScreenText(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    guard screen.sensitiveFlagCount == 0, screen.sensitiveFlags.isEmpty else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "Screen contains sensitive content; copying was blocked."
+      )
+    }
+    let text = screen.selectedText.ifBlank(screen.visibleTexts.joined(separator: "\n"))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else {
+      return AgentActionResult(actionId: action.id, success: false, message: "No visible screen text is available to copy.")
+    }
+    UIPasteboard.general.string = String(text.prefix(12_000))
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: "Copied current screen text to the clipboard.",
+      metadata: ["characters": String(min(text.count, 12_000)), "completion_verified": "true"]
+    )
   }
 
   private func openURL(_ action: AgentAction) -> AgentActionResult {
@@ -351,6 +457,16 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
 
   private func clean(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func uniqueStrings(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    return values.filter { value in
+      let key = value.lowercased()
+      guard !seen.contains(key) else { return false }
+      seen.insert(key)
+      return true
+    }
   }
 
   private static let appSchemes: [String: String] = [
