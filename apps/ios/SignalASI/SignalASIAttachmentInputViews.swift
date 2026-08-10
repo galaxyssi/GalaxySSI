@@ -8,15 +8,31 @@ struct AttachmentPreviewStrip: View {
   var onRemove: (SignalASIDraftAttachment) -> Void
 
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        ForEach(attachments) { attachment in
-          AttachmentPreviewChip(attachment: attachment) {
-            onRemove(attachment)
+    ScrollViewReader { proxy in
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          ForEach(attachments) { attachment in
+            AttachmentPreviewChip(attachment: attachment) {
+              onRemove(attachment)
+            }
+            .id(attachment.id)
           }
         }
+        .padding(.vertical, 2)
       }
-      .padding(.vertical, 2)
+      .onAppear {
+        scrollToLatest(using: proxy)
+      }
+      .onChange(of: attachments.map(\.id)) { _ in
+        scrollToLatest(using: proxy)
+      }
+    }
+  }
+
+  private func scrollToLatest(using proxy: ScrollViewProxy) {
+    guard let latestID = attachments.last?.id else { return }
+    DispatchQueue.main.async {
+      proxy.scrollTo(latestID, anchor: .trailing)
     }
   }
 }
