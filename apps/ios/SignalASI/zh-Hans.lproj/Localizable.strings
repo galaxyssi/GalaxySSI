@@ -714,6 +714,8 @@
 "signalasi.agent_knowledge.audit_subtitle" = "%d 个来源 / %@ / %d 个匹配被拦截";
 "signalasi.agent_knowledge.imported_count" = "已导入 %d 个知识分块";
 "signalasi.agent_knowledge.import_failed" = "导入失败：%@";
+"signalasi.agent_knowledge.import_too_large" = "文档超过 20 MB 导入上限";
+"signalasi.agent_knowledge.import_sensitive" = "由于资料疑似包含密钥或令牌，已阻止导入";
 "signalasi.agent_knowledge.no_readable_text" = "没有找到可读取的文本";
 "signalasi.agent_knowledge.source_metadata" = "%d 个分块 / %@";
 "signalasi.agent_knowledge.source_updated" = "已更新 %d 个分块";

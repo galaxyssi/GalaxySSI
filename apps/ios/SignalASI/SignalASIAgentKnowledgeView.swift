@@ -228,10 +228,24 @@ struct SignalASIAgentKnowledgeView: View {
             url.stopAccessingSecurityScopedResource()
           }
         }
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        if let fileSize = values.fileSize, fileSize > AgentKnowledgeImportPolicy.maxSourceBytes {
+          throw importError(t(
+            "signalasi.agent_knowledge.import_too_large",
+            "Document exceeds the 20 MB import limit"
+          ))
+        }
         let text = try extractText(from: url)
+        let assessment = AgentKnowledgeImportPolicy.assess(text)
+        guard assessment.isAllowed else {
+          throw importError(t(
+            "signalasi.agent_knowledge.import_sensitive",
+            "Import blocked because the source appears to contain secrets"
+          ))
+        }
         importedChunks += store.importAgentKnowledge(
           title: url.lastPathComponent.ifBlank(t("signalasi.agent_knowledge.title", "Knowledge")),
-          content: text,
+          content: assessment.indexedContent,
           source: url.absoluteString,
           kind: knowledgeKind(for: url),
           tags: knowledgeTags(for: url)
@@ -263,7 +277,7 @@ struct SignalASIAgentKnowledgeView: View {
           timeoutInterval: 12
         )
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard data.count <= Self.maximumWebBytes else {
+        guard data.count <= AgentKnowledgeImportPolicy.maxWebBytes else {
           throw webImportError(
             t("signalasi.agent_knowledge.import_web_too_large", "Web page exceeds the 5 MB import limit")
           )
@@ -285,9 +299,16 @@ struct SignalASIAgentKnowledgeView: View {
         let body = decodeWebBody(data, response: response)
         let title = webPageTitle(body).ifBlank(url.host?.ifBlank("Web page") ?? "Web page")
         let text = try extractWebText(body)
+        let assessment = AgentKnowledgeImportPolicy.assess(text)
+        guard assessment.isAllowed else {
+          throw webImportError(t(
+            "signalasi.agent_knowledge.import_sensitive",
+            "Import blocked because the source appears to contain secrets"
+          ))
+        }
         let imported = store.replaceAgentKnowledgeSource(
           title: String(title.prefix(180)),
-          content: text,
+          content: assessment.indexedContent,
           source: url.absoluteString,
           kind: .document,
           tags: ["web", url.host ?? ""]
@@ -411,8 +432,11 @@ struct SignalASIAgentKnowledgeView: View {
     NSError(domain: "SignalASIAgentKnowledgeWebImport", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
   }
 
-  private static let maximumWebBytes = 5 * 1024 * 1024
-  private static let maximumExtractedWebCharacters = 128_000
+  private func importError(_ message: String) -> NSError {
+    NSError(domain: "SignalASIAgentKnowledgeImport", code: 4, userInfo: [NSLocalizedDescriptionKey: message])
+  }
+
+  private static let maximumExtractedWebCharacters = AgentKnowledgeImportPolicy.maxExtractedCharacters
   private static let supportedWebMimeTypes: Set<String> = ["text/html", "application/xhtml+xml", "text/plain"]
 
   private func runSearch(_ query: String) {
@@ -425,6 +449,12 @@ struct SignalASIAgentKnowledgeView: View {
 
   private func extractText(from url: URL) throws -> String {
     let data = try Data(contentsOf: url)
+    guard data.count <= AgentKnowledgeImportPolicy.maxSourceBytes else {
+      throw importError(t(
+        "signalasi.agent_knowledge.import_too_large",
+        "Document exceeds the 20 MB import limit"
+      ))
+    }
     let pathExtension = url.pathExtension.lowercased()
     let text: String
     switch pathExtension {

@@ -214,6 +214,47 @@ struct AgentKnowledgeHit: Codable, Equatable {
   }
 }
 
+struct AgentKnowledgeImportAssessment: Equatable {
+  var indexedContent: String
+  var truncated: Bool
+  var sensitiveFlags: [String]
+
+  var isAllowed: Bool { sensitiveFlags.isEmpty }
+}
+
+enum AgentKnowledgeImportPolicy {
+  static let maxSourceBytes = 20 * 1024 * 1024
+  static let maxWebBytes = 5 * 1024 * 1024
+  static let maxExtractedCharacters = 240_000
+
+  static func assess(_ content: String) -> AgentKnowledgeImportAssessment {
+    let normalized = content
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return AgentKnowledgeImportAssessment(
+      indexedContent: String(normalized.prefix(maxExtractedCharacters)),
+      truncated: normalized.count > maxExtractedCharacters,
+      sensitiveFlags: sensitiveFlags(in: normalized)
+    )
+  }
+
+  static func sensitiveFlags(in content: String) -> [String] {
+    let patterns: [(String, String)] = [
+      ("private_key", "-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+      (
+        "credential_assignment",
+        "(?i)\\b(?:password|api[_ -]?key|access[_ -]?token|secret[_ -]?key)\\s*[:=]\\s*[^\\s]{8,}"
+      ),
+      ("access_token", "\\b(?:sk|rk|pk)_[A-Za-z0-9_-]{20,}\\b")
+    ]
+    return patterns.compactMap { flag, pattern in
+      content.range(of: pattern, options: [.regularExpression, .caseInsensitive]) == nil
+        ? nil
+        : flag
+    }
+  }
+}
+
 struct AgentKnowledgeCitation: Codable, Equatable {
   var index: Int
   var itemId: String
