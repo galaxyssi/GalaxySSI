@@ -206,11 +206,11 @@ struct SignalASIAgentHomeReadinessView: View {
           )
         }
         .buttonStyle(.plain)
-        ForEach(Array(recentTasks.prefix(3))) { task in
+        ForEach(Array(recentTasks.prefix(3).enumerated()), id: \.element.id) { index, task in
           separator
           HStack(spacing: 0) {
             Button(action: { onOpenRecentTask(task) }) {
-              recentTaskRow(task)
+              recentTaskRow(task, index: index)
                 .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
             }
             .buttonStyle(.plain)
@@ -371,27 +371,30 @@ struct SignalASIAgentHomeReadinessView: View {
     .padding(.horizontal, 14)
   }
 
-  private func recentTaskRow(_ task: AgentTaskRecord) -> some View {
+  private func recentTaskRow(_ task: AgentTaskRecord, index: Int) -> some View {
     HStack(spacing: 10) {
-      Image(systemName: "clock.arrow.circlepath")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundColor(recentTaskTint(task.phase))
-        .frame(width: 18)
+      Text("\(index + 1)")
+        .font(.system(size: 12, weight: .bold))
+        .foregroundColor(.white)
+        .frame(width: 28, height: 28)
+        .background(recentTaskTint(task.phase))
+        .clipShape(Circle())
       VStack(alignment: .leading, spacing: 2) {
         Text(task.goal.ifBlank(t("signalasi.agent_tasks.title", "Agent task")))
-          .font(.system(size: 12.5, weight: .semibold))
+          .font(.system(size: 13, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
           .lineLimit(1)
-        Text(recentTaskStatus(task.phase))
-          .font(.system(size: 10.5, weight: .semibold))
-          .foregroundColor(recentTaskTint(task.phase))
-          .lineLimit(1)
         Text(recentTaskSubtitle(task))
-          .font(.system(size: 9.5))
+          .font(.system(size: 10.5))
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
           .truncationMode(.middle)
       }
+      Spacer(minLength: 6)
+      Text(recentTaskStatus(task.phase))
+        .font(.system(size: 10.5, weight: .bold))
+        .foregroundColor(recentTaskTint(task.phase))
+        .lineLimit(1)
     }
     .padding(.horizontal, 14)
   }
