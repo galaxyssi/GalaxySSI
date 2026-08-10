@@ -1,7 +1,10 @@
 import Foundation
 
 enum LocalModelArtifactDownloadSources {
-  static func urls(for artifact: LocalModelHubArtifact) -> [URL] {
+  static func urls(
+    for artifact: LocalModelHubArtifact,
+    preferMirror: Bool = prefersMirror
+  ) -> [URL] {
     var candidates = [artifact.downloadURL]
     guard let host = artifact.downloadURL.host?.lowercased(),
           host == "huggingface.co" || host == "hf-mirror.com",
@@ -16,6 +19,10 @@ enum LocalModelArtifactDownloadSources {
     if let alternate = components.url, !candidates.contains(alternate) {
       candidates.append(alternate)
     }
-    return candidates
+    return preferMirror ? Array(candidates.reversed()) : candidates
+  }
+
+  private static var prefersMirror: Bool {
+    Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") == true
   }
 }
