@@ -131,6 +131,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       return composerInput(action, screen: screen)
     case .swipe:
       return swipeOwnedAgentTranscript(action, screen: screen)
+    case .tap:
+      return tapOwnedAgentHomeElement(action, screen: screen)
     default:
       return AgentActionResult(
         actionId: action.id,
@@ -211,6 +213,37 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       )
     }
     return AgentIOSAgentHomeSwipeBridge.shared.execute(action: action)
+  }
+
+  private func tapOwnedAgentHomeElement(
+    _ action: AgentAction,
+    screen: AgentScreenContext
+  ) -> AgentActionResult {
+    let requestedBounds = clean(action.parameters["bounds"] ?? "")
+    let requestedLabel = clean(action.parameters["matched_label"] ?? "")
+    let element = screen.clickableElements.first { candidate in
+      candidate.viewId.hasPrefix("ios.agent.") &&
+        ((requestedBounds.isEmpty && !requestedLabel.isEmpty && candidate.label == requestedLabel) ||
+          (!requestedBounds.isEmpty && candidate.bounds == requestedBounds))
+    }
+    guard let element,
+          element.origin == .manual,
+          element.bounds.hasPrefix("logical://AgentHomeView/") else {
+      return failure(
+        action,
+        "This iOS tap action is limited to SignalASI-owned Agent home controls.",
+        code: "IOS_AGENT_HOME_ONLY"
+      )
+    }
+    let requestedOrigin = clean(action.parameters["element_origin"] ?? "")
+    guard requestedOrigin.isEmpty || requestedOrigin == AgentElementOrigin.manual.rawValue else {
+      return failure(
+        action,
+        "iOS cannot inject taps into other apps or protected system surfaces.",
+        code: "IOS_AGENT_HOME_ONLY"
+      )
+    }
+    return AgentIOSAgentHomeActionBridge.shared.executeTap(action: action)
   }
 
   private func importWebKnowledge(_ action: AgentAction) -> AgentActionResult {

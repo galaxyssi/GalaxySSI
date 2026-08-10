@@ -53,6 +53,12 @@ struct AgentHomeView: View {
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
+  @State private var agentSessionsShortcutActive = false
+  @State private var agentSettingsShortcutActive = false
+  @State private var agentPermissionsShortcutActive = false
+  @State private var chatListShortcutActive = false
+  @State private var contactsShortcutActive = false
+  @State private var discoverShortcutActive = false
   @State private var scanStatus = ""
   @State private var scanStatusIsError = false
   @State private var recentTasksShortcutActive = false
@@ -479,16 +485,72 @@ struct AgentHomeView: View {
         }
         .hidden()
       )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentSessionsView(),
+          isActive: $agentSessionsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SettingsView(),
+          isActive: $agentSettingsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: OnDeviceAgentPermissionsView(),
+          isActive: $agentPermissionsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: ChatListView(),
+          isActive: $chatListShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: ContactsView(),
+          isActive: $contactsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: DiscoverView(),
+          isActive: $discoverShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
       .onAppear {
         ensureActiveAgentSession()
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
         refreshAgentRouteState()
         installComposerInputBridge()
+        installAgentHomeTapBridge()
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
         AgentIOSComposerInputBridge.shared.removeHandler()
+        AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
@@ -2614,6 +2676,109 @@ struct AgentHomeView: View {
         "platform": "ios",
         "surface": "signalasi_agent_transcript",
         "direction": direction.rawValue,
+        "completion_verified": "true"
+      ]
+    )
+  }
+
+  private func installAgentHomeTapBridge() {
+    AgentIOSAgentHomeActionBridge.shared.installTapHandler { action in
+      applyAgentHomeTapAction(action)
+    }
+  }
+
+  private func applyAgentHomeTapAction(_ action: AgentAction) -> AgentActionResult {
+    let bounds = action.parameters["bounds"] ?? ""
+    let matchedLabel = action.parameters["matched_label"] ?? ""
+    let resolvedBounds = bounds.isEmpty
+      ? agentScreenSnapshot.screen.clickableElements.first { $0.label == matchedLabel }?.bounds ?? ""
+      : bounds
+    let prefix = "logical://AgentHomeView/"
+    guard resolvedBounds.hasPrefix(prefix) else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.tap.unsupported_target",
+          "This Agent action does not target a SignalASI home control."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "completion_verified": "false",
+          "ios_boundary": "owned_agent_home_only"
+        ]
+      )
+    }
+    let targetID = String(resolvedBounds.dropFirst(prefix.count))
+    guard !targetID.isEmpty, !targetID.contains("/") else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.tap.invalid_target",
+          "The SignalASI home control target is invalid."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    switch targetID {
+    case "new-session":
+      createAgentConversation()
+    case "sessions":
+      agentSessionsShortcutActive = true
+    case "scan":
+      scanShortcutActive = true
+    case "take-photo":
+      openCameraAttachmentPicker()
+    case "add-file":
+      fileImporterPresented = true
+    case "permissions":
+      agentPermissionsShortcutActive = true
+    case "settings", "launch-settings":
+      agentSettingsShortcutActive = true
+    case "messages", "launch-messages":
+      chatListShortcutActive = true
+    case "contacts", "launch-contacts":
+      contactsShortcutActive = true
+    case "discover", "launch-discover":
+      discoverShortcutActive = true
+    case "agent", "launch-agent":
+      break
+    default:
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.tap.unknown_target",
+          "This SignalASI home control is not available."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "target_id": targetID,
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    actionTrayPresented = false
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: t(
+        "signalasi.agent.tap.completed",
+        "SignalASI home control activated."
+      ),
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_home",
+        "target_id": targetID,
         "completion_verified": "true"
       ]
     )
