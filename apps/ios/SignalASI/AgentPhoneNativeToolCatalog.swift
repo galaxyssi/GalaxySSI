@@ -470,8 +470,10 @@ enum AgentPhoneNativeToolCatalog {
     case .copyScreenText:
       return [.accessibilityUITree, .clipboard]
     case .pasteText:
-      return [.accessibilityGestures, .clipboard]
-    case .tap, .typeText, .swipe, .longPress, .deleteText, .back, .home, .recents, .lockScreen:
+      return [.ownedAgentInput, .clipboard]
+    case .typeText, .deleteText:
+      return [.ownedAgentInput]
+    case .tap, .swipe, .longPress, .back, .home, .recents, .lockScreen:
       return [.accessibilityGestures]
     case .openApp, .openURL, .setAlarm:
       return [.intentLaunch]

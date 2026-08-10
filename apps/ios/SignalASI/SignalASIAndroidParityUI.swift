@@ -482,6 +482,10 @@ struct AgentHomeView: View {
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
         refreshAgentRouteState()
+        installComposerInputBridge()
+      }
+      .onDisappear {
+        AgentIOSComposerInputBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
         guard phase == .active else { return }
@@ -2442,6 +2446,84 @@ struct AgentHomeView: View {
   private func createAgentConversation() {
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
+  }
+
+  private func installComposerInputBridge() {
+    AgentIOSComposerInputBridge.shared.install { action in
+      applyComposerInputAction(action)
+    }
+  }
+
+  private func applyComposerInputAction(_ action: AgentAction) -> AgentActionResult {
+    let metadata = [
+      "platform": "ios",
+      "surface": "signalasi_agent_composer",
+      "field": "agent_goal",
+      "completion_verified": "true"
+    ]
+    switch action.kind {
+    case .typeText:
+      let text = action.parameters["text"] ?? ""
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return AgentActionResult(
+          actionId: action.id,
+          success: false,
+          message: t("signalasi.agent.input.text_missing", "No text was provided."),
+          metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
+        )
+      }
+      draft = text
+      actionTrayPresented = false
+      composerFocusRequest += 1
+      refreshAgentScreenContext()
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: t("signalasi.agent.input.text_entered", "Text entered in the Agent composer."),
+        metadata: metadata
+      )
+
+    case .deleteText:
+      draft = ""
+      actionTrayPresented = false
+      composerFocusRequest += 1
+      refreshAgentScreenContext()
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: t("signalasi.agent.input.text_cleared", "Agent composer text cleared."),
+        metadata: metadata
+      )
+
+    case .pasteText:
+      let text = UIPasteboard.general.string ?? ""
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return AgentActionResult(
+          actionId: action.id,
+          success: false,
+          message: t("signalasi.agent.input.clipboard_empty", "Clipboard is empty."),
+          metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
+        )
+      }
+      draft = text
+      actionTrayPresented = false
+      composerFocusRequest += 1
+      refreshAgentScreenContext()
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: t("signalasi.agent.input.clipboard_pasted", "Clipboard text pasted in the Agent composer."),
+        metadata: metadata
+      )
+
+    default:
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t("signalasi.agent.input.unsupported", "This action is not supported by the Agent composer."),
+        metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
+      )
+    }
   }
 
   private func focusScannedAgents(_ targetIDs: [String]) {

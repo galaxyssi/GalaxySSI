@@ -3,6 +3,7 @@ import Foundation
 enum AgentPhoneCapabilityId: String, Codable, CaseIterable, Identifiable {
   case accessibilityUITree = "ACCESSIBILITY_UI_TREE"
   case accessibilityGestures = "ACCESSIBILITY_GESTURES"
+  case ownedAgentInput = "OWNED_AGENT_INPUT"
   case mediaProjectionOCR = "MEDIA_PROJECTION_OCR"
   case notificationRead = "NOTIFICATION_READ"
   case notificationReply = "NOTIFICATION_REPLY"
@@ -277,7 +278,8 @@ enum AgentPhoneCapabilityNativeCoverage {
   }
 
   static func isImplemented(_ id: AgentPhoneCapabilityId) -> Bool {
-    !toolIdsByCapability[id, default: []].isEmpty
+    if id == .ownedAgentInput { return true }
+    return !toolIdsByCapability[id, default: []].isEmpty
   }
 
   static let notificationsList = "signalasi.notifications.list"
@@ -328,6 +330,14 @@ enum AgentPhoneCapabilityPolicy {
 
 enum AgentPhoneCapabilityCatalog {
   static let capabilities: [AgentPhoneCapabilityBoundary] = [
+    boundary(
+      .ownedAgentInput,
+      location: .appProcess,
+      availability: .ready,
+      risk: .low,
+      normalAppCanExecute: true,
+      limitation: "Text actions are limited to the SignalASI-owned Agent composer and cannot edit other apps or protected system surfaces."
+    ),
     boundary(
       .accessibilityUITree,
       location: .accessibilityService,
