@@ -28,6 +28,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   @Published private(set) var transcript = ""
   @Published private(set) var elapsedLabel = "00:00"
   @Published private(set) var waveformPhase = 0.0
+  @Published private(set) var waveformAmplitude = 0.0
   @Published private(set) var statusMessage = ""
 
   private let speech = SpeechCaptureService()
@@ -122,6 +123,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     transcript = ""
     elapsedLabel = "00:00"
     waveformPhase = 0
+    waveformAmplitude = 0
     pendingSend = false
     deliveredThisCapture = false
     deferredTranscript = nil
@@ -287,6 +289,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     onCaptureCancelled = nil
     speech.onVoiceCommand = nil
     stopTimer()
+    waveformAmplitude = 0
     if !keepStatus {
       statusMessage = ""
     }
@@ -308,6 +311,8 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
 
   private func tick() {
     waveformPhase += 0.34
+    let targetAmplitude = min(max(Double(speech.currentAudioLevel) * 8, 0), 1)
+    waveformAmplitude += (targetAmplitude - waveformAmplitude) * 0.35
     let elapsed = startedAt.map { Date().timeIntervalSince($0) } ?? 0
     elapsedLabel = Self.formatElapsed(elapsed)
     let currentTranscript = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
