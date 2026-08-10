@@ -2649,11 +2649,11 @@ struct AgentHomeView: View {
       agentPermissionsShortcutActive = true
     case "settings", "launch-settings":
       agentSettingsShortcutActive = true
-    case "launch-messages":
+    case "messages", "launch-messages":
       chatListShortcutActive = true
-    case "launch-contacts":
+    case "contacts", "launch-contacts":
       contactsShortcutActive = true
-    case "launch-discover":
+    case "discover", "launch-discover":
       discoverShortcutActive = true
     case "agent", "launch-agent":
       break
