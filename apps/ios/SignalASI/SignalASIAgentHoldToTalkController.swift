@@ -26,8 +26,11 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   @Published private(set) var isRecording = false
   @Published private(set) var cancelPending = false
   @Published private(set) var transcript = ""
+  @Published private(set) var stableTranscript = ""
+  @Published private(set) var unstableTranscript = ""
   @Published private(set) var elapsedLabel = "00:00"
   @Published private(set) var waveformPhase = 0.0
+  @Published private(set) var waveformAmplitude = 0.0
   @Published private(set) var statusMessage = ""
 
   private let speech = SpeechCaptureService()
@@ -120,8 +123,11 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     cancelPending = false
     statusMessage = ""
     transcript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
     elapsedLabel = "00:00"
     waveformPhase = 0
+    waveformAmplitude = 0
     pendingSend = false
     deliveredThisCapture = false
     deferredTranscript = nil
@@ -230,6 +236,8 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       let cleanText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !cleanText.isEmpty, deliveredCommandKeys.insert(idempotencyKey).inserted else { return }
       self.transcript = cleanText
+      stableTranscript = cleanText
+      unstableTranscript = ""
       if pendingSend {
         _ = deliver(cleanText)
         _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: sessionId))
@@ -287,6 +295,9 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
     onCaptureCancelled = nil
     speech.onVoiceCommand = nil
     stopTimer()
+    stableTranscript = ""
+    unstableTranscript = ""
+    waveformAmplitude = 0
     if !keepStatus {
       statusMessage = ""
     }
@@ -308,8 +319,12 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
 
   private func tick() {
     waveformPhase += 0.34
+    let targetAmplitude = min(max(Double(speech.currentAudioLevel) * 8, 0), 1)
+    waveformAmplitude += (targetAmplitude - waveformAmplitude) * 0.35
     let elapsed = startedAt.map { Date().timeIntervalSince($0) } ?? 0
     elapsedLabel = Self.formatElapsed(elapsed)
+    stableTranscript = speech.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+    unstableTranscript = speech.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
     let currentTranscript = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     if !currentTranscript.isEmpty {
       transcript = currentTranscript
