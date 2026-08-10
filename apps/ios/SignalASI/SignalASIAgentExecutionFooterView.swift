@@ -19,9 +19,7 @@ struct SignalASIAgentExecutionFooterView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack(spacing: 7) {
-        Circle()
-          .fill(Color.signalASIAccent)
-          .frame(width: 7, height: 7)
+        SignalASIAgentRouteLogo(label: executor, size: 16)
         Text(executor)
           .font(.system(size: 11, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)

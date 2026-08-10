@@ -141,9 +141,7 @@ struct SignalASIAgentExecutionStatusCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Circle()
-          .fill(Color.signalASIAccent)
-          .frame(width: 8, height: 8)
+        SignalASIAgentRouteLogo(label: executor, size: 20)
         Text(executor)
           .font(.system(size: 14, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
