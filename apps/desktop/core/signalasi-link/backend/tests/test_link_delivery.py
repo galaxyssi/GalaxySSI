@@ -82,6 +82,33 @@ class LinkDeliveryTest(unittest.TestCase):
                 due = link_delivery.pending_outbound(limit=2, now=101.0)
                 self.assertEqual(["message-2", "message-3"], [item["message_id"] for item in due])
 
+    def test_terminal_message_precedes_older_progress_when_route_is_full(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "delivery.db"
+            with patch.object(link_delivery, "DB_PATH", database):
+                with patch.object(link_delivery.time, "time", return_value=100.0):
+                    link_delivery.queue_outbound(
+                        "client", "progress-1", "control", "wire-1", priority=10,
+                    )
+                    link_delivery.queue_outbound(
+                        "client", "progress-2", "control", "wire-2", priority=10,
+                    )
+                    link_delivery.mark_outbound_sending("client", "progress-1")
+                    link_delivery.mark_outbound_sending("client", "progress-2")
+                with patch.object(link_delivery.time, "time", return_value=101.0):
+                    link_delivery.queue_outbound(
+                        "client", "final", "down", "wire-final", priority=100,
+                    )
+
+                with patch.object(link_delivery.time, "time", return_value=101.0):
+                    pending = link_delivery.pending_outbound(
+                        client_route_id="client",
+                        now=101.0,
+                    )
+
+                self.assertEqual(["final"], [item["message_id"] for item in pending])
+                self.assertEqual(100, pending[0]["priority"])
+
     def test_route_filter_keeps_failed_ciphertexts_in_order(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "delivery.db"

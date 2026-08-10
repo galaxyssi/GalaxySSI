@@ -129,6 +129,109 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         task_results.assert_called_once_with(mqtt_client)
         transport.assert_called_once_with(mqtt_client)
 
+    def test_terminal_result_uses_reserved_slot_when_progress_fills_route(self) -> None:
+        terminal = {
+            "client_route_id": "current",
+            "message_id": "final",
+            "topic": "current/down",
+            "wire_payload": "final-wire",
+            "priority": mqtt_bridge.OUTBOUND_PRIORITY_TERMINAL,
+        }
+        published_topics: list[str] = []
+
+        def publish(_mqttc, topic: str, _wire_payload: str):
+            published_topics.append(topic)
+            return SimpleNamespace(
+                rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS,
+                mid=len(published_topics),
+                is_published=lambda: False,
+            )
+
+        with (
+            patch.object(
+                mqtt_bridge,
+                "list_clients",
+                return_value=[{"client_route_id": "current", "last_seen_at": 1.0}],
+            ),
+            patch.object(
+                mqtt_bridge,
+                "outbound_inflight_count",
+                return_value=mqtt_bridge.MAX_DURABLE_OUTBOUND_INFLIGHT_PER_CLIENT,
+            ),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
+            patch.object(mqtt_bridge, "pending_outbound", return_value=[terminal]),
+            patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
+            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "track_outbound_publish"),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
+        ):
+            mqtt_bridge.flush_outbound_messages(DurableMqttClient())
+
+        self.assertEqual(["current/down"], published_topics)
+
+    def test_durable_queue_lock_is_released_before_mqtt_publish(self) -> None:
+        lock_was_available = threading.Event()
+        candidate = {
+            "client_route_id": "current",
+            "message_id": "message",
+            "topic": "current/down",
+            "wire_payload": "wire",
+            "priority": mqtt_bridge.OUTBOUND_PRIORITY_NORMAL,
+        }
+
+        def publish(_mqttc, _topic: str, _wire_payload: str):
+            def acquire_lock() -> None:
+                with mqtt_bridge.durable_outbound_lock:
+                    lock_was_available.set()
+
+            worker = threading.Thread(target=acquire_lock)
+            worker.start()
+            worker.join(timeout=1.0)
+            return SimpleNamespace(
+                rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS,
+                mid=1,
+                is_published=lambda: False,
+            )
+
+        with (
+            patch.object(
+                mqtt_bridge,
+                "list_clients",
+                return_value=[{"client_route_id": "current", "last_seen_at": 1.0}],
+            ),
+            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=0),
+            patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
+            patch.object(mqtt_bridge, "pending_outbound", return_value=[candidate]),
+            patch.object(mqtt_bridge, "get_client", return_value={"paired": True}),
+            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "track_outbound_publish"),
+            patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
+        ):
+            mqtt_bridge.flush_outbound_messages(DurableMqttClient())
+
+        self.assertTrue(lock_was_available.is_set())
+
+    def test_running_progress_is_best_effort_but_terminal_event_is_durable(self) -> None:
+        base_task = {
+            "task_id": "task-1",
+            "client_route_id": "route-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "turn-1",
+            "events": [{"event_id": "event-1", "kind": "reasoning", "title": "Working"}],
+        }
+        wire = {"_client_route_id": "route-1"}
+        with (
+            patch.object(mqtt_bridge, "_agent_task_payload", return_value={"type": "agent_task_event"}),
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            running = mqtt_bridge._PendingTaskEvent(wire, {**base_task, "status": "running"}, [])
+            completed = mqtt_bridge._PendingTaskEvent(wire, {**base_task, "status": "completed"}, [])
+            self.assertTrue(mqtt_bridge._try_publish_task_event(DurableMqttClient(), running))
+            self.assertTrue(mqtt_bridge._try_publish_task_event(DurableMqttClient(), completed))
+
+        self.assertFalse(publish.call_args_list[0].kwargs["durable"])
+        self.assertTrue(publish.call_args_list[1].kwargs["durable"])
+
     def test_task_result_enqueue_restores_retry_worker(self) -> None:
         payload = {
             "task_id": "task-1",
