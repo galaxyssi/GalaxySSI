@@ -1750,6 +1750,35 @@ enum AgentAuditTrailCommand {
   }
 }
 
+enum AgentNotificationCommand: Equatable {
+  case inbox
+  case search(String)
+
+  static func parse(_ goal: String) -> AgentNotificationCommand? {
+    let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+    switch normalized {
+    case "notifications", "read notifications", "list notifications", "show notifications",
+         "notification inbox", "show notification inbox",
+         "\u{901a}\u{77e5}", "\u{663e}\u{793a}\u{901a}\u{77e5}", "\u{901a}\u{77e5}\u{6536}\u{4ef6}\u{7bb1}":
+      return .inbox
+    default:
+      break
+    }
+    let prefixes = [
+      "search notifications ", "find notifications ",
+      "search notification ", "find notification ",
+      "\u{641c}\u{7d22}\u{901a}\u{77e5} ", "\u{67e5}\u{627e}\u{901a}\u{77e5} "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    let query = String(clean.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return query.isEmpty ? nil : .search(query)
+  }
+}
+
 enum AgentPermissionModeCommand {
   static func mode(_ goal: String) -> AgentPermissionMode? {
     let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
