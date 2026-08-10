@@ -1567,10 +1567,12 @@ final class SignalASIStore: ObservableObject {
   ) -> [AgentKnowledgeItem] {
     let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanContent.isEmpty else { return [] }
+    let assessment = AgentKnowledgeImportPolicy.assess(cleanContent)
+    guard assessment.isAllowed, !assessment.indexedContent.isEmpty else { return [] }
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Private knowledge")
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("local:\(UUID().uuidString)")
-    let chunks = chunkKnowledgeContent(cleanContent)
+    let chunks = chunkKnowledgeContent(assessment.indexedContent)
     let now = Int64(Date().timeIntervalSince1970 * 1_000)
     let items = chunks.enumerated().map { index, chunk in
       AgentKnowledgeItem(

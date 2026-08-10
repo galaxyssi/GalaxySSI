@@ -81,7 +81,7 @@ struct AgentIOSURLSessionWebKnowledgeImporter {
     guard !content.isEmpty else {
       return .failure(message: "No readable text was found on the web page.", code: "empty_web_content")
     }
-    let sensitiveFlags = Self.sensitiveFlags(in: content)
+    let sensitiveFlags = AgentKnowledgeImportPolicy.sensitiveFlags(in: content)
     guard sensitiveFlags.isEmpty else {
       return .failure(
         message: "Import blocked because the web page appears to contain secrets.",
@@ -128,13 +128,4 @@ struct AgentIOSURLSessionWebKnowledgeImporter {
     return components.string
   }
 
-  private static func sensitiveFlags(in content: String) -> [String] {
-    let lower = content.lowercased()
-    let markers = [
-      "password", "passcode", "verification code", "one-time password",
-      "private key", "api key", "access token", "seed phrase",
-      "\u{5BC6}\u{7801}", "\u{79C1}\u{94A5}", "\u{8BBF}\u{95EE}\u{4EE4}\u{724C}"
-    ]
-    return markers.filter { lower.contains($0) }
-  }
 }
