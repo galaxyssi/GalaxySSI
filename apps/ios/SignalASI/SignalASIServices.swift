@@ -1610,6 +1610,10 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let originalRequestText = requestText
+    let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+      request: originalRequestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
     let richOutputJson = outgoingAttachmentRichOutput(attachments)
     let outgoing = store.appendOutgoing(
       displayText,
@@ -1679,7 +1683,8 @@ final class MessageCoordinator: ObservableObject {
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(attachments)
       }
-      if let active = activeAgentTurn(for: outgoing.conversationId) {
+      if taskExecutionMode != .planOnly,
+         let active = activeAgentTurn(for: outgoing.conversationId) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
           activeGoal: active.goal,
@@ -1832,6 +1837,7 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     if contact.id == "hermes",
+       taskExecutionMode != .planOnly,
        let fastReply = AgentFastLocalResponse.reply(
          goal: requestText,
          context: AgentConversationContext(
@@ -1889,7 +1895,8 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if attachments.isEmpty,
+        if taskExecutionMode != .planOnly,
+           attachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
              store: store,
