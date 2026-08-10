@@ -11,7 +11,7 @@ enum AgentWorkflowTriggerKind: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 
   var supportedOnIOS: Bool {
-    self == .powerConnected || self == .batteryLow
+    true
   }
 
   var requiresCondition: Bool {
@@ -293,6 +293,16 @@ final class AgentWorkflowTriggerCoordinator: ObservableObject {
         }
       })
     }
+    observations.append(center.addObserver(
+      forName: AgentIOSOwnedNotificationStore.didRecordNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      guard let item = notification.object as? AgentIOSNotificationItem else { return }
+      Task { @MainActor [weak self] in
+        self?.dispatchNotification(item)
+      }
+    })
     scheduleBackgroundRefresh()
   }
 
@@ -365,7 +375,43 @@ final class AgentWorkflowTriggerCoordinator: ObservableObject {
     }
   }
 
-  private func conditionSnapshot(nowMillis: Int64) -> AgentWorkflowConditionSnapshot {
+  private func dispatchNotification(_ item: AgentIOSNotificationItem) {
+    let now = Int64(Date().timeIntervalSince1970 * 1_000)
+    let notificationText = String([item.title, item.textPreview]
+      .filter { !$0.isEmpty }
+      .joined(separator: "\n")
+      .prefix(4_096))
+    let snapshot = conditionSnapshot(
+      nowMillis: now,
+      text: notificationText,
+      packageName: String(item.packageName.prefix(512))
+    )
+    for trigger in triggerStore.readyTriggers(kind: .notificationPackage, nowMillis: now)
+      where item.packageName.range(of: trigger.condition, options: [.caseInsensitive]) != nil &&
+        AgentWorkflowConditionEvaluator.evaluateAll(trigger.conditions, snapshot: snapshot) {
+      dispatch(trigger, now: now)
+    }
+    guard item.sensitiveFlags.isEmpty else { return }
+    for trigger in triggerStore.readyTriggers(kind: .notificationText, nowMillis: now)
+      where notificationText.range(of: trigger.condition, options: [.caseInsensitive]) != nil &&
+        AgentWorkflowConditionEvaluator.evaluateAll(trigger.conditions, snapshot: snapshot) {
+      dispatch(trigger, now: now)
+    }
+  }
+
+  private func dispatch(_ trigger: AgentWorkflowTrigger, now: Int64) {
+    triggerStore.markTriggered(id: trigger.id, at: now)
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      _ = await self.coordinator.executeWorkflowTrigger(trigger, workflowStore: self.workflowStore)
+    }
+  }
+
+  private func conditionSnapshot(
+    nowMillis: Int64,
+    text: String? = nil,
+    packageName: String? = nil
+  ) -> AgentWorkflowConditionSnapshot {
     let device = UIDevice.current
     let batteryPercent: Int? = device.batteryLevel >= 0
       ? min(max(Int(device.batteryLevel * 100), 0), 100)
@@ -386,6 +432,8 @@ final class AgentWorkflowTriggerCoordinator: ObservableObject {
     let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: Double(nowMillis) / 1_000))
     let minuteOfDay = components.hour.map { $0 * 60 + (components.minute ?? 0) }
     return AgentWorkflowConditionSnapshot(
+      text: text,
+      packageName: packageName,
       isDeviceCharging: charging,
       batteryPercent: batteryPercent,
       isNetworkAvailable: networkAvailable,
