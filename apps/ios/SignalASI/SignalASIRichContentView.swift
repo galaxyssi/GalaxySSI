@@ -584,7 +584,7 @@ private struct SignalASIRichBlockView: View {
                 inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
               }
             ) {
-              resourceBlock
+              SignalASIRichImageFailureView()
             }
           } else {
             resourceBlock
@@ -1852,6 +1852,28 @@ private struct SignalASIRichBarChartView: View {
   ]
 }
 
+private struct SignalASIRichImageFailureView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: "photo")
+        .font(.title2.weight(.semibold))
+      Text(t("rich_output_load_failed", "Unable to display preview"))
+        .font(.caption)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+    }
+    .foregroundColor(.signalASITextSecondary)
+    .frame(maxWidth: .infinity, minHeight: 96)
+    .accessibilityElement(children: .combine)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
 private struct SignalASIInlineHTMLView: UIViewRepresentable {
   let html: String
 
@@ -1958,51 +1980,58 @@ private struct SignalASIAudioArtifactView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: "waveform")
-          .foregroundColor(.signalASIAccent)
-        Text(title)
-          .font(.subheadline.weight(.semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(2)
-        Spacer(minLength: 8)
-        Button {
-          player.togglePlayback()
-        } label: {
-          Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-            .frame(width: 32, height: 32)
-            .background(Circle().fill(Color.signalASIAccent))
-            .foregroundColor(.white)
-        }
-        .buttonStyle(.plain)
-          .accessibilityLabel(
-            SignalASILocalization.string(
-              player.isPlaying ? "rich_output_pause" : "rich_output_play",
-              fallback: player.isPlaying
-                ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
-                : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
-              language: interfaceLanguage
-            )
-          )
+    HStack(spacing: 8) {
+      Button {
+        player.togglePlayback()
+      } label: {
+        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+          .font(.system(size: 17, weight: .bold))
+          .frame(width: 42, height: 42)
+          .background(Circle().fill(Color.signalASIAccent))
+          .foregroundColor(.white)
       }
-      Slider(
-        value: Binding(
-          get: { player.currentTime },
-          set: { player.seek(to: $0) }
-        ),
-        in: 0...max(player.duration, 1)
+      .buttonStyle(.plain)
+      .accessibilityLabel(
+        SignalASILocalization.string(
+          player.isPlaying ? "rich_output_pause" : "rich_output_play",
+          fallback: player.isPlaying
+            ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
+            : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
+          language: interfaceLanguage
+        )
       )
-      HStack {
-        Text(formatTime(player.currentTime))
-        Spacer()
-        Text(formatTime(player.duration))
+
+      VStack(alignment: .leading, spacing: 0) {
+        Text(title)
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        HStack(spacing: 4) {
+          Slider(
+            value: Binding(
+              get: { player.currentTime },
+              set: { player.seek(to: $0) }
+            ),
+            in: 0...max(player.duration, 1)
+          )
+          .frame(maxWidth: .infinity, minHeight: 28)
+          Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
+            .font(.caption2.monospacedDigit())
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+            .frame(width: 82, alignment: .trailing)
+        }
       }
-      .font(.caption2.monospacedDigit())
-      .foregroundColor(.signalASITextSecondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(10)
-    .background(Color.signalASISearchBackground.opacity(0.45))
+    .padding(.horizontal, 10)
+    .padding(.vertical, 9)
+    .background(Color.signalASISearchBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.signalASISeparator, lineWidth: 0.5)
+    )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     .onDisappear {
       player.stop()
@@ -2135,13 +2164,33 @@ private struct SignalASIVideoArtifactView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 0) {
       if !title.isEmpty {
         Text(title)
-          .font(.subheadline.weight(.semibold))
+          .font(.system(size: 15, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .padding(.bottom, 7)
       }
-      VideoPlayer(player: player.player)
+      ZStack {
+        VideoPlayer(player: player.player)
+        if player.hasFailed {
+          VStack(spacing: 7) {
+            Image(systemName: "exclamationmark.triangle")
+              .font(.title3)
+              .foregroundColor(.orange)
+            Text(SignalASILocalization.string(
+              "rich_output_load_failed",
+              fallback: "Unable to display preview",
+              language: interfaceLanguage
+            ))
+              .font(.caption)
+              .foregroundColor(.signalASITextSecondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Color.signalASISearchBackground)
+        }
+      }
         .frame(maxWidth: .infinity)
         .frame(height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -2157,11 +2206,14 @@ private struct SignalASIVideoArtifactView: View {
 
 private final class SignalASIVideoArtifactPlayer: ObservableObject {
   let player: AVPlayer
+  @Published private(set) var hasFailed = false
   private var playbackObservation: NSKeyValueObservation? = nil
+  private var statusObservation: NSKeyValueObservation? = nil
 
   init(url: URL) {
     player = AVPlayer(url: url)
     installPlaybackObservation()
+    installStatusObservation()
   }
 
   private func installPlaybackObservation() {
@@ -2182,6 +2234,18 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
     }
   }
 
+  private func installStatusObservation() {
+    guard let item = player.currentItem else { return }
+    statusObservation = item.observe(
+      \.status,
+      options: [.initial, .new]
+    ) { [weak self] item, _ in
+      DispatchQueue.main.async {
+        self?.hasFailed = item.status == .failed
+      }
+    }
+  }
+
   func stop() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player.pause()
@@ -2194,6 +2258,7 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
 
   deinit {
     playbackObservation?.invalidate()
+    statusObservation?.invalidate()
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
   }
 }
