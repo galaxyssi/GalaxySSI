@@ -206,6 +206,25 @@ private struct SignalASIRichSectionView: View {
   }
 
   var body: some View {
+    if section.kind == .finalAnswer {
+      finalAnswerBody
+    } else {
+      collapsibleBody
+    }
+  }
+
+  private var finalAnswerBody: some View {
+    SignalASIRichBlockListView(
+      blocks: section.blocks,
+      isOutgoing: isOutgoing,
+      onAction: onAction,
+      onFormSubmit: onFormSubmit,
+      onArtifactSave: onArtifactSave
+    )
+    .padding(.vertical, 4)
+  }
+
+  private var collapsibleBody: some View {
     VStack(alignment: .leading, spacing: 6) {
       Button {
         withAnimation(.easeInOut(duration: 0.18)) {
