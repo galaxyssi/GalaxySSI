@@ -3808,3 +3808,9 @@
 "signalasi.agent.tap.invalid_target" = "SignalASI 主页面控件目标无效。";
 "signalasi.agent.tap.unknown_target" = "此 SignalASI 主页面控件当前不可用。";
 "signalasi.agent.tap.completed" = "SignalASI 主页面控件已执行。";
+"signalasi.agent.swipe.invalid_direction" = "Agent transcript 滑动方向无效。";
+"signalasi.agent.swipe.vertical_only" = "Agent transcript 仅支持上下滑动。";
+"signalasi.agent.swipe.completed" = "Agent transcript 已移动。";
+"signalasi.capability.owned_agent_input" = "Agent 输入框";
+"signalasi.capability.owned_agent_controls" = "Agent 主页面控件";
+"signalasi.capability.owned_agent_transcript" = "Agent transcript 导航";
