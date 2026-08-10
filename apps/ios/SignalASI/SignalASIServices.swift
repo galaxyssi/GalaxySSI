@@ -1686,6 +1686,38 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
+    if contact.id == "hermes",
+       let fastReply = AgentFastLocalResponse.reply(
+         goal: requestText,
+         context: AgentConversationContext(
+           conversationId: outgoing.conversationId,
+           summary: recentLocalConversationContext(
+             contactId: contact.id,
+             excluding: outgoing.id
+           ),
+           turns: [],
+           privateMode: true
+         )
+       ) {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "local_fast_reply",
+        detail: "Agent fast local response",
+        status: .delivered
+      )
+      let response = store.appendIncoming(
+        fastReply,
+        from: contact.id,
+        remoteMessageId: "local-fast-\(UUID().uuidString.lowercased())",
+        status: .delivered,
+        traceStage: "local_fast_reply_received",
+        conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId
+      )
+      onIncomingMessage?(response)
+      return true
+    }
     if AgentReplyWaitingIndicatorPolicy.tracksAgentReply(for: contact) {
       beginPendingAgentReply(for: outgoing)
     }

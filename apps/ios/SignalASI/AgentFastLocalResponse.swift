@@ -180,9 +180,9 @@ enum AgentFastLocalResponse {
   private static let englishVagueReply =
     "What should I work on? Send text, a file, or an image, or tell me whether to inspect, edit, summarize, or execute it."
   private static let englishSharedStorageReply =
-    "Android does not let apps read this raw shared-storage path directly. Select the file again with the input bar's file button; after you grant access, I will process it directly."
+    "iOS does not let apps read this raw shared-storage path directly. Select the file again with the input bar's file button; after you grant access, I will process it directly."
   private static let chineseVagueReply =
     "\u{4f60}\u{60f3}\u{8ba9}\u{6211}\u{5904}\u{7406}\u{4ec0}\u{4e48}\u{ff1f}\u{53ef}\u{4ee5}\u{53d1}\u{6587}\u{5b57}\u{3001}\u{6587}\u{4ef6}\u{6216}\u{56fe}\u{7247}\u{ff0c}\u{6216}\u{76f4}\u{63a5}\u{8bf4}\u{8981}\u{6211}\u{67e5}\u{770b}\u{3001}\u{4fee}\u{6539}\u{3001}\u{603b}\u{7ed3}\u{8fd8}\u{662f}\u{6267}\u{884c}\u{3002}"
   private static let chineseSharedStorageReply =
-    "Android \u{4e0d}\u{5141}\u{8bb8} App \u{76f4}\u{63a5}\u{8bfb}\u{53d6}\u{8fd9}\u{4e2a}\u{5171}\u{4eab}\u{5b58}\u{50a8}\u{8def}\u{5f84}\u{3002}\u{8bf7}\u{70b9}\u{8f93}\u{5165}\u{680f}\u{7684}\u{6587}\u{4ef6}\u{6309}\u{94ae}\u{91cd}\u{65b0}\u{9009}\u{62e9}\u{8be5}\u{6587}\u{4ef6}\u{ff0c}\u{6388}\u{6743}\u{540e}\u{6211}\u{4f1a}\u{76f4}\u{63a5}\u{5904}\u{7406}\u{3002}"
+    "iOS \u{4e0d}\u{5141}\u{8bb8} App \u{76f4}\u{63a5}\u{8bfb}\u{53d6}\u{8fd9}\u{4e2a}\u{5171}\u{4eab}\u{5b58}\u{50a8}\u{8def}\u{5f84}\u{3002}\u{8bf7}\u{70b9}\u{8f93}\u{5165}\u{680f}\u{7684}\u{6587}\u{4ef6}\u{6309}\u{94ae}\u{91cd}\u{65b0}\u{9009}\u{62e9}\u{8be5}\u{6587}\u{4ef6}\u{ff0c}\u{6388}\u{6743}\u{540e}\u{6211}\u{4f1a}\u{76f4}\u{63a5}\u{5904}\u{7406}\u{3002}"
 }
