@@ -246,12 +246,11 @@ struct SignalASIAgentComposerView: View {
             cancelPending: holdToTalk.cancelPending
           )
         } else {
-          Text(holdToTalk.transcript)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: .infinity)
+          SignalASIAgentRecordingTranscript(
+            stableText: holdToTalk.stableTranscript,
+            unstableText: holdToTalk.unstableTranscript,
+            fallbackText: holdToTalk.transcript
+          )
         }
       }
       .frame(height: 38)
@@ -494,6 +493,52 @@ struct SignalASIVoiceTranscriptionPendingView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIAgentRecordingTranscript: View {
+  var stableText: String
+  var unstableText: String
+  var fallbackText: String
+
+  private var unstableColor: Color {
+    Color(red: 232.0 / 255.0, green: 1, blue: 233.0 / 255.0)
+  }
+
+  var body: some View {
+    let stable = stableText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let unstable = unstableText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let separator = Self.separator(stable: stable, unstable: unstable)
+    Group {
+      if stable.isEmpty && unstable.isEmpty {
+        Text(fallbackText)
+      } else {
+        (Text(stable).foregroundColor(.white) +
+          Text(separator + unstable).foregroundColor(unstableColor))
+      }
+    }
+    .font(.system(size: 15, weight: .semibold))
+    .lineLimit(1)
+    .truncationMode(.head)
+    .frame(maxWidth: .infinity)
+  }
+
+  private static func separator(stable: String, unstable: String) -> String {
+    guard let last = stable.last,
+          let first = unstable.first,
+          (last.isLetter || last.isNumber),
+          (first.isLetter || first.isNumber),
+          !isCJK(last),
+          !isCJK(first) else {
+      return ""
+    }
+    return " "
+  }
+
+  private static func isCJK(_ character: Character) -> Bool {
+    character.unicodeScalars.contains { scalar in
+      (0x3400...0x9FFF).contains(scalar.value)
+    }
   }
 }
 

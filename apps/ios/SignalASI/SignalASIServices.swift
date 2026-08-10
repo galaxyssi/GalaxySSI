@@ -6296,6 +6296,8 @@ private enum SpeechCaptureLiveWhisperFinalizationError: LocalizedError {
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
+  private(set) var stableTranscript = ""
+  private(set) var unstableTranscript = ""
   var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?
 
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
@@ -6338,10 +6340,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     self.liveWhisperController.setUpdateHandler { [weak self] update in
       DispatchQueue.main.async { [weak self] in
         guard let self = self, self.liveWhisperActive else { return }
+        self.stableTranscript = update.transcript.stableText
+        self.unstableTranscript = update.transcript.unstableText
         let displayText = update.transcript.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !displayText.isEmpty {
-          self.transcript = displayText
-        }
+        self.transcript = displayText
       }
     }
     self.liveWhisperController.setTransitionHandler { [weak self] transition in
@@ -6395,6 +6397,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       throw error
     }
     transcript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
     currentIOSSpeechTranscript = ""
     updateAudioLevel(0)
     currentRecognitionModelProfileId = localeIdentifier
@@ -6474,6 +6478,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           }
           if result.isFinal {
             if !self.liveWhisperActive {
+              self.stableTranscript = text
+              self.unstableTranscript = ""
               self.emitCommands(
                 self.coordinatorBridge.finishWithBestTranscript(
                   text,
@@ -6484,11 +6490,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             }
           } else {
             if !self.liveWhisperActive {
-              self.coordinatorBridge.transcriptPartial(
+              let transition = self.coordinatorBridge.transcriptPartial(
                 text,
                 provider: iosSpeechProviderId,
                 modelProfileId: self.currentRecognitionModelProfileId
               )
+              self.stableTranscript = transition.current.stableText
+              self.unstableTranscript = transition.current.partialText
             }
           }
         }
@@ -6540,6 +6548,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     request = nil
     currentRecognitionModelProfileId = ""
     currentIOSSpeechTranscript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
     updateAudioLevel(0)
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
