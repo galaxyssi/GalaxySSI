@@ -394,12 +394,14 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var quoteBlock: some View {
-    HStack(alignment: .top, spacing: 8) {
+    HStack(alignment: .top, spacing: 0) {
       Rectangle()
-        .fill(Color.signalASIAccent.opacity(0.75))
-        .frame(width: 3)
+        .fill(Color.gray.opacity(0.65))
+        .frame(width: 2)
       selectableText(displayText)
+        .font(.system(size: 15))
         .foregroundColor(.signalASITextSecondary)
+        .padding(.leading, 10)
     }
     .padding(.vertical, 3)
   }
@@ -410,9 +412,11 @@ private struct SignalASIRichBlockView: View {
       ForEach(Array(values.prefix(Self.visibleListItems).enumerated()), id: \.offset) { _, item in
         HStack(alignment: .top, spacing: 7) {
           Text(listMarkerLabel(item.marker))
+            .font(.system(size: 15))
             .foregroundColor(item.marker.lowercased() == "checked" ? .signalASIAccent : .signalASITextSecondary)
             .frame(width: 24, alignment: .trailing)
           selectableText(item.text)
+            .font(.system(size: 16))
         }
       }
     }
