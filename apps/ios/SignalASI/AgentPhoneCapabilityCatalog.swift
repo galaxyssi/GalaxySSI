@@ -4,6 +4,7 @@ enum AgentPhoneCapabilityId: String, Codable, CaseIterable, Identifiable {
   case accessibilityUITree = "ACCESSIBILITY_UI_TREE"
   case accessibilityGestures = "ACCESSIBILITY_GESTURES"
   case ownedAgentInput = "OWNED_AGENT_INPUT"
+  case ownedAgentTranscript = "OWNED_AGENT_TRANSCRIPT"
   case mediaProjectionOCR = "MEDIA_PROJECTION_OCR"
   case notificationRead = "NOTIFICATION_READ"
   case notificationReply = "NOTIFICATION_REPLY"
@@ -279,6 +280,7 @@ enum AgentPhoneCapabilityNativeCoverage {
 
   static func isImplemented(_ id: AgentPhoneCapabilityId) -> Bool {
     if id == .ownedAgentInput { return true }
+    if id == .ownedAgentTranscript { return true }
     return !toolIdsByCapability[id, default: []].isEmpty
   }
 
@@ -337,6 +339,14 @@ enum AgentPhoneCapabilityCatalog {
       risk: .low,
       normalAppCanExecute: true,
       limitation: "Text actions are limited to the SignalASI-owned Agent composer and cannot edit other apps or protected system surfaces."
+    ),
+    boundary(
+      .ownedAgentTranscript,
+      location: .appProcess,
+      availability: .ready,
+      risk: .low,
+      normalAppCanExecute: true,
+      limitation: "Swipe actions are limited to vertical navigation in the visible SignalASI-owned Agent transcript and cannot inject gestures into other apps or protected system surfaces."
     ),
     boundary(
       .accessibilityUITree,

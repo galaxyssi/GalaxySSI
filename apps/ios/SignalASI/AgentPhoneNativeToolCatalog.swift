@@ -473,7 +473,9 @@ enum AgentPhoneNativeToolCatalog {
       return [.ownedAgentInput, .clipboard]
     case .typeText, .deleteText:
       return [.ownedAgentInput]
-    case .tap, .swipe, .longPress, .back, .home, .recents, .lockScreen:
+    case .swipe:
+      return [.ownedAgentTranscript]
+    case .tap, .longPress, .back, .home, .recents, .lockScreen:
       return [.accessibilityGestures]
     case .openApp, .openURL, .setAlarm:
       return [.intentLaunch]

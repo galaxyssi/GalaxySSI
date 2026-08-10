@@ -42,6 +42,8 @@ struct AgentHomeView: View {
   @State private var voiceTranscriptionPending = false
   @State private var transcriptAutoFollow = true
   @State private var transcriptShowLatestButton = false
+  @State private var pendingAgentSwipeDirection = ""
+  @State private var agentSwipeRequest = 0
   @State private var transcriptContentMinY: CGFloat = 0
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
@@ -483,9 +485,11 @@ struct AgentHomeView: View {
         store.markContactRead(contact.id)
         refreshAgentRouteState()
         installComposerInputBridge()
+        installAgentHomeSwipeBridge()
       }
       .onDisappear {
         AgentIOSComposerInputBridge.shared.removeHandler()
+        AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
         guard phase == .active else { return }
@@ -1366,6 +1370,9 @@ struct AgentHomeView: View {
           olderTranscriptAnchor = nil
         }
       }
+      .onChange(of: agentSwipeRequest) { _ in
+        applyPendingAgentSwipe(with: proxy)
+      }
       .onChange(of: store.activeAgentConversationId) { _ in
         visibleAgentMessageLimit = Self.agentTranscriptPageSize
         olderTranscriptAnchor = nil
@@ -1487,6 +1494,35 @@ struct AgentHomeView: View {
     guard hasOlderTranscriptMessages else { return }
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize
+  }
+
+  private func applyPendingAgentSwipe(with proxy: ScrollViewProxy) {
+    let direction = pendingAgentSwipeDirection
+    pendingAgentSwipeDirection = ""
+    guard direction == AgentIOSAgentSwipeDirection.up.rawValue ||
+      direction == AgentIOSAgentSwipeDirection.down.rawValue else {
+      return
+    }
+
+    if direction == AgentIOSAgentSwipeDirection.up.rawValue {
+      transcriptAutoFollow = false
+      if hasOlderTranscriptMessages {
+        loadOlderTranscriptMessages()
+      } else if let first = transcriptMessages.first {
+        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+          proxy.scrollTo(first.id, anchor: .top)
+        }
+      }
+      transcriptShowLatestButton = !messages.isEmpty
+      return
+    }
+
+    guard let last = messages.last else { return }
+    transcriptAutoFollow = true
+    transcriptShowLatestButton = false
+    withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+      proxy.scrollTo(last.id, anchor: .bottom)
+    }
   }
 
   private func retryAgentMessage(_ message: ChatMessage) {
@@ -2524,6 +2560,63 @@ struct AgentHomeView: View {
         metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
       )
     }
+  }
+
+  private func installAgentHomeSwipeBridge() {
+    AgentIOSAgentHomeSwipeBridge.shared.install { action in
+      applyAgentHomeSwipeAction(action)
+    }
+  }
+
+  private func applyAgentHomeSwipeAction(_ action: AgentAction) -> AgentActionResult {
+    guard let direction = AgentIOSAgentSwipeDirection.resolve(parameters: action.parameters) else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.swipe.invalid_direction",
+          "The Agent transcript swipe direction is invalid."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_transcript",
+          "completion_verified": "false"
+        ]
+      )
+    }
+    guard direction == .up || direction == .down else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.swipe.vertical_only",
+          "The Agent transcript supports only vertical swipes."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_transcript",
+          "direction": direction.rawValue,
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    pendingAgentSwipeDirection = direction.rawValue
+    agentSwipeRequest += 1
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: t(
+        "signalasi.agent.swipe.completed",
+        "Agent transcript moved."
+      ),
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_transcript",
+        "direction": direction.rawValue,
+        "completion_verified": "true"
+      ]
+    )
   }
 
   private func focusScannedAgents(_ targetIDs: [String]) {

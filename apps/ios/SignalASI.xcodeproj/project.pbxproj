@@ -452,6 +452,7 @@
     A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */; };
     A1000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift */; };
     A1000000000000000000B002 /* AgentIOSComposerInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000B002 /* AgentIOSComposerInputBridge.swift */; };
+    A1000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift */; };
     A10000000000000000000683 /* AgentPlanEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000683 /* AgentPlanEditor.swift */; };
     A10000000000000000000685 /* AgentToolCoordination.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000685 /* AgentToolCoordination.swift */; };
     A10000000000000000000687 /* FileAgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000687 /* FileAgentWorkspaceStore.swift */; };
@@ -1126,6 +1127,7 @@
     A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeActionExecutor.swift; sourceTree = "<group>"; };
     A2000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebKnowledgeImporter.swift; sourceTree = "<group>"; };
     A2000000000000000000B002 /* AgentIOSComposerInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSComposerInputBridge.swift; sourceTree = "<group>"; };
+    A2000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSAgentHomeSwipeBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000683 /* AgentPlanEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanEditor.swift; sourceTree = "<group>"; };
     A20000000000000000000685 /* AgentToolCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolCoordination.swift; sourceTree = "<group>"; };
     A20000000000000000000687 /* FileAgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAgentWorkspaceStore.swift; sourceTree = "<group>"; };
@@ -1621,6 +1623,7 @@
         A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */,
         A2000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift */,
         A2000000000000000000B002 /* AgentIOSComposerInputBridge.swift */,
+        A2000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift */,
         A20000000000000000000683 /* AgentPlanEditor.swift */,
         A20000000000000000000685 /* AgentToolCoordination.swift */,
         A20000000000000000000687 /* FileAgentWorkspaceStore.swift */,
@@ -2456,6 +2459,7 @@
         A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */,
         A1000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift in Sources */,
         A1000000000000000000B002 /* AgentIOSComposerInputBridge.swift in Sources */,
+        A1000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift in Sources */,
         A10000000000000000000683 /* AgentPlanEditor.swift in Sources */,
         A10000000000000000000685 /* AgentToolCoordination.swift in Sources */,
         A10000000000000000000687 /* FileAgentWorkspaceStore.swift in Sources */,

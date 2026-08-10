@@ -411,6 +411,8 @@ struct SignalASIAppAdapterDetailView: View {
     switch id {
     case .accessibilityUITree: return t("signalasi.capability.accessibility_tree", "Accessibility UI Tree")
     case .accessibilityGestures: return t("signalasi.capability.accessibility_gestures", "Accessibility Gestures")
+    case .ownedAgentInput: return t("signalasi.capability.owned_agent_input", "Agent Composer Input")
+    case .ownedAgentTranscript: return t("signalasi.capability.owned_agent_transcript", "Agent Transcript Navigation")
     case .mediaProjectionOCR: return t("signalasi.capability.screen_capture", "Screen Capture OCR")
     case .notificationRead: return t("signalasi.capability.notification_read", "Notification Read")
     case .notificationReply: return t("signalasi.capability.notification_reply", "Notification Reply")
@@ -495,6 +497,10 @@ private func capabilityIcon(_ id: AgentPhoneCapabilityId) -> String {
   switch id {
   case .accessibilityUITree, .accessibilityGestures, .mediaProjectionOCR:
     return "text.viewfinder"
+  case .ownedAgentInput:
+    return "keyboard"
+  case .ownedAgentTranscript:
+    return "arrow.up.and.down.text.horizontal"
   case .notificationRead, .notificationReply:
     return "bell.badge"
   case .clipboard:
