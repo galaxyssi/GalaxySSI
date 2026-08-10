@@ -9,6 +9,8 @@ struct SignalASIAgentHomeReadinessView: View {
   var currentApp: String
   var memorySnapshot: AgentMemorySnapshot
   var knowledgeStats: AgentKnowledgeStats
+  var screen: AgentScreenContext
+  var screenSections: [SignalASIAgentScreenDetailSection]
   var recentTaskCount: Int = 0
   var recentTasks: [AgentTaskRecord] = []
   var permissionMode: AgentPermissionMode = .askBeforeAction
@@ -20,6 +22,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var onToggleExecutionPaused: () -> Void = {}
   var onOpenRecentTasks: () -> Void = {}
   var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
+  var onScreenCommand: (String) -> Void = { _ in }
   var t: (String, String) -> String
 
   var body: some View {
@@ -138,6 +141,26 @@ struct SignalASIAgentHomeReadinessView: View {
               0
             ),
             systemImage: "books.vertical"
+          )
+        }
+        .buttonStyle(.plain)
+        separator
+        NavigationLink(
+          destination: SignalASIAgentScreenContextDetailView(
+            screen: screen,
+            sections: screenSections,
+            onCommand: onScreenCommand,
+            t: t
+          )
+        ) {
+          infoNavigationRow(
+            String(
+              format: t("agent_screen_context_value", "Screen: %d text / %d actions / %d fields"),
+              max(screen.visibleTextCount, screen.visibleTexts.count),
+              screen.clickableNodeCount,
+              screen.inputFieldCount
+            ),
+            systemImage: "rectangle.on.rectangle"
           )
         }
         .buttonStyle(.plain)
