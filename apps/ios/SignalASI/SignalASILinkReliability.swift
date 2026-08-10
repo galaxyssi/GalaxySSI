@@ -128,6 +128,11 @@ struct ExhaustedLinkMessage: Equatable, Identifiable {
   var attempts: Int
 }
 
+struct AttachmentDependencyRelease: Equatable {
+  var matchedMessages: Int
+  var releasedMessages: Int
+}
+
 @MainActor
 final class SignalASILinkDeliveryStore {
   private struct PersistedState: Codable {
@@ -363,10 +368,19 @@ final class SignalASILinkDeliveryStore {
 
   @discardableResult
   func releaseAttachmentDependency(_ transferId: String, now: Date = Date()) -> Int {
+    releaseAttachmentDependencyResult(transferId, now: now).releasedMessages
+  }
+
+  @discardableResult
+  func releaseAttachmentDependencyResult(
+    _ transferId: String,
+    now: Date = Date()
+  ) -> AttachmentDependencyRelease {
     guard let normalized = PendingLinkMessage.normalizedTransferIds([transferId]).first else {
-      return 0
+      return AttachmentDependencyRelease(matchedMessages: 0, releasedMessages: 0)
     }
     var changed = false
+    var matched = 0
     var released = 0
     for index in state.outbox.indices {
       let before = state.outbox[index].blockedByAttachmentTransferIds.count
@@ -374,6 +388,7 @@ final class SignalASILinkDeliveryStore {
       guard state.outbox[index].blockedByAttachmentTransferIds.count != before else {
         continue
       }
+      matched += 1
       changed = true
       state.outbox[index].updatedAt = now
       if state.outbox[index].blockedByAttachmentTransferIds.isEmpty {
@@ -383,7 +398,7 @@ final class SignalASILinkDeliveryStore {
       }
     }
     if changed { save() }
-    return released
+    return AttachmentDependencyRelease(matchedMessages: matched, releasedMessages: released)
   }
 
   @discardableResult
