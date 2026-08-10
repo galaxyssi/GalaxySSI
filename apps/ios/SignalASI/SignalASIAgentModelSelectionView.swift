@@ -286,6 +286,16 @@ struct SignalASIAgentModelSelectionView: View {
       )
     }
 
+    if let target = callableTargets.first(where: { $0.id == targetId }),
+       target.kind == .agent {
+      return (
+        target.title.ifBlank(selection.displayName).ifBlank(target.id),
+        AgentConnectorRouteSelector.isDeliverable(target)
+          ? t("signalasi.agent.model_selection.on_agent", "Agent")
+          : t("signalasi.agent.model_selection.unavailable", "Unavailable")
+      )
+    }
+
     if let contact = store.contact(id: targetId) {
       if contact.type == "agent" {
         let title = contact.displayName
