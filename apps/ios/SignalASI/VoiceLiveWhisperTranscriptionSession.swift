@@ -10,6 +10,7 @@ struct VoiceLiveWhisperTranscriptUpdate: Codable, Equatable {
 enum VoiceLiveWhisperTranscriptionSessionFailure: Error, Equatable {
   case finalAlreadyRequested
   case finalDecodeDropped(VoiceWhisperDecodeDropReason)
+  case finalTranscriptIncomplete(String)
 }
 
 final class VoiceLiveWhisperTranscriptionSession {
@@ -110,6 +111,15 @@ final class VoiceLiveWhisperTranscriptionSession {
     )
     switch await scheduler.submit(request) {
     case .completed(_, let native):
+      let completeness = VoiceWhisperTranscriptCompletenessPolicy.evaluate(
+        result: native,
+        snapshot: snapshot
+      )
+      guard completeness.accepted else {
+        throw VoiceLiveWhisperTranscriptionSessionFailure.finalTranscriptIncomplete(
+          completeness.reasonCode
+        )
+      }
       let decoded = decode(request: request, native: native)
       applyFinal(request: request, decoded: decoded)
       return native

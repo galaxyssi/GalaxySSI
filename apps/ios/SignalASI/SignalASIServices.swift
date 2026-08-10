@@ -6566,7 +6566,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         await MainActor.run {
           controller.close()
           self.liveWhisperActive = false
-          VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+          var isIncompleteFinal = false
+          if let failure = error as? VoiceLiveWhisperTranscriptionSessionFailure {
+            if case .finalTranscriptIncomplete = failure {
+              isIncompleteFinal = true
+            }
+          }
+          if isIncompleteFinal {
+            // The system recognizer fallback remains usable when Whisper coverage is incomplete.
+            VoiceRuntimeHealthRegistry.success(runtimeChannel)
+          } else {
+            VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+          }
           self.emitCommands(
             self.coordinatorBridge.finishStoppedCapture(
               transcript: fallbackTranscript,
