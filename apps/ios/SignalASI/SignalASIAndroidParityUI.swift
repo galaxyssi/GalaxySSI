@@ -454,26 +454,20 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .background(
-        NavigationLink(
-          destination: AddContactView(
-            autoOpenScanner: true,
-            onAgentAdded: { agentIDs in
-              scanShortcutActive = false
-              scanStatus = t(
-                "signalasi.agent.scan.selecting",
-                "Agent added. Selecting it for this session..."
-              )
-              scanStatusIsError = false
-              focusScannedAgents(agentIDs)
-            }
-          ),
-          isActive: $scanShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
+      .sheet(isPresented: $scanShortcutActive) {
+        AddContactView(
+          autoOpenScanner: true,
+          onAgentAdded: { agentIDs in
+            scanShortcutActive = false
+            scanStatus = t(
+              "signalasi.agent.scan.selecting",
+              "Agent added. Selecting it for this session..."
+            )
+            scanStatusIsError = false
+            focusScannedAgents(agentIDs)
+          }
+        )
+      }
       .background(
         NavigationLink(
           destination: SignalASIAgentRecentTasksView(initialTask: recentTaskForDetails),
@@ -1880,7 +1874,7 @@ struct AgentHomeView: View {
           }
         ) {
           HStack(spacing: 3) {
-            Image(systemName: "chevron.left")
+            Image(systemName: "chevron.down")
               .font(.system(size: 8, weight: .bold))
             Text(headerModelStatusLabel)
               .lineLimit(1)
