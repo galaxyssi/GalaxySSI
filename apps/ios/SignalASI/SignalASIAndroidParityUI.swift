@@ -1476,22 +1476,61 @@ struct AgentHomeView: View {
               t: t
 #endif
             )
-            ForEach(transcriptMessages) { message in
-              VStack(alignment: .leading, spacing: 4) {
-                if let mergedSource = mergedSourceLabel(for: message) {
-                  Text(mergedSource)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.signalASITextSecondary)
-                    .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
-                    .accessibilityLabel(mergedSource)
-                }
-                MessageBubble(
-                  message: message,
-                  onActionWithMessage: { message, action in
-                    handleRichAction(action, from: message)
-                  },
-                  onFormSubmit: handleAgentRichForm
+            SignalASIAgentTranscriptMessagesView(
+              messages: transcriptMessages,
+              waitingMessageIDs: waitingMessageIDs,
+              retryingMessageIDs: retryingAgentMessageIDs,
+              t: t,
+              mergedSourceLabel: { mergedSourceLabel(for: $0) },
+              agentTask: { agentTask(for: $0) },
+              remoteAgentTask: { remoteAgentTask(for: $0) },
+              voiceAgentRun: { voiceAgentRun(for: $0) },
+              agentPhaseLabel: agentPhaseLabel,
+              agentExecutionLocationSummary: agentExecutionLocationSummary,
+              agentExecutionStep: agentExecutionStep,
+              remoteAgentStatusLabel: remoteAgentStatusLabel,
+              remoteAgentStep: remoteAgentStep,
+              remoteAgentTimelineLine: remoteAgentTimelineLine,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
                 )
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              isVoiceRunCancelling: { runID in
+                cancellingVoiceRunIDs.contains(runID)
+              },
+              onRichAction: { message, action in
+                handleRichAction(action, from: message)
+              },
+              onFormSubmit: handleAgentRichForm,
+              onCancelAgentTask: cancelActiveAgentTask,
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelVoiceRun: cancelVoiceAgentRun,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onMessageDetails: { message in
+                selectedMessageForDetails = message
+              },
+              onCopyMessage: { message in
+                UIPasteboard.general.string = message.content
+              },
+              onCancelMessageTask: cancelActiveAgentTask,
+              onCancelMessageRemoteTask: cancelRemoteAgentTask,
+              onCancelMessageVoiceRun: cancelVoiceAgentRun,
+              onDeleteMessage: { message in
+                store.deleteMessage(message.id, contactId: contact.id)
+              },
+              onRetryMessage: retryAgentMessage
+            )
+#if false
                 if !message.isMine, !message.isSystem {
                   if let task = agentTask(for: message) {
                     SignalASIAgentExecutionFooterView(
@@ -1643,6 +1682,7 @@ struct AgentHomeView: View {
                 }
               }
             }
+#endif
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()
                 .frame(maxWidth: .infinity, alignment: .leading)
