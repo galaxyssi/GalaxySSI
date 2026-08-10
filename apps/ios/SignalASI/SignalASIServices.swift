@@ -2717,6 +2717,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentPermissionModeCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentHighRiskGuardCommand(
         requestText: requestText,
         outgoing: outgoing,
@@ -3369,6 +3376,67 @@ final class MessageCoordinator: ObservableObject {
       return "\(app) [\(category)] \(title)\(preview)"
     }
     return String(([heading] + rows).joined(separator: "\n").prefix(3_000))
+  }
+
+  private func handleDirectAgentPermissionModeCommand(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let mode = AgentPermissionModeCommand.mode(requestText) else {
+      return false
+    }
+    store.updateAgentSafetySettings { $0.permissionMode = mode }
+    let result = localReply(
+      english: "Agent permission mode set to \(mode.displayTitle)",
+      chinese: "Agent 权限模式已设置为\(agentPermissionModeLabel(mode))"
+    )
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Security"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-agent-security"
+    task.result = result
+    task.verification = "Local Agent permission mode updated"
+    task.executionLog.append("Local Agent permission mode: \(mode.rawValue)")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_permission_mode_reply",
+      detail: mode.rawValue,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_permission_mode_reply_received",
+      detail: mode.rawValue,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentPermissionModeLabel(_ mode: AgentPermissionMode) -> String {
+    switch mode {
+    case .observeOnly:
+      return "仅观察"
+    case .suggestOnly:
+      return "仅建议"
+    case .askBeforeAction:
+      return "操作前确认"
+    case .autoLowRisk:
+      return "低风险自动"
+    }
   }
 
   private func handleDirectAgentHighRiskGuardCommand(
