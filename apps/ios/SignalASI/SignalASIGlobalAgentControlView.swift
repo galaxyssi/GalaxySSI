@@ -656,7 +656,6 @@ struct SignalASIGlobalAgentInsightInboxView: View {
                 onOpen: openTopic,
                 onFeedback: recordFeedback
               )
-              .onAppear { store.markGlobalProactiveInboxViewed(item) }
             }
           }
         }
@@ -667,6 +666,11 @@ struct SignalASIGlobalAgentInsightInboxView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      // Match Android: opening the inbox acknowledges the currently available findings,
+      // including cards that are below the initial viewport.
+      items.forEach { store.markGlobalProactiveInboxViewed($0) }
+    }
   }
 
   private func sourceLabel(_ item: GlobalProactiveInboxItem) -> String {
