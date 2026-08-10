@@ -39,18 +39,23 @@ internal object GenieXLocalModelRuntime {
         thinkingEnabled: Boolean
     ): LocalModelInferenceResult = runBlocking {
         runtimeMutex.withLock {
-            generateLocked(
-                context = context,
-                profile = profile,
-                modelFile = modelFile,
-                contextTokens = contextTokens,
-                threads = threads,
-                systemPrompt = systemPrompt,
-                userPrompt = userPrompt,
-                maximumTokens = maximumTokens,
-                temperature = temperature,
-                thinkingEnabled = thinkingEnabled
-            )
+            val memoryWatchdog = LocalModelRuntimeMemoryWatchdog.start(profile)
+            try {
+                generateLocked(
+                    context = context,
+                    profile = profile,
+                    modelFile = modelFile,
+                    contextTokens = contextTokens,
+                    threads = threads,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
+                    maximumTokens = maximumTokens,
+                    temperature = temperature,
+                    thinkingEnabled = thinkingEnabled
+                )
+            } finally {
+                memoryWatchdog.close()
+            }
         }
     }
 
@@ -234,7 +239,16 @@ internal object GenieXLocalModelRuntime {
         context: Context,
         profile: LocalModelRuntimeProfile,
         modelFile: File?
-    ): RuntimeArtifact = if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+    ): RuntimeArtifact = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+        val artifact = Lfm25QnnDeploymentStore(context).runtimeArtifact(profile)
+        RuntimeArtifact(
+            modelName = profile.repositoryId,
+            modelPath = artifact.modelPath,
+            tokenizerPath = artifact.tokenizerPath,
+            runtimeId = artifact.runtimeId,
+            computeUnit = null
+        )
+    } else if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
         val paths = GenieXQairtModelManager.paths(context, profile)
             ?: throw IllegalStateException("The Qualcomm QAIRT model is not installed")
         RuntimeArtifact(
@@ -256,7 +270,9 @@ internal object GenieXLocalModelRuntime {
     }
 
     private fun backendAttestation(profile: LocalModelRuntimeProfile): String =
-        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+        if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            "GenieX QAIRT / precompiled W4A8 context / Hexagon NPU"
+        } else if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
             "GenieX QAIRT / Hexagon NPU"
         } else {
             "GenieX llama.cpp / Hexagon hybrid"
