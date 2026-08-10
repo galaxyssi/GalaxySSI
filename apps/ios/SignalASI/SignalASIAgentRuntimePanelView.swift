@@ -809,7 +809,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var auditRows: [SignalASIAgentRuntimeRow] {
-    let nativeRows = auditRecords.prefix(3).map { record in
+    let nativeRows = auditRecords.prefix(6).map { record in
       SignalASIAgentRuntimeRow(
         id: "audit-\(record.auditId)",
         title: record.toolId,
