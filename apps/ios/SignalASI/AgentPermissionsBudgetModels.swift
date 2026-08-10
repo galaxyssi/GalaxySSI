@@ -500,7 +500,6 @@ struct GlobalAgentSettings: Codable, Equatable {
   var autoCreateConversationsEnabled: Bool
   var notificationsEnabled: Bool
   var adaptiveLearningEnabled: Bool
-  var protectBatteryForBackgroundWork: Bool
   var allowMeteredBackgroundResearch: Bool
   var dailyBackgroundModelCallBudget: Int
   var maxConcurrentBackgroundModelCalls: Int
@@ -529,7 +528,6 @@ struct GlobalAgentSettings: Codable, Equatable {
     autoCreateConversationsEnabled: Bool = true,
     notificationsEnabled: Bool = true,
     adaptiveLearningEnabled: Bool = true,
-    protectBatteryForBackgroundWork: Bool = true,
     allowMeteredBackgroundResearch: Bool = false,
     dailyBackgroundModelCallBudget: Int = 48,
     maxConcurrentBackgroundModelCalls: Int = 3,
@@ -555,7 +553,6 @@ struct GlobalAgentSettings: Codable, Equatable {
     self.autoCreateConversationsEnabled = autoCreateConversationsEnabled
     self.notificationsEnabled = notificationsEnabled
     self.adaptiveLearningEnabled = adaptiveLearningEnabled
-    self.protectBatteryForBackgroundWork = protectBatteryForBackgroundWork
     self.allowMeteredBackgroundResearch = allowMeteredBackgroundResearch
     self.dailyBackgroundModelCallBudget = max(0, min(dailyBackgroundModelCallBudget, 1_000))
     self.maxConcurrentBackgroundModelCalls = max(1, min(maxConcurrentBackgroundModelCalls, 24))
@@ -583,7 +580,6 @@ struct GlobalAgentSettings: Codable, Equatable {
     case autoCreateConversationsEnabled = "auto_create_conversations_enabled"
     case notificationsEnabled = "notifications_enabled"
     case adaptiveLearningEnabled = "adaptive_learning_enabled"
-    case protectBatteryForBackgroundWork = "protect_battery_for_background_work"
     case allowMeteredBackgroundResearch = "allow_metered_background_research"
     case dailyBackgroundModelCallBudget = "daily_background_model_call_budget"
     case maxConcurrentBackgroundModelCalls = "max_concurrent_background_model_calls"
@@ -614,7 +610,6 @@ struct GlobalAgentSettings: Codable, Equatable {
       autoCreateConversationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoCreateConversationsEnabled) ?? fallback.autoCreateConversationsEnabled,
       notificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? fallback.notificationsEnabled,
       adaptiveLearningEnabled: try container.decodeIfPresent(Bool.self, forKey: .adaptiveLearningEnabled) ?? fallback.adaptiveLearningEnabled,
-      protectBatteryForBackgroundWork: try container.decodeIfPresent(Bool.self, forKey: .protectBatteryForBackgroundWork) ?? fallback.protectBatteryForBackgroundWork,
       allowMeteredBackgroundResearch: try container.decodeIfPresent(Bool.self, forKey: .allowMeteredBackgroundResearch) ?? fallback.allowMeteredBackgroundResearch,
       dailyBackgroundModelCallBudget: try container.decodeIfPresent(Int.self, forKey: .dailyBackgroundModelCallBudget) ?? fallback.dailyBackgroundModelCallBudget,
       maxConcurrentBackgroundModelCalls: try container.decodeIfPresent(Int.self, forKey: .maxConcurrentBackgroundModelCalls) ?? fallback.maxConcurrentBackgroundModelCalls,

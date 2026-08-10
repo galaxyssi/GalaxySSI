@@ -33,8 +33,7 @@ enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
 
   var blocksLaunch: Bool {
     switch self {
-    case .modelFileMissing, .modelFileInvalid, .systemLowMemory, .insufficientMemory, .deviceTooHot,
-         .criticalBattery:
+    case .modelFileMissing, .modelFileInvalid, .systemLowMemory, .insufficientMemory, .deviceTooHot:
       return true
     case .contextReduced, .thermalPressure, .lowBattery, .powerSaveMode:
       return false
@@ -550,17 +549,6 @@ enum LocalModelRuntimeEstimator {
       issues.insert(.thermalPressure)
     }
 
-    if !device.charging, let batteryPercent = device.batteryPercent {
-      if batteryPercent < CRITICAL_BATTERY_PERCENT {
-        issues.insert(.criticalBattery)
-      } else if batteryPercent < LOW_BATTERY_PERCENT {
-        issues.insert(.lowBattery)
-      }
-    }
-    if device.powerSaveMode {
-      issues.insert(.powerSaveMode)
-    }
-
     let readiness: LocalModelRuntimeReadiness
     if issues.contains(where: { $0.blocksLaunch }) {
       readiness = .blocked
@@ -607,10 +595,7 @@ enum LocalModelRuntimeEstimator {
 
   private static func shouldUseConservativeThreads(device: LocalModelDeviceSnapshot) -> Bool {
     let thermalStatus = device.thermalStatus ?? THERMAL_STATUS_NONE
-    let batteryPercent = device.batteryPercent ?? 100
-    return device.powerSaveMode ||
-      thermalStatus >= THERMAL_STATUS_MODERATE ||
-      (!device.charging && batteryPercent < LOW_BATTERY_PERCENT)
+    return thermalStatus >= THERMAL_STATUS_MODERATE
   }
 
   private static func candidateContexts(_ requestedContext: Int) -> [Int] {
@@ -693,8 +678,6 @@ enum LocalModelRuntimeEstimator {
   private static let THERMAL_STATUS_SEVERE = 3
   private static let WARM_BATTERY_CELSIUS = 42.0
   private static let HOT_BATTERY_CELSIUS = 45.0
-  private static let LOW_BATTERY_PERCENT = 20
-  private static let CRITICAL_BATTERY_PERCENT = 10
 }
 
 enum LocalModelDeviceSnapshotDetector {

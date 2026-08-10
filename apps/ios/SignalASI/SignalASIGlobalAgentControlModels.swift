@@ -18,7 +18,6 @@ extension GlobalAgentSettings {
       autoCreateConversationsEnabled: autoCreateConversationsEnabled,
       notificationsEnabled: notificationsEnabled,
       adaptiveLearningEnabled: adaptiveLearningEnabled,
-      protectBatteryForBackgroundWork: protectBatteryForBackgroundWork,
       allowMeteredBackgroundResearch: allowMeteredBackgroundResearch,
       dailyBackgroundModelCallBudget: dailyBackgroundModelCallBudget,
       maxConcurrentBackgroundModelCalls: maxConcurrentBackgroundModelCalls,
