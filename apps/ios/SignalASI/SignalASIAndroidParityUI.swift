@@ -2053,6 +2053,14 @@ struct AgentHomeView: View {
           HStack(spacing: 3) {
             Image(systemName: "chevron.down")
               .font(.system(size: 8, weight: .bold))
+            if let assetName = headerModelAssetName {
+              Image(assetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .accessibilityHidden(true)
+            }
             Text(headerModelStatusLabel)
               .lineLimit(1)
               .minimumScaleFactor(0.72)
@@ -2131,6 +2139,41 @@ struct AgentHomeView: View {
       fallback = "Automatic · %@"
     }
     return String(format: t(key, fallback), headerModelLabel)
+  }
+
+  private var headerModelAssetName: String? {
+    let candidates = [
+      modelSelection.targetId,
+      modelSelection.displayName,
+      modelSelection.modelId,
+      headerModelLabel,
+      liveExecutionTargetLabel ?? ""
+    ]
+    for candidate in candidates {
+      if let assetName = routeLogoAssetName(for: candidate) {
+        return assetName
+      }
+    }
+    return nil
+  }
+
+  private func routeLogoAssetName(for value: String) -> String? {
+    let normalized = value.lowercased()
+    if normalized.contains("codex") { return "CodexLogo" }
+    if normalized.contains("claude") || normalized.contains("anthropic") {
+      return "ClaudeLogo"
+    }
+    if normalized.contains("hermes") { return "HermesLogo" }
+    if normalized.contains("deepseek") { return "CloudProviderDeepSeek" }
+    if normalized.contains("openrouter") { return "CloudProviderOpenRouter" }
+    if normalized.contains("qwen") { return "CloudProviderQwen" }
+    if normalized.contains("gemini") || normalized.contains("google") {
+      return "CloudProviderGemini"
+    }
+    if normalized.contains("openai") || normalized.contains("gpt") {
+      return "CloudProviderOpenAI"
+    }
+    return nil
   }
 
   private var headerSessionTitle: String {
