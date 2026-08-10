@@ -2703,6 +2703,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentAuditTrail(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentNotificationCommand(
         requestText: requestText,
         outgoing: outgoing,
@@ -3167,6 +3174,89 @@ final class MessageCoordinator: ObservableObject {
       english: "mode=\(mode); high_risk_guard=\(boolean(settings.highRiskGuard)); memory_capture=\(boolean(settings.memoryCapture)); accessibility=\(boolean(screen.isAccessibilityEnabled)); notifications=\(boolean(notifications.hasAccess)); clipboard=\(boolean(clipboard.hasText)); sensitive_screen_flags=\(screen.sensitiveFlagCount); sensitive_notifications=\(notifications.sensitiveFlags.count); sensitive_clipboard=\(clipboard.sensitiveFlags.count)",
       chinese: "模式=\(mode)；高风险保护=\(boolean(settings.highRiskGuard))；记忆捕获=\(boolean(settings.memoryCapture))；屏幕权限=\(boolean(screen.isAccessibilityEnabled))；通知访问=\(boolean(notifications.hasAccess))；剪贴板=\(boolean(clipboard.hasText))；屏幕敏感标记=\(screen.sensitiveFlagCount)；通知敏感标记=\(notifications.sensitiveFlags.count)；剪贴板敏感标记=\(clipboard.sensitiveFlags.count)"
     )
+  }
+
+  private func handleDirectAgentAuditTrail(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentAuditTrailCommand.matches(requestText) else {
+      return false
+    }
+    let result = agentAuditTrailReply(
+      tasks: store.recentAgentTasks(limit: 12),
+      nativeRecords: AgentNativeToolDefaultStores
+        .makePersistentStores()
+        .auditStore
+        .list(limit: 12, toolId: "", status: nil)
+    )
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Audit Trail"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-agent-audit-trail"
+    task.result = result
+    task.verification = "Local Agent audit trail read"
+    task.executionLog.append("Local Agent audit trail read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_audit_trail_reply",
+      detail: "agent_audit_trail",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_audit_trail_reply_received",
+      detail: "agent_audit_trail",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentAuditTrailReply(
+    tasks: [AgentTaskRecord],
+    nativeRecords: [AgentNativeToolAuditRecord]
+  ) -> String {
+    let heading = localReply(
+      english: "Recent Agent audit trail:",
+      chinese: "最近的 Agent 审计日志："
+    )
+    var lines = [heading]
+    for task in tasks.prefix(8) {
+      let label = String(task.goal.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+        .ifBlank("Agent task")
+      let logs = task.executionLog.suffix(2)
+      if logs.isEmpty {
+        lines.append("task: \(label) / \(task.phase.rawValue.lowercased())")
+      } else {
+        lines.append(contentsOf: logs.map { log in
+          "task: \(label) / \(String(log.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140)))"
+        })
+      }
+    }
+    lines.append(contentsOf: nativeRecords.prefix(8).map { record in
+      "tool: \(record.toolId) / \(record.status.rawValue.lowercased()) / \(record.durationMillis)ms"
+    })
+    if lines.count == 1 {
+      lines.append(localReply(
+        english: "No Agent audit events.",
+        chinese: "没有 Agent 审计事件。"
+      ))
+    }
+    return String(lines.joined(separator: "\n").prefix(3_000))
   }
 
   private func handleDirectAgentNotificationCommand(
