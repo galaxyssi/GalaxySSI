@@ -4,7 +4,6 @@ import UIKit
 struct AgentTaskBudgetSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @State private var editingLimit: TaskBudgetEditableLimit?
   @State private var networkPolicyPresented = false
 
   private var budget: AgentTaskBudget {
@@ -28,14 +27,14 @@ struct AgentTaskBudgetSettingsView: View {
             title: t("cc_task_budget_banner_title", "Resource guardrails"),
             subtitle: t(
               "cc_task_budget_banner_subtitle",
-              "Budgets follow the task across phone, Desktop, models, and Agents. Time is unlimited unless you choose a finite limit."
+              "Resource counters follow the task across phone, Desktop, models, and Agents without interrupting execution. Network and privacy policies remain enforceable."
             ),
             systemImage: "hourglass.circle.fill",
             tint: .purple,
             badge: TaskBudgetCopy.profileLabel(budget.profile, language: interfaceLanguage)
           )
           profileSection
-          limitSection
+          telemetrySection
           resourceSection
         }
         .padding(.horizontal, 12)
@@ -45,10 +44,6 @@ struct AgentTaskBudgetSettingsView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .sheet(item: $editingLimit) { limit in
-      AgentTaskBudgetValueEditor(limit: limit, budget: budget)
-        .environmentObject(store)
-    }
     .sheet(isPresented: $networkPolicyPresented) {
       AgentTaskBudgetNetworkPolicySheet()
         .environmentObject(store)
@@ -75,19 +70,17 @@ struct AgentTaskBudgetSettingsView: View {
     }
   }
 
-  private var limitSection: some View {
+  private var telemetrySection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_task_budget_limits_section", "Per-task limits"))
+      SignalASISecuritySectionTitle(title: t("cc_task_budget_limits_section", "Runtime telemetry"))
       ForEach(TaskBudgetEditableLimit.allCases) { limit in
-        SignalASISecurityActionRow(
+        SignalASISecurityStatusRow(
           title: limit.title(language: interfaceLanguage),
           subtitle: limit.subtitle(language: interfaceLanguage),
           systemImage: limit.systemImage,
           tint: limit.tint,
           badge: limit.valueLabel(from: budget, language: interfaceLanguage)
-        ) {
-          editingLimit = limit
-        }
+        )
       }
     }
   }
@@ -559,15 +552,15 @@ private enum TaskBudgetCopy {
   static func profileSubtitle(_ profile: AgentTaskBudgetProfile, language: String) -> String {
     switch profile {
     case .adaptive:
-      return t("cc_task_budget_profile_adaptive_subtitle", "Broad limits with no fixed task deadline", language: language)
+      return t("cc_task_budget_profile_adaptive_subtitle", "Resource usage is recorded without stopping the task", language: language)
     case .fast:
-      return t("cc_task_budget_profile_fast_subtitle", "Five-minute execution window with bounded resources", language: language)
+      return t("cc_task_budget_profile_fast_subtitle", "Run without time, token, memory, or network byte cutoffs", language: language)
     case .economy:
-      return t("cc_task_budget_profile_economy_subtitle", "Reduce paid usage, tokens, data, and memory", language: language)
+      return t("cc_task_budget_profile_economy_subtitle", "Keep resource usage visible while preserving task completion", language: language)
     case .privateMode:
       return t("cc_task_budget_profile_private_subtitle", "Use phone, private, and trusted paired resources only", language: language)
     case .custom:
-      return t("cc_task_budget_profile_custom_subtitle", "Use the limits configured below", language: language)
+      return t("cc_task_budget_profile_custom_subtitle", "Retain custom values for compatibility and telemetry", language: language)
     }
   }
 

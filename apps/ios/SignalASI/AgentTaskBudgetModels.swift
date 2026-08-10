@@ -27,11 +27,11 @@ enum AgentTaskBudgetProfile: String, Codable, CaseIterable, Identifiable {
   var detail: String {
     switch self {
     case .adaptive:
-      return "Broad limits with no fixed task deadline."
+      return "Resource usage is recorded for telemetry without stopping the task."
     case .fast:
-      return "Five-minute execution window with bounded resources."
+      return "Run without time, token, memory, or network byte cutoffs."
     case .economy:
-      return "Reduce paid usage, tokens, data, and memory."
+      return "Keep resource usage visible while preserving task completion."
     case .privateMode:
       return "Use phone, private, and trusted paired resources only."
     case .custom:
@@ -117,34 +117,12 @@ struct AgentTaskBudget: Codable, Equatable {
     case .adaptive:
       return AgentTaskBudget(profile: profile)
     case .fast:
-      return AgentTaskBudget(
-        profile: profile,
-        maxElapsedSeconds: 5 * 60,
-        maxCostMicros: 2_000_000,
-        maxInputTokens: 256_000,
-        maxOutputTokens: 64_000,
-        maxNetworkBytes: 128 * mib,
-        minimumBatteryPercent: 10,
-        maxMemoryBytes: 1_536 * mib
-      )
+      return AgentTaskBudget(profile: profile)
     case .economy:
-      return AgentTaskBudget(
-        profile: profile,
-        maxCostMicros: 250_000,
-        maxInputTokens: 64_000,
-        maxOutputTokens: 16_000,
-        maxNetworkBytes: 32 * mib,
-        minimumBatteryPercent: 15,
-        maxMemoryBytes: 768 * mib
-      )
+      return AgentTaskBudget(profile: profile)
     case .privateMode:
       return AgentTaskBudget(
         profile: profile,
-        maxInputTokens: 128_000,
-        maxOutputTokens: 32_000,
-        maxNetworkBytes: 64 * mib,
-        minimumBatteryPercent: 10,
-        maxMemoryBytes: 1_024 * mib,
         networkPolicy: .trustedOnly,
         allowCloud: false,
         allowPaidProviders: false
@@ -285,9 +263,6 @@ struct AgentTaskBudgetEnvironment: Equatable {
   var appMemoryBytes: Int64 = 0
   var availableMemoryBytes: Int64 = 0
 
-  var energyConstrained: Bool {
-    powerSaveMode || (!charging && (0...19).contains(batteryPercent))
-  }
 }
 
 enum AgentTaskBudgetLimit: String, Equatable {
@@ -321,30 +296,8 @@ enum AgentTaskBudgetPolicy {
     paidProvider: Bool = false
   ) -> AgentTaskBudgetDecision {
     let limits = budget.normalized
-    if limits.maxElapsedSeconds > 0 && usage.elapsedMillis > limits.maxElapsedSeconds * 1_000 {
-      return denied(.time, "Task time budget exhausted")
-    }
-    if limits.maxCostMicros > 0 && usage.costMicros > limits.maxCostMicros {
-      return denied(.cost, "Task cost budget exhausted")
-    }
-    if limits.maxInputTokens > 0 && usage.inputTokens > limits.maxInputTokens {
-      return denied(.inputTokens, "Task input token budget exhausted")
-    }
-    if limits.maxOutputTokens > 0 && usage.outputTokens > limits.maxOutputTokens {
-      return denied(.outputTokens, "Task output token budget exhausted")
-    }
-    if limits.maxNetworkBytes > 0 && usage.networkBytes > limits.maxNetworkBytes {
-      return denied(.network, "Task network budget exhausted")
-    }
-    if environment.batteryPercent >= 0 &&
-      environment.batteryPercent < limits.minimumBatteryPercent &&
-      !environment.charging {
-      return denied(.battery, "Phone battery is below the task minimum")
-    }
-    let observedMemory = max(max(usage.peakMemoryBytes, environment.appMemoryBytes), 0)
-    if limits.maxMemoryBytes > 0 && observedMemory > limits.maxMemoryBytes {
-      return denied(.memory, "Task memory budget exhausted")
-    }
+    // Resource counters are telemetry. Runtime owners handle actual memory,
+    // thermal, battery, and connectivity failures without terminating a task.
     if cloudProvider && !limits.allowCloud {
       return denied(.cloud, "Cloud resources are disabled for this task")
     }
