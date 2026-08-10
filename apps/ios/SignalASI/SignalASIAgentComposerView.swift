@@ -183,12 +183,24 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var inputShell: some View {
-    HStack(spacing: 0) {
-      TextField(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."), text: $draft)
+    ZStack(alignment: .topLeading) {
+      if draft.isEmpty {
+        Text(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."))
+          .font(.system(size: 15))
+          .foregroundColor(.signalASITextSecondary)
+          .padding(.leading, 12)
+          .padding(.top, 16)
+          .allowsHitTesting(false)
+      }
+      TextEditor(text: $draft)
         .font(.system(size: 15))
+        .foregroundColor(.signalASITextPrimary)
         .textInputAutocapitalization(.sentences)
-        .lineLimit(2)
         .focused($inputFocused)
+        .frame(height: 54)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.clear)
         .onSubmit {
           guard canSend else { return }
           inputFocused = false
@@ -199,9 +211,7 @@ struct SignalASIAgentComposerView: View {
           actionTrayPresented = false
         }
     }
-    .padding(.leading, 12)
-    .padding(.trailing, 6)
-    .frame(maxWidth: .infinity, minHeight: 54)
+    .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
     .background(Color.signalASISurface)
     .overlay(
       RoundedRectangle(cornerRadius: 8, style: .continuous)
