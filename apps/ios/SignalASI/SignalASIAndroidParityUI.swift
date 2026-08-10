@@ -1837,7 +1837,7 @@ struct AgentHomeView: View {
 
   private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
     let location = AgentExecutionPresentationPolicy.location(record: task)
-    return [
+    let summary = [
       locationLabel(location.locationKind),
       runtimeLabel(location.runtimeKind),
       location.locationName
@@ -1845,6 +1845,7 @@ struct AgentHomeView: View {
       .filter { !$0.isBlank }
       .joined(separator: " · ")
       .ifBlank(t("signalasi.agent.execution.unknown", "Execution location unavailable"))
+    return summary.replacingOccurrences(of: " \u{8DEF} ", with: " \u{00B7} ")
   }
 
   private func agentExecutionStep(_ task: AgentTaskRecord) -> String {
