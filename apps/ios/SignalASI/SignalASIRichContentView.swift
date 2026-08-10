@@ -1401,9 +1401,9 @@ private struct SignalASIRichBlockView: View {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 
-  private static let collapsedCodeLines = 12
+  private static let collapsedCodeLines = 28
   private static let visibleListItems = 100
-  private static let visibleTableRows = 6
+  private static let visibleTableRows = 12
 }
 
 private struct SignalASIRichResourceRow: View {
