@@ -131,6 +131,7 @@ struct SignalASIAgentExecutionStatusCard: View {
   var resumeTitle: String
   var canCancel: Bool
   var cancelTitle: String
+  var statusTint: Color = .signalASIAccent
   var onResume: () -> Void
   var onCancel: () -> Void
   var timelineActions: [AgentExecutionLoopTimelineAction] = []
@@ -154,7 +155,7 @@ struct SignalASIAgentExecutionStatusCard: View {
       }
       Text(status)
         .font(.system(size: 12, weight: .semibold))
-        .foregroundColor(.signalASITextSecondary)
+        .foregroundColor(statusTint)
         .lineLimit(2)
       Text(step)
         .font(.system(size: 12))
