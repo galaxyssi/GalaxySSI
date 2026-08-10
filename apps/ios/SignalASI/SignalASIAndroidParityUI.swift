@@ -1575,7 +1575,7 @@ struct AgentHomeView: View {
                   }
                 }
               if waitingMessageIDs.contains(message.id) {
-                AgentReplyWaitingIndicatorView()
+                AgentReplyWaitingIndicatorView(bubbleBackground: false)
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
               }

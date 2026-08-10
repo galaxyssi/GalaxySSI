@@ -50,6 +50,7 @@ enum AgentReplyWaitingIndicatorPolicy {
 struct AgentReplyWaitingIndicatorView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var isAnimating = false
+  var bubbleBackground = true
 
   var body: some View {
     HStack(spacing: 6) {
@@ -67,8 +68,13 @@ struct AgentReplyWaitingIndicatorView: View {
           )
       }
     }
-    .frame(minWidth: 96, minHeight: 44)
-    .background(Color.signalASIIncomingBubble)
+    .padding(.horizontal, bubbleBackground ? 15 : 2)
+    .padding(.vertical, bubbleBackground ? 10 : 7)
+    .frame(
+      minWidth: bubbleBackground ? 96 : 48,
+      minHeight: bubbleBackground ? 44 : 32
+    )
+    .background(bubbleBackground ? Color.signalASIIncomingBubble : Color.clear)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(
