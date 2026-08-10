@@ -804,14 +804,22 @@ private struct SignalASIRichBlockView: View {
             .frame(width: 7, height: 7)
             .padding(.top, 5)
           VStack(alignment: .leading, spacing: 2) {
-            if let first = row.first, row.count > 1 {
-              Text(first)
-                .font(.caption.weight(.semibold))
+            let primary = row.count > 1 ? row[1] : row.first ?? ""
+            let secondary = row.count > 2 ? row[2] : ""
+            selectableText(primary)
+              .font(.system(size: 14, weight: .bold))
+            if !secondary.isEmpty {
+              selectableText(secondary)
+                .font(.system(size: 12))
                 .foregroundColor(.signalASITextSecondary)
-              selectableText(row.dropFirst().joined(separator: " "))
-            } else {
-              selectableText(row.joined(separator: " "))
             }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          if row.count > 1 {
+            Text(row[0])
+              .font(.system(size: 11))
+              .foregroundColor(.signalASITextSecondary)
+              .lineLimit(1)
           }
         }
       }
