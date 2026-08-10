@@ -1750,6 +1750,40 @@ enum AgentAuditTrailCommand {
   }
 }
 
+enum AgentPermissionModeCommand {
+  static func mode(_ goal: String) -> AgentPermissionMode? {
+    let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+      .replacingOccurrences(of: "-", with: " ")
+      .replacingOccurrences(of: "_", with: " ")
+    let prefixes = [
+      "set permission mode ", "permission mode ",
+      "set agent mode ", "agent mode ",
+      "\u{8bbe}\u{7f6e}\u{6743}\u{9650}\u{6a21}\u{5f0f} ",
+      "\u{6743}\u{9650}\u{6a21}\u{5f0f} ",
+      "\u{8bbe}\u{7f6e} agent \u{6a21}\u{5f0f} ",
+      "agent \u{6a21}\u{5f0f} "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    let value = String(normalized.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    switch value {
+    case "observe", "observe only", "read only", "readonly", "\u{4ec5}\u{89c2}\u{5bdf}", "\u{53ea}\u{8bfb}":
+      return .observeOnly
+    case "suggest", "suggest only", "assist", "assisted", "\u{5efa}\u{8bae}", "\u{4ec5}\u{5efa}\u{8bae}":
+      return .suggestOnly
+    case "confirm", "ask", "ask first", "ask before action", "\u{786e}\u{8ba4}", "\u{64cd}\u{4f5c}\u{524d}\u{786e}\u{8ba4}":
+      return .askBeforeAction
+    case "auto", "automatic", "auto low risk", "low risk auto", "\u{81ea}\u{52a8}", "\u{4f4e}\u{98ce}\u{9669}\u{81ea}\u{52a8}":
+      return .autoLowRisk
+    default:
+      return nil
+    }
+  }
+}
+
 enum AgentPermissionChecklistCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
