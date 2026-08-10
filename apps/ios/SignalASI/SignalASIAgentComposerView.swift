@@ -273,12 +273,22 @@ struct SignalASIAgentComposerView: View {
     .frame(maxWidth: .infinity, minHeight: 236, alignment: .bottom)
     .background(
       LinearGradient(
-        colors: [
-          Color.clear,
-          Color.signalASIAgentRecordingLight.opacity(0.52),
-          Color.signalASIAgentRecordingMid.opacity(0.88),
-          Color.signalASIAgentRecordingDeep,
-        ],
+        gradient: Gradient(stops: [
+          .init(color: .clear, location: 0),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(30.0 / 255.0),
+            location: 0.16
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(132.0 / 255.0),
+            location: 0.36
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingMid.opacity(224.0 / 255.0),
+            location: 0.64
+          ),
+          .init(color: Color.signalASIAgentRecordingDeep, location: 1.0),
+        ]),
         startPoint: .top,
         endPoint: .bottom
       )
