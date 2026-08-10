@@ -54,6 +54,14 @@ extension CloudConversationStreaming {
 final class CloudConversationStreamEngine: CloudModelStreamClient {
   private static let maxToolRounds = 4
   private static let maxToolCalls = 8
+  private static let maxParallelToolCalls = 4
+
+  private struct ToolExecutionOutcome {
+    var index: Int
+    var call: AssembledToolCall
+    var output: String?
+    var errorMessage: String?
+  }
 
   private let modelClient: CloudModelClient
   private let streamClient: CloudModelStreamClient
@@ -335,36 +343,41 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           continue
         }
 
-        var results: [(AssembledToolCall, String)] = []
+        var preparedCalls: [AssembledToolCall] = []
         for call in calls.prefix(remaining) {
           guard executedToolKeys.insert(call.streamIdentityKey).inserted else { continue }
-          do {
-            let result = try toolExecutor.executeTool(
-              call: call,
-              context: CloudConversationToolExecutionContext(
-                requestId: requestId,
-                conversationId: conversationId,
-                turnId: turnId
-              )
-            )
-            results.append((call, result))
-            toolCallCount += 1
-          } catch {
-            let streamError = ModelStreamError(
-              code: "INVALID_TOOL_ARGUMENTS",
-              message: "Tool arguments were incomplete: \(error.localizedDescription.ifBlank(String(describing: error)))"
-            )
-            AgentDataDisclosureLedger.update(
-              store: disclosureStore,
-              ticket: ticket,
-              status: .failed,
-              failureReason: streamError.message
-            )
-            continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
-            continuation.finish()
-            return
-          }
+          preparedCalls.append(call)
         }
+
+        let outcomes = await executeToolCalls(
+          preparedCalls,
+          context: CloudConversationToolExecutionContext(
+            requestId: requestId,
+            conversationId: conversationId,
+            turnId: turnId
+          )
+        )
+        if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
+          let streamError = ModelStreamError(
+            code: "INVALID_TOOL_ARGUMENTS",
+            message: "Tool arguments were incomplete: \(failedOutcome.errorMessage ?? "unknown error")"
+          )
+          AgentDataDisclosureLedger.update(
+            store: disclosureStore,
+            ticket: ticket,
+            status: .failed,
+            failureReason: streamError.message
+          )
+          continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
+          continuation.finish()
+          return
+        }
+
+        let results = outcomes.compactMap { outcome -> (AssembledToolCall, String)? in
+          guard let output = outcome.output else { return nil }
+          return (outcome.call, output)
+        }
+        toolCallCount += results.count
 
         if results.isEmpty {
           forceFinalRound = true
@@ -456,6 +469,49 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
     }
+  }
+
+  private func executeToolCalls(
+    _ calls: [AssembledToolCall],
+    context: CloudConversationToolExecutionContext
+  ) async -> [ToolExecutionOutcome] {
+    guard !calls.isEmpty else { return [] }
+
+    var outcomes: [ToolExecutionOutcome] = []
+    for start in stride(from: 0, to: calls.count, by: Self.maxParallelToolCalls) {
+      let end = min(start + Self.maxParallelToolCalls, calls.count)
+      let batch = Array(calls[start..<end])
+      let batchOutcomes = await withTaskGroup(of: ToolExecutionOutcome.self) { group in
+        for (offset, call) in batch.enumerated() {
+          group.addTask { [toolExecutor] in
+            do {
+              let output = try toolExecutor.executeTool(call: call, context: context)
+              return ToolExecutionOutcome(
+                index: start + offset,
+                call: call,
+                output: output,
+                errorMessage: nil
+              )
+            } catch {
+              return ToolExecutionOutcome(
+                index: start + offset,
+                call: call,
+                output: nil,
+                errorMessage: error.localizedDescription.ifBlank(String(describing: error))
+              )
+            }
+          }
+        }
+
+        var completed: [ToolExecutionOutcome] = []
+        for await outcome in group {
+          completed.append(outcome)
+        }
+        return completed.sorted { $0.index < $1.index }
+      }
+      outcomes.append(contentsOf: batchOutcomes)
+    }
+    return outcomes
   }
 
   private func setActiveRound(_ roundId: String?, for requestId: String) {
