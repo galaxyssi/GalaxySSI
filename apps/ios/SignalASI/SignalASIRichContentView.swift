@@ -594,13 +594,15 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var webpageBlock: some View {
-    SignalASIRichResourceRow(
-      icon: "safari",
-      title: block.title.isEmpty ? block.uri : block.title,
-      subtitle: block.fallbackText.ifBlank(block.uri),
-      url: webpageURL,
-      typeLabel: t("rich_output_type_web", "Web")
-    )
+    if let url = webpageURL {
+      SignalASIWebPagePreviewView(
+        url: url,
+        title: block.title,
+        fallbackText: block.fallbackText.ifBlank(block.uri)
+      )
+    } else {
+      resourceBlock
+    }
   }
 
   private var videoBlock: some View {
