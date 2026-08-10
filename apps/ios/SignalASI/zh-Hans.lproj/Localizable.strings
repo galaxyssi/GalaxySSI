@@ -677,7 +677,7 @@
 "signalasi.agent_knowledge.source_badge" = "%d 个来源";
 "signalasi.agent_knowledge.section_actions" = "检索与导入";
 "signalasi.agent_knowledge.import" = "导入资料";
-"signalasi.agent_knowledge.import_subtitle" = "支持 PDF、Word、Markdown、文本、JSON 等可读文档";
+"signalasi.agent_knowledge.import_subtitle" = "支持 PDF、Word、Markdown、文本、JSON、图片等可读资料";
 "signalasi.agent_knowledge.add" = "添加";
 "signalasi.agent_knowledge.import_web" = "导入网页";
 "signalasi.agent_knowledge.import_web_subtitle" = "将公开 HTTP 或 HTTPS 网页导入为私有知识";
@@ -717,6 +717,8 @@
 "signalasi.agent_knowledge.import_too_large" = "文档超过 20 MB 导入上限";
 "signalasi.agent_knowledge.import_sensitive" = "由于资料疑似包含密钥或令牌，已阻止导入";
 "signalasi.agent_knowledge.no_readable_text" = "没有找到可读取的文本";
+"signalasi.agent_knowledge.image_ocr_too_large" = "图片超过 12 MB OCR 上限";
+"signalasi.agent_knowledge.image_ocr_failed" = "图片 OCR 失败：%@";
 "signalasi.agent_knowledge.source_metadata" = "%d 个分块 / %@";
 "signalasi.agent_knowledge.source_updated" = "已更新 %d 个分块";
 "signalasi.agent_knowledge.source_deleted" = "已删除 %d 个分块";

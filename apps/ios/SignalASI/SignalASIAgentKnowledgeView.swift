@@ -53,7 +53,7 @@ struct SignalASIAgentKnowledgeView: View {
               title: t("signalasi.agent_knowledge.import", "Import source"),
               subtitle: t(
                 "signalasi.agent_knowledge.import_subtitle",
-                "PDF, Word, Markdown, text, JSON, or another readable document"
+                "PDF, Word, Markdown, text, JSON, images, or another readable document"
               ),
               systemImage: "doc.text",
               tint: .signalASIAccent,
@@ -458,6 +458,8 @@ struct SignalASIAgentKnowledgeView: View {
     let pathExtension = url.pathExtension.lowercased()
     let text: String
     switch pathExtension {
+    case "png", "jpg", "jpeg", "webp", "bmp", "gif", "heic", "heif", "tif", "tiff":
+      text = try extractImageText(data, url: url)
     case "pdf":
       text = try extractPDFText(data)
     case "docx":
@@ -483,6 +485,54 @@ struct SignalASIAgentKnowledgeView: View {
       )
     }
     return clean
+  }
+
+  private func extractImageText(_ data: Data, url: URL) throws -> String {
+    let maximumBytes = Int(AgentIOSWebMediaNativeToolCatalog.maxOcrSourceBytes)
+    guard data.count <= maximumBytes else {
+      throw NSError(
+        domain: "SignalASIAgentKnowledgeImport",
+        code: 5,
+        userInfo: [
+          NSLocalizedDescriptionKey: t(
+            "signalasi.agent_knowledge.image_ocr_too_large",
+            "Image exceeds the 12 MB OCR limit"
+          )
+        ]
+      )
+    }
+    let content = AgentIOSWebMediaContent(
+      contentURI: url.absoluteString,
+      contentType: "image/\(url.pathExtension.lowercased())",
+      displayName: url.lastPathComponent,
+      data: data
+    )
+    let request = AgentIOSWebMediaOCRRequest(
+      contentURI: url.absoluteString,
+      sourceKind: "document",
+      scriptHint: "auto",
+      maxSourceBytes: AgentIOSWebMediaNativeToolCatalog.maxOcrSourceBytes,
+      timeoutMillis: AgentIOSWebMediaNativeToolCatalog.maxToolTimeoutMillis
+    )
+    do {
+      return try AgentIOSVisionTextOCRRecognizer()
+        .recognize(content: content, request: request)
+        .text
+    } catch {
+      throw NSError(
+        domain: "SignalASIAgentKnowledgeImport",
+        code: 6,
+        userInfo: [
+          NSLocalizedDescriptionKey: String(
+            format: t(
+              "signalasi.agent_knowledge.image_ocr_failed",
+              "Image OCR failed: %@"
+            ),
+            error.localizedDescription
+          )
+        ]
+      )
+    }
   }
 
   private func extractPDFText(_ data: Data) throws -> String {
