@@ -10,6 +10,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var currentApp: String
   var memorySnapshot: AgentMemorySnapshot
   var knowledgeStats: AgentKnowledgeStats
+  var knowledgeHitCount: Int
   var screen: AgentScreenContext
   var screenSections: [SignalASIAgentScreenDetailSection]
   var recentTaskCount: Int = 0
@@ -166,7 +167,7 @@ struct SignalASIAgentHomeReadinessView: View {
               format: t("agent_knowledge_value", "Knowledge: %d items / %d sources / %d hits"),
               knowledgeStats.itemCount,
               knowledgeStats.sourceCount,
-              0
+              knowledgeHitCount
             ),
             systemImage: "books.vertical"
           )
