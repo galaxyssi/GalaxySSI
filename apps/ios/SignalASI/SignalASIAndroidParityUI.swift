@@ -349,6 +349,15 @@ struct AgentHomeView: View {
     return action.risk.weight < AgentRisk.high.weight
   }
 
+  private var primaryActionNeedsHighRiskConfirmation: Bool {
+    guard let task = primaryAgentTask,
+          task.phase == .waitingConfirmation,
+          let action = task.pendingAction else {
+      return false
+    }
+    return action.risk.weight >= AgentRisk.high.weight
+  }
+
   private var blockedAgentTask: AgentTaskRecord? {
     let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return activeSessionTasks.first { task in
@@ -1867,6 +1876,7 @@ struct AgentHomeView: View {
       hasPendingPrimaryAction: primaryAgentTask != nil,
       pendingPrimaryActionResumesTask: primaryActionResumesTask,
       pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
+      pendingPrimaryActionNeedsHighRiskConfirmation: primaryActionNeedsHighRiskConfirmation,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
