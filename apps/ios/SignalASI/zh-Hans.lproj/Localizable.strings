@@ -3739,6 +3739,7 @@
 "signalasi.agent.task_control.pause" = "暂停任务";
 "signalasi.agent.task_control.replan" = "重新规划任务";
 "signalasi.agent.task_control.replan_prompt" = "重新规划并继续此 Agent 任务：%@";
+"signalasi.agent.task_control.title" = "任务控制";
 "signalasi.agent.task_control.rollback" = "回滚上一个动作";
 "signalasi.agent.task_control.rollback_requested" = "已请求回滚上一个动作";
 "signalasi.agent.task_control.rollback_failed" = "当前没有可回滚的动作";

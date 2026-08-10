@@ -1187,7 +1187,17 @@ struct AgentHomeView: View {
                       updatedAtMillis: task.updatedAtMillis
                     ),
                     details: task.executionLog,
-                    detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline")
+                    detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                    timelineActions: agentTimelineActions(for: task),
+                    timelineActionTitle: { agentTimelineActionTitle($0) },
+                    timelineActionIcon: { agentTimelineActionIcon($0) },
+                    timelineActionMenuTitle: t(
+                      "signalasi.agent.task_control.title",
+                      "Task controls"
+                    ),
+                    onTimelineAction: { action in
+                      runAgentTimelineAction(action, task: task)
+                    }
                   )
                 }
               }
