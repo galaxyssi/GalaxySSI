@@ -1260,6 +1260,20 @@ struct AgentHomeView: View {
               title: t("signalasi.agent.empty.title", "How can I help?"),
               subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
             )
+            SignalASIAgentHomeQuickActionsView(
+              t: t,
+              onNewSession: createAgentConversation,
+              onOpenSessions: {
+                recentTaskForDetails = nil
+                agentSessionsShortcutActive = true
+              },
+              onScan: {
+                scanShortcutActive = true
+              },
+              onOpenSettings: {
+                agentSettingsShortcutActive = true
+              }
+            )
             SignalASIAgentHomeReadinessView(
               runningTasks: activeAgentTasks.count,
               callableTargets: availableCallableTargetCount,
