@@ -90,19 +90,24 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
   var handoffProvider: AgentIOSNativeActionHandoffProviding
   var notificationCenter: UNUserNotificationCenter
   var nowMillis: () -> Int64
+  var knowledgeStore: ((AgentKnowledgeItem) -> AgentKnowledgeItem)?
 
   init(
     handoffProvider: AgentIOSNativeActionHandoffProviding = AgentIOSDefaultNativeActionHandoffProvider(),
     notificationCenter: UNUserNotificationCenter = .current(),
-    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    knowledgeStore: ((AgentKnowledgeItem) -> AgentKnowledgeItem)? = nil
   ) {
     self.handoffProvider = handoffProvider
     self.notificationCenter = notificationCenter
     self.nowMillis = nowMillis
+    self.knowledgeStore = knowledgeStore
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     switch action.kind {
+    case .saveScreenKnowledge:
+      return saveScreenKnowledge(action, screen: screen)
     case .readScreen:
       return readScreen(action, screen: screen)
     case .copyScreenText:
@@ -126,6 +131,98 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         ]
       )
     }
+  }
+
+  private func saveScreenKnowledge(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    guard action.parameters["_signalasi_long_term_write_allowed"] != "false" else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "Private sessions cannot save long-term screen knowledge."
+      )
+    }
+    guard screen.sensitiveFlagCount == 0 else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "Screen contains sensitive content; knowledge save skipped."
+      )
+    }
+    guard screen.clipboard.sensitiveFlags.isEmpty else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "Clipboard contains sensitive content; knowledge save skipped."
+      )
+    }
+    guard screen.notifications.sensitiveFlags.isEmpty,
+          !screen.notifications.items.contains(where: { !$0.sensitiveFlags.isEmpty }) else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "Notifications contain sensitive content; knowledge save skipped."
+      )
+    }
+    guard let knowledgeStore else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "The iOS Agent knowledge store is unavailable."
+      )
+    }
+
+    let title = clean(screen.pageTitle)
+      .ifBlank(clean(screen.foregroundApp))
+      .ifBlank("Screen snapshot")
+    let content = screenKnowledgeContent(screen, title: title)
+    let item = AgentKnowledgeItem(
+      kind: .screen,
+      title: title,
+      content: content,
+      source: "screen:\(clean(screen.foregroundApp).ifBlank("ios"))",
+      tags: ["screen", clean(screen.foregroundApp), title].filter { !$0.isEmpty },
+      summary: String(content.prefix(500))
+    )
+    _ = knowledgeStore(item)
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: "Saved screen snapshot to Agent knowledge.",
+      metadata: [
+        "knowledge_kind": AgentKnowledgeKind.screen.rawValue,
+        "knowledge_source": item.source,
+        "completion_verified": "true"
+      ]
+    )
+  }
+
+  private func screenKnowledgeContent(_ screen: AgentScreenContext, title: String) -> String {
+    var lines = [
+      "App: \(clean(screen.foregroundApp).ifBlank("ios"))",
+      "Activity: \(clean(screen.activityName).ifBlank("-"))",
+      "Page: \(title)",
+      "Visible text count: \(screen.visibleTextCount)",
+      "Clickable action count: \(screen.clickableNodeCount)",
+      "Input field count: \(screen.inputFieldCount)"
+    ]
+    if !screen.selectedText.isEmpty {
+      lines.append("Selected text: \(String(screen.selectedText.prefix(500)))")
+    }
+    if screen.clipboard.hasText {
+      lines.append("Clipboard: \(screen.clipboard.textLength) chars / hash \(screen.clipboard.textHash)")
+    }
+    if !screen.notifications.items.isEmpty {
+      lines.append("Notifications: \(screen.notifications.items.count)")
+      lines += screen.notifications.items.prefix(6).map {
+        "- \(clean($0.packageName).ifBlank("app")) / \(clean($0.title).ifBlank("-"))"
+      }
+    }
+    if !screen.visibleTexts.isEmpty {
+      lines.append("")
+      lines.append("Visible text:")
+      lines += screen.visibleTexts.prefix(40).map { "- \($0)" }
+    }
+    return lines.joined(separator: "\n")
   }
 
   private func readScreen(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {

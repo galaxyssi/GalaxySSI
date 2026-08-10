@@ -717,7 +717,9 @@ final class MessageCoordinator: ObservableObject {
   private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
-      actionExecutor: AgentIOSNativeActionExecutor(),
+      actionExecutor: AgentIOSNativeActionExecutor(
+        knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) }
+      ),
       screenProvider: { [weak self] _ in
         self?.currentAgentScreenContext ?? AgentScreenContext(
           foregroundApp: "SignalASI iOS",
