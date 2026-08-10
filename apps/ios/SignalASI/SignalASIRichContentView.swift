@@ -1558,9 +1558,8 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
 
   func togglePlayback() {
     if isPlaying {
-      player?.pause()
-      isPlaying = false
-      stopTimer()
+      SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
+      pauseForCoordinator()
       return
     }
     do {
@@ -1571,9 +1570,13 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
         player = audioPlayer
         installObservers(for: audioPlayer)
       }
+      SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
+        self?.pauseForCoordinator()
+      }
       player?.play()
       isPlaying = true
     } catch {
+      SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
       player = nil
       duration = 0
       currentTime = 0
@@ -1587,6 +1590,7 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   }
 
   func stop() {
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player?.pause()
     player?.seek(to: .zero)
     currentTime = 0
@@ -1597,6 +1601,7 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   }
 
   deinit {
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     removeObservers()
   }
 
@@ -1621,9 +1626,16 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   }
 
   private func finishPlayback() {
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     currentTime = 0
     isPlaying = false
     player?.seek(to: .zero)
+  }
+
+  private func pauseForCoordinator() {
+    player?.pause()
+    isPlaying = false
+    stopTimer()
   }
 
   private func removeObservers() {
@@ -1671,14 +1683,44 @@ private struct SignalASIVideoArtifactView: View {
 
 private final class SignalASIVideoArtifactPlayer: ObservableObject {
   let player: AVPlayer
+  private var playbackObservation: NSKeyValueObservation? = nil
 
   init(url: URL) {
     player = AVPlayer(url: url)
+    installPlaybackObservation()
+  }
+
+  private func installPlaybackObservation() {
+    playbackObservation = player.observe(
+      \.timeControlStatus,
+      options: [.initial, .new]
+    ) { [weak self] player, _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        if player.timeControlStatus == .playing {
+          SignalASIRichMediaPlaybackCoordinator.shared.activate(owner: self) { [weak self] in
+            self?.pauseForCoordinator()
+          }
+        } else {
+          SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
+        }
+      }
+    }
   }
 
   func stop() {
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player.pause()
     player.seek(to: .zero)
+  }
+
+  private func pauseForCoordinator() {
+    player.pause()
+  }
+
+  deinit {
+    playbackObservation?.invalidate()
+    SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
   }
 }
 
