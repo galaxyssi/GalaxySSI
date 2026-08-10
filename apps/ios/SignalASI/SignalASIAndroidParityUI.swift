@@ -1450,170 +1450,60 @@ struct AgentHomeView: View {
               onRefresh: refreshAgentScreenContext,
               t: t
             )
-            ForEach(transcriptMessages) { message in
-              VStack(alignment: .leading, spacing: 4) {
-                if let mergedSource = mergedSourceLabel(for: message) {
-                  Text(mergedSource)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.signalASITextSecondary)
-                    .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
-                    .accessibilityLabel(mergedSource)
-                }
-                MessageBubble(
-                  message: message,
-                  onActionWithMessage: { message, action in
-                    handleRichAction(action, from: message)
-                  },
-                  onFormSubmit: handleAgentRichForm
+            SignalASIAgentTranscriptMessagesView(
+              messages: transcriptMessages,
+              waitingMessageIDs: waitingMessageIDs,
+              retryingMessageIDs: retryingAgentMessageIDs,
+              t: t,
+              mergedSourceLabel: { mergedSourceLabel(for: $0) },
+              agentTask: { agentTask(for: $0) },
+              remoteAgentTask: { remoteAgentTask(for: $0) },
+              voiceAgentRun: { voiceAgentRun(for: $0) },
+              agentPhaseLabel: agentPhaseLabel,
+              agentExecutionLocationSummary: agentExecutionLocationSummary,
+              agentExecutionStep: agentExecutionStep,
+              remoteAgentStatusLabel: remoteAgentStatusLabel,
+              remoteAgentStep: remoteAgentStep,
+              remoteAgentTimelineLine: remoteAgentTimelineLine,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
                 )
-                if !message.isMine, !message.isSystem {
-                  if let task = agentTask(for: message) {
-                    SignalASIAgentExecutionFooterView(
-                      executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
-                      status: agentPhaseLabel(task.phase),
-                      location: agentExecutionLocationSummary(task),
-                      step: agentExecutionStep(task),
-                      duration: executionDuration(
-                        startedAtMillis: task.createdAtMillis,
-                        updatedAtMillis: task.updatedAtMillis
-                      ),
-                      details: task.executionLog,
-                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                      timelineActions: agentTimelineActions(for: task),
-                      timelineActionTitle: { agentTimelineActionTitle($0) },
-                      timelineActionIcon: { agentTimelineActionIcon($0) },
-                      timelineActionMenuTitle: t(
-                        "signalasi.agent.task_control.title",
-                        "Task controls"
-                      ),
-                      canCancel: AgentTaskCenterPolicy.cancellable(task),
-                      cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
-                      onCancel: {
-                        cancelActiveAgentTask(task)
-                      },
-                      onTimelineAction: { action in
-                        runAgentTimelineAction(action, task: task)
-                      }
-                    )
-                  } else if let remoteTask = remoteAgentTask(for: message) {
-                    SignalASIAgentExecutionFooterView(
-                      executor: remoteTask.target.ifBlank(t("signalasi.agent.status", "Agent")),
-                      status: remoteAgentStatusLabel(remoteTask.status),
-                      location: remoteTask.location.ifBlank(
-                        t("signalasi.agent_execution.location.desktop", "Desktop")
-                      ),
-                      step: remoteAgentStep(remoteTask),
-                      duration: executionDuration(
-                        startedAtMillis: remoteTask.history.first?.updatedAtMillis
-                          ?? remoteTask.updatedAtMillis,
-                        updatedAtMillis: remoteTask.updatedAtMillis
-                      ),
-                      details: remoteTask.history.map(remoteAgentTimelineLine),
-                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                      canCancel: remoteTask.isCancellable &&
-                        !cancellingRemoteTaskIDs.contains(remoteTask.id),
-                      cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
-                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
-                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
-                      onCancel: {
-                        cancelRemoteAgentTask(remoteTask)
-                      }
-                    )
-                  } else if let run = voiceAgentRun(for: message) {
-                    let runStatus = remoteAgentStatusLabel(run.state.rawValue.lowercased())
-                    SignalASIAgentExecutionFooterView(
-                      executor: run.agentName.ifBlank(run.agentId).ifBlank(
-                        t("signalasi.agent.status", "Agent")
-                      ),
-                      status: runStatus,
-                      location: t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent"),
-                      step: run.progressMessage.ifBlank(run.stage).ifBlank(runStatus),
-                      duration: executionDuration(
-                        startedAtMillis: run.acceptedAtMillis > 0
-                          ? run.acceptedAtMillis
-                          : run.createdAtMillis,
-                        updatedAtMillis: run.updatedAtMillis
-                      ),
-                      details: [run.progressMessage, run.partialResult, run.resultSummary]
-                        .filter { !$0.isBlank },
-                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                      canCancel: run.cancellable && !cancellingVoiceRunIDs.contains(run.runId),
-                      cancelTitle: cancellingVoiceRunIDs.contains(run.runId)
-                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
-                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
-                      onCancel: {
-                        cancelVoiceAgentRun(run)
-                      }
-                    )
-                  }
-                }
-              }
-                .id(message.id)
-                .contextMenu {
-                  Button {
-                    selectedMessageForDetails = message
-                  } label: {
-                    Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-                  }
-                  Button {
-                    UIPasteboard.general.string = message.content
-                  } label: {
-                    Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-                  }
-                  if let task = agentTask(for: message), AgentTaskCenterPolicy.cancellable(task) {
-                    Button(role: .destructive) {
-                      cancelActiveAgentTask(task)
-                    } label: {
-                      Label(
-                        t("signalasi.agent.task_control.cancel", "Cancel task"),
-                        systemImage: "xmark.circle"
-                      )
-                    }
-                  } else if let remoteTask = remoteAgentTask(for: message), remoteTask.isCancellable {
-                    Button(role: .destructive) {
-                      cancelRemoteAgentTask(remoteTask)
-                    } label: {
-                      Label(
-                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
-                        systemImage: "xmark.circle"
-                      )
-                    }
-                  } else if let run = voiceAgentRun(for: message), run.cancellable {
-                    Button(role: .destructive) {
-                      cancelVoiceAgentRun(run)
-                    } label: {
-                      Label(
-                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
-                        systemImage: "xmark.circle"
-                      )
-                    }
-                  }
-                  Button(role: .destructive) {
-                    store.deleteMessage(message.id, contactId: contact.id)
-                  } label: {
-                    Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
-                  }
-                }
-              if waitingMessageIDs.contains(message.id) {
-                AgentReplyWaitingIndicatorView(bubbleBackground: false)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
-              }
-              if message.isMine && message.deliveryStatus == .failed {
-                SignalASIAgentRetryCard(
-                  title: t("signalasi.agent.retry.title", "Agent request failed"),
-                  subtitle: t(
-                    "signalasi.agent.retry.subtitle",
-                    "Retry the most recent Agent request."
-                  ),
-                  retryTitle: t("signalasi.common.retry", "Retry"),
-                  retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
-                  isRetrying: retryingAgentMessageIDs.contains(message.id)
-                ) {
-                  retryAgentMessage(message)
-                }
-              }
-            }
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              isVoiceRunCancelling: { runID in
+                cancellingVoiceRunIDs.contains(runID)
+              },
+              onRichAction: { message, action in
+                handleRichAction(action, from: message)
+              },
+              onFormSubmit: handleAgentRichForm,
+              onCancelAgentTask: cancelActiveAgentTask,
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelVoiceRun: cancelVoiceAgentRun,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onMessageDetails: { message in
+                selectedMessageForDetails = message
+              },
+              onCopyMessage: { message in
+                UIPasteboard.general.string = message.content
+              },
+              onCancelMessageTask: cancelActiveAgentTask,
+              onCancelMessageRemoteTask: cancelRemoteAgentTask,
+              onCancelMessageVoiceRun: cancelVoiceAgentRun,
+              onDeleteMessage: { message in
+                store.deleteMessage(message.id, contactId: contact.id)
+              },
+              onRetryMessage: retryAgentMessage
+            )
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()
                 .frame(maxWidth: .infinity, alignment: .leading)
