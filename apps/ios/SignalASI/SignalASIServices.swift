@@ -2072,6 +2072,40 @@ final class MessageCoordinator: ObservableObject {
     return AgentManualTargetUnavailableError(targetName: targetName)
   }
 
+  private func automaticRouteSelection(
+    for contact: SignalASIContact,
+    conversationId: String
+  ) -> AgentConnectorRouteSelection? {
+    let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    guard contact.id == "hermes", selection.mode == .automatic else { return nil }
+
+    var targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    if let profile = readyAutomaticLocalModelProfile() {
+      targets.append(
+        AgentCallableTarget(
+          id: "local-llm",
+          title: profile.displayName,
+          kind: .model,
+          status: .available,
+          capabilities: [.chat, .reasoning, .toolUse, .localInference],
+          failureDomain: "local-model",
+          adapterType: "ios-local-model"
+        )
+      )
+    }
+    return AgentConnectorRouteSelector.select(targets: targets, decision: nil)
+  }
+
+  private func readyAutomaticLocalModelProfile() -> LocalModelRuntimeProfile? {
+    let profile = LocalModelRuntimeSettings.selectedProfile()
+    let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+      LocalModelInferenceRuntime.shared.ready(profile: profile)
+    return ready ? profile : nil
+  }
+
   private func selectedLocalModel(
     for contact: SignalASIContact,
     conversationId: String
@@ -2084,7 +2118,9 @@ final class MessageCoordinator: ObservableObject {
     let legacySelection = !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
       store.modelPlannerSettings.enabled &&
       store.modelPlannerSettings.cloudContactId == "local-llm"
-    guard manualSelection || legacySelection else { return nil }
+    let automaticSelection = selection.mode == .automatic &&
+      automaticRouteSelection(for: contact, conversationId: conversationId)?.target.id == "local-llm"
+    guard manualSelection || legacySelection || automaticSelection else { return nil }
     let profile = selection.mode == .manual
       ? LocalModelRuntimeCatalog.find(selection.modelId)
       : LocalModelRuntimeSettings.selectedProfile()
@@ -2098,10 +2134,13 @@ final class MessageCoordinator: ObservableObject {
     conversationId: String
   ) -> SignalASIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    let targetId = selection.mode == .manual
+      ? selection.targetId
+      : automaticRouteSelection(for: contact, conversationId: conversationId)?.target.id ?? ""
     guard contact.id == "hermes",
-          selection.mode == .manual,
-          selection.targetId != "local-llm",
-          let selected = store.contact(id: selection.targetId),
+          !targetId.isEmpty,
+          targetId != "local-llm",
+          let selected = store.contact(id: targetId),
           selected.deliveryMode == .cloudAPI,
           let model = selected.selectedCloudModel,
           AgentConnectorAvailability.cloudModelReady(
@@ -2120,9 +2159,12 @@ final class MessageCoordinator: ObservableObject {
     conversationId: String
   ) -> SignalASIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
+    let targetId = selection.mode == .manual
+      ? selection.targetId
+      : automaticRouteSelection(for: contact, conversationId: conversationId)?.target.id ?? ""
     guard contact.id == "hermes",
-          selection.mode == .manual,
-          let selected = store.contact(id: selection.targetId),
+          !targetId.isEmpty,
+          let selected = store.contact(id: targetId),
           selected.id != "hermes",
           !selected.deleted,
           selected.type == "agent",
@@ -2134,10 +2176,10 @@ final class MessageCoordinator: ObservableObject {
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    guard AgentCallableTargetCatalog.preferredTargetId(
-      selection: selection,
-      targets: callableTargets
-    ) == selected.id,
+    let expectedTargetId = selection.mode == .manual
+      ? AgentCallableTargetCatalog.preferredTargetId(selection: selection, targets: callableTargets)
+      : targetId
+    guard expectedTargetId == selected.id,
     let selectedTarget = callableTargets.first(where: { $0.id == selected.id }),
     AgentConnectorRouteSelector.isDeliverable(selectedTarget) else {
       return nil
