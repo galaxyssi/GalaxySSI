@@ -129,6 +129,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       return createNotification(action)
     case .typeText, .deleteText, .pasteText:
       return composerInput(action, screen: screen)
+    case .swipe:
+      return swipeOwnedAgentTranscript(action, screen: screen)
     case .tap:
       return tapOwnedAgentHomeElement(action, screen: screen)
     default:
@@ -177,6 +179,40 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       )
     }
     return AgentIOSComposerInputBridge.shared.execute(action: action)
+  }
+
+  private func swipeOwnedAgentTranscript(
+    _ action: AgentAction,
+    screen: AgentScreenContext
+  ) -> AgentActionResult {
+    let direction = AgentIOSAgentSwipeDirection.resolve(parameters: action.parameters)
+    guard let direction else {
+      return failure(
+        action,
+        "The iOS Agent transcript swipe direction is invalid.",
+        code: "IOS_AGENT_TRANSCRIPT_DIRECTION_INVALID"
+      )
+    }
+    guard direction == .up || direction == .down else {
+      return failure(
+        action,
+        "The iOS Agent transcript supports only vertical swipes.",
+        code: "IOS_AGENT_TRANSCRIPT_VERTICAL_ONLY"
+      )
+    }
+    let transcript = screen.scrollableRegions.first { element in
+      element.viewId == "ios.agent.agent-transcript" &&
+        element.origin == .manual &&
+        element.bounds == "logical://AgentHomeView/agent-transcript"
+    }
+    guard screen.activityName == "AgentHomeView", transcript != nil else {
+      return failure(
+        action,
+        "This iOS swipe action is limited to the visible SignalASI Agent transcript.",
+        code: "IOS_AGENT_TRANSCRIPT_ONLY"
+      )
+    }
+    return AgentIOSAgentHomeSwipeBridge.shared.execute(action: action)
   }
 
   private func tapOwnedAgentHomeElement(
