@@ -509,131 +509,32 @@ struct AgentHomeView: View {
         )
       }
       .background(
-        NavigationLink(
-          destination: SignalASIAgentRecentTasksView(initialTask: recentTaskForDetails),
-          isActive: $recentTasksShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentSessionsView(),
-          isActive: $agentSessionsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SettingsView(),
-          isActive: $agentSettingsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: OnDeviceAgentPermissionsView(),
-          isActive: $agentPermissionsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView {
+        SignalASIAgentHomeNavigationRoutesView(
+          recentTasksShortcutActive: $recentTasksShortcutActive,
+          agentSessionsShortcutActive: $agentSessionsShortcutActive,
+          agentSettingsShortcutActive: $agentSettingsShortcutActive,
+          agentPermissionsShortcutActive: $agentPermissionsShortcutActive,
+          agentModelSelectionShortcutActive: $agentModelSelectionShortcutActive,
+          agentNativeToolsShortcutActive: $agentNativeToolsShortcutActive,
+          agentMemoryShortcutActive: $agentMemoryShortcutActive,
+          agentKnowledgeShortcutActive: $agentKnowledgeShortcutActive,
+          agentScreenContextShortcutActive: $agentScreenContextShortcutActive,
+          agentInsightsShortcutActive: $agentInsightsShortcutActive,
+          chatListShortcutActive: $chatListShortcutActive,
+          contactsShortcutActive: $contactsShortcutActive,
+          discoverShortcutActive: $discoverShortcutActive,
+          recentTaskForDetails: recentTaskForDetails,
+          screen: agentScreenSnapshot.screen,
+          screenSections: agentScreenSnapshot.sections,
+          onModelSelectionChanged: {
             modelSelection = AgentModelSelectionSettings.selection(
               for: store.activeAgentConversationId
             )
           },
-          isActive: $agentModelSelectionShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASINativeToolCatalogView(),
-          isActive: $agentNativeToolsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentMemoryView(),
-          isActive: $agentMemoryShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentKnowledgeView(),
-          isActive: $agentKnowledgeShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentScreenContextDetailView(
-            screen: agentScreenSnapshot.screen,
-            sections: agentScreenSnapshot.sections,
-            onCommand: prefillAgentScreenCommand,
-            onRefresh: refreshAgentScreenContext,
-            t: t
-          ),
-          isActive: $agentScreenContextShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIGlobalAgentInsightInboxView(),
-          isActive: $agentInsightsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: ChatListView(),
-          isActive: $chatListShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: ContactsView(),
-          isActive: $contactsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: DiscoverView(),
-          isActive: $discoverShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
+          onScreenCommand: prefillAgentScreenCommand,
+          onRefreshScreen: refreshAgentScreenContext,
+          t: t
+        )
       )
       .onAppear {
         ensureActiveAgentSession()
