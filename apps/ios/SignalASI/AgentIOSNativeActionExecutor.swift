@@ -129,6 +129,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       return createNotification(action)
     case .typeText, .deleteText, .pasteText:
       return composerInput(action, screen: screen)
+    case .back:
+      return backOwnedAgentHome(action, screen: screen)
     case .swipe:
       return swipeOwnedAgentTranscript(action, screen: screen)
     case .tap:
@@ -181,6 +183,20 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       )
     }
     return AgentIOSComposerInputBridge.shared.execute(action: action)
+  }
+
+  private func backOwnedAgentHome(
+    _ action: AgentAction,
+    screen: AgentScreenContext
+  ) -> AgentActionResult {
+    guard screen.activityName == "AgentHomeView" else {
+      return failure(
+        action,
+        "This iOS back action is limited to the SignalASI Agent home page.",
+        code: "IOS_AGENT_HOME_NAVIGATION_ONLY"
+      )
+    }
+    return AgentIOSAgentHomeActionBridge.shared.executeBack(action: action)
   }
 
   private func swipeOwnedAgentTranscript(

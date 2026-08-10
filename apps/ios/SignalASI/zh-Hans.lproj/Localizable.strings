@@ -3816,3 +3816,6 @@
 "signalasi.agent.tap.completed" = "SignalASI 主页面控件已执行。";
 "signalasi.agent.long_press.completed" = "SignalASI 主页面控件已长按执行。";
 "signalasi.capability.owned_agent_long_press" = "Agent 主页面长按";
+"signalasi.agent.back.completed" = "SignalASI Agent 页面已返回。";
+"signalasi.agent.back.nothing_to_dismiss" = "当前没有可关闭的 SignalASI Agent 页面内容。";
+"signalasi.capability.owned_agent_navigation" = "Agent 主页面导航";
