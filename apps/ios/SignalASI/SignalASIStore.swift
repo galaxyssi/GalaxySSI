@@ -1303,7 +1303,7 @@ final class SignalASIStore: ObservableObject {
       title: cleanTitle,
       createdAt: now,
       updatedAt: now,
-      selectedModelOrAgent: contact(id: "hermes")?.displayName ?? "Automatic"
+      selectedModelOrAgent: "Automatic"
     )
     persistAgentConversation(session)
     activeAgentConversationId = session.id
@@ -1995,7 +1995,8 @@ final class SignalASIStore: ObservableObject {
     _ content: String,
     to contactId: String,
     status: ChatDeliveryStatus = .queued,
-    turnId: String = ""
+    turnId: String = "",
+    richOutputJson: String = ""
   ) -> ChatMessage {
     let messageId = UUID()
     let conversationId = activeConversationId(for: contactId)
@@ -2009,7 +2010,8 @@ final class SignalASIStore: ObservableObject {
       deliveryStatus: status,
       deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)],
       conversationId: conversationId,
-      turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString)
+      turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString),
+      richOutputJson: richOutputJson
     )
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: conversationId, contactId: contactId, content: content, at: createdAt)

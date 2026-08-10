@@ -191,12 +191,24 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var inputShell: some View {
-    HStack(spacing: 0) {
-      TextField(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."), text: $draft)
+    ZStack(alignment: .topLeading) {
+      if draft.isEmpty {
+        Text(t("signalasi.agent.goal_hint", "Enter message or hold to talk..."))
+          .font(.system(size: 15))
+          .foregroundColor(.signalASITextSecondary)
+          .padding(.leading, 12)
+          .padding(.top, 16)
+          .allowsHitTesting(false)
+      }
+      TextEditor(text: $draft)
         .font(.system(size: 15))
+        .foregroundColor(.signalASITextPrimary)
         .textInputAutocapitalization(.sentences)
-        .lineLimit(2)
         .focused($inputFocused)
+        .frame(height: 54)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.clear)
         .onSubmit {
           guard canSend else {
             emptySubmitMessage = t(
@@ -213,9 +225,7 @@ struct SignalASIAgentComposerView: View {
           actionTrayPresented = false
         }
     }
-    .padding(.leading, 12)
-    .padding(.trailing, 6)
-    .frame(maxWidth: .infinity, minHeight: 54)
+    .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
     .background(Color.signalASISurface)
     .overlay(
       RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -242,15 +252,15 @@ struct SignalASIAgentComposerView: View {
         if holdToTalk.transcript.isEmpty {
           SignalASIAgentRecordingWaveform(
             phase: holdToTalk.waveformPhase,
+            amplitude: holdToTalk.waveformAmplitude,
             cancelPending: holdToTalk.cancelPending
           )
         } else {
-          Text(holdToTalk.transcript)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: .infinity)
+          SignalASIAgentRecordingTranscript(
+            stableText: holdToTalk.stableTranscript,
+            unstableText: holdToTalk.unstableTranscript,
+            fallbackText: holdToTalk.transcript
+          )
         }
       }
       .frame(height: 38)
@@ -263,12 +273,22 @@ struct SignalASIAgentComposerView: View {
     .frame(maxWidth: .infinity, minHeight: 236, alignment: .bottom)
     .background(
       LinearGradient(
-        colors: [
-          Color.clear,
-          Color.signalASIAgentRecordingLight.opacity(0.52),
-          Color.signalASIAgentRecordingMid.opacity(0.88),
-          Color.signalASIAgentRecordingDeep,
-        ],
+        gradient: Gradient(stops: [
+          .init(color: .clear, location: 0),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(30.0 / 255.0),
+            location: 0.16
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(132.0 / 255.0),
+            location: 0.36
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingMid.opacity(224.0 / 255.0),
+            location: 0.64
+          ),
+          .init(color: Color.signalASIAgentRecordingDeep, location: 1.0),
+        ]),
         startPoint: .top,
         endPoint: .bottom
       )
@@ -496,15 +516,63 @@ struct SignalASIVoiceTranscriptionPendingView: View {
   }
 }
 
+private struct SignalASIAgentRecordingTranscript: View {
+  var stableText: String
+  var unstableText: String
+  var fallbackText: String
+
+  private var unstableColor: Color {
+    Color(red: 232.0 / 255.0, green: 1, blue: 233.0 / 255.0)
+  }
+
+  var body: some View {
+    let stable = stableText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let unstable = unstableText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let separator = Self.separator(stable: stable, unstable: unstable)
+    Group {
+      if stable.isEmpty && unstable.isEmpty {
+        Text(fallbackText)
+      } else {
+        (Text(stable).foregroundColor(.white) +
+          Text(separator + unstable).foregroundColor(unstableColor))
+      }
+    }
+    .font(.system(size: 15, weight: .semibold))
+    .lineLimit(1)
+    .truncationMode(.head)
+    .frame(maxWidth: .infinity)
+  }
+
+  private static func separator(stable: String, unstable: String) -> String {
+    guard let last = stable.last,
+          let first = unstable.first,
+          (last.isLetter || last.isNumber),
+          (first.isLetter || first.isNumber),
+          !isCJK(last),
+          !isCJK(first) else {
+      return ""
+    }
+    return " "
+  }
+
+  private static func isCJK(_ character: Character) -> Bool {
+    character.unicodeScalars.contains { scalar in
+      (0x3400...0x9FFF).contains(scalar.value)
+    }
+  }
+}
+
 private struct SignalASIAgentRecordingWaveform: View {
   var phase: Double
+  var amplitude: Double
   var cancelPending: Bool
 
   private let sampleCount = 56
 
   var body: some View {
     GeometryReader { proxy in
-      let step = max(1, proxy.size.width / CGFloat(sampleCount))
+      let waveformWidth = proxy.size.width * 0.75
+      let step = max(1, waveformWidth / CGFloat(sampleCount))
       let maxHeight = max(2, proxy.size.height - 8)
       HStack(alignment: .center, spacing: max(1, step * 0.68)) {
         ForEach(0..<sampleCount, id: \.self) { index in
@@ -513,13 +581,13 @@ private struct SignalASIAgentRecordingWaveform: View {
             .frame(width: min(2, step * 0.32), height: barHeight(index: index, maxHeight: maxHeight))
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .overlay(
+      .frame(width: waveformWidth, height: proxy.size.height)
+      .overlay {
         Rectangle()
           .fill((cancelPending ? Color.signalASIAgentVoiceCancel : .white).opacity(0.28))
-          .frame(height: 1),
-        alignment: .center
-      )
+          .frame(height: 1)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
@@ -529,8 +597,9 @@ private struct SignalASIAgentRecordingWaveform: View {
     let primary = (sin(Double(index) * 0.82 + phase) + 1) * 0.5
     let secondary = (sin(Double(index) * 0.37 - phase * 1.45) + 1) * 0.5
     let variation = 0.26 + primary * 0.48 + secondary * 0.26
-    let amplitude = 0.10 + 0.90 * centerEnvelope * variation
-    return max(2, maxHeight * CGFloat(min(1, amplitude)))
+    let animatedLevel = 0.24 + 0.76 * min(1, max(0, amplitude))
+    let barAmplitude = 0.10 + 0.90 * centerEnvelope * variation * animatedLevel
+    return max(2, maxHeight * CGFloat(min(1, barAmplitude)))
   }
 }
 

@@ -3,36 +3,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct AgentTranscriptScrollMetrics: Equatable {
-  var contentMinY: CGFloat = 0
-  var contentMaxY: CGFloat = 0
-  var viewportHeight: CGFloat = 0
-}
-
-private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
-  static let defaultValue = AgentTranscriptScrollMetrics()
-
-  static func reduce(
-    value: inout AgentTranscriptScrollMetrics,
-    nextValue: () -> AgentTranscriptScrollMetrics
-  ) {
-    value = nextValue()
-  }
-}
-
-private extension View {
-  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
-    frame(
-      minWidth: CGFloat(policy.minimumTouchTargetDp),
-      minHeight: CGFloat(policy.minimumTouchTargetDp)
-    )
-    .contentShape(Rectangle())
-  }
-}
-
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -439,8 +411,6 @@ struct AgentHomeView: View {
   }
 
   private static let voiceTranscriptionPendingViewId = "signalasi-voice-transcription-pending"
-  private static let agentTranscriptCoordinateSpace = "signalasi-agent-transcript"
-
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
@@ -468,6 +438,13 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        if store.globalProactiveInboxNewCount() > 0 {
+          SignalASIAgentHomeInsightBarView(
+            count: store.globalProactiveInboxNewCount()
+          )
+          .padding(.horizontal, 10)
+          .padding(.top, 6)
+        }
         if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
           SignalASIAgentHomeSafetyStrip(
             permissionMode: store.agentSafetySettings.permissionMode,
@@ -494,146 +471,33 @@ struct AgentHomeView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .sheet(isPresented: $scanShortcutActive) {
-        AddContactView(
-          autoOpenScanner: true,
-          onAgentAdded: { agentIDs in
-            scanShortcutActive = false
-            scanStatus = t(
-              "signalasi.agent.scan.selecting",
-              "Agent added. Selecting it for this session..."
-            )
-            scanStatusIsError = false
-            focusScannedAgents(agentIDs)
-          }
-        )
-      }
       .background(
-        NavigationLink(
-          destination: SignalASIAgentRecentTasksView(initialTask: recentTaskForDetails),
-          isActive: $recentTasksShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentSessionsView(),
-          isActive: $agentSessionsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SettingsView(),
-          isActive: $agentSettingsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: OnDeviceAgentPermissionsView(),
-          isActive: $agentPermissionsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView {
+        SignalASIAgentHomeNavigationRoutesView(
+          recentTasksShortcutActive: $recentTasksShortcutActive,
+          agentSessionsShortcutActive: $agentSessionsShortcutActive,
+          agentSettingsShortcutActive: $agentSettingsShortcutActive,
+          agentPermissionsShortcutActive: $agentPermissionsShortcutActive,
+          agentModelSelectionShortcutActive: $agentModelSelectionShortcutActive,
+          agentNativeToolsShortcutActive: $agentNativeToolsShortcutActive,
+          agentMemoryShortcutActive: $agentMemoryShortcutActive,
+          agentKnowledgeShortcutActive: $agentKnowledgeShortcutActive,
+          agentScreenContextShortcutActive: $agentScreenContextShortcutActive,
+          agentInsightsShortcutActive: $agentInsightsShortcutActive,
+          chatListShortcutActive: $chatListShortcutActive,
+          contactsShortcutActive: $contactsShortcutActive,
+          discoverShortcutActive: $discoverShortcutActive,
+          recentTaskForDetails: recentTaskForDetails,
+          screen: agentScreenSnapshot.screen,
+          screenSections: agentScreenSnapshot.sections,
+          onModelSelectionChanged: {
             modelSelection = AgentModelSelectionSettings.selection(
               for: store.activeAgentConversationId
             )
           },
-          isActive: $agentModelSelectionShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASINativeToolCatalogView(),
-          isActive: $agentNativeToolsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentMemoryView(),
-          isActive: $agentMemoryShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentKnowledgeView(),
-          isActive: $agentKnowledgeShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIAgentScreenContextDetailView(
-            screen: agentScreenSnapshot.screen,
-            sections: agentScreenSnapshot.sections,
-            onCommand: prefillAgentScreenCommand,
-            onRefresh: refreshAgentScreenContext,
-            t: t
-          ),
-          isActive: $agentScreenContextShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: SignalASIGlobalAgentInsightInboxView(),
-          isActive: $agentInsightsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: ChatListView(),
-          isActive: $chatListShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: ContactsView(),
-          isActive: $contactsShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
-      )
-      .background(
-        NavigationLink(
-          destination: DiscoverView(),
-          isActive: $discoverShortcutActive
-        ) {
-          EmptyView()
-        }
-        .hidden()
+          onScreenCommand: prefillAgentScreenCommand,
+          onRefreshScreen: refreshAgentScreenContext,
+          t: t
+        )
       )
       .onAppear {
         ensureActiveAgentSession()
@@ -695,151 +559,73 @@ struct AgentHomeView: View {
         guard !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         runtimeArtifactError = failure
       }
-      .fileImporter(
-        isPresented: $fileImporterPresented,
-        allowedContentTypes: [.item],
-        allowsMultipleSelection: true
-      ) { result in
-        switch result {
-        case .success(let urls):
-          urls.forEach(addAttachment)
-        case .failure(let error):
-          attachmentError = error.localizedDescription
-        }
-      }
-      .fullScreenCover(isPresented: $cameraPickerPresented) {
-        CameraAttachmentPickerView { attachment in
-          appendAttachment(attachment)
-        }
-      }
-      .sheet(item: $selectedMessageForDetails) { message in
-        MessageDetailView(message: message, contact: contact)
-      }
-      .sheet(item: $homeActionEditorSelection) { selection in
-        SignalASIAgentRuntimeActionEditorSheet(
-          task: selection.task,
-          action: selection.action,
-          t: t,
-          onUpdate: { taskId, actionId, description, input in
-            coordinator.updatePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId,
-              description: description,
-              input: input
-            )
-          },
-          onMove: { taskId, actionId, offset in
-            coordinator.movePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId,
-              offset: offset
-            )
-          },
-          onRemove: { taskId, actionId in
-            coordinator.removePendingLocalNativeAction(
-              taskId: taskId,
-              actionId: actionId
-            )
-          }
-        )
-      }
-      .sheet(item: $runtimeArtifactPreview) { preview in
-        SignalASIRuntimeArtifactPreviewView(preview: preview)
-      }
-      .fileExporter(
-        isPresented: $runtimeArtifactExportPresented,
-        document: runtimeArtifactDocument,
-        contentType: .data,
-        defaultFilename: runtimeArtifactExportFilename
-      ) { result in
-        if case .success(let url) = result,
-           !runtimeArtifactExportSourceURI.isEmpty {
-          coordinator.markDesktopArtifactSaved(
-            sourceURI: runtimeArtifactExportSourceURI,
-            savedURI: url.absoluteString
+      .signalASIAgentHomePresentationRoutes(
+        scanShortcutActive: $scanShortcutActive,
+        fileImporterPresented: $fileImporterPresented,
+        cameraPickerPresented: $cameraPickerPresented,
+        attachmentError: $attachmentError,
+        selectedMessageForDetails: $selectedMessageForDetails,
+        homeActionEditorSelection: $homeActionEditorSelection,
+        runtimeArtifactPreview: $runtimeArtifactPreview,
+        runtimeArtifactDocument: $runtimeArtifactDocument,
+        runtimeArtifactExportPresented: $runtimeArtifactExportPresented,
+        runtimeArtifactExportFilename: $runtimeArtifactExportFilename,
+        runtimeArtifactError: $runtimeArtifactError,
+        runtimeArtifactStatus: $runtimeArtifactStatus,
+        richActionStatus: $richActionStatus,
+        pendingHighRiskApprovalTask: $pendingHighRiskApprovalTask,
+        homeTaskPendingDeletion: $homeTaskPendingDeletion,
+        contact: contact,
+        t: t,
+        onAgentAdded: { agentIDs in
+          scanStatus = t(
+            "signalasi.agent.scan.selecting",
+            "Agent added. Selecting it for this session..."
           )
-          runtimeArtifactExportSourceURI = ""
-        } else if case .failure(let error) = result {
-          runtimeArtifactExportSourceURI = ""
-          runtimeArtifactError = error.localizedDescription
-        }
-      }
-      .alert(
-        t("runtime_artifact.error.title", "Artifact unavailable"),
-        isPresented: Binding(
-          get: { !runtimeArtifactError.isEmpty },
-          set: { if !$0 { runtimeArtifactError = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          runtimeArtifactError = ""
-        }
-      } message: {
-        Text(runtimeArtifactError)
-      }
-      .alert(
-        t("runtime_artifact.status.title", "Artifact"),
-        isPresented: Binding(
-          get: { !runtimeArtifactStatus.isEmpty },
-          set: { if !$0 { runtimeArtifactStatus = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          runtimeArtifactStatus = ""
-        }
-      } message: {
-        Text(runtimeArtifactStatus)
-      }
-      .alert(
-        t("signalasi.agent.action_status.title", "Agent action"),
-        isPresented: Binding(
-          get: { !richActionStatus.isEmpty },
-          set: { if !$0 { richActionStatus = "" } }
-        )
-      ) {
-        Button(t("signalasi.common.done", "Done"), role: .cancel) {
-          richActionStatus = ""
-        }
-      } message: {
-        Text(richActionStatus)
-      }
-      .alert(item: $pendingHighRiskApprovalTask) { task in
-        let action = task.pendingAction
-        let fallbackDescription = t("signalasi.agent.confirmation.untitled", "Phone action")
-        let description = action.map {
-          $0.description.ifBlank(fallbackDescription)
-        } ?? fallbackDescription
-        let target = action?.target.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let detail = target.isEmpty ? description : "\(description)\n\(target)"
-        return Alert(
-          title: Text(t("signalasi.agent.high_risk_confirmation.title", "Confirm high-risk action")),
-          message: Text(detail),
-          primaryButton: .default(
-            Text(t("signalasi.agent.high_risk_confirmation.execute", "Execute"))
-          ) {
-            approveHighRiskTask(task)
-          },
-          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
-        )
-      }
-      .alert(item: $homeTaskPendingDeletion) { task in
-        Alert(
-          title: Text(t("signalasi.agent_task_center.delete_title", "Delete task?")),
-          message: Text(
-            String(
-              format: t(
-                "signalasi.agent_task_center.delete_message",
-                "Delete the task record for \"%@\"? The conversation will remain available."
-              ),
-              task.goal
+          scanStatusIsError = false
+          focusScannedAgents(agentIDs)
+        },
+        onAddAttachment: addAttachment,
+        onAppendAttachment: appendAttachment,
+        onUpdatePendingAction: { taskId, actionId, description, input in
+          coordinator.updatePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId,
+            description: description,
+            input: input
+          )
+        },
+        onMovePendingAction: { taskId, actionId, offset in
+          coordinator.movePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId,
+            offset: offset
+          )
+        },
+        onRemovePendingAction: { taskId, actionId in
+          coordinator.removePendingLocalNativeAction(
+            taskId: taskId,
+            actionId: actionId
+          )
+        },
+        onArtifactExport: { result in
+          if case .success(let url) = result,
+             !runtimeArtifactExportSourceURI.isEmpty {
+            coordinator.markDesktopArtifactSaved(
+              sourceURI: runtimeArtifactExportSourceURI,
+              savedURI: url.absoluteString
             )
-          ),
-          primaryButton: .destructive(Text(t("signalasi.common.delete", "Delete"))) {
-            handleAgentRuntimeTaskAction(.delete, task: task)
-          },
-          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
-        )
-      }
+            runtimeArtifactExportSourceURI = ""
+          } else if case .failure(let error) = result {
+            runtimeArtifactExportSourceURI = ""
+            runtimeArtifactError = error.localizedDescription
+          }
+        },
+        onApproveHighRisk: approveHighRiskTask,
+        onDeleteTask: { task in
+          handleAgentRuntimeTaskAction(.delete, task: task)
+        }
+      )
     }
     .navigationViewStyle(StackNavigationViewStyle())
   }
@@ -1172,11 +958,41 @@ struct AgentHomeView: View {
   }
 
   private var agentOutput: some View {
-    ScrollViewReader { proxy in
-      GeometryReader { viewport in
-        ZStack(alignment: .bottomTrailing) {
-          ScrollView {
-        LazyVStack(spacing: 5) {
+    SignalASIAgentTranscriptScrollView(
+      visibleMessageLimit: $visibleAgentMessageLimit,
+      olderTranscriptAnchor: $olderTranscriptAnchor,
+      transcriptTopLoadTriggered: $transcriptTopLoadTriggered,
+      transcriptAutoFollow: $transcriptAutoFollow,
+      transcriptShowLatestButton: $transcriptShowLatestButton,
+      transcriptContentMinY: $transcriptContentMinY,
+      agentSwipeRequest: agentSwipeRequest,
+      pendingAgentSwipeDirection: $pendingAgentSwipeDirection,
+      activeAgentConversationID: store.activeAgentConversationId,
+      messages: messages,
+      transcriptMessages: transcriptMessages,
+      hasOlderTranscriptMessages: hasOlderTranscriptMessages,
+      latestWaitingIndicatorID: latestWaitingIndicatorID,
+      waitingIndicatorCount: waitingIndicatorCount,
+      voiceTranscriptionPending: voiceTranscriptionPending,
+      waitingForAgentReply: waitingForAgentReply,
+      activeAgentPhase: activeAgentPhase,
+      activeAgentTasks: activeAgentTasks,
+      pageSize: Self.agentTranscriptPageSize,
+      reduceMotion: deviceInputPolicy.reduceMotion,
+      voiceTranscriptionPendingViewID: Self.voiceTranscriptionPendingViewId,
+      replyWaitingViewID: Self.replyWaitingViewId,
+      latestButtonTitle: t("signalasi.agent.latest", "Back to latest"),
+      onLoadOlderTranscriptMessages: loadOlderTranscriptMessages,
+      onMessagesChanged: {
+        if voiceTranscriptionPending && !messages.isEmpty {
+          voiceTranscriptionPending = false
+        }
+        store.markContactRead(contact.id)
+        refreshAgentRuntimeAuditRecords()
+      },
+      onExecutionStateChanged: refreshAgentRuntimeAuditRecords
+    ) {
+      LazyVStack(spacing: 5) {
           if !scanStatus.isEmpty {
             SignalASIAgentScanStatusView(
               message: scanStatus,
@@ -1290,25 +1106,9 @@ struct AgentHomeView: View {
               activeRemoteAgentTask == nil &&
               activeVoiceAgentRuns.isEmpty &&
               recoverableAgentTasksFromOtherSessions.isEmpty {
-            SignalASIAgentEmptyStateView(
+            SignalASIAgentHomeEmptyStatePanel(
               title: t("signalasi.agent.empty.title", "How can I help?"),
-              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
-            )
-            SignalASIAgentHomeQuickActionsView(
-              t: t,
-              onNewSession: createAgentConversation,
-              onOpenSessions: {
-                recentTaskForDetails = nil
-                agentSessionsShortcutActive = true
-              },
-              onScan: {
-                scanShortcutActive = true
-              },
-              onOpenSettings: {
-                agentSettingsShortcutActive = true
-              }
-            )
-            SignalASIAgentHomeReadinessView(
+              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"),
               runningTasks: activeAgentTasks.count,
               callableTargets: availableCallableTargetCount,
               nativeToolSummary: nativeToolSummary,
@@ -1328,6 +1128,26 @@ struct AgentHomeView: View {
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
+              routeTitle: headerModelLabel,
+              routeSubtitle: hasManualSelection
+                ? t("signalasi.agent.route.manual", "Manual route")
+                : t("signalasi.agent.route.automatic", "Automatic route"),
+              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
+                ? t("signalasi.status.ready", "Ready")
+                : t("signalasi.agent.model_selection.choose", "Choose"),
+              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
+              t: t,
+              onNewSession: createAgentConversation,
+              onOpenSessions: {
+                recentTaskForDetails = nil
+                agentSessionsShortcutActive = true
+              },
+              onScan: {
+                scanShortcutActive = true
+              },
+              onOpenSettings: {
+                agentSettingsShortcutActive = true
+              },
               onCyclePermissionMode: cycleAgentPermissionMode,
               onToggleHighRiskGuard: {
                 store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
@@ -1348,26 +1168,66 @@ struct AgentHomeView: View {
               },
               onTaskAction: handleHomeTaskAction,
               onModelSelectionChanged: refreshAgentRouteState,
-              routeTitle: headerModelLabel,
-              routeSubtitle: hasManualSelection
-                ? t("signalasi.agent.route.manual", "Manual route")
-                : t("signalasi.agent.route.automatic", "Automatic route"),
-              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
-                ? t("signalasi.status.ready", "Ready")
-                : t("signalasi.agent.model_selection.choose", "Choose"),
-              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
               onOpenRouteSelection: {
                 agentModelSelectionShortcutActive = true
               },
               onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreenContext: refreshAgentScreenContext,
-              t: t
+              onRefreshScreenContext: refreshAgentScreenContext
             )
             AgentProcessCard(
               activePhase: activeAgentPhase,
               executionPaused: store.agentSafetySettings.executionPaused
             )
           } else {
+            SignalASIAgentExecutionOverviewView(
+              activeRemoteAgentTask: activeRemoteAgentTask,
+              activeExecutionTask: activeExecutionTask,
+              actionQueueItems: agentActionQueueItems,
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              screen: agentScreenSnapshot.screen,
+              screenSections: agentScreenSnapshot.sections,
+              t: t,
+              remoteStatusLabel: remoteAgentStatusLabel,
+              remoteStep: remoteAgentStep,
+              remoteTimelineLine: remoteAgentTimelineLine,
+              phaseLabel: agentPhaseLabel,
+              executionLocationSummary: agentExecutionLocationSummary,
+              executionStep: agentExecutionStep,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
+                )
+              },
+              liveExecutionDuration: { elapsedMillis in
+                executionDuration(elapsedMillis: elapsedMillis)
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              remoteCancellationTitle: { isCancelling in
+                isCancelling
+                  ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                  : t("signalasi.agent.remote_status.cancel", "Cancel task")
+              },
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelExecutionTask: cancelActiveAgentTask,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onEditAction: { item in
+                homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
+                  task: item.task,
+                  action: item.action
+                )
+              },
+              onScreenCommand: prefillAgentScreenCommand,
+              onRefreshScreen: refreshAgentScreenContext
+#if false
             if let activeRemoteAgentTask {
               SignalASIAgentExecutionStatusCard(
                 executor: activeRemoteAgentTask.target,
@@ -1451,23 +1311,63 @@ struct AgentHomeView: View {
               onCommand: prefillAgentScreenCommand,
               onRefresh: refreshAgentScreenContext,
               t: t
+#endif
             )
-            ForEach(transcriptMessages) { message in
-              VStack(alignment: .leading, spacing: 4) {
-                if let mergedSource = mergedSourceLabel(for: message) {
-                  Text(mergedSource)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.signalASITextSecondary)
-                    .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
-                    .accessibilityLabel(mergedSource)
-                }
-                MessageBubble(
-                  message: message,
-                  onActionWithMessage: { message, action in
-                    handleRichAction(action, from: message)
-                  },
-                  onFormSubmit: handleAgentRichForm
+            SignalASIAgentTranscriptMessagesView(
+              messages: transcriptMessages,
+              waitingMessageIDs: waitingMessageIDs,
+              retryingMessageIDs: retryingAgentMessageIDs,
+              t: t,
+              mergedSourceLabel: { mergedSourceLabel(for: $0) },
+              agentTask: { agentTask(for: $0) },
+              remoteAgentTask: { remoteAgentTask(for: $0) },
+              voiceAgentRun: { voiceAgentRun(for: $0) },
+              agentPhaseLabel: agentPhaseLabel,
+              agentExecutionLocationSummary: agentExecutionLocationSummary,
+              agentExecutionStep: agentExecutionStep,
+              remoteAgentStatusLabel: remoteAgentStatusLabel,
+              remoteAgentStep: remoteAgentStep,
+              remoteAgentTimelineLine: remoteAgentTimelineLine,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
                 )
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              isVoiceRunCancelling: { runID in
+                cancellingVoiceRunIDs.contains(runID)
+              },
+              onRichAction: { message, action in
+                handleRichAction(action, from: message)
+              },
+              onFormSubmit: handleAgentRichForm,
+              onCancelAgentTask: cancelActiveAgentTask,
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelVoiceRun: cancelVoiceAgentRun,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onMessageDetails: { message in
+                selectedMessageForDetails = message
+              },
+              onCopyMessage: { message in
+                UIPasteboard.general.string = message.content
+              },
+              onCancelMessageTask: cancelActiveAgentTask,
+              onCancelMessageRemoteTask: cancelRemoteAgentTask,
+              onCancelMessageVoiceRun: cancelVoiceAgentRun,
+              onDeleteMessage: { message in
+                store.deleteMessage(message.id, contactId: contact.id)
+              },
+              onRetryMessage: retryAgentMessage
+            )
+#if false
                 if !message.isMine, !message.isSystem {
                   if let task = agentTask(for: message) {
                     SignalASIAgentExecutionFooterView(
@@ -1619,6 +1519,7 @@ struct AgentHomeView: View {
                 }
               }
             }
+#endif
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1639,166 +1540,8 @@ struct AgentHomeView: View {
             }
           }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 16)
-        .background(
-          GeometryReader { content in
-            Color.clear.preference(
-              key: AgentTranscriptScrollMetricsKey.self,
-              value: AgentTranscriptScrollMetrics(
-                contentMinY: content.frame(in: .named(Self.agentTranscriptCoordinateSpace)).minY,
-                contentMaxY: content.frame(in: .named(Self.agentTranscriptCoordinateSpace)).maxY,
-                viewportHeight: viewport.size.height
-              )
-            )
-          }
-        )
       }
-      .background(Color.signalASIPageBackground)
-      .simultaneousGesture(
-        DragGesture(minimumDistance: 12)
-          .onEnded { value in
-            guard hasOlderTranscriptMessages,
-                  transcriptContentMinY >= -8,
-                  value.translation.height >= 12,
-                  abs(value.translation.height) >= abs(value.translation.width) else {
-              return
-            }
-            loadOlderTranscriptMessages()
-          }
-      )
-      .onChange(of: visibleAgentMessageLimit) { _ in
-        guard let anchor = olderTranscriptAnchor else { return }
-        DispatchQueue.main.async {
-          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(anchor, anchor: .top)
-          }
-          olderTranscriptAnchor = nil
-        }
-      }
-      .onChange(of: agentSwipeRequest) { _ in
-        applyPendingAgentSwipe(with: proxy)
-      }
-      .onChange(of: store.activeAgentConversationId) { _ in
-        visibleAgentMessageLimit = Self.agentTranscriptPageSize
-        olderTranscriptAnchor = nil
-        transcriptTopLoadTriggered = false
-        transcriptAutoFollow = true
-        transcriptShowLatestButton = false
-        DispatchQueue.main.async {
-          guard let last = messages.last else { return }
-          withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-            proxy.scrollTo(last.id, anchor: .bottom)
-          }
-        }
-      }
-      .onAppear {
-        transcriptAutoFollow = true
-        transcriptShowLatestButton = false
-        DispatchQueue.main.async {
-          guard let last = messages.last else { return }
-          proxy.scrollTo(last.id, anchor: .bottom)
-        }
-      }
-      .onChange(of: messages.count) { _ in
-        if voiceTranscriptionPending && !messages.isEmpty {
-          voiceTranscriptionPending = false
-        }
-        if transcriptAutoFollow {
-          if let waitingID = latestWaitingIndicatorID {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(waitingID, anchor: .bottom)
-            }
-          } else if waitingForAgentReply {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
-            }
-          } else if let last = messages.last {
-            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-              proxy.scrollTo(last.id, anchor: .bottom)
-            }
-          }
-        } else if !messages.isEmpty {
-          transcriptShowLatestButton = true
-        }
-        store.markContactRead(contact.id)
-        refreshAgentRuntimeAuditRecords()
-      }
-      .onChange(of: activeAgentPhase) { _ in
-        refreshAgentRuntimeAuditRecords()
-      }
-      .onChange(of: activeAgentTasks) { _ in
-        refreshAgentRuntimeAuditRecords()
-      }
-      .onChange(of: waitingIndicatorCount) { _ in
-        guard let last = transcriptMessages.last else { return }
-        guard transcriptAutoFollow else {
-          transcriptShowLatestButton = true
-          return
-        }
-        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(latestWaitingIndicatorID ?? last.id, anchor: .bottom)
-        }
-      }
-      .onChange(of: voiceTranscriptionPending) { pending in
-        guard pending else { return }
-        transcriptAutoFollow = true
-        transcriptShowLatestButton = false
-        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(Self.voiceTranscriptionPendingViewId, anchor: .bottom)
-        }
-      }
-      .onChange(of: waitingForAgentReply) { waiting in
-        guard waiting else { return }
-        guard transcriptAutoFollow else {
-          transcriptShowLatestButton = true
-          return
-        }
-        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(Self.replyWaitingViewId, anchor: .bottom)
-        }
-      }
-      if transcriptShowLatestButton, let last = messages.last {
-            SignalASIAgentLatestButton(
-              title: t("signalasi.agent.latest", "Back to latest")
-            ) {
-              transcriptAutoFollow = true
-              transcriptShowLatestButton = false
-              withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-                proxy.scrollTo(last.id, anchor: .bottom)
-              }
-            }
-            .padding(.trailing, 16)
-            .padding(.bottom, 12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-          }
-        }
-        .coordinateSpace(name: Self.agentTranscriptCoordinateSpace)
-        .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
-          transcriptContentMinY = metrics.contentMinY
-          let atTop = metrics.contentMinY >= -8
-          let userIsAwayFromLatest = metrics.contentMaxY > metrics.viewportHeight + 56
-          if !atTop {
-            transcriptTopLoadTriggered = false
-          } else if atTop,
-                    userIsAwayFromLatest,
-                    hasOlderTranscriptMessages,
-                    !transcriptTopLoadTriggered {
-            transcriptTopLoadTriggered = true
-            loadOlderTranscriptMessages()
-          }
-          let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 56
-          if nearBottom {
-            transcriptAutoFollow = true
-            transcriptShowLatestButton = false
-          } else {
-            transcriptAutoFollow = false
-            transcriptShowLatestButton = true
-          }
-        }
-      }
-    }
+    )
   }
 
   private func loadOlderTranscriptMessages() {
@@ -1806,35 +1549,6 @@ struct AgentHomeView: View {
     transcriptTopLoadTriggered = transcriptContentMinY >= -8
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize
-  }
-
-  private func applyPendingAgentSwipe(with proxy: ScrollViewProxy) {
-    let direction = pendingAgentSwipeDirection
-    pendingAgentSwipeDirection = ""
-    guard direction == AgentIOSAgentSwipeDirection.up.rawValue ||
-      direction == AgentIOSAgentSwipeDirection.down.rawValue else {
-      return
-    }
-
-    if direction == AgentIOSAgentSwipeDirection.up.rawValue {
-      transcriptAutoFollow = false
-      if hasOlderTranscriptMessages {
-        loadOlderTranscriptMessages()
-      } else if let first = transcriptMessages.first {
-        withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(first.id, anchor: .top)
-        }
-      }
-      transcriptShowLatestButton = !messages.isEmpty
-      return
-    }
-
-    guard let last = messages.last else { return }
-    transcriptAutoFollow = true
-    transcriptShowLatestButton = false
-    withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
-      proxy.scrollTo(last.id, anchor: .bottom)
-    }
   }
 
   private func retryAgentMessage(_ message: ChatMessage) {
@@ -2313,93 +2027,15 @@ struct AgentHomeView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
-      SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
-      VStack(alignment: .center, spacing: 2) {
-        Text("SignalASI")
-          .font(.system(size: 14.5, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-        Text(t("signalasi.agent.brand.subtitle", "Superintelligent agent"))
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
+    SignalASIAgentHomeHeaderView(
+      sessionTitle: headerSessionTitle,
+      modelStatusLabel: headerModelStatusLabel,
+      modelLogoLabel: headerModelLabel,
+      brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
+      modelSelectionDestination: SignalASIAgentModelSelectionView {
+        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
-      Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 2) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
-          Text(headerSessionTitle)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundColor(.signalASIAgentSessionTitle)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(t("agent_sessions_title", "Agent sessions")))
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView {
-            modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-          }
-        ) {
-          HStack(spacing: 3) {
-            Image(systemName: "chevron.down")
-              .font(.system(size: 8, weight: .bold))
-            if let assetName = headerModelAssetName {
-              Image(assetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .accessibilityHidden(true)
-            }
-            Text(headerModelStatusLabel)
-              .lineLimit(1)
-              .minimumScaleFactor(0.72)
-          }
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(t("agent_model_selection_title", "Agent model selection")))
-      }
-      .frame(width: 128, minHeight: 44, alignment: .trailing)
-      NavigationLink(destination: SettingsView()) {
-        Image(systemName: "ellipsis.horizontal")
-          .font(.system(size: 22, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-          .frame(width: 44, height: 44)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(Text(t("agent_more_actions", "More actions")))
-    }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(height: 76)
-    .background(Color.signalASIPageBackground)
-  }
-
-  private var headerLogoSize: CGFloat {
-    let scale: CGFloat
-    switch dynamicTypeSize {
-    case .xSmall:
-      scale = 0.82
-    case .small:
-      scale = 0.90
-    case .medium:
-      scale = 1.00
-    case .large:
-      scale = 1.10
-    case .xLarge:
-      scale = 1.20
-    case .xxLarge:
-      scale = 1.30
-    case .xxxLarge:
-      scale = 1.40
-    default:
-      scale = 1.45
-    }
-    return min(56, max(32, 39 * scale))
+    )
   }
 
   private var headerModelLabel: String {
@@ -2602,6 +2238,7 @@ struct AgentHomeView: View {
   private var agentRuntimePanel: some View {
     SignalASIAgentRuntimePanelView(
       safetySettings: store.agentSafetySettings,
+      taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
       modelPlannerSettings: store.modelPlannerSettings,
       taskBudget: store.agentTaskBudget,
       callableTargets: availableCallableTargetCount,
@@ -2616,6 +2253,7 @@ struct AgentHomeView: View {
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
       auditRecords: agentRuntimeAuditRecords,
       onCyclePermissionMode: cycleAgentPermissionMode,
+      onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
       onToggleHighRiskGuard: {
         store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
       },
@@ -2928,6 +2566,15 @@ struct AgentHomeView: View {
     store.updateAgentSafetySettings { $0.permissionMode = modes[(index + 1) % modes.count] }
   }
 
+  private func cycleAgentTaskExecutionMode() {
+    let modes = AgentTaskExecutionMode.allCases
+    guard let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) else {
+      store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
+      return
+    }
+    store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
+  }
+
   private func refreshAgentRuntimeAuditRecords() {
     agentRuntimeAuditRecords = AgentNativeToolDefaultStores
       .makePersistentStores()
@@ -3205,6 +2852,13 @@ struct AgentHomeView: View {
       recentTasksShortcutActive = true
     case "permission-mode":
       cycleAgentPermissionMode()
+    case "task-execution-mode":
+      let modes = AgentTaskExecutionMode.allCases
+      if let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) {
+        store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
+      } else {
+        store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
+      }
     case "high-risk-guard":
       store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
     case "memory-capture":
@@ -3493,96 +3147,5 @@ struct AgentHomeView: View {
       ),
       sourceTitle
     )
-  }
-}
-
-private struct AgentInsightBanner: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  var unreadTotal: Int
-  var runningTasks: Int
-  var callableTargets: Int
-  var executionPaused: Bool
-  var nativeToolSummary: (total: Int, available: Int)
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 10) {
-        SignalASILogoView(size: 34, cornerRadius: 7)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("SignalASI Agent")
-            .font(.system(size: 15, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
-          Text(summaryText)
-            .font(.system(size: 12))
-            .foregroundColor(.signalASIInsightText)
-            .lineLimit(2)
-        }
-        Spacer()
-      }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
-          AgentStatusChip(title: t("signalasi.agent.status", "Agent"), value: agentStatusText)
-          AgentStatusChip(title: t("cc_metric_native_tools", "Native tools"), value: nativeToolsText)
-        }
-      }
-    }
-    .padding(12)
-    .background(Color.signalASIInsightBackground)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-  }
-
-  private var summaryText: String {
-    if unreadTotal > 0 {
-      return String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
-    }
-    if executionPaused {
-      return t("agent_status_paused_subtitle", "Execution is paused. Resume when you are ready.")
-    }
-    return String(
-      format: t("agent_running_tasks_targets_value", "Running tasks: %d / targets: %d"),
-      runningTasks,
-      callableTargets
-    )
-  }
-
-  private var agentStatusText: String {
-    executionPaused
-      ? t("on_device_agent_status_paused", "Paused")
-      : t("on_device_agent_status_running", "Running")
-  }
-
-  private var nativeToolsText: String {
-    "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct AgentStatusChip: View {
-  var title: String
-  var value: String
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Text(title)
-        .foregroundColor(.signalASITextSecondary)
-      Text(value)
-        .fontWeight(.bold)
-        .foregroundColor(.signalASITextPrimary)
-    }
-    .font(.system(size: 11))
-    .lineLimit(1)
-    .minimumScaleFactor(0.85)
-    .padding(.horizontal, 9)
-    .padding(.vertical, 6)
-    .background(Color.signalASISurface)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
