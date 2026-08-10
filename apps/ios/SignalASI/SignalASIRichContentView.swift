@@ -1104,6 +1104,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func tableRow(_ values: [String], header: Bool, columnCount: Int, rowIndex: Int) -> some View {
+    let columnWidth = tableColumnWidth(columnCount)
     HStack(spacing: 0) {
       ForEach(0..<columnCount, id: \.self) { index in
         let value = index < values.count ? values[index] : ""
@@ -1112,12 +1113,17 @@ private struct SignalASIRichBlockView: View {
           .foregroundColor(.signalASITextPrimary)
           .textSelection(.enabled)
           .multilineTextAlignment(isNumeric(value) && !header ? .trailing : .leading)
-          .frame(width: 112, alignment: isNumeric(value) && !header ? .trailing : .leading)
+          .frame(width: columnWidth, alignment: isNumeric(value) && !header ? .trailing : .leading)
           .padding(.horizontal, 8)
           .padding(.vertical, 7)
           .background(header ? Color.signalASISearchBackground : rowColor(rowIndex))
       }
     }
+  }
+
+  private func tableColumnWidth(_ columnCount: Int) -> CGFloat {
+    let available = max(0, UIScreen.main.bounds.width - 48)
+    return min(max(available / CGFloat(max(columnCount, 1)), 120), 280)
   }
 
   private func previewPlaceholder(_ text: String) -> some View {
