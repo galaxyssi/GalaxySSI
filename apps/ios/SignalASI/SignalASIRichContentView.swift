@@ -645,13 +645,22 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var chartBlock: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if !block.title.isEmpty {
-        selectableText(block.title)
-          .font(.subheadline.weight(.semibold))
-      }
-      SignalASIRichBarChartView(columns: block.columns, rows: block.rows)
-        .accessibilityLabel(String(format: t("rich_output_chart_description", "Chart with %d data points"), block.rows.count))
+    let hasNumbers = block.rows.contains { row in
+      row.dropFirst().contains { isNumeric($0) }
+    }
+    if hasNumbers {
+      return AnyView(
+        VStack(alignment: .leading, spacing: 8) {
+          if !block.title.isEmpty {
+            selectableText(block.title)
+              .font(.subheadline.weight(.semibold))
+          }
+          SignalASIRichBarChartView(columns: block.columns, rows: block.rows)
+            .accessibilityLabel(String(format: t("rich_output_chart_description", "Chart with %d data points"), block.rows.count))
+        }
+      )
+    } else {
+      return AnyView(tableBlock)
     }
   }
 
@@ -1470,6 +1479,7 @@ private struct SignalASIRichResourceRow: View {
 private struct SignalASIRichBarChartView: View {
   var columns: [String]
   var rows: [[String]]
+  @State private var reveal: CGFloat = 0
 
   private var points: [SignalASIRichChartPoint] {
     rows.prefix(Self.maxPoints).compactMap { row in
@@ -1479,8 +1489,8 @@ private struct SignalASIRichBarChartView: View {
     }
   }
 
-  private var maximum: Double {
-    max(1, points.flatMap(\.values).map { abs($0) }.max() ?? 1)
+  private var seriesCount: Int {
+    points.max { $0.values.count < $1.values.count }?.values.count ?? 1
   }
 
   var body: some View {
@@ -1500,30 +1510,13 @@ private struct SignalASIRichBarChartView: View {
           }
         }
       }
-
-      ForEach(Array(points.enumerated()), id: \.offset) { _, point in
-        HStack(spacing: 8) {
-          Text(point.label)
-            .font(.caption2)
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
-            .frame(width: 58, alignment: .leading)
-          GeometryReader { proxy in
-            HStack(alignment: .center, spacing: 3) {
-              ForEach(Array(point.values.enumerated()), id: \.offset) { valueIndex, value in
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                  .fill(seriesColor(valueIndex))
-                  .frame(width: max(3, proxy.size.width * CGFloat(min(abs(value) / maximum, 1))), height: 12)
-              }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
-          .frame(height: 14)
-          Text(point.values.map { SignalASIRichContentLink.numberFormatter.string(from: NSNumber(value: $0)) ?? "\($0)" }.joined(separator: " / "))
-            .font(.caption2)
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
-            .frame(width: 54, alignment: .trailing)
+      Canvas { context, size in
+        drawChart(&context, size: size)
+      }
+      .frame(height: 230)
+      .onAppear {
+        withAnimation(.easeOut(duration: 0.42)) {
+          reveal = 1
         }
       }
     }
@@ -1538,6 +1531,69 @@ private struct SignalASIRichBarChartView: View {
 
   private func seriesColor(_ index: Int) -> Color {
     Self.seriesColors[index % Self.seriesColors.count]
+  }
+
+  private func drawChart(_ context: inout GraphicsContext, size: CGSize) {
+    guard !points.isEmpty else { return }
+
+    let left: CGFloat = 12
+    let right = max(left + 1, size.width - 12)
+    let top: CGFloat = 18
+    let bottom = max(top + 1, size.height - 34)
+    let chartHeight = max(1, bottom - top)
+    let allValues = points.flatMap(\.values)
+    let minimum = min(0, allValues.min() ?? 0)
+    let maximum = max(0, allValues.max() ?? 0)
+    let range = max(1, maximum - minimum)
+
+    var grid = Path()
+    for step in 0...4 {
+      let y = top + chartHeight * CGFloat(step) / 4
+      grid.move(to: CGPoint(x: left, y: y))
+      grid.addLine(to: CGPoint(x: right, y: y))
+    }
+    context.stroke(grid, with: .color(Color.signalASISeparator), lineWidth: 1)
+
+    let groupWidth = (right - left) / CGFloat(max(points.count, 1))
+    let gap: CGFloat = 2
+    let barWidth = max(1, (groupWidth * 0.72 - gap * CGFloat(seriesCount - 1)) / CGFloat(seriesCount))
+    let zeroY = bottom - CGFloat((0 - minimum) / range) * chartHeight
+
+    for (pointIndex, point) in points.enumerated() {
+      let groupStart = left + CGFloat(pointIndex) * groupWidth + groupWidth * 0.14
+      for (seriesIndex, value) in point.values.enumerated() {
+        let x = groupStart + CGFloat(seriesIndex) * (barWidth + gap)
+        let valueY = bottom - CGFloat((value - minimum) / range) * chartHeight
+        let animatedY = zeroY + (valueY - zeroY) * reveal
+        let rect = CGRect(
+          x: x,
+          y: min(zeroY, animatedY),
+          width: barWidth,
+          height: max(1, abs(animatedY - zeroY))
+        )
+        context.fill(
+          Path(roundedRect: rect, cornerRadius: 3),
+          with: .color(seriesColor(seriesIndex))
+        )
+      }
+
+      if pointIndex % labelStride(points.count) == 0 {
+        let label = String(point.label.prefix(12))
+        context.draw(
+          Text(label)
+            .font(.system(size: 11))
+            .foregroundColor(.signalASITextSecondary),
+          at: CGPoint(x: left + CGFloat(pointIndex) * groupWidth + groupWidth / 2, y: size.height - 12),
+          anchor: .center
+        )
+      }
+    }
+  }
+
+  private func labelStride(_ count: Int) -> Int {
+    if count <= 6 { return 1 }
+    if count <= 12 { return 2 }
+    return 3
   }
 
   private static let maxPoints = 24
