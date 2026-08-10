@@ -1342,6 +1342,55 @@ struct AgentHomeView: View {
               executionPaused: store.agentSafetySettings.executionPaused
             )
           } else {
+            SignalASIAgentExecutionOverviewView(
+              activeRemoteAgentTask: activeRemoteAgentTask,
+              activeExecutionTask: activeExecutionTask,
+              actionQueueItems: agentActionQueueItems,
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              screen: agentScreenSnapshot.screen,
+              screenSections: agentScreenSnapshot.sections,
+              t: t,
+              remoteStatusLabel: remoteAgentStatusLabel,
+              remoteStep: remoteAgentStep,
+              remoteTimelineLine: remoteAgentTimelineLine,
+              phaseLabel: agentPhaseLabel,
+              executionLocationSummary: agentExecutionLocationSummary,
+              executionStep: agentExecutionStep,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
+                )
+              },
+              liveExecutionDuration: { elapsedMillis in
+                executionDuration(elapsedMillis: elapsedMillis)
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              remoteCancellationTitle: { isCancelling in
+                isCancelling
+                  ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                  : t("signalasi.agent.remote_status.cancel", "Cancel task")
+              },
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelExecutionTask: cancelActiveAgentTask,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onEditAction: { item in
+                homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
+                  task: item.task,
+                  action: item.action
+                )
+              },
+              onScreenCommand: prefillAgentScreenCommand,
+              onRefreshScreen: refreshAgentScreenContext
+#if false
             if let activeRemoteAgentTask {
               SignalASIAgentExecutionStatusCard(
                 executor: activeRemoteAgentTask.target,
@@ -1425,6 +1474,7 @@ struct AgentHomeView: View {
               onCommand: prefillAgentScreenCommand,
               onRefresh: refreshAgentScreenContext,
               t: t
+#endif
             )
             ForEach(transcriptMessages) { message in
               VStack(alignment: .leading, spacing: 4) {

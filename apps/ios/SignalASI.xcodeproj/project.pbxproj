@@ -132,6 +132,7 @@
     A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */; };
     A10000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */; };
     A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */; };
+    A10000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */; };
     A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001435 /* SignalASIAgentComposerView.swift */; };
     A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */; };
     A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */; };
@@ -889,6 +890,7 @@
     A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeReadinessView.swift; sourceTree = "<group>"; };
     A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeEmptyStatePanel.swift; sourceTree = "<group>"; };
     A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeQuickActionsView.swift; sourceTree = "<group>"; };
+    A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentExecutionOverviewView.swift; sourceTree = "<group>"; };
     A20000000000000000001435 /* SignalASIAgentComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerView.swift; sourceTree = "<group>"; };
     A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerUiPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScreenContextView.swift; sourceTree = "<group>"; };
@@ -1971,6 +1973,7 @@
         A20000000000000000001600 /* SignalASIAgentHomeReadinessView.swift */,
         A20000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift */,
         A20000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift */,
+        A20000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift */,
         A20000000000000000001435 /* SignalASIAgentComposerView.swift */,
         A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */,
         A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */,
@@ -2851,6 +2854,7 @@
         A10000000000000000001600 /* SignalASIAgentHomeReadinessView.swift in Sources */,
         A10000000000000000001800 /* SignalASIAgentHomeEmptyStatePanel.swift in Sources */,
         A10000000000000000001601 /* SignalASIAgentHomeQuickActionsView.swift in Sources */,
+        A10000000000000000001810 /* SignalASIAgentExecutionOverviewView.swift in Sources */,
         A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */,
         A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */,
         A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */,
