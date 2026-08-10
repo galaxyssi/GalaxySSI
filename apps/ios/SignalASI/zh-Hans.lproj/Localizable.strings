@@ -107,6 +107,10 @@
 "agent_toolbox_meta" = "%@ / %@ 风险";
 "agent_toolbox_action_hint" = "点击使用此示例";
 "agent_toolbox_example_read_screen" = "总结当前屏幕";
+"agent_toolbox_example_tap" = "点击第一个";
+"agent_toolbox_example_type" = "输入 hello";
+"agent_toolbox_example_swipe" = "向上滑动";
+"agent_toolbox_example_long_press" = "长按第一个";
 "agent_toolbox_example_copy_screen" = "复制屏幕文字";
 "agent_toolbox_example_paste" = "粘贴剪贴板";
 "agent_toolbox_example_delete" = "清空文字";
@@ -117,6 +121,7 @@
 "agent_toolbox_example_open_app" = "打开电话";
 "agent_toolbox_example_open_url" = "打开网址 https://example.com";
 "agent_toolbox_example_set_alarm" = "设置闹钟 07:30";
+"agent_toolbox_example_reply_notification" = "回复通知 谢谢";
 "agent_section_action_queue" = "动作队列";
 "agent_action_queue_empty" = "暂无活动 Agent 计划";
 "agent_action_queue_meta" = "%@ / %@ 风险";
@@ -3892,4 +3897,7 @@
 "signalasi.capability.owned_agent_long_press" = "Agent 主页面长按";
 "signalasi.agent.back.completed" = "SignalASI Agent 页面已返回。";
 "signalasi.agent.back.nothing_to_dismiss" = "当前没有可关闭的 SignalASI Agent 页面内容。";
+"agent_screen_action_task_execution_mode" = "任务执行方式";
+"agent_screen_action_task_execution_mode_detail" = "切换 Agent 仅规划或自动完成模式";
 "signalasi.capability.owned_agent_navigation" = "Agent 主页面导航";
+"agent_safety_task_execution_value" = "任务执行方式：%@";

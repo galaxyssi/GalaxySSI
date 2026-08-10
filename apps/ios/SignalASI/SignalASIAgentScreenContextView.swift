@@ -484,6 +484,16 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: "cycle Agent permission mode"
       ),
       commandRow(
+        id: "task-execution-mode",
+        title: t("agent_screen_action_task_execution_mode", "Task execution mode"),
+        detail: t(
+          "agent_screen_action_task_execution_mode_detail",
+          "cycle Agent plan-only or auto-complete mode"
+        ),
+        systemImage: "play.rectangle",
+        command: "cycle Agent task execution mode"
+      ),
+      commandRow(
         id: "high-risk-guard",
         title: t("agent_screen_action_high_risk_guard", "High-risk guard"),
         detail: t("agent_screen_action_high_risk_guard_detail", "toggle high-risk action protection"),
