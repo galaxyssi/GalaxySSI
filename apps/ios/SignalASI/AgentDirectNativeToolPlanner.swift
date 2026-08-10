@@ -1736,6 +1736,18 @@ enum AgentSecurityStatusCommand {
   }
 }
 
+enum AgentPermissionChecklistCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "permission checklist", "show permission checklist", "check permissions",
+         "agent permissions", "show agent permissions", "missing permissions":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))
