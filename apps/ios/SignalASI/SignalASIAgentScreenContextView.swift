@@ -56,9 +56,11 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     attachments: [SignalASIDraftAttachment],
     unreadTotal: Int,
     screenObservationAllowed: Bool,
+    snapshotAgeMillis: Int64 = 0,
     t: (String, String) -> String,
-    snapshotAgeMillis: Int64 = 0
+    clipboard: AgentClipboardContext = AgentClipboardContext()
   ) -> SignalASIAgentScreenContextSnapshot {
+    let resolvedClipboard = screenObservationAllowed ? clipboard : AgentClipboardContext()
     let visibleTexts = screenObservationAllowed
       ? visibleTextValues(
         messages: messages,
@@ -83,6 +85,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       sensitiveFlagCount: 0,
       visibleTexts: visibleTexts,
       selectedText: "",
+      clipboard: resolvedClipboard,
       isAccessibilityEnabled: screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis
     )
@@ -97,6 +100,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         inputRows: inputRows,
         scrollRows: scrollRows,
         launchRows: launchRows,
+        clipboard: resolvedClipboard,
         t: t
       )
     )
@@ -108,6 +112,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     inputRows: [SignalASIAgentScreenDetailRow],
     scrollRows: [SignalASIAgentScreenDetailRow],
     launchRows: [SignalASIAgentScreenDetailRow],
+    clipboard: AgentClipboardContext,
     t: (String, String) -> String
   ) -> [SignalASIAgentScreenDetailSection] {
     let visibleRows = visibleTexts.prefix(8).enumerated().map { index, value in
@@ -136,15 +141,15 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       SignalASIAgentScreenDetailSection(
         id: "clipboard",
         title: t("agent_screen_clipboard", "Clipboard"),
-        rows: [
+        rows: clipboard.hasText ? [
           SignalASIAgentScreenDetailRow(
             id: "clipboard-paste",
             title: t("agent_screen_clipboard", "Clipboard"),
-            detail: t("agent_screen_clipboard_ios_summary", "paste clipboard"),
+            detail: clipboardDetail(clipboard, t: t),
             systemImage: "doc.on.clipboard",
             command: "paste clipboard"
           )
-        ]
+        ] : []
       ),
       SignalASIAgentScreenDetailSection(
         id: "notifications",
@@ -217,6 +222,23 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       )
     ]
     return sections.filter { !$0.rows.isEmpty }
+  }
+
+  private static func clipboardDetail(
+    _ clipboard: AgentClipboardContext,
+    t: (String, String) -> String
+  ) -> String {
+    if !clipboard.sensitiveFlags.isEmpty {
+      return String(
+        format: t("agent_screen_clipboard_sensitive_ios", "%d chars / sensitive content"),
+        clipboard.textLength
+      )
+    }
+    return String(
+      format: t("agent_screen_clipboard_summary_ios", "%d chars / %@"),
+      clipboard.textLength,
+      clipboard.preview.ifBlank(clipboard.textHash)
+    )
   }
 
   private static func visibleTextValues(

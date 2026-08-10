@@ -75,6 +75,7 @@ struct AgentHomeView: View {
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
+  @State private var agentClipboardContext = AgentClipboardContext()
   @State private var agentScreenContextCapturedAtMillis =
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
 
@@ -2336,13 +2337,17 @@ struct AgentHomeView: View {
       unreadTotal: unreadTotal,
       screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis,
-      t: t
+      t: t,
+      clipboard: agentClipboardContext
     )
   }
 
   private func refreshAgentScreenContext() {
     let capturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     agentScreenContextCapturedAtMillis = capturedAtMillis
+    agentClipboardContext = store.agentSafetySettings.screenObservationAllowed
+      ? AgentClipboardContext.fromText(UIPasteboard.general.string ?? "")
+      : AgentClipboardContext()
     coordinator.updateAgentScreenContext(makeAgentScreenSnapshot(snapshotAgeMillis: 0).screen)
   }
 
