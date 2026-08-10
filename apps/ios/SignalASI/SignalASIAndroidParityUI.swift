@@ -2302,9 +2302,11 @@ struct AgentHomeView: View {
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_sessions_title", "Agent sessions")))
         NavigationLink(
           destination: SignalASIAgentModelSelectionView {
             modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
@@ -2327,9 +2329,11 @@ struct AgentHomeView: View {
           }
           .font(.system(size: 10, weight: .regular))
           .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+          .frame(maxWidth: .infinity, minHeight: 30, alignment: .trailing)
+          .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_model_selection_title", "Agent model selection")))
       }
       .frame(width: 128, minHeight: 44, alignment: .trailing)
       NavigationLink(destination: SettingsView()) {
@@ -2339,6 +2343,7 @@ struct AgentHomeView: View {
           .frame(width: 44, height: 44)
       }
       .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("agent_more_actions", "More actions")))
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
