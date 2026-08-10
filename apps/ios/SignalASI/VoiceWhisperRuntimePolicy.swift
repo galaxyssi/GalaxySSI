@@ -169,13 +169,6 @@ enum VoiceWhisperRuntimePolicyEngine {
       reasons.append("Critical thermal pressure blocks local Whisper")
       return remoteOrUnavailable(input, reasons: reasons)
     }
-    if let battery = environment.batteryPercent,
-      battery <= criticalBatteryPercent,
-      !environment.charging {
-      reasons.append("Critical battery level blocks sustained local inference")
-      return remoteOrUnavailable(input, reasons: reasons)
-    }
-
     switch input.userMode {
     case .automatic, .fast:
       guard let fast = realtime.first else {
@@ -310,7 +303,6 @@ enum VoiceWhisperRuntimePolicyEngine {
   private static func shouldRunSecondPass(_ environment: VoiceWhisperRuntimeEnvironment) -> Bool {
     environment.foreground &&
       environment.thermalStatus < thermalSevere &&
-      (environment.batteryPercent == nil || environment.charging || environment.batteryPercent! >= lowBatteryPercent) &&
       environment.decodeQueueDepth == 0 &&
       (environment.highRiskTask || environment.utteranceDurationMillis >= minSecondPassAudioMillis)
   }
@@ -382,8 +374,6 @@ enum VoiceWhisperRuntimePolicyEngine {
   private static let minPartialIntervalMillis: Int64 = 400
   private static let maxPartialIntervalMillis: Int64 = 8_000
   private static let minSecondPassAudioMillis: Int64 = 3_000
-  private static let lowBatteryPercent = 20
-  private static let criticalBatteryPercent = 5
   private static let thermalModerate = 2
   private static let thermalSevere = 3
   private static let thermalCritical = 4
