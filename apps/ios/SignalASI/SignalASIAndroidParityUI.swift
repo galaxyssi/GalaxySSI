@@ -199,6 +199,17 @@ struct AgentHomeView: View {
     return (tools.count, available)
   }
 
+  private var callableAgentTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
+  private var availableCallableTargetCount: Int {
+    callableAgentTargets.filter { AgentConnectorRouteSelector.isDeliverable($0) }.count
+  }
+
   private var canSend: Bool {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
   }
@@ -1001,7 +1012,7 @@ struct AgentHomeView: View {
             )
             SignalASIAgentHomeReadinessView(
               runningTasks: activeAgentTasks.count,
-              callableTargets: store.visibleContacts.filter { $0.isCommunicable }.count,
+              callableTargets: availableCallableTargetCount,
               nativeToolSummary: nativeToolSummary,
               screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
               executionPaused: store.agentSafetySettings.executionPaused,
@@ -1930,7 +1941,7 @@ struct AgentHomeView: View {
       safetySettings: store.agentSafetySettings,
       modelPlannerSettings: store.modelPlannerSettings,
       taskBudget: store.agentTaskBudget,
-      callableTargets: store.visibleContacts.count,
+      callableTargets: availableCallableTargetCount,
       currentGoal: draft,
       recentTasks: agentRuntimeTasks,
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
