@@ -78,6 +78,29 @@ internal class Lfm25QnnDeploymentStore private constructor(
     fun isInstalled(profile: LocalModelRuntimeProfile): Boolean =
         LocalModelQnnMemoryPolicy.appliesTo(profile) && installedManifest()?.modelId == profile.id
 
+    fun partialDownloadFile(): File {
+        root.mkdirs()
+        require(root.isDirectory)
+        return File(root, PARTIAL_DOWNLOAD_FILE_NAME)
+    }
+
+    fun partialDownloadBytes(): Long = partialDownloadFile().length().coerceAtLeast(0L)
+
+    fun availableBytes(): Long {
+        root.mkdirs()
+        return root.usableSpace
+    }
+
+    fun requiredDownloadBytes(estimatedArchiveBytes: Long): Long {
+        val remainingArchive = (estimatedArchiveBytes - partialDownloadBytes()).coerceAtLeast(0L)
+        val extractionBytes = estimatedArchiveBytes.coerceAtMost(Lfm25QnnDeploymentManifest.MAX_INSTALLED_BYTES)
+        return safeAdd(safeAdd(remainingArchive, extractionBytes), MINIMUM_FREE_SPACE_BYTES)
+    }
+
+    fun deletePartialDownload() {
+        safeDelete(partialDownloadFile())
+    }
+
     fun runtimeArtifact(profile: LocalModelRuntimeProfile): Lfm25QnnRuntimeArtifact {
         require(LocalModelQnnMemoryPolicy.appliesTo(profile))
         val manifest = requireNotNull(installedManifest()) {
@@ -98,6 +121,7 @@ internal class Lfm25QnnDeploymentStore private constructor(
 
     fun delete() {
         safeDelete(installationDirectory())
+        safeDelete(partialDownloadFile())
     }
 
     private fun extract(
@@ -193,10 +217,15 @@ internal class Lfm25QnnDeploymentStore private constructor(
         ): Lfm25QnnDeploymentStore = Lfm25QnnDeploymentStore(root, signatureVerifier)
 
         private const val ROOT_DIRECTORY = "local-model-qnn"
+        private const val PARTIAL_DOWNLOAD_FILE_NAME = "lfm2.5-2.6b-qnn-w4a8-sm8850.zip.part"
         private const val COPY_BUFFER_BYTES = 1024 * 1024
         private const val MAX_PACKAGE_ENTRIES = 96
         private const val MAX_SINGLE_FILE_BYTES = 3L * 1024L * 1024L * 1024L
         private const val MAX_MANIFEST_BYTES = 256L * 1024L
+        private const val MINIMUM_FREE_SPACE_BYTES = 512L * 1024L * 1024L
+
+        private fun safeAdd(left: Long, right: Long): Long =
+            if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
     }
 }
 
