@@ -1368,87 +1368,54 @@ struct AgentHomeView: View {
               executionPaused: store.agentSafetySettings.executionPaused
             )
           } else {
-            if let activeRemoteAgentTask {
-              SignalASIAgentExecutionStatusCard(
-                executor: activeRemoteAgentTask.target,
-                status: remoteAgentStatusLabel(activeRemoteAgentTask.status),
-                location: activeRemoteAgentTask.location,
-                step: remoteAgentStep(activeRemoteAgentTask),
-                duration: executionDuration(
-                  startedAtMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
-                    ?? activeRemoteAgentTask.updatedAtMillis,
-                  updatedAtMillis: activeRemoteAgentTask.updatedAtMillis
-                ),
-                liveDurationStartMillis: activeRemoteAgentTask.history.first?.updatedAtMillis
-                  ?? activeRemoteAgentTask.updatedAtMillis,
-                liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
-                detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
-                canResume: false,
-                resumeTitle: "",
-                canCancel: activeRemoteAgentTask.isCancellable &&
-                  !cancellingRemoteTaskIDs.contains(activeRemoteAgentTask.id),
-                cancelTitle: cancellingRemoteTaskIDs.contains(activeRemoteAgentTask.id)
+            SignalASIAgentExecutionOverviewView(
+              activeRemoteAgentTask: activeRemoteAgentTask,
+              activeExecutionTask: activeExecutionTask,
+              actionQueueItems: agentActionQueueItems,
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              screen: agentScreenSnapshot.screen,
+              screenSections: agentScreenSnapshot.sections,
+              t: t,
+              remoteStatusLabel: remoteAgentStatusLabel,
+              remoteStep: remoteAgentStep,
+              remoteTimelineLine: remoteAgentTimelineLine,
+              phaseLabel: agentPhaseLabel,
+              executionLocationSummary: agentExecutionLocationSummary,
+              executionStep: agentExecutionStep,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
+                )
+              },
+              liveExecutionDuration: { elapsedMillis in
+                executionDuration(elapsedMillis: elapsedMillis)
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              remoteCancellationTitle: { isCancelling in
+                isCancelling
                   ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
                   : t("signalasi.agent.remote_status.cancel", "Cancel task")
-              ) {
-                // Remote tasks resume through the Desktop's next status event.
-              } onCancel: {
-                cancelRemoteAgentTask(activeRemoteAgentTask)
-              }
-            }
-            if let activeExecutionTask {
-              SignalASIAgentExecutionStatusCard(
-                executor: activeExecutionTask.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
-                status: agentPhaseLabel(activeExecutionTask.phase),
-                location: agentExecutionLocationSummary(activeExecutionTask),
-                step: agentExecutionStep(activeExecutionTask),
-                duration: executionDuration(
-                  startedAtMillis: activeExecutionTask.createdAtMillis,
-                  updatedAtMillis: activeExecutionTask.updatedAtMillis
-                ),
-                liveDurationStartMillis: activeExecutionTask.createdAtMillis,
-                liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
-                detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                details: activeExecutionTask.executionLog,
-                canResume: false,
-                resumeTitle: "",
-                canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
-                cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
-                onResume: {},
-                onCancel: {
-                  cancelActiveAgentTask(activeExecutionTask)
-                },
-                timelineActions: agentTimelineActions(for: activeExecutionTask),
-                timelineActionTitle: { agentTimelineActionTitle($0) },
-                timelineActionIcon: { agentTimelineActionIcon($0) },
-                onTimelineAction: { action in
-                  runAgentTimelineAction(action, task: activeExecutionTask)
-                }
-              }
-            }
-            if !agentActionQueueItems.isEmpty {
-              SignalASIAgentActionQueueCard(
-                items: agentActionQueueItems,
-                onEditAction: { item in
-                  homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
-                    task: item.task,
-                    action: item.action
-                  )
-                },
-                t: t
-              )
-            }
-            AgentProcessCard(
-              activePhase: activeAgentPhase,
-              executionPaused: store.agentSafetySettings.executionPaused
-            )
-            SignalASIAgentScreenContextCard(
-              screen: agentScreenSnapshot.screen,
-              sections: agentScreenSnapshot.sections,
-              onCommand: prefillAgentScreenCommand,
-              onRefresh: refreshAgentScreenContext,
-              t: t
+              },
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelExecutionTask: cancelActiveAgentTask,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onEditAction: { item in
+                homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
+                  task: item.task,
+                  action: item.action
+                )
+              },
+              onScreenCommand: prefillAgentScreenCommand,
+              onRefreshScreen: refreshAgentScreenContext
             )
             ForEach(transcriptMessages) { message in
               VStack(alignment: .leading, spacing: 4) {
