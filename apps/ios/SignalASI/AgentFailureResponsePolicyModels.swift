@@ -310,14 +310,14 @@ enum AgentFailureRecoveryRichContent {
     prompt: String? = nil,
     chinese: Bool = false
   ) -> AgentAction? {
-    let availableTargets = targets.filter { $0.status == .available }
+    let availableTargets = targets.filter(AgentConnectorRouteSelector.isDeliverable)
     let current = canonical(payload.agentId)
     let target: AgentCallableTarget?
     switch payload.action {
     case .switchAgent:
-      target = availableTargets.first { canonical($0.id) != current }
+      target = availableTargets.first { !matches($0, identifier: current) }
     case .retry, .degrade, .diagnostics:
-      target = availableTargets.first { canonical($0.id) == current }
+      target = availableTargets.first { matches($0, identifier: current) }
     }
     guard let target else { return nil }
     let resolvedPrompt = prompt ?? AgentFailureRecoveryPolicy.instruction(payload: payload, chinese: chinese)
@@ -361,12 +361,19 @@ enum AgentFailureRecoveryRichContent {
   }
 
   private static func canonical(_ value: String) -> String {
-    value
+    let suffix = value
       .split(separator: ":")
       .last
-      .map(String.init)?
-      .lowercased()
-      .replacingOccurrences(of: "-", with: "") ?? ""
+      .map(String.init) ?? value
+    return suffix.lowercased().unicodeScalars
+      .filter { CharacterSet.alphanumerics.contains($0) }
+      .map(String.init)
+      .joined()
+  }
+
+  private static func matches(_ target: AgentCallableTarget, identifier: String) -> Bool {
+    guard !identifier.isEmpty else { return false }
+    return canonical(target.id) == identifier || canonical(target.title) == identifier
   }
 
   private static func normalizedToken(_ value: String) -> String {
