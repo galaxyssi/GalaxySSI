@@ -58,15 +58,6 @@ struct SignalASIExecutionPolicyView: View {
       ) {
         AgentSafetySettingsView()
       }
-      SignalASISecurityNavigationRow(
-        title: t("cc_task_budget_title", "Task budget"),
-        subtitle: t("cc_task_budget_subtitle", "Limit time, cost, tokens, data, battery, and memory for each task"),
-        systemImage: "clock.arrow.circlepath",
-        tint: .purple,
-        badge: t(store.agentTaskBudget.profile.displayName, store.agentTaskBudget.profile.displayName)
-      ) {
-        AgentTaskBudgetSettingsView()
-      }
       SignalASIExecutionPolicyToggleRow(
         title: t("on_device_agent_high_risk_guard", "High-risk Guard"),
         subtitle: t("on_device_agent_high_risk_guard_subtitle", "Always protect payments, deletion, privacy sharing, installation, and security changes"),
