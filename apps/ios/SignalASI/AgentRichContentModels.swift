@@ -54,7 +54,7 @@ struct AgentRichAction: Codable, Equatable, Identifiable {
     self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)).ifBlank("action")
     self.label = String(label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
     self.verb = String(verb.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(80))
-    self.value = String(value.prefix(24_000))
+    self.value = String(value.prefix(Self.maximumValue))
     self.style = String(style.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)).ifBlank("default")
   }
 
@@ -68,6 +68,8 @@ struct AgentRichAction: Codable, Equatable, Identifiable {
       style: try container.decodeIfPresent(String.self, forKey: .style) ?? "default"
     )
   }
+
+  private static let maximumValue = 8_000
 }
 
 struct AgentRichField: Codable, Equatable, Identifiable {
