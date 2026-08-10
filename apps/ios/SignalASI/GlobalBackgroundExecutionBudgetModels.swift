@@ -28,9 +28,6 @@ enum GlobalBackgroundWorkKind: String, Codable, CaseIterable, Identifiable {
 
 enum GlobalBackgroundDeferralReason: String, Codable, CaseIterable, Identifiable {
   case none = "NONE"
-  case powerSave = "POWER_SAVE"
-  case criticalBattery = "CRITICAL_BATTERY"
-  case lowBattery = "LOW_BATTERY"
   case networkUnavailable = "NETWORK_UNAVAILABLE"
   case networkUnvalidated = "NETWORK_UNVALIDATED"
   case meteredNetwork = "METERED_NETWORK"
@@ -79,12 +76,6 @@ struct GlobalBackgroundExecutionDecision: Codable, Equatable {
 }
 
 enum GlobalBackgroundExecutionBudgetPolicy {
-  static let criticalBatteryPercent = 14
-  static let lowBatteryPercent = 24
-  static let powerSaveRetryMillis: Int64 = 30 * 60 * 1_000
-  static let criticalBatteryRetryMillis: Int64 = 60 * 60 * 1_000
-  static let lowBatteryReasoningRetryMillis: Int64 = 20 * 60 * 1_000
-  static let lowBatteryResearchRetryMillis: Int64 = 45 * 60 * 1_000
   static let networkRecoveryRetryMillis: Int64 = 10 * 60 * 1_000
   static let meteredNetworkRetryMillis: Int64 = 60 * 60 * 1_000
 
@@ -97,19 +88,6 @@ enum GlobalBackgroundExecutionBudgetPolicy {
   ) -> GlobalBackgroundExecutionDecision {
     if explicitUserOverride {
       return allowed(nowMillis)
-    }
-    if settings.protectBatteryForBackgroundWork {
-      if environment.powerSaveMode {
-        return deferred(nowMillis, powerSaveRetryMillis, .powerSave)
-      }
-      if !environment.charging && (0...criticalBatteryPercent).contains(environment.batteryPercent) {
-        return deferred(nowMillis, criticalBatteryRetryMillis, .criticalBattery)
-      }
-      if !environment.charging &&
-        ((criticalBatteryPercent + 1)...lowBatteryPercent).contains(environment.batteryPercent) {
-        let retry = kind == .research ? lowBatteryResearchRetryMillis : lowBatteryReasoningRetryMillis
-        return deferred(nowMillis, retry, .lowBattery)
-      }
     }
     if kind == .research {
       if !environment.networkAvailable {

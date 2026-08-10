@@ -361,13 +361,6 @@ struct SignalASIGlobalAgentControlView: View {
     let current = snapshot
     return section(t("cc_global_section_resources", "Resource policy")) {
       toggleRow(
-        title: t("cc_global_battery_protection_title", "Protect battery in background"),
-        subtitle: t("cc_global_battery_protection_subtitle", "Defer model reasoning and autonomous work during power saver or low battery"),
-        systemImage: "battery.75",
-        tint: .signalASIAccent,
-        keyPath: \.protectBatteryForBackgroundWork
-      )
-      toggleRow(
         title: t("cc_global_metered_research_title", "Research on metered networks"),
         subtitle: t("cc_global_metered_research_subtitle", "Allow autonomous research to use cellular or another metered connection"),
         systemImage: "antenna.radiowaves.left.and.right",

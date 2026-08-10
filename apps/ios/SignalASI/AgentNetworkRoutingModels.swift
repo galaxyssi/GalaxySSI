@@ -290,10 +290,6 @@ struct AgentRuntimeEnvironment: Codable, Equatable {
   var appMemoryBytes: Int64
   var availableMemoryBytes: Int64
 
-  var energyConstrained: Bool {
-    powerSaveMode || (!charging && batteryPercent >= 0 && batteryPercent <= 19)
-  }
-
   init(
     batteryPercent: Int = -1,
     charging: Bool = false,
