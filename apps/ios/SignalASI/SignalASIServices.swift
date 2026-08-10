@@ -2710,6 +2710,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentNotificationCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentCallableSearch(
         requestText: requestText,
         outgoing: outgoing,
@@ -3250,6 +3257,111 @@ final class MessageCoordinator: ObservableObject {
       ))
     }
     return String(lines.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func handleDirectAgentNotificationCommand(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let command = AgentNotificationCommand.parse(requestText) else {
+      return false
+    }
+    let notifications = currentAgentScreenContext.notifications
+    let query: String?
+    let matches: [AgentNotificationItem]
+    switch command {
+    case .inbox:
+      query = nil
+      matches = notifications.items
+    case .search(let value):
+      query = value
+      let normalizedQuery = value.lowercased()
+      matches = notifications.items.filter { item in
+        [item.packageName, item.category, item.title, item.textPreview]
+          .joined(separator: " ")
+          .lowercased()
+          .contains(normalizedQuery)
+      }
+    }
+    let result = agentNotificationReply(
+      notifications: notifications,
+      matches: matches,
+      query: query
+    )
+    let success = notifications.hasAccess
+    task.phase = success ? .completed : .failed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Notifications"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-agent-notifications"
+    task.result = result
+    task.verification = "Local Agent notification context read"
+    task.executionLog.append(
+      query.map { "Local Agent notification search: \($0)" } ?? "Local Agent notification inbox read"
+    )
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_notifications_reply",
+      detail: query ?? "inbox",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_notifications_reply_received",
+      detail: query ?? "inbox",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentNotificationReply(
+    notifications: AgentNotificationContext,
+    matches: [AgentNotificationItem],
+    query: String?
+  ) -> String {
+    guard notifications.hasAccess else {
+      return localReply(
+        english: "Notification access is disabled.",
+        chinese: "通知访问未开启。"
+      )
+    }
+    if matches.isEmpty {
+      return localReply(
+        english: query.map { "No active notifications match '\($0)'" } ?? "No active notifications.",
+        chinese: query.map { "没有匹配“\($0)”的活动通知。" } ?? "没有活动通知。"
+      )
+    }
+    let heading = localReply(
+      english: query.map { "Notification matches: \(matches.count)" } ?? "Active notifications: \(matches.count)",
+      chinese: query.map { "通知匹配项：\(matches.count)" } ?? "活动通知：\(matches.count)"
+    )
+    let rows = matches.prefix(12).map { item in
+      let app = item.packageName.ifBlank("SignalASI")
+      let category = item.category.ifBlank("app")
+      if !item.sensitiveFlags.isEmpty {
+        return "\(app) [\(category)] " + localReply(
+          english: "[sensitive content hidden]",
+          chinese: "[敏感内容已隐藏]"
+        )
+      }
+      let title = item.title.ifBlank("Notification")
+      let preview = item.textPreview.isEmpty ? "" : ": \(item.textPreview)"
+      return "\(app) [\(category)] \(title)\(preview)"
+    }
+    return String(([heading] + rows).joined(separator: "\n").prefix(3_000))
   }
 
   private func handleDirectAgentCallableSearch(
