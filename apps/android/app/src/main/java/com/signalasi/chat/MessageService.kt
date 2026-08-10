@@ -19,7 +19,6 @@ import com.signalasi.chat.voice.VoiceFeatureFlags
 import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
 import org.json.JSONObject
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class MessageService : Service(), SignalASIMqttClient.Listener {
@@ -28,24 +27,14 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         private const val NOTIFICATION_ID = 1001
         private const val MESSAGE_NOTIFICATION_ID = 1002
         private const val AGENT_SCHEDULE_NOTIFICATION_ID = 1003
-        private const val GLOBAL_AGENT_NOTIFICATION_ID = 1004
-        private const val GLOBAL_AGENT_INTERVAL_SECONDS = 45L
-        private const val GLOBAL_AGENT_FOREGROUND_DELAY_MILLIS = 60_000L
         private const val RUNTIME_AUTOSTART_DELAY_MILLIS = 5_000L
         const val ACTION_REFRESH_LANGUAGE = "com.signalasi.chat.action.REFRESH_NOTIFICATION_LANGUAGE"
         const val ACTION_PROCESS_GLOBAL_AGENT = "com.signalasi.chat.action.PROCESS_GLOBAL_AGENT"
     }
 
-    private val globalAgentExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
-        Thread(runnable, "signalasi-global-agent-service").apply { isDaemon = true }
-    }
-    private val globalResearchExecutor = Executors.newFixedThreadPool(2) { runnable ->
-        Thread(runnable, "signalasi-global-research").apply { isDaemon = true }
-    }
     private val proactiveTaskExecutor = Executors.newFixedThreadPool(4) { runnable ->
         Thread(runnable, "signalasi-proactive-task").apply { isDaemon = true }
     }
-    private val recoverySignalGate = GlobalAgentRecoverySignalGate()
     private var networkRecoveryCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun attachBaseContext(newBase: Context) {
@@ -69,12 +58,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }
             runCatching { AgentOnDeviceRuntimeLifecycle.ensureRunning(this@MessageService) }
         }
-        globalAgentExecutor.scheduleWithFixedDelay(
-            ::requestRecoveryCycle,
-            0L,
-            GLOBAL_AGENT_INTERVAL_SECONDS,
-            TimeUnit.SECONDS
-        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,7 +68,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         }
         handleDebugIncoming(intent)
         when (intent?.action) {
-            ACTION_PROCESS_GLOBAL_AGENT -> globalAgentExecutor.execute(::processGlobalAgentEvents)
+            ACTION_PROCESS_GLOBAL_AGENT -> Unit
             AgentWorkflowScheduler.ACTION_RUN_SCHEDULE -> executeScheduledWorkflow(
                 intent.getStringExtra(AgentWorkflowScheduler.EXTRA_SCHEDULE_ID).orEmpty()
             )
@@ -106,11 +89,11 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     override fun onConnectionChanged(isConnected: Boolean) {
-        if (isConnected) requestRecoveryCycle()
+        Unit
     }
 
     override fun onSecureChannelChanged(isReady: Boolean) {
-        if (isReady) requestRecoveryCycle()
+        Unit
     }
 
     override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
@@ -126,16 +109,12 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        scheduleServiceRecoveryWake()
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
         unregisterNetworkRecoveryCallback()
-        scheduleServiceRecoveryWake()
         SignalASIMqttClient.removeListener(this)
-        globalAgentExecutor.shutdownNow()
-        globalResearchExecutor.shutdownNow()
         proactiveTaskExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -175,11 +154,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
                         taskId = envelope?.optString("task_id").orEmpty(),
                         richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                     )
-                    val globalRuntime = GlobalSuperAgentRuntime.get(this)
-                    if (globalRuntime.consumeResearchResponse(response)) {
-                        globalAgentExecutor.execute(::processGlobalAgentEvents)
-                        return
-                    }
                     if (AgentConnectorResponseBus.publish(this, response)) return
                 }
             }
@@ -201,13 +175,11 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 SignalASIMqttClient.connectAfterNetworkAvailable(this@MessageService)
-                requestRecoveryCycle()
             }
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                     SignalASIMqttClient.connectAfterNetworkAvailable(this@MessageService)
-                    requestRecoveryCycle()
                 }
             }
         }
@@ -221,34 +193,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         networkRecoveryCallback = null
         runCatching {
             getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback)
-        }
-    }
-
-    private fun requestRecoveryCycle() {
-        if (!recoverySignalGate.tryAcquire()) return
-        runCatching {
-            globalAgentExecutor.execute {
-                try {
-                    processGlobalAgentEvents()
-                } finally {
-                    recoverySignalGate.release()
-                }
-            }
-        }.onFailure {
-            recoverySignalGate.release()
-            scheduleServiceRecoveryWake()
-        }
-    }
-
-    private fun scheduleServiceRecoveryWake(nowMillis: Long = System.currentTimeMillis()) {
-        val scheduledWorkWake = runCatching {
-            GlobalSuperAgentRuntime.get(this).scheduleNextWake(nowMillis)
-        }.getOrDefault(0L)
-        runCatching {
-            GlobalAgentWakeScheduler.schedule(
-                this,
-                GlobalAgentServiceContinuityPolicy.recoveryWakeAt(nowMillis, scheduledWorkWake)
-            )
         }
     }
 
@@ -435,83 +379,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             .setShowWhen(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(AGENT_SCHEDULE_NOTIFICATION_ID, notification)
-    }
-
-    private fun processGlobalAgentEvents() {
-        runCatching { AgentProactiveTaskScheduler.reconcile(this) }
-        if (AppForegroundTracker.isForeground()) {
-            GlobalAgentWakeScheduler.schedule(this, System.currentTimeMillis() + GLOBAL_AGENT_FOREGROUND_DELAY_MILLIS)
-            return
-        }
-        val runtime = GlobalSuperAgentRuntime.get(this)
-        runCatching { runtime.processPending() }
-        runCatching { runtime.processLongHorizonCycle() }
-        runCatching { runtime.processProactiveDiscoveryCycle() }
-        repeat(2) {
-            globalResearchExecutor.execute {
-                val cognition = runCatching { runtime.executeCognitionCycle() }.getOrNull()
-                val autonomous = runCatching { runtime.executeAutonomousCycle() }.getOrNull()
-                val research = runCatching { runtime.executeResearchCycle() }.getOrNull()
-                if (cognition?.status == GlobalCognitionTaskStatus.COMPLETED ||
-                    autonomous?.status in setOf(
-                        GlobalAutonomousRunStatus.COMPLETED,
-                        GlobalAutonomousRunStatus.PARTIAL,
-                        GlobalAutonomousRunStatus.REPLANNING
-                    ) ||
-                    research?.status in setOf(
-                        GlobalResearchTaskStatus.COMPLETED,
-                        GlobalResearchTaskStatus.SCHEDULED
-                    )
-                ) {
-                    runCatching { runtime.processPending() }
-                    runCatching { runtime.processLongHorizonCycle() }
-                    runCatching { runtime.processProactiveDiscoveryCycle() }
-                }
-                deliverPendingGlobalMessages(runtime)
-                runCatching { runtime.scheduleNextWake() }
-            }
-        }
-        deliverPendingGlobalMessages(runtime)
-        runCatching { runtime.scheduleNextWake() }
-    }
-
-
-    private fun deliverPendingGlobalMessages(runtime: GlobalSuperAgentRuntime) {
-        if (AppForegroundTracker.isForeground()) {
-            GlobalProactiveDeliveryBus.signalReady()
-            return
-        }
-        val delivered = runCatching { runtime.deliverPending(AgentTranscriptStore(this)) }
-            .getOrDefault(emptyList())
-        val candidate = runtime.notificationCandidateForDelivered(
-            delivered.ifEmpty { runtime.unnotifiedDeliveredMessages() }
-        ) ?: return
-        showGlobalAgentNotification(candidate)
-        runtime.markNotified(candidate.messageIds)
-    }
-
-    private fun showGlobalAgentNotification(message: GlobalAgentNotificationCandidate) {
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("signalasi_open_agent", true)
-            putExtra("signalasi_agent_conversation_id", message.conversationId)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            GLOBAL_AGENT_NOTIFICATION_ID,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_tab_chat_filled)
-            .setContentTitle(message.title)
-            .setContentText(message.content.take(160))
-            .setStyle(Notification.BigTextStyle().bigText(message.content))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .setShowWhen(true)
-            .build()
-        getSystemService(NotificationManager::class.java).notify(GLOBAL_AGENT_NOTIFICATION_ID, notification)
     }
 
     private fun handleDebugIncoming(intent: Intent?) {

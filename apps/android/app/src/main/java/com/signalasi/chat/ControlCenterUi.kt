@@ -76,8 +76,7 @@ object ControlCenterHomeGrouping {
 
     private val routesByGroup = linkedMapOf(
         ControlCenterHomeGroup.IDENTITY to listOf(
-            ControlCenterRoute.PROFILE,
-            ControlCenterRoute.GLOBAL_AGENT
+            ControlCenterRoute.PROFILE
         ),
         ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
             ControlCenterRoute.NODES,
