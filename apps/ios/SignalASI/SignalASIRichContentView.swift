@@ -966,21 +966,47 @@ private struct SignalASIRichBlockView: View {
 
   @ViewBuilder
   private func inputField(_ field: AgentRichField) -> some View {
-    if field.inputType == "password" {
-      SecureField(field.label, text: binding(for: field))
+    let inputType = field.inputType.lowercased()
+    if inputType == "password" {
+      SecureField("", text: binding(for: field))
         .textFieldStyle(.roundedBorder)
-    } else if !field.options.isEmpty {
-      Picker(field.label, selection: binding(for: field)) {
-        ForEach(field.options, id: \.self) { option in
-          Text(option).tag(option)
+        .accessibilityLabel(Text(field.label))
+    } else if inputType == "boolean" || inputType == "checkbox" {
+      Toggle("", isOn: booleanBinding(for: field))
+        .labelsHidden()
+        .accessibilityLabel(Text(field.label))
+    } else if !field.options.isEmpty || ["select", "choice", "enum"].contains(inputType) {
+      let choices = field.options.isEmpty
+        ? [field.value].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        : field.options
+      Picker("", selection: binding(for: field)) {
+        if choices.isEmpty {
+          Text("").tag("")
+        } else {
+          ForEach(choices, id: \.self) { option in
+            Text(option).tag(option)
+          }
         }
       }
       .pickerStyle(.menu)
       .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityLabel(Text(field.label))
+    } else if inputType == "multiline" || inputType == "textarea" {
+      TextEditor(text: binding(for: field))
+        .frame(minHeight: 80, maxHeight: 140)
+        .padding(4)
+        .background(Color.signalASISearchBackground)
+        .overlay(
+          RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityLabel(Text(field.label))
     } else {
-      TextField(field.label, text: binding(for: field))
+      TextField("", text: binding(for: field))
         .textFieldStyle(.roundedBorder)
-        .keyboardType(field.inputType == "number" ? .numbersAndPunctuation : .default)
+        .keyboardType(keyboardType(for: inputType))
+        .accessibilityLabel(Text(field.label))
     }
   }
 
@@ -1039,6 +1065,34 @@ private struct SignalASIRichBlockView: View {
         formValues[field.id] = next
       }
     )
+  }
+
+  private func booleanBinding(for field: AgentRichField) -> Binding<Bool> {
+    Binding(
+      get: {
+        ["true", "1", "yes", "on"].contains(
+          (formValues[field.id] ?? field.value).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        )
+      },
+      set: { next in
+        formValues[field.id] = next ? "true" : "false"
+      }
+    )
+  }
+
+  private func keyboardType(for inputType: String) -> UIKeyboardType {
+    switch inputType {
+    case "email":
+      return .emailAddress
+    case "phone":
+      return .phonePad
+    case "integer":
+      return .numberPad
+    case "number", "decimal":
+      return .decimalPad
+    default:
+      return .default
+    }
   }
 
   private var submittedFormValues: [String: String] {
