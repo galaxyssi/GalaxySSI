@@ -486,7 +486,8 @@ private struct SignalASIAgentRecordingWaveform: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let step = max(1, proxy.size.width / CGFloat(sampleCount))
+      let waveformWidth = proxy.size.width * 0.75
+      let step = max(1, waveformWidth / CGFloat(sampleCount))
       let maxHeight = max(2, proxy.size.height - 8)
       HStack(alignment: .center, spacing: max(1, step * 0.68)) {
         ForEach(0..<sampleCount, id: \.self) { index in
@@ -495,13 +496,13 @@ private struct SignalASIAgentRecordingWaveform: View {
             .frame(width: min(2, step * 0.32), height: barHeight(index: index, maxHeight: maxHeight))
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .overlay(
+      .frame(width: waveformWidth, height: proxy.size.height)
+      .overlay {
         Rectangle()
           .fill((cancelPending ? Color.signalASIAgentVoiceCancel : .white).opacity(0.28))
-          .frame(height: 1),
-        alignment: .center
-      )
+          .frame(height: 1)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
