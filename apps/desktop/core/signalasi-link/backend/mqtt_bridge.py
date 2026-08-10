@@ -126,6 +126,21 @@ MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
 running = False
+mqtt_worker_thread: threading.Thread | None = None
+mqtt_supervisor_thread: threading.Thread | None = None
+mqtt_lifecycle_lock = threading.RLock()
+mqtt_lifecycle_stop_event = threading.Event()
+mqtt_connected_event = threading.Event()
+mqtt_worker_started_at = 0.0
+mqtt_connected_at = 0.0
+mqtt_disconnected_at = 0.0
+mqtt_last_error = ""
+mqtt_worker_start_count = 0
+MQTT_SUPERVISOR_POLL_SECONDS = 1.0
+MQTT_DISCONNECTED_RECOVERY_SECONDS = max(
+    10.0,
+    float(os.environ.get("SIGNALASI_MQTT_DISCONNECTED_RECOVERY_SECONDS", "30")),
+)
 codex_app_server: CodexAppServer | None = None
 codex_task_callbacks: dict[str, Callable[[str, dict], None]] = {}
 codex_task_callbacks_lock = threading.Lock()
@@ -1980,8 +1995,61 @@ def _reason_code_value(reason_code):
         return getattr(reason_code, "value", reason_code)
 
 
+def _record_mqtt_connected() -> None:
+    global mqtt_connected_at, mqtt_disconnected_at, mqtt_last_error
+    with mqtt_lifecycle_lock:
+        mqtt_connected_at = time.time()
+        mqtt_disconnected_at = 0.0
+        mqtt_last_error = ""
+        mqtt_connected_event.set()
+
+
+def _record_mqtt_disconnected(error: str = "") -> None:
+    global mqtt_disconnected_at, mqtt_last_error
+    with mqtt_lifecycle_lock:
+        if mqtt_disconnected_at <= 0.0:
+            mqtt_disconnected_at = time.time()
+        if error:
+            mqtt_last_error = str(error)[:500]
+        mqtt_connected_event.clear()
+
+
+def mqtt_bridge_status() -> dict[str, Any]:
+    """Return process and broker health separately for Desktop diagnostics."""
+    with mqtt_lifecycle_lock:
+        worker_alive = mqtt_worker_thread is not None and mqtt_worker_thread.is_alive()
+        supervisor_alive = mqtt_supervisor_thread is not None and mqtt_supervisor_thread.is_alive()
+        connected = mqtt_connected_event.is_set()
+        active_client = client
+        if connected and active_client is not None:
+            try:
+                connected = bool(active_client.is_connected())
+            except Exception:
+                connected = False
+        disconnected_seconds = (
+            max(0.0, time.time() - mqtt_disconnected_at)
+            if not connected and mqtt_disconnected_at > 0.0
+            else 0.0
+        )
+        return {
+            "running": bool(running and worker_alive),
+            "connected": connected,
+            "supervised": supervisor_alive,
+            "broker": BROKER,
+            "port": PORT,
+            "tls": MQTT_TLS,
+            "worker_start_count": mqtt_worker_start_count,
+            "worker_started_at": mqtt_worker_started_at,
+            "connected_at": mqtt_connected_at,
+            "disconnected_at": mqtt_disconnected_at,
+            "disconnected_seconds": round(disconnected_seconds, 3),
+            "last_error": mqtt_last_error,
+        }
+
+
 def on_connect(mqttc, userdata, flags, reason_code, properties=None):
     if _reason_code_value(reason_code) == 0:
+        _record_mqtt_connected()
         log.info(f"MQTT connected {BROKER}:{PORT}")
         # A FastAPI/Electron lifecycle can stop and restart the bridge in the
         # same process. Re-establish the durable worker here so a completed
@@ -2046,6 +2114,7 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
             MQTT_PROBE_INITIAL_DELAY_SECONDS,
         )
     else:
+        _record_mqtt_disconnected(f"connect_rc={reason_code}")
         _clear_transport_reconnect()
         transport_probe_state.disconnected()
         log.warning(f"MQTT connection failed rc={reason_code}")
@@ -2191,6 +2260,7 @@ def _clear_mqtt_wire_transport_state() -> None:
 
 def on_disconnect(mqttc, userdata, *args):
     reason_code = args[-2] if len(args) >= 2 else (args[0] if args else "unknown")
+    _record_mqtt_disconnected(f"disconnect_rc={reason_code}")
     _clear_transport_reconnect()
     transport_probe_state.disconnected()
     _clear_mqtt_wire_transport_state()
@@ -7192,57 +7262,143 @@ def start_agent_task(
 
 
 def start():
-    """Start the MQTT client; this blocks and should run in a background thread."""
-    global client, running
-    if running:
-        return
-
-    running = True
-    if ensure_transport_epoch(MQTT_TRANSPORT_EPOCH):
-        log.info("MQTT transport epoch advanced; obsolete broker outbox entries were cleared")
-    stable_desktop_id = re.sub(r"[^a-zA-Z0-9_-]", "-", desktop_id())[-45:]
-    client_id = f"signalasi-pc-{MQTT_TRANSPORT_EPOCH}-{stable_desktop_id}"
-    callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
-    if callback_api_version is not None:
-        mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=True)
-    else:
-        mqttc = mqtt.Client(client_id=client_id, clean_session=True)
-    client = mqttc
-    mqttc.on_connect = on_connect
-    mqttc.on_disconnect = on_disconnect
-    mqttc.on_message = on_mqtt_message
-    mqttc.on_publish = on_publish
-    mqttc.max_inflight_messages_set(MQTT_MAX_INFLIGHT)
-    mqttc.max_queued_messages_set(256)
-    if MQTT_TLS:
-        mqttc.tls_set()
-        mqttc.tls_insecure_set(False)
-
-    mqttc.reconnect_delay_set(min_delay=1, max_delay=30)
-    while running:
-        try:
-            mqttc.connect(BROKER, PORT, keepalive=60)
-            mqttc.loop_forever(retry_first_connection=True)
-        except Exception as e:
-            log.error(f"MQTT connection failed; retrying in 3 seconds: {e}")
+    """Run one supervised MQTT worker until shutdown or an unrecoverable exit."""
+    global client, running, mqtt_worker_started_at, mqtt_worker_start_count, mqtt_last_error
+    mqttc = None
+    with mqtt_lifecycle_lock:
         if running:
-            time.sleep(3)
+            return
+        running = True
+        mqtt_worker_started_at = time.time()
+        mqtt_worker_start_count += 1
+        _record_mqtt_disconnected()
+    try:
+        if ensure_transport_epoch(MQTT_TRANSPORT_EPOCH):
+            log.info("MQTT transport epoch advanced; obsolete broker outbox entries were cleared")
+        stable_desktop_id = re.sub(r"[^a-zA-Z0-9_-]", "-", desktop_id())[-45:]
+        client_id = f"signalasi-pc-{MQTT_TRANSPORT_EPOCH}-{stable_desktop_id}"
+        callback_api_version = getattr(mqtt, "CallbackAPIVersion", None)
+        if callback_api_version is not None:
+            mqttc = mqtt.Client(callback_api_version=callback_api_version.VERSION2, client_id=client_id, clean_session=True)
+        else:
+            mqttc = mqtt.Client(client_id=client_id, clean_session=True)
+        with mqtt_lifecycle_lock:
+            client = mqttc
+        mqttc.on_connect = on_connect
+        mqttc.on_disconnect = on_disconnect
+        mqttc.on_message = on_mqtt_message
+        mqttc.on_publish = on_publish
+        mqttc.max_inflight_messages_set(MQTT_MAX_INFLIGHT)
+        mqttc.max_queued_messages_set(256)
+        if MQTT_TLS:
+            mqttc.tls_set()
+            mqttc.tls_insecure_set(False)
+
+        mqttc.reconnect_delay_set(min_delay=1, max_delay=30)
+        while running and not mqtt_lifecycle_stop_event.is_set():
+            try:
+                mqttc.connect(BROKER, PORT, keepalive=60)
+                mqttc.loop_forever(retry_first_connection=True)
+            except Exception as exc:
+                _record_mqtt_disconnected(str(exc))
+                log.error("MQTT connection failed; retrying in 3 seconds: %s", exc)
+            if running and not mqtt_lifecycle_stop_event.wait(3.0):
+                continue
+            break
+    except Exception as exc:
+        _record_mqtt_disconnected(str(exc))
+        log.exception("MQTT worker exited during initialization")
+    finally:
+        _record_mqtt_disconnected(mqtt_last_error or "worker_exited")
+        with mqtt_lifecycle_lock:
+            if client is mqttc:
+                client = None
+            running = False
+
+
+def _ensure_mqtt_worker() -> bool:
+    global mqtt_worker_thread
+    with mqtt_lifecycle_lock:
+        if mqtt_lifecycle_stop_event.is_set():
+            return False
+        if mqtt_worker_thread is not None and mqtt_worker_thread.is_alive():
+            return False
+        mqtt_worker_thread = threading.Thread(
+            target=start,
+            daemon=True,
+            name="signalasi-mqtt-worker",
+        )
+        mqtt_worker_thread.start()
+        return True
+
+
+def _mqtt_supervisor_tick(now: float | None = None) -> None:
+    if mqtt_lifecycle_stop_event.is_set():
+        return
+    if _ensure_mqtt_worker():
+        log.warning("MQTT worker was not running and has been restarted")
+        return
+    observed_at = time.time() if now is None else float(now)
+    with mqtt_lifecycle_lock:
+        disconnected_since = mqtt_disconnected_at
+        mqttc = client
+    if mqtt_connected_event.is_set() or disconnected_since <= 0.0 or mqttc is None:
+        return
+    disconnected_for = max(0.0, observed_at - disconnected_since)
+    if disconnected_for < MQTT_DISCONNECTED_RECOVERY_SECONDS:
+        return
+    if _transport_reconnect_age() is not None:
+        return
+    log.warning(
+        "MQTT remained disconnected for %sms; forcing transport recovery",
+        round(disconnected_for * 1000),
+    )
+    _request_transport_reconnect(mqttc, "supervisor_disconnected")
+
+
+def _mqtt_supervisor_loop() -> None:
+    global mqtt_supervisor_thread
+    try:
+        while not mqtt_lifecycle_stop_event.wait(MQTT_SUPERVISOR_POLL_SECONDS):
+            try:
+                _mqtt_supervisor_tick()
+            except Exception:
+                log.exception("MQTT supervisor iteration failed; supervision remains active")
+    finally:
+        with mqtt_lifecycle_lock:
+            if threading.current_thread() is mqtt_supervisor_thread:
+                mqtt_supervisor_thread = None
+
+
+def _ensure_mqtt_supervisor() -> None:
+    global mqtt_supervisor_thread
+    with mqtt_lifecycle_lock:
+        if mqtt_supervisor_thread is not None and mqtt_supervisor_thread.is_alive():
+            return
+        mqtt_supervisor_thread = threading.Thread(
+            target=_mqtt_supervisor_loop,
+            daemon=True,
+            name="signalasi-mqtt-supervisor",
+        )
+        mqtt_supervisor_thread.start()
 
 
 def start_background():
-    """Start MQTT in a background thread."""
+    """Start MQTT support and keep its broker worker supervised."""
     _ensure_task_event_publisher()
     _ensure_presence_thread()
     _ensure_outbound_retry_thread()
     _ensure_codex_warm_thread()
     _ensure_transport_probe_thread()
-    t = threading.Thread(target=start, daemon=True)
-    t.start()
-    log.info("MQTT bridge started in background")
+    mqtt_lifecycle_stop_event.clear()
+    _ensure_mqtt_worker()
+    _ensure_mqtt_supervisor()
+    log.info("MQTT bridge started with lifecycle supervision")
 
 
 def stop():
-    global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread, transport_probe_thread
+    global client, running, codex_app_server, presence_thread, outbound_retry_thread, codex_warm_thread, transport_probe_thread, mqtt_worker_thread, mqtt_supervisor_thread
+    mqtt_lifecycle_stop_event.set()
     running = False
     codex_warm_stop_event.set()
     presence_stop_event.set()
@@ -7255,6 +7411,16 @@ def stop():
     if client:
         client.disconnect()
         client = None
+    worker_thread = mqtt_worker_thread
+    if worker_thread is not None and worker_thread is not threading.current_thread():
+        worker_thread.join(timeout=4.0)
+    supervisor_thread = mqtt_supervisor_thread
+    if supervisor_thread is not None and supervisor_thread is not threading.current_thread():
+        supervisor_thread.join(timeout=MQTT_SUPERVISOR_POLL_SECONDS + 0.5)
+    if worker_thread is None or not worker_thread.is_alive():
+        mqtt_worker_thread = None
+    if supervisor_thread is None or not supervisor_thread.is_alive():
+        mqtt_supervisor_thread = None
     retry_thread = outbound_retry_thread
     if retry_thread is not None and retry_thread is not threading.current_thread():
         retry_thread.join(timeout=OUTBOUND_RETRY_POLL_SECONDS + 0.5)

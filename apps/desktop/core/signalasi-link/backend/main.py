@@ -407,10 +407,22 @@ def api_provider_profiles():
 
 @app.get("/health")
 def api_health():
+    try:
+        from mqtt_bridge import mqtt_bridge_status
+
+        message_bridge = mqtt_bridge_status()
+    except Exception as exc:
+        message_bridge = {
+            "running": False,
+            "connected": False,
+            "supervised": False,
+            "last_error": str(exc)[:500],
+        }
     return {
         "status": "ok",
         "protocol": "SignalASI Link Protocol",
         "connector": "SignalASI Desktop",
+        "message_bridge": message_bridge,
     }
 
 @app.get("/api/agents/execution-log")
