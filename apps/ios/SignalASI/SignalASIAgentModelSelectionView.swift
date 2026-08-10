@@ -133,6 +133,19 @@ struct SignalASIAgentModelSelectionView: View {
     )
   }
 
+  private var selectedManualTargetIsVisible: Bool {
+    guard selection.mode == .manual else { return true }
+    let targetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !targetId.isEmpty else { return true }
+    if targetId == "local-llm" {
+      return localProfiles.contains { $0.id == selection.modelId }
+    }
+    if agentTargets.contains(where: { $0.id == targetId }) {
+      return true
+    }
+    return cloudContacts.contains { $0.id == targetId }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -165,6 +178,21 @@ struct SignalASIAgentModelSelectionView: View {
               : t("signalasi.common.select", "Select")
           ) {
             selectAutomatic()
+          }
+
+          if selection.mode == .manual,
+             let selectedManualTarget,
+             !selectedManualTargetIsVisible {
+            SignalASISecurityStatusRow(
+              title: selectedManualTarget.title,
+              subtitle: t(
+                "signalasi.agent.model_selection.unavailable_subtitle",
+                "The selected target is currently unavailable. Choose Automatic or another ready target."
+              ),
+              systemImage: "exclamationmark.triangle.fill",
+              tint: .orange,
+              badge: t("signalasi.agent.model_selection.unavailable", "Unavailable")
+            )
           }
 
           if !localProfiles.isEmpty {
