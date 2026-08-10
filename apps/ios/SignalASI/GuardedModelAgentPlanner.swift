@@ -122,7 +122,9 @@ struct GuardedModelAgentPlanner {
   }
 
   private func hasSensitivePlannerContext(_ screen: AgentScreenContext) -> Bool {
-    screen.sensitiveFlagCount > 0
+    screen.sensitiveFlagCount > 0 ||
+      !screen.notifications.sensitiveFlags.isEmpty ||
+      screen.notifications.items.contains { !$0.sensitiveFlags.isEmpty }
   }
 
   private func hasSensitivePlannerGoal(_ goal: String) -> Bool {

@@ -198,6 +198,16 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "Current app: \(screen.foregroundApp.prefixStringForPlanning(160))\n")
     append(&prompt, "Current page: \(screen.pageTitle.prefixStringForPlanning(160))\n")
     append(&prompt, "Screen counts: text=\(visibleTextCount), actions=\(clickableCount), fields=\(inputCount)\n")
+    if screen.notifications.hasAccess {
+      append(&prompt, "Notifications: total=\(screen.notifications.totalCount), visible=\(screen.notifications.items.count)\n")
+      for item in screen.notifications.items.prefix(6) {
+        if item.sensitiveFlags.isEmpty {
+          append(&prompt, "- \(item.packageName.prefixStringForPlanning(120)) | \(item.title.prefixStringForPlanning(160)) | \(item.textPreview.prefixStringForPlanning(240))\n")
+        } else {
+          append(&prompt, "- sensitive notification | flags=\(item.sensitiveFlags.prefix(6).joined(separator: ","))\n")
+        }
+      }
+    }
     let visualActions = request.parsingContext.clickableElements.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     let visualFields = request.parsingContext.inputFields.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     if visualActions > 0 || visualFields > 0 {
