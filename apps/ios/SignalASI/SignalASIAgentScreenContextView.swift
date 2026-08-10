@@ -56,7 +56,8 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     attachments: [SignalASIDraftAttachment],
     unreadTotal: Int,
     screenObservationAllowed: Bool,
-    t: (String, String) -> String
+    t: (String, String) -> String,
+    snapshotAgeMillis: Int64 = 0
   ) -> SignalASIAgentScreenContextSnapshot {
     let visibleTexts = screenObservationAllowed
       ? visibleTextValues(
@@ -83,7 +84,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       visibleTexts: visibleTexts,
       selectedText: "",
       isAccessibilityEnabled: screenObservationAllowed,
-      snapshotAgeMillis: 0
+      snapshotAgeMillis: snapshotAgeMillis
     )
     guard screenObservationAllowed else {
       return SignalASIAgentScreenContextSnapshot(screen: screen, sections: [])
@@ -456,6 +457,7 @@ struct SignalASIAgentScreenContextCard: View {
   var sections: [SignalASIAgentScreenDetailSection]
   var onCommand: (String) -> Void
   var t: (String, String) -> String
+  var onRefresh: () -> Void = {}
   var expandedByDefault: Bool = false
 
   @State private var expanded = false
@@ -498,33 +500,46 @@ struct SignalASIAgentScreenContextCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Button {
-        withAnimation(.easeOut(duration: 0.16)) {
-          expanded.toggle()
-        }
-      } label: {
-        HStack(spacing: 10) {
-          Image(systemName: "rectangle.on.rectangle")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundColor(.signalASIAccent)
-            .frame(width: 28, height: 28)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(t("agent_section_screen_details", "Screen Details"))
-              .font(.system(size: 13, weight: .bold))
-              .foregroundColor(.signalASITextPrimary)
-              .lineLimit(1)
-            Text(summaryText)
-              .font(.system(size: 11))
-              .foregroundColor(.signalASITextSecondary)
-              .lineLimit(1)
+      HStack(spacing: 8) {
+        Button {
+          withAnimation(.easeOut(duration: 0.16)) {
+            expanded.toggle()
           }
-          Spacer(minLength: 8)
-          Image(systemName: expanded ? "chevron.up" : "chevron.down")
+        } label: {
+          HStack(spacing: 10) {
+            Image(systemName: "rectangle.on.rectangle")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(t("agent_section_screen_details", "Screen Details"))
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.signalASITextPrimary)
+                .lineLimit(1)
+              Text(summaryText)
+                .font(.system(size: 11))
+                .foregroundColor(.signalASITextSecondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+              .font(.system(size: 13, weight: .bold))
+              .foregroundColor(.signalASITextSecondary)
+          }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        Button(action: onRefresh) {
+          Image(systemName: "arrow.clockwise")
             .font(.system(size: 13, weight: .bold))
             .foregroundColor(.signalASITextSecondary)
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("agent_screen_refresh", "Refresh screen context")))
       }
-      .buttonStyle(.plain)
 
       if expanded {
         if disabled {
@@ -677,6 +692,7 @@ struct SignalASIAgentScreenContextDetailView: View {
   var sections: [SignalASIAgentScreenDetailSection]
   var onCommand: (String) -> Void
   var t: (String, String) -> String
+  var onRefresh: () -> Void = {}
 
   var body: some View {
     ScrollView {
@@ -685,6 +701,7 @@ struct SignalASIAgentScreenContextDetailView: View {
           screen: screen,
           sections: sections,
           onCommand: onCommand,
+          onRefresh: onRefresh,
           t: t,
           expandedByDefault: true
         )
