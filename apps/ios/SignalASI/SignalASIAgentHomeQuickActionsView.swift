@@ -5,6 +5,8 @@ struct SignalASIAgentHomeQuickActionsView: View {
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
   var onScan: () -> Void
+  var onTakePhoto: () -> Void
+  var onAddFile: () -> Void
   var onOpenSettings: () -> Void
 
   var body: some View {
@@ -26,6 +28,16 @@ struct SignalASIAgentHomeQuickActionsView: View {
         title: t("agent_attachment_scan", "Scan Agent"),
         systemImage: "qrcode.viewfinder",
         action: onScan
+      )
+      action(
+        title: t("agent_attachment_take_photo", "Take photo"),
+        systemImage: "camera",
+        action: onTakePhoto
+      )
+      action(
+        title: t("agent_attachment_add_file", "Add file"),
+        systemImage: "paperclip",
+        action: onAddFile
       )
       action(
         title: t("signalasi.tab.settings", "Settings"),
