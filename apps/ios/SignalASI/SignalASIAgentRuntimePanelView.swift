@@ -761,7 +761,7 @@ struct SignalASIAgentRuntimePanelView: View {
   private var verificationRows: [SignalASIAgentRuntimeRow] {
     recentTasks
       .filter { !$0.verification.isBlank || !$0.result.isBlank || $0.phase == .completed || $0.phase == .failed }
-      .prefix(3)
+      .prefix(4)
       .map { task in
         return SignalASIAgentRuntimeRow(
           id: "verification-\(task.taskId)",
