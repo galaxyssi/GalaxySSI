@@ -819,10 +819,22 @@ private struct SignalASIRichBlockView: View {
   private var approvalBlock: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Image(systemName: "checkmark.seal")
+        Image(systemName: "lock.shield")
           .foregroundColor(.signalASIAccent)
+          .frame(width: 24, height: 24)
         selectableText(firstNonEmpty([block.title, t("rich_output_input_required", "Input required")]))
           .font(.subheadline.weight(.semibold))
+        Spacer(minLength: 4)
+        if !block.fallbackText.isEmpty {
+          Text(block.fallbackText)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Color.signalASIButtonSoft)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
       }
       if !block.text.isEmpty {
         selectableText(block.text)
@@ -943,7 +955,12 @@ private struct SignalASIRichBlockView: View {
         selectableText(block.text)
           .foregroundColor(.signalASITextSecondary)
       }
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], alignment: .leading, spacing: 8) {
+      let columnCount = block.actions.count > 2 ? 2 : max(block.actions.count, 1)
+      LazyVGrid(
+        columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount),
+        alignment: .leading,
+        spacing: 8
+      ) {
         ForEach(block.actions) { action in
           Button {
             onAction(action)
@@ -952,7 +969,7 @@ private struct SignalASIRichBlockView: View {
               .font(.caption.weight(.semibold))
               .lineLimit(2)
               .minimumScaleFactor(0.75)
-              .frame(maxWidth: .infinity, minHeight: 34)
+              .frame(maxWidth: .infinity, minHeight: 42)
               .padding(.horizontal, 8)
               .background(actionBackground(action))
               .foregroundColor(actionForeground(action))
@@ -1308,6 +1325,9 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func actionBackground(_ action: AgentRichAction) -> Color {
+    if isPermissionConfirmation(action) {
+      return Color.signalASIAccent.opacity(0.12)
+    }
     switch action.style.lowercased() {
     case "destructive", "danger":
       return Color.red.opacity(0.14)
@@ -1319,6 +1339,9 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func actionForeground(_ action: AgentRichAction) -> Color {
+    if isPermissionConfirmation(action) {
+      return .signalASIAccent
+    }
     switch action.style.lowercased() {
     case "primary", "confirm":
       return .white
@@ -1327,6 +1350,15 @@ private struct SignalASIRichBlockView: View {
     default:
       return .signalASITextPrimary
     }
+  }
+
+  private func isPermissionConfirmation(_ action: AgentRichAction) -> Bool {
+    guard ["decide_task_permission", "decide_remote_task_permission"].contains(action.verb) else {
+      return false
+    }
+    let denied = action.value == AgentPermissionChoice.denyAlways.wireValue ||
+      action.value.contains("\"decision_scope\":\"\(AgentPermissionChoice.denyAlways.wireValue)\"")
+    return !denied
   }
 
   private func rowColor(_ index: Int) -> Color {
