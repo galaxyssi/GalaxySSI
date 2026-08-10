@@ -1147,7 +1147,7 @@ struct AgentHomeView: View {
       GeometryReader { viewport in
         ZStack(alignment: .bottomTrailing) {
           ScrollView {
-        LazyVStack(spacing: 10) {
+        LazyVStack(spacing: 5) {
           if !scanStatus.isEmpty {
             SignalASIAgentScanStatusView(
               message: scanStatus,
