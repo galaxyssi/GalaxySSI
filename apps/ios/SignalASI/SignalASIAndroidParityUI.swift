@@ -906,10 +906,14 @@ struct AgentHomeView: View {
         runtimeArtifactError = error.localizedDescription
       }
     default:
-      richActionStatus = t(
-        "signalasi.agent.action_status.unsupported",
-        "This Agent action is not supported on iOS yet."
-      )
+      richActionStatus = action.label
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank(
+          t(
+            "signalasi.agent.action_status.unsupported",
+            "This Agent action is not available on iOS."
+          )
+        )
     }
   }
 
