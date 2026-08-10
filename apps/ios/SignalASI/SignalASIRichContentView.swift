@@ -656,24 +656,20 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var statusBlock: some View {
-    HStack(alignment: .top, spacing: 8) {
-      Image(systemName: statusIcon)
+    HStack(spacing: 8) {
+      Image(systemName: "terminal")
         .font(.caption.weight(.semibold))
-        .foregroundColor(statusColor)
-        .frame(width: 20, height: 20)
-      VStack(alignment: .leading, spacing: 2) {
-        selectableText(firstNonEmpty([block.title, block.text, t("rich_output_progress", "Progress")]))
-          .font(.subheadline.weight(.semibold))
-        if !block.fallbackText.isEmpty {
-          selectableText(block.fallbackText)
-            .font(.caption)
-            .foregroundColor(.signalASITextSecondary)
-        }
-      }
+        .foregroundColor(.signalASITextSecondary)
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
+      Text(statusText)
+        .font(.caption)
+        .foregroundColor(.signalASITextSecondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(9)
-    .background(statusColor.opacity(0.10))
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .frame(minHeight: 30)
   }
 
   private var progressBlock: some View {
@@ -724,24 +720,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var toolBlock: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 8) {
-        Image(systemName: "terminal")
-          .font(.caption.weight(.semibold))
-          .foregroundColor(.signalASIAccent)
-        Text(firstNonEmpty([block.title, block.metadata["tool"] ?? "", t("rich_output_type_code", "Code")]))
-          .font(.subheadline.weight(.semibold))
-          .foregroundColor(.signalASITextPrimary)
-      }
-      if !block.text.isEmpty {
-        selectableText(block.text)
-          .font(.caption)
-          .foregroundColor(.signalASITextSecondary)
-      }
-    }
-    .padding(9)
-    .background(Color.signalASISearchBackground.opacity(0.45))
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    statusBlock
   }
 
   private var timelineBlock: some View {
@@ -1356,26 +1335,11 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
-  private var statusIcon: String {
-    let normalized = firstNonEmpty([block.metadata["status"] ?? "", block.text, block.title]).lowercased()
-    if normalized.contains("fail") || normalized.contains("error") {
-      return "xmark.circle.fill"
+  private var statusText: String {
+    let values = [block.title, block.text].filter {
+      !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    if normalized.contains("complete") || normalized.contains("success") || normalized.contains("done") {
-      return "checkmark.circle.fill"
-    }
-    return "clock.fill"
-  }
-
-  private var statusColor: Color {
-    let normalized = firstNonEmpty([block.metadata["status"] ?? "", block.text, block.title]).lowercased()
-    if normalized.contains("fail") || normalized.contains("error") {
-      return .red
-    }
-    if normalized.contains("complete") || normalized.contains("success") || normalized.contains("done") {
-      return .signalASIAccent
-    }
-    return .orange
+    return values.joined(separator: " · ").ifBlank(block.fallbackText)
   }
 
   private func actionBackground(_ action: AgentRichAction) -> Color {
