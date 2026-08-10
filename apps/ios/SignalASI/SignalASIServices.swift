@@ -5127,20 +5127,20 @@ final class MessageCoordinator: ObservableObject {
       profile: mediaProfile
     )
     if !outboundAttachments.isEmpty {
-      deliveryStore.enqueue(
-        messageId: wire.messageId,
-        topic: link.routes.upTopic,
-        wirePayload: wire.wireText,
-        requiresValidatedNetwork: requiresValidatedNetwork,
-        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
-        clientSourceMessageId: sourceMessageId,
-        contactId: contact.id
-      )
       do {
         try enqueueOutboundAttachmentTransfers(
           outboundAttachments,
           link: link,
           sourceMessageId: sourceMessageId,
+          contactId: contact.id
+        )
+        deliveryStore.enqueue(
+          messageId: wire.messageId,
+          topic: link.routes.upTopic,
+          wirePayload: wire.wireText,
+          requiresValidatedNetwork: requiresValidatedNetwork,
+          blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+          clientSourceMessageId: sourceMessageId,
           contactId: contact.id
         )
       } catch {
@@ -5215,25 +5215,15 @@ final class MessageCoordinator: ObservableObject {
     sourceMessageId: String,
     contactId: String
   ) throws {
-    for attachment in attachments {
+    for step in AgentAttachmentPublishOrder.steps(attachments) {
       try enqueueLinkPayload(
-        attachment.manifestPayload(resume: false),
+        try step.payload(),
         link: link,
         topic: link.routes.upTopic,
-        requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+        requiresValidatedNetwork: step.attachment.requiresValidatedNetwork,
         clientSourceMessageId: sourceMessageId,
         contactId: contactId
       )
-      for index in 0..<attachment.chunkCount {
-        try enqueueLinkPayload(
-          attachment.chunkPayload(index: index),
-          link: link,
-          topic: link.routes.upTopic,
-          requiresValidatedNetwork: attachment.requiresValidatedNetwork,
-          clientSourceMessageId: sourceMessageId,
-          contactId: contactId
-        )
-      }
     }
   }
 
