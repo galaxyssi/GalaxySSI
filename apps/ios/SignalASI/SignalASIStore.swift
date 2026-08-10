@@ -298,6 +298,7 @@ final class SignalASIStore: ObservableObject {
   private let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   private let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
+  private let richContentMaterializer: AgentRichContentMaterializer
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
@@ -313,6 +314,12 @@ final class SignalASIStore: ObservableObject {
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
+    self.richContentMaterializer = AgentRichContentMaterializer(
+      applicationSupportDirectory: FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+      ).first ?? FileManager.default.temporaryDirectory
+    )
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -387,9 +394,10 @@ final class SignalASIStore: ObservableObject {
       homeAssistantSettings = .default
       modelPlannerSettings = .default
       globalAgentSettings = .default
-      save()
     }
+    messagesByContact = materializedMessages(messagesByContact)
     agentPreferenceModeStore.save(agentPreferenceMode)
+    save()
   }
 
   var visibleContacts: [SignalASIContact] {
@@ -2011,7 +2019,7 @@ final class SignalASIStore: ObservableObject {
       deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)],
       conversationId: conversationId,
       turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString),
-      richOutputJson: richOutputJson
+      richOutputJson: richContentMaterializer.materialize(richOutputJson)
     )
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: conversationId, contactId: contactId, content: content, at: createdAt)
@@ -2042,7 +2050,7 @@ final class SignalASIStore: ObservableObject {
       conversationId: resolvedConversationId,
       turnId: turnId,
       remoteMessageId: remoteMessageId,
-      richOutputJson: richOutputJson
+      richOutputJson: richContentMaterializer.materialize(richOutputJson)
     )
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
@@ -2116,7 +2124,7 @@ final class SignalASIStore: ObservableObject {
       messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: traceStage, detail: detail))
     }
     if let richOutputJson {
-      messages[index].richOutputJson = richOutputJson
+      messages[index].richOutputJson = richContentMaterializer.materialize(richOutputJson)
     }
     messagesByContact[contactId] = messages
     save()
@@ -2443,7 +2451,7 @@ final class SignalASIStore: ObservableObject {
       friendRequests = payload.friendRequests
     }
     if includeMessages, payload.includesMessages {
-      messagesByContact = payload.messagesByContact
+      messagesByContact = materializedMessages(payload.messagesByContact)
       readAtByContact = payload.readAtByContact
     }
     if payload.includesAgentData {
@@ -3757,7 +3765,7 @@ final class SignalASIStore: ObservableObject {
       profile: profile,
       contacts: contacts,
       friendRequests: friendRequests,
-      messagesByContact: messagesByContact,
+      messagesByContact: materializedMessages(messagesByContact),
       readAtByContact: readAtByContact,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings,
@@ -3782,6 +3790,18 @@ final class SignalASIStore: ObservableObject {
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)
+    }
+  }
+
+  private func materializedMessages(
+    _ values: [String: [ChatMessage]]
+  ) -> [String: [ChatMessage]] {
+    values.mapValues { messages in
+      messages.map { message in
+        var materialized = message
+        materialized.richOutputJson = richContentMaterializer.materialize(message.richOutputJson)
+        return materialized
+      }
     }
   }
 
