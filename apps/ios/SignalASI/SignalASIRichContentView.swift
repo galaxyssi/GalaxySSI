@@ -1393,6 +1393,22 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var resourceSubtitle: String {
+    if let detail = block.metadata["detail"],
+      !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return detail
+    }
+    if [.file, .link, .citation, .unknown].contains(block.type) {
+      let format = firstNonEmpty([
+        block.metadata["format"] ?? "",
+        block.mimeType,
+        resourceTypeLabel
+      ])
+      let size = block.metadata["size"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let details = [format, size].filter { !$0.isEmpty }
+      if !details.isEmpty {
+        return details.joined(separator: " | ")
+      }
+    }
     firstNonEmpty([block.text, block.uri, block.mimeType])
   }
 
