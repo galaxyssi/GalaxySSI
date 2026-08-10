@@ -131,6 +131,110 @@ struct SignalASIVoiceAgentRunsView: View {
   }
 }
 
+struct SignalASIAgentVoiceRunSummaryCard: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var runs: [VoiceAgentRunSnapshot]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      HStack(spacing: 8) {
+        Image(systemName: "waveform.badge.mic")
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundColor(.signalASIAccent)
+          .frame(width: 24, height: 24)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(t("signalasi.voice_agent_runs.title", "Voice Agent runs"))
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+          Text(
+            String(
+              format: t(
+                "signalasi.voice_agent_runs.active_summary",
+                "%d active voice task(s)"
+              ),
+              runs.count
+            )
+          )
+          .font(.system(size: 11))
+          .foregroundColor(.signalASITextSecondary)
+        }
+        Spacer(minLength: 8)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 12, weight: .bold))
+          .foregroundColor(.signalASITextSecondary)
+      }
+
+      ForEach(Array(runs.prefix(3))) { run in
+        HStack(alignment: .top, spacing: 8) {
+          Circle()
+            .fill(stateTint(run.state))
+            .frame(width: 8, height: 8)
+            .padding(.top, 5)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(run.goal.ifBlank(t("signalasi.voice_agent_runs.detail.goal", "Voice Agent task")))
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(1)
+            Text(run.progressMessage.ifBlank(run.stage).ifBlank(stateLabel(run.state)))
+              .font(.system(size: 10.5))
+              .foregroundColor(.signalASITextSecondary)
+              .lineLimit(1)
+          }
+          Spacer(minLength: 6)
+          Text(stateLabel(run.state))
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundColor(stateTint(run.state))
+            .lineLimit(1)
+        }
+      }
+
+      HStack(spacing: 4) {
+        Text(t("signalasi.voice_agent_runs.open", "Open voice runs"))
+          .font(.system(size: 11, weight: .semibold))
+        Image(systemName: "arrow.up.right")
+          .font(.system(size: 10, weight: .bold))
+      }
+      .foregroundColor(.signalASIAccent)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.signalASIInsightBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func stateLabel(_ state: VoiceAgentRunState) -> String {
+    switch state {
+    case .created: return t("signalasi.voice_agent_runs.state.created", "Created")
+    case .accepted: return t("signalasi.voice_agent_runs.state.accepted", "Accepted")
+    case .queued: return t("signalasi.voice_agent_runs.state.queued", "Queued")
+    case .starting: return t("signalasi.voice_agent_runs.state.starting", "Starting")
+    case .running: return t("signalasi.voice_agent_runs.state.running", "Running")
+    case .waitingInput: return t("signalasi.voice_agent_runs.state.waiting_input", "Waiting for input")
+    case .waitingApproval: return t("signalasi.voice_agent_runs.state.waiting_approval", "Waiting for approval")
+    case .cancelling: return t("signalasi.voice_agent_runs.state.cancelling", "Cancelling")
+    case .completed: return t("signalasi.voice_agent_runs.state.completed", "Completed")
+    case .failed: return t("signalasi.voice_agent_runs.state.failed", "Failed")
+    case .cancelled: return t("signalasi.voice_agent_runs.state.cancelled", "Cancelled")
+    case .timedOut: return t("signalasi.voice_agent_runs.state.timed_out", "Timed out")
+    }
+  }
+
+  private func stateTint(_ state: VoiceAgentRunState) -> Color {
+    if state == .waitingApproval || state == .waitingInput || state == .cancelling {
+      return .orange
+    }
+    return .signalASIAccent
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
 private struct VoiceAgentRunEmptyView: View {
   var title: String
   var subtitle: String
