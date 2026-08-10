@@ -801,45 +801,64 @@ private struct SignalASIRichBlockView: View {
 
   private var noticeBlock: some View {
     let palette = noticePalette
-    return HStack(alignment: .top, spacing: 8) {
+    return HStack(alignment: .top, spacing: 0) {
       Rectangle()
         .fill(palette.accent)
         .frame(width: 4)
       VStack(alignment: .leading, spacing: 2) {
         if !block.title.isEmpty {
           selectableText(block.title)
-            .font(.subheadline.weight(.semibold))
+            .font(.system(size: 14, weight: .bold))
         }
         if !block.text.isEmpty {
           selectableText(block.text)
-            .font(.caption)
+            .font(.system(size: 13))
+            .padding(.top, block.title.isEmpty ? 0 : 1)
         }
         if block.title.isEmpty && block.text.isEmpty {
           selectableText(displayText)
-            .font(.caption)
+            .font(.system(size: 13))
         }
       }
+      .padding(.horizontal, 11)
+      .padding(.vertical, 9)
       .foregroundColor(palette.text)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(9)
     .background(palette.background)
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(palette.accent.opacity(0.65), lineWidth: 0.5)
+        .stroke(palette.accent, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
   private var noticePalette: (background: Color, accent: Color, text: Color) {
-    switch (block.metadata["style"]?.lowercased()) {
+    switch block.metadata["style"]?.lowercased() {
     case "success":
-      return (.signalASIInsightBackground, .signalASIAccent, .signalASIInsightText)
+      return (
+        Color(red: 234 / 255, green: 248 / 255, blue: 244 / 255),
+        Color(red: 10 / 255, green: 148 / 255, blue: 128 / 255),
+        Color(red: 8 / 255, green: 127 / 255, blue: 105 / 255)
+      )
     case "warning":
-      return (Color.orange.opacity(0.12), .orange, .orange)
+      return (
+        Color(red: 255 / 255, green: 247 / 255, blue: 230 / 255),
+        Color(red: 225 / 255, green: 161 / 255, blue: 43 / 255),
+        Color(red: 122 / 255, green: 82 / 255, blue: 0 / 255)
+      )
     case "error":
-      return (Color.red.opacity(0.10), .red, .red)
+      return (
+        Color(red: 255 / 255, green: 240 / 255, blue: 241 / 255),
+        Color(red: 210 / 255, green: 77 / 255, blue: 87 / 255),
+        Color(red: 159 / 255, green: 35 / 255, blue: 48 / 255)
+      )
     default:
-      return (Color.blue.opacity(0.10), .blue, .blue)
+      return (
+        Color(red: 238 / 255, green: 245 / 255, blue: 255 / 255),
+        Color(red: 90 / 255, green: 143 / 255, blue: 230 / 255),
+        Color(red: 49 / 255, green: 95 / 255, blue: 155 / 255)
+      )
     }
   }
 
