@@ -339,8 +339,12 @@ struct SignalASIAgentComposerView: View {
                   : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
-          .background(Color.white)
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .background(
+            canSend
+              ? Color(red: 0.655, green: 0.906, blue: 0.847)
+              : Color(red: 0.565, green: 0.569, blue: 0.588)
+          )
+          .clipShape(Circle())
       }
       .buttonStyle(.plain)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
