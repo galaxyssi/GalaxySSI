@@ -448,7 +448,7 @@ struct SignalASIAgentHomeReadinessView: View {
 
   private func recentTaskSubtitle(_ task: AgentTaskRecord) -> String {
     let execution = AgentExecutionPresentationPolicy.location(record: task)
-    return [
+    let summary = [
       executionLocationLabel(execution.locationKind),
       executionRuntimeLabel(execution.runtimeKind),
       execution.locationName,
@@ -458,6 +458,7 @@ struct SignalASIAgentHomeReadinessView: View {
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
       .joined(separator: " · ")
+    return summary.replacingOccurrences(of: " \u{8DEF} ", with: " \u{00B7} ")
   }
 
   private func executionLocationLabel(_ kind: AgentExecutionLocationKind) -> String {
