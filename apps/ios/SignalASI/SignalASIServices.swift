@@ -5078,6 +5078,9 @@ final class MessageCoordinator: ObservableObject {
       "turn_id": taskIdentity.turnId,
       "client_route_id": taskIdentity.clientRouteId,
       "client_message_id": sourceMessageId,
+      "agent_id": contact.connectorAgentId,
+      "desktop_id": contact.desktopId,
+      "desktop_name": contact.desktopName,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
     let mediaProfile = mediaNetworkProfileProvider()
