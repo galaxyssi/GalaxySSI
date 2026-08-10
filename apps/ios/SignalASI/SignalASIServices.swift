@@ -2696,7 +2696,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if handleDirectAgentCallableInventory(
+      if handleDirectAgentSecurityStatus(
         requestText: requestText,
         outgoing: outgoing,
         task: &task
@@ -2704,6 +2704,20 @@ final class MessageCoordinator: ObservableObject {
         return
       }
       if handleDirectAgentScreenSearch(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
+      if handleDirectAgentPermissionChecklist(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
+      if handleDirectAgentCallableInventory(
         requestText: requestText,
         outgoing: outgoing,
         task: &task
@@ -3084,6 +3098,265 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func handleDirectAgentSecurityStatus(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentSecurityStatusCommand.matches(requestText) else {
+      return false
+    }
+    let result = agentSecurityStatusReply()
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Security"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-security-status"
+    task.result = result
+    task.verification = "Local Agent security status read"
+    task.executionLog.append("Local Agent security status read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_security_status_reply",
+      detail: "agent_security",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_security_status_reply_received",
+      detail: "agent_security",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentSecurityStatusReply() -> String {
+    let settings = store.agentSafetySettings
+    let screen = currentAgentScreenContext
+    let clipboard = screen.clipboard
+    let notifications = screen.notifications
+    let mode = settings.permissionMode.rawValue.lowercased()
+    let boolean = { (value: Bool) in value ? "true" : "false" }
+    return localReply(
+      english: "mode=\(mode); high_risk_guard=\(boolean(settings.highRiskGuard)); memory_capture=\(boolean(settings.memoryCapture)); accessibility=\(boolean(screen.isAccessibilityEnabled)); notifications=\(boolean(notifications.hasAccess)); clipboard=\(boolean(clipboard.hasText)); sensitive_screen_flags=\(screen.sensitiveFlagCount); sensitive_notifications=\(notifications.sensitiveFlags.count); sensitive_clipboard=\(clipboard.sensitiveFlags.count)",
+      chinese: "模式=\(mode)；高风险保护=\(boolean(settings.highRiskGuard))；记忆捕获=\(boolean(settings.memoryCapture))；屏幕权限=\(boolean(screen.isAccessibilityEnabled))；通知访问=\(boolean(notifications.hasAccess))；剪贴板=\(boolean(clipboard.hasText))；屏幕敏感标记=\(screen.sensitiveFlagCount)；通知敏感标记=\(notifications.sensitiveFlags.count)；剪贴板敏感标记=\(clipboard.sensitiveFlags.count)"
+    )
+  }
+
+  private func handleDirectAgentScreenSearch(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let query = AgentScreenSearchCommand.query(requestText) else {
+      return false
+    }
+    let screen = currentAgentScreenContext
+    let result = agentScreenSearchReply(screen, query: query)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Screen Context"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-screen-context"
+    task.result = result
+    task.verification = "Local screen context search completed"
+    task.executionLog.append("Local screen search: \(query)")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_screen_search_reply",
+      detail: query,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_screen_search_reply_received",
+      detail: query,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentScreenSearchReply(_ screen: AgentScreenContext, query: String) -> String {
+    guard screen.isAccessibilityEnabled else {
+      return localReply(
+        english: "Screen Agent permission is disabled.",
+        chinese: "\u{5c4f}\u{5e55} Agent \u{6743}\u{9650}\u{672a}\u{5f00}\u{542f}\u{3002}"
+      )
+    }
+    let sensitive = screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty
+    if sensitive {
+      return localReply(
+        english: "Screen contains sensitive content; element values are hidden.",
+        chinese: "\u{5c4f}\u{5e55}\u{5305}\u{542b}\u{654f}\u{611f}\u{5185}\u{5bb9}\u{ff0c}\u{5143}\u{7d20}\u{503c}\u{5df2}\u{9690}\u{85cf}\u{3002}"
+      )
+    }
+    let normalizedQuery = query.lowercased()
+    let candidates: [(kind: String, value: String)] =
+      screen.visibleTexts.map { ("text", $0) } +
+      screen.clickableElements.map { ("action", screenSearchElementTitle($0)) } +
+      screen.inputFields.map { ("field", screenSearchElementTitle($0)) } +
+      screen.scrollableRegions.map { ("scroll", screenSearchElementTitle($0)) }
+    var matches: [(kind: String, value: String)] = []
+    for candidate in candidates {
+      let value = normalizedAgentScreenSearchText(candidate.value)
+      guard value.lowercased().contains(normalizedQuery),
+            !matches.contains(where: { $0.kind == candidate.kind && $0.value == value }) else {
+        continue
+      }
+      matches.append((candidate.kind, value))
+      if matches.count == 20 { break }
+    }
+    guard !matches.isEmpty else {
+      return localReply(
+        english: "No current screen elements match '\(query)'",
+        chinese: "\u{5f53}\u{524d}\u{5c4f}\u{5e55}\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{5143}\u{7d20}\u{3002}"
+      )
+    }
+    let heading = localReply(
+      english: "Screen matches: \(matches.count)",
+      chinese: "\u{5c4f}\u{5e55}\u{5339}\u{914d}\u{9879}\u{ff1a}\(matches.count)"
+    )
+    let rows = [heading] + matches.map { "\($0.kind): \($0.value)" }
+    return String(rows.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func normalizedAgentScreenSearchText(_ value: String) -> String {
+    String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(160))
+  }
+
+  private func screenSearchElementTitle(_ element: AgentScreenElement) -> String {
+    element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(element.viewId)
+      .ifBlank(element.className)
+      .ifBlank("Unnamed element")
+  }
+
+  private func handleDirectAgentPermissionChecklist(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentPermissionChecklistCommand.matches(requestText) else {
+      return false
+    }
+    let result = agentPermissionChecklistReply()
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Permissions"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-permissions"
+    task.result = result
+    task.verification = "Local Agent permission checklist read"
+    task.executionLog.append("Local Agent permission checklist read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_permission_checklist_reply",
+      detail: "agent_permissions",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_permission_checklist_reply_received",
+      detail: "agent_permissions",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentPermissionChecklistReply() -> String {
+    let screenReady = currentAgentScreenContext.isAccessibilityEnabled
+    let notificationsReady = currentAgentScreenContext.notifications.hasAccess
+    let microphoneReady = AVAudioSession.sharedInstance().recordPermission == .granted
+    let cameraReady = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+    let items: [(title: String, ready: Bool, required: Bool, fix: String)] = [
+      ("Screen Agent", screenReady, true, "open iOS app settings"),
+      ("Notification access", notificationsReady, false, "open notification settings"),
+      ("Microphone", microphoneReady, false, "request microphone access from voice input"),
+      ("Camera", cameraReady, false, "request camera access from Scan or Camera")
+    ]
+    let readyCount = items.filter { $0.ready }.count
+    let requiredMissing = items.filter { $0.required && !$0.ready }.count
+    var lines = [localReply(
+      english: "Agent permissions: \(readyCount)/\(items.count) ready",
+      chinese: "Agent 权限：\(readyCount)/\(items.count) 已就绪"
+    )]
+    for item in items {
+      let state = localReply(english: item.ready ? "ready" : "missing", chinese: item.ready ? "已就绪" : "缺失")
+      let title = localizedPermissionTitle(item.title)
+      var line = "\(state): \(title)"
+      if !item.ready {
+        line += " -> \(localizedPermissionFix(item.fix))"
+      }
+      if item.required {
+        line += localReply(english: " [required]", chinese: " [必需]")
+      }
+      lines.append(line)
+    }
+    if requiredMissing > 0 {
+      lines.append(localReply(
+        english: "Required permissions are still missing.",
+        chinese: "仍有必需权限未开启。"
+      ))
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private func localizedPermissionTitle(_ title: String) -> String {
+    switch title {
+    case "Screen Agent": return localReply(english: title, chinese: "屏幕 Agent")
+    case "Notification access": return localReply(english: title, chinese: "通知访问")
+    case "Microphone": return localReply(english: title, chinese: "麦克风")
+    case "Camera": return localReply(english: title, chinese: "相机")
+    default: return title
+    }
+  }
+
+  private func localizedPermissionFix(_ fix: String) -> String {
+    switch fix {
+    case "open iOS app settings": return localReply(english: fix, chinese: "打开 iOS 应用设置")
+    case "open notification settings": return localReply(english: fix, chinese: "打开通知设置")
+    case "request microphone access from voice input": return localReply(english: fix, chinese: "从语音输入请求麦克风权限")
+    case "request camera access from Scan or Camera": return localReply(english: fix, chinese: "从扫描或相机功能请求相机权限")
+    default: return fix
+    }
+  }
+
   private func handleDirectAgentCallableInventory(
     requestText: String,
     outgoing: ChatMessage,
@@ -3189,106 +3462,6 @@ final class MessageCoordinator: ObservableObject {
       english: "\(title) (\(count)):",
       chinese: "\(title)（\(count)）："
     )
-  }
-
-  private func handleDirectAgentScreenSearch(
-    requestText: String,
-    outgoing: ChatMessage,
-    task: inout AgentTaskRecord
-  ) -> Bool {
-    guard let query = AgentScreenSearchCommand.query(requestText) else {
-      return false
-    }
-    let screen = currentAgentScreenContext
-    let result = agentScreenSearchReply(screen, query: query)
-    task.phase = .completed
-    task.blocked = false
-    task.pendingAction = nil
-    task.pendingActions = []
-    task.routeKind = .localSystem
-    task.targetTitle = "Screen Context"
-    task.executionLocationKind = .phone
-    task.executionLocationName = "SignalASI iPhone"
-    task.executionRuntimeKind = .phoneNative
-    task.executionRuntimeId = "ios-screen-context"
-    task.result = result
-    task.verification = "Local screen context search completed"
-    task.executionLog.append("Local screen search: \(query)")
-    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    store.upsertAgentTask(task)
-    store.appendDeliveryTrace(
-      outgoing.id,
-      contactId: outgoing.contactId,
-      stage: "local_agent_screen_search_reply",
-      detail: query,
-      status: .delivered
-    )
-    _ = store.appendIncoming(
-      result,
-      from: outgoing.contactId,
-      remoteMessageId: outgoing.turnId,
-      status: .delivered,
-      traceStage: "local_agent_screen_search_reply_received",
-      detail: query,
-      conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId
-    )
-    return true
-  }
-
-  private func agentScreenSearchReply(_ screen: AgentScreenContext, query: String) -> String {
-    guard screen.isAccessibilityEnabled else {
-      return localReply(
-        english: "Screen Agent permission is disabled.",
-        chinese: "\u{5c4f}\u{5e55} Agent \u{6743}\u{9650}\u{672a}\u{5f00}\u{542f}\u{3002}"
-      )
-    }
-    let sensitive = screen.sensitiveFlagCount > 0 || !screen.sensitiveFlags.isEmpty
-    if sensitive {
-      return localReply(
-        english: "Screen contains sensitive content; element values are hidden.",
-        chinese: "\u{5c4f}\u{5e55}\u{5305}\u{542b}\u{654f}\u{611f}\u{5185}\u{5bb9}\u{ff0c}\u{5143}\u{7d20}\u{503c}\u{5df2}\u{9690}\u{85cf}\u{3002}"
-      )
-    }
-    let normalizedQuery = query.lowercased()
-    let candidates: [(kind: String, value: String)] =
-      screen.visibleTexts.map { ("text", $0) } +
-      screen.clickableElements.map { ("action", screenSearchElementTitle($0)) } +
-      screen.inputFields.map { ("field", screenSearchElementTitle($0)) } +
-      screen.scrollableRegions.map { ("scroll", screenSearchElementTitle($0)) }
-    var matches: [(kind: String, value: String)] = []
-    for candidate in candidates {
-      let value = normalizedAgentScreenSearchText(candidate.value)
-      guard value.lowercased().contains(normalizedQuery),
-            !matches.contains(where: { $0.kind == candidate.kind && $0.value == value }) else {
-        continue
-      }
-      matches.append((candidate.kind, value))
-      if matches.count == 20 { break }
-    }
-    guard !matches.isEmpty else {
-      return localReply(
-        english: "No current screen elements match '\(query)'",
-        chinese: "\u{5f53}\u{524d}\u{5c4f}\u{5e55}\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{5143}\u{7d20}\u{3002}"
-      )
-    }
-    let heading = localReply(
-      english: "Screen matches: \(matches.count)",
-      chinese: "\u{5c4f}\u{5e55}\u{5339}\u{914d}\u{9879}\u{ff1a}\(matches.count)"
-    )
-    let rows = [heading] + matches.map { "\($0.kind): \($0.value)" }
-    return String(rows.joined(separator: "\n").prefix(3_000))
-  }
-
-  private func normalizedAgentScreenSearchText(_ value: String) -> String {
-    String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(160))
-  }
-
-  private func screenSearchElementTitle(_ element: AgentScreenElement) -> String {
-    element.label.trimmingCharacters(in: .whitespacesAndNewlines)
-      .ifBlank(element.viewId)
-      .ifBlank(element.className)
-      .ifBlank("Unnamed element")
   }
 
   private func handleDirectLocalNativeAction(
