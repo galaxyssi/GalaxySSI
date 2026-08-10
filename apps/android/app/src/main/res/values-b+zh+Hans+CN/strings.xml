@@ -238,8 +238,9 @@
     <string name="local_model_metered_title">使用移动数据？</string>
     <string name="local_model_metered_message">%1$s 大小为 %2$s，使用计费网络下载可能产生流量费用。</string>
     <string name="local_model_search_title">搜索模型</string>
+    <string name="local_model_qnn_catalog_subtitle">可下载并启用一个或多个可信 QNN 模型。LFM2.5 使用为本机编译并签名的 W4A8 模型包。</string>
     <string name="local_model_qnn_import_title">导入预编译 QNN 模型</string>
-    <string name="local_model_qnn_import_subtitle">为当前设备编译并签名的 LFM2.5-2.6B W4A8 模型包</string>
+    <string name="local_model_qnn_import_subtitle">离线导入已签名的 LFM2.5-2.6B W4A8 模型包</string>
     <string name="local_model_qnn_import_action">导入</string>
     <string name="local_model_qnn_import_started">正在验证并安装 QNN 模型包…</string>
     <string name="local_model_qnn_import_complete">%1$s 已安装，并启用 3 GB 内存保护</string>

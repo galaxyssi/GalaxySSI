@@ -159,6 +159,25 @@ data class LocalModelRuntimeEstimate(
 }
 
 object LocalModelRuntimeProfiles {
+    val LFM_2_5_2_6B_QAIRT = profile(
+        id = Lfm25QnnDeploymentManifest.MODEL_ID,
+        displayName = "LFM2.5 2.6B QNN (NPU)",
+        repositoryId = Lfm25QnnDeploymentManifest.SOURCE_MODEL_ID,
+        fileName = Lfm25QnnDownloadCatalog.ARCHIVE_FILE_NAME,
+        expectedModelFileBytes = Lfm25QnnDownloadCatalog.ESTIMATED_ARCHIVE_BYTES,
+        sha256 = "",
+        parameterCountBillions = 2.6,
+        layerCount = 30,
+        keyValueHeadCount = 8,
+        headDimension = 64,
+        defaultContextTokens = Lfm25QnnDeploymentManifest.DEFAULT_CONTEXT_LIMIT,
+        maximumContextTokens = Lfm25QnnDeploymentManifest.MAX_CONTEXT_LIMIT,
+        quantizationLabel = Lfm25QnnDeploymentManifest.REQUIRED_PRECISION,
+        defaultNoThink = true,
+        preferredAccelerator = LocalModelAcceleratorKind.VENDOR_SDK,
+        artifactFormat = LocalModelArtifactFormat.QAIRT,
+        targetChipset = Lfm25QnnDeploymentManifest.TARGET_CHIPSET
+    )
     val QWEN_3_1_7B_QNN = profile(
         id = "qwen3-1-7b-qnn",
         displayName = "Qwen3 1.7B QNN (Hybrid)",
@@ -328,6 +347,7 @@ object LocalModelRuntimeProfiles {
     val all: List<LocalModelRuntimeProfile> = listOf(
         GEMMA_3_1B_Q4,
         GEMMA_3_4B_Q4,
+        LFM_2_5_2_6B_QAIRT,
         QWEN_3_1_7B_QAIRT,
         QWEN_3_1_7B_QNN,
         QWEN_3_4B_Q4_K_M,

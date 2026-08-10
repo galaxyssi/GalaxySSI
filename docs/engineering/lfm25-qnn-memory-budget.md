@@ -40,6 +40,12 @@ node tools/models/prepare-lfm25-qnn-deployment.mjs \
 
 8. Zip the directory contents without adding a parent directory. Import that ZIP from **Control Center -> Local models -> Import precompiled QNN model**.
 
+## Download publication
+
+The Android model list includes LFM2.5 as a first-class downloadable QNN profile. Publish the same signed archive under the fixed file name `lfm2.5-2.6b-qnn-w4a8-sm8850.zip` to the SignalASI Hugging Face, ModelScope, and GitHub release locations used by `Lfm25QnnDownloadCatalog`.
+
+The download service supports pause, resume, source failover, live progress, and automatic activation. It never trusts the transport alone: installation still verifies the embedded manifest signature, target chipset, W4A8 precision, process peak, spill-fill metadata, declared file set, and every file SHA-256. The manual import row remains available for offline deployment.
+
 ## Isolation guarantees
 
 The policy is keyed only to the signed LFM deployment ID. Existing Qwen, Gemma, custom GGUF, and Whisper profiles retain their current download, memory estimation, accelerator, and lifecycle behavior. LFM inference still uses the existing `:local_model_runtime` process and is unloaded after every request, so an over-budget native graph cannot take down the UI or messaging process.

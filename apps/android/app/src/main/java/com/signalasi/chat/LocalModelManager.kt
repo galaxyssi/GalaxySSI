@@ -79,10 +79,15 @@ object LocalModelManager {
 
     fun state(context: Context, profile: LocalModelRuntimeProfile): LocalModelDownloadState {
         if (isInstalled(context, profile)) {
+            val installedBytes = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+                Lfm25QnnDeploymentStore(context).installedManifest()?.installedSizeBytes
+            } else {
+                null
+            } ?: profile.expectedModelFileBytes
             return LocalModelDownloadState(
                 state = LocalModelInstallState.READY,
-                bytesDownloaded = profile.expectedModelFileBytes,
-                totalBytes = profile.expectedModelFileBytes
+                bytesDownloaded = installedBytes,
+                totalBytes = installedBytes
             )
         }
         val prefs = preferences(context)
@@ -93,10 +98,12 @@ object LocalModelManager {
                 totalBytes = profile.expectedModelFileBytes
             )
         }
-        val partialBytes = if (profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
-            storage(context).partialFile(profile).length()
-        } else {
-            prefs.getLong(KEY_BYTES + profile.id, 0L)
+        val partialBytes = when {
+            LocalModelQnnMemoryPolicy.appliesTo(profile) ->
+                Lfm25QnnDeploymentStore(context).partialDownloadBytes()
+            profile.artifactFormat == LocalModelArtifactFormat.GGUF ->
+                storage(context).partialFile(profile).length()
+            else -> prefs.getLong(KEY_BYTES + profile.id, 0L)
         }
         val effective = if (saved in setOf(LocalModelInstallState.DOWNLOADING, LocalModelInstallState.QUEUED) &&
             !LocalModelDownloadService.isActive(profile.id)
@@ -115,17 +122,23 @@ object LocalModelManager {
     }
 
     fun start(context: Context, profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
-        check(!LocalModelQnnMemoryPolicy.appliesTo(profile)) {
-            "Import the signed precompiled LFM2.5 QNN package from Local models"
-        }
         require(profile.downloadable) { "The selected local-model artifact has no verified download metadata" }
         require(GenieXQairtModelManager.supportsDevice(profile)) {
             "${profile.displayName} is compiled for ${profile.targetChipset}"
         }
         if (isInstalled(context, profile)) return
         val storage = storage(context)
-        val required = storage.requiredDownloadBytes(profile)
-        val available = storage.availableBytes()
+        val lfmStore = Lfm25QnnDeploymentStore(context)
+        val required = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            lfmStore.requiredDownloadBytes(profile.expectedModelFileBytes)
+        } else {
+            storage.requiredDownloadBytes(profile)
+        }
+        val available = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            lfmStore.availableBytes()
+        } else {
+            storage.availableBytes()
+        }
         if (available in 0 until required) throw LocalModelInsufficientStorage(required, available)
         if (isMetered(context) && !allowMetered) throw LocalModelMeteredConfirmationRequired(profile)
         record(
@@ -133,7 +146,11 @@ object LocalModelManager {
             profile,
             LocalModelDownloadState(
                 state = LocalModelInstallState.QUEUED,
-                bytesDownloaded = storage.partialFile(profile).length(),
+                bytesDownloaded = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+                    lfmStore.partialDownloadBytes()
+                } else {
+                    storage.partialFile(profile).length()
+                },
                 totalBytes = profile.expectedModelFileBytes,
                 sourceIndex = state(context, profile).sourceIndex
             )

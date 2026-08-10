@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -109,7 +110,11 @@ class LocalModelDownloadService : Service() {
             activeIds -= profileId
             val profile = LocalModelManager.profile(this, profileId)
             if (request == StopRequest.CANCEL) {
-                LocalModelManager.storage(this).partialFile(profile).delete()
+                if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+                    Lfm25QnnDeploymentStore(this).deletePartialDownload()
+                } else {
+                    LocalModelManager.storage(this).partialFile(profile).delete()
+                }
                 LocalModelManager.clearState(this, profile)
             } else {
                 val current = LocalModelManager.state(this, profile)
@@ -119,6 +124,10 @@ class LocalModelDownloadService : Service() {
     }
 
     private fun download(profile: LocalModelRuntimeProfile) {
+        if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            downloadSignedLfmQnn(profile)
+            return
+        }
         if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
             downloadQairt(profile)
             return
@@ -226,6 +235,211 @@ class LocalModelDownloadService : Service() {
             )
         )
         updateNotification(profile)
+    }
+
+    private fun downloadSignedLfmQnn(profile: LocalModelRuntimeProfile) {
+        val store = Lfm25QnnDeploymentStore(this)
+        val urls = Lfm25QnnDownloadCatalog.sourceUrls(LocalModelManager.preferChinaMirror(this))
+        var sourceIndex = LocalModelManager.state(this, profile).sourceIndex.coerceIn(0, urls.lastIndex)
+        var lastFailure: Throwable? = null
+        while (sourceIndex < urls.size) {
+            var downloadComplete = false
+            try {
+                val downloadedBytes = downloadLfmPackageFrom(profile, urls[sourceIndex], sourceIndex)
+                downloadComplete = true
+                checkStop(profile)
+                LocalModelManager.record(
+                    this,
+                    profile,
+                    LocalModelDownloadState(
+                        LocalModelInstallState.VERIFYING,
+                        downloadedBytes,
+                        downloadedBytes,
+                        sourceIndex
+                    )
+                )
+                updateNotification(profile)
+                LocalModelManager.record(
+                    this,
+                    profile,
+                    LocalModelDownloadState(
+                        LocalModelInstallState.INSTALLING,
+                        downloadedBytes,
+                        downloadedBytes,
+                        sourceIndex
+                    )
+                )
+                updateNotification(profile)
+                val installed = FileInputStream(store.partialDownloadFile()).use { input ->
+                    LocalModelManager.importSignedQnnDeployment(this, input)
+                }
+                store.deletePartialDownload()
+                LocalModelManager.record(
+                    this,
+                    installed,
+                    LocalModelDownloadState(
+                        LocalModelInstallState.READY,
+                        installed.expectedModelFileBytes,
+                        installed.expectedModelFileBytes,
+                        sourceIndex
+                    )
+                )
+                updateNotification(installed)
+                return
+            } catch (error: Throwable) {
+                lastFailure = error
+                when (stopRequest.get()) {
+                    StopRequest.PAUSE -> {
+                        val bytes = store.partialDownloadBytes()
+                        LocalModelManager.record(
+                            this,
+                            profile,
+                            LocalModelDownloadState(
+                                LocalModelInstallState.PAUSED,
+                                bytes,
+                                LocalModelManager.state(this, profile).totalBytes,
+                                sourceIndex
+                            )
+                        )
+                        return
+                    }
+                    StopRequest.CANCEL -> {
+                        store.deletePartialDownload()
+                        LocalModelManager.clearState(this, profile)
+                        return
+                    }
+                    StopRequest.NONE -> {
+                        if (downloadComplete) store.deletePartialDownload()
+                        sourceIndex += 1
+                        if (sourceIndex < urls.size) {
+                            LocalModelManager.record(
+                                this,
+                                profile,
+                                LocalModelDownloadState(
+                                    LocalModelInstallState.QUEUED,
+                                    store.partialDownloadBytes(),
+                                    profile.expectedModelFileBytes,
+                                    sourceIndex,
+                                    "Retrying another signed QNN source"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        LocalModelManager.record(
+            this,
+            profile,
+            LocalModelDownloadState(
+                LocalModelInstallState.FAILED,
+                store.partialDownloadBytes(),
+                profile.expectedModelFileBytes,
+                sourceIndex.coerceAtLeast(0),
+                lastFailure?.message.orEmpty().ifBlank { "Signed QNN model download failed" }
+            )
+        )
+        updateNotification(profile)
+    }
+
+    private fun downloadLfmPackageFrom(
+        profile: LocalModelRuntimeProfile,
+        sourceUrl: String,
+        sourceIndex: Int
+    ): Long {
+        val store = Lfm25QnnDeploymentStore(this)
+        val partial = store.partialDownloadFile()
+        var offset = partial.length().takeIf { it in 0..Lfm25QnnDownloadCatalog.MAX_ARCHIVE_BYTES } ?: 0L
+        if (partial.length() != offset) {
+            store.deletePartialDownload()
+            offset = 0L
+        }
+        val request = Request.Builder()
+            .url(sourceUrl)
+            .header("Accept", "application/zip, application/octet-stream")
+            .header("Accept-Encoding", "identity")
+            .header("User-Agent", "SignalASI-Android")
+            .apply { if (offset > 0L) header("Range", "bytes=$offset-") }
+            .build()
+        val call = client.newCall(request)
+        activeCall = call
+        call.execute().use { response ->
+            checkStop(profile)
+            if (response.code == 416 && offset > 0L) return partial.length()
+            if (!response.isSuccessful) throw IOException("QNN model source returned HTTP ${response.code}")
+            val append = LocalModelDownloadProtocol.shouldAppend(
+                requestedOffset = offset,
+                responseCode = response.code,
+                contentRange = response.header("Content-Range")
+            )
+            if (!append) {
+                store.deletePartialDownload()
+                offset = 0L
+            }
+            val body = response.body ?: throw IOException("QNN model source returned no data")
+            val total = Lfm25QnnDownloadCatalog.responseTotalBytes(
+                requestedOffset = offset,
+                responseContentLength = body.contentLength(),
+                contentRange = response.header("Content-Range"),
+                fallbackBytes = profile.expectedModelFileBytes
+            )
+            val requiredBytes = store.requiredDownloadBytes(total)
+            val availableBytes = store.availableBytes()
+            if (availableBytes in 0 until requiredBytes) {
+                throw LocalModelInsufficientStorage(requiredBytes, availableBytes)
+            }
+            val exactTotal = response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull() != null ||
+                body.contentLength() >= 0L
+            LocalModelManager.record(
+                this,
+                profile,
+                LocalModelDownloadState(
+                    LocalModelInstallState.DOWNLOADING,
+                    offset,
+                    total,
+                    sourceIndex
+                )
+            )
+            updateNotification(profile)
+            FileOutputStream(partial, append).use { output ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(1024 * 1024)
+                    var downloaded = offset
+                    var lastPersistedAt = 0L
+                    while (true) {
+                        checkStop(profile)
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read == 0) continue
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (downloaded > Lfm25QnnDownloadCatalog.MAX_ARCHIVE_BYTES) {
+                            throw IOException("QNN model package exceeded its size limit")
+                        }
+                        val now = System.currentTimeMillis()
+                        if (now - lastPersistedAt >= 750L) {
+                            LocalModelManager.record(
+                                this,
+                                profile,
+                                LocalModelDownloadState(
+                                    LocalModelInstallState.DOWNLOADING,
+                                    downloaded,
+                                    maxOf(total, downloaded),
+                                    sourceIndex
+                                )
+                            )
+                            updateNotification(profile)
+                            lastPersistedAt = now
+                        }
+                    }
+                }
+                output.fd.sync()
+            }
+            if (exactTotal && partial.length() != total) {
+                throw IOException("Downloaded ${partial.length()} of $total QNN package bytes")
+            }
+        }
+        return partial.length()
     }
 
     private fun downloadQairt(profile: LocalModelRuntimeProfile) = runBlocking {

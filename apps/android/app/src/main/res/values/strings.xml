@@ -183,7 +183,7 @@
     <string name="local_model_inference_speed">Inference Speed  28 token/s</string>
     <string name="local_model_section_manage">Model Management</string>
     <string name="local_model_qnn_section">QNN NPU Models</string>
-    <string name="local_model_qnn_catalog_subtitle">Enable either model or both. SignalASI uses Qwen for fast tasks and coordinates Qwen with Gemma for complex tasks.</string>
+    <string name="local_model_qnn_catalog_subtitle">Download and enable one or more verified QNN models. LFM2.5 uses a signed W4A8 package compiled for this device.</string>
     <string name="local_model_qnn_installed_count">%1$d/%2$d installed</string>
     <string name="local_model_qwen_automatic_thinking">Fast response and planning; thinking is selected automatically</string>
     <string name="local_model_gemma_reasoning_role">Complex reasoning and final response</string>
@@ -277,7 +277,7 @@
     <string name="local_model_metered_message">%1$s is %2$s. Downloading over a metered network may incur data charges.</string>
     <string name="local_model_search_title">Search models</string>
     <string name="local_model_qnn_import_title">Import precompiled QNN model</string>
-    <string name="local_model_qnn_import_subtitle">Signed LFM2.5-2.6B W4A8 package compiled for this device</string>
+    <string name="local_model_qnn_import_subtitle">Offline fallback for a signed LFM2.5-2.6B W4A8 package</string>
     <string name="local_model_qnn_import_action">Import</string>
     <string name="local_model_qnn_import_started">Verifying and installing the QNN package…</string>
     <string name="local_model_qnn_import_complete">%1$s is installed with the 3 GB memory guard</string>

@@ -26,6 +26,53 @@ class Lfm25QnnDeploymentTest {
     }
 
     @Test
+    fun built_in_profile_is_a_downloadable_qnn_npu_model() {
+        val profile = LocalModelRuntimeProfiles.LFM_2_5_2_6B_QAIRT
+
+        assertEquals(Lfm25QnnDeploymentManifest.MODEL_ID, profile.id)
+        assertEquals(LocalModelArtifactFormat.QAIRT, profile.artifactFormat)
+        assertEquals(LocalModelAcceleratorKind.VENDOR_SDK, profile.preferredAccelerator)
+        assertEquals("W4A8", profile.quantizationLabel)
+        assertEquals("SM8850", profile.targetChipset)
+        assertTrue(profile.downloadable)
+        assertTrue(LocalModelRuntimeProfiles.all.any { it.id == profile.id })
+    }
+
+    @Test
+    fun qnn_download_sources_use_the_signed_archive_and_prefer_china_mirrors() {
+        val china = Lfm25QnnDownloadCatalog.sourceUrls(preferChinaMirror = true)
+        val global = Lfm25QnnDownloadCatalog.sourceUrls(preferChinaMirror = false)
+
+        assertTrue(china.first().startsWith("https://modelscope.cn/"))
+        assertTrue(global.first().startsWith("https://huggingface.co/"))
+        assertEquals(4, china.distinct().size)
+        (china + global).forEach { url ->
+            assertTrue(url.startsWith("https://"))
+            assertTrue(url.contains(Lfm25QnnDownloadCatalog.ARCHIVE_FILE_NAME))
+        }
+    }
+
+    @Test
+    fun qnn_download_total_supports_resumed_content_ranges() {
+        val total = Lfm25QnnDownloadCatalog.responseTotalBytes(
+            requestedOffset = 1_000L,
+            responseContentLength = 2_000L,
+            contentRange = "bytes 1000-2999/9000",
+            fallbackBytes = 4_000L
+        )
+
+        assertEquals(9_000L, total)
+        assertTrue(runCatching {
+            Lfm25QnnDownloadCatalog.responseTotalBytes(
+                requestedOffset = 0L,
+                responseContentLength = Lfm25QnnDownloadCatalog.MAX_ARCHIVE_BYTES + 1L,
+                contentRange = null,
+                fallbackBytes = 1L
+            )
+        }.isFailure)
+    }
+
+    @Test
     fun manifest_rejects_profiled_peak_without_safety_headroom() {
         val invalid = manifestJson().put(
             "profiled_peak_bytes",
@@ -52,6 +99,18 @@ class Lfm25QnnDeploymentTest {
         assertEquals(manifest.profiledPeakBytes, artifact.manifest.profiledPeakBytes)
         store.delete()
         assertFalse(store.isInstalled(profile))
+    }
+
+    @Test
+    fun partial_qnn_download_is_private_and_removed_with_the_model() {
+        val root = temporaryDirectory("lfm-qnn-partial")
+        val store = Lfm25QnnDeploymentStore.forTesting(root) { true }
+        val partial = store.partialDownloadFile()
+        partial.writeBytes(byteArrayOf(1, 2, 3))
+
+        assertEquals(3L, store.partialDownloadBytes())
+        store.delete()
+        assertFalse(partial.exists())
     }
 
     @Test

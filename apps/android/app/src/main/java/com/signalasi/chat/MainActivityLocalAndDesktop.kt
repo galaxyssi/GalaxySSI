@@ -542,7 +542,8 @@ internal fun MainActivity.updateLocalModelRow(binding: LocalModelRowBinding, sta
         } else if (profile.defaultNoThink) {
             append("\n")
             append(getString(R.string.local_model_default_no_think))
-        } else if (state.state == LocalModelInstallState.FAILED && state.detail.isNotBlank()) {
+        }
+        if (state.state == LocalModelInstallState.FAILED && state.detail.isNotBlank()) {
             append("\n")
             append(state.detail)
         }
@@ -606,10 +607,6 @@ internal fun MainActivity.localModelActionLabel(
 }
 
 internal fun MainActivity.handleLocalModelRowClick(profile: LocalModelRuntimeProfile) {
-    if (LocalModelQnnMemoryPolicy.appliesTo(profile) && !LocalModelManager.isInstalled(this, profile)) {
-        selectLocalQnnPackage()
-        return
-    }
     when (LocalModelManager.state(this, profile).state) {
         LocalModelInstallState.NOT_INSTALLED,
         LocalModelInstallState.PAUSED,
