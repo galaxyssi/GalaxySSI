@@ -1308,6 +1308,9 @@ struct AgentHomeView: View {
       .onChange(of: activeAgentPhase) { _ in
         refreshAgentRuntimeAuditRecords()
       }
+      .onChange(of: activeAgentTasks) { _ in
+        refreshAgentRuntimeAuditRecords()
+      }
       .onChange(of: waitingMessageIDs.count) { _ in
         guard let last = messages.last else { return }
         guard transcriptAutoFollow else {
