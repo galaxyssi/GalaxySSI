@@ -16,48 +16,21 @@ class GlobalBackgroundExecutionBudgetTest {
     }
 
     @Test
-    fun `power saver defers all background model and autonomous work`() {
+    fun `power state never defers background work`() {
         GlobalBackgroundWorkKind.values().forEach { kind ->
             val decision = decide(kind, healthyEnvironment().copy(powerSaveMode = true))
 
-            assertFalse(decision.allowed)
-            assertEquals(GlobalBackgroundDeferralReason.POWER_SAVE, decision.reason)
-            assertEquals(NOW + GlobalBackgroundExecutionBudgetPolicy.POWER_SAVE_RETRY_MILLIS, decision.nextEligibleAtMillis)
+            assertTrue(decision.allowed)
+            assertEquals(GlobalBackgroundDeferralReason.NONE, decision.reason)
         }
     }
 
     @Test
-    fun `critical battery defers work unless the phone is charging`() {
-        val lowBattery = healthyEnvironment().copy(batteryPercent = 9)
-
-        assertEquals(
-            GlobalBackgroundDeferralReason.CRITICAL_BATTERY,
-            decide(GlobalBackgroundWorkKind.COGNITION, lowBattery).reason
-        )
-        assertTrue(
-            decide(
-                GlobalBackgroundWorkKind.COGNITION,
-                lowBattery.copy(charging = true)
-            ).allowed
-        )
-    }
-
-    @Test
-    fun `low battery applies the longer retry window to research`() {
-        val lowBattery = healthyEnvironment().copy(batteryPercent = 20)
-
-        val cognition = decide(GlobalBackgroundWorkKind.COGNITION, lowBattery)
-        val research = decide(GlobalBackgroundWorkKind.RESEARCH, lowBattery)
-
-        assertEquals(GlobalBackgroundDeferralReason.LOW_BATTERY, cognition.reason)
-        assertEquals(
-            NOW + GlobalBackgroundExecutionBudgetPolicy.LOW_BATTERY_REASONING_RETRY_MILLIS,
-            cognition.nextEligibleAtMillis
-        )
-        assertEquals(
-            NOW + GlobalBackgroundExecutionBudgetPolicy.LOW_BATTERY_RESEARCH_RETRY_MILLIS,
-            research.nextEligibleAtMillis
-        )
+    fun `low battery never defers background work`() {
+        val environment = healthyEnvironment().copy(batteryPercent = 1, charging = false)
+        GlobalBackgroundWorkKind.values().forEach { kind ->
+            assertTrue(decide(kind, environment).allowed)
+        }
     }
 
     @Test
@@ -94,20 +67,14 @@ class GlobalBackgroundExecutionBudgetTest {
     }
 
     @Test
-    fun `settings and explicit user action can bypass background protection`() {
+    fun `explicit user action can bypass network scheduling`() {
         val constrained = healthyEnvironment().copy(
             batteryPercent = 5,
             powerSaveMode = true,
             networkMetered = true
         )
 
-        assertTrue(
-            decide(
-                GlobalBackgroundWorkKind.COGNITION,
-                constrained,
-                GlobalAgentSettings(protectBatteryForBackgroundWork = false)
-            ).allowed
-        )
+        assertTrue(decide(GlobalBackgroundWorkKind.COGNITION, constrained).allowed)
         val forced = GlobalBackgroundExecutionBudgetPolicy.decide(
             kind = GlobalBackgroundWorkKind.RESEARCH,
             environment = constrained,

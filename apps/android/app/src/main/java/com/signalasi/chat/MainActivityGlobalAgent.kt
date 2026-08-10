@@ -341,7 +341,6 @@ internal fun MainActivity.renderControlCenterGlobalAgentPage() {
                 ControlCenterSectionSpec(
                     getString(R.string.cc_global_section_resources),
                     listOf(
-                        ControlCenterRowSpec("global.toggle_battery_protection", getString(R.string.cc_global_battery_protection_title), getString(R.string.cc_global_battery_protection_subtitle), R.drawable.ic_resource_battery, switchValue = settings.protectBatteryForBackgroundWork, showChevron = false, enabled = settings.enabled),
                         ControlCenterRowSpec("global.toggle_metered_research", getString(R.string.cc_global_metered_research_title), getString(R.string.cc_global_metered_research_subtitle), R.drawable.ic_resource_network, switchValue = settings.allowMeteredBackgroundResearch, showChevron = false, enabled = settings.enabled && settings.autonomousResearchEnabled),
                         ControlCenterRowSpec(
                             "global.daily_model_calls",

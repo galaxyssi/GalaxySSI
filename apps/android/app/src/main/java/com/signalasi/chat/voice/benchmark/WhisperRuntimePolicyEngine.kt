@@ -115,13 +115,6 @@ object WhisperRuntimePolicyEngine {
             reasons += "Critical thermal pressure blocks local Whisper"
             return remoteOrUnavailable(input, reasons)
         }
-        if (environment.batteryPercent != null && environment.batteryPercent <= CRITICAL_BATTERY_PERCENT &&
-            !environment.charging
-        ) {
-            reasons += "Critical battery level blocks sustained local inference"
-            return remoteOrUnavailable(input, reasons)
-        }
-
         return when (input.userMode) {
             WhisperUserVoiceMode.AUTOMATIC, WhisperUserVoiceMode.FAST -> {
                 val fast = realtime.firstOrNull()
@@ -324,7 +317,6 @@ object WhisperRuntimePolicyEngine {
     private fun shouldRunSecondPass(environment: WhisperRuntimeEnvironment): Boolean =
         environment.foreground &&
             environment.thermalStatus < THERMAL_SEVERE &&
-            (environment.batteryPercent == null || environment.charging || environment.batteryPercent >= LOW_BATTERY_PERCENT) &&
             environment.decodeQueueDepth == 0 &&
             (environment.highRiskTask ||
                 environment.accuracySensitiveTask ||
@@ -380,8 +372,6 @@ object WhisperRuntimePolicyEngine {
     private const val MIN_PARTIAL_INTERVAL_MS = 400L
     private const val MAX_PARTIAL_INTERVAL_MS = 8_000L
     private const val MIN_SECOND_PASS_AUDIO_MS = 3_000L
-    private const val LOW_BATTERY_PERCENT = 20
-    private const val CRITICAL_BATTERY_PERCENT = 5
     private const val THERMAL_MODERATE = 2
     private const val THERMAL_SEVERE = 3
     private const val THERMAL_CRITICAL = 4

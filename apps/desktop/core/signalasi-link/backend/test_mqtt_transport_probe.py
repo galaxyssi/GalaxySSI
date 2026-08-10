@@ -59,6 +59,16 @@ class MqttTransportProbeStateTests(unittest.TestCase):
         state.disconnected()
         self.assertEqual((False, 0.0, generation), state.stalled(120.0))
 
+    def test_real_transport_activity_cancels_stale_probe(self):
+        state = mqtt_bridge.MqttTransportProbeState(15.0, 10.0)
+        state.connected(100.0)
+        self.assertTrue(state.begin("pending", 100.0))
+
+        self.assertTrue(state.observe_transport_activity(109.5))
+        self.assertEqual((False, 0.0, 1), state.stalled(120.0))
+        self.assertFalse(state.should_publish(124.4))
+        self.assertTrue(state.should_publish(124.5))
+
 
 class MqttTransportProbeIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -107,6 +117,26 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
 
         self.assertTrue(mqtt_bridge._handle_transport_probe_message(message))
         self.assertEqual((True, 10.0, 1), self.state.stalled(110.0))
+
+    def test_authenticated_route_traffic_prevents_probe_reconnect(self):
+        self.state.connected(100.0)
+        self.assertTrue(self.state.begin("pending", 100.0))
+        server_route = "a" * 22
+        client_route = "b" * 22
+        message = SimpleNamespace(
+            topic=f"signalasichat/v1/{server_route}/{client_route}/up",
+            payload=b"{}",
+        )
+
+        with (
+            patch.object(mqtt_bridge.time, "monotonic", return_value=109.5),
+            patch.object(mqtt_bridge, "server_route_id", return_value=server_route),
+            patch.object(mqtt_bridge, "_queue_inbound_message") as queued,
+        ):
+            mqtt_bridge.on_mqtt_message(_ProbeMqtt(), None, message)
+
+        queued.assert_called_once()
+        self.assertEqual((False, 0.0, 1), self.state.stalled(120.0))
 
     def test_rejected_probe_requests_transport_recovery(self):
         mqttc = _ProbeMqtt(rc=4)

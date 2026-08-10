@@ -80,9 +80,7 @@ data class AgentRuntimeEnvironment(
     val networkMetered: Boolean = false,
     val appMemoryBytes: Long = 0L,
     val availableMemoryBytes: Long = 0L
-) {
-    val energyConstrained: Boolean get() = powerSaveMode || (!charging && batteryPercent in 0..19)
-}
+)
 
 data class AgentResourceCandidate(
     val resource: AgentResourceDescriptor,
@@ -971,10 +969,6 @@ class AgentResourceRouter(context: Context) {
         if (requirements.executionHorizon != AgentExecutionHorizon.INTERACTIVE) {
             if (resource.supportsBackground) score += 140 else score -= 120
         }
-        if (environment.energyConstrained) {
-            score -= resource.energy.ordinal * 70
-            if (resource.energy == AgentResourceEnergy.MINIMAL) score += 80
-        }
         if (environment.networkMetered && resource.location == AgentResourceLocation.CLOUD) score -= 70
         if (environment.networkAvailable && !environment.networkValidated && resource.location != AgentResourceLocation.PHONE) score -= 180
         if (resource.contextWindowTokens in 1 until requirements.estimatedInputTokens) score -= 300
@@ -1018,7 +1012,6 @@ class AgentResourceRouter(context: Context) {
         if (requirements.executionHorizon != AgentExecutionHorizon.INTERACTIVE) {
             reasons += "background:${resource.supportsBackground}"
         }
-        if (environment.energyConstrained) reasons += "energy_constrained"
         if (environment.networkMetered) reasons += "metered_network"
         reasons += "task_budget:${taskBudget.profile.wireValue}"
         return AgentResourceCandidate(resource, score, reasons)

@@ -220,11 +220,6 @@ class VoiceResourceGovernor(
         if (!workload.allowBackground && !snapshot.foreground) {
             reasons += VoiceResourceReason.BACKGROUND_RESTRICTED
         }
-        if (workload.localInference && snapshot.batteryPercent != null &&
-            snapshot.batteryPercent <= CRITICAL_BATTERY_PERCENT && !snapshot.charging
-        ) {
-            reasons += VoiceResourceReason.CRITICAL_BATTERY
-        }
         val highMemoryThermalBlock = workload.localInference && workload.highMemoryLocalModel &&
             thermal.releaseLargeModels
         val hardBlocked = reasons.any { it in HARD_BLOCK_REASONS } || highMemoryThermalBlock
@@ -258,13 +253,11 @@ class VoiceResourceGovernor(
     }
 
     companion object {
-        private const val CRITICAL_BATTERY_PERCENT = 5
         private val HARD_BLOCK_REASONS = setOf(
             VoiceResourceReason.LOW_MEMORY_SIGNAL,
             VoiceResourceReason.INSUFFICIENT_MEMORY_HEADROOM,
             VoiceResourceReason.THERMAL_CRITICAL,
             VoiceResourceReason.THERMAL_SHUTDOWN,
-            VoiceResourceReason.CRITICAL_BATTERY,
             VoiceResourceReason.BACKGROUND_RESTRICTED,
             VoiceResourceReason.NETWORK_UNAVAILABLE
         )

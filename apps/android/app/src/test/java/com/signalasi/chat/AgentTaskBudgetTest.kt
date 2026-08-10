@@ -14,11 +14,11 @@ class AgentTaskBudgetTest {
         val private = AgentTaskBudget.forProfile(AgentTaskBudgetProfile.PRIVATE)
 
         assertEquals(0L, adaptive.maxElapsedSeconds)
-        assertEquals(5_000_000L, adaptive.maxCostMicros)
-        assertEquals(300L, fast.maxElapsedSeconds)
-        assertEquals(256_000L, fast.maxInputTokens)
-        assertEquals(250_000L, economy.maxCostMicros)
-        assertEquals(32L * AgentTaskBudget.MIB, economy.maxNetworkBytes)
+        assertEquals(0L, adaptive.maxCostMicros)
+        assertEquals(0L, fast.maxElapsedSeconds)
+        assertEquals(0L, fast.maxInputTokens)
+        assertEquals(0L, economy.maxCostMicros)
+        assertEquals(0L, economy.maxNetworkBytes)
         assertFalse(private.allowCloud)
         assertFalse(private.allowPaidProviders)
         assertEquals(AgentTaskNetworkPolicy.TRUSTED_ONLY, private.networkPolicy)
@@ -48,7 +48,7 @@ class AgentTaskBudgetTest {
     }
 
     @Test
-    fun eachResourceLimitProducesATypedDenial() {
+    fun resourceCountersNeverTerminateAUserTask() {
         val cases = listOf(
             Triple(
                 AgentTaskBudget(maxElapsedSeconds = 1),
@@ -82,10 +82,10 @@ class AgentTaskBudgetTest {
             )
         )
 
-        cases.forEach { (budget, usage, expectedLimit) ->
+        cases.forEach { (budget, usage, _) ->
             val decision = AgentTaskBudgetPolicy.evaluate(budget, usage)
-            assertFalse(decision.allowed)
-            assertEquals(expectedLimit, decision.limit)
+            assertTrue(decision.allowed)
+            assertEquals(null, decision.limit)
         }
     }
 
@@ -116,14 +116,35 @@ class AgentTaskBudgetTest {
             trustedNetworkTarget = false
         )
 
-        assertEquals(AgentTaskBudgetLimit.BATTERY, lowBattery.limit)
+        assertTrue(lowBattery.allowed)
         assertTrue(charging.allowed)
         assertTrue(trusted.allowed)
         assertEquals(AgentTaskBudgetLimit.NETWORK, untrusted.limit)
     }
 
     @Test
-    fun executionLoopPersistsAndEnforcesResourceUsage() {
+    fun lowBatteryAndMemoryTelemetryNeverBlocksTransport() {
+        val decision = AgentTaskBudgetPolicy.evaluate(
+            budget = AgentTaskBudget(
+                minimumBatteryPercent = 80,
+                maxMemoryBytes = 1
+            ),
+            usage = AgentTaskBudgetUsage(peakMemoryBytes = 1024),
+            environment = AgentTaskBudgetEnvironment(
+                batteryPercent = 5,
+                charging = false,
+                appMemoryBytes = 1024,
+                networkAvailable = true
+            ),
+            networkRequired = true,
+            trustedNetworkTarget = true
+        )
+
+        assertTrue(decision.allowed)
+    }
+
+    @Test
+    fun executionLoopPersistsResourceUsageWithoutTerminatingTheTask() {
         val loop = AgentExecutionLoop.create { 1_000L }
         loop.start(
             taskId = "budgeted-task",
@@ -144,10 +165,10 @@ class AgentTaskBudgetTest {
             AgentExecutionLoopJsonCodec.encode(updated.snapshot)
         )
 
-        assertEquals(AgentExecutionLoopPhase.FAILED, updated.phase)
+        assertEquals(AgentExecutionLoopPhase.PLAN, updated.phase)
         assertEquals(11L, restored?.taskBudgetUsage?.inputTokens)
         assertEquals(3L, restored?.taskBudgetUsage?.outputTokens)
         assertTrue(restored?.taskBudgetUsage?.usageEstimated == true)
-        assertTrue(restored?.budgetFailure?.contains("input token", ignoreCase = true) == true)
+        assertTrue(restored?.budgetFailure.isNullOrBlank())
     }
 }

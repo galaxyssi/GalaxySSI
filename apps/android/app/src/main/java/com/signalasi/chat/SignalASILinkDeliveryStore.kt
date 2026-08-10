@@ -63,6 +63,11 @@ object SignalASILinkDeliveryStore {
         val receiptRequired: Boolean
     )
 
+    data class AttachmentDependencyRelease(
+        val matchedMessages: Int,
+        val releasedMessages: Int
+    )
+
     @Synchronized
     fun ensureTransportEpoch(context: Context, epoch: String): Boolean {
         require(epoch.isNotBlank()) { "Transport epoch is required" }
@@ -124,11 +129,18 @@ object SignalASILinkDeliveryStore {
     fun releaseAttachmentDependency(
         context: Context,
         transferId: String
-    ): Int {
+    ): Int = releaseAttachmentDependencyResult(context, transferId).releasedMessages
+
+    @Synchronized
+    fun releaseAttachmentDependencyResult(
+        context: Context,
+        transferId: String
+    ): AttachmentDependencyRelease {
         val normalized = transferId.lowercase()
-        if (!normalized.matches(SHA256)) return 0
+        if (!normalized.matches(SHA256)) return AttachmentDependencyRelease(0, 0)
         val values = outboxArray(context)
         val now = System.currentTimeMillis()
+        var matched = 0
         var released = 0
         var changed = false
         for (index in 0 until values.length()) {
@@ -145,6 +157,7 @@ object SignalASILinkDeliveryStore {
                 }
             }
             if (!removed) continue
+            matched += 1
             changed = true
             if (remaining.length() == 0) {
                 item.remove(BLOCKED_BY_ATTACHMENT_TRANSFERS)
@@ -157,7 +170,7 @@ object SignalASILinkDeliveryStore {
             }
         }
         if (changed) writeArray(context, KEY_OUTBOX, values)
-        return released
+        return AttachmentDependencyRelease(matched, released)
     }
 
     @Synchronized
