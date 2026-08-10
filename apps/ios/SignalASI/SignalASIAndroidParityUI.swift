@@ -1418,36 +1418,60 @@ struct AgentHomeView: View {
                   },
                   onFormSubmit: handleAgentRichForm
                 )
-                if !message.isMine,
-                   !message.isSystem,
-                   let task = agentTask(for: message) {
-                  SignalASIAgentExecutionFooterView(
-                    executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
-                    status: agentPhaseLabel(task.phase),
-                    location: agentExecutionLocationSummary(task),
-                    step: agentExecutionStep(task),
-                    duration: executionDuration(
-                      startedAtMillis: task.createdAtMillis,
-                      updatedAtMillis: task.updatedAtMillis
-                    ),
-                    details: task.executionLog,
-                    detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
-                    timelineActions: agentTimelineActions(for: task),
-                    timelineActionTitle: { agentTimelineActionTitle($0) },
-                    timelineActionIcon: { agentTimelineActionIcon($0) },
-                    timelineActionMenuTitle: t(
-                      "signalasi.agent.task_control.title",
-                      "Task controls"
-                    ),
-                    canCancel: AgentTaskCenterPolicy.cancellable(task),
-                    cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
-                    onCancel: {
-                      cancelActiveAgentTask(task)
-                    },
-                    onTimelineAction: { action in
-                      runAgentTimelineAction(action, task: task)
-                    }
-                  )
+                if !message.isMine, !message.isSystem {
+                  if let task = agentTask(for: message) {
+                    SignalASIAgentExecutionFooterView(
+                      executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
+                      status: agentPhaseLabel(task.phase),
+                      location: agentExecutionLocationSummary(task),
+                      step: agentExecutionStep(task),
+                      duration: executionDuration(
+                        startedAtMillis: task.createdAtMillis,
+                        updatedAtMillis: task.updatedAtMillis
+                      ),
+                      details: task.executionLog,
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      timelineActions: agentTimelineActions(for: task),
+                      timelineActionTitle: { agentTimelineActionTitle($0) },
+                      timelineActionIcon: { agentTimelineActionIcon($0) },
+                      timelineActionMenuTitle: t(
+                        "signalasi.agent.task_control.title",
+                        "Task controls"
+                      ),
+                      canCancel: AgentTaskCenterPolicy.cancellable(task),
+                      cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelActiveAgentTask(task)
+                      },
+                      onTimelineAction: { action in
+                        runAgentTimelineAction(action, task: task)
+                      }
+                    )
+                  } else if let remoteTask = remoteAgentTask(for: message) {
+                    SignalASIAgentExecutionFooterView(
+                      executor: remoteTask.target.ifBlank(t("signalasi.agent.status", "Agent")),
+                      status: remoteAgentStatusLabel(remoteTask.status),
+                      location: remoteTask.location.ifBlank(
+                        t("signalasi.agent_execution.location.desktop", "Desktop")
+                      ),
+                      step: remoteAgentStep(remoteTask),
+                      duration: executionDuration(
+                        startedAtMillis: remoteTask.history.first?.updatedAtMillis
+                          ?? remoteTask.updatedAtMillis,
+                        updatedAtMillis: remoteTask.updatedAtMillis
+                      ),
+                      details: remoteTask.history.map(remoteAgentTimelineLine),
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      canCancel: remoteTask.isCancellable &&
+                        !cancellingRemoteTaskIDs.contains(remoteTask.id),
+                      cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
+                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelRemoteAgentTask(remoteTask)
+                      }
+                    )
+                  }
                 }
               }
                 .id(message.id)
@@ -1468,6 +1492,15 @@ struct AgentHomeView: View {
                     } label: {
                       Label(
                         t("signalasi.agent.task_control.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  } else if let remoteTask = remoteAgentTask(for: message), remoteTask.isCancellable {
+                    Button(role: .destructive) {
+                      cancelRemoteAgentTask(remoteTask)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
                         systemImage: "xmark.circle"
                       )
                     }
@@ -1825,6 +1858,36 @@ struct AgentHomeView: View {
     let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !turnID.isEmpty else { return nil }
     return store.agentTask(id: turnID)
+  }
+
+  private func remoteAgentTask(for message: ChatMessage) -> AgentRemoteTaskStatusSnapshot? {
+    let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationID.isEmpty else { return nil }
+    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return coordinator.remoteAgentTaskStatuses.values
+      .filter { snapshot in
+        guard snapshot.conversationId == conversationID,
+              !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) else {
+          return false
+        }
+        let turnMatches = !turnID.isEmpty &&
+          (snapshot.taskId == turnID || snapshot.turnId == turnID)
+        let sourceID = snapshot.sourceMessageId > 0
+          ? String(snapshot.sourceMessageId)
+          : ""
+        let sourceMatches = !remoteMessageID.isEmpty &&
+          (!sourceID.isEmpty &&
+            (remoteMessageID == sourceID || remoteMessageID == "agent-stream-\(sourceID)"))
+        return turnMatches || sourceMatches
+      }
+      .max { lhs, rhs in
+        if lhs.updatedAtMillis != rhs.updatedAtMillis {
+          return lhs.updatedAtMillis < rhs.updatedAtMillis
+        }
+        return lhs.id < rhs.id
+      }
   }
 
   private func handleAgentRichForm(_ block: AgentRichBlock, _ values: [String: String]) {
