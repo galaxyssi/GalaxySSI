@@ -4,7 +4,7 @@ import SwiftUI
 extension GlobalAgentSettings {
   var normalized: GlobalAgentSettings {
     GlobalAgentSettings(
-      enabled: enabled,
+      enabled: false,
       proactiveInsightsEnabled: proactiveInsightsEnabled,
       proactiveDiscoveryEnabled: proactiveDiscoveryEnabled,
       modelUnderstandingEnabled: modelUnderstandingEnabled,

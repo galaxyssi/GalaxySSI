@@ -108,17 +108,6 @@ struct SignalASIControlCenterView: View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_intelligent_core", "Intelligent Core"))
       SignalASIControlCenterNavigationRow(
-        title: t("cc_global_agent_title", "Global Super Agent"),
-        subtitle: t("cc_global_agent_subtitle", "Personal intelligence that works across conversations and long-term goals"),
-        systemImage: "sparkles",
-        tint: store.globalAgentSettings.enabled ? .signalASIAccent : .orange,
-        badge: store.globalAgentSettings.enabled
-          ? t("cc_global_understanding_active", "Global understanding active")
-          : t("on_device_agent_status_paused", "Paused")
-      ) {
-        SignalASIGlobalAgentControlView()
-      }
-      SignalASIControlCenterNavigationRow(
         title: t("cc_agent_core_title", "Agent Core"),
         subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
         systemImage: "cpu",
