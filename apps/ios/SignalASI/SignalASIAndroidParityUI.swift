@@ -657,10 +657,19 @@ struct AgentHomeView: View {
         focusScannedAgents(agentIDs)
       }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
-        runtimeArtifactStatus = t(
-          "runtime_artifact.download_completed",
-          "Artifact download completed and is ready on this device."
-        )
+        let savedPath = coordinator.artifactDownloadSavedPath
+        runtimeArtifactStatus = savedPath.isEmpty
+          ? t(
+            "runtime_artifact.download_completed",
+            "Artifact download completed and is ready on this device."
+          )
+          : String(
+            format: t(
+              "runtime_artifact.download_saved",
+              "Artifact downloaded to %@."
+            ),
+            savedPath
+          )
       }
       .onChange(of: coordinator.artifactDownloadFailure) { failure in
         guard !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -725,7 +734,7 @@ struct AgentHomeView: View {
       ) { result in
         if case .success(let url) = result,
            !runtimeArtifactExportSourceURI.isEmpty {
-          try? AgentDesktopArtifactStore.shared.markSavedToDownloads(
+          coordinator.markDesktopArtifactSaved(
             sourceURI: runtimeArtifactExportSourceURI,
             savedURI: url.absoluteString
           )
@@ -854,7 +863,7 @@ struct AgentHomeView: View {
         runtimeArtifactError = t("runtime_artifact.error.invalid", "The artifact information is invalid.")
         return
       }
-      if let file = AgentDesktopArtifactStore.shared.localFile(forArtifactURI: payload.artifactURI) {
+      if let file = coordinator.desktopArtifactStore.localFile(for: payload.richBlock) {
         do {
           runtimeArtifactDocument = SignalASIRuntimeArtifactDocument(data: try Data(contentsOf: file))
           runtimeArtifactExportFilename = payload.displayName

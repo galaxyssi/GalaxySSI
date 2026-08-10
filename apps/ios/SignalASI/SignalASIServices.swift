@@ -693,6 +693,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var artifactRevision = 0
   @Published private(set) var artifactDownloadCompletedRevision = 0
+  @Published private(set) var artifactDownloadSavedPath = ""
   @Published private(set) var artifactDownloadFailure = ""
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
@@ -5726,9 +5727,19 @@ final class MessageCoordinator: ObservableObject {
       do {
         let result = try desktopArtifactStore.ingest(payload)
         if result.completed {
-          pendingArtifactDownloads.remove(result.artifactURI)
+          let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
           artifactRevision &+= 1
           artifactDownloadFailure = ""
+          artifactDownloadSavedPath = ""
+          if saveRequested {
+            do {
+              artifactDownloadSavedPath = try desktopArtifactStore.saveArtifactUriToDownloads(
+                sourceURI: result.artifactURI
+              )
+            } catch {
+              artifactDownloadFailure = error.localizedDescription
+            }
+          }
           artifactDownloadCompletedRevision &+= 1
           let link = incomingLink ?? store.serverLinks.first { $0.desktopId == payload.string("desktop_id") }
           publishDesktopArtifactControl(

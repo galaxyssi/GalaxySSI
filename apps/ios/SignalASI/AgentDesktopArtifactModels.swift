@@ -268,6 +268,36 @@ final class AgentDesktopArtifactStore {
     return file
   }
 
+  func saveArtifactUriToDownloads(sourceURI: String) throws -> String {
+    try locked {
+      guard let record = try existingRecord(artifactURI: sourceURI),
+            let source = try artifactFile(record: record),
+            fileManager.fileExists(atPath: source.path) else {
+        throw AgentDesktopArtifactStoreError.unavailable("Artifact is not available")
+      }
+      let fileName = Self.safeFileName(record.name).ifBlank("SignalASI-artifact")
+      guard let downloadsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
+        .first?
+        .appendingPathComponent("Downloads", isDirectory: true)
+        .appendingPathComponent("SignalASI", isDirectory: true) else {
+        throw AgentDesktopArtifactStoreError.unavailable("Downloads directory is unavailable")
+      }
+      try fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+      let destination = downloadsDirectory.appendingPathComponent(fileName, isDirectory: false)
+      if fileManager.fileExists(atPath: destination.path) {
+        try fileManager.removeItem(at: destination)
+      }
+      try fileManager.copyItem(at: source, to: destination)
+
+      var updated = record
+      updated.savedToDownloads = true
+      updated.savedURI = destination.absoluteString
+      updated.savedAtMillis = nowMillis()
+      try writeRecord(updated, artifactURI: sourceURI)
+      return "Downloads/SignalASI/\(fileName)"
+    }
+  }
+
   func markSavedToDownloads(sourceURI: String, savedURI: String) throws {
     try locked {
       var record = try existingRecord(artifactURI: sourceURI)
