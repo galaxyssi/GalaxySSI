@@ -5185,7 +5185,7 @@ final class MessageCoordinator: ObservableObject {
         once: true
       )
     }
-    if let data = try? JSONEncoder().encode(store.agentTaskBudget),
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
        let taskBudget = try? JSONSerialization.jsonObject(with: data) {
       payload["task_budget"] = taskBudget
     }
