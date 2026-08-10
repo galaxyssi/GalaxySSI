@@ -340,6 +340,7 @@ private struct SignalASIRichBlockView: View {
       actionsBlock(title: block.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t("rich_output_actions", "Actions") : block.title)
     case .approval:
       approvalBlock
+        .frame(maxWidth: UIScreen.main.bounds.width * Self.approvalWidthRatio, alignment: .leading)
     case .form:
       formBlock
     case .html:
@@ -1461,6 +1462,7 @@ private struct SignalASIRichBlockView: View {
   private static let collapsedCodeLines = 28
   private static let visibleListItems = 100
   private static let visibleTableRows = 12
+  private static let approvalWidthRatio: CGFloat = 0.78
   private static let visibleGalleryItems = 10
   private static let visibleTimelineItems = 50
 }
