@@ -75,6 +75,7 @@ struct AgentHomeView: View {
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
+  @State private var agentClipboardContext = AgentClipboardContext()
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -2317,7 +2318,8 @@ struct AgentHomeView: View {
       attachments: attachments,
       unreadTotal: unreadTotal,
       screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
-      t: t
+      t: t,
+      clipboard: agentClipboardContext
     )
   }
 
@@ -2351,7 +2353,21 @@ struct AgentHomeView: View {
       for: store.activeAgentConversationId
     )
     refreshAgentRuntimeAuditRecords()
-    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
+    let clipboard = store.agentSafetySettings.screenObservationAllowed
+      ? AgentClipboardContext.fromText(UIPasteboard.general.string ?? "")
+      : AgentClipboardContext()
+    agentClipboardContext = clipboard
+    coordinator.updateAgentScreenContext(
+      SignalASIAgentScreenContextSnapshotBuilder.make(
+        messages: messages,
+        draft: draft,
+        attachments: attachments,
+        unreadTotal: unreadTotal,
+        screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
+        t: t,
+        clipboard: clipboard
+      ).screen
+    )
   }
 
   private func resetAgentSessionPresentation() {

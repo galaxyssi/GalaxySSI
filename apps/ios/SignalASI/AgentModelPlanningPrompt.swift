@@ -198,6 +198,15 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "Current app: \(screen.foregroundApp.prefixStringForPlanning(160))\n")
     append(&prompt, "Current page: \(screen.pageTitle.prefixStringForPlanning(160))\n")
     append(&prompt, "Screen counts: text=\(visibleTextCount), actions=\(clickableCount), fields=\(inputCount)\n")
+    if screen.clipboard.hasText {
+      let sensitivity = screen.clipboard.sensitiveFlags.isEmpty
+        ? "none"
+        : screen.clipboard.sensitiveFlags.joined(separator: ",")
+      append(
+        &prompt,
+        "Clipboard: chars=\(screen.clipboard.textLength), hash=\(screen.clipboard.textHash.prefixStringForPlanning(128)), sensitive=\(sensitivity)\n"
+      )
+    }
     let visualActions = request.parsingContext.clickableElements.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     let visualFields = request.parsingContext.inputFields.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     if visualActions > 0 || visualFields > 0 {

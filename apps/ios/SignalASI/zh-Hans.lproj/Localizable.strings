@@ -15,6 +15,8 @@
 "agent_screen_focused_input" = "当前输入框";
 "agent_screen_clipboard" = "剪贴板";
 "agent_screen_clipboard_ios_summary" = "粘贴剪贴板";
+"agent_screen_clipboard_summary_ios" = "%d 个字符 / %@";
+"agent_screen_clipboard_sensitive_ios" = "%d 个字符 / 敏感内容";
 "agent_screen_notifications" = "通知";
 "agent_screen_notifications_locked" = "通知访问未启用";
 "agent_screen_device_status" = "设备状态";

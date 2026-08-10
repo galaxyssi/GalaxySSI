@@ -137,7 +137,10 @@ enum AgentExecutionContinuity {
       screen.pageTitle,
       screen.visibleTexts.prefix(40).joined(separator: "\u{001f}"),
       String(screen.clickableNodeCount),
-      String(screen.inputFieldCount)
+      String(screen.inputFieldCount),
+      screen.clipboard.textHash,
+      String(screen.clipboard.textLength),
+      screen.clipboard.sensitiveFlags.joined(separator: ",")
     ].joined(separator: "\u{001e}")
     return String(javaStringHash(payload))
   }

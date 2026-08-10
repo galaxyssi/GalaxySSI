@@ -50,6 +50,78 @@ enum AgentRecoveryDecision: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+struct AgentClipboardContext: Codable, Equatable {
+  var hasText: Bool
+  var textLength: Int
+  var textHash: String
+  var preview: String
+  var sensitiveFlags: [String]
+
+  init(
+    hasText: Bool = false,
+    textLength: Int = 0,
+    textHash: String = "",
+    preview: String = "",
+    sensitiveFlags: [String] = []
+  ) {
+    self.hasText = hasText
+    self.textLength = max(textLength, 0)
+    self.textHash = String(textHash.prefix(128))
+    self.preview = String(preview.prefix(96))
+    self.sensitiveFlags = Array(
+      sensitiveFlags
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .prefix(8)
+    )
+  }
+
+  static func fromText(_ rawText: String) -> AgentClipboardContext {
+    guard !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return AgentClipboardContext()
+    }
+    let normalized = rawText.replacingOccurrences(
+      of: "\\s+",
+      with: " ",
+      options: .regularExpression
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    let flags = sensitiveFlags(for: rawText)
+    return AgentClipboardContext(
+      hasText: true,
+      textLength: rawText.count,
+      textHash: SHA256.hash(data: Data(rawText.utf8))
+        .map { String(format: "%02x", $0) }
+        .joined(),
+      preview: flags.isEmpty ? normalized : "",
+      sensitiveFlags: flags
+    )
+  }
+
+  private static func sensitiveFlags(for text: String) -> [String] {
+    let normalized = text.lowercased()
+    var flags: [String] = []
+    let terms = [
+      ("password", "password"),
+      ("passcode", "passcode"),
+      ("verification code", "verification_code"),
+      ("one-time code", "one_time_code"),
+      ("otp", "otp"),
+      ("api key", "api_key"),
+      ("secret key", "secret_key"),
+      ("private key", "private_key"),
+      ("seed phrase", "seed_phrase"),
+      ("credit card", "financial")
+    ]
+    for (term, flag) in terms where normalized.contains(term) {
+      flags.append(flag)
+    }
+    if normalized.range(of: #"\b(?:\d[ -]?){13,19}\b"#, options: .regularExpression) != nil {
+      flags.append("financial")
+    }
+    return Array(Set(flags)).sorted()
+  }
+}
+
 struct AgentScreenContext: Codable, Equatable {
   var foregroundApp: String
   var activityName: String
@@ -61,6 +133,7 @@ struct AgentScreenContext: Codable, Equatable {
   var sensitiveFlagCount: Int
   var visibleTexts: [String]
   var selectedText: String
+  var clipboard: AgentClipboardContext
   var isAccessibilityEnabled: Bool
   var snapshotAgeMillis: Int64
 
@@ -75,6 +148,7 @@ struct AgentScreenContext: Codable, Equatable {
     sensitiveFlagCount: Int = 0,
     visibleTexts: [String] = [],
     selectedText: String = "",
+    clipboard: AgentClipboardContext = AgentClipboardContext(),
     isAccessibilityEnabled: Bool = false,
     snapshotAgeMillis: Int64 = 0
   ) {
@@ -92,6 +166,7 @@ struct AgentScreenContext: Codable, Equatable {
       .prefix(Self.maximumVisibleTextItems)
       .map { $0 }
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
+    self.clipboard = clipboard
     self.isAccessibilityEnabled = isAccessibilityEnabled
     self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
   }
@@ -107,6 +182,7 @@ struct AgentScreenContext: Codable, Equatable {
     case sensitiveFlagCount = "sensitive_flag_count"
     case visibleTexts = "visible_texts"
     case selectedText = "selected_text"
+    case clipboard
     case isAccessibilityEnabled = "is_accessibility_enabled"
     case snapshotAgeMillis = "snapshot_age_millis"
   }
@@ -124,6 +200,7 @@ struct AgentScreenContext: Codable, Equatable {
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
       visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
+      clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
       snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
     )
