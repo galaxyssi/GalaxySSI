@@ -104,30 +104,64 @@ final class VoiceLiveWhisperTranscriptionSession {
     finalized = true
     lock.unlock()
 
-    let request = try makeRequest(
-      snapshot: snapshot,
-      mode: .finalOnly,
-      priority: .currentFinal
+    let chunks = VoiceWhisperFinalAudioChunker.plan(
+      sampleCount: snapshot.samples.count,
+      sampleRateHz: snapshot.sampleRateHz,
+      mode: .finalOnly
     )
-    switch await scheduler.submit(request) {
-    case .completed(_, let native):
-      let completeness = VoiceWhisperTranscriptCompletenessPolicy.evaluate(
-        result: native,
-        snapshot: snapshot
+    var decodedChunks: [VoiceWhisperFinalDecodeChunk] = []
+    var lastRequest: VoiceScheduledWhisperDecode?
+    for chunk in chunks {
+      let windowStartSample = snapshot.captureStartSample + Int64(chunk.offset)
+      let windowEndSampleExclusive = windowStartSample + Int64(chunk.length)
+      let request = try makeRequest(
+        pcm16: Array(snapshot.samples[chunk.offset..<chunk.endExclusive]),
+        sampleRateHz: snapshot.sampleRateHz,
+        windowStartSample: windowStartSample,
+        windowEndSampleExclusive: windowEndSampleExclusive,
+        mode: .finalOnly,
+        priority: .currentFinal
       )
-      guard completeness.accepted else {
-        throw VoiceLiveWhisperTranscriptionSessionFailure.finalTranscriptIncomplete(
-          completeness.reasonCode
-        )
+      lastRequest = request
+      switch await scheduler.submit(request) {
+      case .completed(_, let native):
+        decodedChunks.append(VoiceWhisperFinalDecodeChunk(chunk: chunk, result: native))
+      case .failed(_, let error):
+        throw error
+      case .dropped(_, let reason):
+        throw VoiceLiveWhisperTranscriptionSessionFailure.finalDecodeDropped(reason)
       }
-      let decoded = decode(request: request, native: native)
-      applyFinal(request: request, decoded: decoded)
-      return native
-    case .failed(_, let error):
-      throw error
-    case .dropped(_, let reason):
-      throw VoiceLiveWhisperTranscriptionSessionFailure.finalDecodeDropped(reason)
     }
+
+    guard let lastRequest else {
+      throw VoiceLiveWhisperTranscriptionSessionFailure.finalTranscriptIncomplete("empty_audio")
+    }
+    let native = decodedChunks.count == 1
+      ? decodedChunks[0].result
+      : VoiceWhisperFinalResultAssembler.assemble(
+        chunks: decodedChunks,
+        totalSamples: snapshot.samples.count,
+        sampleRateHz: snapshot.sampleRateHz
+      )
+    let completeness = VoiceWhisperTranscriptCompletenessPolicy.evaluate(
+      result: native,
+      snapshot: snapshot
+    )
+    guard completeness.accepted else {
+      throw VoiceLiveWhisperTranscriptionSessionFailure.finalTranscriptIncomplete(
+        completeness.reasonCode
+      )
+    }
+    let aggregateRequest = decodedChunks.count == 1
+      ? lastRequest
+      : try makeRequest(
+        snapshot: snapshot,
+        mode: .finalOnly,
+        priority: .currentFinal
+      )
+    let decoded = decode(request: aggregateRequest, native: native)
+    applyFinal(request: aggregateRequest, decoded: decoded)
+    return native
   }
 
   func close() {
@@ -165,19 +199,37 @@ final class VoiceLiveWhisperTranscriptionSession {
     mode: VoiceWhisperExecutionMode,
     priority: VoiceWhisperDecodePriority
   ) throws -> VoiceScheduledWhisperDecode {
+    try makeRequest(
+      pcm16: snapshot.samples,
+      sampleRateHz: snapshot.sampleRateHz,
+      windowStartSample: snapshot.captureStartSample,
+      windowEndSampleExclusive: snapshot.captureEndSampleExclusive,
+      mode: mode,
+      priority: priority
+    )
+  }
+
+  private func makeRequest(
+    pcm16: [Int16],
+    sampleRateHz: Int,
+    windowStartSample: Int64,
+    windowEndSampleExclusive: Int64,
+    mode: VoiceWhisperExecutionMode,
+    priority: VoiceWhisperDecodePriority
+  ) throws -> VoiceScheduledWhisperDecode {
     let revision = nextRevision()
     return try VoiceScheduledWhisperDecode(
       requestId: "\(voiceSessionId):\(revision)",
       voiceSessionId: voiceSessionId,
       revision: revision,
       modelProfileId: profile.id,
-      pcm16: snapshot.samples,
-      sampleRateHz: snapshot.sampleRateHz,
+      pcm16: pcm16,
+      sampleRateHz: sampleRateHz,
       language: language,
       mode: mode,
       priority: priority,
-      windowStartSample: snapshot.captureStartSample,
-      windowEndSampleExclusive: snapshot.captureEndSampleExclusive
+      windowStartSample: windowStartSample,
+      windowEndSampleExclusive: windowEndSampleExclusive
     )
   }
 
