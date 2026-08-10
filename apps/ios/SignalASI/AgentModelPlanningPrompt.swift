@@ -217,6 +217,11 @@ enum AgentModelPlanningPrompt {
         "Clipboard: chars=\(screen.clipboard.textLength), hash=\(screen.clipboard.textHash.prefixStringForPlanning(128)), sensitive=\(sensitivity)\n"
       )
     }
+    let device = screen.deviceStatus
+    append(
+      &prompt,
+      "Device status: battery=\(device.batteryPercent), charging=\(device.charging), power_save=\(device.powerSaveMode), network=\(device.network), free_storage_mb=\(device.freeStorageMb), thermal=\(device.thermalState)\n"
+    )
     let visualActions = request.parsingContext.clickableElements.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     let visualFields = request.parsingContext.inputFields.filter { $0.origin == .visualOcr || $0.origin == .fused }.count
     if visualActions > 0 || visualFields > 0 {

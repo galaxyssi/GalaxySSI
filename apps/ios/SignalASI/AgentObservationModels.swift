@@ -224,6 +224,59 @@ struct AgentClipboardContext: Codable, Equatable {
   }
 }
 
+struct AgentDeviceStatusContext: Codable, Equatable {
+  var batteryPercent: Int
+  var charging: Bool
+  var powerSaveMode: Bool
+  var network: String
+  var freeStorageMb: Int64
+  var totalStorageMb: Int64
+  var thermalState: String
+
+  init(
+    batteryPercent: Int = -1,
+    charging: Bool = false,
+    powerSaveMode: Bool = false,
+    network: String = "unknown",
+    freeStorageMb: Int64 = 0,
+    totalStorageMb: Int64 = 0,
+    thermalState: String = "unknown"
+  ) {
+    self.batteryPercent = batteryPercent < 0 ? -1 : min(batteryPercent, 100)
+    self.charging = charging
+    self.powerSaveMode = powerSaveMode
+    let cleanNetwork = network.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    self.network = String((cleanNetwork.isEmpty ? "unknown" : cleanNetwork).prefix(32))
+    self.freeStorageMb = max(0, freeStorageMb)
+    self.totalStorageMb = max(0, totalStorageMb)
+    let cleanThermalState = thermalState.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    self.thermalState = String((cleanThermalState.isEmpty ? "unknown" : cleanThermalState).prefix(32))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case batteryPercent = "battery_percent"
+    case charging
+    case powerSaveMode = "power_save_mode"
+    case network
+    case freeStorageMb = "free_storage_mb"
+    case totalStorageMb = "total_storage_mb"
+    case thermalState = "thermal_state"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      batteryPercent: try container.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? -1,
+      charging: try container.decodeIfPresent(Bool.self, forKey: .charging) ?? false,
+      powerSaveMode: try container.decodeIfPresent(Bool.self, forKey: .powerSaveMode) ?? false,
+      network: try container.decodeIfPresent(String.self, forKey: .network) ?? "unknown",
+      freeStorageMb: try container.decodeIfPresent(Int64.self, forKey: .freeStorageMb) ?? 0,
+      totalStorageMb: try container.decodeIfPresent(Int64.self, forKey: .totalStorageMb) ?? 0,
+      thermalState: try container.decodeIfPresent(String.self, forKey: .thermalState) ?? "unknown"
+    )
+  }
+}
+
 struct AgentScreenContext: Codable, Equatable {
   var foregroundApp: String
   var activityName: String
@@ -237,6 +290,7 @@ struct AgentScreenContext: Codable, Equatable {
   var selectedText: String
   var notifications: AgentNotificationContext
   var clipboard: AgentClipboardContext
+  var deviceStatus: AgentDeviceStatusContext
   var isAccessibilityEnabled: Bool
   var snapshotAgeMillis: Int64
 
@@ -253,6 +307,7 @@ struct AgentScreenContext: Codable, Equatable {
     selectedText: String = "",
     notifications: AgentNotificationContext = AgentNotificationContext(),
     clipboard: AgentClipboardContext = AgentClipboardContext(),
+    deviceStatus: AgentDeviceStatusContext = AgentDeviceStatusContext(),
     isAccessibilityEnabled: Bool = false,
     snapshotAgeMillis: Int64 = 0
   ) {
@@ -272,6 +327,7 @@ struct AgentScreenContext: Codable, Equatable {
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
     self.notifications = notifications
     self.clipboard = clipboard
+    self.deviceStatus = deviceStatus
     self.isAccessibilityEnabled = isAccessibilityEnabled
     self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
   }
@@ -289,6 +345,7 @@ struct AgentScreenContext: Codable, Equatable {
     case selectedText = "selected_text"
     case notifications
     case clipboard
+    case deviceStatus = "device_status"
     case isAccessibilityEnabled = "is_accessibility_enabled"
     case snapshotAgeMillis = "snapshot_age_millis"
   }
@@ -306,8 +363,9 @@ struct AgentScreenContext: Codable, Equatable {
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
       visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
-    notifications: try container.decodeIfPresent(AgentNotificationContext.self, forKey: .notifications) ?? AgentNotificationContext(),
-    clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
+      notifications: try container.decodeIfPresent(AgentNotificationContext.self, forKey: .notifications) ?? AgentNotificationContext(),
+      clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
+      deviceStatus: try container.decodeIfPresent(AgentDeviceStatusContext.self, forKey: .deviceStatus) ?? AgentDeviceStatusContext(),
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
       snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
     )

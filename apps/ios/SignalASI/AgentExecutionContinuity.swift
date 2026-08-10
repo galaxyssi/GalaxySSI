@@ -145,7 +145,13 @@ enum AgentExecutionContinuity {
       }.joined(separator: "\u{001d}"),
       screen.clipboard.textHash,
       String(screen.clipboard.textLength),
-      screen.clipboard.sensitiveFlags.joined(separator: ",")
+      screen.clipboard.sensitiveFlags.joined(separator: ","),
+      String(screen.deviceStatus.batteryPercent),
+      String(screen.deviceStatus.charging),
+      String(screen.deviceStatus.powerSaveMode),
+      screen.deviceStatus.network,
+      String(screen.deviceStatus.freeStorageMb),
+      screen.deviceStatus.thermalState
     ].joined(separator: "\u{001e}")
     return String(javaStringHash(payload))
   }
