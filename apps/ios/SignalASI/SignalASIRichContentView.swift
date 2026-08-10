@@ -396,12 +396,14 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var quoteBlock: some View {
-    HStack(alignment: .top, spacing: 8) {
+    HStack(alignment: .top, spacing: 0) {
       Rectangle()
-        .fill(Color.signalASIAccent.opacity(0.75))
-        .frame(width: 3)
+        .fill(Color.gray.opacity(0.65))
+        .frame(width: 2)
       selectableText(displayText)
+        .font(.system(size: 15))
         .foregroundColor(.signalASITextSecondary)
+        .padding(.leading, 10)
     }
     .padding(.vertical, 3)
   }
@@ -412,9 +414,11 @@ private struct SignalASIRichBlockView: View {
       ForEach(Array(values.prefix(Self.visibleListItems).enumerated()), id: \.offset) { _, item in
         HStack(alignment: .top, spacing: 7) {
           Text(listMarkerLabel(item.marker))
+            .font(.system(size: 15))
             .foregroundColor(item.marker.lowercased() == "checked" ? .signalASIAccent : .signalASITextSecondary)
             .frame(width: 24, alignment: .trailing)
           selectableText(item.text)
+            .font(.system(size: 16))
         }
       }
     }
@@ -496,11 +500,11 @@ private struct SignalASIRichBlockView: View {
       ForEach(Array(pairs.enumerated()), id: \.offset) { index, pair in
         HStack(alignment: .center, spacing: 0) {
           Text(pair.key)
-            .font(.caption.weight(.semibold))
+            .font(.system(size: 13))
             .foregroundColor(.signalASITextSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
           selectableText(pair.value)
-            .font(.subheadline)
+            .font(.system(size: 14))
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -580,7 +584,7 @@ private struct SignalASIRichBlockView: View {
                 inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
               }
             ) {
-              resourceBlock
+              SignalASIRichImageFailureView()
             }
           } else {
             resourceBlock
@@ -735,47 +739,46 @@ private struct SignalASIRichBlockView: View {
 
   private var progressBlock: some View {
     let clamped = min(max(block.value, 0), block.maximum)
+    let label = firstNonEmpty([block.title, block.text])
     return VStack(alignment: .leading, spacing: 7) {
-      HStack(spacing: 8) {
-        selectableText(firstNonEmpty([block.title, block.text, t("rich_output_progress", "Progress")]))
-          .font(.subheadline.weight(.semibold))
-        Spacer(minLength: 8)
-        Text(block.value < 0
-          ? "--"
-          : "\(Int((Double(clamped) / Double(max(block.maximum, 1)) * 100).rounded()))%")
-          .font(.caption.weight(.semibold))
+      if !label.isEmpty {
+        selectableText(label)
+          .font(.system(size: 13))
           .foregroundColor(.signalASITextSecondary)
       }
       if block.value < 0 {
         ProgressView()
-          .frame(maxWidth: .infinity, alignment: .leading)
+          .progressViewStyle(.linear)
+          .frame(maxWidth: .infinity)
+          .frame(height: 8)
           .accentColor(.signalASIAccent)
       } else {
         ProgressView(value: Double(clamped), total: Double(max(block.maximum, 1)))
+          .progressViewStyle(.linear)
+          .frame(maxWidth: .infinity)
+          .frame(height: 8)
           .accentColor(.signalASIAccent)
       }
     }
-    .padding(9)
-    .background(Color.signalASISearchBackground.opacity(0.45))
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
   private var metricBlock: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(firstNonEmpty([block.text, block.metadata["value"] ?? "", "\(block.value)"]))
-        .font(.title2.weight(.bold))
+        .font(.system(size: 22, weight: .bold))
         .foregroundColor(.signalASITextPrimary)
         .minimumScaleFactor(0.75)
       Text(firstNonEmpty([block.title, block.metadata["label"] ?? "", t("rich_output_type_data", "Data")]))
-        .font(.caption)
+        .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
     }
-    .padding(10)
+    .padding(.horizontal, 13)
+    .padding(.vertical, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.signalASIInsightBackground)
+    .background(Color.signalASISearchBackground)
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 0.5)
+        .stroke(Color.signalASISeparator, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
@@ -801,14 +804,22 @@ private struct SignalASIRichBlockView: View {
             .frame(width: 7, height: 7)
             .padding(.top, 5)
           VStack(alignment: .leading, spacing: 2) {
-            if let first = row.first, row.count > 1 {
-              Text(first)
-                .font(.caption.weight(.semibold))
+            let primary = row.count > 1 ? row[1] : row.first ?? ""
+            let secondary = row.count > 2 ? row[2] : ""
+            selectableText(primary)
+              .font(.system(size: 14, weight: .bold))
+            if !secondary.isEmpty {
+              selectableText(secondary)
+                .font(.system(size: 12))
                 .foregroundColor(.signalASITextSecondary)
-              selectableText(row.dropFirst().joined(separator: " "))
-            } else {
-              selectableText(row.joined(separator: " "))
             }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          if row.count > 1 {
+            Text(row[0])
+              .font(.system(size: 11))
+              .foregroundColor(.signalASITextSecondary)
+              .lineLimit(1)
           }
         }
       }
@@ -817,45 +828,64 @@ private struct SignalASIRichBlockView: View {
 
   private var noticeBlock: some View {
     let palette = noticePalette
-    return HStack(alignment: .top, spacing: 8) {
+    return HStack(alignment: .top, spacing: 0) {
       Rectangle()
         .fill(palette.accent)
         .frame(width: 4)
       VStack(alignment: .leading, spacing: 2) {
         if !block.title.isEmpty {
           selectableText(block.title)
-            .font(.subheadline.weight(.semibold))
+            .font(.system(size: 14, weight: .bold))
         }
         if !block.text.isEmpty {
           selectableText(block.text)
-            .font(.caption)
+            .font(.system(size: 13))
+            .padding(.top, block.title.isEmpty ? 0 : 1)
         }
         if block.title.isEmpty && block.text.isEmpty {
           selectableText(displayText)
-            .font(.caption)
+            .font(.system(size: 13))
         }
       }
+      .padding(.horizontal, 11)
+      .padding(.vertical, 9)
       .foregroundColor(palette.text)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(9)
     .background(palette.background)
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(palette.accent.opacity(0.65), lineWidth: 0.5)
+        .stroke(palette.accent, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
   private var noticePalette: (background: Color, accent: Color, text: Color) {
-    switch (block.metadata["style"]?.lowercased()) {
+    switch block.metadata["style"]?.lowercased() {
     case "success":
-      return (.signalASIInsightBackground, .signalASIAccent, .signalASIInsightText)
+      return (
+        Color(red: 234 / 255, green: 248 / 255, blue: 244 / 255),
+        Color(red: 10 / 255, green: 148 / 255, blue: 128 / 255),
+        Color(red: 8 / 255, green: 127 / 255, blue: 105 / 255)
+      )
     case "warning":
-      return (Color.orange.opacity(0.12), .orange, .orange)
+      return (
+        Color(red: 255 / 255, green: 247 / 255, blue: 230 / 255),
+        Color(red: 225 / 255, green: 161 / 255, blue: 43 / 255),
+        Color(red: 122 / 255, green: 82 / 255, blue: 0 / 255)
+      )
     case "error":
-      return (Color.red.opacity(0.10), .red, .red)
+      return (
+        Color(red: 255 / 255, green: 240 / 255, blue: 241 / 255),
+        Color(red: 210 / 255, green: 77 / 255, blue: 87 / 255),
+        Color(red: 159 / 255, green: 35 / 255, blue: 48 / 255)
+      )
     default:
-      return (Color.blue.opacity(0.10), .blue, .blue)
+      return (
+        Color(red: 238 / 255, green: 245 / 255, blue: 255 / 255),
+        Color(red: 90 / 255, green: 143 / 255, blue: 230 / 255),
+        Color(red: 49 / 255, green: 95 / 255, blue: 155 / 255)
+      )
     }
   }
 
@@ -1038,6 +1068,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func actionsBlock(title: String) -> some View {
+    let isStandalone = block.type == .actions
     VStack(alignment: .leading, spacing: 8) {
       if !title.isEmpty {
         selectableText(title)
@@ -1071,6 +1102,17 @@ private struct SignalASIRichBlockView: View {
         }
       }
     }
+    .padding(.horizontal, isStandalone ? 12 : 0)
+    .padding(.vertical, isStandalone ? 11 : 0)
+    .background(isStandalone ? Color.signalASISearchBackground : Color.clear)
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(
+          isStandalone ? Color.signalASISeparator : Color.clear,
+          lineWidth: isStandalone ? 0.5 : 0
+        )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 
   @ViewBuilder
@@ -1120,6 +1162,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func tableRow(_ values: [String], header: Bool, columnCount: Int, rowIndex: Int) -> some View {
+    let columnWidth = tableColumnWidth(columnCount)
     HStack(spacing: 0) {
       ForEach(0..<columnCount, id: \.self) { index in
         let value = index < values.count ? values[index] : ""
@@ -1128,12 +1171,17 @@ private struct SignalASIRichBlockView: View {
           .foregroundColor(.signalASITextPrimary)
           .textSelection(.enabled)
           .multilineTextAlignment(isNumeric(value) && !header ? .trailing : .leading)
-          .frame(width: 112, alignment: isNumeric(value) && !header ? .trailing : .leading)
+          .frame(width: columnWidth, alignment: isNumeric(value) && !header ? .trailing : .leading)
           .padding(.horizontal, 8)
           .padding(.vertical, 7)
           .background(header ? Color.signalASISearchBackground : rowColor(rowIndex))
       }
     }
+  }
+
+  private func tableColumnWidth(_ columnCount: Int) -> CGFloat {
+    let available = max(0, UIScreen.main.bounds.width - 48)
+    return min(max(available / CGFloat(max(columnCount, 1)), 120), 280)
   }
 
   private func previewPlaceholder(_ text: String) -> some View {
@@ -1804,6 +1852,28 @@ private struct SignalASIRichBarChartView: View {
   ]
 }
 
+private struct SignalASIRichImageFailureView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: "photo")
+        .font(.title2.weight(.semibold))
+      Text(t("rich_output_load_failed", "Unable to display preview"))
+        .font(.caption)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+    }
+    .foregroundColor(.signalASITextSecondary)
+    .frame(maxWidth: .infinity, minHeight: 96)
+    .accessibilityElement(children: .combine)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
 private struct SignalASIInlineHTMLView: UIViewRepresentable {
   let html: String
 
@@ -1910,51 +1980,58 @@ private struct SignalASIAudioArtifactView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Image(systemName: "waveform")
-          .foregroundColor(.signalASIAccent)
-        Text(title)
-          .font(.subheadline.weight(.semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(2)
-        Spacer(minLength: 8)
-        Button {
-          player.togglePlayback()
-        } label: {
-          Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-            .frame(width: 32, height: 32)
-            .background(Circle().fill(Color.signalASIAccent))
-            .foregroundColor(.white)
-        }
-        .buttonStyle(.plain)
-          .accessibilityLabel(
-            SignalASILocalization.string(
-              player.isPlaying ? "rich_output_pause" : "rich_output_play",
-              fallback: player.isPlaying
-                ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
-                : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
-              language: interfaceLanguage
-            )
-          )
+    HStack(spacing: 8) {
+      Button {
+        player.togglePlayback()
+      } label: {
+        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+          .font(.system(size: 17, weight: .bold))
+          .frame(width: 42, height: 42)
+          .background(Circle().fill(Color.signalASIAccent))
+          .foregroundColor(.white)
       }
-      Slider(
-        value: Binding(
-          get: { player.currentTime },
-          set: { player.seek(to: $0) }
-        ),
-        in: 0...max(player.duration, 1)
+      .buttonStyle(.plain)
+      .accessibilityLabel(
+        SignalASILocalization.string(
+          player.isPlaying ? "rich_output_pause" : "rich_output_play",
+          fallback: player.isPlaying
+            ? (interfaceLanguage.hasPrefix("zh") ? "暂停" : "Pause")
+            : (interfaceLanguage.hasPrefix("zh") ? "播放" : "Play"),
+          language: interfaceLanguage
+        )
       )
-      HStack {
-        Text(formatTime(player.currentTime))
-        Spacer()
-        Text(formatTime(player.duration))
+
+      VStack(alignment: .leading, spacing: 0) {
+        Text(title)
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        HStack(spacing: 4) {
+          Slider(
+            value: Binding(
+              get: { player.currentTime },
+              set: { player.seek(to: $0) }
+            ),
+            in: 0...max(player.duration, 1)
+          )
+          .frame(maxWidth: .infinity, minHeight: 28)
+          Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
+            .font(.caption2.monospacedDigit())
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+            .frame(width: 82, alignment: .trailing)
+        }
       }
-      .font(.caption2.monospacedDigit())
-      .foregroundColor(.signalASITextSecondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(10)
-    .background(Color.signalASISearchBackground.opacity(0.45))
+    .padding(.horizontal, 10)
+    .padding(.vertical, 9)
+    .background(Color.signalASISearchBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.signalASISeparator, lineWidth: 0.5)
+    )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     .onDisappear {
       player.stop()
@@ -2087,13 +2164,33 @@ private struct SignalASIVideoArtifactView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 0) {
       if !title.isEmpty {
         Text(title)
-          .font(.subheadline.weight(.semibold))
+          .font(.system(size: 15, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .padding(.bottom, 7)
       }
-      VideoPlayer(player: player.player)
+      ZStack {
+        VideoPlayer(player: player.player)
+        if player.hasFailed {
+          VStack(spacing: 7) {
+            Image(systemName: "exclamationmark.triangle")
+              .font(.title3)
+              .foregroundColor(.orange)
+            Text(SignalASILocalization.string(
+              "rich_output_load_failed",
+              fallback: "Unable to display preview",
+              language: interfaceLanguage
+            ))
+              .font(.caption)
+              .foregroundColor(.signalASITextSecondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Color.signalASISearchBackground)
+        }
+      }
         .frame(maxWidth: .infinity)
         .frame(height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -2109,11 +2206,14 @@ private struct SignalASIVideoArtifactView: View {
 
 private final class SignalASIVideoArtifactPlayer: ObservableObject {
   let player: AVPlayer
+  @Published private(set) var hasFailed = false
   private var playbackObservation: NSKeyValueObservation? = nil
+  private var statusObservation: NSKeyValueObservation? = nil
 
   init(url: URL) {
     player = AVPlayer(url: url)
     installPlaybackObservation()
+    installStatusObservation()
   }
 
   private func installPlaybackObservation() {
@@ -2134,6 +2234,18 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
     }
   }
 
+  private func installStatusObservation() {
+    guard let item = player.currentItem else { return }
+    statusObservation = item.observe(
+      \.status,
+      options: [.initial, .new]
+    ) { [weak self] item, _ in
+      DispatchQueue.main.async {
+        self?.hasFailed = item.status == .failed
+      }
+    }
+  }
+
   func stop() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player.pause()
@@ -2146,6 +2258,7 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
 
   deinit {
     playbackObservation?.invalidate()
+    statusObservation?.invalidate()
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
   }
 }
