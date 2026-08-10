@@ -21,6 +21,7 @@ OUTBOUND_RETENTION_SECONDS = 7 * 24 * 60 * 60
 OUTBOUND_RETRY_BASE_SECONDS = 5.0
 OUTBOUND_RETRY_MAX_SECONDS = 300.0
 OUTBOUND_MAX_ATTEMPTS = 6
+OUTBOUND_PRIORITY_NORMAL = 50
 SECURE_STORAGE_VERSION = "1"
 ROUTE_PURPOSE = "link-delivery-route"
 
@@ -58,9 +59,19 @@ def _connect() -> sqlite3.Connection:
             updated_at REAL NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 50,
             PRIMARY KEY (client_route_id, message_id)
         )"""
     )
+    outbound_columns = {
+        str(row[1])
+        for row in db.execute("PRAGMA table_info(outbound_messages)").fetchall()
+    }
+    if "priority" not in outbound_columns:
+        db.execute(
+            "ALTER TABLE outbound_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 50"
+        )
+        db.commit()
     db.execute(
         """CREATE TABLE IF NOT EXISTS delivery_metadata (
             key TEXT PRIMARY KEY,
@@ -240,15 +251,22 @@ def previous_acknowledgement(client_route_id: str, message_id: str) -> dict:
     return value
 
 
-def queue_outbound(client_route_id: str, message_id: str, topic: str, wire_payload: str) -> None:
+def queue_outbound(
+    client_route_id: str,
+    message_id: str,
+    topic: str,
+    wire_payload: str,
+    *,
+    priority: int = OUTBOUND_PRIORITY_NORMAL,
+) -> None:
     now = time.time()
     with _lock:
         db = _connect()
         try:
             db.execute(
                 """INSERT OR IGNORE INTO outbound_messages
-                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status)
-                   VALUES(?,?,?,?,?,?,0,'queued')""",
+                   (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status,priority)
+                   VALUES(?,?,?,?,?,?,0,'queued',?)""",
                 (
                     _route(client_route_id),
                     message_id,
@@ -256,6 +274,7 @@ def queue_outbound(client_route_id: str, message_id: str, topic: str, wire_paylo
                     _protect(wire_payload, "wire-payload"),
                     now,
                     now,
+                    int(priority),
                 ),
             )
             db.commit()
@@ -514,19 +533,19 @@ def pending_outbound(
             if normalized_route_id:
                 rows = db.execute(
                     """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                              updated_at,status
+                               updated_at,status,priority
                        FROM outbound_messages
                        WHERE client_route_id=? AND status IN ('queued','sending','published')
-                       ORDER BY created_at""",
+                       ORDER BY priority DESC, created_at""",
                     (_route(normalized_route_id),),
                 ).fetchall()
             else:
                 rows = db.execute(
                     """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
-                              updated_at,status
+                               updated_at,status,priority
                        FROM outbound_messages
                        WHERE status IN ('queued','sending','published')
-                       ORDER BY CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
+                       ORDER BY priority DESC, CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
                 ).fetchall()
             db.commit()
         finally:
@@ -541,6 +560,7 @@ def pending_outbound(
             "created_at": row[5],
             "updated_at": row[6],
             "status": row[7],
+            "priority": int(row[8]),
         }, (
             int(row[4]) < retry_limit and
             _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at)
