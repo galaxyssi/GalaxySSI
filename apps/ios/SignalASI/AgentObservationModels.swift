@@ -50,6 +50,108 @@ enum AgentRecoveryDecision: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+struct AgentNotificationItem: Codable, Equatable {
+  var key: String
+  var packageName: String
+  var title: String
+  var textPreview: String
+  var category: String
+  var postedAtMillis: Int64
+  var canReply: Bool
+  var sensitiveFlags: [String]
+
+  init(
+    key: String = "",
+    packageName: String = "",
+    title: String = "",
+    textPreview: String = "",
+    category: String = "app",
+    postedAtMillis: Int64 = 0,
+    canReply: Bool = false,
+    sensitiveFlags: [String] = []
+  ) {
+    self.key = String(key.trimmingCharacters(in: .whitespacesAndNewlines).prefix(255))
+    self.packageName = String(packageName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(255))
+    self.title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+    self.textPreview = String(textPreview.trimmingCharacters(in: .whitespacesAndNewlines).prefix(320))
+    self.category = String(category.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
+    self.postedAtMillis = max(0, postedAtMillis)
+    self.canReply = canReply
+    self.sensitiveFlags = Array(
+      sensitiveFlags
+        .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)) }
+        .filter { !$0.isEmpty }
+        .prefix(8)
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case key
+    case packageName = "package_name"
+    case title
+    case textPreview = "text_preview"
+    case category
+    case postedAtMillis = "posted_at_millis"
+    case canReply = "can_reply"
+    case sensitiveFlags = "sensitive_flags"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      key: try container.decodeIfPresent(String.self, forKey: .key) ?? "",
+      packageName: try container.decodeIfPresent(String.self, forKey: .packageName) ?? "",
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      textPreview: try container.decodeIfPresent(String.self, forKey: .textPreview) ?? "",
+      category: try container.decodeIfPresent(String.self, forKey: .category) ?? "app",
+      postedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .postedAtMillis) ?? 0,
+      canReply: try container.decodeIfPresent(Bool.self, forKey: .canReply) ?? false,
+      sensitiveFlags: try container.decodeIfPresent([String].self, forKey: .sensitiveFlags) ?? []
+    )
+  }
+}
+
+struct AgentNotificationContext: Codable, Equatable {
+  var hasAccess: Bool
+  var items: [AgentNotificationItem]
+  var sensitiveFlags: [String]
+  var totalCount: Int
+
+  init(
+    hasAccess: Bool = false,
+    items: [AgentNotificationItem] = [],
+    sensitiveFlags: [String] = [],
+    totalCount: Int? = nil
+  ) {
+    self.hasAccess = hasAccess
+    self.items = Array(items.prefix(6))
+    self.sensitiveFlags = Array(
+      sensitiveFlags
+        .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)) }
+        .filter { !$0.isEmpty }
+        .prefix(8)
+    )
+    self.totalCount = max(0, totalCount ?? items.count)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case hasAccess = "has_access"
+    case items
+    case sensitiveFlags = "sensitive_flags"
+    case totalCount = "total_count"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      hasAccess: try container.decodeIfPresent(Bool.self, forKey: .hasAccess) ?? false,
+      items: try container.decodeIfPresent([AgentNotificationItem].self, forKey: .items) ?? [],
+      sensitiveFlags: try container.decodeIfPresent([String].self, forKey: .sensitiveFlags) ?? [],
+      totalCount: try container.decodeIfPresent(Int.self, forKey: .totalCount)
+    )
+  }
+}
+
 struct AgentClipboardContext: Codable, Equatable {
   var hasText: Bool
   var textLength: Int
@@ -186,6 +288,7 @@ struct AgentScreenContext: Codable, Equatable {
   var sensitiveFlagCount: Int
   var visibleTexts: [String]
   var selectedText: String
+  var notifications: AgentNotificationContext
   var clipboard: AgentClipboardContext
   var deviceStatus: AgentDeviceStatusContext
   var isAccessibilityEnabled: Bool
@@ -202,6 +305,7 @@ struct AgentScreenContext: Codable, Equatable {
     sensitiveFlagCount: Int = 0,
     visibleTexts: [String] = [],
     selectedText: String = "",
+    notifications: AgentNotificationContext = AgentNotificationContext(),
     clipboard: AgentClipboardContext = AgentClipboardContext(),
     deviceStatus: AgentDeviceStatusContext = AgentDeviceStatusContext(),
     isAccessibilityEnabled: Bool = false,
@@ -221,6 +325,7 @@ struct AgentScreenContext: Codable, Equatable {
       .prefix(Self.maximumVisibleTextItems)
       .map { $0 }
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
+    self.notifications = notifications
     self.clipboard = clipboard
     self.deviceStatus = deviceStatus
     self.isAccessibilityEnabled = isAccessibilityEnabled
@@ -238,6 +343,7 @@ struct AgentScreenContext: Codable, Equatable {
     case sensitiveFlagCount = "sensitive_flag_count"
     case visibleTexts = "visible_texts"
     case selectedText = "selected_text"
+    case notifications
     case clipboard
     case deviceStatus = "device_status"
     case isAccessibilityEnabled = "is_accessibility_enabled"
@@ -257,6 +363,7 @@ struct AgentScreenContext: Codable, Equatable {
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
       visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
+      notifications: try container.decodeIfPresent(AgentNotificationContext.self, forKey: .notifications) ?? AgentNotificationContext(),
       clipboard: try container.decodeIfPresent(AgentClipboardContext.self, forKey: .clipboard) ?? AgentClipboardContext(),
       deviceStatus: try container.decodeIfPresent(AgentDeviceStatusContext.self, forKey: .deviceStatus) ?? AgentDeviceStatusContext(),
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,

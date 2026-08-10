@@ -23,7 +23,8 @@ final class AgentIOSOwnedNotificationStore {
       textPreview: String(body.trimmingCharacters(in: .whitespacesAndNewlines).prefix(320)),
       category: String(category.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32)),
       postedAtMillis: postedAtMillis,
-      canReply: false
+      canReply: false,
+      sensitiveFlags: notificationSensitiveFlags(title: title, body: body)
     )
     lock.lock()
     defer { lock.unlock() }
@@ -31,6 +32,17 @@ final class AgentIOSOwnedNotificationStore {
     items.insert(item, at: 0)
     items = Array(items.prefix(AgentIOSNotificationNativeToolCatalog.maxNotifications))
     return identifier
+  }
+
+  private func notificationSensitiveFlags(title: String, body: String) -> [String] {
+    let value = "\(title) \(body)".lowercased()
+    let terms = [
+      "password", "passcode", "verification", "otp", "2fa", "bank", "payment",
+      "private key", "access token", "api key", "密码", "验证码", "私钥", "银行卡", "支付"
+    ]
+    return terms
+      .filter { value.contains($0) }
+      .map { "notification_\($0.replacingOccurrences(of: " ", with: "_"))" }
   }
 
   func snapshot(limit: Int) -> AgentIOSNotificationContext {

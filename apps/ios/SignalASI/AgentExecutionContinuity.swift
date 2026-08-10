@@ -138,6 +138,11 @@ enum AgentExecutionContinuity {
       screen.visibleTexts.prefix(40).joined(separator: "\u{001f}"),
       String(screen.clickableNodeCount),
       String(screen.inputFieldCount),
+      String(screen.notifications.totalCount),
+      screen.notifications.items.prefix(6).map {
+        [$0.key, $0.packageName, $0.title, String($0.postedAtMillis), $0.sensitiveFlags.joined(separator: ",")]
+          .joined(separator: "\u{001f}")
+      }.joined(separator: "\u{001d}"),
       screen.clipboard.textHash,
       String(screen.clipboard.textLength),
       screen.clipboard.sensitiveFlags.joined(separator: ","),
