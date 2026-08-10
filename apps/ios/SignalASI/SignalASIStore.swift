@@ -1602,13 +1602,29 @@ final class SignalASIStore: ObservableObject {
     tags: [String] = []
   ) -> [AgentKnowledgeItem] {
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !sourceKey.isEmpty {
-      let existingIds = agentKnowledgeItems.filter { $0.source == sourceKey }.map(\.id)
-      if !existingIds.isEmpty {
-        _ = deleteAgentKnowledgeSource(itemIds: existingIds)
-      }
+    let existingItems = sourceKey.isEmpty
+      ? []
+      : agentKnowledgeItems.filter { $0.source == sourceKey }
+    let previousPolicy = existingItems.first.map {
+      (cloudAccess: $0.cloudAccess, agentAccess: $0.agentAccess, allowedAgentIds: $0.allowedAgentIds)
     }
-    return importAgentKnowledge(title: title, content: content, source: sourceKey, kind: kind, tags: tags)
+    let imported = importAgentKnowledge(title: title, content: content, source: sourceKey, kind: kind, tags: tags)
+    guard !imported.isEmpty else {
+      return []
+    }
+    let existingIds = existingItems.map(\.id)
+    if !existingIds.isEmpty {
+      _ = deleteAgentKnowledgeSource(itemIds: existingIds)
+    }
+    if let previousPolicy {
+      _ = updateAgentKnowledgeSourceAccess(
+        itemIds: imported.map(\.id),
+        cloudAccess: previousPolicy.cloudAccess,
+        agentAccess: previousPolicy.agentAccess,
+        allowedAgentIds: previousPolicy.allowedAgentIds
+      )
+    }
+    return imported
   }
 
   @discardableResult
