@@ -2043,7 +2043,10 @@ struct AgentHomeView: View {
     _ action: AgentTaskCenterAction,
     task: AgentTaskRecord
   ) {
-    if action == .delete {
+    if action == .viewLog {
+      recentTaskForDetails = task
+      recentTasksShortcutActive = true
+    } else if action == .delete {
       homeTaskPendingDeletion = task
     } else {
       handleAgentRuntimeTaskAction(action, task: task)
