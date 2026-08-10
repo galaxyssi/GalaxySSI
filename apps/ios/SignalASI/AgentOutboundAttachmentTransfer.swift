@@ -274,6 +274,12 @@ enum AgentAttachmentTransferProtocol {
 }
 
 final class AgentOutboundAttachmentTransferStore {
+  struct StoredAcknowledgement: Equatable {
+    var transferId: String
+    var matchedMessages: Int
+    var releasedMessages: Int
+  }
+
   static let chunkBytes = 256 * 1024
   static let maxAttachmentBytes: Int64 = 64 * 1024 * 1024
   static let maxChunks = Int(maxAttachmentBytes / Int64(chunkBytes))
@@ -345,7 +351,22 @@ final class AgentOutboundAttachmentTransferStore {
     }
   }
 
-  func acknowledgeStored(payload: [String: Any]) -> String? {
+  func discard(_ transferIds: some Collection<String>, deliveryStore: SignalASILinkDeliveryStore) {
+    let normalized = Set(
+      transferIds
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        .filter { $0.range(of: Self.sha256Pattern, options: .regularExpression) != nil }
+    )
+    guard !normalized.isEmpty else { return }
+    locked {
+      normalized.forEach { transferId in
+        try? fileManager.removeItem(at: transferDirectory(transferId))
+      }
+    }
+    _ = deliveryStore.discardBlockedByAttachmentTransfers(Array(normalized))
+  }
+
+  func acknowledgeStored(payload: [String: Any], deliveryStore: SignalASILinkDeliveryStore) -> StoredAcknowledgement? {
     let transferId = payload.string("transfer_id").lowercased()
     guard payload.string("status") == "stored",
           let transfer = find(transferId),
@@ -361,10 +382,16 @@ final class AgentOutboundAttachmentTransferStore {
        payload.string("source_message_id") != clientMessageId {
       return nil
     }
+    let release = deliveryStore.releaseAttachmentDependencyResult(transfer.transferId)
+    guard release.matchedMessages > 0 else { return nil }
     locked {
       try? fileManager.removeItem(at: transferDirectory(transfer.transferId))
     }
-    return transfer.transferId
+    return StoredAcknowledgement(
+      transferId: transfer.transferId,
+      matchedMessages: release.matchedMessages,
+      releasedMessages: release.releasedMessages
+    )
   }
 
   func prune() -> [String] {

@@ -5144,7 +5144,11 @@ final class MessageCoordinator: ObservableObject {
           contactId: contact.id
         )
       } catch {
-        _ = deliveryStore.discardBlockedByAttachmentTransfers(outboundAttachments.map(\.transferId))
+        attachmentTransferStore.discard(
+          outboundAttachments.map(\.transferId),
+          deliveryStore: deliveryStore
+        )
+        _ = deliveryStore.discardClientSourceMessage(sourceMessageId)
         throw error
       }
       store.appendDeliveryTrace(
@@ -6005,14 +6009,13 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if payload.string("status") == "stored" {
-      guard let releasedTransferId = attachmentTransferStore.acknowledgeStored(payload: payload) else {
+      guard attachmentTransferStore.acknowledgeStored(
+        payload: payload,
+        deliveryStore: deliveryStore
+      ) != nil else {
         return
       }
-      if deliveryStore.releaseAttachmentDependency(releasedTransferId) > 0 {
-        scheduleOutboxFlush(after: 0)
-      } else {
-        scheduleOutboxFlushFromStore()
-      }
+      scheduleOutboxFlush(after: 0)
       return
     }
     guard payload.string("status") == "missing",
