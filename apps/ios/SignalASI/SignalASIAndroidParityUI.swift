@@ -468,6 +468,13 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        if store.globalProactiveInboxNewCount() > 0 {
+          SignalASIAgentHomeInsightBarView(
+            count: store.globalProactiveInboxNewCount()
+          )
+          .padding(.horizontal, 10)
+          .padding(.top, 6)
+        }
         if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
           SignalASIAgentHomeSafetyStrip(
             permissionMode: store.agentSafetySettings.permissionMode,
