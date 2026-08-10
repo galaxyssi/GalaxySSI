@@ -207,6 +207,34 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     _ artifact: LocalModelHubArtifact,
     profile: LocalModelRuntimeProfile
   ) async throws -> URL {
+    var lastError: Error?
+    for sourceURL in LocalModelArtifactDownloadSources.urls(for: artifact) {
+      do {
+        return try await downloadToStaging(
+          artifact,
+          profile: profile,
+          sourceURL: sourceURL
+        )
+      } catch let cancellation as CancellationError {
+        throw cancellation
+      } catch {
+        if Task.isCancelled {
+          throw CancellationError()
+        }
+        lastError = error
+      }
+    }
+    if let lastError {
+      throw lastError
+    }
+    throw LocalModelArtifactDownloadError.httpStatus
+  }
+
+  private func downloadToStaging(
+    _ artifact: LocalModelHubArtifact,
+    profile: LocalModelRuntimeProfile,
+    sourceURL: URL
+  ) async throws -> URL {
     let staging = storage.stagingFileURL(for: profile)
     try fileManager.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
     var offset = partialBytes(for: profile)
@@ -217,7 +245,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     var restartedWithoutRange = false
 
     while true {
-      var request = URLRequest(url: artifact.downloadURL)
+      var request = URLRequest(url: sourceURL)
       request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
       request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
       if offset > 0 {
