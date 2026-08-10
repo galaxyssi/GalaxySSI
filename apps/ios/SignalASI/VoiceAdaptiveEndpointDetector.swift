@@ -22,7 +22,7 @@ struct AdaptiveEndpointConfig: Equatable {
     maxTrailingSilenceMs: Int64 = 1_200,
     maxDurationMs: Int64 = 60_000,
     preRollMs: Int = 300,
-    postRollMs: Int = 200
+    postRollMs: Int = 400
   ) {
     precondition((1_500...3_000).contains(noSpeechTimeoutMs))
     precondition(minTrailingSilenceMs >= 250 && minTrailingSilenceMs <= maxTrailingSilenceMs)

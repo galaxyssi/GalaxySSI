@@ -79,7 +79,7 @@ struct SegmentRange: Equatable {
 
   init(
     preRollMs: Int = 300,
-    postRollMs: Int = 200,
+    postRollMs: Int = 400,
     includeAllWhenSpeechMissing: Bool = true
   ) {
     self.preRollMs = max(0, preRollMs)
