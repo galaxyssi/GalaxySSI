@@ -500,11 +500,11 @@ private struct SignalASIRichBlockView: View {
       ForEach(Array(pairs.enumerated()), id: \.offset) { index, pair in
         HStack(alignment: .center, spacing: 0) {
           Text(pair.key)
-            .font(.caption.weight(.semibold))
+            .font(.system(size: 13))
             .foregroundColor(.signalASITextSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
           selectableText(pair.value)
-            .font(.subheadline)
+            .font(.system(size: 14))
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
