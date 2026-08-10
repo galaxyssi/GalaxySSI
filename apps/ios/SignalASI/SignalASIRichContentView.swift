@@ -325,6 +325,7 @@ private struct SignalASIRichBlockView: View {
   @State private var copiedCode = false
   @State private var formValues: [String: String] = [:]
   @State private var imageViewerItem: SignalASIImageViewerItem?
+  @State private var inlineImageSize: CGSize?
 
   var body: some View {
     switch block.type {
@@ -573,14 +574,19 @@ private struct SignalASIRichBlockView: View {
           if let data {
             SignalASIAnimatedImageView(data: data)
           } else if let url {
-            SignalASIAsyncAnimatedImageView(url: url) {
+            SignalASIAsyncAnimatedImageView(
+              url: url,
+              onLoaded: { loadedData in
+                inlineImageSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+              }
+            ) {
               resourceBlock
             }
           } else {
             resourceBlock
           }
         }
-        .frame(maxHeight: 240)
+        .frame(width: imageBlockSize.width, height: imageBlockSize.height)
         .background(Color.signalASISearchBackground.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -598,6 +604,16 @@ private struct SignalASIRichBlockView: View {
         }
       }
     }
+  }
+
+  private var imageBlockSize: CGSize {
+    if let data = inlineImageData ?? localImageData {
+      return SignalASIImageResourceDecoder.galleryThumbnailSize(from: data)
+    }
+    return inlineImageSize ?? CGSize(
+      width: SignalASIImageResourceDecoder.thumbnailWidth,
+      height: SignalASIImageResourceDecoder.thumbnailHeight
+    )
   }
 
   private var audioBlock: some View {
