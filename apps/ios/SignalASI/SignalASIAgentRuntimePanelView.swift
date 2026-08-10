@@ -411,7 +411,7 @@ struct SignalASIAgentRuntimePanelView: View {
 
   private var actionQueueRows: [SignalASIAgentRuntimeRow] {
     if !queuedActionEntries.isEmpty {
-      return queuedActionEntries.prefix(6).map { entry in
+      return queuedActionEntries.map { entry in
         let action = entry.action
         let target = action.target.ifBlank(entry.task.targetTitle)
           .ifBlank(t("signalasi.agent_tasks.target_phone", "SignalASI"))
@@ -431,7 +431,7 @@ struct SignalASIAgentRuntimePanelView: View {
         )
       }
     }
-    activeTasks.prefix(4).map { task in
+    activeTasks.map { task in
       SignalASIAgentRuntimeRow(
         id: "queue-\(task.taskId)",
         title: task.goal.ifBlank(statusText(task)),
