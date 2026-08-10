@@ -710,6 +710,7 @@ final class MessageCoordinator: ObservableObject {
   private let taskIdentityStore: AgentTaskIdentityStore
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let connectorResponseBus: AgentConnectorResponseBus
+  private let richContentMaterializer: AgentRichContentMaterializer
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
@@ -789,6 +790,7 @@ final class MessageCoordinator: ObservableObject {
     desktopMarketplaceStore: AgentDesktopMarketplaceStore = .shared,
     connectorResponseBus: AgentConnectorResponseBus = AgentConnectorResponseBus(),
     desktopArtifactStore: AgentDesktopArtifactStore? = nil,
+    richContentMaterializer: AgentRichContentMaterializer? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
@@ -808,6 +810,12 @@ final class MessageCoordinator: ObservableObject {
     self.taskIdentityStore = taskIdentityStore
     self.desktopMarketplaceStore = desktopMarketplaceStore
     self.connectorResponseBus = connectorResponseBus
+    self.richContentMaterializer = richContentMaterializer ?? AgentRichContentMaterializer(
+      applicationSupportDirectory: FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+      ).first ?? FileManager.default.temporaryDirectory
+    )
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
@@ -5681,6 +5689,7 @@ final class MessageCoordinator: ObservableObject {
         )
       )
     }
+    richOutputJson = richContentMaterializer.materialize(richOutputJson)
     if !remoteTaskStatus.isEmpty {
       recordRemoteAgentTaskStatus(
         payload: appPayload,
