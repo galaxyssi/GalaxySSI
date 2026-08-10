@@ -678,9 +678,24 @@ struct SignalASIGlobalAgentInsightInboxView: View {
     if item.urgent {
       parts.append(t("agent_global_insight_urgent", "Important"))
     }
-    let source = item.topic.ifBlank(item.sourceConversationId).ifBlank("SignalASI")
+    let source = store.agentSession(id: item.sourceConversationId)?.title
+      .ifBlank(item.topic)
+      .ifBlank(item.sourceConversationId)
+      .ifBlank("SignalASI") ?? item.topic.ifBlank(item.sourceConversationId).ifBlank("SignalASI")
     parts.append(String(format: t("agent_global_insight_source", "From %@"), source))
+    if let deliveredAt = deliveredAtLabel(item.deliveredAtMillis) {
+      parts.append(deliveredAt)
+    }
     return parts.joined(separator: " / ")
+  }
+
+  private func deliveredAtLabel(_ millis: Int64) -> String? {
+    guard millis > 0 else { return nil }
+    let formatter = DateFormatter()
+    formatter.locale = .current
+    formatter.timeZone = .current
+    formatter.dateFormat = "MMM d, HH:mm"
+    return formatter.string(from: Date(timeIntervalSince1970: Double(millis) / 1_000))
   }
 
   private func targetLabel(_ target: GlobalProactiveTarget) -> String {
