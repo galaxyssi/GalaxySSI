@@ -1582,6 +1582,10 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let originalRequestText = requestText
+    let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+      request: originalRequestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
@@ -1960,7 +1964,8 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: agentContact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -2024,7 +2029,8 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: contact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -5041,7 +5047,8 @@ final class MessageCoordinator: ObservableObject {
     _ text: String,
     contact: SignalASIContact,
     outgoing: ChatMessage,
-    attachments: [SignalASIDraftAttachment]
+    attachments: [SignalASIDraftAttachment],
+    executionMode: AgentTaskExecutionMode
   ) async throws -> AgentDisclosureStatus {
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
@@ -5084,8 +5091,13 @@ final class MessageCoordinator: ObservableObject {
       "agent_id": contact.connectorAgentId,
       "desktop_id": contact.desktopId,
       "desktop_name": contact.desktopName,
+      "execution_mode": executionMode.rawValue,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget),
+       let taskBudget = try? JSONSerialization.jsonObject(with: data) {
+      payload["task_budget"] = taskBudget
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     AgentMediaLinkPayloadPolicy.payloadMetadata(
       attachments: attachments,
