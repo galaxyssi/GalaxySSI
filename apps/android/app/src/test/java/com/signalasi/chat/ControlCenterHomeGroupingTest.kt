@@ -29,7 +29,6 @@ class ControlCenterHomeGroupingTest {
         )
         val expectedRoutes = setOf(
             ControlCenterRoute.PROFILE,
-            ControlCenterRoute.GLOBAL_AGENT,
             ControlCenterRoute.NODES,
             ControlCenterRoute.PHONE_CAPABILITIES,
             ControlCenterRoute.SMART_SPACES,

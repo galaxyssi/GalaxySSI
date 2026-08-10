@@ -1588,10 +1588,10 @@ class GlobalAgentRepository(context: Context) {
         .put("monitor_interval_millis", settings.monitorIntervalMillis)
 
     private fun decodeSettings(raw: String): GlobalAgentSettings = runCatching {
-        if (raw.isBlank()) return@runCatching GlobalAgentSettings()
+        if (raw.isBlank()) return@runCatching GlobalAgentSettings(enabled = false)
         val json = JSONObject(raw)
         GlobalAgentSettings(
-            enabled = json.optBoolean("enabled", true),
+            enabled = false,
             proactiveInsightsEnabled = json.optBoolean("proactive_insights_enabled", true),
             proactiveDiscoveryEnabled = json.optBoolean("proactive_discovery_enabled", true),
             modelUnderstandingEnabled = json.optBoolean("model_understanding_enabled", true),
@@ -1639,7 +1639,7 @@ class GlobalAgentRepository(context: Context) {
                 json.optLong("monitor_interval_millis")
             )
         )
-    }.getOrDefault(GlobalAgentSettings())
+    }.getOrDefault(GlobalAgentSettings(enabled = false))
 
     private inline fun <reified T : Enum<T>> enumValue(value: String, fallback: T): T =
         enumValues<T>().firstOrNull { it.name == value } ?: fallback
@@ -2421,7 +2421,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun updateSettings(transform: (GlobalAgentSettings) -> GlobalAgentSettings): GlobalAgentSettings {
         val previous = repository.settings()
-        val updated = transform(previous)
+        val updated = transform(previous).copy(enabled = false)
         repository.saveSettings(updated)
         if (updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
                 !previous.proactiveDiscoveryEnabled || !previous.modelUnderstandingEnabled
@@ -3715,26 +3715,9 @@ object GlobalConversationEventBus {
     }
 
     fun requestProcessing(context: Context) {
-        val intent = Intent(context.applicationContext, MessageService::class.java)
-            .setAction(MessageService.ACTION_PROCESS_GLOBAL_AGENT)
-        val started = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !AppForegroundTracker.isForeground()) {
-                context.applicationContext.startForegroundService(intent)
-            } else {
-                context.applicationContext.startService(intent)
-            }
-        }.isSuccess
-        if (!started) {
-            runCatching {
-                GlobalAgentWakeScheduler.schedule(
-                    context.applicationContext,
-                    System.currentTimeMillis() + PROCESSING_START_RETRY_MILLIS
-                )
-            }
-        }
+        // Global Agent background cognition is intentionally disabled. Foreground Agent
+        // conversations and explicit device tools continue through their normal runtimes.
     }
-
-    private const val PROCESSING_START_RETRY_MILLIS = 60_000L
     private val EVENT_PUBLISH_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-global-event-publisher").apply { isDaemon = true }
     }
