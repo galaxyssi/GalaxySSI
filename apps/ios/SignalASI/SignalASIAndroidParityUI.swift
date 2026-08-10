@@ -121,6 +121,36 @@ struct AgentHomeView: View {
     return nil
   }
 
+  private var automaticRouteWarning: (title: String, subtitle: String)? {
+    guard !hasManualSelection else { return nil }
+
+    let hasReadyLocalModel = LocalModelRuntimeSettings.activeProfiles().contains { profile in
+      LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+        LocalModelInferenceRuntime.shared.ready(profile: profile)
+    }
+    let hasReadyRemoteTarget = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    ).contains { target in
+      guard target.kind != .device,
+            AgentConnectorRouteSelector.isDeliverable(target) else {
+        return false
+      }
+      return target.capabilities.contains { capability in
+        capability == .chat || capability == .reasoning || capability == .research
+      }
+    }
+    guard !hasReadyLocalModel && !hasReadyRemoteTarget else { return nil }
+
+    return (
+      t("signalasi.agent.model_selection.no_models", "No ready models"),
+      t(
+        "signalasi.agent.model_selection.no_models_subtitle",
+        "Configure a cloud model, install a local model, or connect an Agent in Settings."
+      )
+    )
+  }
+
   private var messages: [ChatMessage] {
     let allMessages = store.messages(for: contact.id)
     guard let session = activeAgentSession else {
@@ -887,6 +917,21 @@ struct AgentHomeView: View {
             )
           }
           if let routeWarning = manualRouteWarning {
+            SignalASISecurityNavigationRow(
+              title: routeWarning.title,
+              subtitle: routeWarning.subtitle,
+              systemImage: "exclamationmark.triangle.fill",
+              tint: .orange,
+              badge: t("signalasi.agent.model_selection.choose", "Choose")
+            ) {
+              SignalASIAgentModelSelectionView {
+                modelSelection = AgentModelSelectionSettings.selection(
+                  for: store.activeAgentConversationId
+                )
+              }
+            }
+          }
+          if let routeWarning = automaticRouteWarning {
             SignalASISecurityNavigationRow(
               title: routeWarning.title,
               subtitle: routeWarning.subtitle,
