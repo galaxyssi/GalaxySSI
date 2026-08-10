@@ -129,6 +129,9 @@ final class AgentManagedConnectorResponseRegistry {
 
   private struct Interceptor {
     var ownerId: String
+    var conversationId: String
+    var turnId: String
+    var taskId: String
     var consume: (AgentConnectorResponse) -> Bool
   }
 
@@ -139,6 +142,9 @@ final class AgentManagedConnectorResponseRegistry {
     sourceMessageId: Int64,
     contactId: String = "",
     ownerId: String,
+    conversationId: String = "",
+    turnId: String = "",
+    taskId: String = "",
     consume: @escaping (AgentConnectorResponse) -> Bool
   ) throws {
     guard sourceMessageId > 0 else {
@@ -152,6 +158,9 @@ final class AgentManagedConnectorResponseRegistry {
     defer { lock.unlock() }
     interceptors[key(sourceMessageId: sourceMessageId, contactId: contactId)] = Interceptor(
       ownerId: cleanOwner,
+      conversationId: conversationId.trimmingCharacters(in: .whitespacesAndNewlines),
+      turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines),
+      taskId: taskId.trimmingCharacters(in: .whitespacesAndNewlines),
       consume: consume
     )
   }
@@ -160,13 +169,26 @@ final class AgentManagedConnectorResponseRegistry {
     lock.lock()
     let exactKey = key(sourceMessageId: response.sourceMessageId, contactId: response.contactId)
     let wildcardKey = key(sourceMessageId: response.sourceMessageId, contactId: "")
-    let interceptor = interceptors.removeValue(forKey: exactKey) ??
-      interceptors.removeValue(forKey: wildcardKey)
-    lock.unlock()
-    guard let interceptor else {
+    let entry = interceptors[exactKey].map { (exactKey, $0) } ??
+      interceptors[wildcardKey].map { (wildcardKey, $0) }
+    guard let entry,
+          AgentTaskIdentityPolicy.matchesResponseIdentity(
+            expectedConversationId: entry.1.conversationId,
+            expectedTurnId: entry.1.turnId,
+            expectedTaskId: entry.1.taskId,
+            actualConversationId: response.conversationId,
+            actualTurnId: response.turnId,
+            actualTaskId: response.taskId
+          ) else {
+      lock.unlock()
       return false
     }
-    return interceptor.consume(response)
+    guard interceptors.removeValue(forKey: entry.0) != nil else {
+      lock.unlock()
+      return false
+    }
+    lock.unlock()
+    return entry.1.consume(response)
   }
 
   func unregisterOwner(_ ownerId: String) {
