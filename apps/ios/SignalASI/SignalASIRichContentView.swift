@@ -747,19 +747,20 @@ private struct SignalASIRichBlockView: View {
   private var metricBlock: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(firstNonEmpty([block.text, block.metadata["value"] ?? "", "\(block.value)"]))
-        .font(.title2.weight(.bold))
+        .font(.system(size: 22, weight: .bold))
         .foregroundColor(.signalASITextPrimary)
         .minimumScaleFactor(0.75)
       Text(firstNonEmpty([block.title, block.metadata["label"] ?? "", t("rich_output_type_data", "Data")]))
-        .font(.caption)
+        .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
     }
-    .padding(10)
+    .padding(.horizontal, 13)
+    .padding(.vertical, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.signalASIInsightBackground)
+    .background(Color.signalASISearchBackground)
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 0.5)
+        .stroke(Color.signalASISeparator, lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
