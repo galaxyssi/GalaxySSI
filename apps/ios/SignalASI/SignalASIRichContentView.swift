@@ -1422,8 +1422,13 @@ private struct SignalASIInlineHTMLView: UIViewRepresentable {
     configuration.preferences.javaScriptEnabled = true
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
     configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-    let webView = WKWebView(frame: .zero, configuration: configuration)
-    webView.navigationDelegate = context.coordinator
+    configuration.mediaTypesRequiringUserActionForPlayback = []
+    let coordinator = context.coordinator
+    let webView = SignalASIRichHTMLWebView(frame: .zero, configuration: configuration)
+    coordinator.webView = webView
+    webView.onFocus = { [weak coordinator] in coordinator?.focusIfVisible() }
+    webView.onDetach = { [weak coordinator] in coordinator?.deactivate() }
+    webView.navigationDelegate = coordinator
     webView.isOpaque = false
     webView.backgroundColor = .clear
     webView.scrollView.backgroundColor = .clear
@@ -1437,6 +1442,7 @@ private struct SignalASIInlineHTMLView: UIViewRepresentable {
   func updateUIView(_ webView: WKWebView, context: Context) {
     guard context.coordinator.loadedHTML != html else { return }
     context.coordinator.loadedHTML = html
+    context.coordinator.deactivate()
     webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
   }
 
@@ -1462,6 +1468,17 @@ private struct SignalASIInlineHTMLView: UIViewRepresentable {
 
   final class Coordinator: NSObject, WKNavigationDelegate {
     var loadedHTML: String?
+    weak var webView: WKWebView?
+
+    func focusIfVisible() {
+      guard let webView, webView.window != nil else { return }
+      SignalASIRichHTMLPlaybackCoordinator.shared.activate(webView)
+    }
+
+    func deactivate() {
+      guard let webView else { return }
+      SignalASIRichHTMLPlaybackCoordinator.shared.deactivate(webView)
+    }
 
     func webView(
       _ webView: WKWebView,
@@ -1469,6 +1486,18 @@ private struct SignalASIInlineHTMLView: UIViewRepresentable {
       decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
       decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+      SignalASIRichHTMLPlaybackCoordinator.shared.sync(webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+      SignalASIRichHTMLPlaybackCoordinator.shared.sync(webView)
+    }
+
+    deinit {
+      deactivate()
     }
   }
 }
