@@ -2002,6 +2002,7 @@ final class MessageCoordinator: ObservableObject {
           contact: agentContact,
           outgoing: outgoing,
           attachments: attachments,
+          voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
@@ -2067,6 +2068,7 @@ final class MessageCoordinator: ObservableObject {
           contact: contact,
           outgoing: outgoing,
           attachments: attachments,
+          voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
@@ -5087,6 +5089,7 @@ final class MessageCoordinator: ObservableObject {
     contact: SignalASIContact,
     outgoing: ChatMessage,
     attachments: [SignalASIDraftAttachment],
+    voiceSessionId: String = "",
     executionMode: AgentTaskExecutionMode
   ) async throws -> AgentDisclosureStatus {
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5116,6 +5119,30 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    let normalizedVoiceSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let voiceRun = normalizedVoiceSessionId.isEmpty
+      ? nil
+      : VoiceAgentRunBridgeRegistry.shared.find(sessionId: normalizedVoiceSessionId)
+    let traceCandidate = (voiceRun?.traceId ?? normalizedVoiceSessionId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let voiceTraceId = traceCandidate.range(
+      of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#,
+      options: .regularExpression
+    ) == nil ? "" : traceCandidate
+    let messageTraceId = voiceTraceId.isEmpty ? UUID().uuidString : voiceTraceId
+    let publishStartedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+    var deliveryTrace = outgoing.deliveryTrace.map { event in
+      [
+        "stage": event.stage,
+        "detail": event.detail,
+        "at": Int64(event.createdAt.timeIntervalSince1970 * 1_000)
+      ] as [String: Any]
+    }
+    deliveryTrace.append([
+      "stage": "phone_publish_started",
+      "detail": contact.id,
+      "at": publishStartedAt
+    ])
     let responseLanguagePreference = LanguagePolicySettings.normalizeVoice(
       store.languagePolicy.responseLanguage
     )
@@ -5134,11 +5161,30 @@ final class MessageCoordinator: ObservableObject {
       "agent_id": contact.connectorAgentId,
       "desktop_id": contact.desktopId,
       "desktop_name": contact.desktopName,
+      "trace_id": messageTraceId,
+      "client_sent_at_ms": publishStartedAt,
+      "delivery_trace": deliveryTrace,
       "response_language": responseLanguage,
       "response_language_preference": responseLanguagePreference,
       "execution_mode": executionMode.rawValue,
-      "time": Int64(Date().timeIntervalSince1970 * 1000)
+      "time": publishStartedAt
     ]
+    if !voiceTraceId.isEmpty {
+      payload["voice_session_id"] = voiceTraceId
+      if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {
+        payload["run_id"] = runId
+      }
+      let agentProvider = contact.id.split(separator: ":").last.map(String.init) ?? "remote_agent"
+      VoiceLatencyTelemetry.record(
+        traceId: voiceTraceId,
+        event: VoiceTraceEvents.agentRunCreateStarted,
+        attributes: [
+          "agent_provider": agentProvider,
+          "transport": "signalasi_link"
+        ],
+        once: true
+      )
+    }
     if let data = try? JSONEncoder().encode(store.agentTaskBudget),
        let taskBudget = try? JSONSerialization.jsonObject(with: data) {
       payload["task_budget"] = taskBudget
