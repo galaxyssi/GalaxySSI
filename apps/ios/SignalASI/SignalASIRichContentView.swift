@@ -1133,7 +1133,30 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func selectableText(_ text: String) -> Text {
-    Text(text)
+    var attributed = AttributedString("")
+    for segment in AgentInlineMarkdown.parse(text) {
+      var fragment = AttributedString(segment.text)
+      switch segment.style {
+      case .bold:
+        fragment.inlinePresentationIntent = .stronglyEmphasized
+      case .italic:
+        fragment.inlinePresentationIntent = .emphasized
+      case .strike:
+        fragment.inlinePresentationIntent = .strikethrough
+      case .code:
+        fragment.inlinePresentationIntent = .code
+      case .link:
+        if let url = URL(string: segment.url) {
+          fragment.link = url
+        }
+        fragment.foregroundColor = Color.signalASIAccent
+        fragment.underlineStyle = .single
+      case .normal:
+        break
+      }
+      attributed.append(fragment)
+    }
+    return Text(attributed)
       .font(.body)
   }
 
