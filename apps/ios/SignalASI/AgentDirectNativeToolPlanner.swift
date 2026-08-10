@@ -1736,6 +1736,20 @@ enum AgentSecurityStatusCommand {
   }
 }
 
+enum AgentAuditTrailCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "audit trail", "show audit trail", "audit log", "show audit log",
+         "execution log", "show execution log",
+         "\u{5ba1}\u{8ba1}\u{65e5}\u{5fd7}", "\u{663e}\u{793a}\u{5ba1}\u{8ba1}\u{65e5}\u{5fd7}",
+         "\u{6267}\u{884c}\u{65e5}\u{5fd7}", "\u{663e}\u{793a}\u{6267}\u{884c}\u{65e5}\u{5fd7}":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 enum AgentPermissionChecklistCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
