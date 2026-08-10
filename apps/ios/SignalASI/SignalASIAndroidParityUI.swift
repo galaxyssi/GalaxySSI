@@ -2798,7 +2798,7 @@ struct AgentHomeView: View {
     }
 
     Task { @MainActor in
-      for delay in [UInt64(0), 300_000_000, 900_000_000, 1_800_000_000] {
+      for delay in [UInt64(0), 300_000_000, 900_000_000, 1_800_000_000, 3_000_000_000, 5_000_000_000] {
         if delay > 0 {
           try? await Task.sleep(nanoseconds: delay)
         }
@@ -2821,9 +2821,36 @@ struct AgentHomeView: View {
     }
   }
 
+  private func scannedAgentContact(for requestedID: String) -> SignalASIContact? {
+    let normalizedID = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedID.isEmpty else { return nil }
+    if let direct = store.contact(id: normalizedID), direct.type == "agent" {
+      return direct
+    }
+
+    let parts = normalizedID.split(separator: ":", omittingEmptySubsequences: true)
+    let requestedAgentID = parts.last.map(String.init) ?? normalizedID
+    let requestedDesktopID = parts.count > 1
+      ? parts.dropLast().map(String.init).joined(separator: ":")
+      : ""
+    return store.visibleContacts.first { contact in
+      guard contact.type == "agent" else { return false }
+      let knownIDs = [contact.id, contact.signalASIId, contact.connectorAgentId]
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+      if knownIDs.contains(normalizedID) {
+        return true
+      }
+      guard !requestedDesktopID.isEmpty else {
+        return contact.connectorAgentId == requestedAgentID
+      }
+      return contact.desktopId == requestedDesktopID &&
+        contact.connectorAgentId == requestedAgentID
+    }
+  }
+
   private func focusScannedAgentIfAvailable(_ targetID: String) -> Bool {
-    guard let target = store.contact(id: targetID),
-          target.type == "agent" else {
+    guard let target = scannedAgentContact(for: targetID) else {
       return false
     }
     let conversationId = store.activeAgentConversationId
