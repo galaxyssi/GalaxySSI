@@ -5138,6 +5138,15 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    let conversationContext = AgentConversationContext(
+      conversationId: conversationId,
+      summary: recentLocalConversationContext(
+        contactId: contact.id,
+        excluding: outgoing.id
+      ),
+      turns: [],
+      privateMode: store.agentSession(id: conversationId)?.privateMode ?? true
+    )
     let normalizedVoiceSessionId = voiceSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
     let voiceRun = normalizedVoiceSessionId.isEmpty
       ? nil
@@ -5188,6 +5197,14 @@ final class MessageCoordinator: ObservableObject {
       "execution_mode": executionMode.rawValue,
       "time": publishStartedAt
     ]
+    payload["_signalasi_conversation_id"] = taskIdentity.conversationId
+    payload["_signalasi_conversation_context"] = conversationContext.asTransportBlock(maximumTokens: 10_000)
+    payload["_signalasi_conversation_has_attachments"] = (!attachments.isEmpty).description
+    payload["_signalasi_turn_id"] = taskIdentity.turnId
+    payload["_signalasi_task_id"] = taskIdentity.taskId
+    payload["_signalasi_long_term_write_allowed"] = (!conversationContext.privateMode).description
+    payload["_signalasi_task_execution_mode"] = executionMode.rawValue
+    payload["original_goal"] = String(text.prefix(500))
     if !voiceTraceId.isEmpty {
       payload["voice_session_id"] = voiceTraceId
       if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {
