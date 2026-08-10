@@ -1158,9 +1158,6 @@ struct AgentHomeView: View {
               onAddFile: {
                 fileImporterPresented = true
               },
-              onOpenSettings: {
-                agentSettingsShortcutActive = true
-              },
               onCyclePermissionMode: cycleAgentPermissionMode,
               onToggleHighRiskGuard: {
                 store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }

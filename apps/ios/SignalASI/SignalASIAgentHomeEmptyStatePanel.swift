@@ -30,7 +30,6 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
   var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
-  var onOpenSettings: () -> Void
   var onCyclePermissionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
@@ -51,8 +50,7 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
       onOpenSessions: onOpenSessions,
       onScan: onScan,
       onTakePhoto: onTakePhoto,
-      onAddFile: onAddFile,
-      onOpenSettings: onOpenSettings
+      onAddFile: onAddFile
     )
     SignalASIAgentHomeReadinessView(
       runningTasks: runningTasks,
