@@ -220,7 +220,10 @@ class MqttRouteDispatchTests(unittest.TestCase):
         ):
             published = mqtt_bridge.flush_outbound_messages(mqttc)
 
-        select.assert_called_once_with(limit=1, client_route_id="client")
+        select.assert_called_once_with(
+            limit=mqtt_bridge.MAX_DURABLE_OUTBOUND_BATCH,
+            client_route_id="client",
+        )
         mark_sending.assert_called_once_with("client", "message-0")
         track.assert_called_once()
         self.assertEqual({("client", "message-0")}, set(published))

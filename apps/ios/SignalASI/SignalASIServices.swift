@@ -1568,6 +1568,34 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func outgoingAttachmentRichOutput(
+    _ attachments: [SignalASIDraftAttachment]
+  ) -> String {
+    var remainingInlineBytes = SignalASIAttachmentPayloadBuilder.maximumInlineBytes
+    let blocks = attachments.prefix(SignalASIAttachmentPayloadBuilder.maximumAttachmentCount).map { attachment in
+      var dataB64 = ""
+      if attachment.isImage,
+         attachment.data.count <= remainingInlineBytes {
+        dataB64 = attachment.data.base64EncodedString()
+        remainingInlineBytes -= attachment.data.count
+      }
+      return AgentRichBlock(
+        id: attachment.id,
+        type: attachment.isImage ? .image : .file,
+        title: attachment.displayName,
+        text: attachment.isImage ? "" : attachment.humanSize,
+        dataB64: dataB64,
+        mimeType: attachment.mimeType,
+        fallbackText: attachment.displayName,
+        metadata: [
+          "size_bytes": String(attachment.sizeBytes),
+          "source": "user_attachment"
+        ]
+      )
+    }
+    return AgentRichContentCodec.encode(Array(blocks))
+  }
+
   func send(
     _ text: String,
     to contact: SignalASIContact,
@@ -1582,10 +1610,16 @@ final class MessageCoordinator: ObservableObject {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(displayText)
     let originalRequestText = requestText
+    let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+      request: originalRequestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
+    let richOutputJson = outgoingAttachmentRichOutput(attachments)
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
-      turnId: voiceSessionId
+      turnId: voiceSessionId,
+      richOutputJson: richOutputJson
     )
     if !voiceSessionId.isEmpty {
       _ = VoiceAgentRunBridgeRegistry.shared.bindTransportIdentity(
@@ -1649,7 +1683,8 @@ final class MessageCoordinator: ObservableObject {
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(attachments)
       }
-      if let active = activeAgentTurn(for: outgoing.conversationId) {
+      if taskExecutionMode != .planOnly,
+         let active = activeAgentTurn(for: outgoing.conversationId) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
           activeGoal: active.goal,
@@ -1702,7 +1737,8 @@ final class MessageCoordinator: ObservableObject {
         hasUserGoal: !trimmed.isEmpty
       )
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -1729,7 +1765,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowCommandRouter.handle(displayText)
         ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
@@ -1752,7 +1789,8 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
@@ -1779,7 +1817,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -1802,6 +1841,7 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     if contact.id == "hermes",
+       taskExecutionMode != .planOnly,
        let fastReply = AgentFastLocalResponse.reply(
          goal: requestText,
          context: AgentConversationContext(
@@ -1859,7 +1899,8 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if attachments.isEmpty,
+        if taskExecutionMode != .planOnly,
+           attachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
              store: store,
@@ -1960,7 +2001,8 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: agentContact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -2024,7 +2066,8 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: contact,
           outgoing: outgoing,
-          attachments: attachments
+          attachments: attachments,
+          executionMode: taskExecutionMode
         )
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
@@ -2756,89 +2799,91 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if handleDirectAgentScreenOverview(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentClearTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentSecurityStatus(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentAuditTrail(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentNotificationCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionModeCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentHighRiskGuardCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentScreenSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionChecklist(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableInventory(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
+      if executionMode != .planOnly {
+        if handleDirectAgentScreenOverview(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentClearTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentSecurityStatus(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentAuditTrail(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentNotificationCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionModeCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentHighRiskGuardCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentScreenSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionChecklist(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableInventory(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
       }
       if handleDirectLocalNativeAction(
         requestText: requestText,
@@ -5041,7 +5086,8 @@ final class MessageCoordinator: ObservableObject {
     _ text: String,
     contact: SignalASIContact,
     outgoing: ChatMessage,
-    attachments: [SignalASIDraftAttachment]
+    attachments: [SignalASIDraftAttachment],
+    executionMode: AgentTaskExecutionMode
   ) async throws -> AgentDisclosureStatus {
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
@@ -5090,8 +5136,13 @@ final class MessageCoordinator: ObservableObject {
       "desktop_name": contact.desktopName,
       "response_language": responseLanguage,
       "response_language_preference": responseLanguagePreference,
+      "execution_mode": executionMode.rawValue,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget),
+       let taskBudget = try? JSONSerialization.jsonObject(with: data) {
+      payload["task_budget"] = taskBudget
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     AgentMediaLinkPayloadPolicy.payloadMetadata(
       attachments: attachments,
@@ -6302,12 +6353,15 @@ private enum SpeechCaptureLiveWhisperFinalizationError: LocalizedError {
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
+  private(set) var stableTranscript = ""
+  private(set) var unstableTranscript = ""
   var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?
 
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
   private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
   private let liveWhisperController: VoiceLiveWhisperCaptureController
   private let audioEngine = AVAudioEngine()
+  private let audioLevelLock = NSLock()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
@@ -6319,6 +6373,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var pcmTapSpeechEnded = false
   private var pcmTapEndpointRequested = false
   private var liveWhisperActive = false
+  private var latestAudioLevel: Float = 0
+
+  var currentAudioLevel: Float {
+    audioLevelLock.lock()
+    defer { audioLevelLock.unlock() }
+    return latestAudioLevel
+  }
 
   init(
     coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge(),
@@ -6336,10 +6397,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     self.liveWhisperController.setUpdateHandler { [weak self] update in
       DispatchQueue.main.async { [weak self] in
         guard let self = self, self.liveWhisperActive else { return }
+        self.stableTranscript = update.transcript.stableText
+        self.unstableTranscript = update.transcript.unstableText
         let displayText = update.transcript.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !displayText.isEmpty {
-          self.transcript = displayText
-        }
+        self.transcript = displayText
       }
     }
     self.liveWhisperController.setTransitionHandler { [weak self] transition in
@@ -6393,7 +6454,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       throw error
     }
     transcript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
     currentIOSSpeechTranscript = ""
+    updateAudioLevel(0)
     currentRecognitionModelProfileId = localeIdentifier
     request = SFSpeechAudioBufferRecognitionRequest()
     guard let request = request else {
@@ -6471,6 +6535,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           }
           if result.isFinal {
             if !self.liveWhisperActive {
+              self.stableTranscript = text
+              self.unstableTranscript = ""
               self.emitCommands(
                 self.coordinatorBridge.finishWithBestTranscript(
                   text,
@@ -6481,11 +6547,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             }
           } else {
             if !self.liveWhisperActive {
-              self.coordinatorBridge.transcriptPartial(
+              let transition = self.coordinatorBridge.transcriptPartial(
                 text,
                 provider: iosSpeechProviderId,
                 modelProfileId: self.currentRecognitionModelProfileId
               )
+              self.stableTranscript = transition.current.stableText
+              self.unstableTranscript = transition.current.partialText
             }
           }
         }
@@ -6537,6 +6605,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     request = nil
     currentRecognitionModelProfileId = ""
     currentIOSSpeechTranscript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
+    updateAudioLevel(0)
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
@@ -6610,6 +6681,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
     guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
+    updateAudioLevel(Float(update.decision.peak) / Float(Int16.max))
     coordinatorBridge.dispatchAudioLevel(update.decision.rms)
     if update.endpoint.speechStarted, !pcmTapSpeechStarted {
       pcmTapSpeechStarted = true
@@ -6648,6 +6720,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         self.stop()
       }
     }
+  }
+
+  private func updateAudioLevel(_ value: Float) {
+    audioLevelLock.lock()
+    latestAudioLevel = min(max(value, 0), 1)
+    audioLevelLock.unlock()
   }
 
   private func emitCommands(_ transition: VoiceInteractionTransition) {
