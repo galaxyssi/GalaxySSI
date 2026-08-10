@@ -373,17 +373,17 @@ struct SignalASIAgentRecentTasksView: View {
 
   private func statusTint(_ task: AgentTaskRecord) -> Color {
     if task.blocked || task.phase == .blocked {
-      return .orange
+      return .red
     }
     switch task.phase {
     case .completed:
       return .signalASIAccent
-    case .failed, .cancelled:
+    case .failed:
       return .red
-    case .paused, .waitingConfirmation, .waitingResponse:
-      return .orange
+    case .cancelled, .paused:
+      return .signalASITextSecondary
     default:
-      return .blue
+      return .signalASIAccent
     }
   }
 

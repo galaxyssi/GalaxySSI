@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SignalASIAgentRuntimePanelView: View {
   var safetySettings: AgentSafetySettings
+  var taskExecutionMode: AgentTaskExecutionMode
   var modelPlannerSettings: AgentModelPlannerSettings
   var taskBudget: AgentTaskBudget
   var callableTargets: Int
@@ -15,6 +16,7 @@ struct SignalASIAgentRuntimePanelView: View {
   var nativeTools: [AgentNativeToolDescriptor]
   var auditRecords: [AgentNativeToolAuditRecord]
   var onCyclePermissionMode: () -> Void
+  var onCycleTaskExecutionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
   var onToggleExecutionPaused: () -> Void
@@ -257,6 +259,14 @@ struct SignalASIAgentRuntimePanelView: View {
           action: onToggleMemoryCapture
         )
       }
+      runtimeControlButton(
+        title: String(
+          format: t("agent_safety_task_execution_value", "Task execution: %@"),
+          taskExecutionModeTitle(taskExecutionMode)
+        ),
+        tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
+        action: onCycleTaskExecutionMode
+      )
       runtimeControlButton(
         title: String(
           format: t("agent_safety_execution_value", "Execution: %@"),
@@ -1212,6 +1222,10 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private func permissionModeTitle(_ mode: AgentPermissionMode) -> String {
+    t(mode.displayTitle, mode.displayTitle)
+  }
+
+  private func taskExecutionModeTitle(_ mode: AgentTaskExecutionMode) -> String {
     t(mode.displayTitle, mode.displayTitle)
   }
 
