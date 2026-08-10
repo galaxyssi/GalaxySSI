@@ -5722,7 +5722,7 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(appPayload.string("message_id"))
     )
     let incoming: ChatMessage
-    let streamRemoteMessageId = "agent-stream-(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
+    let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
     let liveMessageId = liveConnectorMessageIds.removeValue(forKey: streamKey)
       ?? store.messages(for: displayContactId).last(where: { $0.remoteMessageId == streamRemoteMessageId })?.id
     if let liveMessageId,
