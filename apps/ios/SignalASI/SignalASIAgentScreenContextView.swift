@@ -417,6 +417,76 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: "attach a file"
       ),
       commandRow(
+        id: "model-selection",
+        title: t("agent_screen_action_model_selection", "Model selection"),
+        detail: t("agent_screen_action_model_selection_detail", "choose the Agent model or route"),
+        systemImage: "arrow.triangle.2.circlepath",
+        command: "choose Agent model"
+      ),
+      commandRow(
+        id: "native-tools",
+        title: t("agent_screen_action_native_tools", "Native tools"),
+        detail: t("agent_screen_action_native_tools_detail", "show available phone-native tools"),
+        systemImage: "wrench.and.screwdriver",
+        command: "show native tools"
+      ),
+      commandRow(
+        id: "memory",
+        title: t("agent_screen_action_memory", "Memory"),
+        detail: t("agent_screen_action_memory_detail", "open Agent memory"),
+        systemImage: "brain",
+        command: "open Agent memory"
+      ),
+      commandRow(
+        id: "knowledge",
+        title: t("agent_screen_action_knowledge", "Knowledge"),
+        detail: t("agent_screen_action_knowledge_detail", "open Agent knowledge"),
+        systemImage: "books.vertical",
+        command: "open Agent knowledge"
+      ),
+      commandRow(
+        id: "screen-context",
+        title: t("agent_screen_action_screen_context", "Screen context"),
+        detail: t("agent_screen_action_screen_context_detail", "inspect current screen context"),
+        systemImage: "rectangle.on.rectangle",
+        command: "show screen context"
+      ),
+      commandRow(
+        id: "recent-tasks",
+        title: t("agent_screen_action_recent_tasks", "Recent tasks"),
+        detail: t("agent_screen_action_recent_tasks_detail", "open recent Agent tasks"),
+        systemImage: "clock.arrow.circlepath",
+        command: "show recent Agent tasks"
+      ),
+      commandRow(
+        id: "permission-mode",
+        title: t("agent_screen_action_permission_mode", "Permission mode"),
+        detail: t("agent_screen_action_permission_mode_detail", "cycle Agent permission mode"),
+        systemImage: "checklist",
+        command: "cycle Agent permission mode"
+      ),
+      commandRow(
+        id: "high-risk-guard",
+        title: t("agent_screen_action_high_risk_guard", "High-risk guard"),
+        detail: t("agent_screen_action_high_risk_guard_detail", "toggle high-risk action protection"),
+        systemImage: "shield.lefthalf.filled",
+        command: "toggle Agent high-risk guard"
+      ),
+      commandRow(
+        id: "memory-capture",
+        title: t("agent_screen_action_memory_capture", "Memory capture"),
+        detail: t("agent_screen_action_memory_capture_detail", "toggle Agent memory capture"),
+        systemImage: "brain",
+        command: "toggle Agent memory capture"
+      ),
+      commandRow(
+        id: "execution-paused",
+        title: t("agent_screen_action_execution", "Execution"),
+        detail: t("agent_screen_action_execution_detail", "toggle Agent execution pause"),
+        systemImage: "pause.circle",
+        command: "toggle Agent execution pause"
+      ),
+      commandRow(
         id: "permissions",
         title: t("cc_permissions_title", "Permissions & Audit"),
         detail: t("agent_screen_action_permissions_detail", "open permissions"),

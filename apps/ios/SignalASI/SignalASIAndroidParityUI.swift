@@ -56,6 +56,11 @@ struct AgentHomeView: View {
   @State private var agentSessionsShortcutActive = false
   @State private var agentSettingsShortcutActive = false
   @State private var agentPermissionsShortcutActive = false
+  @State private var agentModelSelectionShortcutActive = false
+  @State private var agentNativeToolsShortcutActive = false
+  @State private var agentMemoryShortcutActive = false
+  @State private var agentKnowledgeShortcutActive = false
+  @State private var agentScreenContextShortcutActive = false
   @State private var chatListShortcutActive = false
   @State private var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
@@ -507,6 +512,61 @@ struct AgentHomeView: View {
         NavigationLink(
           destination: OnDeviceAgentPermissionsView(),
           isActive: $agentPermissionsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentModelSelectionView {
+            modelSelection = AgentModelSelectionSettings.selection(
+              for: store.activeAgentConversationId
+            )
+          },
+          isActive: $agentModelSelectionShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASINativeToolCatalogView(),
+          isActive: $agentNativeToolsShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentMemoryView(),
+          isActive: $agentMemoryShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentKnowledgeView(),
+          isActive: $agentKnowledgeShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIAgentScreenContextDetailView(
+            screen: agentScreenSnapshot.screen,
+            sections: agentScreenSnapshot.sections,
+            onCommand: prefillAgentScreenCommand,
+            onRefresh: refreshAgentScreenContext,
+            t: t
+          ),
+          isActive: $agentScreenContextShortcutActive
         ) {
           EmptyView()
         }
@@ -2756,6 +2816,27 @@ struct AgentHomeView: View {
       fileImporterPresented = true
     case "permissions":
       agentPermissionsShortcutActive = true
+    case "model-selection":
+      agentModelSelectionShortcutActive = true
+    case "native-tools":
+      agentNativeToolsShortcutActive = true
+    case "memory":
+      agentMemoryShortcutActive = true
+    case "knowledge":
+      agentKnowledgeShortcutActive = true
+    case "screen-context":
+      agentScreenContextShortcutActive = true
+    case "recent-tasks":
+      recentTaskForDetails = nil
+      recentTasksShortcutActive = true
+    case "permission-mode":
+      cycleAgentPermissionMode()
+    case "high-risk-guard":
+      store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
+    case "memory-capture":
+      store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
+    case "execution-paused":
+      store.updateAgentSafetySettings { $0.executionPaused.toggle() }
     case "settings", "launch-settings":
       agentSettingsShortcutActive = true
     case "messages", "launch-messages":
