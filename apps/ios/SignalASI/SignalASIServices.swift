@@ -2696,6 +2696,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentClearTaskHistoryCommand(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentSecurityStatus(
         requestText: requestText,
         outgoing: outgoing,
@@ -3131,6 +3138,55 @@ final class MessageCoordinator: ObservableObject {
     default:
       return task.phase.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
     }
+  }
+
+  private func handleDirectAgentClearTaskHistoryCommand(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentClearTaskHistoryCommand.matches(requestText) else {
+      return false
+    }
+    let taskIDs = Set(store.recentAgentTasks(limit: 200).map(\.taskId))
+    let deletedCount = store.deleteAgentTasks(ids: taskIDs)
+    let result = localReply(
+      english: "Cleared Agent task history",
+      chinese: "\u{5df2}\u{6e05}\u{9664} Agent \u{4efb}\u{52a1}\u{5386}\u{53f2}"
+    )
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Task History"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-task-history"
+    task.result = result
+    task.verification = "Local Agent task history cleared"
+    task.executionLog.append("Local Agent task history cleared: \(deletedCount) records")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_task_history_clear_reply",
+      detail: "deleted:\(deletedCount)",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_task_history_clear_reply_received",
+      detail: "deleted:\(deletedCount)",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
   }
 
   private func handleDirectAgentSecurityStatus(
