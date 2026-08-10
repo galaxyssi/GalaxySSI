@@ -1345,10 +1345,12 @@ struct AgentHomeView: View {
                 details: activeExecutionTask.executionLog,
                 canResume: false,
                 resumeTitle: "",
-                canCancel: false,
-                cancelTitle: "",
+                canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
+                cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
                 onResume: {},
-                onCancel: {},
+                onCancel: {
+                  cancelActiveAgentTask(activeExecutionTask)
+                },
                 timelineActions: agentTimelineActions(for: activeExecutionTask),
                 timelineActionTitle: { agentTimelineActionTitle($0) },
                 timelineActionIcon: { agentTimelineActionIcon($0) },
