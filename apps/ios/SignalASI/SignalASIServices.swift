@@ -1691,6 +1691,22 @@ final class MessageCoordinator: ObservableObject {
     }
     var disclosureTicket: AgentDisclosureTicket?
     do {
+      if contact.id == "hermes",
+         let directPlan = deterministicLocalNativePlan(for: requestText) {
+        updateAgentExecutionTarget(
+          conversationId: outgoing.conversationId,
+          runtimeTarget: directPlan.selectedAgentOrModel.ifBlank("iOS phone")
+        )
+        try await receiveLocalModelReply(
+          profile: LocalModelRuntimeSettings.selectedProfile(),
+          requestText: requestText,
+          attachments: attachments,
+          outgoing: outgoing,
+          initialPlan: directPlan
+        )
+        finishPendingAgentReply(for: outgoing)
+        return true
+      }
       if let localProfile = selectedLocalModel(for: contact, conversationId: outgoing.conversationId) {
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
@@ -2489,31 +2505,37 @@ final class MessageCoordinator: ObservableObject {
     profile: LocalModelRuntimeProfile,
     requestText: String,
     attachments: [SignalASIDraftAttachment],
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    initialPlan: AgentPlan? = nil
   ) async throws {
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
+    let isNativeRoute = initialPlan != nil
     var task = AgentTaskRecord(
       taskId: taskId,
       sessionId: outgoing.conversationId,
       goal: requestText,
       phase: .planning,
-      routeKind: .localModel,
-      targetTitle: profile.displayName,
+      routeKind: isNativeRoute ? .localSystem : .localModel,
+      targetTitle: isNativeRoute
+        ? initialPlan?.selectedAgentOrModel.ifBlank("iOS phone") ?? "iOS phone"
+        : profile.displayName,
       risk: .low,
       blocked: false,
       executionLocationKind: .phone,
-      executionRuntimeKind: .phoneLocalModel,
+      executionRuntimeKind: isNativeRoute ? .phoneNative : .phoneLocalModel,
       executionLocationId: "ios",
       executionLocationName: "SignalASI iPhone",
-      executionRuntimeId: profile.id,
+      executionRuntimeId: isNativeRoute ? "ios-native-tools" : profile.id,
       executionLocationTrusted: true,
       createdAtMillis: createdAt,
       updatedAtMillis: createdAt
     )
     store.upsertAgentTask(task)
     task.phase = .executing
-    task.executionLog = ["Local model request started"]
+    task.executionLog = [
+      isNativeRoute ? "Local native action request started" : "Local model request started"
+    ]
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     let executionMode = AgentTaskExecutionModePolicy.resolve(
@@ -2522,6 +2544,20 @@ final class MessageCoordinator: ObservableObject {
     ).mode
 
     do {
+      if let initialPlan {
+        guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
+        if executionMode == .planOnly {
+          _ = completePlanOnlyTask(plan: initialPlan, outgoing: outgoing, task: &task)
+        } else {
+          _ = applyLocalNativeActions(
+            actions: initialPlan.actions,
+            outgoing: outgoing,
+            task: &task,
+            plan: initialPlan
+          )
+        }
+        return
+      }
       let prompt = localModelPrompt(
         text: requestText,
         attachments: attachments,
@@ -2622,6 +2658,26 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
       throw error
     }
+  }
+
+  private func deterministicLocalNativePlan(for requestText: String) -> AgentPlan? {
+    guard let runtime = localNativeToolRuntime else { return nil }
+    let executionMode = AgentTaskExecutionModePolicy.resolve(
+      request: requestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
+    let request = AgentPlanRequest(
+      goal: requestText,
+      screen: currentAgentScreenContext,
+      nativeTools: runtime.registry.descriptors(),
+      responseLanguage: store.languagePolicy.responseLanguage,
+      executionMode: executionMode
+    )
+    guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
+          plan.actions.contains(where: { $0.kind == .callNativeTool }) else {
+      return nil
+    }
+    return plan
   }
 
   private func handleMatchedLocalSkill(
