@@ -514,7 +514,7 @@ struct GlobalAgentSettings: Codable, Equatable {
   static let `default` = GlobalAgentSettings()
 
   init(
-    enabled: Bool = true,
+    enabled: Bool = false,
     proactiveInsightsEnabled: Bool = true,
     proactiveDiscoveryEnabled: Bool = true,
     modelUnderstandingEnabled: Bool = true,
@@ -596,7 +596,7 @@ struct GlobalAgentSettings: Codable, Equatable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let fallback = Self.default
     self.init(
-      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? fallback.enabled,
+      enabled: false,
       proactiveInsightsEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveInsightsEnabled) ?? fallback.proactiveInsightsEnabled,
       proactiveDiscoveryEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveDiscoveryEnabled) ?? fallback.proactiveDiscoveryEnabled,
       modelUnderstandingEnabled: try container.decodeIfPresent(Bool.self, forKey: .modelUnderstandingEnabled) ?? fallback.modelUnderstandingEnabled,

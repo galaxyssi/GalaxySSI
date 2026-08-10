@@ -156,7 +156,8 @@ struct SignalASIGlobalAgentControlView: View {
         subtitle: t("cc_global_master_subtitle", "Observe authorized conversations and maintain the personal world model"),
         systemImage: "power",
         tint: .signalASIAccent,
-        keyPath: \.enabled
+        keyPath: \.enabled,
+        enabled: false
       )
       toggleRow(
         title: t("cc_global_model_understanding_title", "Model-assisted understanding"),
