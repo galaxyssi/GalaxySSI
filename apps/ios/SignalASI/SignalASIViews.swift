@@ -870,6 +870,7 @@ struct MessageDetailView: View {
 struct MessageBubble: View {
   var message: ChatMessage
   var onAction: (AgentRichAction) -> Void = { _ in }
+  var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   var body: some View {
@@ -880,7 +881,13 @@ struct MessageBubble: View {
           content: message.content,
           richOutputJson: message.richOutputJson,
           isOutgoing: message.isMine,
-          onAction: onAction,
+          onAction: { action in
+            if let onActionWithMessage = onActionWithMessage {
+              onActionWithMessage(message, action)
+            } else {
+              onAction(action)
+            }
+          },
           onFormSubmit: onFormSubmit
         )
           .padding(.horizontal, 12)

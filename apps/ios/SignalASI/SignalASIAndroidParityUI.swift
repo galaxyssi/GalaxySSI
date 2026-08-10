@@ -764,6 +764,14 @@ struct AgentHomeView: View {
     }
   }
 
+  private func handleRichAction(_ action: AgentRichAction, from message: ChatMessage) {
+    guard action.verb == "recover_agent_task" else {
+      handleRichAction(action)
+      return
+    }
+    recoverAgentTask(action.value, sourceMessage: message)
+  }
+
   private func openRichActionURI(_ rawURI: String) {
     let value = rawURI.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let url = URL(string: value),
@@ -873,7 +881,7 @@ struct AgentHomeView: View {
     resetAgentSessionPresentation()
   }
 
-  private func recoverAgentTask(_ rawPayload: String) {
+  private func recoverAgentTask(_ rawPayload: String, sourceMessage: ChatMessage? = nil) {
     guard let payload = AgentFailureRecoveryPayload.decode(rawPayload) else {
       richActionStatus = t("signalasi.agent.action_status.invalid", "This Agent action is invalid.")
       return
@@ -883,6 +891,21 @@ struct AgentHomeView: View {
     guard !conversationID.isEmpty, !taskID.isEmpty else {
       richActionStatus = t("signalasi.agent.action_status.invalid", "This Agent action is invalid.")
       return
+    }
+    if let sourceMessage {
+      let sourceConversationID = sourceMessage.conversationId
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let sourceTurnID = sourceMessage.turnId
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard sourceConversationID == conversationID,
+            !sourceTurnID.isEmpty,
+            sourceTurnID == payload.turnId.trimmingCharacters(in: .whitespacesAndNewlines) else {
+        richActionStatus = t(
+          "signalasi.agent.action_status.invalid",
+          "This Agent action is invalid."
+        )
+        return
+      }
     }
     guard store.switchAgentSession(conversationID) else {
       richActionStatus = t(
@@ -1198,7 +1221,9 @@ struct AgentHomeView: View {
               VStack(alignment: .leading, spacing: 4) {
                 MessageBubble(
                   message: message,
-                  onAction: handleRichAction,
+                  onActionWithMessage: { message, action in
+                    handleRichAction(action, from: message)
+                  },
                   onFormSubmit: handleAgentRichForm
                 )
                 if !message.isMine,
