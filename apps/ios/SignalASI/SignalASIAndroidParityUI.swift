@@ -35,6 +35,7 @@ struct AgentHomeView: View {
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @ObservedObject private var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @State private var draft = ""
   @State private var attachments: [SignalASIDraftAttachment] = []
   @State private var actionTrayPresented = false
@@ -309,6 +310,23 @@ struct AgentHomeView: View {
       .max { $0.updatedAtMillis < $1.updatedAtMillis }
   }
 
+  private var activeVoiceAgentRuns: [VoiceAgentRunSnapshot] {
+    let sessionID = store.activeAgentConversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return voiceAgentRunRecovery.activeSnapshots
+      .filter { snapshot in
+        guard !sessionID.isEmpty else { return true }
+        return snapshot.conversationId == sessionID || snapshot.sessionId == sessionID
+      }
+      .sorted { lhs, rhs in
+        if lhs.updatedAtMillis != rhs.updatedAtMillis {
+          return lhs.updatedAtMillis > rhs.updatedAtMillis
+        }
+        return lhs.runId < rhs.runId
+      }
+      .prefix(3)
+      .map { $0 }
+  }
+
   private var liveExecutionTargetLabel: String? {
     let candidates = [
       activeRemoteAgentTask?.target,
@@ -405,7 +423,7 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil {
+        if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
           SignalASIAgentHomeSafetyStrip(
             permissionMode: store.agentSafetySettings.permissionMode,
             highRiskGuard: store.agentSafetySettings.highRiskGuard,
@@ -462,6 +480,7 @@ struct AgentHomeView: View {
       )
       .onAppear {
         ensureActiveAgentSession()
+        voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
         refreshAgentRouteState()
       }
@@ -961,6 +980,12 @@ struct AgentHomeView: View {
               onDismiss: { scanStatus = "" }
             )
           }
+          if !activeVoiceAgentRuns.isEmpty {
+            NavigationLink(destination: SignalASIVoiceAgentRunsView()) {
+              SignalASIAgentVoiceRunSummaryCard(runs: activeVoiceAgentRuns)
+            }
+            .buttonStyle(.plain)
+          }
           if let routeWarning = manualRouteWarning {
             SignalASISecurityNavigationRow(
               title: routeWarning.title,
@@ -1038,6 +1063,7 @@ struct AgentHomeView: View {
               blockedAgentTask == nil &&
               activeExecutionTask == nil &&
               activeRemoteAgentTask == nil &&
+              activeVoiceAgentRuns.isEmpty &&
               recoverableAgentTasksFromOtherSessions.isEmpty {
             SignalASIAgentEmptyStateView(
               title: t("signalasi.agent.empty.title", "How can I help?"),

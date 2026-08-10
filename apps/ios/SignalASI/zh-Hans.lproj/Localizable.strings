@@ -3672,6 +3672,8 @@
 "signalasi.voice_agent_runs.title" = "语音 Agent 运行";
 "signalasi.voice_agent_runs.refresh" = "刷新运行记录";
 "signalasi.voice_agent_runs.summary" = "%d 个活动 / %d 个已保存";
+"signalasi.voice_agent_runs.active_summary" = "%d 个活动语音任务";
+"signalasi.voice_agent_runs.open" = "打开语音运行";
 "signalasi.voice_agent_runs.empty" = "暂无语音 Agent 运行";
 "signalasi.voice_agent_runs.empty_subtitle" = "从语音页面启动的任务会在完成前保存在这里。";
 "signalasi.voice_agent_runs.state.created" = "已创建";
