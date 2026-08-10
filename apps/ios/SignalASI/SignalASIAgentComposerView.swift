@@ -228,6 +228,7 @@ struct SignalASIAgentComposerView: View {
         if holdToTalk.transcript.isEmpty {
           SignalASIAgentRecordingWaveform(
             phase: holdToTalk.waveformPhase,
+            amplitude: holdToTalk.waveformAmplitude,
             cancelPending: holdToTalk.cancelPending
           )
         } else {
@@ -480,6 +481,7 @@ struct SignalASIVoiceTranscriptionPendingView: View {
 
 private struct SignalASIAgentRecordingWaveform: View {
   var phase: Double
+  var amplitude: Double
   var cancelPending: Bool
 
   private let sampleCount = 56
@@ -511,8 +513,9 @@ private struct SignalASIAgentRecordingWaveform: View {
     let primary = (sin(Double(index) * 0.82 + phase) + 1) * 0.5
     let secondary = (sin(Double(index) * 0.37 - phase * 1.45) + 1) * 0.5
     let variation = 0.26 + primary * 0.48 + secondary * 0.26
-    let amplitude = 0.10 + 0.90 * centerEnvelope * variation
-    return max(2, maxHeight * CGFloat(min(1, amplitude)))
+    let animatedLevel = 0.24 + 0.76 * min(1, max(0, amplitude))
+    let barAmplitude = 0.10 + 0.90 * centerEnvelope * variation * animatedLevel
+    return max(2, maxHeight * CGFloat(min(1, barAmplitude)))
   }
 }
 
