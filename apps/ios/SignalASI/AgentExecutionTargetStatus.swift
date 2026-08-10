@@ -16,6 +16,15 @@ enum AgentExecutionTargetStatusPolicy {
       if let contact = contacts.first(where: { matches(identity, contact: $0) }),
          !contact.deleted,
          contact.id != "hermes" {
+        if contact.deliveryMode == .cloudAPI,
+           let model = contact.selectedCloudModel {
+          let modelLabel = model.displayName
+            .ifBlank(model.modelId)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+          if !modelLabel.isEmpty {
+            return modelLabel
+          }
+        }
         return contact.displayName.ifBlank(contact.name).ifBlank(identity)
       }
     }
