@@ -15,6 +15,7 @@
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A00 /* SignalASIRichContentView.swift */; };
     A10000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */; };
+    A10000000000000000001750 /* AgentRichMarkdownParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001750 /* AgentRichMarkdownParser.swift */; };
     A10000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */; };
     A10000000000000000001730 /* SignalASIWebPagePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001730 /* SignalASIWebPagePreviewView.swift */; };
     A10000000000000000001740 /* SignalASIRichHTMLPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001740 /* SignalASIRichHTMLPlayback.swift */; };
@@ -767,6 +768,7 @@
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000A00 /* SignalASIRichContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichContentView.swift; sourceTree = "<group>"; };
     A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAsyncAnimatedImageView.swift; sourceTree = "<group>"; };
+    A20000000000000000001750 /* AgentRichMarkdownParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichMarkdownParser.swift; sourceTree = "<group>"; };
     A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichAnimatedImagePlayback.swift; sourceTree = "<group>"; };
     A20000000000000000001730 /* SignalASIWebPagePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWebPagePreviewView.swift; sourceTree = "<group>"; };
     A20000000000000000001740 /* SignalASIRichHTMLPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichHTMLPlayback.swift; sourceTree = "<group>"; };
@@ -1542,6 +1544,7 @@
         A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */,
         A20000000000000000000792 /* CloudModelConversationContext.swift */,
         A20000000000000000009997 /* SignalASIAnimatedImageView.swift */,
+        A20000000000000000001750 /* AgentRichMarkdownParser.swift */,
         A20000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift */,
         A20000000000000000001730 /* SignalASIWebPagePreviewView.swift */,
         A20000000000000000001740 /* SignalASIRichHTMLPlayback.swift */,
@@ -2701,6 +2704,7 @@
         A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */,
         A10000000000000000000792 /* CloudModelConversationContext.swift in Sources */,
         A10000000000000000009997 /* SignalASIAnimatedImageView.swift in Sources */,
+        A10000000000000000001750 /* AgentRichMarkdownParser.swift in Sources */,
         A10000000000000000001721 /* SignalASIRichAnimatedImagePlayback.swift in Sources */,
         A10000000000000000001730 /* SignalASIWebPagePreviewView.swift in Sources */,
         A10000000000000000001740 /* SignalASIRichHTMLPlayback.swift in Sources */,
