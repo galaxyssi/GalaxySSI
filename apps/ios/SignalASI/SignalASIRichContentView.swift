@@ -745,7 +745,10 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var timelineBlock: some View {
-    let rows = block.rows.isEmpty ? listRows.map { [$0] } : block.rows
+    let rows = Array(
+      (block.rows.isEmpty ? listRows.map { [$0] } : block.rows)
+        .prefix(Self.visibleTimelineItems)
+    )
     return VStack(alignment: .leading, spacing: 8) {
       if !block.title.isEmpty {
         selectableText(block.title)
@@ -1274,7 +1277,7 @@ private struct SignalASIRichBlockView: View {
         items.append(item)
       }
     }
-    return Array(items.prefix(12))
+    return Array(items.prefix(Self.visibleGalleryItems))
   }
 
   private func makeImageViewerItem(
@@ -1436,6 +1439,8 @@ private struct SignalASIRichBlockView: View {
   private static let collapsedCodeLines = 28
   private static let visibleListItems = 100
   private static let visibleTableRows = 12
+  private static let visibleGalleryItems = 10
+  private static let visibleTimelineItems = 50
 }
 
 private struct SignalASIRichResourceRow: View {
