@@ -14,6 +14,7 @@ struct SignalASIAgentComposerView: View {
   var hasPendingPrimaryAction: Bool
   var pendingPrimaryActionResumesTask: Bool
   var pendingPrimaryActionApprovesTask: Bool
+  var pendingPrimaryActionWaitingForResponse: Bool
   var pendingPrimaryActionNeedsHighRiskConfirmation: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
@@ -322,16 +323,20 @@ struct SignalASIAgentComposerView: View {
             ? "play.fill"
             : pendingPrimaryActionApprovesTask
               ? "checkmark"
-              : pendingPrimaryActionNeedsHighRiskConfirmation
-                ? "exclamationmark.triangle.fill"
-              : "xmark")
+              : pendingPrimaryActionWaitingForResponse
+                ? "hourglass"
+                : pendingPrimaryActionNeedsHighRiskConfirmation
+                  ? "exclamationmark.triangle.fill"
+                  : "xmark")
           .font(.system(size: 20, weight: .bold))
           .foregroundColor(
             canSend || pendingPrimaryActionResumesTask || pendingPrimaryActionApprovesTask
               ? .signalASIAccent
-              : pendingPrimaryActionNeedsHighRiskConfirmation
-                ? .orange
-                : .signalASIAgentVoiceCancel
+              : pendingPrimaryActionWaitingForResponse
+                ? .signalASITextSecondary
+                : pendingPrimaryActionNeedsHighRiskConfirmation
+                  ? .orange
+                  : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
           .background(Color.white)
@@ -346,9 +351,11 @@ struct SignalASIAgentComposerView: View {
           ? t("signalasi.agent.resume_task", "Resume task")
           : pendingPrimaryActionApprovesTask
             ? t("signalasi.agent.confirmation.allow_once", "Allow once")
-          : pendingPrimaryActionNeedsHighRiskConfirmation
-            ? t("signalasi.agent.high_risk_confirmation.execute", "Confirm high-risk action")
-          : t("signalasi.agent.cancel_task", "Cancel task")))
+            : pendingPrimaryActionWaitingForResponse
+              ? t("agent_status_waiting_response", "Waiting for an Agent response")
+            : pendingPrimaryActionNeedsHighRiskConfirmation
+              ? t("signalasi.agent.high_risk_confirmation.execute", "Confirm high-risk action")
+              : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
         if actionTrayPresented {
