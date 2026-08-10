@@ -28,6 +28,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var onModelSelectionChanged: () -> Void = {}
   var onScreenCommand: (String) -> Void = { _ in }
   var t: (String, String) -> String
+  var onRefreshScreenContext: () -> Void = {}
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -179,6 +180,7 @@ struct SignalASIAgentHomeReadinessView: View {
             screen: screen,
             sections: screenSections,
             onCommand: onScreenCommand,
+            onRefresh: onRefreshScreenContext,
             t: t
           )
         ) {
