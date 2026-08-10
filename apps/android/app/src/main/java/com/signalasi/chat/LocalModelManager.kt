@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.io.InputStream
 import java.util.Locale
 
 data class LocalModelDownloadState(
@@ -59,7 +60,10 @@ object LocalModelManager {
     fun storage(context: Context): LocalModelStorage = LocalModelStorage(context.applicationContext)
 
     fun isInstalled(context: Context, profile: LocalModelRuntimeProfile): Boolean =
-        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+        if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            Lfm25QnnDeploymentStore(context).isInstalled(profile) &&
+                GenieXQairtModelManager.supportsDevice(profile)
+        } else if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
             savedInstallState(context, profile) == LocalModelInstallState.READY &&
                 GenieXQairtModelManager.supportsDevice(profile)
         } else {
@@ -83,6 +87,12 @@ object LocalModelManager {
         }
         val prefs = preferences(context)
         val saved = savedInstallState(context, profile)
+        if (LocalModelQnnMemoryPolicy.appliesTo(profile) && saved == LocalModelInstallState.READY) {
+            return LocalModelDownloadState(
+                state = LocalModelInstallState.FAILED,
+                totalBytes = profile.expectedModelFileBytes
+            )
+        }
         val partialBytes = if (profile.artifactFormat == LocalModelArtifactFormat.GGUF) {
             storage(context).partialFile(profile).length()
         } else {
@@ -105,6 +115,9 @@ object LocalModelManager {
     }
 
     fun start(context: Context, profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
+        check(!LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            "Import the signed precompiled LFM2.5 QNN package from Local models"
+        }
         require(profile.downloadable) { "The selected local-model artifact has no verified download metadata" }
         require(GenieXQairtModelManager.supportsDevice(profile)) {
             "${profile.displayName} is compiled for ${profile.targetChipset}"
@@ -139,16 +152,46 @@ object LocalModelManager {
     fun delete(context: Context, profile: LocalModelRuntimeProfile) {
         LocalModelDownloadService.cancel(context.applicationContext, profile.id)
         LocalModelInferenceRuntime.unloadIfSelected(profile.id)
-        if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
+        if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            Lfm25QnnDeploymentStore(context).delete()
+        } else if (profile.artifactFormat == LocalModelArtifactFormat.QAIRT) {
             runBlocking { GenieXQairtModelManager.remove(context.applicationContext, profile) }
         } else {
             storage(context).delete(profile, modelLoaded = LocalModelInferenceRuntime.loadedProfileId() == profile.id)
         }
         clearState(context, profile)
-        if (profile.sourceTrust == LocalModelSourceTrust.HUB_VERIFIED) {
+        if (profile.sourceTrust in setOf(
+            LocalModelSourceTrust.HUB_VERIFIED,
+            LocalModelSourceTrust.SIGNED_DEPLOYMENT
+        )) {
             LocalModelProfileStore(context).delete(profile.id)
         }
         LocalModelRuntimeSettings.removeProfile(context, profile)
+    }
+
+    fun importSignedQnnDeployment(
+        context: Context,
+        input: InputStream,
+        onBytesCopied: (Long) -> Unit = {}
+    ): LocalModelRuntimeProfile {
+        val store = Lfm25QnnDeploymentStore(context)
+        val profile = store.install(input, onBytesCopied)
+        if (!GenieXQairtModelManager.supportsDevice(profile)) {
+            store.delete()
+            error("${profile.displayName} is compiled for ${profile.targetChipset}")
+        }
+        LocalModelCatalog.addSignedDeployment(context, profile)
+        record(
+            context,
+            profile,
+            LocalModelDownloadState(
+                state = LocalModelInstallState.READY,
+                bytesDownloaded = profile.expectedModelFileBytes,
+                totalBytes = profile.expectedModelFileBytes
+            )
+        )
+        LocalModelRuntimeSettings.registerInstalledProfile(context, profile)
+        return profile
     }
 
     fun preferChinaMirror(context: Context): Boolean {

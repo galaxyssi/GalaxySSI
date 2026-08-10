@@ -78,6 +78,8 @@
     "runtime:build-image": "node tools/runtime/build-runtime-image.mjs",
     "runtime:build-pack": "node tools/runtime/build-runtime-pack.mjs",
     "runtime:build-catalog": "node tools/runtime/build-runtime-catalog.mjs",
-    "runtime:print-trust-anchor": "node tools/runtime/print-runtime-trust-anchor.mjs"
+    "runtime:print-trust-anchor": "node tools/runtime/print-runtime-trust-anchor.mjs",
+    "model:prepare-lfm25-qnn": "node tools/models/prepare-lfm25-qnn-deployment.mjs",
+    "test:model-deployments": "node --test tools/models/lfm25-qnn-deployment.test.mjs"
   }
 }

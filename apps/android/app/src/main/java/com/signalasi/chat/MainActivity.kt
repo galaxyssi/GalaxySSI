@@ -1587,6 +1587,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             importRuntimePackFromUri(data?.data ?: return)
             return
         }
+        if (requestCode == REQUEST_IMPORT_LOCAL_QNN_PACKAGE && resultCode == RESULT_OK) {
+            importLocalQnnPackageFromUri(data?.data ?: return)
+            return
+        }
         if (requestCode == REQUEST_EXPORT_RUNTIME_ARTIFACT) {
             val pending = pendingRuntimeArtifactExport
             pendingRuntimeArtifactExport = null

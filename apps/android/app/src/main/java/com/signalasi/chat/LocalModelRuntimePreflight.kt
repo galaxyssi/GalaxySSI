@@ -108,7 +108,8 @@ data class LocalModelRuntimeProfile(
 
 enum class LocalModelSourceTrust {
     CURATED,
-    HUB_VERIFIED
+    HUB_VERIFIED,
+    SIGNED_DEPLOYMENT
 }
 
 enum class LocalModelHubSource(val displayName: String) {
