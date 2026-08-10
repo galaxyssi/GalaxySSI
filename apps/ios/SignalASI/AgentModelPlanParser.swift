@@ -278,7 +278,7 @@ enum AgentModelPlanParser {
     let connectorId = input.string("connector_id").trimmedForModelPlan
     guard let target = request.targets.first(where: {
       $0.id == connectorId &&
-        $0.status == .available &&
+        AgentConnectorRouteSelector.isDeliverable($0) &&
         (kind != .controlDevice || $0.kind == .device)
     }) else {
       return nil
