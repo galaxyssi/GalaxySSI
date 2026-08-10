@@ -47,6 +47,7 @@ struct SignalASIAgentActionQueueCard: View {
     .accessibilityElement(children: .contain)
   }
 
+  @ViewBuilder
   private func actionRow(_ item: SignalASIAgentActionQueueItem) -> some View {
     let action = item.action
     let target = action.target.ifBlank(item.task.targetTitle)
@@ -54,7 +55,39 @@ struct SignalASIAgentActionQueueCard: View {
     let status = actionStatusText(action.status)
     let tint = actionStatusTint(action.status)
 
-    return HStack(alignment: .top, spacing: 9) {
+    if AgentPlanEditor.isEditablePending(action), let onEditAction {
+      Button {
+        onEditAction(item)
+      } label: {
+        actionRowContent(
+          action: action,
+          target: target,
+          status: status,
+          tint: tint,
+          showsEditIndicator: true
+        )
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("agent_plan_edit_action", "Edit action")))
+    } else {
+      actionRowContent(
+        action: action,
+        target: target,
+        status: status,
+        tint: tint,
+        showsEditIndicator: false
+      )
+    }
+  }
+
+  private func actionRowContent(
+    action: AgentAction,
+    target: String,
+    status: String,
+    tint: Color,
+    showsEditIndicator: Bool
+  ) -> some View {
+    HStack(alignment: .top, spacing: 9) {
       Circle()
         .fill(tint)
         .frame(width: 8, height: 8)
@@ -78,17 +111,11 @@ struct SignalASIAgentActionQueueCard: View {
         .lineLimit(2)
         .multilineTextAlignment(.trailing)
         .frame(minWidth: 48, alignment: .trailing)
-      if AgentPlanEditor.isEditablePending(action), let onEditAction {
-        Button {
-          onEditAction(item)
-        } label: {
-          Image(systemName: "ellipsis.circle")
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.signalASITextSecondary)
-            .frame(width: 30, height: 30)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(t("agent_plan_edit_action", "Edit action")))
+      if showsEditIndicator {
+        Image(systemName: "ellipsis.circle")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(width: 30, height: 30)
       }
     }
     .padding(.horizontal, 10)
