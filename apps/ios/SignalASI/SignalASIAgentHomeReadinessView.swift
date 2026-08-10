@@ -48,16 +48,22 @@ struct SignalASIAgentHomeReadinessView: View {
       }
 
       HStack(spacing: 8) {
-        metric(
-          title: t("signalasi.agent.readiness.targets", "Targets"),
-          value: "\(callableTargets)",
-          systemImage: "person.2"
-        )
-        metric(
-          title: t("cc_metric_native_tools", "Native tools"),
-          value: "\(nativeToolSummary.available)/\(nativeToolSummary.total)",
-          systemImage: "wrench.and.screwdriver"
-        )
+        NavigationLink(destination: SignalASIAgentModelSelectionView()) {
+          metric(
+            title: t("signalasi.agent.readiness.targets", "Targets"),
+            value: "\(callableTargets)",
+            systemImage: "person.2"
+          )
+        }
+        .buttonStyle(.plain)
+        NavigationLink(destination: SignalASINativeToolCatalogView()) {
+          metric(
+            title: t("cc_metric_native_tools", "Native tools"),
+            value: "\(nativeToolSummary.available)/\(nativeToolSummary.total)",
+            systemImage: "wrench.and.screwdriver"
+          )
+        }
+        .buttonStyle(.plain)
       }
 
       HStack(spacing: 8) {
@@ -214,6 +220,9 @@ struct SignalASIAgentHomeReadinessView: View {
           .lineLimit(1)
       }
       Spacer(minLength: 0)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 10, weight: .bold))
+        .foregroundColor(.signalASITextSecondary)
     }
     .padding(.horizontal, 9)
     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
