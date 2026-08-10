@@ -234,7 +234,7 @@ final class SignalASIStore: ObservableObject {
       self.customDeviceConnectors = customDeviceConnectors
       self.homeAssistantSettings = homeAssistantSettings
       self.modelPlannerSettings = modelPlannerSettings
-      self.globalAgentSettings = globalAgentSettings
+      self.globalAgentSettings = globalAgentSettings.normalized
     }
 
     init(from decoder: Decoder) throws {
@@ -358,7 +358,7 @@ final class SignalASIStore: ObservableObject {
         defaultEntityId: state.homeAssistantSettings.defaultEntityId
       )
       modelPlannerSettings = state.modelPlannerSettings
-      globalAgentSettings = state.globalAgentSettings
+      globalAgentSettings = state.globalAgentSettings.normalized
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -2457,7 +2457,7 @@ final class SignalASIStore: ObservableObject {
       try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
       try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
       modelPlannerSettings = payload.agentData.modelPlannerSettings
-      globalAgentSettings = payload.agentData.globalAgentSettings
+      globalAgentSettings = payload.agentData.globalAgentSettings.normalized
       agentMemoryItems = agentMemoryStore.restoreBackupItems(
         payload.agentData.memory,
         tombstones: payload.agentData.memoryDeletionIndex
