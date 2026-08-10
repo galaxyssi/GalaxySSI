@@ -349,6 +349,10 @@ struct AgentHomeView: View {
     return action.risk.weight < AgentRisk.high.weight
   }
 
+  private var primaryActionWaitingForResponse: Bool {
+    primaryAgentTask?.phase == .waitingResponse
+  }
+
   private var blockedAgentTask: AgentTaskRecord? {
     let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return activeSessionTasks.first { task in
@@ -1867,6 +1871,7 @@ struct AgentHomeView: View {
       hasPendingPrimaryAction: primaryAgentTask != nil,
       pendingPrimaryActionResumesTask: primaryActionResumesTask,
       pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
+      pendingPrimaryActionWaitingForResponse: primaryActionWaitingForResponse,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -1895,7 +1900,12 @@ struct AgentHomeView: View {
 
   private func handlePendingAgentTaskAction() {
     guard let task = primaryAgentTask else { return }
-    if task.phase == .waitingConfirmation {
+    if task.phase == .waitingResponse {
+      richActionStatus = t(
+        "agent_status_waiting_response",
+        "Waiting for an Agent response."
+      )
+    } else if task.phase == .waitingConfirmation {
       if requestAgentTaskApproval(task) {
         richActionStatus = t(
           "signalasi.agent.approval_status.approved",

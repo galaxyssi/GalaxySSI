@@ -14,6 +14,7 @@ struct SignalASIAgentComposerView: View {
   var hasPendingPrimaryAction: Bool
   var pendingPrimaryActionResumesTask: Bool
   var pendingPrimaryActionApprovesTask: Bool
+  var pendingPrimaryActionWaitingForResponse: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -321,12 +322,16 @@ struct SignalASIAgentComposerView: View {
             ? "play.fill"
             : pendingPrimaryActionApprovesTask
               ? "checkmark"
+              : pendingPrimaryActionWaitingForResponse
+                ? "hourglass"
               : "xmark")
           .font(.system(size: 20, weight: .bold))
           .foregroundColor(
             canSend || pendingPrimaryActionResumesTask || pendingPrimaryActionApprovesTask
               ? .signalASIAccent
-              : .signalASIAgentVoiceCancel
+              : pendingPrimaryActionWaitingForResponse
+                ? .signalASITextSecondary
+                : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
           .background(Color.white)
@@ -341,6 +346,8 @@ struct SignalASIAgentComposerView: View {
           ? t("signalasi.agent.resume_task", "Resume task")
           : pendingPrimaryActionApprovesTask
             ? t("signalasi.agent.confirmation.allow_once", "Allow once")
+          : pendingPrimaryActionWaitingForResponse
+            ? t("agent_status_waiting_response", "Waiting for an Agent response")
           : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
