@@ -45,6 +45,7 @@ struct AgentHomeView: View {
   @State private var pendingAgentSwipeDirection = ""
   @State private var agentSwipeRequest = 0
   @State private var transcriptContentMinY: CGFloat = 0
+  @State private var transcriptTopLoadTriggered = false
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
   @State private var retryingAgentMessageIDs: Set<UUID> = []
@@ -1556,6 +1557,7 @@ struct AgentHomeView: View {
       .onChange(of: store.activeAgentConversationId) { _ in
         visibleAgentMessageLimit = Self.agentTranscriptPageSize
         olderTranscriptAnchor = nil
+        transcriptTopLoadTriggered = false
         transcriptAutoFollow = true
         transcriptShowLatestButton = false
         DispatchQueue.main.async {
@@ -1657,6 +1659,17 @@ struct AgentHomeView: View {
         .coordinateSpace(name: Self.agentTranscriptCoordinateSpace)
         .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
           transcriptContentMinY = metrics.contentMinY
+          let atTop = metrics.contentMinY >= -8
+          let userIsAwayFromLatest = metrics.contentMaxY > metrics.viewportHeight + 56
+          if !atTop {
+            transcriptTopLoadTriggered = false
+          } else if atTop,
+                    userIsAwayFromLatest,
+                    hasOlderTranscriptMessages,
+                    !transcriptTopLoadTriggered {
+            transcriptTopLoadTriggered = true
+            loadOlderTranscriptMessages()
+          }
           let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 56
           if nearBottom {
             transcriptAutoFollow = true
@@ -1671,7 +1684,8 @@ struct AgentHomeView: View {
   }
 
   private func loadOlderTranscriptMessages() {
-    guard hasOlderTranscriptMessages else { return }
+    guard hasOlderTranscriptMessages, olderTranscriptAnchor == nil else { return }
+    transcriptTopLoadTriggered = transcriptContentMinY >= -8
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize
   }
@@ -2718,6 +2732,7 @@ struct AgentHomeView: View {
     composerFocusRequest += 1
     visibleAgentMessageLimit = Self.agentTranscriptPageSize
     olderTranscriptAnchor = nil
+    transcriptTopLoadTriggered = false
     transcriptAutoFollow = true
     transcriptShowLatestButton = false
     retryingAgentMessageIDs.removeAll()
