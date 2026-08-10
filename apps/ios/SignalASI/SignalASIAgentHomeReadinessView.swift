@@ -302,6 +302,11 @@ struct SignalASIAgentHomeReadinessView: View {
           .font(.system(size: 10.5, weight: .semibold))
           .foregroundColor(recentTaskTint(task.phase))
           .lineLimit(1)
+        Text(recentTaskSubtitle(task))
+          .font(.system(size: 9.5))
+          .foregroundColor(.signalASITextSecondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
       }
       Spacer(minLength: 8)
       Image(systemName: "chevron.right")
@@ -343,6 +348,71 @@ struct SignalASIAgentHomeReadinessView: View {
       return .signalASIAccent
     case .observing, .planning, .executing, .verifying, .waitingResponse:
       return .signalASITextSecondary
+    }
+  }
+
+  private func recentTaskSubtitle(_ task: AgentTaskRecord) -> String {
+    let execution = AgentExecutionPresentationPolicy.location(record: task)
+    return [
+      executionLocationLabel(execution.locationKind),
+      executionRuntimeLabel(execution.runtimeKind),
+      execution.locationName,
+      task.targetTitle,
+      riskLabel(task.risk)
+    ]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .joined(separator: " · ")
+  }
+
+  private func executionLocationLabel(_ kind: AgentExecutionLocationKind) -> String {
+    switch kind {
+    case .phone:
+      return t("signalasi.agent_execution.location.phone", "Phone")
+    case .desktop:
+      return t("signalasi.agent_execution.location.desktop", "Desktop")
+    case .cloud:
+      return t("signalasi.agent_execution.location.cloud", "Cloud")
+    case .connectedDevice:
+      return t("signalasi.agent_execution.location.device", "Connected device")
+    case .unknown:
+      return ""
+    }
+  }
+
+  private func executionRuntimeLabel(_ kind: AgentExecutionRuntimeKind) -> String {
+    switch kind {
+    case .phoneNative:
+      return t("signalasi.agent_execution.runtime.phone_native", "Phone native")
+    case .phoneLinux:
+      return t("signalasi.agent_execution.runtime.phone_linux", "Phone Linux")
+    case .phoneLocalModel:
+      return t("signalasi.agent_execution.runtime.local_model", "Local model")
+    case .phoneCloudAPI:
+      return t("signalasi.agent_execution.runtime.cloud_api", "Cloud API")
+    case .desktopAgent:
+      return t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent")
+    case .desktopTool:
+      return t("signalasi.agent_execution.runtime.desktop_tool", "Desktop tool")
+    case .connectedDevice:
+      return t("signalasi.agent_execution.runtime.connected_device", "Connected device")
+    case .knowledge:
+      return t("signalasi.agent_execution.runtime.knowledge", "Knowledge")
+    case .unknown:
+      return ""
+    }
+  }
+
+  private func riskLabel(_ risk: AgentRisk) -> String {
+    switch risk {
+    case .low:
+      return t("signalasi.agent_risk.low", "low risk")
+    case .medium:
+      return t("signalasi.agent_risk.medium", "medium risk")
+    case .high:
+      return t("signalasi.agent_risk.high", "high risk")
+    case .blocked:
+      return t("signalasi.agent_risk.blocked", "blocked")
     }
   }
 }
