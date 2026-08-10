@@ -887,18 +887,64 @@ private struct SignalASIRichBlockView: View {
     if isDesktopArtifact {
       desktopArtifactBlock
     } else {
-      SignalASIRichResourceRow(
-        icon: resourceIcon,
-        title: resourceTitle,
-        subtitle: resourceSubtitle,
-        url: SignalASIRichContentLink.safeURL(block.uri),
-        typeLabel: resourceTypeLabel
-      )
+      let hasPriorityAction = block.actions.contains {
+        ["preview_runtime_artifact", "save_runtime_artifact"].contains($0.verb)
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        SignalASIRichResourceRow(
+          icon: resourceIcon,
+          title: resourceTitle,
+          subtitle: resourceSubtitle,
+          url: hasPriorityAction ? nil : SignalASIRichContentLink.safeURL(block.uri),
+          typeLabel: resourceTypeLabel
+        )
+        if !block.actions.isEmpty {
+          resourceActionButtons(block.actions)
+        }
+      }
+    }
+  }
+
+  private func resourceActionButtons(_ actions: [AgentRichAction]) -> some View {
+    let columnCount = actions.count > 2 ? 2 : max(actions.count, 1)
+    return LazyVGrid(
+      columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount),
+      alignment: .leading,
+      spacing: 8
+    ) {
+      ForEach(actions) { action in
+        Button {
+          onAction(action)
+        } label: {
+          Label(action.label, systemImage: resourceActionIcon(action))
+            .font(.caption.weight(.semibold))
+            .lineLimit(2)
+            .minimumScaleFactor(0.75)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .padding(.horizontal, 8)
+            .background(actionBackground(action))
+            .foregroundColor(actionForeground(action))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private func resourceActionIcon(_ action: AgentRichAction) -> String {
+    switch action.verb.lowercased() {
+    case "preview_runtime_artifact":
+      return "eye"
+    case "save_runtime_artifact":
+      return "square.and.arrow.down"
+    default:
+      return "bolt"
     }
   }
 
   private var desktopArtifactBlock: some View {
     let available = coordinator.desktopArtifactStore.localFile(for: block) != nil
+    let previewActions = block.actions.filter { $0.verb == "preview_runtime_artifact" }
     return VStack(alignment: .leading, spacing: 8) {
       SignalASIRichResourceRow(
         icon: "doc.richtext",
@@ -927,6 +973,9 @@ private struct SignalASIRichBlockView: View {
           }
           .buttonStyle(.borderedProminent)
         }
+      }
+      if !previewActions.isEmpty {
+        resourceActionButtons(previewActions)
       }
     }
   }
