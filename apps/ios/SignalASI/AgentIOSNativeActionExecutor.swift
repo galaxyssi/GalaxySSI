@@ -106,6 +106,8 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     switch action.kind {
+    case .draftPlan:
+      return draftPlan(action)
     case .saveScreenKnowledge:
       return saveScreenKnowledge(action, screen: screen)
     case .readScreen:
@@ -131,6 +133,18 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         ]
       )
     }
+  }
+
+  private func draftPlan(_ action: AgentAction) -> AgentActionResult {
+    let isComplete = clean(action.target).caseInsensitiveCompare("task-complete") == .orderedSame
+    return success(
+      action,
+      message: isComplete ? clean(action.description).ifBlank("Task completed") : "",
+      metadata: [
+        "plan_action": "draft",
+        "completion_verified": isComplete.description
+      ]
+    )
   }
 
   private func saveScreenKnowledge(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
