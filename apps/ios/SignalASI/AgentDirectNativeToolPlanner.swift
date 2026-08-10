@@ -1706,6 +1706,43 @@ enum AgentTaskHistoryCommand: Equatable {
   }
 }
 
+enum AgentTaskControlCommand {
+  case approve
+  case retry
+  case pause
+  case resume
+  case replan
+  case rollback
+  case cancel
+
+  static func parse(_ goal: String) -> AgentTaskControlCommand? {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "approve", "confirm", "approve next", "confirm next", "run next", "execute next",
+         "\u{6279}\u{51c6}", "\u{786e}\u{8ba4}", "\u{6279}\u{51c6}\u{4e0b}\u{4e00}\u{6b65}", "\u{6267}\u{884c}\u{4e0b}\u{4e00}\u{6b65}":
+      return .approve
+    case "retry", "retry task", "retry action", "retry failed action", "try again",
+         "\u{91cd}\u{8bd5}", "\u{91cd}\u{8bd5}\u{4efb}\u{52a1}", "\u{518d}\u{8bd5}\u{4e00}\u{6b21}":
+      return .retry
+    case "pause", "pause task", "pause execution", "\u{6682}\u{505c}", "\u{6682}\u{505c}\u{4efb}\u{52a1}":
+      return .pause
+    case "resume", "resume task", "resume execution", "continue task",
+         "\u{7ee7}\u{7eed}", "\u{7ee7}\u{7eed}\u{4efb}\u{52a1}":
+      return .resume
+    case "replan", "replan task", "update plan", "plan again",
+         "\u{91cd}\u{65b0}\u{89c4}\u{5212}", "\u{66f4}\u{65b0}\u{8ba1}\u{5212}":
+      return .replan
+    case "rollback", "rollback task", "undo last action", "restore checkpoint",
+         "\u{56de}\u{6eda}", "\u{64a4}\u{9500}\u{6700}\u{540e}\u{4e00}\u{6b21}\u{64cd}\u{4f5c}":
+      return .rollback
+    case "cancel", "cancel task", "stop task", "abort task",
+         "\u{53d6}\u{6d88}", "\u{53d6}\u{6d88}\u{4efb}\u{52a1}", "\u{505c}\u{6b62}\u{4efb}\u{52a1}":
+      return .cancel
+    default:
+      return nil
+    }
+  }
+}
+
 enum AgentClearTaskHistoryCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {

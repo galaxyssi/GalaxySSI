@@ -1546,6 +1546,14 @@ final class MessageCoordinator: ObservableObject {
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
+      if attachments.isEmpty,
+         let command = AgentTaskControlCommand.parse(requestText) {
+        return await handleAgentTaskControlCommand(
+          command,
+          outgoing: outgoing,
+          conversationId: outgoing.conversationId
+        )
+      }
       let clarification = AgentClarificationPolicy.decide(
         goal: requestText,
         hasAttachments: !attachments.isEmpty,
@@ -2517,7 +2525,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func cancelLocalAgentTask(taskId: String) -> Bool {
+  func cancelLocalAgentTask(taskId: String, emitReply: Bool = true) -> Bool {
     guard let task = store.agentTask(id: taskId),
           [
             .observing,
@@ -2531,7 +2539,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if task.pendingAction != nil || !task.pendingActions.isEmpty {
-      cancelLocalNativeAction(taskId: taskId)
+      cancelLocalNativeAction(taskId: taskId, emitReply: emitReply)
       return store.agentTask(id: taskId)?.phase == .cancelled
     }
     guard var cancelled = store.agentTask(id: taskId) else { return false }
@@ -2545,7 +2553,7 @@ final class MessageCoordinator: ObservableObject {
     cancelled.executionLog.append("Agent task: cancelled")
     cancelled.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(cancelled)
-    guard let outgoing = localOutgoingMessage(for: cancelled) else { return true }
+    guard emitReply, let outgoing = localOutgoingMessage(for: cancelled) else { return true }
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
@@ -2566,7 +2574,7 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
-  func cancelLocalNativeAction(taskId: String) {
+  func cancelLocalNativeAction(taskId: String, emitReply: Bool = true) {
     guard var task = store.agentTask(id: taskId),
           [
             .observing,
@@ -2596,7 +2604,7 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append("Native tool task: cancelled")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    guard let outgoing = localOutgoingMessage(for: task) else { return }
+    guard emitReply, let outgoing = localOutgoingMessage(for: task) else { return }
     store.appendDeliveryTrace(
       outgoing.id,
       contactId: outgoing.contactId,
@@ -2932,6 +2940,117 @@ final class MessageCoordinator: ObservableObject {
       turnId: outgoing.turnId
     )
     return true
+  }
+
+  private func handleAgentTaskControlCommand(
+    _ command: AgentTaskControlCommand,
+    outgoing: ChatMessage,
+    conversationId: String
+  ) async -> Bool {
+    let active = activeAgentTurn(for: conversationId)
+    let localTask = active?.localTask
+    let localTaskID = localTask?.taskId ?? ""
+    let success: Bool
+    switch command {
+    case .approve:
+      guard let localTask,
+            localTask.phase == .waitingConfirmation,
+            localTask.pendingAction != nil else {
+        return await appendAgentTaskControlReply(
+          command: command,
+          success: false,
+          taskID: localTaskID,
+          outgoing: outgoing
+        )
+      }
+      approveLocalNativeAction(taskId: localTask.taskId)
+      success = store.agentTask(id: localTask.taskId)?.phase != .waitingConfirmation
+    case .retry:
+      success = !localTaskID.isEmpty && retryFailedLocalNativeAction(taskId: localTaskID)
+    case .pause:
+      success = !localTaskID.isEmpty && pauseLocalNativeAction(taskId: localTaskID)
+    case .resume:
+      success = !localTaskID.isEmpty && resumeLocalNativeAction(taskId: localTaskID)
+    case .replan:
+      success = !localTaskID.isEmpty && await replanLocalNativeAction(taskId: localTaskID)
+    case .rollback:
+      success = !localTaskID.isEmpty && rollbackLastLocalNativeAction(taskId: localTaskID)
+    case .cancel:
+      if let localTask {
+        success = cancelLocalAgentTask(taskId: localTask.taskId, emitReply: false)
+      } else if let remoteTask = active?.remoteTask {
+        success = await cancelRemoteAgentTask(remoteTask)
+      } else {
+        success = false
+      }
+    }
+    return await appendAgentTaskControlReply(
+      command: command,
+      success: success,
+      taskID: localTaskID,
+      outgoing: outgoing
+    )
+  }
+
+  private func appendAgentTaskControlReply(
+    command: AgentTaskControlCommand,
+    success: Bool,
+    taskID: String,
+    outgoing: ChatMessage
+  ) async -> Bool {
+    let verb = agentTaskControlVerb(command)
+    let result = localReply(
+      english: success
+        ? "Agent task \(verb)."
+        : "The active Agent task could not be \(verb.lowercased()).",
+      chinese: success
+        ? "Agent 任务已\(agentTaskControlChineseLabel(command))。"
+        : "当前 Agent 任务无法\(agentTaskControlChineseLabel(command))。"
+    )
+    let detail = "\(verb):\(success ? "success" : "failed"): \(taskID.ifBlank("none"))"
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_task_control_reply",
+      detail: detail,
+      status: success ? .delivered : .failed
+    )
+    let response = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: "local-agent-task-control-" + outgoing.turnId,
+      status: success ? .delivered : .failed,
+      traceStage: "local_agent_task_control_reply_received",
+      detail: detail,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    onIncomingMessage?(response)
+    return true
+  }
+
+  private func agentTaskControlVerb(_ command: AgentTaskControlCommand) -> String {
+    switch command {
+    case .approve: return "approved"
+    case .retry: return "retried"
+    case .pause: return "paused"
+    case .resume: return "resumed"
+    case .replan: return "replanned"
+    case .rollback: return "rolled back"
+    case .cancel: return "cancelled"
+    }
+  }
+
+  private func agentTaskControlChineseLabel(_ command: AgentTaskControlCommand) -> String {
+    switch command {
+    case .approve: return "批准"
+    case .retry: return "重试"
+    case .pause: return "暂停"
+    case .resume: return "继续"
+    case .replan: return "重新规划"
+    case .rollback: return "回滚"
+    case .cancel: return "取消"
+    }
   }
 
   private func handleDirectAgentScreenOverview(
