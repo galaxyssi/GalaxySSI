@@ -834,8 +834,12 @@ enum AgentPlanFactory {
   }
 
   static func actions(request: AgentPlanRequest, _ actions: [AgentAction]) -> AgentPlan {
+    let aliasedActions = AgentConnectorAliasResolver.resolve(
+      actions: actions,
+      targets: request.targets
+    )
     let plannedActions = AgentHomeAssistantNativeToolPlanBridge.rewrite(
-      actions: collapseDuplicateConnectorCalls(actions),
+      actions: collapseDuplicateConnectorCalls(aliasedActions),
       request: request
     )
     let resolvedActions = plannedActions.isEmpty ? [emptyPlanFallbackAction(request)] : plannedActions
