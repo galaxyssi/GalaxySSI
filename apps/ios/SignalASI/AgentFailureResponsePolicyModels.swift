@@ -202,7 +202,8 @@ enum AgentFailureRecoveryRichContent {
     turnId: String,
     agentId: String,
     originalGoal: String,
-    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = [],
+    chinese: Bool = false
   ) -> AgentRichBlock? {
     let display = AgentNoReplyReasonPolicy.display(for: signal)
     return recoveryBlock(
@@ -216,7 +217,8 @@ enum AgentFailureRecoveryRichContent {
       title: display.title,
       message: display.message,
       noReplyReason: display.reason.rawValue,
-      advertisedActions: advertisedActions
+      advertisedActions: advertisedActions,
+      chinese: chinese
     )
   }
 
@@ -231,7 +233,8 @@ enum AgentFailureRecoveryRichContent {
     title: String,
     message: String,
     noReplyReason: String = "",
-    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = [],
+    chinese: Bool = false
   ) -> AgentRichBlock? {
     let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -245,7 +248,8 @@ enum AgentFailureRecoveryRichContent {
       originalGoal: originalGoal,
       failure: failure,
       status: status,
-      advertisedActions: advertisedActions
+      advertisedActions: advertisedActions,
+      chinese: chinese
     )
     guard !actions.isEmpty else { return nil }
     let recommended = recommendedAction(status: status, failure: failure, advertisedActions: advertisedActions)
@@ -273,7 +277,8 @@ enum AgentFailureRecoveryRichContent {
     originalGoal: String,
     failure: String,
     status: String,
-    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = []
+    advertisedActions: [AgentFailureRecoveryAdvertisedAction] = [],
+    chinese: Bool = false
   ) -> [AgentRichAction] {
     let advertisedByAction = advertisedActions.reduce(into: [AgentFailureRecoveryAction: AgentFailureRecoveryAdvertisedAction]()) {
       values, item in
@@ -295,7 +300,8 @@ enum AgentFailureRecoveryRichContent {
       )
       return AgentRichAction(
         id: "recovery-\(action.rawValue)",
-        label: advertisedByAction[action]?.label.ifBlank(label(for: action)) ?? label(for: action),
+        label: advertisedByAction[action]?.label.ifBlank(label(for: action, chinese: chinese))
+          ?? label(for: action, chinese: chinese),
         verb: actionVerb,
         value: payload.encode(),
         style: action == recommended ? "primary" : "default"
@@ -338,7 +344,15 @@ enum AgentFailureRecoveryRichContent {
     )
   }
 
-  static func label(for action: AgentFailureRecoveryAction) -> String {
+  static func label(for action: AgentFailureRecoveryAction, chinese: Bool = false) -> String {
+    if chinese {
+      switch action {
+      case .retry: return "重试"
+      case .switchAgent: return "切换 Agent"
+      case .degrade: return "安全降级"
+      case .diagnostics: return "诊断"
+      }
+    }
     switch action {
     case .retry:
       return "Retry"
