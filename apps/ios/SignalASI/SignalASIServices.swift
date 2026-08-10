@@ -5225,6 +5225,40 @@ final class MessageCoordinator: ObservableObject {
         payload["attachments"] = attachmentDescriptors
       }
     }
+    if payload["task_budget"] != nil {
+      let estimatedBytes = Int64((try? SignalASILinkProtocol.jsonData(payload).count) ?? 0)
+      let taskBudgetUsage = AgentTaskBudgetUsage(
+        networkBytes: estimatedBytes,
+        usageEstimated: true
+      )
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      let environment = AgentTaskBudgetEnvironment(
+        networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated,
+        networkMetered: probe.metered
+      )
+      let decision = AgentTaskBudgetPolicy.evaluate(
+        budget: store.agentTaskBudget,
+        usage: taskBudgetUsage,
+        environment: environment,
+        networkRequired: true,
+        trustedNetworkTarget: link.paired
+      )
+      guard decision.allowed else {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "task_budget_blocked",
+          detail: decision.reason,
+          status: .failed
+        )
+        throw SignalASIError.invalidPayload("Agent task budget blocked: \(decision.reason)")
+      }
+      if let data = try? JSONEncoder().encode(taskBudgetUsage),
+         let encodedUsage = try? JSONSerialization.jsonObject(with: data) {
+        payload["task_budget_usage"] = encodedUsage
+      }
+    }
     taskIdentityStore.register(
       contactId: contact.id,
       sourceMessageId: sourceMessageId,
@@ -5573,10 +5607,28 @@ final class MessageCoordinator: ObservableObject {
       runtimeTarget: appPayload.string("runtime_target").ifBlank(appPayload.string("target")),
       fallbackTarget: appPayload.string("agent_name").ifBlank(appPayload.string("provider"))
     )
-    let richOutputJson = AgentRichContentCodec.normalize(
+    var richOutputJson = AgentRichContentCodec.normalize(
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
     let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    if richOutputJson.isEmpty,
+       ["failed", "timed_out", "not_found"].contains(remoteTaskStatus) {
+      let failure = appPayload.string("error")
+        .ifBlank(appPayload.string("content"))
+        .ifBlank(appPayload.string("text"))
+        .ifBlank(remoteTaskStatus)
+      richOutputJson = AgentRichContentCodec.normalize(
+        remoteFailureRecoveryRichOutput(
+          payload: appPayload,
+          contactId: displayContactId,
+          taskId: appPayload.string("task_id"),
+          conversationId: appPayload.string("conversation_id"),
+          turnId: responseTurnId,
+          failure: failure,
+          status: remoteTaskStatus
+        )
+      )
+    }
     if !remoteTaskStatus.isEmpty {
       recordRemoteAgentTaskStatus(
         payload: appPayload,
@@ -5732,6 +5784,101 @@ final class MessageCoordinator: ObservableObject {
         .min { $0.value.updatedAtMillis < $1.value.updatedAtMillis }?.key
       if let oldest { remoteAgentTaskStatuses.removeValue(forKey: oldest) }
     }
+  }
+
+  private func remoteFailureRecoveryRichOutput(
+    payload: [String: Any],
+    contactId: String,
+    taskId: String,
+    conversationId: String,
+    turnId: String,
+    failure: String,
+    status: String
+  ) -> String {
+    guard !taskId.isBlank, !conversationId.isBlank else { return "" }
+    let executionView = payload.dictionary("execution_view")
+    let routeKind = AgentRouteKind.fromWireValue(
+      payload.string("route_kind").ifBlank(executionView?.string("route_kind") ?? "")
+    )
+    let routeStatusValue = payload.string("route_status")
+      .ifBlank(executionView?.string("route_status") ?? "")
+    let routeStatus = routeStatusValue.isBlank
+      ? .available
+      : AgentConnectorStatus.fromWireValue(routeStatusValue)
+    let endpointStatusValue = payload.string("endpoint_status")
+      .ifBlank(executionView?.string("endpoint_status") ?? "")
+    let endpointStatus = endpointStatusValue.isBlank
+      ? nil
+      : AgentEndpointStatus.fromWireValue(endpointStatusValue)
+    let networkProbe = AgentMediaNetworkDetector.shared.currentProbe
+    let networkAvailable = networkProbe.networkPresent &&
+      networkProbe.internetCapable &&
+      networkProbe.validated
+    let signal = AgentNoReplySignal(
+      taskStatus: status,
+      error: failure,
+      currentStep: payload.string("current_step")
+        .ifBlank(executionView?.string("current_step") ?? ""),
+      routeKind: routeKind,
+      routeStatus: routeStatus,
+      endpointStatus: endpointStatus,
+      networkRequired: payloadBool(payload["network_required"], defaultValue: true),
+      networkAvailable: payloadBool(payload["network_available"], defaultValue: networkAvailable)
+    )
+    let sessionGoal = store.agentSessionMessages(conversationId)
+      .last { !$0.isSystem && $0.isMine }?.content ?? ""
+    let fallbackGoal = store.messages(for: contactId)
+      .last { !$0.isSystem && $0.isMine }?.content ?? ""
+    let originalGoal = sessionGoal.ifBlank(fallbackGoal)
+    let agentId = payload.string("connector_id")
+      .ifBlank(payload.string("agent_id"))
+      .ifBlank(contactId)
+    let chinese = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+      .hasPrefix("zh")
+    guard let block = AgentFailureRecoveryRichContent.recoveryBlock(
+      signal: signal,
+      taskId: taskId,
+      conversationId: conversationId,
+      turnId: turnId,
+      agentId: agentId,
+      originalGoal: originalGoal,
+      advertisedActions: recoveryAdvertisedActions(from: payload),
+      chinese: chinese
+    ) else {
+      return ""
+    }
+    return AgentRichContentCodec.encode([block])
+  }
+
+  private func recoveryAdvertisedActions(
+    from payload: [String: Any]
+  ) -> [AgentFailureRecoveryAdvertisedAction] {
+    guard let values = payload["recovery_actions"] as? [Any] else { return [] }
+    return values.compactMap { value in
+      guard let item = value as? [String: Any],
+            let action = AgentFailureRecoveryAction.fromWireValue(item.string("action")) else {
+        return nil
+      }
+      return AgentFailureRecoveryAdvertisedAction(
+        action: action,
+        enabled: payloadBool(item["enabled"], defaultValue: true),
+        recommended: payloadBool(item["recommended"], defaultValue: false),
+        label: item.string("label")
+      )
+    }
+  }
+
+  private func payloadBool(_ value: Any?, defaultValue: Bool) -> Bool {
+    if let value = value as? Bool { return value }
+    if let value = value as? NSNumber { return value.boolValue }
+    if let value = value as? String {
+      switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+      case "true", "1", "yes": return true
+      case "false", "0", "no": return false
+      default: break
+      }
+    }
+    return defaultValue
   }
 
   private func applyAgentConnectorStreamUpdate(_ update: AgentConnectorStreamUpdate) {

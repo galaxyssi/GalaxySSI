@@ -567,9 +567,19 @@ struct SignalASIAgentSessionsView: View {
     let metrics = store.agentSessionMetrics(session.id)
     return String(
       format: t("signalasi.agent_session.message_count", "%@ / %d messages / %@"),
-      session.selectedModelOrAgent,
+      sessionRouteLabel(session),
       metrics.messageCount,
       listTime(session.updatedAt)
+    )
+  }
+
+  private func sessionRouteLabel(_ session: AgentConversation) -> String {
+    let selection = AgentModelSelectionSettings.selection(for: session.id)
+    if selection.mode == .automatic || selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return t("signalasi.agent.model_selection.automatic", "Automatic")
+    }
+    return session.selectedModelOrAgent.ifBlank(
+      selection.displayName.ifBlank(selection.modelId).ifBlank(selection.targetId)
     )
   }
 

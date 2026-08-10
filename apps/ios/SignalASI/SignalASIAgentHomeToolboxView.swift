@@ -113,6 +113,14 @@ struct SignalASIAgentHomeToolboxView: View {
     switch true {
     case id.hasSuffix(".read.screen"):
       return t("agent_toolbox_example_read_screen", "summarize screen")
+    case id.hasSuffix(".tap"):
+      return t("agent_toolbox_example_tap", "tap first")
+    case id.hasSuffix(".type.text"):
+      return t("agent_toolbox_example_type", "type hello")
+    case id.hasSuffix(".swipe"):
+      return t("agent_toolbox_example_swipe", "swipe up")
+    case id.hasSuffix(".long.press"):
+      return t("agent_toolbox_example_long_press", "long press first")
     case id.hasSuffix(".copy.screen.text"):
       return t("agent_toolbox_example_copy_screen", "copy screen text")
     case id.hasSuffix(".paste.text"):
@@ -133,6 +141,8 @@ struct SignalASIAgentHomeToolboxView: View {
       return t("agent_toolbox_example_open_url", "open url https://example.com")
     case id.hasSuffix(".set.alarm"):
       return t("agent_toolbox_example_set_alarm", "set alarm 07:30")
+    case id.hasSuffix(".reply.notification"):
+      return t("agent_toolbox_example_reply_notification", "reply notification thanks")
     default:
       return nil
     }
