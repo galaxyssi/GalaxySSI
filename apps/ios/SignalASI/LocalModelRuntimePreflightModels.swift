@@ -356,6 +356,22 @@ enum LocalModelRuntimeProfiles {
     visionCapable: true
   )
 
+  static let LFM_2_5_350M_Q8_0 = profile(
+    id: "lfm2-5-350m-q8-0",
+    displayName: "LFM2.5 350M",
+    repositoryId: "LiquidAI/LFM2.5-350M-GGUF",
+    fileName: "LFM2.5-350M-Q8_0.gguf",
+    expectedModelFileBytes: 379_217_632,
+    sha256: "be036a757295e550098b85e13f6af2735d0fa73b41e1156a40c7d8e8e32a5766",
+    parameterCountBillions: 0.35,
+    layerCount: 16,
+    keyValueHeadCount: 8,
+    headDimension: 64,
+    maximumContextTokens: 32_768,
+    quantizationLabel: "Q8_0",
+    defaultNoThink: true
+  )
+
   static let LLAMA_3_1_8B_Q4_K_M = profile(
     id: "llama-3-1-8b-instruct-q4-k-m",
     displayName: "Llama 3.1 8B Instruct",
@@ -408,6 +424,7 @@ enum LocalModelRuntimeProfiles {
     QWEN_3_4B_Q4_K_M,
     QWEN_3_8B_Q4_K_M,
     QWEN_3_5_9B_Q4_K_M,
+    LFM_2_5_350M_Q8_0,
     LLAMA_3_1_8B_Q4_K_M,
     DEEPSEEK_R1_DISTILL_LLAMA_8B_Q4_K_M,
     GEMMA_3_12B_Q4_K_M,
@@ -421,6 +438,8 @@ enum LocalModelRuntimeProfiles {
       return GEMMA_3_4B_Q4
     case "qwen-2.5-7b-q4":
       return QWEN_2_5_7B_Q4
+    case "lfm2-5-350m-q8-0":
+      return LFM_2_5_350M_Q8_0
     default:
       return all.first { $0.id == id } ?? GEMMA_3_4B_Q4
     }
@@ -438,6 +457,7 @@ enum LocalModelRuntimeProfiles {
     keyValueHeadCount: Int,
     headDimension: Int,
     maximumContextTokens: Int,
+    quantizationLabel: String = "Q4_K_M",
     defaultNoThink: Bool = false,
     visionCapable: Bool = false
   ) -> LocalModelRuntimeProfile {
@@ -450,7 +470,7 @@ enum LocalModelRuntimeProfiles {
       headDimension: headDimension,
       defaultContextTokens: 4_096,
       maximumContextTokens: maximumContextTokens,
-      quantizationLabel: "Q4_K_M",
+      quantizationLabel: quantizationLabel,
       repositoryId: repositoryId,
       fileName: fileName,
       sha256: sha256,
