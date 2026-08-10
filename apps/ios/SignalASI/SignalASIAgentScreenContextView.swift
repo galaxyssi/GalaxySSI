@@ -59,9 +59,11 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     snapshotAgeMillis: Int64 = 0,
     t: (String, String) -> String,
     clipboard: AgentClipboardContext = AgentClipboardContext(),
-    notifications: AgentNotificationContext = AgentNotificationContext()
+    notifications: AgentNotificationContext = AgentNotificationContext(),
+    deviceStatus: AgentDeviceStatusContext = AgentDeviceStatusContext()
   ) -> SignalASIAgentScreenContextSnapshot {
     let resolvedClipboard = screenObservationAllowed ? clipboard : AgentClipboardContext()
+    let resolvedDeviceStatus = screenObservationAllowed ? deviceStatus : AgentDeviceStatusContext()
     let visibleTexts = screenObservationAllowed
       ? visibleTextValues(
         messages: messages,
@@ -104,6 +106,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       inputFields: inputElements,
       scrollableRegions: scrollableElements,
       sensitiveFlags: sensitiveFlags,
+      deviceStatus: resolvedDeviceStatus,
       isAccessibilityEnabled: screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis
     )
@@ -120,6 +123,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         launchRows: launchRows,
         notifications: visibleNotifications,
         clipboard: resolvedClipboard,
+        deviceStatus: resolvedDeviceStatus,
         t: t
       )
     )
@@ -133,6 +137,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     launchRows: [SignalASIAgentScreenDetailRow],
     notifications: AgentNotificationContext,
     clipboard: AgentClipboardContext,
+    deviceStatus: AgentDeviceStatusContext,
     t: (String, String) -> String
   ) -> [SignalASIAgentScreenDetailSection] {
     let visibleRows = visibleTexts.prefix(8).enumerated().map { index, value in
@@ -183,7 +188,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
           SignalASIAgentScreenDetailRow(
             id: "device-status-current",
             title: t("agent_screen_device_status", "Device Status"),
-            detail: deviceStatusDetail(t: t),
+            detail: deviceStatusDetail(deviceStatus, t: t),
             systemImage: "battery.100",
             command: "device status"
           )
@@ -493,74 +498,100 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     )
   }
 
-  private static func deviceStatusDetail(t: (String, String) -> String) -> String {
+  static func currentDeviceStatus() -> AgentDeviceStatusContext {
     let device = UIDevice.current
     device.isBatteryMonitoringEnabled = true
-    let batteryLevel = device.batteryLevel
+    let batteryPercent = device.batteryLevel >= 0
+      ? Int((device.batteryLevel * 100).rounded())
+      : -1
+    let charging = device.batteryState == .charging || device.batteryState == .full
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let network: String
+    if !probe.networkPresent {
+      network = "offline"
+    } else if let transport = probe.transports.first(where: { !$0.isEmpty }) {
+      network = transport
+    } else if probe.cellular {
+      network = "cellular"
+    } else if probe.internetCapable {
+      network = "internet"
+    } else {
+      network = "unknown"
+    }
+    let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+    let totalStorage = (attributes?[.systemSize] as? NSNumber)?.int64Value ?? 0
+    let freeStorage = (attributes?[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+    let thermal: String
+    switch ProcessInfo.processInfo.thermalState {
+    case .nominal:
+      thermal = "nominal"
+    case .fair:
+      thermal = "fair"
+    case .serious:
+      thermal = "serious"
+    case .critical:
+      thermal = "critical"
+    @unknown default:
+      thermal = "unknown"
+    }
+    return AgentDeviceStatusContext(
+      batteryPercent: batteryPercent,
+      charging: charging,
+      powerSaveMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+      network: network,
+      freeStorageMb: freeStorage / (1024 * 1024),
+      totalStorageMb: totalStorage / (1024 * 1024),
+      thermalState: thermal
+    )
+  }
+
+  private static func deviceStatusDetail(
+    _ status: AgentDeviceStatusContext,
+    t: (String, String) -> String
+  ) -> String {
     let battery: String
-    if batteryLevel >= 0 {
-      battery = "\(Int((batteryLevel * 100).rounded()))%"
+    if status.batteryPercent >= 0 {
+      battery = "\(status.batteryPercent)%"
     } else {
       battery = t("common_unknown", "Unknown")
     }
     let power: String
-    if ProcessInfo.processInfo.isLowPowerModeEnabled {
+    if status.powerSaveMode {
       power = t("agent_screen_power_low", "power save")
-    } else if device.batteryState == .charging || device.batteryState == .full {
+    } else if status.charging {
       power = t("agent_screen_power_charging", "charging")
     } else {
       power = t("agent_screen_power_battery", "battery")
     }
-    let thermal = thermalStateLabel(ProcessInfo.processInfo.thermalState, t: t)
-    let storage = freeStorageLabel(t: t)
+    let thermal = thermalStateLabel(status.thermalState, t: t)
+    let network = status.network.ifBlank(t("common_unknown", "Unknown"))
+    let storage = status.freeStorageMb > 0
+      ? ByteCountFormatter.string(fromByteCount: status.freeStorageMb * 1024 * 1024, countStyle: .file)
+      : t("common_unknown", "Unknown")
     return String(
-      format: t("agent_screen_device_status_summary_ios", "Battery %@ / %@ / %@ / %@ free"),
+      format: t("agent_screen_device_status_summary_ios_v2", "Battery %@ / %@ / %@ / %@ / %@ free"),
       battery,
       power,
       thermal,
+      network,
       storage
     )
   }
 
-  private static func freeStorageLabel(t: (String, String) -> String) -> String {
-    let fileManager = FileManager.default
-    guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-      return t("common_unknown", "Unknown")
-    }
-    let keys: Set<URLResourceKey> = [
-      .volumeAvailableCapacityForImportantUsageKey,
-      .volumeAvailableCapacityKey
-    ]
-    guard let values = try? documentsURL.resourceValues(forKeys: keys) else {
-      return t("common_unknown", "Unknown")
-    }
-    if let important = values.volumeAvailableCapacityForImportantUsage, important > 0 {
-      return formatBytes(important)
-    }
-    if let capacity = values.volumeAvailableCapacity, capacity > 0 {
-      return formatBytes(Int64(capacity))
-    }
-    return t("common_unknown", "Unknown")
-  }
-
-  private static func formatBytes(_ bytes: Int64) -> String {
-    ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
-  }
-
   private static func thermalStateLabel(
-    _ state: ProcessInfo.ThermalState,
+    _ state: String,
     t: (String, String) -> String
   ) -> String {
-    switch state {
-    case .nominal:
+    switch state.lowercased() {
+    case "nominal":
       return t("agent_screen_thermal_nominal", "normal")
-    case .fair:
+    case "fair":
       return t("agent_screen_thermal_fair", "warm")
-    case .serious:
+    case "serious":
       return t("agent_screen_thermal_serious", "hot")
-    case .critical:
+    case "critical":
       return t("agent_screen_thermal_critical", "critical")
-    @unknown default:
+    default:
       return t("common_unknown", "Unknown")
     }
   }

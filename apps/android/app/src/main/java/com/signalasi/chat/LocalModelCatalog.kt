@@ -18,6 +18,11 @@ object LocalModelCatalog {
         LocalModelProfileStore(context).upsert(profile)
         return profile
     }
+
+    fun addSignedDeployment(context: Context, profile: LocalModelRuntimeProfile) {
+        require(profile.sourceTrust == LocalModelSourceTrust.SIGNED_DEPLOYMENT)
+        LocalModelProfileStore(context).upsert(profile)
+    }
 }
 
 class LocalModelProfileStore(context: Context) {
@@ -34,7 +39,10 @@ class LocalModelProfileStore(context: Context) {
     }
 
     fun upsert(profile: LocalModelRuntimeProfile) {
-        require(profile.sourceTrust == LocalModelSourceTrust.HUB_VERIFIED)
+        require(profile.sourceTrust in setOf(
+            LocalModelSourceTrust.HUB_VERIFIED,
+            LocalModelSourceTrust.SIGNED_DEPLOYMENT
+        ))
         require(profile.downloadable)
         val updated = (list().filterNot { it.id == profile.id } + profile)
             .sortedBy(LocalModelRuntimeProfile::displayName)
@@ -82,7 +90,10 @@ private fun LocalModelRuntimeProfile.toJson(): JSONObject = JSONObject()
 
 private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
     val trust = enumValueOf<LocalModelSourceTrust>(getString("source_trust"))
-    require(trust == LocalModelSourceTrust.HUB_VERIFIED)
+    require(trust in setOf(
+        LocalModelSourceTrust.HUB_VERIFIED,
+        LocalModelSourceTrust.SIGNED_DEPLOYMENT
+    ))
     LocalModelRuntimeProfile(
         id = getString("id"),
         displayName = getString("display_name"),

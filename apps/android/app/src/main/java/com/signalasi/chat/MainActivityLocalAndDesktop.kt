@@ -265,6 +265,14 @@ internal fun MainActivity.showLocalModelFeaturePage() {
     ).apply {
         setOnClickListener { showLocalModelSearchPage() }
     })
+    featureContent.addView(featureRow(
+        getString(R.string.local_model_qnn_import_title),
+        getString(R.string.local_model_qnn_import_subtitle),
+        R.drawable.ic_import,
+        getString(R.string.local_model_qnn_import_action)
+    ).apply {
+        setOnClickListener { selectLocalQnnPackage() }
+    })
     otherProfiles.forEach { candidate ->
         featureContent.addView(localModelProfileRow(candidate))
     }
@@ -323,6 +331,32 @@ internal fun MainActivity.showLocalModelFeaturePage() {
             formatBytes(estimate.safeMemoryBudgetBytes)
         )
     ))
+    if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+        Lfm25QnnDeploymentStore(this).installedManifest()?.let { manifest ->
+            featureContent.addView(featureValueRow(
+                getString(R.string.local_model_qnn_context_status),
+                getString(
+                    R.string.local_model_qnn_context_status_subtitle,
+                    manifest.qairtVersion,
+                    manifest.maximumContextTokens
+                ),
+                R.drawable.ic_security_shield,
+                getString(R.string.local_model_qnn_precompiled)
+            ))
+            featureContent.addView(featureValueRow(
+                getString(R.string.local_model_qnn_profiled_peak),
+                getString(R.string.local_model_qnn_profiled_peak_subtitle),
+                R.drawable.ic_agent_memory,
+                formatBytes(manifest.profiledPeakBytes)
+            ))
+            featureContent.addView(featureValueRow(
+                getString(R.string.local_model_qnn_spill_fill),
+                getString(R.string.local_model_qnn_spill_fill_subtitle),
+                R.drawable.ic_agent_memory,
+                formatBytes(manifest.spillFillBufferBytes)
+            ))
+        }
+    }
     featureContent.addView(featureValueRow(
         getString(R.string.local_model_threads),
         getString(
@@ -502,6 +536,9 @@ internal fun MainActivity.updateLocalModelRow(binding: LocalModelRowBinding, sta
         } else if (profile.id == LocalModelRuntimeProfiles.GEMMA_4_E4B_QNN.id) {
             append("\n")
             append(getString(R.string.local_model_gemma_reasoning_role))
+        } else if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            append("\n")
+            append(getString(R.string.local_model_qnn_lfm_memory_profile))
         } else if (profile.defaultNoThink) {
             append("\n")
             append(getString(R.string.local_model_default_no_think))
@@ -569,6 +606,10 @@ internal fun MainActivity.localModelActionLabel(
 }
 
 internal fun MainActivity.handleLocalModelRowClick(profile: LocalModelRuntimeProfile) {
+    if (LocalModelQnnMemoryPolicy.appliesTo(profile) && !LocalModelManager.isInstalled(this, profile)) {
+        selectLocalQnnPackage()
+        return
+    }
     when (LocalModelManager.state(this, profile).state) {
         LocalModelInstallState.NOT_INSTALLED,
         LocalModelInstallState.PAUSED,

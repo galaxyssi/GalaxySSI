@@ -159,7 +159,18 @@ object LocalModelInferenceRuntime {
         } else {
             null
         }
-        val requestedContext = LocalModelRuntimeSettings.contextTokens(context)
+        val configuredContext = LocalModelRuntimeSettings.contextTokens(context)
+        val requestedContext = if (LocalModelQnnMemoryPolicy.appliesTo(profile)) {
+            val manifest = Lfm25QnnDeploymentStore(context).runtimeArtifact(profile).manifest
+            LocalModelQnnMemoryPolicy.requireLaunchable(
+                profile = profile,
+                manifest = manifest,
+                requestedContextTokens = configuredContext,
+                availableBytes = LocalModelDeviceSnapshotDetector.capture(context).availableMemoryBytes
+            ).effectiveContextTokens
+        } else {
+            configuredContext
+        }
         val estimate = if (modelFile != null) {
             LocalModelRuntimePreflight.beforeLaunch(
                 context = context,

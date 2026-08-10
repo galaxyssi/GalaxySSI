@@ -149,7 +149,13 @@ enum AgentExecutionContinuity {
       screen.sensitiveFlags.joined(separator: ","),
       screen.clickableElements.prefix(12).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
       screen.inputFields.prefix(8).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
-      screen.scrollableRegions.prefix(6).map(\.viewId).joined(separator: "\u{001d}")
+      screen.scrollableRegions.prefix(6).map(\.viewId).joined(separator: "\u{001d}"),
+      String(screen.deviceStatus.batteryPercent),
+      String(screen.deviceStatus.charging),
+      String(screen.deviceStatus.powerSaveMode),
+      screen.deviceStatus.network,
+      String(screen.deviceStatus.freeStorageMb),
+      screen.deviceStatus.thermalState
     ].joined(separator: "\u{001e}")
     return String(javaStringHash(payload))
   }

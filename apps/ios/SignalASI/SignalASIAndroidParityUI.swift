@@ -76,6 +76,7 @@ struct AgentHomeView: View {
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
   @State private var agentClipboardContext = AgentClipboardContext()
+  @State private var agentDeviceStatusContext = AgentDeviceStatusContext()
   @State private var agentScreenContextCapturedAtMillis =
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
   @State private var agentNotificationContext = AgentNotificationContext()
@@ -2340,7 +2341,8 @@ struct AgentHomeView: View {
       snapshotAgeMillis: snapshotAgeMillis,
       t: t,
       clipboard: agentClipboardContext,
-      notifications: agentNotificationContext
+      notifications: agentNotificationContext,
+      deviceStatus: agentDeviceStatusContext
     )
   }
 
@@ -2372,6 +2374,9 @@ struct AgentHomeView: View {
     agentClipboardContext = store.agentSafetySettings.screenObservationAllowed
       ? AgentClipboardContext.fromText(UIPasteboard.general.string ?? "")
       : AgentClipboardContext()
+    agentDeviceStatusContext = store.agentSafetySettings.screenObservationAllowed
+      ? SignalASIAgentScreenContextSnapshotBuilder.currentDeviceStatus()
+      : AgentDeviceStatusContext()
     coordinator.updateAgentScreenContext(makeAgentScreenSnapshot(snapshotAgeMillis: 0).screen)
   }
 
