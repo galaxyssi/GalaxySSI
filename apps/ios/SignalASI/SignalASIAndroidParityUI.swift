@@ -508,6 +508,7 @@ struct AgentHomeView: View {
         ensureActiveAgentSession()
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
+        _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         installComposerInputBridge()
         installAgentHomeTapBridge()
@@ -524,6 +525,7 @@ struct AgentHomeView: View {
       }
       .onChange(of: scenePhase) { phase in
         guard phase == .active else { return }
+        _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         coordinator.refreshAgentHomeState()
       }
