@@ -574,7 +574,7 @@ private struct SignalASIRichBlockView: View {
             SignalASIAnimatedImageView(data: data)
           } else if let url {
             SignalASIAsyncAnimatedImageView(url: url) {
-              resourceBlock
+              SignalASIRichImageFailureView()
             }
           } else {
             resourceBlock
@@ -1690,6 +1690,28 @@ private struct SignalASIRichBarChartView: View {
     .orange,
     .purple
   ]
+}
+
+private struct SignalASIRichImageFailureView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: "photo")
+        .font(.title2.weight(.semibold))
+      Text(t("rich_output_load_failed", "Unable to display preview"))
+        .font(.caption)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+    }
+    .foregroundColor(.signalASITextSecondary)
+    .frame(maxWidth: .infinity, minHeight: 96)
+    .accessibilityElement(children: .combine)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
 }
 
 private struct SignalASIInlineHTMLView: UIViewRepresentable {
