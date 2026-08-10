@@ -3779,6 +3779,7 @@
 "signalasi.workflow.platform" = "平台";
 "signalasi.agent.empty.title" = "我可以帮你做什么？";
 "signalasi.agent.empty.subtitle" = "输入目标，或按住说话";
+"agent_info_empty" = "暂无 Agent 运行信息";
 "signalasi.agent.latest" = "回到最新消息";
 "signalasi.agent.load_older" = "加载更早消息";
 "signalasi.agent.retry.title" = "Agent 请求失败";
@@ -3788,6 +3789,7 @@
 "signalasi.agent.task_control.resume_failed" = "此任务无法恢复";
 "signalasi.agent.task_control.action_retrying" = "正在重试失败的动作……";
 "signalasi.agent.task_control.cancelled" = "任务已取消";
+"signalasi.agent.task_control.cancel_failed" = "此任务无法取消";
 "signalasi.agent.task_control.paused" = "任务已暂停";
 "signalasi.agent.task_control.pause_failed" = "此任务无法暂停";
 "signalasi.agent.task_control.replanned" = "已重新规划任务";
@@ -3839,6 +3841,9 @@
 "runtime_artifact.download_requested" = "已请求桌面重新发送此工件。";
 "runtime_artifact.download_failed" = "无法从桌面请求此工件。";
 "signalasi.common.cancel_task" = "取消任务";
+"signalasi.common.resume" = "恢复";
+"signalasi.agent_tasks.resumed" = "任务已恢复";
+"signalasi.agent_tasks.cancelled" = "任务已取消";
 "signalasi.agent.execution.unknown" = "执行位置不可用";
 "signalasi.agent.session.merged_from" = "来自合并会话：%@";
 "signalasi.agent.input.text_missing" = "未提供文本。";
