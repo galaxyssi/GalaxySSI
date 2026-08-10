@@ -3172,6 +3172,13 @@ struct AgentHomeView: View {
       recentTasksShortcutActive = true
     case "permission-mode":
       cycleAgentPermissionMode()
+    case "task-execution-mode":
+      let modes = AgentTaskExecutionMode.allCases
+      if let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) {
+        store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
+      } else {
+        store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
+      }
     case "high-risk-guard":
       store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
     case "memory-capture":

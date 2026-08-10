@@ -3868,4 +3868,6 @@
 "signalasi.capability.owned_agent_long_press" = "Agent 主页面长按";
 "signalasi.agent.back.completed" = "SignalASI Agent 页面已返回。";
 "signalasi.agent.back.nothing_to_dismiss" = "当前没有可关闭的 SignalASI Agent 页面内容。";
+"agent_screen_action_task_execution_mode" = "任务执行方式";
+"agent_screen_action_task_execution_mode_detail" = "切换 Agent 仅规划或自动完成模式";
 "signalasi.capability.owned_agent_navigation" = "Agent 主页面导航";
