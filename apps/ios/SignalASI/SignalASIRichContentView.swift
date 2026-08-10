@@ -2164,13 +2164,33 @@ private struct SignalASIVideoArtifactView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 0) {
       if !title.isEmpty {
         Text(title)
-          .font(.subheadline.weight(.semibold))
+          .font(.system(size: 15, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+          .padding(.bottom, 7)
       }
-      VideoPlayer(player: player.player)
+      ZStack {
+        VideoPlayer(player: player.player)
+        if player.hasFailed {
+          VStack(spacing: 7) {
+            Image(systemName: "exclamationmark.triangle")
+              .font(.title3)
+              .foregroundColor(.orange)
+            Text(SignalASILocalization.string(
+              "rich_output_load_failed",
+              fallback: "Unable to display preview",
+              language: interfaceLanguage
+            ))
+              .font(.caption)
+              .foregroundColor(.signalASITextSecondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Color.signalASISearchBackground)
+        }
+      }
         .frame(maxWidth: .infinity)
         .frame(height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -2186,11 +2206,14 @@ private struct SignalASIVideoArtifactView: View {
 
 private final class SignalASIVideoArtifactPlayer: ObservableObject {
   let player: AVPlayer
+  @Published private(set) var hasFailed = false
   private var playbackObservation: NSKeyValueObservation? = nil
+  private var statusObservation: NSKeyValueObservation? = nil
 
   init(url: URL) {
     player = AVPlayer(url: url)
     installPlaybackObservation()
+    installStatusObservation()
   }
 
   private func installPlaybackObservation() {
@@ -2211,6 +2234,18 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
     }
   }
 
+  private func installStatusObservation() {
+    guard let item = player.currentItem else { return }
+    statusObservation = item.observe(
+      \.status,
+      options: [.initial, .new]
+    ) { [weak self] item, _ in
+      DispatchQueue.main.async {
+        self?.hasFailed = item.status == .failed
+      }
+    }
+  }
+
   func stop() {
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
     player.pause()
@@ -2223,6 +2258,7 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
 
   deinit {
     playbackObservation?.invalidate()
+    statusObservation?.invalidate()
     SignalASIRichMediaPlaybackCoordinator.shared.deactivate(owner: self)
   }
 }
