@@ -1676,6 +1676,36 @@ enum AgentScreenOverviewCommand {
   }
 }
 
+enum AgentTaskHistoryCommand: Equatable {
+  case recent
+  case search(String)
+
+  static func parse(_ goal: String) -> AgentTaskHistoryCommand? {
+    let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+    guard !clean.isEmpty else { return nil }
+
+    switch normalized {
+    case "recent tasks", "show recent tasks", "task history", "show task history",
+         "last tasks", "show last tasks":
+      return .recent
+    default:
+      break
+    }
+
+    let prefixes = [
+      "search tasks ", "find tasks ", "search task ", "find task ",
+      "搜索任务 ", "查找任务 "
+    ]
+    guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+      return nil
+    }
+    let query = String(clean.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return query.isEmpty ? nil : .search(query)
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))
