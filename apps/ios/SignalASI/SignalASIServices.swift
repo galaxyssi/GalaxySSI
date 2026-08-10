@@ -5116,6 +5116,10 @@ final class MessageCoordinator: ObservableObject {
       taskId: taskId,
       turnId: turnId
     )
+    let responseLanguagePreference = LanguagePolicySettings.normalizeVoice(
+      store.languagePolicy.responseLanguage
+    )
+    let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
       "type": "text",
       "message_id": sourceMessageId,
@@ -5130,6 +5134,8 @@ final class MessageCoordinator: ObservableObject {
       "agent_id": contact.connectorAgentId,
       "desktop_id": contact.desktopId,
       "desktop_name": contact.desktopName,
+      "response_language": responseLanguage,
+      "response_language_preference": responseLanguagePreference,
       "execution_mode": executionMode.rawValue,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
