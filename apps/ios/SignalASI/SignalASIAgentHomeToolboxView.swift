@@ -16,6 +16,12 @@ struct SignalASIAgentHomeToolboxView: View {
       }
   }
 
+  private var visibleTools: [AgentNativeToolDescriptor] {
+    let quickActions = availableTools.filter { example(for: $0) != nil }
+    let informationalTools = availableTools.filter { example(for: $0) == nil }
+    return Array((quickActions + informationalTools).prefix(6))
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 7) {
@@ -41,7 +47,7 @@ struct SignalASIAgentHomeToolboxView: View {
           .background(Color.signalASISurface)
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       } else {
-        ForEach(Array(availableTools.prefix(6))) { tool in
+        ForEach(visibleTools) { tool in
           toolRow(tool)
         }
       }
