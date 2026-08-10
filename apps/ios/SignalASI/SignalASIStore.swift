@@ -1659,10 +1659,16 @@ final class SignalASIStore: ObservableObject {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty else { return [] }
     let tokens = knowledgeTokens(cleanQuery)
+    let queryTrigrams = knowledgeTrigrams(cleanQuery)
     return agentKnowledgeItems
       .compactMap { item -> AgentKnowledgeHit? in
-        let score = knowledgeScore(item, query: cleanQuery, tokens: tokens)
-        guard score > 0 else { return nil }
+        let score = knowledgeScore(
+          item,
+          query: cleanQuery,
+          tokens: tokens,
+          queryTrigrams: queryTrigrams
+        )
+        guard score >= 1.2 else { return nil }
         let matchedTerms = knowledgeMatchedTerms(item, query: cleanQuery, tokens: tokens)
         return AgentKnowledgeHit(
           item: item,
@@ -3446,8 +3452,9 @@ final class SignalASIStore: ObservableObject {
   }
 
   private func knowledgeTokens(_ query: String) -> [String] {
-    let normalized = query.lowercased().unicodeScalars.map { scalar -> String in
-      CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : " "
+    let scalars = query.lowercased().unicodeScalars
+    let normalized = scalars.map { scalar -> String in
+      isKnowledgeCJK(scalar) ? " " : (CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : " ")
     }.joined()
     var seen = Set<String>()
     var values: [String] = []
@@ -3455,9 +3462,52 @@ final class SignalASIStore: ObservableObject {
       let clean = String(token.prefix(64))
       guard clean.count >= 2, seen.insert(clean).inserted else { continue }
       values.append(clean)
-      if values.count >= 24 { break }
+      if values.count >= 64 { return values }
+    }
+    var cjkRun = ""
+    func appendCJKRun(_ run: String) {
+      let characters = Array(run)
+      guard characters.count >= 2 else { return }
+      for index in 0..<(characters.count - 1) {
+        let token = String(characters[index...(index + 1)])
+        if seen.insert(token).inserted {
+          values.append(token)
+          if values.count >= 64 { return }
+        }
+      }
+    }
+    for scalar in scalars {
+      if isKnowledgeCJK(scalar) {
+        cjkRun.unicodeScalars.append(scalar)
+      } else if !cjkRun.isEmpty {
+        appendCJKRun(cjkRun)
+        cjkRun = ""
+        if values.count >= 64 { break }
+      }
+    }
+    if values.count < 64, !cjkRun.isEmpty {
+      appendCJKRun(cjkRun)
     }
     return values
+  }
+
+  private func isKnowledgeCJK(_ scalar: Unicode.Scalar) -> Bool {
+    (0x3400...0x4DBF).contains(scalar.value) ||
+      (0x4E00...0x9FFF).contains(scalar.value) ||
+      (0xF900...0xFAFF).contains(scalar.value)
+  }
+
+  private func knowledgeTrigrams(_ value: String) -> Set<String> {
+    let characters = value.lowercased().unicodeScalars
+      .filter { CharacterSet.alphanumerics.contains($0) }
+      .map { Character(String($0)) }
+    guard characters.count >= 3 else { return [] }
+    var trigrams = Set<String>()
+    for index in 0...(characters.count - 3) {
+      trigrams.insert(String(characters[index...(index + 2)]))
+      if trigrams.count >= 512 { break }
+    }
+    return trigrams
   }
 
   private func knowledgeMatchedTerms(_ item: AgentKnowledgeItem, query: String, tokens: [String]) -> [String] {
@@ -3479,27 +3529,44 @@ final class SignalASIStore: ObservableObject {
     return values
   }
 
-  private func knowledgeScore(_ item: AgentKnowledgeItem, query: String, tokens: [String]) -> Double {
-    let cleanQuery = query.lowercased()
+  private func knowledgeScore(
+    _ item: AgentKnowledgeItem,
+    query: String,
+    tokens: [String],
+    queryTrigrams: Set<String>
+  ) -> Double {
+    let cleanQuery = query
+      .lowercased()
+      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
     let title = item.title.lowercased()
     let summary = item.summary.lowercased()
     let content = item.content.lowercased()
-    let source = item.source.lowercased()
-    let tags = item.tags.map { $0.lowercased() }
+    let tags = item.tags.joined(separator: " ").lowercased()
     var score = 0.0
 
-    if title.localizedCaseInsensitiveContains(cleanQuery) { score += 10 }
-    if summary.localizedCaseInsensitiveContains(cleanQuery) { score += 6 }
-    if content.localizedCaseInsensitiveContains(cleanQuery) { score += 8 }
-    if source.localizedCaseInsensitiveContains(cleanQuery) { score += 2 }
-    if tags.contains(where: { $0.localizedCaseInsensitiveContains(cleanQuery) }) { score += 4 }
+    if title.localizedCaseInsensitiveContains(cleanQuery) { score += 14 }
+    if summary.localizedCaseInsensitiveContains(cleanQuery) { score += 10 }
+    if content.localizedCaseInsensitiveContains(cleanQuery) { score += 7 }
 
     for token in tokens {
-      if title.localizedCaseInsensitiveContains(token) { score += 4 }
-      if summary.localizedCaseInsensitiveContains(token) { score += 2 }
-      if content.localizedCaseInsensitiveContains(token) { score += 1 }
-      if source.localizedCaseInsensitiveContains(token) { score += 0.5 }
-      if tags.contains(where: { $0.localizedCaseInsensitiveContains(token) }) { score += 3 }
+      if title.localizedCaseInsensitiveContains(token) { score += 4.5 }
+      if tags.localizedCaseInsensitiveContains(token) { score += 3.5 }
+      if summary.localizedCaseInsensitiveContains(token) { score += 2.5 }
+      if content.localizedCaseInsensitiveContains(token) { score += 1.2 }
+    }
+    if !tokens.isEmpty {
+      let searchable = "\(title) \(summary) \(tags) \(content)"
+      let matched = tokens.filter { searchable.localizedCaseInsensitiveContains($0) }.count
+      score += Double(matched) / Double(tokens.count) * 6
+    }
+    let itemTrigrams = knowledgeTrigrams("\(title) \(summary) \(content.prefix(1_200))")
+    if !queryTrigrams.isEmpty, !itemTrigrams.isEmpty {
+      let intersection = queryTrigrams.intersection(itemTrigrams).count
+      let union = queryTrigrams.union(itemTrigrams).count
+      if union > 0 {
+        score += Double(intersection) / Double(union) * 9
+      }
     }
     return score
   }
