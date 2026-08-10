@@ -11,7 +11,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     recoverableSource: @escaping () -> [AgentRecoverableRun] = { [] },
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     healthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger(),
-    runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore()
+    runEventStore: AgentRunEventPersistence? = UserDefaultsAgentRunEventStore(),
+    managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger()
   ) {
     let provider = ActionExecutorAgentProvider(
       registrationSource: registrationSource,
@@ -19,7 +20,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       recoverableSource: recoverableSource,
       runStartReceipts: runStartReceipts,
       healthLedger: healthLedger,
-      runEventStore: runEventStore
+      runEventStore: runEventStore,
+      managedResponseLedger: managedResponseLedger
     )
     self.provider = provider
     let directory = AgentAdapterDirectory()
@@ -209,6 +211,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   private let runStartReceipts: AgentRunStartReceiptStore
   private let healthLedger: AgentProviderHealthLedger
   private let runEventStore: AgentRunEventPersistence?
+  private let managedResponseLedger: AgentManagedResponseLedger
   private let localProtocol: AgentProtocolRange
   private let lock = NSRecursiveLock()
   private var transportsByAgentId: [String: ActionExecutorAgentTransport] = [:]
@@ -226,6 +229,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     runStartReceipts: AgentRunStartReceiptStore = InMemoryAgentRunStartReceiptStore(),
     healthLedger: AgentProviderHealthLedger = InMemoryAgentProviderHealthLedger(),
     runEventStore: AgentRunEventPersistence? = nil,
+    managedResponseLedger: AgentManagedResponseLedger = UserDefaultsAgentManagedResponseLedger(),
     providerId: String = "signalasi-connectors",
     localProtocol: AgentProtocolRange = AgentProtocolRange(
       preferred: "1.0",
@@ -240,6 +244,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
     self.runStartReceipts = runStartReceipts
     self.healthLedger = healthLedger
     self.runEventStore = runEventStore
+    self.managedResponseLedger = managedResponseLedger
     self.providerId = providerId
     self.localProtocol = localProtocol
   }
@@ -604,7 +609,8 @@ final class ActionExecutorAgentProvider: AgentProvider {
       delegate: delegate,
       recoverableSource: recoverableSource,
       agentId: agentId,
-      runEventStore: runEventStore
+      runEventStore: runEventStore,
+      managedResponseLedger: managedResponseLedger
     )
     transportsByAgentId[agentId] = transport
     return transport
@@ -658,6 +664,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private let recoverableSource: () -> [AgentRecoverableRun]
   private let agentId: String
   private let runEventStore: AgentRunEventPersistence?
+  private let managedResponseLedger: AgentManagedResponseLedger
   private let lock = NSRecursiveLock()
   private var preparedByRunId: [String: PreparedAction] = [:]
   private var resultsByRunId: [String: AgentActionResult] = [:]
@@ -671,13 +678,15 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     delegate: AgentActionExecutor,
     recoverableSource: @escaping () -> [AgentRecoverableRun],
     agentId: String,
-    runEventStore: AgentRunEventPersistence?
+    runEventStore: AgentRunEventPersistence?,
+    managedResponseLedger: AgentManagedResponseLedger
   ) {
     self.registrationSource = registrationSource
     self.delegate = delegate
     self.recoverableSource = recoverableSource
     self.agentId = agentId
     self.runEventStore = runEventStore
+    self.managedResponseLedger = managedResponseLedger
   }
 
   func prepare(runId: String, action: AgentAction, screen: AgentScreenContext, registration: AgentRegistration) {
@@ -737,14 +746,33 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         (type: .agentConnected, sequence: 3, payload: [:])
       ]
     )
-    let result = delegate.execute(action: item.action, screen: item.screen)
+    var result = delegate.execute(action: item.action, screen: item.screen)
+    let awaitingResponse = result.metadata["awaiting_response"] == "true"
+    if awaitingResponse {
+      var metadata = result.metadata
+      metadata["conversation_id"] = (metadata["conversation_id"] ?? "")
+        .ifBlank(request.conversationId)
+      metadata["turn_id"] = (metadata["turn_id"] ?? "")
+        .ifBlank(request.messageId)
+      metadata["task_id"] = (metadata["task_id"] ?? "")
+        .ifBlank(metadata["remote_task_id"] ?? "")
+        .ifBlank(request.taskId)
+      result = AgentActionResult(
+        actionId: result.actionId,
+        success: result.success,
+        message: result.message,
+        metadata: metadata
+      )
+    }
     lock.lock()
     resultsByRunId[request.runId] = result
     lock.unlock()
-    let awaitingResponse = result.metadata["awaiting_response"] == "true"
     let sourceMessageId = Int64(result.metadata["source_message_id"] ?? "") ?? 0
     let contactId = result.metadata["contact_id"] ?? ""
     if awaitingResponse && sourceMessageId > 0 {
+      let responseConversationId = result.metadata["conversation_id"] ?? request.conversationId
+      let responseTurnId = result.metadata["turn_id"] ?? request.messageId
+      let responseTaskId = result.metadata["task_id"] ?? request.taskId
       lock.lock()
       activeByRunId[request.runId] = ActiveRun(
         request: request,
@@ -754,6 +782,30 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         contactId: contactId
       )
       lock.unlock()
+      try? managedResponseLedger.register(
+        AgentManagedResponseRecord(
+          ownerRunId: request.runId,
+          supervisorRunId: request.parentRunId,
+          agentId: agentId,
+          deliveryMode: request.deliveryMode,
+          sourceMessageId: sourceMessageId,
+          contactId: contactId,
+          conversationId: responseConversationId,
+          turnId: responseTurnId,
+          taskId: responseTaskId
+        )
+      )
+      try? AgentManagedConnectorResponseRegistry.shared.register(
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        ownerId: request.runId,
+        conversationId: responseConversationId,
+        turnId: responseTurnId,
+        taskId: responseTaskId
+      ) { [weak self] response in
+        guard let self else { return false }
+        return self.acceptConnectorResponse(response) != nil
+      }
     }
     emit(
       request: request,
@@ -806,6 +858,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       metadata: metadata
     )
     lock.unlock()
+    clearManagedResponse(runId: runId)
     if let active {
       emit(
         request: active.request,
@@ -839,6 +892,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     activeByRunId.removeValue(forKey: runId)
     eventContextsByRunId.removeValue(forKey: runId)
     lock.unlock()
+    _ = managedResponseLedger.acknowledge(response)
     emit(
       request: active.request,
       registration: active.registration,
@@ -874,6 +928,9 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       eventContextsByRunId.removeValue(forKey: runId)
     }
     lock.unlock()
+    if resolved.shouldDeactivateRun {
+      clearManagedResponse(runId: runId)
+    }
     if let eventType = settlement.eventType {
       emit(
         request: active.request,
@@ -976,6 +1033,9 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       eventContextsByRunId.removeValue(forKey: match.key)
     }
     lock.unlock()
+    if resolved.shouldDeactivateRun {
+      clearManagedResponse(runId: match.key)
+    }
     emit(
       request: active.request,
       registration: active.registration,
@@ -1031,6 +1091,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     activeByRunId.removeValue(forKey: match.key)
     eventContextsByRunId.removeValue(forKey: match.key)
     lock.unlock()
+    clearManagedResponse(runId: match.key)
     emit(
       request: active.request,
       registration: active.registration,
@@ -1059,6 +1120,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[runId] = timeout.result
     eventContextsByRunId.removeValue(forKey: runId)
     lock.unlock()
+    clearManagedResponse(runId: runId)
     emit(
       request: active.request,
       registration: active.registration,
@@ -1067,6 +1129,11 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       payload: timeout.eventPayload
     )
     return timeout.result
+  }
+
+  private func clearManagedResponse(runId: String) {
+    AgentManagedConnectorResponseRegistry.shared.unregisterOwner(runId)
+    managedResponseLedger.removeOwner(runId)
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
