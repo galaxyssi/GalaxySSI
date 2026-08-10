@@ -138,7 +138,11 @@ struct AgentHomeView: View {
         capability == .chat || capability == .reasoning || capability == .research
       }
     }
-    guard !hasReadyLocalModel && !hasReadyRemoteTarget else { return nil }
+    // Native phone tools can execute deterministic device requests without a model.
+    let hasReadyNativeTool = nativeToolSummary.available > 0
+    guard !hasReadyLocalModel && !hasReadyRemoteTarget && !hasReadyNativeTool else {
+      return nil
+    }
 
     return (
       t("signalasi.agent.model_selection.no_models", "No ready models"),
