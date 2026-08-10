@@ -451,24 +451,28 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var keyValueBlock: some View {
-    let pairs = keyValuePairs
+    let pairs = Array(keyValuePairs.prefix(Self.visibleTableRows))
     return VStack(alignment: .leading, spacing: 0) {
       if !block.title.isEmpty {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
-          .padding(.bottom, 6)
+          .padding(.horizontal, 12)
+          .padding(.top, 10)
+          .padding(.bottom, 7)
       }
       ForEach(Array(pairs.enumerated()), id: \.offset) { index, pair in
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 0) {
           Text(pair.key)
             .font(.caption.weight(.semibold))
             .foregroundColor(.signalASITextSecondary)
-            .frame(width: 88, alignment: .leading)
-          selectableText(pair.value)
             .frame(maxWidth: .infinity, alignment: .leading)
+          selectableText(pair.value)
+            .font(.subheadline)
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
         .background(index.isMultiple(of: 2) ? Color.signalASISurface : Color.signalASISearchBackground.opacity(0.35))
       }
     }
