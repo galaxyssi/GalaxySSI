@@ -15,6 +15,9 @@ struct SignalASIAgentExecutionFooterView: View {
   var timelineActionIcon: (AgentExecutionLoopTimelineAction) -> String = { _ in "ellipsis" }
   var timelineActionMenuTitle: String = "Task controls"
   var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
+  var canCancel: Bool = false
+  var cancelTitle: String = "Cancel task"
+  var onCancel: () -> Void = {}
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
@@ -63,22 +66,35 @@ struct SignalASIAgentExecutionFooterView: View {
           .padding(.leading, 4)
         }
       }
-      if !timelineActions.isEmpty {
-        Menu {
-          ForEach(timelineActions) { action in
-            Button {
-              onTimelineAction(action)
-            } label: {
-              Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+      if canCancel || !timelineActions.isEmpty {
+        HStack(spacing: 8) {
+          if canCancel {
+            Button(role: .destructive, action: onCancel) {
+              Label(cancelTitle, systemImage: "xmark.circle")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(minHeight: 30)
             }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(Text(cancelTitle))
           }
-        } label: {
-          Label("", systemImage: "ellipsis.circle")
-            .font(.system(size: 10, weight: .semibold))
-            .frame(width: 42, height: 30)
+          if !timelineActions.isEmpty {
+            Menu {
+              ForEach(timelineActions) { action in
+                Button {
+                  onTimelineAction(action)
+                } label: {
+                  Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+                }
+              }
+            } label: {
+              Label("", systemImage: "ellipsis.circle")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 42, height: 30)
+            }
+            .menuStyle(.borderedButton)
+            .accessibilityLabel(Text(timelineActionMenuTitle))
+          }
         }
-        .menuStyle(.borderedButton)
-        .accessibilityLabel(Text(timelineActionMenuTitle))
       }
     }
     .padding(.horizontal, 9)

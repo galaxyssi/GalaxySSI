@@ -1419,6 +1419,11 @@ struct AgentHomeView: View {
                       "signalasi.agent.task_control.title",
                       "Task controls"
                     ),
+                    canCancel: AgentTaskCenterPolicy.cancellable(task),
+                    cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
+                    onCancel: {
+                      cancelActiveAgentTask(task)
+                    },
                     onTimelineAction: { action in
                       runAgentTimelineAction(action, task: task)
                     }
