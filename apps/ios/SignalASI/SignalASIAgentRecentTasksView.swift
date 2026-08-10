@@ -5,10 +5,12 @@ struct SignalASIAgentRecentTasksView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  var initialTask: AgentTaskRecord? = nil
   @State private var searchText = ""
   @State private var selectedTask: AgentTaskRecord?
   @State private var deletingTask: AgentTaskRecord?
   @State private var statusText = ""
+  @State private var initialTaskPresented = false
 
   private var tasks: [AgentTaskRecord] {
     let clean = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -94,6 +96,11 @@ struct SignalASIAgentRecentTasksView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      guard !initialTaskPresented, let initialTask else { return }
+      initialTaskPresented = true
+      selectedTask = tasks.first(where: { $0.taskId == initialTask.taskId }) ?? initialTask
+    }
     .sheet(item: $selectedTask) { task in
       AgentTaskDetailSheet(
         task: task,

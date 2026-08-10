@@ -52,6 +52,7 @@ struct AgentHomeView: View {
   @State private var scanStatus = ""
   @State private var scanStatusIsError = false
   @State private var recentTasksShortcutActive = false
+  @State private var recentTaskForDetails: AgentTaskRecord?
   @State private var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
@@ -396,7 +397,7 @@ struct AgentHomeView: View {
       )
       .background(
         NavigationLink(
-          destination: SignalASIAgentRecentTasksView(),
+          destination: SignalASIAgentRecentTasksView(initialTask: recentTaskForDetails),
           isActive: $recentTasksShortcutActive
         ) {
           EmptyView()
@@ -980,6 +981,11 @@ struct AgentHomeView: View {
                 store.updateAgentSafetySettings { $0.executionPaused.toggle() }
               },
               onOpenRecentTasks: {
+                recentTaskForDetails = nil
+                recentTasksShortcutActive = true
+              },
+              onOpenRecentTask: { task in
+                recentTaskForDetails = task
                 recentTasksShortcutActive = true
               },
               t: t
