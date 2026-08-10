@@ -1737,7 +1737,8 @@ final class MessageCoordinator: ObservableObject {
         hasUserGoal: !trimmed.isEmpty
       )
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -1764,7 +1765,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowCommandRouter.handle(displayText)
         ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
@@ -1787,7 +1789,8 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
@@ -1814,7 +1817,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if contact.deliveryMode == .local,
+    if taskExecutionMode != .planOnly,
+       contact.deliveryMode == .local,
        attachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
@@ -2793,89 +2797,91 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if handleDirectAgentScreenOverview(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentClearTaskHistoryCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentSecurityStatus(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentAuditTrail(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentNotificationCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionModeCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentHighRiskGuardCommand(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentScreenSearch(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentPermissionChecklist(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
-      }
-      if handleDirectAgentCallableInventory(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
+      if executionMode != .planOnly {
+        if handleDirectAgentScreenOverview(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentClearTaskHistoryCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentSecurityStatus(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentAuditTrail(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentNotificationCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionModeCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentHighRiskGuardCommand(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentScreenSearch(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentPermissionChecklist(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
+        if handleDirectAgentCallableInventory(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
       }
       if handleDirectLocalNativeAction(
         requestText: requestText,
