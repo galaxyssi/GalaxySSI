@@ -75,6 +75,8 @@ struct AgentHomeView: View {
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
+  @State private var agentScreenContextCapturedAtMillis =
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -1138,6 +1140,7 @@ struct AgentHomeView: View {
               onTaskAction: handleHomeTaskAction,
               onModelSelectionChanged: refreshAgentRouteState,
               onScreenCommand: prefillAgentScreenCommand,
+              onRefreshScreenContext: refreshAgentScreenContext,
               t: t
             )
             AgentProcessCard(
@@ -1222,6 +1225,7 @@ struct AgentHomeView: View {
               screen: agentScreenSnapshot.screen,
               sections: agentScreenSnapshot.sections,
               onCommand: prefillAgentScreenCommand,
+              onRefresh: refreshAgentScreenContext,
               t: t
             )
             ForEach(transcriptMessages) { message in
@@ -2311,14 +2315,35 @@ struct AgentHomeView: View {
   }
 
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
+    makeAgentScreenSnapshot(snapshotAgeMillis: agentScreenContextSnapshotAgeMillis)
+  }
+
+  private var agentScreenContextSnapshotAgeMillis: Int64 {
+    max(
+      0,
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded()) -
+        agentScreenContextCapturedAtMillis
+    )
+  }
+
+  private func makeAgentScreenSnapshot(
+    snapshotAgeMillis: Int64
+  ) -> SignalASIAgentScreenContextSnapshot {
     SignalASIAgentScreenContextSnapshotBuilder.make(
       messages: messages,
       draft: draft,
       attachments: attachments,
       unreadTotal: unreadTotal,
       screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
+      snapshotAgeMillis: snapshotAgeMillis,
       t: t
     )
+  }
+
+  private func refreshAgentScreenContext() {
+    let capturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    agentScreenContextCapturedAtMillis = capturedAtMillis
+    coordinator.updateAgentScreenContext(makeAgentScreenSnapshot(snapshotAgeMillis: 0).screen)
   }
 
   private func prefillAgentScreenCommand(_ command: String) {
@@ -2351,10 +2376,11 @@ struct AgentHomeView: View {
       for: store.activeAgentConversationId
     )
     refreshAgentRuntimeAuditRecords()
-    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
+    refreshAgentScreenContext()
   }
 
   private func resetAgentSessionPresentation() {
+    agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     draft = ""
     attachments.removeAll()
     voiceAttachmentSnapshot.removeAll()
