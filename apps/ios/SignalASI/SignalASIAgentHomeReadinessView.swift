@@ -78,7 +78,11 @@ struct SignalASIAgentHomeReadinessView: View {
         .buttonStyle(.plain)
       }
 
-      SignalASIAgentHomeToolboxView(tools: nativeTools, t: t)
+      SignalASIAgentHomeToolboxView(
+        tools: nativeTools,
+        t: t,
+        onCommand: onScreenCommand
+      )
 
       HStack(spacing: 8) {
         controlButton(
