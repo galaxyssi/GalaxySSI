@@ -3893,3 +3893,4 @@
 "signalasi.agent.back.completed" = "SignalASI Agent 页面已返回。";
 "signalasi.agent.back.nothing_to_dismiss" = "当前没有可关闭的 SignalASI Agent 页面内容。";
 "signalasi.capability.owned_agent_navigation" = "Agent 主页面导航";
+"agent_safety_task_execution_value" = "任务执行方式：%@";
