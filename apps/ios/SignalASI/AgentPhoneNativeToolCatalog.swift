@@ -479,7 +479,9 @@ enum AgentPhoneNativeToolCatalog {
       return [.ownedAgentTranscript]
     case .longPress:
       return [.ownedAgentLongPress]
-    case .back, .home, .recents, .lockScreen:
+    case .back:
+      return [.ownedAgentNavigation]
+    case .home, .recents, .lockScreen:
       return [.accessibilityGestures]
     case .openApp, .openURL, .setAlarm:
       return [.intentLaunch]

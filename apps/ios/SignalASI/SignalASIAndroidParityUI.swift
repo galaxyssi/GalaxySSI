@@ -547,12 +547,14 @@ struct AgentHomeView: View {
         installComposerInputBridge()
         installAgentHomeTapBridge()
         installAgentHomeLongPressBridge()
+        installAgentHomeBackBridge()
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
         AgentIOSAgentHomeActionBridge.shared.removeLongPressHandler()
+        AgentIOSAgentHomeActionBridge.shared.removeBackHandler()
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
@@ -2695,6 +2697,12 @@ struct AgentHomeView: View {
     }
   }
 
+  private func installAgentHomeBackBridge() {
+    AgentIOSAgentHomeActionBridge.shared.installBackHandler { action in
+      applyAgentHomeBackAction(action)
+    }
+  }
+
   private func applyAgentHomeTapAction(_ action: AgentAction) -> AgentActionResult {
     let bounds = action.parameters["bounds"] ?? ""
     let matchedLabel = action.parameters["matched_label"] ?? ""
@@ -2803,6 +2811,64 @@ struct AgentHomeView: View {
         ? t("signalasi.agent.long_press.completed", "SignalASI home control long-pressed.")
         : tapResult.message,
       metadata: metadata
+    )
+  }
+
+  private func applyAgentHomeBackAction(_ action: AgentAction) -> AgentActionResult {
+    let dismissedSurface: String?
+    if actionTrayPresented {
+      actionTrayPresented = false
+      dismissedSurface = "action_tray"
+    } else if scanShortcutActive {
+      scanShortcutActive = false
+      dismissedSurface = "scan_sheet"
+    } else if cameraPickerPresented {
+      cameraPickerPresented = false
+      dismissedSurface = "camera_sheet"
+    } else if fileImporterPresented {
+      fileImporterPresented = false
+      dismissedSurface = "file_importer"
+    } else if selectedMessageForDetails != nil {
+      selectedMessageForDetails = nil
+      dismissedSurface = "message_details"
+    } else if homeActionEditorSelection != nil {
+      homeActionEditorSelection = nil
+      dismissedSurface = "action_editor"
+    } else if pendingHighRiskApprovalTask != nil {
+      pendingHighRiskApprovalTask = nil
+      dismissedSurface = "high_risk_confirmation"
+    } else {
+      dismissedSurface = nil
+    }
+
+    guard let dismissedSurface else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.back.nothing_to_dismiss",
+          "There is no open SignalASI Agent surface to dismiss."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "completion_verified": "false"
+        ]
+      )
+    }
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: t(
+        "signalasi.agent.back.completed",
+        "SignalASI Agent surface dismissed."
+      ),
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_home",
+        "dismissed_surface": dismissedSurface,
+        "completion_verified": "true"
+      ]
     )
   }
 

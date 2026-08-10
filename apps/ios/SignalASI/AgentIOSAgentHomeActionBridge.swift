@@ -6,6 +6,7 @@ final class AgentIOSAgentHomeActionBridge {
   private let lock = NSLock()
   private var tapHandler: ((AgentAction) -> AgentActionResult)?
   private var longPressHandler: ((AgentAction) -> AgentActionResult)?
+  private var backHandler: ((AgentAction) -> AgentActionResult)?
 
   private init() {}
 
@@ -30,6 +31,18 @@ final class AgentIOSAgentHomeActionBridge {
   func removeLongPressHandler() {
     lock.lock()
     longPressHandler = nil
+    lock.unlock()
+  }
+
+  func installBackHandler(_ handler: @escaping (AgentAction) -> AgentActionResult) {
+    lock.lock()
+    backHandler = handler
+    lock.unlock()
+  }
+
+  func removeBackHandler() {
+    lock.lock()
+    backHandler = nil
     lock.unlock()
   }
 
@@ -101,6 +114,44 @@ final class AgentIOSAgentHomeActionBridge {
       actionId: action.id,
       success: false,
       message: "The SignalASI Agent home long-press action did not complete.",
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_home",
+        "completion_verified": "false"
+      ]
+    )
+  }
+
+  func executeBack(action: AgentAction) -> AgentActionResult {
+    lock.lock()
+    let handler = backHandler
+    lock.unlock()
+
+    guard let handler else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: "The SignalASI Agent home page is not currently visible.",
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    if Thread.isMainThread {
+      return handler(action)
+    }
+
+    var result: AgentActionResult?
+    DispatchQueue.main.sync {
+      result = handler(action)
+    }
+    return result ?? AgentActionResult(
+      actionId: action.id,
+      success: false,
+      message: "The SignalASI Agent home back action did not complete.",
       metadata: [
         "platform": "ios",
         "surface": "signalasi_agent_home",
