@@ -390,8 +390,9 @@ private struct SignalASIRichBlockView: View {
 
   private var headingBlock: some View {
     let level = Int(block.metadata["level"] ?? "") ?? 2
+    let size: CGFloat = level == 1 ? 20 : level == 2 ? 18 : 16
     return selectableText(displayText)
-      .font(level == 1 ? .title3.weight(.bold) : .subheadline.weight(.semibold))
+      .font(.system(size: size, weight: .bold))
   }
 
   private var quoteBlock: some View {
