@@ -10,6 +10,11 @@ struct SignalASIAgentExecutionFooterView: View {
   var duration: String
   var details: [String]
   var detailsTitle: String
+  var timelineActions: [AgentExecutionLoopTimelineAction] = []
+  var timelineActionTitle: (AgentExecutionLoopTimelineAction) -> String = { $0.rawValue }
+  var timelineActionIcon: (AgentExecutionLoopTimelineAction) -> String = { _ in "ellipsis" }
+  var timelineActionMenuTitle: String = "Task controls"
+  var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
@@ -59,6 +64,23 @@ struct SignalASIAgentExecutionFooterView: View {
           }
           .padding(.leading, 4)
         }
+      }
+      if !timelineActions.isEmpty {
+        Menu {
+          ForEach(timelineActions) { action in
+            Button {
+              onTimelineAction(action)
+            } label: {
+              Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+            }
+          }
+        } label: {
+          Label("", systemImage: "ellipsis.circle")
+            .font(.system(size: 10, weight: .semibold))
+            .frame(width: 42, height: 30)
+        }
+        .menuStyle(.borderedButton)
+        .accessibilityLabel(Text(timelineActionMenuTitle))
       }
     }
     .padding(.horizontal, 9)
