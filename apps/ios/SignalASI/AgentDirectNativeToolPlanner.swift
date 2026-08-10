@@ -1664,6 +1664,18 @@ enum AgentDirectNativeToolPlanner {
   }
 }
 
+enum AgentScreenOverviewCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "screen status", "inspect screen", "screen elements", "show screen elements",
+         "screen structure", "show screen structure":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))
