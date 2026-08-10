@@ -682,12 +682,20 @@ private struct SignalASIRichBlockView: View {
         selectableText(firstNonEmpty([block.title, block.text, t("rich_output_progress", "Progress")]))
           .font(.subheadline.weight(.semibold))
         Spacer(minLength: 8)
-        Text("\(Int((Double(clamped) / Double(max(block.maximum, 1)) * 100).rounded()))%")
+        Text(block.value < 0
+          ? "--"
+          : "\(Int((Double(clamped) / Double(max(block.maximum, 1)) * 100).rounded()))%")
           .font(.caption.weight(.semibold))
           .foregroundColor(.signalASITextSecondary)
       }
-      ProgressView(value: Double(clamped), total: Double(max(block.maximum, 1)))
-        .accentColor(.signalASIAccent)
+      if block.value < 0 {
+        ProgressView()
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accentColor(.signalASIAccent)
+      } else {
+        ProgressView(value: Double(clamped), total: Double(max(block.maximum, 1)))
+          .accentColor(.signalASIAccent)
+      }
     }
     .padding(9)
     .background(Color.signalASISearchBackground.opacity(0.45))
@@ -696,13 +704,13 @@ private struct SignalASIRichBlockView: View {
 
   private var metricBlock: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(firstNonEmpty([block.title, block.metadata["label"] ?? "", t("rich_output_type_data", "Data")]))
-        .font(.caption.weight(.semibold))
-        .foregroundColor(.signalASITextSecondary)
       Text(firstNonEmpty([block.text, block.metadata["value"] ?? "", "\(block.value)"]))
-        .font(.title3.weight(.bold))
+        .font(.title2.weight(.bold))
         .foregroundColor(.signalASITextPrimary)
         .minimumScaleFactor(0.75)
+      Text(firstNonEmpty([block.title, block.metadata["label"] ?? "", t("rich_output_type_data", "Data")]))
+        .font(.caption)
+        .foregroundColor(.signalASITextSecondary)
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -764,19 +772,47 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var noticeBlock: some View {
-    HStack(alignment: .top, spacing: 8) {
-      Image(systemName: "info.circle")
-        .foregroundColor(.signalASIInsightText)
-      selectableText(displayText)
-        .foregroundColor(.signalASIInsightText)
+    let palette = noticePalette
+    return HStack(alignment: .top, spacing: 8) {
+      Rectangle()
+        .fill(palette.accent)
+        .frame(width: 4)
+      VStack(alignment: .leading, spacing: 2) {
+        if !block.title.isEmpty {
+          selectableText(block.title)
+            .font(.subheadline.weight(.semibold))
+        }
+        if !block.text.isEmpty {
+          selectableText(block.text)
+            .font(.caption)
+        }
+        if block.title.isEmpty && block.text.isEmpty {
+          selectableText(displayText)
+            .font(.caption)
+        }
+      }
+      .foregroundColor(palette.text)
     }
     .padding(9)
-    .background(Color.signalASIInsightBackground)
+    .background(palette.background)
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 0.5)
+        .stroke(palette.accent.opacity(0.65), lineWidth: 0.5)
     )
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+  }
+
+  private var noticePalette: (background: Color, accent: Color, text: Color) {
+    switch (block.metadata["style"]?.lowercased()) {
+    case "success":
+      return (.signalASIInsightBackground, .signalASIAccent, .signalASIInsightText)
+    case "warning":
+      return (Color.orange.opacity(0.12), .orange, .orange)
+    case "error":
+      return (Color.red.opacity(0.10), .red, .red)
+    default:
+      return (Color.blue.opacity(0.10), .blue, .blue)
+    }
   }
 
   private var approvalBlock: some View {
