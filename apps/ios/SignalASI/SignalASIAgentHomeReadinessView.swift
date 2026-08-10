@@ -19,6 +19,7 @@ struct SignalASIAgentHomeReadinessView: View {
   var onToggleMemoryCapture: () -> Void = {}
   var onToggleExecutionPaused: () -> Void = {}
   var onOpenRecentTasks: () -> Void = {}
+  var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
   var t: (String, String) -> String
 
   var body: some View {
@@ -147,7 +148,7 @@ struct SignalASIAgentHomeReadinessView: View {
         .buttonStyle(.plain)
         ForEach(Array(recentTasks.prefix(3))) { task in
           separator
-          Button(action: onOpenRecentTasks) {
+          Button(action: { onOpenRecentTask(task) }) {
             recentTaskRow(task)
           }
           .buttonStyle(.plain)
