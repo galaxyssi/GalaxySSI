@@ -26,6 +26,11 @@ struct SignalASIAgentHomeReadinessView: View {
   var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
   var onTaskAction: (AgentTaskCenterAction, AgentTaskRecord) -> Void = { _, _ in }
   var onModelSelectionChanged: () -> Void = {}
+  var routeTitle: String = ""
+  var routeSubtitle: String = ""
+  var routeStatus: String = ""
+  var routeReady: Bool = true
+  var onOpenRouteSelection: () -> Void = {}
   var onScreenCommand: (String) -> Void = { _ in }
   var t: (String, String) -> String
   var onRefreshScreenContext: () -> Void = {}
@@ -77,6 +82,15 @@ struct SignalASIAgentHomeReadinessView: View {
         }
         .buttonStyle(.plain)
       }
+
+      SignalASIAgentHomeRouteSummaryView(
+        title: t("signalasi.agent.route.current", "Current route"),
+        route: routeTitle.ifBlank(t("signalasi.agent.model_selection.automatic", "Automatic")),
+        subtitle: routeSubtitle,
+        status: routeStatus,
+        ready: routeReady,
+        onTap: onOpenRouteSelection
+      )
 
       SignalASIAgentHomeToolboxView(
         tools: nativeTools,
@@ -510,6 +524,64 @@ struct SignalASIAgentHomeReadinessView: View {
     case .blocked:
       return t("signalasi.agent_risk.blocked", "blocked")
     }
+  }
+}
+
+struct SignalASIAgentHomeRouteSummaryView: View {
+  var title: String
+  var route: String
+  var subtitle: String
+  var status: String
+  var ready: Bool
+  var onTap: () -> Void
+
+  var body: some View {
+    Button(action: onTap) {
+      HStack(spacing: 9) {
+        Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(ready ? .signalASIAccent : .orange)
+          .frame(width: 24, height: 24)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+          Text(route)
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+          if !subtitle.isEmpty {
+            Text(subtitle)
+              .font(.system(size: 10.5))
+              .foregroundColor(.signalASITextSecondary)
+              .lineLimit(1)
+          }
+        }
+        Spacer(minLength: 6)
+        VStack(alignment: .trailing, spacing: 3) {
+          Text(status)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(ready ? .signalASIAccent : .orange)
+            .lineLimit(1)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.signalASITextSecondary)
+        }
+      }
+      .padding(.horizontal, 12)
+      .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+      .background(Color.signalASISurface)
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .stroke((ready ? Color.signalASIAccent : Color.orange).opacity(0.55), lineWidth: 1)
+      )
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(Text("\(title): \(route), \(status)"))
   }
 }
 
