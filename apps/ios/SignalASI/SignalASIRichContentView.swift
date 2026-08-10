@@ -293,6 +293,7 @@ private struct SignalASIRichBlockView: View {
   @State private var expandedTable = false
   @State private var copiedCode = false
   @State private var formValues: [String: String] = [:]
+  @State private var imageViewerItem: SignalASIImageViewerItem?
 
   var body: some View {
     switch block.type {
@@ -523,28 +524,41 @@ private struct SignalASIRichBlockView: View {
     if isDesktopArtifact {
       desktopArtifactBlock
     } else {
+      let data = inlineImageData ?? localImageData
+      let url = remoteURL
       VStack(alignment: .leading, spacing: 6) {
-      if !block.title.isEmpty {
-        selectableText(block.title)
-          .font(.subheadline.weight(.semibold))
-      }
+        if !block.title.isEmpty {
+          selectableText(block.title)
+            .font(.subheadline.weight(.semibold))
+        }
 
-      if let data = inlineImageData ?? localImageData {
-        SignalASIAnimatedImageView(data: data)
-          .frame(maxHeight: 240)
-          .background(Color.signalASISearchBackground.opacity(0.5))
-          .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-          .accessibilityLabel(block.title.isEmpty ? t("rich_output_type_image", "Image") : block.title)
-      } else if let url = remoteURL {
-        SignalASIAsyncAnimatedImageView(url: url) {
-          resourceBlock
+        Group {
+          if let data {
+            SignalASIAnimatedImageView(data: data)
+          } else if let url {
+            SignalASIAsyncAnimatedImageView(url: url) {
+              resourceBlock
+            }
+          } else {
+            resourceBlock
+          }
         }
         .frame(maxHeight: 240)
         .background(Color.signalASISearchBackground.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-      } else {
-        resourceBlock
-      }
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onTapGesture {
+          guard let item = makeImageViewerItem(
+            data: data,
+            url: url,
+            id: "\(block.id)-image",
+            title: block.title
+          ) else { return }
+          imageViewerItem = item
+        }
+        .fullScreenCover(item: $imageViewerItem) { item in
+          SignalASIImageLightboxView(item: item)
+        }
       }
     }
   }
@@ -601,24 +615,28 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var galleryBlock: some View {
+    let items = galleryImageItems
     VStack(alignment: .leading, spacing: 8) {
       if !block.title.isEmpty {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
       }
-      if !block.dataB64.isEmpty || !block.uri.isEmpty {
+      if items.isEmpty {
         imageBlock
-      }
-      ForEach(Array(block.rows.enumerated()), id: \.offset) { index, row in
-        let title = row.first ?? "\(t("rich_output_type_image", "Image")) \(index + 1)"
-        let uri = row.dropFirst().first ?? ""
-        SignalASIRichResourceRow(
-          icon: "photo",
-          title: title,
-          subtitle: uri,
-          url: SignalASIRichContentLink.safeURL(uri),
-          typeLabel: t("rich_output_type_image", "Image")
-        )
+      } else {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(items) { item in
+              SignalASIImageThumbnailView(item: item) {
+                imageViewerItem = item
+              }
+            }
+          }
+          .padding(.vertical, 1)
+        }
+        .fullScreenCover(item: $imageViewerItem) { item in
+          SignalASIImageLightboxView(item: item)
+        }
       }
     }
   }
@@ -1063,6 +1081,64 @@ private struct SignalASIRichBlockView: View {
     guard block.type == .image || block.type == .gallery,
           let url = SignalASIRichContentLink.safeURL(block.uri),
           ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+      return nil
+    }
+    return url
+  }
+
+  private var galleryImageItems: [SignalASIImageViewerItem] {
+    var items: [SignalASIImageViewerItem] = []
+    let primaryData = inlineImageData ?? localImageData
+    let primaryURL = primaryData == nil ? imageURL(for: block.uri) : nil
+    if let primary = makeImageViewerItem(
+      data: primaryData,
+      url: primaryURL,
+      id: "\(block.id)-primary",
+      title: block.title
+    ) {
+      items.append(primary)
+    }
+
+    for (index, row) in block.rows.enumerated() {
+      let title = row.first?.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(
+        "\(t("rich_output_type_image", "Image")) \(index + 1)"
+      ) ?? "\(t("rich_output_type_image", "Image")) \(index + 1)"
+      let rawURL = row.dropFirst().first ?? ""
+      guard let url = imageURL(for: rawURL) else { continue }
+      let data = url.isFileURL ? try? Data(contentsOf: url) : nil
+      let remote = data == nil && !url.isFileURL ? url : nil
+      if let item = makeImageViewerItem(
+        data: data,
+        url: remote,
+        id: "\(block.id)-gallery-\(index)",
+        title: title
+      ) {
+        items.append(item)
+      }
+    }
+    return Array(items.prefix(12))
+  }
+
+  private func makeImageViewerItem(
+    data: Data?,
+    url: URL?,
+    id: String,
+    title: String
+  ) -> SignalASIImageViewerItem? {
+    guard data != nil || url != nil else { return nil }
+    return SignalASIImageViewerItem(
+      id: id,
+      data: data,
+      url: url,
+      title: title.trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+  }
+
+  private func imageURL(for raw: String) -> URL? {
+    let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: clean),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https", "file"].contains(scheme) else {
       return nil
     }
     return url
