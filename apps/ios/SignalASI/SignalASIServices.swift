@@ -2717,6 +2717,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentCallableInventory(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
@@ -3348,6 +3355,113 @@ final class MessageCoordinator: ObservableObject {
     case "request camera access from Scan or Camera": return localReply(english: fix, chinese: "从扫描或相机功能请求相机权限")
     default: return fix
     }
+  }
+
+  private func handleDirectAgentCallableInventory(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let filter = AgentCallableInventoryCommand.filter(requestText) else {
+      return false
+    }
+    let result = agentCallableInventoryReply(filter)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Tool Router"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-callable-inventory"
+    task.result = result
+    task.verification = "Local Agent callable inventory read"
+    task.executionLog.append("Local Agent callable inventory read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_callable_inventory_reply",
+      detail: "callable_inventory",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_callable_inventory_reply_received",
+      detail: "callable_inventory",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentCallableInventoryReply(_ filter: AgentCallableInventoryFilter) -> String {
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    let targetLines: (AgentConnectorKind) -> [String] = { kind in
+      targets
+        .filter { $0.kind == kind }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        .prefix(24)
+        .map { "\($0.title) [\($0.status.rawValue.lowercased())]" }
+    }
+    let toolLines = tools.prefix(24).map { tool in
+      "\(tool.title) [\(tool.availability.status.rawValue)]"
+    }
+    let capabilities = Set(
+      targets.flatMap { $0.capabilities.map(\.wireValue) } +
+        tools.flatMap { $0.capabilities.map { $0.lowercased() } }
+    ).sorted()
+    let lines: [String]
+    switch filter {
+    case .tools:
+      lines = [inventoryHeading("Tools", count: tools.count)] + toolLines
+    case .agents:
+      let values = targetLines(.agent)
+      lines = [inventoryHeading("Agents", count: values.count)] + values
+    case .models:
+      let values = targetLines(.model)
+      lines = [inventoryHeading("Models", count: values.count)] + values
+    case .devices:
+      let values = targetLines(.device)
+      lines = [inventoryHeading("Devices", count: values.count)] + values
+    case .capabilities:
+      lines = [inventoryHeading("Capabilities", count: capabilities.count)] + capabilities
+    case .all:
+      let agents = targetLines(.agent)
+      let models = targetLines(.model)
+      let devices = targetLines(.device)
+      lines = [
+        inventoryHeading("Tools", count: tools.count),
+        toolLines.joined(separator: ", "),
+        inventoryHeading("Agents", count: agents.count),
+        agents.joined(separator: ", "),
+        inventoryHeading("Models", count: models.count),
+        models.joined(separator: ", "),
+        inventoryHeading("Devices", count: devices.count),
+        devices.joined(separator: ", "),
+        inventoryHeading("Capabilities", count: capabilities.count),
+        capabilities.joined(separator: ", ")
+      ]
+    }
+    return String(lines.joined(separator: "\n").prefix(4_000))
+  }
+
+  private func inventoryHeading(_ title: String, count: Int) -> String {
+    localReply(
+      english: "\(title) (\(count)):",
+      chinese: "\(title)（\(count)）："
+    )
   }
 
   private func handleDirectLocalNativeAction(

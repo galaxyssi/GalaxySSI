@@ -1748,6 +1748,36 @@ enum AgentPermissionChecklistCommand {
   }
 }
 
+enum AgentCallableInventoryFilter {
+  case tools
+  case agents
+  case models
+  case devices
+  case capabilities
+  case all
+}
+
+enum AgentCallableInventoryCommand {
+  static func filter(_ goal: String) -> AgentCallableInventoryFilter? {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "list tools", "show tools", "available tools", "list system tools", "show system tools",
+         "列出工具", "显示工具":
+      return .tools
+    case "list agents", "show agents", "available agents", "列出 agent", "显示 agent":
+      return .agents
+    case "list models", "show models", "available models", "列出模型", "显示模型":
+      return .models
+    case "list devices", "show devices", "available devices", "列出设备", "显示设备":
+      return .devices
+    case "list capabilities", "show capabilities", "list callable targets", "show callable targets",
+         "what can you do", "列出能力", "显示能力", "你能做什么":
+      return .all
+    default:
+      return nil
+    }
+  }
+}
+
 private extension String {
   func prefixString(_ limit: Int) -> String {
     String(prefix(max(0, limit)))
