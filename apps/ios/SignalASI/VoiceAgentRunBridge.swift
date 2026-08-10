@@ -322,6 +322,49 @@ final class VoiceAgentRunBridge {
   }
 
   @discardableResult
+  func bindTransportIdentity(
+    sessionId: String,
+    taskId: String,
+    sourceMessageId: String
+  ) -> VoiceAgentRunSnapshot? {
+    let result: (snapshot: VoiceAgentRunSnapshot?, update: VoiceAgentRunUpdate?) = locked {
+      guard let current = repository.list().first(where: { $0.sessionId == clean(sessionId) }),
+            !current.state.isTerminal else {
+        return (nil, nil)
+      }
+      let normalizedTaskId = clean(taskId)
+      let normalizedSourceMessageId = clean(sourceMessageId)
+      guard !normalizedTaskId.isEmpty || !normalizedSourceMessageId.isEmpty else {
+        return (current, nil)
+      }
+      var next = current
+      if !normalizedTaskId.isEmpty {
+        next.taskId = normalizedTaskId
+      }
+      if !normalizedSourceMessageId.isEmpty {
+        next.sourceMessageId = normalizedSourceMessageId
+      }
+      guard next != current else { return (current, nil) }
+      next.updatedAtMillis = max(clock(), current.updatedAtMillis)
+      repository.save(next)
+      return (
+        next,
+        VoiceAgentRunUpdate(
+          snapshot: next,
+          eventId: "transport-bound:\(next.runId):\(next.updatedAtMillis)",
+          eventKind: "transport_bound",
+          message: "",
+          firstAcceptance: false,
+          firstProgress: false,
+          firstPartialResult: false
+        )
+      )
+    }
+    if let update = result.update { notify(update) }
+    return result.snapshot
+  }
+
+  @discardableResult
   func consumeRemoteEnvelope(_ envelope: [String: Any]) -> VoiceAgentRunUpdate? {
     let update: VoiceAgentRunUpdate? = locked {
       let normalizedEnvelope = flatten(envelope)

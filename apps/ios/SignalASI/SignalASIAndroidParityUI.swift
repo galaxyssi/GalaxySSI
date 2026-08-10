@@ -87,6 +87,7 @@ struct AgentHomeView: View {
   @State private var recoveringAgentTaskIDs: Set<String> = []
   @State private var approvalActionsInFlight: Set<String> = []
   @State private var cancellingRemoteTaskIDs: Set<String> = []
+  @State private var cancellingVoiceRunIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
   @State private var agentClipboardContext = AgentClipboardContext()
@@ -325,7 +326,10 @@ struct AgentHomeView: View {
   private var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot? {
     guard let session = activeAgentSession else { return nil }
     return coordinator.remoteAgentTaskStatuses.values
-      .filter { $0.conversationId == session.id && !$0.isTerminal }
+      .filter {
+        $0.conversationId == session.id &&
+          !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+      }
       .max { $0.updatedAtMillis < $1.updatedAtMillis }
   }
 
@@ -1156,6 +1160,21 @@ struct AgentHomeView: View {
               SignalASIAgentVoiceRunSummaryCard(runs: activeVoiceAgentRuns)
             }
             .buttonStyle(.plain)
+            ForEach(activeVoiceAgentRuns.filter { voiceRunRemoteTask($0)?.isCancellable == true }) { run in
+              Button(role: .destructive) {
+                cancelVoiceAgentRun(run)
+              } label: {
+                Label(
+                  cancellingVoiceRunIDs.contains(run.runId)
+                    ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                    : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                  systemImage: "xmark.circle"
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+              }
+              .buttonStyle(.bordered)
+              .disabled(cancellingVoiceRunIDs.contains(run.runId))
+            }
           }
           if let routeWarning = manualRouteWarning {
             SignalASISecurityNavigationRow(
@@ -1827,6 +1846,41 @@ struct AgentHomeView: View {
     Task { @MainActor in
       let sent = await coordinator.cancelRemoteAgentTask(snapshot)
       cancellingRemoteTaskIDs.remove(snapshot.id)
+      richActionStatus = sent
+        ? t("signalasi.agent.remote_status.cancel_sent", "Cancellation sent.")
+        : t("signalasi.agent.remote_status.cancel_failed", "The cancellation could not be sent.")
+    }
+  }
+
+  private func voiceRunRemoteTask(_ run: VoiceAgentRunSnapshot) -> AgentRemoteTaskStatusSnapshot? {
+    coordinator.remoteAgentTaskStatuses.values
+      .filter { snapshot in
+        snapshot.conversationId == run.conversationId &&
+          (snapshot.taskId == run.taskId ||
+            snapshot.turnId == run.turnId ||
+            String(snapshot.sourceMessageId) == run.sourceMessageId) &&
+          !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status)
+      }
+      .max { $0.updatedAtMillis < $1.updatedAtMillis }
+  }
+
+  private func cancelVoiceAgentRun(_ run: VoiceAgentRunSnapshot) {
+    guard cancellingVoiceRunIDs.insert(run.runId).inserted else { return }
+    richActionStatus = t(
+      "signalasi.agent.remote_status.cancelling",
+      "Sending cancellation..."
+    )
+    Task { @MainActor in
+      let sent: Bool
+      if let remoteTask = voiceRunRemoteTask(run) {
+        sent = await coordinator.cancelRemoteAgentTask(remoteTask)
+      } else {
+        sent = await coordinator.cancelVoiceAgentRun(run)
+      }
+      if sent {
+        _ = VoiceAgentRunBridgeRegistry.shared.markCancellationRequested(sessionId: run.sessionId)
+      }
+      cancellingVoiceRunIDs.remove(run.runId)
       richActionStatus = sent
         ? t("signalasi.agent.remote_status.cancel_sent", "Cancellation sent.")
         : t("signalasi.agent.remote_status.cancel_failed", "The cancellation could not be sent.")
@@ -2679,6 +2733,7 @@ struct AgentHomeView: View {
     recoveringAgentTaskIDs.removeAll()
     approvalActionsInFlight.removeAll()
     cancellingRemoteTaskIDs.removeAll()
+    cancellingVoiceRunIDs.removeAll()
     pendingHighRiskApprovalTask = nil
     modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
     refreshAgentRuntimeAuditRecords()

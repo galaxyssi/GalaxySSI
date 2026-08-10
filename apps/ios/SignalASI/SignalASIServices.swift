@@ -1208,6 +1208,62 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func cancelVoiceAgentRun(_ run: VoiceAgentRunSnapshot) async -> Bool {
+    guard !run.taskId.isEmpty,
+          !run.conversationId.isEmpty,
+          !run.turnId.isEmpty,
+          !run.contactId.isEmpty else {
+      return false
+    }
+    let contact = store.contact(id: run.contactId)
+    let requestedDesktopId = contact?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let link = requestedDesktopId.isEmpty
+      ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
+      : store.serverLinks.first(where: { $0.paired && $0.desktopId == requestedDesktopId })
+    guard let link, link.paired else {
+      lastError = "No paired Desktop route is available for this cancellation"
+      return false
+    }
+    let payload: [String: Any] = [
+      "type": "agent_task_cancel",
+      "task_id": run.taskId,
+      "client_route_id": link.routes.clientRouteId,
+      "conversation_id": run.conversationId,
+      "turn_id": run.turnId,
+      "contact_id": run.contactId,
+      "source_message_id": run.sourceMessageId,
+      "agent_id": contact?.connectorAgentId ?? run.agentId,
+      "desktop_id": link.desktopId,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      lastError = "Agent cancellation payload could not be encoded"
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.upTopic,
+      wirePayload: wire.wireText,
+      clientSourceMessageId: run.sourceMessageId,
+      contactId: run.contactId
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func publishRemoteAgentConversationDelete(
     conversationId: String,
     taskIds: [String]
@@ -1528,6 +1584,13 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId
     )
+    if !voiceSessionId.isEmpty {
+      _ = VoiceAgentRunBridgeRegistry.shared.bindTransportIdentity(
+        sessionId: voiceSessionId,
+        taskId: outgoing.id.uuidString,
+        sourceMessageId: outgoing.id.uuidString
+      )
+    }
     var stagedAttachments: [AgentStagedAttachment] = []
     if !attachments.isEmpty {
       stagedAttachments = await stageAgentAttachments(
