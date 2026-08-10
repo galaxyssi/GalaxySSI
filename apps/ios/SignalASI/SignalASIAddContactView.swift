@@ -486,7 +486,7 @@ struct AddContactView: View {
     if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) {
       return source.agents.count
     }
-    return 6
+    return fallbackDesktopAgents.count
   }
 
   private static func desktopAgentNames(from pairing: PairingQRCode) -> [String] {
@@ -506,35 +506,38 @@ struct AddContactView: View {
         return names
       }
     }
-    return [
-      "Hermes Agent",
-      "Codex Agent",
-      "Claude Code",
-      "OpenClaw",
-      "Local LLM",
-      "Custom Agent"
-    ]
+    return fallbackDesktopAgents.map(\.name)
   }
 
   private static func desktopAgentIDs(from pairing: PairingQRCode) -> [String] {
-    guard let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) else {
-      return []
-    }
-    return source.agents.compactMap { agent -> String? in
-      let agentID = agent.string("agent_id")
-        .ifBlank(agent.string("mobile_contact_id"))
-        .ifBlank(agent.string("id"))
-      let kind = agent.string("kind").ifBlank(agent.string("agent_kind"))
-      guard !agentID.isEmpty, agentID != "cloud-model", kind != "cloud-model" else {
-        return nil
+    if let source = SignalASIContactExchange.connectorAgentSource(from: pairing.raw) {
+      return source.agents.compactMap { agent -> String? in
+        let agentID = agent.string("agent_id")
+          .ifBlank(agent.string("mobile_contact_id"))
+          .ifBlank(agent.string("id"))
+        let kind = agent.string("kind").ifBlank(agent.string("agent_kind"))
+        guard !agentID.isEmpty, agentID != "cloud-model", kind != "cloud-model" else {
+          return nil
+        }
+        if agentID.hasPrefix("\(pairing.desktopId):") {
+          return agentID
+        }
+        let suffix = agentID.split(separator: ":").last.map(String.init) ?? agentID
+        return "\(pairing.desktopId):\(suffix)"
       }
-      if agentID.hasPrefix("\(pairing.desktopId):") {
-        return agentID
-      }
-      let suffix = agentID.split(separator: ":").last.map(String.init) ?? agentID
-      return "\(pairing.desktopId):\(suffix)"
     }
+    guard !pairing.desktopId.isEmpty else { return [] }
+    return fallbackDesktopAgents.map { "\(pairing.desktopId):\($0.id)" }
   }
+
+  private static let fallbackDesktopAgents: [(id: String, name: String)] = [
+    ("hermes", "Hermes Agent"),
+    ("codex", "Codex Agent"),
+    ("claude", "Claude Code"),
+    ("openclaw", "OpenClaw"),
+    ("local-llm", "Local LLM"),
+    ("custom-agent", "Custom Agent")
+  ]
 }
 
 private struct AddContactHeroView: View {
