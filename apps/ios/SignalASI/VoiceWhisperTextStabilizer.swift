@@ -84,7 +84,7 @@ final class VoiceWhisperTextStabilizer {
     if window.final {
       let finalText = VoiceWhisperTranscriptText.normalize(window.text)
       if !finalText.isEmpty {
-        stable = finalText
+        stable = collapseRepeatedFinalPrefix(finalText)
       }
       previousCandidate = stable
       return VoiceWhisperStabilizedTranscript(
@@ -122,6 +122,69 @@ final class VoiceWhisperTextStabilizer {
     stable = ""
     previousCandidate = ""
     revision = 0
+  }
+
+  private func collapseRepeatedFinalPrefix(_ value: String) -> String {
+    let evidence = stable.ifBlank(previousCandidate)
+    let evidenceKey = canonicalEvidence(evidence)
+    guard evidenceKey.count >= Self.minimumDuplicateEvidenceCharacters else {
+      return value
+    }
+
+    let characters = Array(value)
+    let maximumUnitEnd = characters.count / 2
+    guard maximumUnitEnd >= Self.minimumDuplicateEvidenceCharacters else {
+      return value
+    }
+
+    for unitEnd in stride(
+      from: maximumUnitEnd,
+      through: Self.minimumDuplicateEvidenceCharacters,
+      by: -1
+    ) {
+      let first = String(characters.prefix(unitEnd)).trimmingCharacters(in: .whitespacesAndNewlines)
+      let canonicalFirst = canonicalEvidence(first)
+      guard canonicalFirst.count >= Self.minimumDuplicateEvidenceCharacters else {
+        continue
+      }
+
+      var secondStart = unitEnd
+      while secondStart < characters.count && characters[secondStart].isWhitespace {
+        secondStart += 1
+      }
+      guard secondStart + Array(first).count <= characters.count else {
+        continue
+      }
+      let second = String(characters.dropFirst(secondStart))
+      guard second.hasPrefix(first) else {
+        continue
+      }
+
+      let comparableLength = min(canonicalFirst.count, evidenceKey.count)
+      var commonLength = 0
+      for pair in zip(canonicalFirst, evidenceKey).prefix(comparableLength) {
+        guard pair.0 == pair.1 else { break }
+        commonLength += 1
+      }
+      guard commonLength >= Self.minimumDuplicateEvidenceCharacters,
+            commonLength * 100 >= comparableLength * Self.minimumEvidenceMatchPercent else {
+        continue
+      }
+      return second.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return value
+  }
+
+  private func canonicalEvidence(_ value: String) -> String {
+    value.reduce(into: "") { result, character in
+      if character.isLetter || character.isNumber || isCJK(character) {
+        result.append(contentsOf: character.lowercased())
+      }
+    }
+  }
+
+  private func isCJK(_ character: Character) -> Bool {
+    character.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) }
   }
 
   private func stableEligibleText(_ window: VoiceWhisperDecodedWindow) -> String {
@@ -178,6 +241,8 @@ final class VoiceWhisperTextStabilizer {
     ".", ",", "!", "?", ";", ":",
     "\u{3002}", "\u{ff0c}", "\u{ff01}", "\u{ff1f}", "\u{ff1b}", "\u{ff1a}",
   ]
+  private static let minimumDuplicateEvidenceCharacters = 6
+  private static let minimumEvidenceMatchPercent = 70
 }
 
 enum VoiceWhisperTranscriptText {
