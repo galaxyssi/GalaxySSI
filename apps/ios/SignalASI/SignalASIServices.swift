@@ -718,7 +718,21 @@ final class MessageCoordinator: ObservableObject {
     let settingsStore = store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: AgentIOSNativeActionExecutor(
-        knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) }
+        knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) },
+        webKnowledgeImporter: { url, actionId in
+          AgentIOSURLSessionWebKnowledgeImporter(
+            nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+            store: { title, content, source, tags in
+              settingsStore.replaceAgentKnowledgeSource(
+                title: title,
+                content: content,
+                source: source,
+                kind: .document,
+                tags: tags
+              )
+            }
+          ).importPage(url, actionId: actionId)
+        }
       ),
       screenProvider: { [weak self] _ in
         self?.currentAgentScreenContext ?? AgentScreenContext(
