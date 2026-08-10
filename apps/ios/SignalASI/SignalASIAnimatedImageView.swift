@@ -5,6 +5,8 @@ import UIKit
 enum SignalASIImageResourceDecoder {
   static let maximumBytes = 12 * 1024 * 1024
   static let maximumPixelDimension = 2_048
+  static let thumbnailWidth: CGFloat = 112
+  static let thumbnailHeight: CGFloat = 168
 
   static func base64Data(_ value: String) -> Data? {
     var encoded = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,6 +78,16 @@ enum SignalASIImageResourceDecoder {
       return nil
     }
     return UIImage(cgImage: image)
+  }
+
+  static func galleryThumbnailSize(from data: Data?) -> CGSize {
+    let portrait = CGSize(width: thumbnailWidth, height: thumbnailHeight)
+    guard let data,
+          let image = staticImage(from: data),
+          image.size.width > image.size.height else {
+      return portrait
+    }
+    return CGSize(width: thumbnailHeight, height: thumbnailWidth)
   }
 
   private static func thumbnail(imageSource: CGImageSource, index: Int) -> CGImage? {
@@ -270,13 +282,14 @@ struct SignalASIImageThumbnailView: View {
   let onTap: () -> Void
 
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var remoteThumbnailSize: CGSize?
 
   var body: some View {
     imageContent
-      .frame(width: 124, height: 92)
+      .frame(width: thumbnailSize.width, height: thumbnailSize.height)
       .background(Color.signalASISearchBackground)
-      .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-      .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .onTapGesture(perform: onTap)
       .accessibilityLabel(
         item.title.isEmpty
@@ -290,12 +303,27 @@ struct SignalASIImageThumbnailView: View {
       .accessibilityAddTraits(.isButton)
   }
 
+  private var thumbnailSize: CGSize {
+    if let data = item.data {
+      return SignalASIImageResourceDecoder.galleryThumbnailSize(from: data)
+    }
+    return remoteThumbnailSize ?? CGSize(
+      width: SignalASIImageResourceDecoder.thumbnailWidth,
+      height: SignalASIImageResourceDecoder.thumbnailHeight
+    )
+  }
+
   @ViewBuilder
   private var imageContent: some View {
     if let data = item.data {
       SignalASIAnimatedImageView(data: data)
     } else if let url = item.url {
-      SignalASIAsyncAnimatedImageView(url: url) {
+      SignalASIAsyncAnimatedImageView(
+        url: url,
+        onLoaded: { data in
+          remoteThumbnailSize = SignalASIImageResourceDecoder.galleryThumbnailSize(from: data)
+        }
+      ) {
         Image(systemName: "photo")
           .foregroundColor(.signalASITextSecondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -4,11 +4,17 @@ import UIKit
 
 struct SignalASIAsyncAnimatedImageView<Failure: View>: View {
   let url: URL
+  private let onLoaded: ((Data) -> Void)?
   private let failure: () -> Failure
   @StateObject private var loader = SignalASIAsyncAnimatedImageLoader()
 
-  init(url: URL, @ViewBuilder failure: @escaping () -> Failure) {
+  init(
+    url: URL,
+    onLoaded: ((Data) -> Void)? = nil,
+    @ViewBuilder failure: @escaping () -> Failure
+  ) {
     self.url = url
+    self.onLoaded = onLoaded
     self.failure = failure
   }
 
@@ -20,6 +26,7 @@ struct SignalASIAsyncAnimatedImageView<Failure: View>: View {
           .frame(maxWidth: .infinity, minHeight: 80)
       case .loaded(let data):
         SignalASIRemoteAnimatedImageView(data: data)
+          .onAppear { onLoaded?(data) }
       case .failed:
         failure()
       }
