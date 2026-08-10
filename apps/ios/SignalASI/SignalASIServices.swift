@@ -5086,6 +5086,10 @@ final class MessageCoordinator: ObservableObject {
       "desktop_name": contact.desktopName,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
+       let taskBudget = try? JSONSerialization.jsonObject(with: data) {
+      payload["task_budget"] = taskBudget
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     AgentMediaLinkPayloadPolicy.payloadMetadata(
       attachments: attachments,
