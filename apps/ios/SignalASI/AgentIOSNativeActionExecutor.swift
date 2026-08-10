@@ -91,21 +91,26 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
   var notificationCenter: UNUserNotificationCenter
   var nowMillis: () -> Int64
   var knowledgeStore: ((AgentKnowledgeItem) -> AgentKnowledgeItem)?
+  var webKnowledgeImporter: ((String, String) -> AgentIOSWebKnowledgeImportResult)?
 
   init(
     handoffProvider: AgentIOSNativeActionHandoffProviding = AgentIOSDefaultNativeActionHandoffProvider(),
     notificationCenter: UNUserNotificationCenter = .current(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
-    knowledgeStore: ((AgentKnowledgeItem) -> AgentKnowledgeItem)? = nil
+    knowledgeStore: ((AgentKnowledgeItem) -> AgentKnowledgeItem)? = nil,
+    webKnowledgeImporter: ((String, String) -> AgentIOSWebKnowledgeImportResult)? = nil
   ) {
     self.handoffProvider = handoffProvider
     self.notificationCenter = notificationCenter
     self.nowMillis = nowMillis
     self.knowledgeStore = knowledgeStore
+    self.webKnowledgeImporter = webKnowledgeImporter
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     switch action.kind {
+    case .importWebKnowledge:
+      return importWebKnowledge(action)
     case .saveScreenKnowledge:
       return saveScreenKnowledge(action, screen: screen)
     case .readScreen:
@@ -133,6 +138,26 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         ]
       )
     }
+  }
+
+  private func importWebKnowledge(_ action: AgentAction) -> AgentActionResult {
+    guard action.parameters["_signalasi_long_term_write_allowed"] != "false" else {
+      return failure(action, "Private sessions cannot import long-term knowledge.", code: "private_session_knowledge_blocked")
+    }
+    let url = clean(action.parameters["url"] ?? "")
+    guard !url.isEmpty else {
+      return failure(action, "No web page URL was provided.", code: "missing_web_url")
+    }
+    guard let webKnowledgeImporter else {
+      return failure(action, "The iOS web knowledge importer is unavailable.", code: "web_importer_unavailable")
+    }
+    let result = webKnowledgeImporter(url, action.id)
+    return AgentActionResult(
+      actionId: action.id,
+      success: result.success,
+      message: result.message,
+      metadata: result.metadata
+    )
   }
 
   private func saveScreenKnowledge(_ action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
