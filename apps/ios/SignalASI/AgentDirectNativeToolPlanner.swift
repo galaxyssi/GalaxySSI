@@ -1743,6 +1743,19 @@ enum AgentTaskControlCommand {
   }
 }
 
+enum AgentClearTaskHistoryCommand {
+  static func matches(_ goal: String) -> Bool {
+    switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "clear task history", "clear recent tasks", "delete task history", "delete recent tasks",
+         "\u{6e05}\u{9664}\u{4efb}\u{52a1}\u{5386}\u{53f2}", "\u{6e05}\u{7a7a}\u{6700}\u{8fd1}\u{4efb}\u{52a1}",
+         "\u{5220}\u{9664}\u{4efb}\u{52a1}\u{5386}\u{53f2}", "\u{5220}\u{9664}\u{6700}\u{8fd1}\u{4efb}\u{52a1}":
+      return true
+    default:
+      return false
+    }
+  }
+}
+
 enum AgentScreenSearchCommand {
   static func query(_ goal: String) -> String? {
     let clean = goal.trimmingCharacters(in: .whitespacesAndNewlines)
