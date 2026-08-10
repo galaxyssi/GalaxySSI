@@ -881,6 +881,7 @@ struct MessageBubble: View {
           content: message.content,
           richOutputJson: message.richOutputJson,
           isOutgoing: message.isMine,
+          expansionStorageKey: "message:\(message.id.uuidString)",
           onAction: { action in
             if let onActionWithMessage = onActionWithMessage {
               onActionWithMessage(message, action)
