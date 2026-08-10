@@ -2710,6 +2710,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentCallableSearch(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectAgentScreenSearch(
         requestText: requestText,
         outgoing: outgoing,
@@ -3243,6 +3250,98 @@ final class MessageCoordinator: ObservableObject {
       ))
     }
     return String(lines.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func handleDirectAgentCallableSearch(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard let query = AgentCallableInventorySearchCommand.query(requestText) else {
+      return false
+    }
+    let result = agentCallableSearchReply(query: query)
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Tool Router"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-callable-inventory"
+    task.result = result
+    task.verification = "Local Agent callable inventory search completed"
+    task.executionLog.append("Local Agent callable inventory search: \(query)")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_callable_search_reply",
+      detail: query,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_callable_search_reply_received",
+      detail: query,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentCallableSearchReply(query: String) -> String {
+    let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = clean.lowercased()
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let targetMatches = targets
+      .filter { target in
+        [
+          target.id,
+          target.title,
+          target.kind.rawValue,
+          target.status.rawValue,
+          target.capabilities.map(\.wireValue).joined(separator: " ")
+        ]
+          .joined(separator: " ")
+          .lowercased()
+          .contains(normalized)
+      }
+      .prefix(6)
+      .map { "\($0.title):\($0.kind.rawValue.lowercased()):\($0.status.rawValue.lowercased())" }
+    let toolMatches = tools
+      .filter { tool in
+        [
+          tool.id,
+          tool.title,
+          tool.description,
+          tool.risk.rawValue,
+          tool.capabilities.joined(separator: " ")
+        ]
+          .joined(separator: " ")
+          .lowercased()
+          .contains(normalized)
+      }
+      .prefix(8)
+      .map { "\($0.title):\($0.location.rawValue.lowercased()):\($0.risk.rawValue.lowercased())" }
+    let matches = Array(targetMatches) + Array(toolMatches)
+    guard !matches.isEmpty else {
+      return localReply(
+        english: "No callable inventory hits for \"\(clean)\"",
+        chinese: "没有匹配“\(clean)”的可调用能力。"
+      )
+    }
+    return matches.joined(separator: " | ")
   }
 
   private func handleDirectAgentScreenSearch(
