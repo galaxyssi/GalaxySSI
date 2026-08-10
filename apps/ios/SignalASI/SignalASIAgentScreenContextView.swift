@@ -78,19 +78,34 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     let scrollRows = screenObservationAllowed ? scrollRows(t: t) : []
     let launchRows = screenObservationAllowed ? launchRows(t: t) : []
     let visibleNotifications = screenObservationAllowed ? notifications : AgentNotificationContext()
+    let clickableElements = screenObservationAllowed
+      ? elementInventory(actionRows + launchRows, className: "Button", visualRole: .button)
+      : []
+    let inputElements = screenObservationAllowed
+      ? elementInventory(inputRows, className: "TextField", visualRole: .input)
+      : []
+    let scrollableElements = screenObservationAllowed
+      ? elementInventory(scrollRows, className: "ScrollView", visualRole: .listItem)
+      : []
+    let sensitiveFlags = screenObservationAllowed ? sensitiveFlags(for: visibleTexts) : []
     let screen = AgentScreenContext(
       foregroundApp: "SignalASI iOS",
       activityName: "AgentHomeView",
       pageTitle: t("signalasi.tab.agent", "Agent"),
       visibleTextCount: visibleTexts.count,
-      clickableNodeCount: actionRows.count + launchRows.count,
-      inputFieldCount: inputRows.count,
-      scrollableRegionCount: scrollRows.count,
-      sensitiveFlagCount: 0,
+      clickableNodeCount: clickableElements.count,
+      inputFieldCount: inputElements.count,
+      scrollableRegionCount: scrollableElements.count,
+      sensitiveFlagCount: sensitiveFlags.count,
       visibleTexts: visibleTexts,
       selectedText: "",
       notifications: visibleNotifications,
       clipboard: resolvedClipboard,
+      focusedInputField: inputElements.first,
+      clickableElements: clickableElements,
+      inputFields: inputElements,
+      scrollableRegions: scrollableElements,
+      sensitiveFlags: sensitiveFlags,
       deviceStatus: resolvedDeviceStatus,
       isAccessibilityEnabled: screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis
@@ -285,6 +300,54 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       clipboard.textLength,
       clipboard.preview.ifBlank(clipboard.textHash)
     )
+  }
+
+  private static func elementInventory(
+    _ rows: [SignalASIAgentScreenDetailRow],
+    className: String,
+    visualRole: AgentVisualRole
+  ) -> [AgentScreenElement] {
+    rows.map { row in
+      AgentScreenElement(
+        label: row.title,
+        viewId: "ios.agent.\(row.id)",
+        className: className,
+        bounds: "logical://AgentHomeView/\(row.id)",
+        origin: .manual,
+        confidence: 1,
+        visualRole: visualRole,
+        actionable: row.command != nil
+      )
+    }
+  }
+
+  private static func sensitiveFlags(for values: [String]) -> [String] {
+    let normalized = values.joined(separator: " ").lowercased()
+    guard !normalized.isEmpty else { return [] }
+    let terms = [
+      ("password", "password"),
+      ("passcode", "passcode"),
+      ("verification code", "verification_code"),
+      ("otp", "otp"),
+      ("private key", "private_key"),
+      ("secret", "secret"),
+      ("token", "token"),
+      ("密码", "password"),
+      ("验证码", "verification_code"),
+      ("私钥", "private_key"),
+      ("支付", "payment")
+    ]
+    var flags: [String] = []
+    for (term, flag) in terms where normalized.contains(term) {
+      if !flags.contains(flag) {
+        flags.append(flag)
+      }
+    }
+    if normalized.range(of: #"\b(?:\d[ -]?){13,19}\b"#, options: .regularExpression) != nil,
+       !flags.contains("financial") {
+      flags.append("financial")
+    }
+    return Array(flags.prefix(12))
   }
 
   private static func visibleTextValues(
