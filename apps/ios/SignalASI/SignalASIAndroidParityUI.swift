@@ -1280,6 +1280,17 @@ struct AgentHomeView: View {
               },
               onTaskAction: handleHomeTaskAction,
               onModelSelectionChanged: refreshAgentRouteState,
+              routeTitle: headerModelLabel,
+              routeSubtitle: hasManualSelection
+                ? t("signalasi.agent.route.manual", "Manual route")
+                : t("signalasi.agent.route.automatic", "Automatic route"),
+              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
+                ? t("signalasi.status.ready", "Ready")
+                : t("signalasi.agent.model_selection.choose", "Choose"),
+              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
+              onOpenRouteSelection: {
+                agentModelSelectionShortcutActive = true
+              },
               onScreenCommand: prefillAgentScreenCommand,
               onRefreshScreenContext: refreshAgentScreenContext,
               t: t
