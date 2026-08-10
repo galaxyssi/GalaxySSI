@@ -61,6 +61,7 @@ struct AgentHomeView: View {
   @State private var agentMemoryShortcutActive = false
   @State private var agentKnowledgeShortcutActive = false
   @State private var agentScreenContextShortcutActive = false
+  @State private var agentInsightsShortcutActive = false
   @State private var chatListShortcutActive = false
   @State private var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
@@ -567,6 +568,15 @@ struct AgentHomeView: View {
             t: t
           ),
           isActive: $agentScreenContextShortcutActive
+        ) {
+          EmptyView()
+        }
+        .hidden()
+      )
+      .background(
+        NavigationLink(
+          destination: SignalASIGlobalAgentInsightInboxView(),
+          isActive: $agentInsightsShortcutActive
         ) {
           EmptyView()
         }
@@ -2826,6 +2836,8 @@ struct AgentHomeView: View {
       agentKnowledgeShortcutActive = true
     case "screen-context":
       agentScreenContextShortcutActive = true
+    case "insights":
+      agentInsightsShortcutActive = true
     case "recent-tasks":
       recentTaskForDetails = nil
       recentTasksShortcutActive = true
