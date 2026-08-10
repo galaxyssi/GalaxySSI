@@ -1109,6 +1109,7 @@ struct AgentHomeView: View {
                 .ifBlank("SignalASI"),
               memorySnapshot: store.agentMemorySnapshot(),
               knowledgeStats: store.agentKnowledgeStats,
+              knowledgeHitCount: store.agentKnowledgeAccessAudit.count,
               screen: agentScreenSnapshot.screen,
               screenSections: agentScreenSnapshot.sections,
               recentTaskCount: store.recentAgentTasks(limit: 200).count,
