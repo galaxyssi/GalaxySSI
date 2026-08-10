@@ -5086,6 +5086,10 @@ final class MessageCoordinator: ObservableObject {
       "desktop_name": contact.desktopName,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
+    if let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
+       let taskBudget = try? JSONSerialization.jsonObject(with: data) {
+      payload["task_budget"] = taskBudget
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     AgentMediaLinkPayloadPolicy.payloadMetadata(
       attachments: attachments,
@@ -5120,6 +5124,40 @@ final class MessageCoordinator: ObservableObject {
       )
       if !attachmentDescriptors.isEmpty {
         payload["attachments"] = attachmentDescriptors
+      }
+    }
+    if payload["task_budget"] != nil {
+      let estimatedBytes = Int64((try? SignalASILinkProtocol.jsonData(payload).count) ?? 0)
+      let taskBudgetUsage = AgentTaskBudgetUsage(
+        networkBytes: estimatedBytes,
+        usageEstimated: true
+      )
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      let environment = AgentTaskBudgetEnvironment(
+        networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated,
+        networkMetered: probe.metered
+      )
+      let decision = AgentTaskBudgetPolicy.evaluate(
+        budget: store.agentTaskBudget,
+        usage: taskBudgetUsage,
+        environment: environment,
+        networkRequired: true,
+        trustedNetworkTarget: link.paired
+      )
+      guard decision.allowed else {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "task_budget_blocked",
+          detail: decision.reason,
+          status: .failed
+        )
+        throw SignalASIError.invalidPayload("Agent task budget blocked: \(decision.reason)")
+      }
+      if let data = try? JSONEncoder().encode(taskBudgetUsage),
+         let encodedUsage = try? JSONSerialization.jsonObject(with: data) {
+        payload["task_budget_usage"] = encodedUsage
       }
     }
     taskIdentityStore.register(
