@@ -1275,6 +1275,8 @@
 "signalasi.agent.scan.selected" = "Agent 已添加，并已选为当前会话路由。";
 "signalasi.agent.scan.not_ready" = "Agent 已添加，但暂时无法通信。请在通讯录中检查 Agent 连接。";
 "signalasi.agent.scan.dismiss" = "关闭";
+"signalasi.agent.scan.retry" = "再次扫描";
+"signalasi.agent.scan.no_agent" = "扫描结果中没有可添加的 Agent。";
 "signalasi.message.actions" = "消息操作";
 "signalasi.message.delete" = "删除消息";
 "signalasi.message.details" = "详情";
