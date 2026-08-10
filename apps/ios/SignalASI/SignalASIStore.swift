@@ -1303,7 +1303,7 @@ final class SignalASIStore: ObservableObject {
       title: cleanTitle,
       createdAt: now,
       updatedAt: now,
-      selectedModelOrAgent: contact(id: "hermes")?.displayName ?? "Automatic"
+      selectedModelOrAgent: "Automatic"
     )
     persistAgentConversation(session)
     activeAgentConversationId = session.id
