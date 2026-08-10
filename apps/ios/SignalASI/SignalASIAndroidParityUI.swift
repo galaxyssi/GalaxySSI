@@ -1046,6 +1046,7 @@ struct AgentHomeView: View {
                 recentTaskForDetails = task
                 recentTasksShortcutActive = true
               },
+              onModelSelectionChanged: refreshAgentRouteState,
               onScreenCommand: prefillAgentScreenCommand,
               t: t
             )
