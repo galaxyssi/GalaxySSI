@@ -54,9 +54,9 @@ enum AgentWorkflowTriggerCommandRouter {
         actionId: "workflow_trigger_create"
       )
     }
-    guard let kind = triggerKind(for: parsed.eventClause) else {
+    guard let spec = triggerSpec(for: parsed.eventClause) else {
       return Result(
-        text: "iOS workflow triggers currently support power connected and low battery events.",
+        text: "iOS workflow triggers support charging, low battery, notification package, and notification text events.",
         actionId: "workflow_trigger_create"
       )
     }
@@ -64,11 +64,12 @@ enum AgentWorkflowTriggerCommandRouter {
       let trigger = try AgentWorkflowTrigger(
         workflowId: workflow.id,
         workflowName: workflow.name,
-        kind: kind
+        kind: spec.kind,
+        condition: spec.condition
       )
       _ = try triggerStore.upsert(trigger)
       return Result(
-        text: "Workflow trigger created for \(workflow.name): \(trigger.id) (\(eventName(kind))).",
+        text: "Workflow trigger created for \(workflow.name): \(trigger.id) (\(eventName(spec.kind, condition: spec.condition))).",
         actionId: "workflow_trigger_create"
       )
     } catch {
@@ -305,13 +306,23 @@ enum AgentWorkflowTriggerCommandRouter {
     return nil
   }
 
-  private static func triggerKind(for clause: String) -> AgentWorkflowTriggerKind? {
+  private static func triggerSpec(for clause: String) -> (kind: AgentWorkflowTriggerKind, condition: String)? {
+    let packagePattern = #"^notification\s+(?:from\s+)?package(?:\s+(?:contains|matches))?(?:\s*::\s*|\s+)(.+)$"#
+    if let condition = capture(packagePattern, in: clause)?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !condition.isEmpty {
+      return (.notificationPackage, condition)
+    }
+    let textPattern = #"^notification\s+text(?:\s+(?:contains|matches))?(?:\s*::\s*|\s+)(.+)$"#
+    if let condition = capture(textPattern, in: clause)?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !condition.isEmpty {
+      return (.notificationText, condition)
+    }
     let normalized = clause.lowercased()
     if normalized.range(of: #"\b(charg|charging|charger|plugged|power|connected)\b"#, options: .regularExpression) != nil {
-      return .powerConnected
+      return (.powerConnected, "")
     }
     if normalized.range(of: #"\b(low battery|battery low|battery below|battery under|battery at)\b"#, options: .regularExpression) != nil {
-      return .batteryLow
+      return (.batteryLow, "")
     }
     return nil
   }
@@ -322,7 +333,7 @@ enum AgentWorkflowTriggerCommandRouter {
       return Result(text: "No workflow triggers configured.", actionId: "workflow_trigger_list")
     }
     let lines = triggers.map { trigger in
-      "- \(trigger.id) | \(trigger.workflowName) | \(eventName(trigger.kind)) | \(trigger.enabled ? "enabled" : "disabled")"
+      "- \(trigger.id) | \(trigger.workflowName) | \(eventName(trigger.kind, condition: trigger.condition)) | \(trigger.enabled ? "enabled" : "disabled")"
     }
     return Result(
       text: "Workflow triggers:\n\(lines.joined(separator: "\n"))",
@@ -357,17 +368,17 @@ enum AgentWorkflowTriggerCommandRouter {
 
   private static func syntax() -> Result {
     Result(
-      text: "Workflow trigger commands: create workflow trigger <workflow> when charging; list workflow triggers; delete workflow trigger <id>.",
+      text: "Workflow trigger commands: create workflow trigger <workflow> when charging; create workflow trigger <workflow> when notification text contains <text>; list workflow triggers; delete workflow trigger <id>.",
       actionId: "workflow_trigger_syntax"
     )
   }
 
-  private static func eventName(_ kind: AgentWorkflowTriggerKind) -> String {
+  private static func eventName(_ kind: AgentWorkflowTriggerKind, condition: String = "") -> String {
     switch kind {
     case .powerConnected: return "power connected"
     case .batteryLow: return "low battery"
-    case .notificationPackage: return "notification package"
-    case .notificationText: return "notification text"
+    case .notificationPackage: return "notification package contains '\(condition)'"
+    case .notificationText: return "notification text contains '\(condition)'"
     }
   }
 

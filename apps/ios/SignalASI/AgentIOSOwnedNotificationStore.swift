@@ -2,6 +2,7 @@ import Foundation
 
 final class AgentIOSOwnedNotificationStore {
   static let shared = AgentIOSOwnedNotificationStore()
+  static let didRecordNotification = Notification.Name("signalasi.ios.owned_notification_recorded")
 
   private let lock = NSLock()
   private var items: [AgentIOSNotificationItem] = []
@@ -27,10 +28,11 @@ final class AgentIOSOwnedNotificationStore {
       sensitiveFlags: notificationSensitiveFlags(title: title, body: body)
     )
     lock.lock()
-    defer { lock.unlock() }
     items.removeAll { $0.key == identifier }
     items.insert(item, at: 0)
     items = Array(items.prefix(AgentIOSNotificationNativeToolCatalog.maxNotifications))
+    lock.unlock()
+    NotificationCenter.default.post(name: Self.didRecordNotification, object: item)
     return identifier
   }
 
