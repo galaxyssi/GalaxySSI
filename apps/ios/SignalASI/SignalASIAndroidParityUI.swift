@@ -1290,25 +1290,9 @@ struct AgentHomeView: View {
               activeRemoteAgentTask == nil &&
               activeVoiceAgentRuns.isEmpty &&
               recoverableAgentTasksFromOtherSessions.isEmpty {
-            SignalASIAgentEmptyStateView(
+            SignalASIAgentHomeEmptyStatePanel(
               title: t("signalasi.agent.empty.title", "How can I help?"),
-              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
-            )
-            SignalASIAgentHomeQuickActionsView(
-              t: t,
-              onNewSession: createAgentConversation,
-              onOpenSessions: {
-                recentTaskForDetails = nil
-                agentSessionsShortcutActive = true
-              },
-              onScan: {
-                scanShortcutActive = true
-              },
-              onOpenSettings: {
-                agentSettingsShortcutActive = true
-              }
-            )
-            SignalASIAgentHomeReadinessView(
+              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"),
               runningTasks: activeAgentTasks.count,
               callableTargets: availableCallableTargetCount,
               nativeToolSummary: nativeToolSummary,
@@ -1328,6 +1312,26 @@ struct AgentHomeView: View {
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
+              routeTitle: headerModelLabel,
+              routeSubtitle: hasManualSelection
+                ? t("signalasi.agent.route.manual", "Manual route")
+                : t("signalasi.agent.route.automatic", "Automatic route"),
+              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
+                ? t("signalasi.status.ready", "Ready")
+                : t("signalasi.agent.model_selection.choose", "Choose"),
+              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
+              t: t,
+              onNewSession: createAgentConversation,
+              onOpenSessions: {
+                recentTaskForDetails = nil
+                agentSessionsShortcutActive = true
+              },
+              onScan: {
+                scanShortcutActive = true
+              },
+              onOpenSettings: {
+                agentSettingsShortcutActive = true
+              },
               onCyclePermissionMode: cycleAgentPermissionMode,
               onToggleHighRiskGuard: {
                 store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
@@ -1348,20 +1352,11 @@ struct AgentHomeView: View {
               },
               onTaskAction: handleHomeTaskAction,
               onModelSelectionChanged: refreshAgentRouteState,
-              routeTitle: headerModelLabel,
-              routeSubtitle: hasManualSelection
-                ? t("signalasi.agent.route.manual", "Manual route")
-                : t("signalasi.agent.route.automatic", "Automatic route"),
-              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
-                ? t("signalasi.status.ready", "Ready")
-                : t("signalasi.agent.model_selection.choose", "Choose"),
-              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
               onOpenRouteSelection: {
                 agentModelSelectionShortcutActive = true
               },
               onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreenContext: refreshAgentScreenContext,
-              t: t
+              onRefreshScreenContext: refreshAgentScreenContext
             )
             AgentProcessCard(
               activePhase: activeAgentPhase,
