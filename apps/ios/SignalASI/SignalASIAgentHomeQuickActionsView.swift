@@ -7,7 +7,6 @@ struct SignalASIAgentHomeQuickActionsView: View {
   var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
-  var onOpenSettings: () -> Void
 
   var body: some View {
     LazyVGrid(
@@ -38,11 +37,6 @@ struct SignalASIAgentHomeQuickActionsView: View {
         title: t("agent_attachment_add_file", "Add file"),
         systemImage: "paperclip",
         action: onAddFile
-      )
-      action(
-        title: t("signalasi.tab.settings", "Settings"),
-        systemImage: "ellipsis.circle",
-        action: onOpenSettings
       )
     }
     .padding(.horizontal, 12)
