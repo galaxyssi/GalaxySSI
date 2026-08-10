@@ -2703,6 +2703,13 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
+      if handleDirectAgentPermissionChecklist(
+        requestText: requestText,
+        outgoing: outgoing,
+        task: &task
+      ) {
+        return
+      }
       if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
@@ -3175,6 +3182,108 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(element.viewId)
       .ifBlank(element.className)
       .ifBlank("Unnamed element")
+  }
+
+  private func handleDirectAgentPermissionChecklist(
+    requestText: String,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    guard AgentPermissionChecklistCommand.matches(requestText) else {
+      return false
+    }
+    let result = agentPermissionChecklistReply()
+    task.phase = .completed
+    task.blocked = false
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.routeKind = .localSystem
+    task.targetTitle = "Agent Permissions"
+    task.executionLocationKind = .phone
+    task.executionLocationName = "SignalASI iPhone"
+    task.executionRuntimeKind = .phoneNative
+    task.executionRuntimeId = "ios-permissions"
+    task.result = result
+    task.verification = "Local Agent permission checklist read"
+    task.executionLog.append("Local Agent permission checklist read")
+    task.updatedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_permission_checklist_reply",
+      detail: "agent_permissions",
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_permission_checklist_reply_received",
+      detail: "agent_permissions",
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func agentPermissionChecklistReply() -> String {
+    let screenReady = currentAgentScreenContext.isAccessibilityEnabled
+    let notificationsReady = currentAgentScreenContext.notifications.hasAccess
+    let microphoneReady = AVAudioSession.sharedInstance().recordPermission == .granted
+    let cameraReady = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+    let items: [(title: String, ready: Bool, required: Bool, fix: String)] = [
+      ("Screen Agent", screenReady, true, "open iOS app settings"),
+      ("Notification access", notificationsReady, false, "open notification settings"),
+      ("Microphone", microphoneReady, false, "request microphone access from voice input"),
+      ("Camera", cameraReady, false, "request camera access from Scan or Camera")
+    ]
+    let readyCount = items.filter { $0.ready }.count
+    let requiredMissing = items.filter { $0.required && !$0.ready }.count
+    var lines = [localReply(
+      english: "Agent permissions: \(readyCount)/\(items.count) ready",
+      chinese: "Agent 权限：\(readyCount)/\(items.count) 已就绪"
+    )]
+    for item in items {
+      let state = localReply(english: item.ready ? "ready" : "missing", chinese: item.ready ? "已就绪" : "缺失")
+      let title = localizedPermissionTitle(item.title)
+      var line = "\(state): \(title)"
+      if !item.ready {
+        line += " -> \(localizedPermissionFix(item.fix))"
+      }
+      if item.required {
+        line += localReply(english: " [required]", chinese: " [必需]")
+      }
+      lines.append(line)
+    }
+    if requiredMissing > 0 {
+      lines.append(localReply(
+        english: "Required permissions are still missing.",
+        chinese: "仍有必需权限未开启。"
+      ))
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private func localizedPermissionTitle(_ title: String) -> String {
+    switch title {
+    case "Screen Agent": return localReply(english: title, chinese: "屏幕 Agent")
+    case "Notification access": return localReply(english: title, chinese: "通知访问")
+    case "Microphone": return localReply(english: title, chinese: "麦克风")
+    case "Camera": return localReply(english: title, chinese: "相机")
+    default: return title
+    }
+  }
+
+  private func localizedPermissionFix(_ fix: String) -> String {
+    switch fix {
+    case "open iOS app settings": return localReply(english: fix, chinese: "打开 iOS 应用设置")
+    case "open notification settings": return localReply(english: fix, chinese: "打开通知设置")
+    case "request microphone access from voice input": return localReply(english: fix, chinese: "从语音输入请求麦克风权限")
+    case "request camera access from Scan or Camera": return localReply(english: fix, chinese: "从扫描或相机功能请求相机权限")
+    default: return fix
+    }
   }
 
   private func handleDirectLocalNativeAction(
