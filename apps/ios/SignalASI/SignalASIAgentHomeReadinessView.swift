@@ -120,6 +120,20 @@ struct SignalASIAgentHomeReadinessView: View {
           )
         )
         separator
+        infoValueRow(
+          String(
+            format: t("agent_callable_targets_value", "Callable targets: %d"),
+            callableTargets
+          )
+        )
+        separator
+        infoValueRow(
+          String(
+            format: t("agent_running_tasks_value", "Running tasks: %d"),
+            runningTasks
+          )
+        )
+        separator
         NavigationLink(destination: SignalASIAgentMemoryView()) {
           infoNavigationRow(
             String(
