@@ -20,6 +20,9 @@
 "agent_screen_clipboard_sensitive_ios" = "%d 个字符 / 敏感内容";
 "agent_screen_notifications" = "通知";
 "agent_screen_notifications_locked" = "通知访问未启用";
+"agent_screen_notifications_empty_ios" = "没有可用的 SignalASI 通知";
+"agent_screen_notification_sensitive_ios" = "敏感通知 / 内容已隐藏";
+"agent_screen_notification_sensitive_detail_ios" = "%d 个敏感标记";
 "agent_screen_device_status" = "设备状态";
 "agent_screen_device_status_summary_ios" = "电量 %@ / %@ / %@ / %@ 可用";
 "agent_screen_launchable_apps" = "可打开页面";

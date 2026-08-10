@@ -78,6 +78,7 @@ struct AgentHomeView: View {
   @State private var agentClipboardContext = AgentClipboardContext()
   @State private var agentScreenContextCapturedAtMillis =
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  @State private var agentNotificationContext = AgentNotificationContext()
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -2338,13 +2339,36 @@ struct AgentHomeView: View {
       screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis,
       t: t,
-      clipboard: agentClipboardContext
+      clipboard: agentClipboardContext,
+      notifications: agentNotificationContext
     )
   }
 
   private func refreshAgentScreenContext() {
     let capturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     agentScreenContextCapturedAtMillis = capturedAtMillis
+    let source = AgentIOSOwnedNotificationStore.shared.snapshot(limit: 6)
+    var sensitiveFlags: [String] = []
+    for flag in source.items.flatMap(\.sensitiveFlags) where !sensitiveFlags.contains(flag) {
+      sensitiveFlags.append(flag)
+    }
+    agentNotificationContext = AgentNotificationContext(
+      hasAccess: source.hasAccess,
+      items: source.items.map { item in
+        AgentNotificationItem(
+          key: item.key,
+          packageName: item.packageName,
+          title: item.title,
+          textPreview: item.textPreview,
+          category: item.category,
+          postedAtMillis: item.postedAtMillis,
+          canReply: item.canReply,
+          sensitiveFlags: item.sensitiveFlags
+        )
+      },
+      sensitiveFlags: sensitiveFlags,
+      totalCount: source.totalCount
+    )
     agentClipboardContext = store.agentSafetySettings.screenObservationAllowed
       ? AgentClipboardContext.fromText(UIPasteboard.general.string ?? "")
       : AgentClipboardContext()

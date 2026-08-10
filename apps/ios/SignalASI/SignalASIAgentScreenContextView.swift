@@ -58,7 +58,8 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     screenObservationAllowed: Bool,
     snapshotAgeMillis: Int64 = 0,
     t: (String, String) -> String,
-    clipboard: AgentClipboardContext = AgentClipboardContext()
+    clipboard: AgentClipboardContext = AgentClipboardContext(),
+    notifications: AgentNotificationContext = AgentNotificationContext()
   ) -> SignalASIAgentScreenContextSnapshot {
     let resolvedClipboard = screenObservationAllowed ? clipboard : AgentClipboardContext()
     let visibleTexts = screenObservationAllowed
@@ -74,6 +75,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     let inputRows = screenObservationAllowed ? inputRows(t: t) : []
     let scrollRows = screenObservationAllowed ? scrollRows(t: t) : []
     let launchRows = screenObservationAllowed ? launchRows(t: t) : []
+    let visibleNotifications = screenObservationAllowed ? notifications : AgentNotificationContext()
     let screen = AgentScreenContext(
       foregroundApp: "SignalASI iOS",
       activityName: "AgentHomeView",
@@ -85,6 +87,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       sensitiveFlagCount: 0,
       visibleTexts: visibleTexts,
       selectedText: "",
+      notifications: visibleNotifications,
       clipboard: resolvedClipboard,
       isAccessibilityEnabled: screenObservationAllowed,
       snapshotAgeMillis: snapshotAgeMillis
@@ -100,6 +103,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         inputRows: inputRows,
         scrollRows: scrollRows,
         launchRows: launchRows,
+        notifications: visibleNotifications,
         clipboard: resolvedClipboard,
         t: t
       )
@@ -112,6 +116,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
     inputRows: [SignalASIAgentScreenDetailRow],
     scrollRows: [SignalASIAgentScreenDetailRow],
     launchRows: [SignalASIAgentScreenDetailRow],
+    notifications: AgentNotificationContext,
     clipboard: AgentClipboardContext,
     t: (String, String) -> String
   ) -> [SignalASIAgentScreenDetailSection] {
@@ -154,14 +159,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       SignalASIAgentScreenDetailSection(
         id: "notifications",
         title: t("agent_screen_notifications", "Notifications"),
-        rows: [
-          SignalASIAgentScreenDetailRow(
-            id: "notifications-limited",
-            title: t("agent_screen_notifications_locked", "Notification access is not enabled"),
-            systemImage: "bell.slash",
-            isNotice: true
-          )
-        ]
+        rows: notificationRows(notifications, t: t)
       ),
       SignalASIAgentScreenDetailSection(
         id: "device-status",
@@ -222,6 +220,49 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
       )
     ]
     return sections.filter { !$0.rows.isEmpty }
+  }
+
+  private static func notificationRows(
+    _ notifications: AgentNotificationContext,
+    t: (String, String) -> String
+  ) -> [SignalASIAgentScreenDetailRow] {
+    guard notifications.hasAccess else {
+      return [
+        SignalASIAgentScreenDetailRow(
+          id: "notifications-limited",
+          title: t("agent_screen_notifications_locked", "Notification access is not enabled"),
+          systemImage: "bell.slash",
+          isNotice: true
+        )
+      ]
+    }
+    guard !notifications.items.isEmpty else {
+      return [
+        SignalASIAgentScreenDetailRow(
+          id: "notifications-empty",
+          title: t("agent_screen_notifications_empty_ios", "No SignalASI notifications available"),
+          systemImage: "bell",
+          isNotice: true
+        )
+      ]
+    }
+    return notifications.items.prefix(3).enumerated().map { index, item in
+      let sensitive = !item.sensitiveFlags.isEmpty
+      let title = sensitive
+        ? t("agent_screen_notification_sensitive_ios", "Sensitive notification / content hidden")
+        : item.title.ifBlank(item.packageName.ifBlank(t("agent_screen_notifications", "Notification")))
+      let detail = sensitive
+        ? String(format: t("agent_screen_notification_sensitive_detail_ios", "%d sensitive flags"), item.sensitiveFlags.count)
+        : [item.packageName, item.textPreview].filter { !$0.isEmpty }.joined(separator: " / ")
+      return SignalASIAgentScreenDetailRow(
+        id: "notification-\(index)-\(item.key)",
+        title: title,
+        detail: detail,
+        systemImage: sensitive ? "bell.badge" : "bell",
+        command: sensitive ? nil : "read current notifications",
+        isNotice: sensitive
+      )
+    }
   }
 
   private static func clipboardDetail(
