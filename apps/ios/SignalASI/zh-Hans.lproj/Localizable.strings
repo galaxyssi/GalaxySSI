@@ -149,6 +149,11 @@
 "signalasi.agent_runtime.recent_summary" = "%d 个任务";
 "signalasi.agent_runtime.audit_summary" = "%d 个事件";
 "signalasi.agent_runtime.audit_detail" = "%@ / %@ / %@";
+"signalasi.agent.task_control.cancel" = "取消任务";
+"signalasi.agent_runtime.collapse" = "收起";
+"signalasi.agent_runtime.expand" = "展开";
+"signalasi.agent_runtime.requirement_detail" = "%@ / %@";
+"agent_current_app_unknown" = "未知";
 "signalasi.agent_runtime.requirements_ready" = "全部要求已就绪";
 "signalasi.agent_runtime.requirements_missing" = "%d 项需要处理";
 "signalasi.agent_runtime.local_actions" = "本机操作";
