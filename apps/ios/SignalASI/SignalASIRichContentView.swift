@@ -452,9 +452,8 @@ private struct SignalASIRichBlockView: View {
       .background(Color.signalASISearchBackground.opacity(isOutgoing ? 0.4 : 0.7))
 
       ScrollView(.horizontal, showsIndicators: true) {
-        Text(visibleText)
+        highlightedCodeText(visibleText)
           .font(.system(size: 13, design: .monospaced))
-          .foregroundColor(.signalASITextPrimary)
           .textSelection(.enabled)
           .padding(10)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -1137,6 +1136,58 @@ private struct SignalASIRichBlockView: View {
       .font(.body)
   }
 
+  private func highlightedCodeText(_ value: String) -> Text {
+    let highlights = codeHighlights(in: value)
+      .sorted { $0.range.location < $1.range.location }
+    guard !highlights.isEmpty else {
+      return Text(value)
+        .foregroundColor(.signalASITextPrimary)
+    }
+
+    let source = value as NSString
+    var result = Text("")
+    var cursor = 0
+    for highlight in highlights {
+      let start = max(cursor, highlight.range.location)
+      let end = min(source.length, highlight.range.location + highlight.range.length)
+      guard end > start else { continue }
+      if start > cursor {
+        result = result + Text(source.substring(with: NSRange(location: cursor, length: start - cursor)))
+          .foregroundColor(.signalASITextPrimary)
+      }
+      result = result + Text(source.substring(with: NSRange(location: start, length: end - start)))
+        .foregroundColor(highlight.color)
+      cursor = end
+    }
+    if cursor < source.length {
+      result = result + Text(source.substring(from: cursor))
+        .foregroundColor(.signalASITextPrimary)
+    }
+    return result
+  }
+
+  private func codeHighlights(in value: String) -> [CodeHighlight] {
+    let language = block.language.lowercased()
+    if block.type == .diff || ["diff", "patch"].contains(language) {
+      return regexHighlights(#"(?m)^\+(?!\+\+\+)[^\n]*"#, in: value, color: .signalASIAccent)
+        + regexHighlights(#"(?m)^-(?!---)[^\n]*"#, in: value, color: .red)
+        + regexHighlights(#"(?m)^@@[^\n]*"#, in: value, color: .blue)
+    }
+    if block.type == .json || language == "json" {
+      return regexHighlights(#""(?:\\.|[^"\\])*"(?=\s*:)"#, in: value, color: .signalASIAccent)
+        + regexHighlights(#"(?<![A-Za-z])(?:true|false|null|-?\d+(?:\.\d+)?)(?![A-Za-z])"#, in: value, color: .purple)
+    }
+    return []
+  }
+
+  private func regexHighlights(_ pattern: String, in value: String, color: Color) -> [CodeHighlight] {
+    guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+    let range = NSRange(value.startIndex..<value.endIndex, in: value)
+    return expression.matches(in: value, range: range).map {
+      CodeHighlight(range: $0.range, color: color)
+    }
+  }
+
   private func copyCode(_ value: String) {
     UIPasteboard.general.string = value
     withAnimation(.easeInOut(duration: 0.12)) {
@@ -1500,6 +1551,11 @@ private struct SignalASIRichBlockView: View {
   private static let approvalWidthRatio: CGFloat = 0.78
   private static let visibleGalleryItems = 10
   private static let visibleTimelineItems = 50
+
+  private struct CodeHighlight {
+    var range: NSRange
+    var color: Color
+  }
 }
 
 private struct SignalASIRichResourceRow: View {
