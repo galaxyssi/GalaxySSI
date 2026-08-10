@@ -323,6 +323,7 @@ struct AddContactView: View {
         setImportStatus(requestsReceivedStatus(stored), isError: false)
         return
       }
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
       let importedAgentIDs = importedAgentIDsFromQRCode(
         value,
         fallback: store.visibleContacts
@@ -361,6 +362,7 @@ struct AddContactView: View {
       guard importedCount > 0 else {
         throw fallbackError
       }
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
       let importedAgentIDs = importedAgentIDsFromQRCode(value, fallback: store.visibleContacts
         .filter { $0.type == "agent" && !existingAgentIDs.contains($0.id) }
         .map(\.id))
@@ -503,6 +505,7 @@ struct AddContactView: View {
     pendingScannedRequests.removeAll { approvedIDs.contains($0.id) }
     pendingFriendRequest = pendingScannedRequests.first
     if approvedCount > 0 {
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
       let message = approvedCount == 1
         ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
         : String(
