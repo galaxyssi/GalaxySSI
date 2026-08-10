@@ -719,29 +719,27 @@ private struct SignalASIRichBlockView: View {
 
   private var progressBlock: some View {
     let clamped = min(max(block.value, 0), block.maximum)
+    let label = firstNonEmpty([block.title, block.text])
     return VStack(alignment: .leading, spacing: 7) {
-      HStack(spacing: 8) {
-        selectableText(firstNonEmpty([block.title, block.text, t("rich_output_progress", "Progress")]))
-          .font(.subheadline.weight(.semibold))
-        Spacer(minLength: 8)
-        Text(block.value < 0
-          ? "--"
-          : "\(Int((Double(clamped) / Double(max(block.maximum, 1)) * 100).rounded()))%")
-          .font(.caption.weight(.semibold))
+      if !label.isEmpty {
+        selectableText(label)
+          .font(.system(size: 13))
           .foregroundColor(.signalASITextSecondary)
       }
       if block.value < 0 {
         ProgressView()
-          .frame(maxWidth: .infinity, alignment: .leading)
+          .progressViewStyle(.linear)
+          .frame(maxWidth: .infinity)
+          .frame(height: 8)
           .accentColor(.signalASIAccent)
       } else {
         ProgressView(value: Double(clamped), total: Double(max(block.maximum, 1)))
+          .progressViewStyle(.linear)
+          .frame(maxWidth: .infinity)
+          .frame(height: 8)
           .accentColor(.signalASIAccent)
       }
     }
-    .padding(9)
-    .background(Color.signalASISearchBackground.opacity(0.45))
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
   private var metricBlock: some View {
