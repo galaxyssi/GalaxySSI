@@ -1447,6 +1447,30 @@ struct AgentHomeView: View {
                         runAgentTimelineAction(action, task: task)
                       }
                     )
+                  } else if let remoteTask = remoteAgentTask(for: message) {
+                    SignalASIAgentExecutionFooterView(
+                      executor: remoteTask.target.ifBlank(t("signalasi.agent.status", "Agent")),
+                      status: remoteAgentStatusLabel(remoteTask.status),
+                      location: remoteTask.location.ifBlank(
+                        t("signalasi.agent_execution.location.desktop", "Desktop")
+                      ),
+                      step: remoteAgentStep(remoteTask),
+                      duration: executionDuration(
+                        startedAtMillis: remoteTask.history.first?.updatedAtMillis
+                          ?? remoteTask.updatedAtMillis,
+                        updatedAtMillis: remoteTask.updatedAtMillis
+                      ),
+                      details: remoteTask.history.map(remoteAgentTimelineLine),
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      canCancel: remoteTask.isCancellable &&
+                        !cancellingRemoteTaskIDs.contains(remoteTask.id),
+                      cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
+                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelRemoteAgentTask(remoteTask)
+                      }
+                    )
                   } else if let run = voiceAgentRun(for: message) {
                     let runStatus = remoteAgentStatusLabel(run.state.rawValue.lowercased())
                     SignalASIAgentExecutionFooterView(
@@ -1494,6 +1518,15 @@ struct AgentHomeView: View {
                     } label: {
                       Label(
                         t("signalasi.agent.task_control.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  } else if let remoteTask = remoteAgentTask(for: message), remoteTask.isCancellable {
+                    Button(role: .destructive) {
+                      cancelRemoteAgentTask(remoteTask)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
                         systemImage: "xmark.circle"
                       )
                     }
@@ -1860,6 +1893,36 @@ struct AgentHomeView: View {
     let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !turnID.isEmpty else { return nil }
     return store.agentTask(id: turnID)
+  }
+
+  private func remoteAgentTask(for message: ChatMessage) -> AgentRemoteTaskStatusSnapshot? {
+    let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationID.isEmpty else { return nil }
+    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return coordinator.remoteAgentTaskStatuses.values
+      .filter { snapshot in
+        guard snapshot.conversationId == conversationID,
+              !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) else {
+          return false
+        }
+        let turnMatches = !turnID.isEmpty &&
+          (snapshot.taskId == turnID || snapshot.turnId == turnID)
+        let sourceID = snapshot.sourceMessageId > 0
+          ? String(snapshot.sourceMessageId)
+          : ""
+        let sourceMatches = !remoteMessageID.isEmpty &&
+          (!sourceID.isEmpty &&
+            (remoteMessageID == sourceID || remoteMessageID == "agent-stream-\(sourceID)"))
+        return turnMatches || sourceMatches
+      }
+      .max { lhs, rhs in
+        if lhs.updatedAtMillis != rhs.updatedAtMillis {
+          return lhs.updatedAtMillis < rhs.updatedAtMillis
+        }
+        return lhs.id < rhs.id
+      }
   }
 
   private func voiceAgentRun(for message: ChatMessage) -> VoiceAgentRunSnapshot? {
