@@ -782,6 +782,7 @@ struct AgentPlanRequest: Codable, Equatable {
   var nativeTools: [AgentNativeToolDescriptor]
   var contextDigest: String
   var responseLanguage: String
+  var executionMode: AgentTaskExecutionMode
 
   init(
     goal: String,
@@ -789,7 +790,8 @@ struct AgentPlanRequest: Codable, Equatable {
     targets: [AgentCallableTarget] = [],
     nativeTools: [AgentNativeToolDescriptor] = [],
     contextDigest: String = "",
-    responseLanguage: String = LanguagePolicySettings.auto
+    responseLanguage: String = LanguagePolicySettings.auto,
+    executionMode: AgentTaskExecutionMode = .autoComplete
   ) {
     self.goal = goal
     self.screen = screen
@@ -797,6 +799,7 @@ struct AgentPlanRequest: Codable, Equatable {
     self.nativeTools = nativeTools
     self.contextDigest = contextDigest
     self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
+    self.executionMode = executionMode
   }
 
   enum CodingKeys: String, CodingKey {
@@ -806,6 +809,7 @@ struct AgentPlanRequest: Codable, Equatable {
     case nativeTools = "native_tools"
     case contextDigest = "context_digest"
     case responseLanguage = "response_language"
+    case executionMode = "execution_mode"
   }
 
   init(from decoder: Decoder) throws {
@@ -816,7 +820,8 @@ struct AgentPlanRequest: Codable, Equatable {
       targets: try container.decodeIfPresent([AgentCallableTarget].self, forKey: .targets) ?? [],
       nativeTools: try container.decodeIfPresent([AgentNativeToolDescriptor].self, forKey: .nativeTools) ?? [],
       contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
-      responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto
+      responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? LanguagePolicySettings.auto,
+      executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete
     )
   }
 }
@@ -847,6 +852,7 @@ enum AgentPlanFactory {
         AgentStep(order: 4, kind: .confirmAndAct, status: .current)
       ],
       actions: resolvedActions,
+      executionMode: request.executionMode,
       selectedAgentOrModel: selectedAgentOrModel(resolvedActions),
       requiredPermissions: distinctPermissions(resolvedActions.flatMap { permissions(for: $0, request: request) }),
       confirmationRequired: true,

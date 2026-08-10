@@ -2516,6 +2516,10 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog = ["Local model request started"]
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
+    let executionMode = AgentTaskExecutionModePolicy.resolve(
+      request: requestText,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
 
     do {
       let prompt = localModelPrompt(
@@ -2530,29 +2534,37 @@ final class MessageCoordinator: ObservableObject {
       if handleDirectLocalNativeAction(
         requestText: requestText,
         outgoing: outgoing,
-        task: &task
+        task: &task,
+        executionMode: executionMode
       ) {
         return
       }
-      if handleMatchedLocalSkill(
-        requestText: requestText,
-        outgoing: outgoing,
-        task: &task
-      ) {
-        return
+      if executionMode != .planOnly {
+        if handleMatchedLocalSkill(
+          requestText: requestText,
+          outgoing: outgoing,
+          task: &task
+        ) {
+          return
+        }
       }
       if let plan = await modelPlannedLocalNativeActions(
         requestText: requestText,
         attachments: attachments,
-        outgoing: outgoing
+        outgoing: outgoing,
+        executionMode: executionMode
       ) {
         guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-        _ = applyLocalNativeActions(
-          actions: plan.actions,
-          outgoing: outgoing,
-          task: &task,
-          plan: plan
-        )
+        if executionMode == .planOnly {
+          _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
+        } else {
+          _ = applyLocalNativeActions(
+            actions: plan.actions,
+            outgoing: outgoing,
+            task: &task,
+            plan: plan
+          )
+        }
         return
       }
       let executionProfile = AgentExecutionProfile.forGoal(
@@ -2670,32 +2682,33 @@ final class MessageCoordinator: ObservableObject {
   private func handleDirectLocalNativeAction(
     requestText: String,
     outgoing: ChatMessage,
-    task: inout AgentTaskRecord
+    task: inout AgentTaskRecord,
+    executionMode: AgentTaskExecutionMode
   ) -> Bool {
     guard let runtime = localNativeToolRuntime else { return false }
     let request = AgentPlanRequest(
       goal: requestText,
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
-      responseLanguage: store.languagePolicy.responseLanguage
+      responseLanguage: store.languagePolicy.responseLanguage,
+      executionMode: executionMode
     )
     guard let plan = AgentDirectNativeToolPlanner.plan(request: request),
           let action = plan.actions.first(where: { $0.kind == .callNativeTool }) else {
       return false
     }
 
-    return applyLocalNativeActions(
-      actions: [action],
-      outgoing: outgoing,
-      task: &task,
-      plan: plan
-    )
+    if executionMode == .planOnly {
+      return completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
+    }
+    return applyLocalNativeActions(actions: [action], outgoing: outgoing, task: &task, plan: plan)
   }
 
   private func modelPlannedLocalNativeActions(
     requestText: String,
     attachments: [SignalASIDraftAttachment],
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    executionMode: AgentTaskExecutionMode
   ) async -> AgentPlan? {
     guard store.modelPlannerSettings.enabled,
           let runtime = localNativeToolRuntime else {
@@ -2725,7 +2738,8 @@ final class MessageCoordinator: ObservableObject {
       goal: requestText,
       screen: currentAgentScreenContext,
       nativeTools: runtime.registry.descriptors(),
-      responseLanguage: store.languagePolicy.responseLanguage
+      responseLanguage: store.languagePolicy.responseLanguage,
+      executionMode: executionMode
     )
     let conversation = AgentConversationContext(
       conversationId: outgoing.conversationId,
@@ -2769,7 +2783,58 @@ final class MessageCoordinator: ObservableObject {
     }) else {
       return nil
     }
-    return plan
+    var resolvedPlan = plan
+    resolvedPlan.executionMode = executionMode
+    return resolvedPlan
+  }
+
+  private func completePlanOnlyTask(
+    plan: AgentPlan,
+    outgoing: ChatMessage,
+    task: inout AgentTaskRecord
+  ) -> Bool {
+    task.planContext = AgentTaskPlanContext(plan: plan)
+    task.pendingAction = nil
+    task.pendingActions = []
+    task.nativeActionResults = []
+    task.phase = .completed
+    task.result = planOnlySummary(plan)
+    task.verification = "Plan generated without executing native tools"
+    task.executionLog.append("Plan only: generated \(plan.actions.count) action(s) without execution")
+    task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    store.upsertAgentTask(task)
+    store.appendDeliveryTrace(
+      outgoing.id,
+      contactId: outgoing.contactId,
+      stage: "local_agent_plan_only",
+      detail: plan.planId,
+      status: .delivered
+    )
+    _ = store.appendIncoming(
+      task.result,
+      from: outgoing.contactId,
+      remoteMessageId: outgoing.turnId,
+      status: .delivered,
+      traceStage: "local_agent_plan_only_received",
+      detail: plan.planId,
+      conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId
+    )
+    return true
+  }
+
+  private func planOnlySummary(_ plan: AgentPlan) -> String {
+    let heading = localReply(
+      english: "Plan generated without executing phone actions:",
+      chinese: "已生成方案，未执行手机操作："
+    )
+    let lines = plan.actions.enumerated().map { index, action in
+      let target = action.target.trimmingCharacters(in: .whitespacesAndNewlines)
+      let detail = action.description.trimmingCharacters(in: .whitespacesAndNewlines)
+      let label = target.isEmpty ? detail : "\(target): \(detail)"
+      return "\(index + 1). \(label.ifBlank("Planned action"))"
+    }
+    return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
   }
 
   private func applyLocalNativeActions(
