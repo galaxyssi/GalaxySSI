@@ -596,6 +596,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var turnId: String
   var remoteMessageId: String
   var richOutputJson: String
+  var sourceConversationId: String
+  var sourceConversationTitle: String
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -610,6 +612,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     case turnId
     case remoteMessageId
     case richOutputJson
+    case sourceConversationId
+    case sourceConversationTitle
   }
 
   init(
@@ -624,7 +628,9 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     conversationId: String = "",
     turnId: String = "",
     remoteMessageId: String = "",
-    richOutputJson: String = ""
+    richOutputJson: String = "",
+    sourceConversationId: String = "",
+    sourceConversationTitle: String = ""
   ) {
     self.id = id
     self.contactId = contactId
@@ -638,6 +644,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     self.turnId = turnId
     self.remoteMessageId = remoteMessageId
     self.richOutputJson = richOutputJson
+    self.sourceConversationId = sourceConversationId
+    self.sourceConversationTitle = sourceConversationTitle
   }
 
   init(from decoder: Decoder) throws {
@@ -654,6 +662,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     turnId = try container.decodeIfPresent(String.self, forKey: .turnId) ?? ""
     remoteMessageId = try container.decodeIfPresent(String.self, forKey: .remoteMessageId) ?? ""
     richOutputJson = try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? ""
+    sourceConversationId = try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? ""
+    sourceConversationTitle = try container.decodeIfPresent(String.self, forKey: .sourceConversationTitle) ?? ""
   }
 
   func encode(to encoder: Encoder) throws {
@@ -670,6 +680,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     try container.encode(turnId, forKey: .turnId)
     try container.encode(remoteMessageId, forKey: .remoteMessageId)
     try container.encode(richOutputJson, forKey: .richOutputJson)
+    try container.encode(sourceConversationId, forKey: .sourceConversationId)
+    try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
   }
 }
 

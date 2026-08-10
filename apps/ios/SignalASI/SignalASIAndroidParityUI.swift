@@ -1371,6 +1371,13 @@ struct AgentHomeView: View {
             )
             ForEach(transcriptMessages) { message in
               VStack(alignment: .leading, spacing: 4) {
+                if let mergedSource = mergedSourceLabel(for: message) {
+                  Text(mergedSource)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.signalASITextSecondary)
+                    .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
+                    .accessibilityLabel(mergedSource)
+                }
                 MessageBubble(
                   message: message,
                   onActionWithMessage: { message, action in
@@ -3117,6 +3124,21 @@ struct AgentHomeView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func mergedSourceLabel(for message: ChatMessage) -> String? {
+    let sourceId = message.sourceConversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sourceId.isEmpty else { return nil }
+    let sourceTitle = message.sourceConversationTitle
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(String(sourceId.prefix(12)))
+    return String(
+      format: t(
+        "signalasi.agent.session.merged_from",
+        "Merged from session: %@"
+      ),
+      sourceTitle
+    )
   }
 }
 
