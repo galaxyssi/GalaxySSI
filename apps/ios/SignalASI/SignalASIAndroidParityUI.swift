@@ -1010,6 +1010,8 @@ struct AgentHomeView: View {
                 .ifBlank("SignalASI"),
               memorySnapshot: store.agentMemorySnapshot(),
               knowledgeStats: store.agentKnowledgeStats,
+              screen: agentScreenSnapshot.screen,
+              screenSections: agentScreenSnapshot.sections,
               recentTaskCount: store.recentAgentTasks(limit: 200).count,
               recentTasks: store.recentAgentTasks(limit: 3),
               permissionMode: store.agentSafetySettings.permissionMode,
@@ -1033,6 +1035,7 @@ struct AgentHomeView: View {
                 recentTaskForDetails = task
                 recentTasksShortcutActive = true
               },
+              onScreenCommand: prefillAgentScreenCommand,
               t: t
             )
             AgentProcessCard(

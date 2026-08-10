@@ -456,6 +456,7 @@ struct SignalASIAgentScreenContextCard: View {
   var sections: [SignalASIAgentScreenDetailSection]
   var onCommand: (String) -> Void
   var t: (String, String) -> String
+  var expandedByDefault: Bool = false
 
   @State private var expanded = false
   @State private var query = ""
@@ -548,6 +549,11 @@ struct SignalASIAgentScreenContextCard: View {
         .stroke(Color.signalASIInsightStroke, lineWidth: 1)
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .onAppear {
+      if expandedByDefault {
+        expanded = true
+      }
+    }
   }
 
   private var searchField: some View {
@@ -663,5 +669,54 @@ struct SignalASIAgentScreenContextCard: View {
       options: [.caseInsensitive, .diacriticInsensitive],
       locale: Locale(identifier: "en_US_POSIX")
     ) != nil
+  }
+}
+
+struct SignalASIAgentScreenContextDetailView: View {
+  var screen: AgentScreenContext
+  var sections: [SignalASIAgentScreenDetailSection]
+  var onCommand: (String) -> Void
+  var t: (String, String) -> String
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        SignalASIAgentScreenContextCard(
+          screen: screen,
+          sections: sections,
+          onCommand: onCommand,
+          t: t,
+          expandedByDefault: true
+        )
+
+        if !screen.isAccessibilityEnabled {
+          NavigationLink(destination: OnDeviceAgentPermissionsView()) {
+            HStack(spacing: 8) {
+              Image(systemName: "eye.slash")
+                .foregroundColor(.orange)
+              Text(t("agent_accessibility_status_disabled", "Screen access: needs permission"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+              Spacer(minLength: 4)
+              Text(t("signalasi.common.manage", "Manage"))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.orange)
+              Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.orange)
+            }
+            .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background(Color.signalASISurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .padding(12)
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationTitle(t("agent_section_screen_details", "Screen Details"))
+    .navigationBarTitleDisplayMode(.inline)
   }
 }
