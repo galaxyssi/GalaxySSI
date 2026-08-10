@@ -77,6 +77,55 @@ struct AgentConnectorResponse: Codable, Equatable {
 
   static let maxContentCharacters = 24_000
   static let maxRichOutputCharacters = 48_000
+
+  static func fromPayload(
+    _ payload: [String: Any],
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentConnectorResponse? {
+    let sourceMessageId = Int64(payload.string("source_message_id")) ?? Int64(payload.int("source_message_id"))
+    guard sourceMessageId > 0 else { return nil }
+    let content = payload.string("content")
+      .ifBlank(payload.string("text"))
+      .ifBlank(payload.string("error"))
+    let richOutput = payload.string("rich_output")
+      .ifBlank(payload.string("rich_output_json"))
+    guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    let receivedAtMillis = Int64(
+      payload.string("received_at_millis")
+        .ifBlank(payload.string("received_at"))
+        .ifBlank(payload.string("time"))
+    ) ?? Int64(payload.int("received_at_millis"))
+    return AgentConnectorResponse(
+      sourceMessageId: sourceMessageId,
+      contactId: payload.string("contact_id"),
+      content: content,
+      conversationId: payload.string("conversation_id"),
+      turnId: payload.string("turn_id"),
+      taskId: payload.string("task_id"),
+      success: payloadBool(payload["success"], defaultValue: true),
+      inputTokens: Int64(payload.string("input_tokens")) ?? Int64(payload.int("input_tokens")),
+      outputTokens: Int64(payload.string("output_tokens")) ?? Int64(payload.int("output_tokens")),
+      costMicros: Int64(payload.string("cost_micros")) ?? Int64(payload.int("cost_micros")),
+      richOutputJson: richOutput,
+      receivedAtMillis: receivedAtMillis > 0 ? receivedAtMillis : max(nowMillis, 0)
+    )
+  }
+
+  private static func payloadBool(_ value: Any?, defaultValue: Bool) -> Bool {
+    if let value = value as? Bool { return value }
+    if let value = value as? NSNumber { return value.boolValue }
+    if let value = value as? String {
+      switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+      case "true", "1", "yes": return true
+      case "false", "0", "no": return false
+      default: break
+      }
+    }
+    return defaultValue
+  }
 }
 
 protocol AgentConnectorResponseSink: AnyObject {

@@ -709,6 +709,7 @@ final class MessageCoordinator: ObservableObject {
   private let disclosureStore: AgentDataDisclosureStore
   private let taskIdentityStore: AgentTaskIdentityStore
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
+  private let connectorResponseBus: AgentConnectorResponseBus
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
@@ -786,6 +787,7 @@ final class MessageCoordinator: ObservableObject {
     ),
     taskIdentityStore: AgentTaskIdentityStore = AgentTaskIdentityStore(),
     desktopMarketplaceStore: AgentDesktopMarketplaceStore = .shared,
+    connectorResponseBus: AgentConnectorResponseBus = AgentConnectorResponseBus(),
     desktopArtifactStore: AgentDesktopArtifactStore? = nil,
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
@@ -805,6 +807,7 @@ final class MessageCoordinator: ObservableObject {
     self.disclosureStore = disclosureStore
     self.taskIdentityStore = taskIdentityStore
     self.desktopMarketplaceStore = desktopMarketplaceStore
+    self.connectorResponseBus = connectorResponseBus
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
@@ -5606,6 +5609,13 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if handleConnectorAgentStatus(appPayload, link: link) {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
+    if let response = AgentConnectorResponse.fromPayload(appPayload),
+       connectorResponseBus.publish(response) {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
