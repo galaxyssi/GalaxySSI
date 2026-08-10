@@ -1643,6 +1643,22 @@ final class MessageCoordinator: ObservableObject {
         status: stagedAttachments.isEmpty ? .failed : .delivered
       )
     }
+    if contact.id == "hermes", !attachments.isEmpty {
+      let importedCount = AgentAttachmentKnowledgeImporter.importDocuments(
+        AgentAttachmentKnowledgeImporter.inputs(from: attachments),
+        conversationId: outgoing.conversationId,
+        store: store
+      )
+      if importedCount > 0 {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "agent_attachment_knowledge_imported",
+          detail: "\(importedCount) knowledge chunk(s)",
+          status: .delivered
+        )
+      }
+    }
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
