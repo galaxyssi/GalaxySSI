@@ -22,6 +22,43 @@ struct AgentResponseSectionLayout: Codable, Equatable {
   var sections: [AgentResponseSection]
 }
 
+final class AgentResponseSectionExpansionStore {
+  static let shared = AgentResponseSectionExpansionStore()
+
+  private let defaults: UserDefaults
+  private let key: String
+  private var states: [String: Bool]
+
+  init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+    self.defaults = defaults
+    self.key = key
+    if let data = defaults.data(forKey: key),
+       let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) {
+      states = decoded
+    } else {
+      states = [:]
+    }
+  }
+
+  func state(for storageKey: String) -> Bool? {
+    guard !storageKey.isEmpty else { return nil }
+    return states[storageKey]
+  }
+
+  func set(_ expanded: Bool, for storageKey: String) {
+    guard !storageKey.isEmpty else { return }
+    states[storageKey] = expanded
+    while states.count > Self.maximumEntries, let firstKey = states.keys.first {
+      states.removeValue(forKey: firstKey)
+    }
+    guard let data = try? JSONEncoder().encode(states) else { return }
+    defaults.set(data, forKey: key)
+  }
+
+  private static let defaultKey = "signalasi.agent.response.section.expansion"
+  private static let maximumEntries = 512
+}
+
 enum AgentResponseSectionOrganizer {
   static func organize(
     _ blocks: [AgentRichBlock],

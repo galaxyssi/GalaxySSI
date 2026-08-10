@@ -20,6 +20,7 @@ struct SignalASIRichContentView: View {
   var content: String
   var richOutputJson: String = ""
   var isOutgoing: Bool = false
+  var expansionStorageKey: String = ""
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
@@ -70,6 +71,7 @@ struct SignalASIRichContentView: View {
               } else {
                 SignalASIRichSectionView(
                   section: section,
+                  expansionStorageKey: expansionStorageKey,
                   isOutgoing: isOutgoing,
                   onAction: onAction,
                   onFormSubmit: onFormSubmit,
@@ -172,6 +174,7 @@ private struct SignalASIRichSectionView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
 
   var section: AgentResponseSection
+  var expansionStorageKey: String
   var isOutgoing: Bool
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
@@ -181,17 +184,25 @@ private struct SignalASIRichSectionView: View {
 
   init(
     section: AgentResponseSection,
+    expansionStorageKey: String = "",
     isOutgoing: Bool,
     onAction: @escaping (AgentRichAction) -> Void,
     onFormSubmit: @escaping (AgentRichBlock, [String: String]) -> Void,
     onArtifactSave: @escaping (AgentRichBlock) -> Void
   ) {
     self.section = section
+    self.expansionStorageKey = expansionStorageKey
     self.isOutgoing = isOutgoing
     self.onAction = onAction
     self.onFormSubmit = onFormSubmit
     self.onArtifactSave = onArtifactSave
-    _expanded = State(initialValue: section.expandedByDefault)
+    let storageKey = expansionStorageKey.isEmpty
+      ? ""
+      : "\(expansionStorageKey):\(section.kind.rawValue)"
+    _expanded = State(
+      initialValue: AgentResponseSectionExpansionStore.shared.state(for: storageKey)
+        ?? section.expandedByDefault
+    )
   }
 
   var body: some View {
@@ -199,6 +210,7 @@ private struct SignalASIRichSectionView: View {
       Button {
         withAnimation(.easeInOut(duration: 0.18)) {
           expanded.toggle()
+          AgentResponseSectionExpansionStore.shared.set(expanded, for: expansionKey)
         }
       } label: {
         HStack(spacing: 8) {
@@ -237,6 +249,11 @@ private struct SignalASIRichSectionView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
       }
     }
+  }
+
+  private var expansionKey: String {
+    guard !expansionStorageKey.isEmpty else { return "" }
+    return "\(expansionStorageKey):\(section.kind.rawValue)"
   }
 
   private var sectionTitle: String {
