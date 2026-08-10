@@ -752,6 +752,8 @@ final class MessageCoordinator: ObservableObject {
   private lazy var localSkillRuntime = AgentSkillRuntime(store: UserDefaultsAgentSkillStore())
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
+  private var outboxFlushInProgress = false
+  private var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
@@ -6135,6 +6137,20 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func flushPendingOutbox() async {
+    guard !outboxFlushInProgress else {
+      outboxFlushRequested = true
+      return
+    }
+    outboxFlushInProgress = true
+    defer {
+      outboxFlushInProgress = false
+      if outboxFlushRequested {
+        outboxFlushRequested = false
+        scheduleOutboxFlush(after: 0)
+      } else {
+        scheduleOutboxFlushFromStore()
+      }
+    }
     let discardedTransfers = attachmentTransferStore.prune()
     if !discardedTransfers.isEmpty {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
@@ -6155,7 +6171,6 @@ final class MessageCoordinator: ObservableObject {
         deliveryStore.markPublished(messageId: item.messageId)
       }
     }
-    scheduleOutboxFlushFromStore()
   }
 
   private func scheduleOutboxFlushFromStore() {
