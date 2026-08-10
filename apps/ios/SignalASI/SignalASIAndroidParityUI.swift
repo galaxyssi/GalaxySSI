@@ -3,36 +3,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct AgentTranscriptScrollMetrics: Equatable {
-  var contentMinY: CGFloat = 0
-  var contentMaxY: CGFloat = 0
-  var viewportHeight: CGFloat = 0
-}
-
-private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
-  static let defaultValue = AgentTranscriptScrollMetrics()
-
-  static func reduce(
-    value: inout AgentTranscriptScrollMetrics,
-    nextValue: () -> AgentTranscriptScrollMetrics
-  ) {
-    value = nextValue()
-  }
-}
-
-private extension View {
-  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
-    frame(
-      minWidth: CGFloat(policy.minimumTouchTargetDp),
-      minHeight: CGFloat(policy.minimumTouchTargetDp)
-    )
-    .contentShape(Rectangle())
-  }
-}
-
 struct AgentHomeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -468,6 +440,13 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        if store.globalProactiveInboxNewCount() > 0 {
+          SignalASIAgentHomeInsightBarView(
+            count: store.globalProactiveInboxNewCount()
+          )
+          .padding(.horizontal, 10)
+          .padding(.top, 6)
+        }
         if !messages.isEmpty || activeExecutionTask != nil || activeRemoteAgentTask != nil || !activeVoiceAgentRuns.isEmpty {
           SignalASIAgentHomeSafetyStrip(
             permissionMode: store.agentSafetySettings.permissionMode,
@@ -1290,25 +1269,9 @@ struct AgentHomeView: View {
               activeRemoteAgentTask == nil &&
               activeVoiceAgentRuns.isEmpty &&
               recoverableAgentTasksFromOtherSessions.isEmpty {
-            SignalASIAgentEmptyStateView(
+            SignalASIAgentHomeEmptyStatePanel(
               title: t("signalasi.agent.empty.title", "How can I help?"),
-              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk")
-            )
-            SignalASIAgentHomeQuickActionsView(
-              t: t,
-              onNewSession: createAgentConversation,
-              onOpenSessions: {
-                recentTaskForDetails = nil
-                agentSessionsShortcutActive = true
-              },
-              onScan: {
-                scanShortcutActive = true
-              },
-              onOpenSettings: {
-                agentSettingsShortcutActive = true
-              }
-            )
-            SignalASIAgentHomeReadinessView(
+              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"),
               runningTasks: activeAgentTasks.count,
               callableTargets: availableCallableTargetCount,
               nativeToolSummary: nativeToolSummary,
@@ -1328,6 +1291,26 @@ struct AgentHomeView: View {
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
+              routeTitle: headerModelLabel,
+              routeSubtitle: hasManualSelection
+                ? t("signalasi.agent.route.manual", "Manual route")
+                : t("signalasi.agent.route.automatic", "Automatic route"),
+              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
+                ? t("signalasi.status.ready", "Ready")
+                : t("signalasi.agent.model_selection.choose", "Choose"),
+              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
+              t: t,
+              onNewSession: createAgentConversation,
+              onOpenSessions: {
+                recentTaskForDetails = nil
+                agentSessionsShortcutActive = true
+              },
+              onScan: {
+                scanShortcutActive = true
+              },
+              onOpenSettings: {
+                agentSettingsShortcutActive = true
+              },
               onCyclePermissionMode: cycleAgentPermissionMode,
               onToggleHighRiskGuard: {
                 store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
@@ -1348,26 +1331,66 @@ struct AgentHomeView: View {
               },
               onTaskAction: handleHomeTaskAction,
               onModelSelectionChanged: refreshAgentRouteState,
-              routeTitle: headerModelLabel,
-              routeSubtitle: hasManualSelection
-                ? t("signalasi.agent.route.manual", "Manual route")
-                : t("signalasi.agent.route.automatic", "Automatic route"),
-              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
-                ? t("signalasi.status.ready", "Ready")
-                : t("signalasi.agent.model_selection.choose", "Choose"),
-              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
               onOpenRouteSelection: {
                 agentModelSelectionShortcutActive = true
               },
               onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreenContext: refreshAgentScreenContext,
-              t: t
+              onRefreshScreenContext: refreshAgentScreenContext
             )
             AgentProcessCard(
               activePhase: activeAgentPhase,
               executionPaused: store.agentSafetySettings.executionPaused
             )
           } else {
+            SignalASIAgentExecutionOverviewView(
+              activeRemoteAgentTask: activeRemoteAgentTask,
+              activeExecutionTask: activeExecutionTask,
+              actionQueueItems: agentActionQueueItems,
+              activePhase: activeAgentPhase,
+              executionPaused: store.agentSafetySettings.executionPaused,
+              screen: agentScreenSnapshot.screen,
+              screenSections: agentScreenSnapshot.sections,
+              t: t,
+              remoteStatusLabel: remoteAgentStatusLabel,
+              remoteStep: remoteAgentStep,
+              remoteTimelineLine: remoteAgentTimelineLine,
+              phaseLabel: agentPhaseLabel,
+              executionLocationSummary: agentExecutionLocationSummary,
+              executionStep: agentExecutionStep,
+              executionDuration: { startedAtMillis, updatedAtMillis in
+                executionDuration(
+                  startedAtMillis: startedAtMillis,
+                  updatedAtMillis: updatedAtMillis
+                )
+              },
+              liveExecutionDuration: { elapsedMillis in
+                executionDuration(elapsedMillis: elapsedMillis)
+              },
+              timelineActions: { task in agentTimelineActions(for: task) },
+              timelineActionTitle: agentTimelineActionTitle,
+              timelineActionIcon: agentTimelineActionIcon,
+              isRemoteTaskCancelling: { taskID in
+                cancellingRemoteTaskIDs.contains(taskID)
+              },
+              remoteCancellationTitle: { isCancelling in
+                isCancelling
+                  ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                  : t("signalasi.agent.remote_status.cancel", "Cancel task")
+              },
+              onCancelRemoteTask: cancelRemoteAgentTask,
+              onCancelExecutionTask: cancelActiveAgentTask,
+              onTimelineAction: { action, task in
+                runAgentTimelineAction(action, task: task)
+              },
+              onEditAction: { item in
+                homeActionEditorSelection = SignalASIAgentRuntimeActionSelection(
+                  task: item.task,
+                  action: item.action
+                )
+              },
+              onScreenCommand: prefillAgentScreenCommand,
+              onRefreshScreen: refreshAgentScreenContext
+#if false
             if let activeRemoteAgentTask {
               SignalASIAgentExecutionStatusCard(
                 executor: activeRemoteAgentTask.target,
@@ -1384,6 +1407,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeRemoteAgentTask.history.map(remoteAgentTimelineLine),
+                statusTint: remoteAgentStatusTint(activeRemoteAgentTask.status),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: activeRemoteAgentTask.isCancellable &&
@@ -1411,6 +1435,7 @@ struct AgentHomeView: View {
                 liveDurationFormatter: { executionDuration(elapsedMillis: $0) },
                 detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
                 details: activeExecutionTask.executionLog,
+                statusTint: agentPhaseTint(activeExecutionTask.phase),
                 canResume: false,
                 resumeTitle: "",
                 canCancel: AgentTaskCenterPolicy.cancellable(activeExecutionTask),
@@ -1449,6 +1474,7 @@ struct AgentHomeView: View {
               onCommand: prefillAgentScreenCommand,
               onRefresh: refreshAgentScreenContext,
               t: t
+#endif
             )
             SignalASIAgentTranscriptMessagesView(
               messages: transcriptMessages,
@@ -1504,6 +1530,159 @@ struct AgentHomeView: View {
               },
               onRetryMessage: retryAgentMessage
             )
+#if false
+                if !message.isMine, !message.isSystem {
+                  if let task = agentTask(for: message) {
+                    SignalASIAgentExecutionFooterView(
+                      executor: task.targetTitle.ifBlank(t("signalasi.agent.status", "Agent")),
+                      status: agentPhaseLabel(task.phase),
+                      location: agentExecutionLocationSummary(task),
+                      step: agentExecutionStep(task),
+                      duration: executionDuration(
+                        startedAtMillis: task.createdAtMillis,
+                        updatedAtMillis: task.updatedAtMillis
+                      ),
+                      details: task.executionLog,
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: agentPhaseTint(task.phase),
+                      timelineActions: agentTimelineActions(for: task),
+                      timelineActionTitle: { agentTimelineActionTitle($0) },
+                      timelineActionIcon: { agentTimelineActionIcon($0) },
+                      timelineActionMenuTitle: t(
+                        "signalasi.agent.task_control.title",
+                        "Task controls"
+                      ),
+                      canCancel: AgentTaskCenterPolicy.cancellable(task),
+                      cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelActiveAgentTask(task)
+                      },
+                      onTimelineAction: { action in
+                        runAgentTimelineAction(action, task: task)
+                      }
+                    )
+                  } else if let remoteTask = remoteAgentTask(for: message) {
+                    SignalASIAgentExecutionFooterView(
+                      executor: remoteTask.target.ifBlank(t("signalasi.agent.status", "Agent")),
+                      status: remoteAgentStatusLabel(remoteTask.status),
+                      location: remoteTask.location.ifBlank(
+                        t("signalasi.agent_execution.location.desktop", "Desktop")
+                      ),
+                      step: remoteAgentStep(remoteTask),
+                      duration: executionDuration(
+                        startedAtMillis: remoteTask.history.first?.updatedAtMillis
+                          ?? remoteTask.updatedAtMillis,
+                        updatedAtMillis: remoteTask.updatedAtMillis
+                      ),
+                      details: remoteTask.history.map(remoteAgentTimelineLine),
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(remoteTask.status),
+                      canCancel: remoteTask.isCancellable &&
+                        !cancellingRemoteTaskIDs.contains(remoteTask.id),
+                      cancelTitle: cancellingRemoteTaskIDs.contains(remoteTask.id)
+                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelRemoteAgentTask(remoteTask)
+                      }
+                    )
+                  } else if let run = voiceAgentRun(for: message) {
+                    let runStatus = remoteAgentStatusLabel(run.state.rawValue.lowercased())
+                    SignalASIAgentExecutionFooterView(
+                      executor: run.agentName.ifBlank(run.agentId).ifBlank(
+                        t("signalasi.agent.status", "Agent")
+                      ),
+                      status: runStatus,
+                      location: t("signalasi.agent_execution.runtime.desktop_agent", "Desktop Agent"),
+                      step: run.progressMessage.ifBlank(run.stage).ifBlank(runStatus),
+                      duration: executionDuration(
+                        startedAtMillis: run.acceptedAtMillis > 0
+                          ? run.acceptedAtMillis
+                          : run.createdAtMillis,
+                        updatedAtMillis: run.updatedAtMillis
+                      ),
+                      details: [run.progressMessage, run.partialResult, run.resultSummary]
+                        .filter { !$0.isBlank },
+                      detailsTitle: t("signalasi.agent.execution.timeline", "Execution timeline"),
+                      statusTint: remoteAgentStatusTint(run.state.rawValue),
+                      canCancel: run.cancellable && !cancellingVoiceRunIDs.contains(run.runId),
+                      cancelTitle: cancellingVoiceRunIDs.contains(run.runId)
+                        ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+                        : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                      onCancel: {
+                        cancelVoiceAgentRun(run)
+                      }
+                    )
+                  }
+                }
+              }
+                .id(message.id)
+                .contextMenu {
+                  Button {
+                    selectedMessageForDetails = message
+                  } label: {
+                    Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
+                  }
+                  Button {
+                    UIPasteboard.general.string = message.content
+                  } label: {
+                    Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+                  }
+                  if let task = agentTask(for: message), AgentTaskCenterPolicy.cancellable(task) {
+                    Button(role: .destructive) {
+                      cancelActiveAgentTask(task)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.task_control.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  } else if let remoteTask = remoteAgentTask(for: message), remoteTask.isCancellable {
+                    Button(role: .destructive) {
+                      cancelRemoteAgentTask(remoteTask)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  } else if let run = voiceAgentRun(for: message), run.cancellable {
+                    Button(role: .destructive) {
+                      cancelVoiceAgentRun(run)
+                    } label: {
+                      Label(
+                        t("signalasi.agent.remote_status.cancel", "Cancel task"),
+                        systemImage: "xmark.circle"
+                      )
+                    }
+                  }
+                  Button(role: .destructive) {
+                    store.deleteMessage(message.id, contactId: contact.id)
+                  } label: {
+                    Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+                  }
+                }
+              if waitingMessageIDs.contains(message.id) {
+                AgentReplyWaitingIndicatorView(bubbleBackground: false)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+              }
+              if message.isMine && message.deliveryStatus == .failed {
+                SignalASIAgentRetryCard(
+                  title: t("signalasi.agent.retry.title", "Agent request failed"),
+                  subtitle: t(
+                    "signalasi.agent.retry.subtitle",
+                    "Retry the most recent Agent request."
+                  ),
+                  retryTitle: t("signalasi.common.retry", "Retry"),
+                  retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
+                  isRetrying: retryingAgentMessageIDs.contains(message.id)
+                ) {
+                  retryAgentMessage(message)
+                }
+              }
+            }
+#endif
             ForEach(unboundWaitingTurnIDs, id: \.self) { turnID in
               AgentReplyWaitingIndicatorView()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1985,6 +2164,18 @@ struct AgentHomeView: View {
     }
   }
 
+  private func agentPhaseTint(_ phase: AgentPhase) -> Color {
+    switch phase {
+    case .blocked, .failed:
+      return .red
+    case .cancelled, .paused:
+      return .signalASITextSecondary
+    case .observing, .planning, .waitingConfirmation, .executing, .verifying,
+         .waitingResponse, .completed:
+      return .signalASIAccent
+    }
+  }
+
   private func agentExecutionLocationSummary(_ task: AgentTaskRecord) -> String {
     let location = AgentExecutionPresentationPolicy.location(record: task)
     let summary = [
@@ -2035,6 +2226,17 @@ struct AgentHomeView: View {
       return t("agent_task_status_cancelling", "Cancelling")
     default:
       return status.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  private func remoteAgentStatusTint(_ status: String) -> Color {
+    switch AgentRemoteTaskStatusPolicy.normalize(status) {
+    case "failed", "timed_out", "not_found":
+      return .red
+    case "cancelled", "cancelling":
+      return .signalASITextSecondary
+    default:
+      return .signalASIAccent
     }
   }
 
@@ -2175,88 +2377,15 @@ struct AgentHomeView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
-      SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
-      VStack(alignment: .center, spacing: 2) {
-        Text("SignalASI")
-          .font(.system(size: 14.5, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-        Text(t("signalasi.agent.brand.subtitle", "Superintelligent agent"))
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
+    SignalASIAgentHomeHeaderView(
+      sessionTitle: headerSessionTitle,
+      modelStatusLabel: headerModelStatusLabel,
+      modelLogoLabel: headerModelLabel,
+      brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
+      modelSelectionDestination: SignalASIAgentModelSelectionView {
+        modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       }
-      Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 2) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
-          Text(headerSessionTitle)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundColor(.signalASIAgentSessionTitle)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .buttonStyle(.plain)
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView {
-            modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-          }
-        ) {
-          HStack(spacing: 3) {
-            Image(systemName: "chevron.down")
-              .font(.system(size: 8, weight: .bold))
-            if let assetName = headerModelAssetName {
-              Image(assetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .accessibilityHidden(true)
-            }
-            Text(headerModelStatusLabel)
-              .lineLimit(1)
-              .minimumScaleFactor(0.72)
-          }
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .buttonStyle(.plain)
-      }
-      .frame(width: 128, minHeight: 44, alignment: .trailing)
-      NavigationLink(destination: SettingsView()) {
-        Image(systemName: "ellipsis.horizontal")
-          .font(.system(size: 22, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-          .frame(width: 44, height: 44)
-      }
-      .buttonStyle(.plain)
-    }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(height: 76)
-    .background(Color.signalASIPageBackground)
-  }
-
-  private var headerLogoSize: CGFloat {
-    let scale: CGFloat
-    switch dynamicTypeSize {
-    case .xSmall:
-      scale = 0.82
-    case .small:
-      scale = 0.90
-    case .medium:
-      scale = 1.00
-    case .large:
-      scale = 1.10
-    case .xLarge:
-      scale = 1.20
-    case .xxLarge:
-      scale = 1.30
-    case .xxxLarge:
-      scale = 1.40
-    default:
-      scale = 1.45
-    }
-    return min(56, max(32, 39 * scale))
+    )
   }
 
   private var headerModelLabel: String {
@@ -3350,96 +3479,5 @@ struct AgentHomeView: View {
       ),
       sourceTitle
     )
-  }
-}
-
-private struct AgentInsightBanner: View {
-  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  var unreadTotal: Int
-  var runningTasks: Int
-  var callableTargets: Int
-  var executionPaused: Bool
-  var nativeToolSummary: (total: Int, available: Int)
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 10) {
-        SignalASILogoView(size: 34, cornerRadius: 7)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("SignalASI Agent")
-            .font(.system(size: 15, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
-          Text(summaryText)
-            .font(.system(size: 12))
-            .foregroundColor(.signalASIInsightText)
-            .lineLimit(2)
-        }
-        Spacer()
-      }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          AgentStatusChip(title: "iOS 15+", value: t("signalasi.status.ready", "Ready"))
-          AgentStatusChip(title: t("signalasi.agent.status", "Agent"), value: agentStatusText)
-          AgentStatusChip(title: t("cc_metric_native_tools", "Native tools"), value: nativeToolsText)
-        }
-      }
-    }
-    .padding(12)
-    .background(Color.signalASIInsightBackground)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.signalASIInsightStroke, lineWidth: 1)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-  }
-
-  private var summaryText: String {
-    if unreadTotal > 0 {
-      return String(format: t("signalasi.agent.insight.unread", "You have %d unread agent messages."), unreadTotal)
-    }
-    if executionPaused {
-      return t("agent_status_paused_subtitle", "Execution is paused. Resume when you are ready.")
-    }
-    return String(
-      format: t("agent_running_tasks_targets_value", "Running tasks: %d / targets: %d"),
-      runningTasks,
-      callableTargets
-    )
-  }
-
-  private var agentStatusText: String {
-    executionPaused
-      ? t("on_device_agent_status_paused", "Paused")
-      : t("on_device_agent_status_running", "Running")
-  }
-
-  private var nativeToolsText: String {
-    "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct AgentStatusChip: View {
-  var title: String
-  var value: String
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Text(title)
-        .foregroundColor(.signalASITextSecondary)
-      Text(value)
-        .fontWeight(.bold)
-        .foregroundColor(.signalASITextPrimary)
-    }
-    .font(.system(size: 11))
-    .lineLimit(1)
-    .minimumScaleFactor(0.85)
-    .padding(.horizontal, 9)
-    .padding(.vertical, 6)
-    .background(Color.signalASISurface)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 }
