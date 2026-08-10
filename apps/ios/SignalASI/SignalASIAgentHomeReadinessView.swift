@@ -431,14 +431,18 @@ struct SignalASIAgentHomeReadinessView: View {
 
   private func recentTaskTint(_ phase: AgentPhase) -> Color {
     switch phase {
-    case .waitingConfirmation, .blocked, .paused:
-      return .orange
-    case .failed, .cancelled:
+    case .blocked, .failed:
       return .red
-    case .completed:
-      return .signalASIAccent
-    case .observing, .planning, .executing, .verifying, .waitingResponse:
+    case .cancelled, .paused:
       return .signalASITextSecondary
+    case .completed,
+      .waitingConfirmation,
+      .observing,
+      .planning,
+      .executing,
+      .verifying,
+      .waitingResponse:
+      return .signalASIAccent
     }
   }
 
