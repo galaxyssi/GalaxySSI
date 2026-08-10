@@ -22,6 +22,7 @@
 "agent_screen_notifications_locked" = "通知访问未启用";
 "agent_screen_device_status" = "设备状态";
 "agent_screen_device_status_summary_ios" = "电量 %@ / %@ / %@ / %@ 可用";
+"agent_screen_device_status_summary_ios_v2" = "电量 %@ / %@ / %@ / 网络 %@ / %@ 可用";
 "agent_screen_launchable_apps" = "可打开页面";
 "agent_screen_visual_grounding" = "端侧视觉定位";
 "agent_screen_visual_summary_ios" = "%@ / %d 个元素 / %d 个动作 / %d 个输入框";
