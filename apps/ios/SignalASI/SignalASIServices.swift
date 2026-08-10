@@ -5625,9 +5625,18 @@ final class MessageCoordinator: ObservableObject {
     let responseTurnId = appPayload.string("turn_id")
       .ifBlank(appPayload.string("source_message_id"))
       .ifBlank(appPayload.string("message_id"))
-    let displayContactId = agentHomeDisplayContactIdsByTurnId[responseTurnId] ?? contactId
+    let responseConversationId = appPayload.string("conversation_id")
+    let resolvedConversationId = store.agentSessionDestination(id: responseConversationId) ?? ""
+    let responseTaskId = appPayload.string("task_id")
+    let nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
+      superseded: false,
+      hasRuntime: !responseTaskId.isEmpty && store.agentTask(id: responseTaskId) != nil,
+      resolvedConversationId: resolvedConversationId
+    )
+    let displayContactId = agentHomeDisplayContactIdsByTurnId[responseTurnId]
+      ?? (nativeAgentResponse ? "hermes" : contactId)
     updateAgentExecutionTarget(
-      conversationId: appPayload.string("conversation_id"),
+      conversationId: resolvedConversationId.ifBlank(responseConversationId),
       connectorId: appPayload.string("connector_id").ifBlank(appPayload.string("agent_id")),
       contactId: contactId,
       runtimeTarget: appPayload.string("runtime_target").ifBlank(appPayload.string("target")),
@@ -5647,8 +5656,8 @@ final class MessageCoordinator: ObservableObject {
         remoteFailureRecoveryRichOutput(
           payload: appPayload,
           contactId: displayContactId,
-          taskId: appPayload.string("task_id"),
-          conversationId: appPayload.string("conversation_id"),
+          taskId: responseTaskId,
+          conversationId: resolvedConversationId.ifBlank(responseConversationId),
           turnId: responseTurnId,
           failure: failure,
           status: remoteTaskStatus
@@ -5716,7 +5725,7 @@ final class MessageCoordinator: ObservableObject {
         content,
         from: displayContactId,
         remoteMessageId: appPayload.string("message_id"),
-        conversationId: appPayload.string("conversation_id"),
+        conversationId: resolvedConversationId.ifBlank(responseConversationId),
         turnId: appPayload.string("turn_id"),
         richOutputJson: richOutputJson
       )
@@ -5915,7 +5924,14 @@ final class MessageCoordinator: ObservableObject {
     if update.sequence > 0 {
       liveConnectorSequenceByKey[update.streamKey] = update.sequence
     }
-    let displayContactId = agentHomeDisplayContactIdsByTurnId[update.turnId] ?? update.contactId
+    let resolvedConversationId = store.agentSessionDestination(id: update.conversationId) ?? ""
+    let nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
+      superseded: false,
+      hasRuntime: !update.taskId.isEmpty && store.agentTask(id: update.taskId) != nil,
+      resolvedConversationId: resolvedConversationId
+    )
+    let displayContactId = agentHomeDisplayContactIdsByTurnId[update.turnId]
+      ?? (nativeAgentResponse ? "hermes" : update.contactId)
     let current: ChatMessage?
     if let messageId = liveConnectorMessageIds[update.streamKey] {
       current = store.updateMessageContent(
@@ -5933,7 +5949,7 @@ final class MessageCoordinator: ObservableObject {
         remoteMessageId: "agent-stream-\(update.sourceMessageId)",
         status: .sent,
         traceStage: "agent_partial_result",
-        conversationId: update.conversationId,
+        conversationId: resolvedConversationId.ifBlank(update.conversationId),
         turnId: update.turnId
       )
       liveConnectorMessageIds[update.streamKey] = appended.id
