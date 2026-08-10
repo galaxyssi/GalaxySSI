@@ -351,67 +351,6 @@ enum AgentRichContentCodec {
     return ""
   }
 
-  static func fromText(_ text: String) -> [AgentRichBlock] {
-    let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty else { return [] }
-    if let pretty = prettyJson(clean) {
-      return [AgentRichBlock(id: newId(), type: .json, text: pretty, language: "json")]
-    }
-    var blocks: [AgentRichBlock] = []
-    var paragraph: [String] = []
-    let lines = clean.components(separatedBy: .newlines)
-    var index = 0
-
-    func flushParagraph() {
-      let value = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-      if !value.isEmpty {
-        blocks.append(AgentRichBlock(id: newId(), type: .text, text: value))
-      }
-      paragraph.removeAll()
-    }
-
-    while index < lines.count && blocks.count < maximumBlocks {
-      let line = lines[index]
-      let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-      if trimmed.hasPrefix("```") {
-        flushParagraph()
-        let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-        index += 1
-        var code: [String] = []
-        while index < lines.count {
-          let candidate = lines[index]
-          if candidate.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```") {
-            break
-          }
-          code.append(candidate)
-          index += 1
-        }
-        blocks.append(
-          AgentRichBlock(
-            id: newId(),
-            type: language.lowercased() == "json" ? .json : .code,
-            text: code.joined(separator: "\n"),
-            language: language
-          )
-        )
-      } else if trimmed.isEmpty {
-        flushParagraph()
-      } else if trimmed.range(of: #"^#{1,6}\s+.+"#, options: .regularExpression) != nil {
-        flushParagraph()
-        let level = trimmed.prefix { $0 == "#" }.count
-        let heading = trimmed.dropFirst(level).trimmingCharacters(in: .whitespacesAndNewlines)
-        blocks.append(
-          AgentRichBlock(id: newId(), type: .heading, text: heading, metadata: ["level": String(level)])
-        )
-      } else {
-        paragraph.append(line)
-      }
-      index += 1
-    }
-    flushParagraph()
-    return Array(blocks.prefix(maximumBlocks))
-  }
-
   private static func deduplicateArtifacts(_ blocks: [AgentRichBlock]) -> [AgentRichBlock] {
     var result: [AgentRichBlock] = []
     var indexes: [String: Int] = [:]
@@ -433,20 +372,6 @@ enum AgentRichContentCodec {
     return result
   }
 
-  private static func prettyJson(_ value: String) -> String? {
-    guard value.hasPrefix("{") && value.hasSuffix("}") || value.hasPrefix("[") && value.hasSuffix("]"),
-      let data = value.data(using: .utf8),
-      let object = try? JSONSerialization.jsonObject(with: data),
-      JSONSerialization.isValidJSONObject(object),
-      let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) else {
-      return nil
-    }
-    return String(decoding: pretty, as: UTF8.self)
-  }
-
-  private static func newId() -> String {
-    UUID().uuidString.lowercased()
-  }
 }
 
 private struct AgentRichDocument: Codable {
