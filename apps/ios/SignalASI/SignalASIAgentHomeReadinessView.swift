@@ -22,6 +22,8 @@ struct SignalASIAgentHomeReadinessView: View {
   var onToggleExecutionPaused: () -> Void = {}
   var onOpenRecentTasks: () -> Void = {}
   var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
+  var onTaskAction: (AgentTaskCenterAction, AgentTaskRecord) -> Void = { _, _ in }
+  var onModelSelectionChanged: () -> Void = {}
   var onScreenCommand: (String) -> Void = { _ in }
   var t: (String, String) -> String
 
@@ -51,7 +53,11 @@ struct SignalASIAgentHomeReadinessView: View {
       }
 
       HStack(spacing: 8) {
-        NavigationLink(destination: SignalASIAgentModelSelectionView()) {
+        NavigationLink(
+          destination: SignalASIAgentModelSelectionView(
+            onSelectionChanged: onModelSelectionChanged
+          )
+        ) {
           metric(
             title: t("signalasi.agent.readiness.targets", "Targets"),
             value: "\(callableTargets)",
@@ -196,10 +202,31 @@ struct SignalASIAgentHomeReadinessView: View {
         .buttonStyle(.plain)
         ForEach(Array(recentTasks.prefix(3))) { task in
           separator
-          Button(action: { onOpenRecentTask(task) }) {
-            recentTaskRow(task)
+          HStack(spacing: 0) {
+            Button(action: { onOpenRecentTask(task) }) {
+              recentTaskRow(task)
+                .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            Menu {
+              ForEach(AgentTaskCenterPolicy.actions(task)) { action in
+                Button(role: action == .delete ? .destructive : nil) {
+                  onTaskAction(action, task)
+                } label: {
+                  Label(
+                    AgentTaskCenterActionPresentation.title(action, t: t),
+                    systemImage: AgentTaskCenterActionPresentation.icon(action)
+                  )
+                }
+              }
+            } label: {
+              Image(systemName: "ellipsis.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.signalASITextSecondary)
+                .frame(width: 42, height: 42)
+            }
+            .accessibilityLabel(Text(t("signalasi.agent_task_center.actions", "Task actions")))
           }
-          .buttonStyle(.plain)
         }
       }
       .background(Color.signalASISurface)
@@ -359,12 +386,7 @@ struct SignalASIAgentHomeReadinessView: View {
           .lineLimit(1)
           .truncationMode(.middle)
       }
-      Spacer(minLength: 8)
-      Image(systemName: "chevron.right")
-        .font(.system(size: 10, weight: .bold))
-        .foregroundColor(.signalASITextSecondary)
     }
-    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
     .padding(.horizontal, 14)
   }
 

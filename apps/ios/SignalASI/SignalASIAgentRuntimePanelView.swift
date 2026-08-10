@@ -393,7 +393,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var toolboxRows: [SignalASIAgentRuntimeRow] {
-    availableTools.prefix(4).map { tool in
+    availableTools.prefix(6).map { tool in
       SignalASIAgentRuntimeRow(
         id: "tool-\(tool.id)",
         title: tool.title,
@@ -411,7 +411,7 @@ struct SignalASIAgentRuntimePanelView: View {
 
   private var actionQueueRows: [SignalASIAgentRuntimeRow] {
     if !queuedActionEntries.isEmpty {
-      return queuedActionEntries.prefix(6).map { entry in
+      return queuedActionEntries.map { entry in
         let action = entry.action
         let target = action.target.ifBlank(entry.task.targetTitle)
           .ifBlank(t("signalasi.agent_tasks.target_phone", "SignalASI"))
@@ -431,7 +431,7 @@ struct SignalASIAgentRuntimePanelView: View {
         )
       }
     }
-    activeTasks.prefix(4).map { task in
+    activeTasks.map { task in
       SignalASIAgentRuntimeRow(
         id: "queue-\(task.taskId)",
         title: task.goal.ifBlank(statusText(task)),
@@ -761,7 +761,7 @@ struct SignalASIAgentRuntimePanelView: View {
   private var verificationRows: [SignalASIAgentRuntimeRow] {
     recentTasks
       .filter { !$0.verification.isBlank || !$0.result.isBlank || $0.phase == .completed || $0.phase == .failed }
-      .prefix(3)
+      .prefix(4)
       .map { task in
         return SignalASIAgentRuntimeRow(
           id: "verification-\(task.taskId)",
@@ -809,7 +809,7 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var auditRows: [SignalASIAgentRuntimeRow] {
-    let nativeRows = auditRecords.prefix(3).map { record in
+    let nativeRows = auditRecords.prefix(6).map { record in
       SignalASIAgentRuntimeRow(
         id: "audit-\(record.auditId)",
         title: record.toolId,

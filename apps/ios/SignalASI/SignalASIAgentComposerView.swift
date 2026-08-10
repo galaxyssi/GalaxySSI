@@ -15,6 +15,7 @@ struct SignalASIAgentComposerView: View {
   var pendingPrimaryActionResumesTask: Bool
   var pendingPrimaryActionApprovesTask: Bool
   var pendingPrimaryActionWaitingForResponse: Bool
+  var pendingPrimaryActionNeedsHighRiskConfirmation: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -324,14 +325,18 @@ struct SignalASIAgentComposerView: View {
               ? "checkmark"
               : pendingPrimaryActionWaitingForResponse
                 ? "hourglass"
-              : "xmark")
+                : pendingPrimaryActionNeedsHighRiskConfirmation
+                  ? "exclamationmark.triangle.fill"
+                  : "xmark")
           .font(.system(size: 20, weight: .bold))
           .foregroundColor(
             canSend || pendingPrimaryActionResumesTask || pendingPrimaryActionApprovesTask
               ? .signalASIAccent
               : pendingPrimaryActionWaitingForResponse
                 ? .signalASITextSecondary
-                : .signalASIAgentVoiceCancel
+                : pendingPrimaryActionNeedsHighRiskConfirmation
+                  ? .orange
+                  : .signalASIAgentVoiceCancel
           )
           .frame(width: 54, height: 54)
           .background(Color.white)
@@ -346,9 +351,11 @@ struct SignalASIAgentComposerView: View {
           ? t("signalasi.agent.resume_task", "Resume task")
           : pendingPrimaryActionApprovesTask
             ? t("signalasi.agent.confirmation.allow_once", "Allow once")
-          : pendingPrimaryActionWaitingForResponse
-            ? t("agent_status_waiting_response", "Waiting for an Agent response")
-          : t("signalasi.agent.cancel_task", "Cancel task")))
+            : pendingPrimaryActionWaitingForResponse
+              ? t("agent_status_waiting_response", "Waiting for an Agent response")
+            : pendingPrimaryActionNeedsHighRiskConfirmation
+              ? t("signalasi.agent.high_risk_confirmation.execute", "Confirm high-risk action")
+              : t("signalasi.agent.cancel_task", "Cancel task")))
     } else {
       Button {
         if actionTrayPresented {

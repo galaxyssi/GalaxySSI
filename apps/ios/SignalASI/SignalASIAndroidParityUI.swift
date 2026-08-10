@@ -72,6 +72,7 @@ struct AgentHomeView: View {
   @State private var approvalActionsInFlight: Set<String> = []
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
+  @State private var homeTaskPendingDeletion: AgentTaskRecord?
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -353,6 +354,15 @@ struct AgentHomeView: View {
     primaryAgentTask?.phase == .waitingResponse
   }
 
+  private var primaryActionNeedsHighRiskConfirmation: Bool {
+    guard let task = primaryAgentTask,
+          task.phase == .waitingConfirmation,
+          let action = task.pendingAction else {
+      return false
+    }
+    return action.risk.weight >= AgentRisk.high.weight
+  }
+
   private var blockedAgentTask: AgentTaskRecord? {
     let sessionId = activeAgentSession?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return activeSessionTasks.first { task in
@@ -610,6 +620,24 @@ struct AgentHomeView: View {
             Text(t("signalasi.agent.high_risk_confirmation.execute", "Execute"))
           ) {
             approveHighRiskTask(task)
+          },
+          secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
+        )
+      }
+      .alert(item: $homeTaskPendingDeletion) { task in
+        Alert(
+          title: Text(t("signalasi.agent_task_center.delete_title", "Delete task?")),
+          message: Text(
+            String(
+              format: t(
+                "signalasi.agent_task_center.delete_message",
+                "Delete the task record for \"%@\"? The conversation will remain available."
+              ),
+              task.goal
+            )
+          ),
+          primaryButton: .destructive(Text(t("signalasi.common.delete", "Delete"))) {
+            handleAgentRuntimeTaskAction(.delete, task: task)
           },
           secondaryButton: .cancel(Text(t("signalasi.common.cancel", "Cancel")))
         )
@@ -1050,6 +1078,8 @@ struct AgentHomeView: View {
                 recentTaskForDetails = task
                 recentTasksShortcutActive = true
               },
+              onTaskAction: handleHomeTaskAction,
+              onModelSelectionChanged: refreshAgentRouteState,
               onScreenCommand: prefillAgentScreenCommand,
               t: t
             )
@@ -1310,6 +1340,9 @@ struct AgentHomeView: View {
         refreshAgentRuntimeAuditRecords()
       }
       .onChange(of: activeAgentPhase) { _ in
+        refreshAgentRuntimeAuditRecords()
+      }
+      .onChange(of: activeAgentTasks) { _ in
         refreshAgentRuntimeAuditRecords()
       }
       .onChange(of: waitingMessageIDs.count) { _ in
@@ -1872,6 +1905,7 @@ struct AgentHomeView: View {
       pendingPrimaryActionResumesTask: primaryActionResumesTask,
       pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
       pendingPrimaryActionWaitingForResponse: primaryActionWaitingForResponse,
+      pendingPrimaryActionNeedsHighRiskConfirmation: primaryActionNeedsHighRiskConfirmation,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -2026,6 +2060,20 @@ struct AgentHomeView: View {
         deleted ? "signalasi.agent_task_center.deleted" : "signalasi.agent_task_center.delete_failed",
         deleted ? "Task deleted" : "The task could not be deleted"
       )
+    }
+  }
+
+  private func handleHomeTaskAction(
+    _ action: AgentTaskCenterAction,
+    task: AgentTaskRecord
+  ) {
+    if action == .viewLog {
+      recentTaskForDetails = task
+      recentTasksShortcutActive = true
+    } else if action == .delete {
+      homeTaskPendingDeletion = task
+    } else {
+      handleAgentRuntimeTaskAction(action, task: task)
     }
   }
 
