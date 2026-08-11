@@ -134,7 +134,15 @@ struct ChatListView: View {
               Color.clear
             }
           },
-          trailing: { Color.clear }
+          trailing: {
+            NavigationLink(destination: AddContactView()) {
+              Image(systemName: "plus")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.add_contact.title", "Add")))
+          }
         )
         VStack(spacing: 10) {
           HStack(spacing: 8) {
