@@ -26,6 +26,7 @@ struct AgentHomeView: View {
   @State private var retryingAgentMessageIDs: Set<UUID> = []
   @State private var retryingAgentTaskIDs: Set<String> = []
   @State private var timelineActionTaskIDsInFlight: Set<String> = []
+  @State private var pendingPrimaryActionTaskID: String?
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
@@ -1798,6 +1799,7 @@ struct AgentHomeView: View {
       pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
       pendingPrimaryActionWaitingForResponse: primaryActionWaitingForResponse,
       pendingPrimaryActionNeedsHighRiskConfirmation: primaryActionNeedsHighRiskConfirmation,
+      primaryActionInFlight: pendingPrimaryActionTaskID != nil,
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
@@ -1828,6 +1830,16 @@ struct AgentHomeView: View {
 
   private func handlePendingAgentTaskAction() {
     guard let task = primaryAgentTask else { return }
+    guard pendingPrimaryActionTaskID != task.taskId else { return }
+    pendingPrimaryActionTaskID = task.taskId
+    defer {
+      let taskID = task.taskId
+      DispatchQueue.main.async {
+        if pendingPrimaryActionTaskID == taskID {
+          pendingPrimaryActionTaskID = nil
+        }
+      }
+    }
     if task.phase == .waitingResponse {
       richActionStatus = t(
         "agent_status_waiting_response",

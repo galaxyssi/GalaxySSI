@@ -17,6 +17,7 @@ struct SignalASIAgentComposerView: View {
   var pendingPrimaryActionApprovesTask: Bool
   var pendingPrimaryActionWaitingForResponse: Bool
   var pendingPrimaryActionNeedsHighRiskConfirmation: Bool
+  var primaryActionInFlight: Bool
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
@@ -381,6 +382,7 @@ struct SignalASIAgentComposerView: View {
           .clipShape(Circle())
       }
       .buttonStyle(.plain)
+      .disabled(!canSend && primaryActionInFlight)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
       .contentShape(Rectangle())
       .accessibilityLabel(Text(canSend
