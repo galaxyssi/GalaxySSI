@@ -12,6 +12,7 @@ struct SignalASIConversationHubView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var selectedTab: SignalASIConversationHubTab
   @State private var searchText = ""
   @State private var showingArchived = false
@@ -20,6 +21,13 @@ struct SignalASIConversationHubView: View {
   @State private var cloudModelPresented = false
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
+  @State private var editingSession: AgentConversation?
+  @State private var deletingSession: AgentConversation?
+  @State private var mergingSession: AgentConversation?
+  @State private var multiDeleteMode = false
+  @State private var selectedSessionIDs: Set<String> = []
+  @State private var bulkDeletePresented = false
+  @State private var sessionNotice = ""
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -92,6 +100,15 @@ struct SignalASIConversationHubView: View {
       .padding(.top, 10)
       .padding(.bottom, 5)
 
+      if !sessionNotice.isEmpty {
+        Text(sessionNotice)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 16)
+          .padding(.bottom, 4)
+      }
+
       ScrollView {
         hubContent
           .padding(.horizontal, 12)
@@ -108,6 +125,16 @@ struct SignalASIConversationHubView: View {
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       ContactsView(showsBackButton: false)
+    }
+    .sheet(item: $editingSession) { session in
+      SignalASIConversationHubRenameSheet(
+        title: t("signalasi.agent_session.rename", "Rename"),
+        initialValue: session.title
+      ) { value in
+        sessionNotice = store.renameAgentSession(id: session.id, title: value)
+          ? t("signalasi.agent_sessions.updated", "Session updated")
+          : t("signalasi.agent_sessions.update_failed", "Session was not changed")
+      }
     }
     .alert(
       t("signalasi.conversation_hub.delete_contact", "Delete contact"),
@@ -128,9 +155,74 @@ struct SignalASIConversationHubView: View {
     } message: {
       Text(t("signalasi.conversation_hub.delete_contact_message", "Only this contact and its local history will be removed."))
     }
+    .alert(
+      t("signalasi.agent_session.delete", "Delete session"),
+      isPresented: Binding(
+        get: { deletingSession != nil },
+        set: { if !$0 { deletingSession = nil } }
+      )
+    ) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        deletingSession = nil
+      }
+      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
+        confirmDeleteSession()
+      }
+    } message: {
+      Text(t("signalasi.agent_session.delete_confirm", "Delete this session and all of its messages?"))
+    }
+    .alert(
+      t("signalasi.agent_session.merge_into_original", "Merge into original session"),
+      isPresented: Binding(
+        get: { mergingSession != nil },
+        set: { if !$0 { mergingSession = nil } }
+      )
+    ) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        mergingSession = nil
+      }
+      Button(t("signalasi.agent_session.merge_confirm_action", "Merge"), role: .destructive) {
+        confirmMergeSession()
+      }
+    } message: {
+      if let session = mergingSession,
+         let target = store.agentSession(id: session.parentConversationId) {
+        Text(
+          String(
+            format: t(
+              "signalasi.agent_session.merge_confirm",
+              "Merge %@ into %@? Messages and running task history will continue in the original session."
+            ),
+            session.title,
+            target.title
+          )
+        )
+      }
+    }
+    .alert(
+      t("signalasi.agent_sessions.delete_selected", "Delete selected sessions"),
+      isPresented: $bulkDeletePresented
+    ) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
+      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
+        confirmBulkDelete()
+      }
+    } message: {
+      Text(
+        String(
+          format: t(
+            "signalasi.agent_sessions.delete_selected_confirm",
+            "Delete %d selected sessions and their messages?"
+          ),
+          selectedSessionIDs.count
+        )
+      )
+    }
     .onChange(of: selectedTab) { _ in
       searchText = ""
       showingArchived = false
+      multiDeleteMode = false
+      selectedSessionIDs.removeAll()
     }
   }
 
@@ -183,6 +275,10 @@ struct SignalASIConversationHubView: View {
         ) {
           showingArchived = true
         }
+      }
+
+      if multiDeleteMode {
+        bulkDeleteToolbar(visible: visible.pinned + visible.recent)
       }
 
       if !visible.pinned.isEmpty {
@@ -280,34 +376,247 @@ struct SignalASIConversationHubView: View {
 
   private func conversationRow(_ session: AgentConversation) -> some View {
     Button {
-      _ = store.switchAgentSession(session.id)
-      dismiss()
+      if multiDeleteMode {
+        toggleSelectedSession(session.id)
+      } else {
+        _ = store.switchAgentSession(session.id)
+        dismiss()
+      }
     } label: {
       hubRowContent(
         title: sessionTitle(session),
         subtitle: sessionSubtitle(session),
         systemImage: "bubble.left.and.bubble.right.fill",
         tint: .signalASIAccent,
-        trailing: session.pinned ? "pin.fill" : ""
+        trailing: multiDeleteMode
+          ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
+          : (session.pinned ? "pin.fill" : "")
       )
     }
     .buttonStyle(.plain)
     .contextMenu {
+      Button(t("signalasi.agent_sessions.select", "Select session")) {
+        _ = store.switchAgentSession(session.id)
+        dismiss()
+      }
+      Button(t("signalasi.agent_session.rename", "Rename")) {
+        editingSession = session
+      }
       Button(session.pinned
         ? t("signalasi.agent_session.unpin", "Unpin")
         : t("signalasi.agent_session.pin", "Pin")) {
         _ = store.setAgentSessionPinned(id: session.id, pinned: !session.pinned)
       }
-      if session.status == .archived {
-        Button(t("signalasi.agent_session.restore", "Restore session")) {
-          _ = store.restoreAgentSession(id: session.id)
-          showingArchived = false
-        }
-      } else {
-        Button(t("signalasi.agent_session.archive", "Archive")) {
-          _ = store.archiveAgentSession(id: session.id)
+      if canMerge(session) {
+        Button(t("signalasi.agent_session.merge_into_original", "Merge into original session")) {
+          mergingSession = session
         }
       }
+      if session.mergedIntoConversationId.isBlank {
+        Button(session.trackingPaused
+          ? t("signalasi.agent_session.resume_tracking", "Resume global tracking")
+          : t("signalasi.agent_session.pause_tracking", "Pause global tracking")) {
+          _ = store.setAgentSessionTrackingPaused(id: session.id, paused: !session.trackingPaused)
+        }
+        Button(session.status == .archived
+          ? t("signalasi.agent_session.restore", "Restore session")
+          : t("signalasi.agent_session.archive", "Archive")) {
+          if session.status == .archived {
+            _ = store.restoreAgentSession(id: session.id)
+            showingArchived = false
+          } else {
+            _ = store.archiveAgentSession(id: session.id)
+          }
+        }
+      }
+      Button(t("signalasi.agent_session.delete_more", "Delete more")) {
+        multiDeleteMode = true
+        selectedSessionIDs.removeAll()
+      }
+      Button(t("signalasi.agent_session.delete", "Delete session"), role: .destructive) {
+        deletingSession = session
+      }
+    }
+  }
+
+  private func bulkDeleteToolbar(visible sessions: [AgentConversation]) -> some View {
+    HStack(spacing: 8) {
+      Text(
+        String(
+          format: t("signalasi.agent_sessions.selected_count", "%d selected"),
+          selectedSessionIDs.count
+        )
+      )
+      .font(.system(size: 12, weight: .semibold))
+      .foregroundColor(.signalASITextSecondary)
+      Spacer(minLength: 0)
+      Button {
+        let visibleIDs = Set(sessions.map(\.id))
+        selectedSessionIDs = selectedSessionIDs == visibleIDs ? [] : visibleIDs
+      } label: {
+        Image(systemName: selectedSessionIDs == Set(sessions.map(\.id)) ? "checkmark.circle" : "checklist")
+          .font(.system(size: 15, weight: .semibold))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(
+        selectedSessionIDs == Set(sessions.map(\.id))
+          ? t("signalasi.agent_sessions.clear_selection", "Clear")
+          : t("signalasi.agent_sessions.select_all", "Select all")
+      ))
+      Button {
+        bulkDeletePresented = true
+      } label: {
+        Image(systemName: "trash")
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundColor(.red)
+      }
+      .buttonStyle(.plain)
+      .disabled(selectedSessionIDs.isEmpty)
+      .accessibilityLabel(Text(t("signalasi.common.delete", "Delete")))
+      Button {
+        multiDeleteMode = false
+        selectedSessionIDs.removeAll()
+      } label: {
+        Image(systemName: "xmark")
+          .font(.system(size: 14, weight: .bold))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("signalasi.common.cancel", "Cancel")))
+    }
+    .padding(.horizontal, 4)
+  }
+
+  private func toggleSelectedSession(_ sessionId: String) {
+    if selectedSessionIDs.contains(sessionId) {
+      selectedSessionIDs.remove(sessionId)
+    } else {
+      selectedSessionIDs.insert(sessionId)
+    }
+  }
+
+  private func canMerge(_ session: AgentConversation) -> Bool {
+    guard session.createdByAgent,
+          !session.parentConversationId.isBlank,
+          session.mergedIntoConversationId.isBlank,
+          let parent = store.agentSession(id: session.parentConversationId) else {
+      return false
+    }
+    return parent.privateMode == session.privateMode
+  }
+
+  private func confirmMergeSession() {
+    guard let session = mergingSession else { return }
+    let result = store.mergeAgentSessionIntoParent(id: session.id)
+    mergingSession = nil
+    guard result.merged else {
+      sessionNotice = mergeFailureMessage(result.failure)
+      return
+    }
+    let targetTitle = result.targetConversation?.title.ifBlank(
+      t("signalasi.agent_session.new", "New session")
+    ) ?? t("signalasi.agent_session.new", "New session")
+    sessionNotice = String(
+      format: t("signalasi.agent_sessions.merge_success", "Merged %d messages into %@"),
+      result.copiedEntryCount,
+      targetTitle
+    )
+    showingArchived = false
+  }
+
+  private func mergeFailureMessage(_ failure: AgentConversationMergeFailure) -> String {
+    switch failure {
+    case .sourceNotFound:
+      return t("signalasi.agent_session.merge_source_missing", "The Agent-created session no longer exists")
+    case .targetNotFound:
+      return t("signalasi.agent_session.merge_target_missing", "The original session no longer exists")
+    case .notAgentCreated:
+      return t("signalasi.agent_session.merge_unavailable", "Only Agent-created sessions can be merged")
+    case .alreadyMerged:
+      return t("signalasi.agent_session.merge_already_done", "This session has already been merged")
+    case .sameConversation, .privacyMismatch, .none:
+      return t("signalasi.agent_session.merge_unavailable", "This session cannot be merged")
+    }
+  }
+
+  private func confirmDeleteSession() {
+    guard let session = deletingSession else { return }
+    let shouldNotifyRemote = session.mergedIntoConversationId.isBlank
+    let taskIds = shouldNotifyRemote
+      ? store.agentTasks(forSession: session.id, limit: 256).map(\.taskId)
+      : []
+    let deleted = store.deleteAgentSession(id: session.id)
+    deletingSession = nil
+    guard deleted, shouldNotifyRemote else {
+      sessionNotice = deleted
+        ? t("signalasi.agent_sessions.deleted", "Session deleted")
+        : t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+      return
+    }
+    sessionNotice = t(
+      "signalasi.agent_sessions.deleted_remote_pending",
+      "Session deleted; cleaning up the paired Desktop..."
+    )
+    Task { @MainActor in
+      let sent = await coordinator.publishRemoteAgentConversationDelete(
+        conversationId: session.id,
+        taskIds: taskIds
+      )
+      sessionNotice = sent
+        ? t("signalasi.agent_sessions.deleted_remote_sent", "Remote cleanup request sent")
+        : t("signalasi.agent_sessions.deleted_remote_failed", "Session deleted; remote cleanup could not be sent")
+    }
+  }
+
+  private func confirmBulkDelete() {
+    let sessions = store.agentSessions(includeArchived: true).filter {
+      selectedSessionIDs.contains($0.id)
+    }
+    guard !sessions.isEmpty else { return }
+    let cleanupRequests = sessions
+      .filter { $0.mergedIntoConversationId.isBlank }
+      .map { session in
+        (
+          conversationId: session.id,
+          taskIds: store.agentTasks(forSession: session.id, limit: 256).map(\.taskId)
+        )
+      }
+    let deletedCount = sessions.reduce(into: 0) { count, session in
+      if store.deleteAgentSession(id: session.id) { count += 1 }
+    }
+    multiDeleteMode = false
+    selectedSessionIDs.removeAll()
+    bulkDeletePresented = false
+    guard deletedCount > 0 else {
+      sessionNotice = t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+      return
+    }
+    sessionNotice = String(
+      format: t(
+        "signalasi.agent_sessions.deleted_selected_pending",
+        "%d sessions deleted; cleaning up the paired Desktop..."
+      ),
+      deletedCount
+    )
+    guard !cleanupRequests.isEmpty else {
+      sessionNotice = String(
+        format: t("signalasi.agent_sessions.deleted_selected", "%d sessions deleted"),
+        deletedCount
+      )
+      return
+    }
+    Task { @MainActor in
+      var failed = 0
+      for request in cleanupRequests {
+        if !await coordinator.publishRemoteAgentConversationDelete(
+          conversationId: request.conversationId,
+          taskIds: request.taskIds
+        ) {
+          failed += 1
+        }
+      }
+      sessionNotice = failed == 0
+        ? t("signalasi.agent_sessions.deleted_selected_sent", "Selected sessions deleted and remote cleanup sent")
+        : t("signalasi.agent_sessions.deleted_selected_failed", "Sessions deleted; some remote cleanup requests failed")
     }
   }
 
@@ -382,7 +691,7 @@ struct SignalASIConversationHubView: View {
         Image(systemName: trailing)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)
-      } else if trailing == "pin.fill" {
+      } else if trailing == "pin.fill" || trailing == "checkmark.circle.fill" || trailing == "circle" {
         Image(systemName: trailing)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)
@@ -532,5 +841,68 @@ enum SignalASIConversationHubModels {
       return "#"
     }
     return first.isASCII && first.isLetter ? String(first).uppercased() : "#"
+  }
+}
+
+private struct SignalASIConversationHubRenameSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var value: String
+  let title: String
+  let onSave: (String) -> Void
+
+  init(title: String, initialValue: String, onSave: @escaping (String) -> Void) {
+    self.title = title
+    self.onSave = onSave
+    _value = State(initialValue: initialValue)
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: title,
+        leading: {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(t("signalasi.common.cancel", "Cancel")))
+        },
+        trailing: {
+          Button {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            onSave(trimmed)
+            dismiss()
+          } label: {
+            Image(systemName: "checkmark")
+              .font(.system(size: 17, weight: .bold))
+              .foregroundColor(.signalASIAccent)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(t("signalasi.common.save", "Save")))
+          .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+      )
+      TextField(t("signalasi.agent_session.name_placeholder", "Session name"), text: $value)
+        .textInputAutocapitalization(.sentences)
+        .autocorrectionDisabled(false)
+        .padding(.horizontal, 12)
+        .frame(height: 46)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(16)
+      Spacer()
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
