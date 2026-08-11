@@ -3250,6 +3250,7 @@
 "message_security_status_subtitle" = "通过 SignalASI Link 端到端会话保护";
 "message_delivery_trace" = "投递轨迹";
 "toast_copied" = "已复制";
+"chat_system_notice" = "系统通知";
 "toast_deleted" = "已删除";
 "signalasi.message.actions_status_detail" = "此消息的操作状态";
 "signalasi.message.cancel_task_subtitle" = "请求已连接的 Agent 停止此任务";
