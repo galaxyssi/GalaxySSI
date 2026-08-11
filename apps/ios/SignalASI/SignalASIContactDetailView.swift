@@ -33,6 +33,7 @@ struct ContactDetailView: View {
           if let contact {
             ContactDetailHeroView(
               contact: contact,
+              displayName: contactDisplayName(contact),
               signalASIId: signalASIId(for: contact),
               statusBadge: deliveryBadge(for: contact)
             )
@@ -443,6 +444,17 @@ struct ContactDetailView: View {
     statusIsError = isError
   }
 
+  private func contactDisplayName(_ contact: SignalASIContact) -> String {
+    switch contact.id {
+    case "system":
+      return t("chat_system_notice", "System Notifications")
+    case "me":
+      return t("chat_me", "Me")
+    default:
+      return contact.displayName
+    }
+  }
+
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
@@ -450,6 +462,7 @@ struct ContactDetailView: View {
 
 private struct ContactDetailHeroView: View {
   var contact: SignalASIContact
+  var displayName: String
   var signalASIId: String
   var statusBadge: String
 
@@ -458,7 +471,7 @@ private struct ContactDetailHeroView: View {
       AvatarView(contact: contact, size: 72)
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
-          Text(contact.displayName)
+          Text(displayName)
             .font(.system(size: 22, weight: .bold))
             .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)

@@ -1041,6 +1041,9 @@
 "signalasi.search.contacts" = "搜索联系人";
 "search_messages_contacts" = "搜索消息或联系人";
 "signalasi.empty.chats" = "暂无匹配聊天";
+"chat_system_notice" = "系统通知";
+"chat_me" = "我";
+"chat_no_messages" = "暂无消息";
 "signalasi.empty.contacts" = "暂无匹配联系人";
 "signalasi.contacts.people" = "联系人";
 "signalasi.contacts.agents" = "Agent";
