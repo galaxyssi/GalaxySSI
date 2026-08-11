@@ -203,6 +203,79 @@ final class SignalASIGlobalResearchRuntimeStore {
   private let formatVersion = 1
 }
 
+struct SignalASIGlobalCognitionDispatchRequest: Equatable {
+  var taskId: String
+  var resourceId: String
+  var transport: GlobalResearchResourceTransport
+  var contactId: String
+  var sourceMessageId: Int64
+  var conversationId: String
+  var turnId: String
+  var systemPrompt: String
+  var prompt: String
+}
+
+struct SignalASIGlobalCognitionExecutionResult: Equatable {
+  var taskId: String
+  var status: GlobalCognitionTaskStatus
+  var resourceId: String
+  var detail: String
+}
+
+enum SignalASIGlobalModelUnderstandingParser {
+  static func parse(_ raw: String) -> GlobalModelUnderstanding? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let start = trimmed.firstIndex(of: "{"),
+          let end = trimmed.lastIndex(of: "}"),
+          start <= end else {
+      return nil
+    }
+    let candidate = String(trimmed[start...end])
+    guard let data = candidate.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) else {
+      return nil
+    }
+    let payload: Any
+    if let dictionary = object as? [String: Any],
+       let nested = dictionary["understanding"] ?? dictionary["result"] {
+      payload = nested
+    } else {
+      payload = object
+    }
+    guard let normalized = normalize(payload),
+          JSONSerialization.isValidJSONObject(normalized),
+          let normalizedData = try? JSONSerialization.data(withJSONObject: normalized) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(GlobalModelUnderstanding.self, from: normalizedData)
+  }
+
+  private static func normalize(_ value: Any) -> Any? {
+    if let dictionary = value as? [String: Any] {
+      return dictionary.reduce(into: [String: Any]()) { result, entry in
+        guard let normalized = normalize(entry.value) else { return }
+        result[camelCase(entry.key)] = normalized
+      }
+    }
+    if let array = value as? [Any] {
+      return array.compactMap { normalize($0) }
+    }
+    if value is NSNull || value is String || value is NSNumber {
+      return value
+    }
+    return nil
+  }
+
+  private static func camelCase(_ value: String) -> String {
+    let parts = value.split(separator: "_")
+    guard let first = parts.first else { return value }
+    return String(first) + parts.dropFirst().map { part in
+      let text = String(part)
+      return text.prefix(1).uppercased() + text.dropFirst()
+    }.joined()
+  }
+}
+
 final class SignalASIGlobalLongHorizonRuntimeStore: GlobalLongHorizonRuntimeStore {
   private var settingsValue: GlobalAgentSettings
   private var worldValue: PersonalWorldModel
@@ -344,6 +417,181 @@ enum SignalASIGlobalAgentRuntimeBridge {
   ) -> GlobalProactiveDiscoveryState {
     SignalASIGlobalProactiveDiscoveryRuntimeStore().makeDue(nowMillis: nowMillis)
   }
+
+  @discardableResult
+  static func processCognitionCycle(
+    store: SignalASIStore,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> SignalASIGlobalCognitionDispatchRequest? {
+    let settings = store.globalAgentSettings
+    guard settings.enabled, settings.modelUnderstandingEnabled else { return nil }
+    let deliberationStore = GlobalAgentDeliberationStore()
+    guard let claimed = deliberationStore.claimCognitionTask(nowMillis: nowMillis) else { return nil }
+    let resource = cognitionResource(
+      from: store,
+      allowCloud: settings.allowCloudCognition,
+      excluding: Set(claimed.attemptedResourceIds)
+    )
+    guard let resource else {
+      _ = deliberationStore.updateCognitionTask(taskId: claimed.id) { current in
+        var waiting = current
+        waiting.status = .waitingForResource
+        waiting.sourceMessageId = 0
+        waiting.leaseExpiresAtMillis = 0
+        waiting.nextAttemptAtMillis = nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(current.attemptCount)
+        waiting.lastError = "No trusted reasoning resource is currently available"
+        waiting.updatedAtMillis = nowMillis
+        return waiting
+      }
+      return nil
+    }
+
+    let sourceMessageId = cognitionCorrelationId(taskId: claimed.id, nowMillis: nowMillis)
+    let running = deliberationStore.updateCognitionTask(taskId: claimed.id) { current in
+      var next = current
+      next.status = .running
+      next.resourceId = resource.id
+      next.sourceMessageId = sourceMessageId
+      next.leaseExpiresAtMillis = nowMillis + GlobalCognitionTaskPolicy.leaseMillis
+      next.lastError = ""
+      next.updatedAtMillis = nowMillis
+      return next
+    } ?? claimed
+    let context = GlobalRealtimeContextProvider(
+      cognitionTasksSource: { [running] }
+    ).build(
+      query: running.sourceEvent.content,
+      currentConversationId: running.sourceEvent.conversationId,
+      maximumItems: 12,
+      maximumCharacters: 12_000,
+      nowMillis: nowMillis
+    )
+    return SignalASIGlobalCognitionDispatchRequest(
+      taskId: running.id,
+      resourceId: resource.id,
+      transport: resource.transport,
+      contactId: resource.contactId,
+      sourceMessageId: sourceMessageId,
+      conversationId: "global-cognition:\(running.id)",
+      turnId: running.id,
+      systemPrompt: cognitionSystemPrompt,
+      prompt: cognitionPrompt(task: running, realtimeContext: context)
+    )
+  }
+
+  @discardableResult
+  static func consumeCognitionResponse(
+    _ response: AgentConnectorResponse,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> SignalASIGlobalCognitionExecutionResult? {
+    let deliberationStore = GlobalAgentDeliberationStore()
+    guard let task = deliberationStore.cognitionTasks().first(where: {
+      $0.status == .running && $0.sourceMessageId == response.sourceMessageId
+    }) else {
+      return nil
+    }
+    guard response.success,
+          let understanding = SignalASIGlobalModelUnderstandingParser.parse(response.content) else {
+      let retry = deliberationStore.updateCognitionTask(taskId: task.id) { current in
+        var next = current
+        next.status = current.attemptCount >= GlobalCognitionTaskPolicy.maxAttempts ? .failed : .waitingForResource
+        next.sourceMessageId = 0
+        next.leaseExpiresAtMillis = 0
+        next.nextAttemptAtMillis = next.status == .failed
+          ? 0
+          : nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(current.attemptCount)
+        next.lastError = response.content.ifBlank("The reasoning result was not valid structured cognition data")
+        next.updatedAtMillis = nowMillis
+        return next
+      }
+      return retry.map {
+        SignalASIGlobalCognitionExecutionResult(
+          taskId: $0.id,
+          status: $0.status,
+          resourceId: $0.resourceId,
+          detail: $0.lastError
+        )
+      }
+    }
+    let completed = deliberationStore.updateCognitionTask(taskId: task.id) { current in
+      var next = current
+      next.status = .completed
+      next.sourceMessageId = 0
+      next.leaseExpiresAtMillis = 0
+      next.nextAttemptAtMillis = 0
+      next.lastError = ""
+      next.result = understanding
+      next.updatedAtMillis = nowMillis
+      return next
+    }
+    return completed.map {
+      SignalASIGlobalCognitionExecutionResult(
+        taskId: $0.id,
+        status: $0.status,
+        resourceId: $0.resourceId.ifBlank(response.contactId),
+        detail: understanding.userInsight.ifBlank(understanding.progressSummary)
+      )
+    }
+  }
+
+  private static func cognitionResource(
+    from store: SignalASIStore,
+    allowCloud: Bool,
+    excluding: Set<String>
+  ) -> GlobalResearchExecutorResource? {
+    let paired = store.visibleContacts.first { contact in
+      !contact.deleted &&
+        contact.trustState == .verified &&
+        contact.deliveryMode.isSignalASILinkFamily &&
+        AgentConnectorAvailability.desktopAgentReady(contact: contact) &&
+        !excluding.contains(contact.id)
+    }
+    if let paired {
+      return GlobalResearchExecutorResource(
+        id: paired.id,
+        transport: .pairedAgent,
+        contactId: paired.id,
+        capabilities: [.reasoning, .chat],
+        displayName: paired.displayName.ifBlank(paired.name)
+      )
+    }
+    guard allowCloud else { return nil }
+    return store.visibleContacts.first { contact in
+      !contact.deleted &&
+        contact.deliveryMode == .cloudAPI &&
+        !excluding.contains(contact.id) &&
+        AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:)))
+    }.map { contact in
+      GlobalResearchExecutorResource(
+        id: contact.id,
+        transport: .cloudModel,
+        contactId: contact.id,
+        capabilities: [.reasoning, .chat],
+        displayName: contact.selectedCloudModel?.displayName.ifBlank(contact.displayName) ?? contact.displayName
+      )
+    }
+  }
+
+  private static func cognitionCorrelationId(taskId: String, nowMillis: Int64) -> Int64 {
+    let hex = String(GlobalAgentText.privateFingerprint("ios-cognition", taskId, String(nowMillis)).prefix(15))
+    return max(Int64(hex, radix: 16) ?? 1, 1)
+  }
+
+  private static func cognitionPrompt(task: GlobalCognitionTask, realtimeContext: String) -> String {
+    let source = task.sourceEvent
+    return """
+    Analyze this authorized global-agent event for durable personal context. Do not include private conversations. Return one JSON object only using camelCase keys matching GlobalModelUnderstanding: topic, project, relatedTopics, intent, entities, goals, tasks, decisions, preferences, risks, opportunities, researchQuestions, goalDependencies, actions, userInsight, goalState, progressSummary, nextCheckHours, confidence.
+
+    Conversation: \(source.conversationTitle)
+    Event: \(source.content)
+    Baseline topic: \(task.baselineUnderstanding.topic)
+    Baseline intent: \(task.baselineIntent)
+    Realtime global context:
+    \(realtimeContext)
+    """
+  }
+
+  private static let cognitionSystemPrompt = "You are SignalASI's structured global cognition engine. Respect privacy boundaries, use only supplied context, and return valid JSON with no markdown."
 
   @discardableResult
   static func processLongHorizonCycle(
