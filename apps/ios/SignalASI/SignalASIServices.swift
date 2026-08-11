@@ -1389,14 +1389,40 @@ final class MessageCoordinator: ObservableObject {
             .ifBlank(agentContact.id)
         )
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        let recentUserMessages = store.agentSessionMessages(outgoing.conversationId)
+          .filter { $0.isMine && !$0.isSystem && $0.id != outgoing.id }
+          .map(\.content)
+        let publicPageRequest = AgentIOSPhonePublicHTMLAttachment.captureRequest(
+          currentRequest: originalRequestText,
+          recentUserMessages: recentUserMessages
+        )
+        let publicPage = await Task.detached(priority: .userInitiated) {
+          AgentIOSPhonePublicHTMLAttachment.prepare(
+            turnId: homeTurnId,
+            currentRequest: publicPageRequest
+          )
+        }.value
+        let remoteAttachments = publicPage.map { effectiveAttachments + [$0.attachment] } ?? effectiveAttachments
+        let remoteRequestText = publicPage.map {
+          requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: $0)
+        } ?? requestText
+        if let publicPage {
+          store.appendDeliveryTrace(
+            outgoing.id,
+            contactId: agentContact.id,
+            stage: "phone_public_page_ready",
+            detail: publicPage.sourceURL,
+            status: .delivered
+          )
+        }
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
           contactId: agentContact.id,
           desktopId: agentContact.desktopId,
           providerId: agentContact.signalASIId,
           title: agentContact.displayName,
-          text: requestText,
-          attachments: effectiveAttachments.map { AgentDataDisclosureAttachment($0) },
+          text: remoteRequestText,
+          attachments: remoteAttachments.map { AgentDataDisclosureAttachment($0) },
           conversationId: outgoing.conversationId,
           taskId: outgoing.id.uuidString,
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1406,10 +1432,10 @@ final class MessageCoordinator: ObservableObject {
         }
         agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
         let disclosureStatus = try await publishLinkMessage(
-          requestText,
+          remoteRequestText,
           contact: agentContact,
           outgoing: outgoing,
-          attachments: effectiveAttachments,
+          attachments: remoteAttachments,
           voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
