@@ -382,7 +382,9 @@ struct ConversationView: View {
     case .cloudAPI:
       return contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(t("signalasi.status.cloud_model", "Cloud model"))
     case .link, .pcConnector:
-      return contact.isCommunicable ? "SignalASI Link" : setupDetail.ifBlank(t("signalasi.status.waiting_pairing", "Waiting for Desktop pairing"))
+      return contact.isCommunicable
+        ? t("chat_link_encrypted", "SignalASI Link encrypted")
+        : setupDetail.ifBlank(t("signalasi.status.waiting_pairing", "Waiting for Desktop pairing"))
     case .local:
       return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
     }
