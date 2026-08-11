@@ -153,6 +153,19 @@ struct SignalASIMessageActionsView: View {
         tint: .blue,
         badge: messageTime
       )
+      if let remoteTask = remoteAgentTask {
+        SignalASISecurityStatusRow(
+          title: t("signalasi.agent_task_details_title", "Agent task"),
+          subtitle: remoteTask.taskId + remoteTaskStepSuffix(remoteTask),
+          systemImage: "cpu",
+          tint: SignalASIRemoteTaskStatusPresentation.tint(remoteTask.status),
+          badge: SignalASIRemoteTaskStatusPresentation.title(
+            remoteTask.status,
+            language: interfaceLanguage
+          ),
+          monospacedSubtitle: true
+        )
+      }
       SignalASISecurityStatusRow(
         title: t("message_security_status", "Security Status"),
         subtitle: securityStatusText,
@@ -223,6 +236,11 @@ struct SignalASIMessageActionsView: View {
       : contact.displayName
   }
 
+  private func remoteTaskStepSuffix(_ task: AgentRemoteTaskStatusSnapshot) -> String {
+    let step = task.currentStep.ifBlank(task.detail)
+    return step.isEmpty ? "" : "\n\(step)"
+  }
+
   private var remoteAgentTask: AgentRemoteTaskStatusSnapshot? {
     let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -231,8 +249,7 @@ struct SignalASIMessageActionsView: View {
     let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
     return coordinator.remoteAgentTaskStatuses.values
       .filter { snapshot in
-        guard snapshot.conversationId == conversationID,
-              !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) else {
+        guard snapshot.conversationId == conversationID else {
           return false
         }
         let turnMatches = !turnID.isEmpty &&
