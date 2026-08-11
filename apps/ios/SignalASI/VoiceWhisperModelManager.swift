@@ -159,7 +159,13 @@ final class VoiceWhisperModelManager {
     storage: VoiceWhisperModelStorage? = nil,
     bundle: Bundle = .main,
     sourceLocale: Locale = .current,
-    networkClass: @escaping () -> VoiceWhisperNetworkClass = { .unknown },
+    networkClass: @escaping () -> VoiceWhisperNetworkClass = {
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      guard probe.networkPresent && probe.internetCapable && probe.validated else {
+        return .offline
+      }
+      return probe.metered || probe.cellular || probe.restricted ? .metered : .wifi
+    },
     availableFreeBytes: (() -> Int64)? = nil,
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
     clockMillis: @escaping () -> Int64 = VoiceWhisperModelManager.defaultClockMillis
@@ -256,7 +262,8 @@ final class VoiceWhisperModelManager {
 
   func enqueue(
     _ model: VoiceWhisperModelProfile,
-    allowsCellularAccess: Bool = true
+    allowsCellularAccess: Bool = true,
+    meteredConfirmed: Bool = false
   ) throws -> VoiceWhisperModelDownloadRequest {
     guard !model.bundled else {
       throw VoiceWhisperModelManagerError.bundledModelDoesNotNeedDownload(model.id)
@@ -264,6 +271,7 @@ final class VoiceWhisperModelManager {
     guard let sourceURL = VoiceWhisperModelCatalog.downloadURL(for: model, locale: sourceLocale) else {
       throw VoiceWhisperModelManagerError.missingDownloadURL(model.id)
     }
+    try enforceDownloadPolicy(for: model, meteredConfirmed: meteredConfirmed)
     if let current = store.record(for: model.id),
        [.pending, .running, .paused].contains(current.status),
        !current.requestId.isEmpty {
@@ -275,7 +283,6 @@ final class VoiceWhisperModelManager {
         createdAtMillis: current.updatedAtMillis
       )
     }
-    try enforceDownloadPolicy(for: model, meteredConfirmed: allowsCellularAccess)
     try prepareDirectory()
     storage.invalidate(model)
     clearNativeFingerprint(for: model.id)
@@ -298,9 +305,14 @@ final class VoiceWhisperModelManager {
 
   func downloadRequests(
     for model: VoiceWhisperModelProfile,
-    allowsCellularAccess: Bool = true
+    allowsCellularAccess: Bool = true,
+    meteredConfirmed: Bool = false
   ) throws -> [VoiceWhisperModelDownloadRequest] {
-    let primary = try enqueue(model, allowsCellularAccess: allowsCellularAccess)
+    let primary = try enqueue(
+      model,
+      allowsCellularAccess: allowsCellularAccess,
+      meteredConfirmed: meteredConfirmed
+    )
     var requests = [primary]
     var seen = Set([primary.sourceURL.absoluteString])
     for sourceURL in downloadSourceURLs(for: model) where seen.insert(sourceURL.absoluteString).inserted {

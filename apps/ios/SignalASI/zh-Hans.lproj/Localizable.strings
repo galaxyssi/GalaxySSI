@@ -1,4 +1,8 @@
 "signalasi.tab.agent" = "Agent";
+"voice_asr_metered_download_title" = "要使用按流量计费的网络下载吗？";
+"voice_asr_metered_download_confirm" = "下载";
+"voice_asr_metered_download_message" = "%@ 是大型模型。通过蜂窝网络或按流量计费的网络下载可能会消耗较多流量。是否继续？";
+"voice_asr_metered_download_required" = "请确认使用按流量计费的网络下载后继续。";
 "cc_audit_empty" = "还没有操作记录";
 "cc_audit_empty_subtitle" = "使用本机工具或 Agent 执行动作后会显示在这里";
 "signalasi.workflow_trigger.title" = "工作流触发器";
