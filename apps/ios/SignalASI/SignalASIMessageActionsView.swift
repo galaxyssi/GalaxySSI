@@ -254,6 +254,7 @@ struct SignalASIMessageActionsView: View {
     case "queued": return t("delivery_trace_queued", "Queued")
     case "sent": return t("delivery_trace_sent", "Sent")
     case "delivered": return t("delivery_trace_delivered", "Delivered")
+    case "read": return t("delivery_trace_read", "Read")
     case "failed": return t("delivery_trace_failed", "Failed")
     case "mqtt_published": return t("delivery_trace_mqtt_published", "Published to MQTT")
     case "publish_failed": return t("delivery_trace_publish_failed", "Publish failed")

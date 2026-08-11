@@ -443,8 +443,25 @@ final class SignalASIStore: ObservableObject {
   func markContactRead(_ contactId: String, at readAt: Date = Date()) -> Int {
     let unreadBefore = conversationSummary(for: contactId).unreadCount
     let previousReadAt = readAtByContact[contactId] ?? .distantPast
-    guard unreadBefore > 0 || readAt > previousReadAt else {
+    guard var messages = messagesByContact[contactId] else {
       return unreadBefore
+    }
+    var changedMessages = false
+    for index in messages.indices where !messages[index].isMine && !messages[index].isSystem {
+      if messages[index].deliveryStatus != .read {
+        messages[index].deliveryStatus = .read
+        changedMessages = true
+      }
+      if !messages[index].deliveryTrace.contains(where: { $0.stage == "read" }) {
+        messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: "read", detail: "chat_opened", createdAt: readAt))
+        changedMessages = true
+      }
+    }
+    guard unreadBefore > 0 || changedMessages else {
+      return unreadBefore
+    }
+    if changedMessages {
+      messagesByContact[contactId] = messages
     }
     readAtByContact[contactId] = max(previousReadAt, readAt)
     save()
