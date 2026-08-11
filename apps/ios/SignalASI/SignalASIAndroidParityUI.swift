@@ -526,6 +526,7 @@ struct AgentHomeView: View {
       }
       .onChange(of: scenePhase) { phase in
         guard phase == .active else { return }
+        coordinator.resumePendingAgentDelivery()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
         coordinator.refreshAgentHomeState()

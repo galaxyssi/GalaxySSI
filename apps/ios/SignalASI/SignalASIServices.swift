@@ -201,7 +201,7 @@ final class MessageCoordinator: ObservableObject {
     self.mqttClient.onConnectionChanged = { [weak self] connected in
       guard connected else { return }
       Task { @MainActor in
-        self?.scheduleOutboxFlush(after: 0)
+        self?.resumePendingAgentDelivery()
         self?.requestConnectorStatuses()
       }
     }
@@ -222,13 +222,17 @@ final class MessageCoordinator: ObservableObject {
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable()
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
-    replayPendingIncoming()
-    replayPendingConnectorResponses()
-    scheduleOutboxFlush(after: 0)
+    resumePendingAgentDelivery()
     startAutomationScheduler()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
       self?.refreshAgentHomeState()
     }
+  }
+
+  func resumePendingAgentDelivery() {
+    replayPendingIncoming()
+    replayPendingConnectorResponses()
+    scheduleOutboxFlush(after: 0)
   }
 
   deinit {
