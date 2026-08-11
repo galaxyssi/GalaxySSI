@@ -23,6 +23,9 @@ struct AvatarView: View {
   }
 
   private var assetName: String? {
+    if contact.type == "device" {
+      return nil
+    }
     let identityFields = [
       contact.id,
       contact.signalASIId,
@@ -43,6 +46,9 @@ struct AvatarView: View {
   }
 
   private var iconName: String {
+    if contact.type == "device" {
+      return "iphone"
+    }
     switch contact.deliveryMode {
     case .cloudAPI: return "cloud"
     case .link, .pcConnector: return "desktopcomputer"
@@ -51,6 +57,9 @@ struct AvatarView: View {
   }
 
   private var color: Color {
+    if contact.type == "device" {
+      return .blue
+    }
     switch contact.deliveryMode {
     case .cloudAPI: return .purple
     case .link, .pcConnector: return .green
