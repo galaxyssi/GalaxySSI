@@ -549,7 +549,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       contentSHA256: hash,
       retrievedAtMillis: retrievedAt,
       expiresAtMillis: retrievedAt + ttl,
-      links: []
+      links: [],
+      metadata: fetchMetadata(webResult.output, content: content)
     )
   }
 
@@ -573,7 +574,30 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["content_sha256"] = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256(["text": .string(text)]))
     output["source_receipts"] = .array([.object(receipt)])
     output["source"] = .object(receipt)
+    output["metadata"] = .object(fetchMetadata(webResult.output, content: text).mapValues { .string($0) })
     return output
+  }
+
+  private func fetchMetadata(_ output: AgentMcpJSONObject, content: String) -> [String: String] {
+    let articleSource = output["article"]?.objectValue?["source_type"]?.stringValue ?? ""
+    return [
+      "fetch_tier": articleSource.isEmpty ? "bounded_public_https" : "mobile_article_https",
+      "challenge_detected": challengeDetected(content).description
+    ]
+  }
+
+  private func challengeDetected(_ content: String) -> Bool {
+    let lower = content.lowercased()
+    return [
+      "verify you are human",
+      "enable javascript",
+      "captcha",
+      "access denied",
+      "checking your browser",
+      "\u{73AF}\u{5883}\u{5F02}\u{5E38}",
+      "\u{8BBF}\u{95EE}\u{8FC7}\u{4E8E}\u{9891}\u{7E41}",
+      "wappoc_appmsgcaptcha"
+    ].contains { lower.contains($0) }
   }
 
   private func searchResults(_ values: [AgentMcpJSONValue], limit: Int) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
