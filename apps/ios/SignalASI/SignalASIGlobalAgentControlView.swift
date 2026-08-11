@@ -561,13 +561,19 @@ struct SignalASIGlobalAgentControlView: View {
       store: store,
       nowMillis: now
     )
+    let discovery = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(
+      store: store,
+      nowMillis: now,
+      force: true,
+      maxTasks: limit
+    )
     Task {
       await coordinator.runAutomationSchedulerCycle()
     }
     refreshRuntime()
     statusMessage = String(
       format: t("cc_global_processed_result", "Processed %d events"),
-      queued + longHorizon.queuedCheckpointCount
+      queued + discovery.queuedTaskCount + longHorizon.queuedCheckpointCount
     )
   }
 

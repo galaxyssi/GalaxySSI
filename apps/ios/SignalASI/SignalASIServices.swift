@@ -247,6 +247,7 @@ final class MessageCoordinator: ObservableObject {
     downloadCompletionCoordinator.deliverPendingCompletions()
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
+    _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
   }
 
   /// Mirrors Android's profile update fan-out for verified person contacts that
