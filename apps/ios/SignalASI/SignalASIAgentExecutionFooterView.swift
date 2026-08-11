@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SignalASIAgentExecutionFooterView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var detailsExpanded = false
 
   var executor: String
@@ -13,10 +14,10 @@ struct SignalASIAgentExecutionFooterView: View {
   var timelineActions: [AgentExecutionLoopTimelineAction] = []
   var timelineActionTitle: (AgentExecutionLoopTimelineAction) -> String = { $0.rawValue }
   var timelineActionIcon: (AgentExecutionLoopTimelineAction) -> String = { _ in "ellipsis" }
-  var timelineActionMenuTitle: String = "Task controls"
+  var timelineActionMenuTitle: String = ""
   var onTimelineAction: (AgentExecutionLoopTimelineAction) -> Void = { _ in }
   var canCancel: Bool = false
-  var cancelTitle: String = "Cancel task"
+  var cancelTitle: String = ""
   var statusTint: Color = .signalASIAccent
   var onCancel: () -> Void = {}
 
@@ -71,12 +72,12 @@ struct SignalASIAgentExecutionFooterView: View {
         HStack(spacing: 8) {
           if canCancel {
             Button(role: .destructive, action: onCancel) {
-              Label(cancelTitle, systemImage: "xmark.circle")
+              Label(resolvedCancelTitle, systemImage: "xmark.circle")
                 .font(.system(size: 10, weight: .semibold))
                 .frame(minHeight: 30)
             }
             .buttonStyle(.bordered)
-            .accessibilityLabel(Text(cancelTitle))
+            .accessibilityLabel(Text(resolvedCancelTitle))
           }
           if !timelineActions.isEmpty {
             Menu {
@@ -93,7 +94,7 @@ struct SignalASIAgentExecutionFooterView: View {
                 .frame(width: 42, height: 30)
             }
             .menuStyle(.borderedButton)
-            .accessibilityLabel(Text(timelineActionMenuTitle))
+            .accessibilityLabel(Text(resolvedTimelineActionMenuTitle))
           }
         }
       }
@@ -111,5 +112,17 @@ struct SignalASIAgentExecutionFooterView: View {
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
       .joined(separator: " · ")
+  }
+
+  private var resolvedCancelTitle: String {
+    cancelTitle.ifBlank(t("signalasi.agent.task_control.cancel", "Cancel task"))
+  }
+
+  private var resolvedTimelineActionMenuTitle: String {
+    timelineActionMenuTitle.ifBlank(t("signalasi.agent.task_control.title", "Task controls"))
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
