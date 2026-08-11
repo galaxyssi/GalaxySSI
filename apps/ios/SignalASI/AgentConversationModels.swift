@@ -820,6 +820,23 @@ struct AgentConversationMergeMutation: Codable, Equatable {
   var entries: [AgentTranscriptEntry]
 }
 
+enum AgentSessionTitlePolicy {
+  static func titleSource(_ content: String) -> String {
+    let clean = content
+      .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard clean.first == "[", let closing = clean.firstIndex(of: "]") else {
+      return clean
+    }
+    let attachmentName = String(clean[clean.index(after: clean.startIndex)..<closing])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let topicStart = clean.index(after: closing)
+    let topic = String(clean[topicStart...])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return topic.ifBlank(attachmentName).ifBlank(clean)
+  }
+}
+
 enum AgentConversationMergePolicy {
   static func stableMergedMessageID(
     targetId: String,
