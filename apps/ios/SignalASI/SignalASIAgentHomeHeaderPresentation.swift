@@ -21,15 +21,27 @@ struct SignalASIAgentHomeHeaderPresentation {
       contacts: contacts,
       language: language
     )
-    let manual = hasManualSelection(selection)
-    let statusKey = manual
-      ? "signalasi.agent.header.routing.manual"
-      : "signalasi.agent.header.routing.auto"
-    let statusFallback = manual ? "Manual · %@" : "Automatic · %@"
-    let modelStatusLabel = String(
-      format: localized(statusKey, fallback: statusFallback, language: language),
-      modelLogoLabel
+    let automaticLabel = localized(
+      "signalasi.agent.model_selection.automatic",
+      fallback: "Auto",
+      language: language
     )
+    let modelStatusLabel: String
+    if hasManualSelection(selection) {
+      // Match Android: a manual choice is already explicit in the selected model name.
+      modelStatusLabel = modelLogoLabel
+    } else if modelLogoLabel.caseInsensitiveCompare(automaticLabel) == .orderedSame {
+      modelStatusLabel = automaticLabel
+    } else {
+      modelStatusLabel = String(
+        format: localized(
+          "signalasi.agent.header.routing.auto",
+          fallback: "Auto · %@",
+          language: language
+        ),
+        modelLogoLabel
+      )
+    }
     return SignalASIAgentHomeHeaderPresentation(
       sessionTitle: sessionTitle(session, language: language),
       modelStatusLabel: modelStatusLabel,
