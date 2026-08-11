@@ -557,7 +557,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             }
             lower.contains("https://") && lower.hasAny("download", "\u4e0b\u8f7d") -> {
                 val url = Regex("https://\\S+", RegexOption.IGNORE_CASE).find(goal)?.value.orEmpty().trimEnd('.', ',', '\u3002')
-                AgentAndroidSystemNativeTools.DOWNLOAD_ENQUEUE to JSONObject().put("url", url).put("title", "SignalASI download")
+                AgentAndroidSystemNativeTools.DOWNLOAD_ENQUEUE to JSONObject().put("url", url)
             }
             else -> return null
         }

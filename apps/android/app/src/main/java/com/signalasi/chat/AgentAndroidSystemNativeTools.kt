@@ -19,6 +19,7 @@ import android.net.Uri
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Environment
 import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.Settings
@@ -600,16 +601,26 @@ object AgentAndroidSystemNativeTools {
         val url = AgentPublicDownloadPolicy.normalizeHttpsUrl(suppliedUrl)
             ?: return failure("invalid_download_url", "A valid public HTTPS download URL is required")
         val uri = Uri.parse(url)
+        val requestedTitle = invocation.text("title", 240)
+        val fileName = AgentAndroidDownloadPolicy.destinationFileName(url, requestedTitle)
+        val relativePath = AgentAndroidDownloadPolicy.relativePath(fileName)
         val request = DownloadManager.Request(uri)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "SignalASI/$fileName")
+            .setTitle(fileName)
         AgentDynamicArticleRequestPolicy.headers(url).forEach(request::addRequestHeader)
-        invocation.text("title", 240).takeIf { it.isNotBlank() }?.let(request::setTitle)
         invocation.text("description", 500).takeIf { it.isNotBlank() }?.let(request::setDescription)
         val id = context.getSystemService(DownloadManager::class.java).enqueue(request)
+        AgentAndroidDownloadCoordinator.track(context, id, invocation, fileName, relativePath)
         return success(
-            mapOf("download_id" to id, "url" to url, "url_normalized" to (url != suppliedUrl.trim())),
+            mapOf(
+                "download_id" to id,
+                "display_name" to fileName,
+                "relative_path" to relativePath,
+                "url_normalized" to (url != suppliedUrl.trim())
+            ),
             "Download started; Android will report completion in the download notification"
         )
     }
