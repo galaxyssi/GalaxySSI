@@ -51,7 +51,7 @@ struct AgentHomeView: View {
   @State var selectedMessageForDetails: ChatMessage?
   @State var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @State var composerFocusRequest = 0
-  @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
+  @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
   @State var voicePendingAttachments: [SignalASIDraftAttachment] = []
@@ -246,7 +246,7 @@ struct AgentHomeView: View {
     )
   }
 
-  private var availableCallableTargetCount: Int {
+  var availableCallableTargetCount: Int {
     callableAgentTargets.filter { AgentConnectorRouteSelector.isDeliverable($0) }.count
   }
 
@@ -335,12 +335,12 @@ struct AgentHomeView: View {
     }
   }
 
-  private var activeExecutionTask: AgentTaskRecord? {
+  var activeExecutionTask: AgentTaskRecord? {
     guard pendingConfirmationTask == nil else { return nil }
     return activeAgentTasks.first
   }
 
-  private var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot? {
+  var activeRemoteAgentTask: AgentRemoteTaskStatusSnapshot? {
     guard let session = activeAgentSession else { return nil }
     return coordinator.remoteAgentTaskStatuses.values
       .filter {
@@ -1194,83 +1194,6 @@ struct AgentHomeView: View {
     )
   }
 
-  private var agentRuntimePanel: some View {
-    SignalASIAgentRuntimePanelView(
-      safetySettings: store.agentSafetySettings,
-      taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
-      modelPlannerSettings: store.modelPlannerSettings,
-      taskBudget: store.agentTaskBudget,
-      callableTargets: availableCallableTargetCount,
-      currentGoal: draft,
-      currentApp: agentScreenSnapshot.screen.foregroundApp
-        .ifBlank(agentScreenSnapshot.screen.pageTitle)
-        .ifBlank("SignalASI iOS"),
-      memorySnapshot: store.agentMemorySnapshot(),
-      knowledgeStats: store.agentKnowledgeStats,
-      knowledgeHitCount: store.agentKnowledgeAccessAudit.count,
-      recentTasks: agentRuntimeTasks,
-      nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
-      auditRecords: agentRuntimeAuditRecords,
-      onCyclePermissionMode: cycleAgentPermissionMode,
-      onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
-      onToggleHighRiskGuard: {
-        store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
-      },
-      onToggleMemoryCapture: {
-        store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
-      },
-      onToggleExecutionPaused: {
-        store.updateAgentSafetySettings { $0.executionPaused.toggle() }
-      },
-      onUpdatePendingAction: { taskId, actionId, description, input in
-        coordinator.updatePendingLocalNativeAction(
-          taskId: taskId,
-          actionId: actionId,
-          description: description,
-          input: input
-        )
-      },
-      onMovePendingAction: { taskId, actionId, offset in
-        coordinator.movePendingLocalNativeAction(
-          taskId: taskId,
-          actionId: actionId,
-          offset: offset
-        )
-      },
-      onRemovePendingAction: { taskId, actionId in
-        coordinator.removePendingLocalNativeAction(
-          taskId: taskId,
-          actionId: actionId
-        )
-      },
-      onTaskAction: handleAgentRuntimeTaskAction,
-      onOpenRecentTasks: {
-        recentTasksShortcutActive = true
-      },
-      t: t
-    )
-  }
-
-  private var agentRuntimeTasks: [AgentTaskRecord] {
-    let sessionID = store.activeAgentConversationId
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !sessionID.isEmpty else {
-      return store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
-    }
-    let scopedTasks = store.agentTasks(forSession: sessionID, limit: 12)
-    if !scopedTasks.isEmpty {
-      return scopedTasks
-    }
-    // Legacy task records may not have a session ID yet.
-    return store.recentAgentTasks(limit: 12).filter(taskBelongsToActiveSession)
-  }
-
-  private var shouldShowAgentRuntimePanel: Bool {
-    activeExecutionTask != nil ||
-      activeRemoteAgentTask != nil ||
-      !agentRuntimeTasks.isEmpty
-  }
-
   func sendAgentMessage(
     voiceAttachmentSnapshot: [SignalASIDraftAttachment]? = nil
   ) {
@@ -1335,7 +1258,7 @@ struct AgentHomeView: View {
     store.updateAgentSafetySettings { $0.permissionMode = modes[(index + 1) % modes.count] }
   }
 
-  private func cycleAgentTaskExecutionMode() {
+  func cycleAgentTaskExecutionMode() {
     let modes = AgentTaskExecutionMode.allCases
     guard let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) else {
       store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
