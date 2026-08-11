@@ -25,6 +25,9 @@ struct SignalASIConversationHubView: View {
   @State private var selectedSessionIDs: Set<String> = []
   @State private var bulkDeletePresented = false
   @State private var sessionNotice = ""
+  @State private var sessionEditDraft: AgentSessionEditDraft?
+  @State private var contextPolicySession: AgentConversation?
+  @State private var detailsSession: AgentConversation?
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -278,6 +281,37 @@ struct SignalASIConversationHubView: View {
         }
       }
     }
+    .sheet(item: $sessionEditDraft) { draft in
+      AgentSessionTextEditSheet(
+        title: draft.sheetTitle,
+        initialText: draft.text,
+        multiline: draft.mode == .summary
+      ) { value in
+        saveSessionDraft(draft, value: value)
+      }
+      .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
+    }
+    .sheet(item: $contextPolicySession) { session in
+      AgentSessionContextPolicySheet(
+        session: session,
+        selectedPolicy: session.contextPolicy,
+        onSelect: { policy in
+          if store.setAgentSessionContextPolicy(id: session.id, policy: policy) {
+            sessionNotice = t("signalasi.agent_sessions.context_updated", "Context policy updated")
+          }
+          contextPolicySession = nil
+        }
+      )
+      .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
+    }
+    .sheet(item: $detailsSession) { session in
+      AgentSessionDetailsSheet(
+        session: store.agentSession(id: session.id) ?? session,
+        metrics: store.agentSessionMetrics(session.id),
+        messages: Array(store.agentSessionMessages(session.id).suffix(8))
+      )
+      .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
+    }
   }
 
   private var contactsContent: some View {
@@ -378,6 +412,11 @@ struct SignalASIConversationHubView: View {
         }
       }
       if session.mergedIntoConversationId.isBlank {
+        Button(session.privateMode
+          ? t("signalasi.agent_session.standard", "Standard session")
+          : t("signalasi.agent_session.private", "Private session")) {
+          _ = store.setAgentSessionPrivateMode(id: session.id, privateMode: !session.privateMode)
+        }
         Button(session.trackingPaused
           ? t("signalasi.agent_session.resume_tracking", "Resume global tracking")
           : t("signalasi.agent_session.pause_tracking", "Pause global tracking")) {
@@ -393,6 +432,20 @@ struct SignalASIConversationHubView: View {
             _ = store.archiveAgentSession(id: session.id)
           }
         }
+      }
+      Button(t("signalasi.agent_session.context_policy", "Context policy")) {
+        contextPolicySession = session
+      }
+      Button(t("signalasi.agent_session.summary", "View or edit summary")) {
+        sessionEditDraft = AgentSessionEditDraft(
+          id: session.id,
+          mode: .summary,
+          sheetTitle: t("signalasi.agent_session.summary", "View or edit summary"),
+          text: session.summary
+        )
+      }
+      Button(t("signalasi.agent_session.details", "Session details")) {
+        detailsSession = session
       }
       Button(t("signalasi.agent_session.delete_more", "Delete more")) {
         multiDeleteMode = true
@@ -583,6 +636,19 @@ struct SignalASIConversationHubView: View {
         ? t("signalasi.agent_sessions.deleted_selected_sent", "Selected sessions deleted and remote cleanup sent")
         : t("signalasi.agent_sessions.deleted_selected_failed", "Sessions deleted; some remote cleanup requests failed")
     }
+  }
+
+  private func saveSessionDraft(_ draft: AgentSessionEditDraft, value: String) {
+    let changed: Bool
+    switch draft.mode {
+    case .rename:
+      changed = store.renameAgentSession(id: draft.id, title: value)
+    case .summary:
+      changed = store.updateAgentSessionSummary(id: draft.id, summary: value)
+    }
+    sessionNotice = changed
+      ? t("signalasi.agent_sessions.updated", "Session updated")
+      : t("signalasi.agent_sessions.update_failed", "Session was not changed")
   }
 
   private func contactRow(_ contact: SignalASIContact) -> some View {
