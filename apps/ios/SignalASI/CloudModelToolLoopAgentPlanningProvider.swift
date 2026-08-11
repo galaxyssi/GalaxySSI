@@ -116,8 +116,10 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   private func safeExecutableSelection(
     for invocation: AgentModelPlanningInvocation
   ) throws -> (registry: AgentNativeToolRegistry, catalog: [AgentNativeToolDescriptor])? {
+    let allowsPhoneRuntimeTools = invocation.request.allowsPhoneRuntimeTools &&
+      AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: invocation.request.planRequest.goal)
     let requestedIds = Set(invocation.nativeTools
-      .filter { Self.isSafePlannerTool($0, allowsPhoneRuntimeTools: invocation.request.allowsPhoneRuntimeTools) }
+      .filter { Self.isSafePlannerTool($0, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools) }
       .map(\.id))
     guard !requestedIds.isEmpty else {
       return nil
@@ -125,7 +127,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
 
     let registry = try toolRegistry.subset { descriptor in
       requestedIds.contains(descriptor.id) &&
-        Self.isSafePlannerTool(descriptor, allowsPhoneRuntimeTools: invocation.request.allowsPhoneRuntimeTools)
+        Self.isSafePlannerTool(descriptor, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools)
     }
     let catalog = registry.descriptors()
     return catalog.isEmpty ? nil : (registry, catalog)
@@ -183,11 +185,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     descriptor.availability.status == .available &&
       descriptor.risk == .low &&
       descriptor.requiredConsents.allSatisfy { !$0.required } &&
-      (allowsPhoneRuntimeTools || !isPhoneRuntimeTool(descriptor.id))
-  }
-
-  private static func isPhoneRuntimeTool(_ id: String) -> Bool {
-    id.hasPrefix("signalasi.runtime.") || id.hasPrefix("signalasi.workspace.")
+      (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
   }
 
   private static func boundedIdentifier(_ value: String, fallback: String) -> String {

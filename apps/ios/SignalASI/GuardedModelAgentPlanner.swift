@@ -95,6 +95,16 @@ struct GuardedModelAgentPlanner {
       )
     }
 
+    guard AgentPhoneRuntimePolicy.acceptsModelPlan(
+      goal: request.planRequest.goal,
+      actions: parsed.actions
+    ) else {
+      return fallback.copyForGuardedPlanner(
+        profile: "rule-based-phone-runtime-rejected",
+        rationale: "The model proposed phone runtime tools outside an eligible on-device task; the deterministic connector route was kept."
+      )
+    }
+
     parsed = AgentActionRiskHardener.enforce(plan: parsed)
     parsed.plannerProfile = "guarded-model:\(modelProfile.prefixStringForGuardedPlanner(80).ifBlankForGuardedPlanner("model"))"
     parsed.routeRationale = "A configured model proposed this plan; all actions were resolved and validated locally."
@@ -108,18 +118,16 @@ struct GuardedModelAgentPlanner {
   private func safeNativeTools(
     for request: AgentModelPlanningPromptRequest
   ) -> [AgentNativeToolDescriptor] {
+    let allowsPhoneRuntimeTools = request.allowsPhoneRuntimeTools &&
+      AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
     request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
-          descriptor.risk == .low &&
-          descriptor.requiredConsents.allSatisfy { !$0.required } &&
-          (request.allowsPhoneRuntimeTools || !Self.isPhoneRuntimeTool(descriptor.id))
+        descriptor.risk == .low &&
+        descriptor.requiredConsents.allSatisfy { !$0.required } &&
+          (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
       }
       .sorted { $0.id < $1.id }
-  }
-
-  private static func isPhoneRuntimeTool(_ id: String) -> Bool {
-    id.hasPrefix("signalasi.runtime.") || id.hasPrefix("signalasi.workspace.")
   }
 
   private func hasSensitivePlannerContext(_ screen: AgentScreenContext) -> Bool {

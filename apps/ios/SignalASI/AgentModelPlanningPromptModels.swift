@@ -34,8 +34,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.globalRealtimeContext = String(globalRealtimeContext.prefix(8_000))
     self.requirements = resolvedRequirements
     self.hasAttachments = resolvedHasAttachments
-    self.allowsPhoneRuntimeTools = allowsPhoneRuntimeTools ??
-      Self.infersPhoneRuntimeTools(goal: planRequest.goal, requirements: resolvedRequirements)
+    self.allowsPhoneRuntimeTools = (allowsPhoneRuntimeTools ?? true) &&
+      AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: planRequest.goal)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -63,22 +63,4 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools)
     )
   }
-
-  private static func infersPhoneRuntimeTools(
-    goal: String,
-    requirements: AgentTaskRequirements
-  ) -> Bool {
-    if !requirements.capabilities.isDisjoint(with: [.code, .taskExecution]) {
-      return true
-    }
-    let normalized = goal.lowercased()
-    return phoneRuntimeTerms.contains { normalized.contains($0) }
-  }
-
-  private static let phoneRuntimeTerms = [
-    "build", "compile", "run tests", "create app", "create file", "zip project", "workspace",
-    "python", "javascript", "swift", "ffmpeg",
-    "\u{7f16}\u{8bd1}", "\u{5f00}\u{53d1}", "\u{8fd0}\u{884c}\u{6d4b}\u{8bd5}",
-    "\u{9879}\u{76ee}", "\u{4ee3}\u{7801}"
-  ]
 }
