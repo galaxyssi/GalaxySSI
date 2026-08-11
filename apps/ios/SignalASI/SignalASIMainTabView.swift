@@ -18,7 +18,7 @@ struct SignalASIMainTabView: View {
   private var selectedContent: some View {
     switch selectedTab {
     case .voice:
-      SignalASIVoiceTabView()
+      SignalASIVoiceTabView(onNavigateToMainTab: { selectedTab = $0 })
     case .agent:
       AgentHomeView(onNavigateToMainTab: { selectedTab = $0 })
     case .messages:
