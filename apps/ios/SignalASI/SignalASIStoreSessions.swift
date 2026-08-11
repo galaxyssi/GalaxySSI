@@ -49,6 +49,34 @@ extension SignalASIStore {
 
   @discardableResult
   func createAgentSession(title: String = "") -> AgentConversation {
+    createAgentSession(
+      title: title,
+      createdByAgent: false,
+      parentConversationId: "",
+      globalTopicKey: ""
+    )
+  }
+
+  @discardableResult
+  func createAgentConversation(
+    title: String,
+    parentConversationId: String = "",
+    globalTopicKey: String = ""
+  ) -> AgentConversation {
+    createAgentSession(
+      title: title,
+      createdByAgent: true,
+      parentConversationId: parentConversationId,
+      globalTopicKey: globalTopicKey
+    )
+  }
+
+  private func createAgentSession(
+    title: String,
+    createdByAgent: Bool,
+    parentConversationId: String,
+    globalTopicKey: String
+  ) -> AgentConversation {
     let now = Self.nowMillis()
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("New session")
@@ -57,10 +85,15 @@ extension SignalASIStore {
       title: cleanTitle,
       createdAt: now,
       updatedAt: now,
-      selectedModelOrAgent: "Automatic"
+      selectedModelOrAgent: "Automatic",
+      createdByAgent: createdByAgent,
+      parentConversationId: parentConversationId.trimmingCharacters(in: .whitespacesAndNewlines),
+      globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines)
     )
     persistAgentConversation(session)
-    activeAgentConversationId = session.id
+    if !createdByAgent {
+      activeAgentConversationId = session.id
+    }
     return session
   }
 
