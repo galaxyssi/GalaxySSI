@@ -2276,6 +2276,12 @@
 "signalasi.local_model.background_runtime_deferred" = "已延后";
 "signalasi.local_model.section_manage" = "模型管理";
 "signalasi.local_model.search_title" = "搜索模型";
+"signalasi.local_model.import_title" = "导入已验证模型";
+"signalasi.local_model.import_subtitle" = "从文件中导入可信的 GGUF 模型";
+"signalasi.local_model.import_action" = "文件";
+"signalasi.local_model.import_verifying" = "正在校验模型文件……";
+"signalasi.local_model.import_success" = "%@ 已导入并启用";
+"signalasi.local_model.import_failed" = "模型导入失败：%@";
 "signalasi.local_model.search_subtitle" = "从可信模型平台查找可下载的 GGUF 模型";
 "signalasi.local_model.search_hint" = "模型名称或仓库";
 "signalasi.local_model.search_action" = "搜索";

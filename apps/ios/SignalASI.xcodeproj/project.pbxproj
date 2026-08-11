@@ -101,6 +101,7 @@
     A10000000000000000001150 /* SignalASIAgentCoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001150 /* SignalASIAgentCoreView.swift */; };
     A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */; };
     A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001041 /* SignalASILocalModelLabView.swift */; };
+    A10000000000000000001768 /* LocalModelVerifiedFileImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001768 /* LocalModelVerifiedFileImporter.swift */; };
     A10000000000000000001050 /* SignalASIAppAdaptersModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */; };
     A10000000000000000001051 /* SignalASIAppAdaptersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001051 /* SignalASIAppAdaptersView.swift */; };
     A10000000000000000001060 /* SignalASIProtocolQualityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001060 /* SignalASIProtocolQualityView.swift */; };
@@ -923,6 +924,7 @@
     A20000000000000000001150 /* SignalASIAgentCoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentCoreView.swift; sourceTree = "<group>"; };
     A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelLabComponents.swift; sourceTree = "<group>"; };
     A20000000000000000001041 /* SignalASILocalModelLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelLabView.swift; sourceTree = "<group>"; };
+    A20000000000000000001768 /* LocalModelVerifiedFileImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelVerifiedFileImporter.swift; sourceTree = "<group>"; };
     A20000000000000000001050 /* SignalASIAppAdaptersModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAppAdaptersModels.swift; sourceTree = "<group>"; };
     A20000000000000000001051 /* SignalASIAppAdaptersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAppAdaptersView.swift; sourceTree = "<group>"; };
     A20000000000000000001060 /* SignalASIProtocolQualityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIProtocolQualityView.swift; sourceTree = "<group>"; };
@@ -2225,6 +2227,7 @@
         A20000000000000000001150 /* SignalASIAgentCoreView.swift */,
         A20000000000000000001040 /* SignalASILocalModelLabComponents.swift */,
         A20000000000000000001041 /* SignalASILocalModelLabView.swift */,
+        A20000000000000000001768 /* LocalModelVerifiedFileImporter.swift */,
         A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */,
         A20000000000000000001520 /* LocalModelCatalog.swift */,
         A20000000000000000001521 /* LocalModelRuntimeStorage.swift */,
@@ -3170,6 +3173,7 @@
         A10000000000000000001150 /* SignalASIAgentCoreView.swift in Sources */,
         A10000000000000000001040 /* SignalASILocalModelLabComponents.swift in Sources */,
         A10000000000000000001041 /* SignalASILocalModelLabView.swift in Sources */,
+        A10000000000000000001768 /* LocalModelVerifiedFileImporter.swift in Sources */,
         A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */,
         A10000000000000000001520 /* LocalModelCatalog.swift in Sources */,
         A10000000000000000001521 /* LocalModelRuntimeStorage.swift in Sources */,
