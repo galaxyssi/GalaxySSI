@@ -573,6 +573,7 @@ struct SignalASIGlobalAgentControlView: View {
     Task { @MainActor in
       _ = await coordinator.runGlobalResearchCycle(nowMillis: now)
       _ = await coordinator.runGlobalCognitionCycle(nowMillis: now)
+      _ = coordinator.runGlobalAutonomousCycle(nowMillis: now)
       refreshRuntime()
     }
     refreshRuntime()

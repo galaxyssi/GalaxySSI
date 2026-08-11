@@ -355,6 +355,7 @@
     A10000000000000000000572 /* GlobalAutonomousReplanPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */; };
     A10000000000000000000574 /* GlobalAgentDeliberationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */; };
     A10000000000000000000850 /* SignalASIGlobalAgentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000850 /* SignalASIGlobalAgentRuntime.swift */; };
+    A10000000000000000000851 /* SignalASIGlobalAutonomousRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000851 /* SignalASIGlobalAutonomousRuntime.swift */; };
     A10000000000000000000576 /* VoiceInteractionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000576 /* VoiceInteractionModels.swift */; };
     A10000000000000000000577 /* VoiceInteractionEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000577 /* VoiceInteractionEvent.swift */; };
     A10000000000000000000578 /* VoiceInteractionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000578 /* VoiceInteractionCommand.swift */; };
@@ -1288,6 +1289,7 @@
     A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousReplanPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDeliberationStore.swift; sourceTree = "<group>"; };
     A20000000000000000000850 /* SignalASIGlobalAgentRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGlobalAgentRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000000851 /* SignalASIGlobalAutonomousRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGlobalAutonomousRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000576 /* VoiceInteractionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000577 /* VoiceInteractionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionEvent.swift; sourceTree = "<group>"; };
     A20000000000000000000578 /* VoiceInteractionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionCommand.swift; sourceTree = "<group>"; };
@@ -1820,6 +1822,7 @@
         A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */,
         A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */,
         A20000000000000000000850 /* SignalASIGlobalAgentRuntime.swift */,
+        A20000000000000000000851 /* SignalASIGlobalAutonomousRuntime.swift */,
         A20000000000000000000502 /* CloudWebGrounding.swift */,
         A20000000000000000000504 /* GlobalProactiveDiscovery.swift */,
         A20000000000000000000506 /* GlobalProactiveDelivery.swift */,
@@ -2701,6 +2704,7 @@
         A10000000000000000000572 /* GlobalAutonomousReplanPolicy.swift in Sources */,
         A10000000000000000000574 /* GlobalAgentDeliberationStore.swift in Sources */,
         A10000000000000000000850 /* SignalASIGlobalAgentRuntime.swift in Sources */,
+        A10000000000000000000851 /* SignalASIGlobalAutonomousRuntime.swift in Sources */,
         A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
         A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */,
         A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */,

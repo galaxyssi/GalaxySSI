@@ -273,10 +273,25 @@ final class MessageCoordinator: ObservableObject {
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
     _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
+    _ = SignalASIGlobalAgentRuntimeBridge.processAutonomousCycle(
+      store: store,
+      toolRegistry: localNativeToolRuntime?.registry
+    )
     Task { @MainActor [weak self] in
       _ = await self?.runGlobalResearchCycle()
       _ = await self?.runGlobalCognitionCycle()
     }
+  }
+
+  @discardableResult
+  func runGlobalAutonomousCycle(
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> Bool {
+    SignalASIGlobalAgentRuntimeBridge.processAutonomousCycle(
+      store: store,
+      toolRegistry: localNativeToolRuntime?.registry,
+      nowMillis: nowMillis
+    ) != nil
   }
 
   @discardableResult
