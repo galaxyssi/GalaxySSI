@@ -2271,6 +2271,9 @@
 "signalasi.local_model.source_modelscope" = "ModelScope";
 "signalasi.local_model.delete_title" = "删除已下载的模型？";
 "signalasi.local_model.delete_action" = "删除";
+"signalasi.local_model.metered_download_title" = "要使用蜂窝数据下载吗？";
+"signalasi.local_model.metered_download_confirm" = "下载";
+"signalasi.local_model.metered_download_message" = "此模型大小为 %@。通过蜂窝网络或按流量计费的网络下载可能会消耗较多流量。";
 "signalasi.local_model.searching" = "正在搜索模型平台...";
 "signalasi.local_model.search_status" = "搜索状态";
 "signalasi.local_model.search_empty" = "没有找到可下载的 GGUF 模型";

@@ -76,6 +76,11 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     errors[artifact.id]
   }
 
+  func requiresMeteredNetworkConfirmation() -> Bool {
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    return probe.metered || probe.cellular
+  }
+
   func start(_ artifact: LocalModelHubArtifact) {
     guard tasks[artifact.id] == nil else { return }
     let profile = LocalModelRuntimeCatalog.addHubArtifact(artifact)
@@ -480,6 +485,8 @@ struct SignalASILocalModelHubArtifactView: View {
   @State private var statusMessage = ""
   @State private var artifactToDelete: LocalModelHubArtifact?
   @State private var showingDeleteConfirmation = false
+  @State private var artifactToStart: LocalModelHubArtifact?
+  @State private var showingMeteredDownloadConfirmation = false
   var model: LocalModelHubSearchResult
 
   var body: some View {
@@ -530,6 +537,24 @@ struct SignalASILocalModelHubArtifactView: View {
         artifactToDelete = nil
       }
     }
+    .alert(
+      t("signalasi.local_model.metered_download_title", "Download over cellular data?"),
+      isPresented: $showingMeteredDownloadConfirmation
+    ) {
+      Button(t("signalasi.local_model.metered_download_confirm", "Download")) {
+        guard let artifact = artifactToStart else { return }
+        startDownload(artifact)
+        artifactToStart = nil
+      }
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        artifactToStart = nil
+      }
+    } message: {
+      Text(String(format: t(
+        "signalasi.local_model.metered_download_message",
+        "This model is %@. Downloading it over cellular or a metered connection may use significant data."
+      ), formatBytes(artifactToStart?.sizeBytes ?? 0)))
+    }
     .task { await loadArtifacts() }
   }
 
@@ -557,14 +582,24 @@ struct SignalASILocalModelHubArtifactView: View {
         artifactToDelete = artifact
         showingDeleteConfirmation = true
       case .notInstalled, .failed, .paused:
-        downloads.start(artifact)
-        statusMessage = downloads.state(for: artifact) == .failed
-          ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
-          : state == .paused
-          ? t("signalasi.local_model.download_resumed", "Download resumed")
-          : t("signalasi.local_model.download_started", "Download started")
+        if downloads.requiresMeteredNetworkConfirmation() {
+          artifactToStart = artifact
+          showingMeteredDownloadConfirmation = true
+        } else {
+          startDownload(artifact)
+        }
       }
     }
+  }
+
+  private func startDownload(_ artifact: LocalModelHubArtifact) {
+    let previousState = downloads.state(for: artifact)
+    downloads.start(artifact)
+    statusMessage = downloads.state(for: artifact) == .failed
+      ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+      : previousState == .paused
+      ? t("signalasi.local_model.download_resumed", "Download resumed")
+      : t("signalasi.local_model.download_started", "Download started")
   }
 
   private func loadArtifacts() async {
