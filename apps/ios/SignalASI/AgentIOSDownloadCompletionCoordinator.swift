@@ -43,12 +43,16 @@ final class AgentIOSDownloadCompletionCoordinator {
     let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
     let succeeded = completion.succeeded
     let content: String
+    let fileName = completion.localFileURL?.lastPathComponent ?? name
+    let relativePath = "SignalASI Downloads/\(fileName)"
     let richOutput: String
     if succeeded {
       content = zh
         ? "\u{4e0b}\u{8f7d}\u{5b8c}\u{6210}\u{ff1a}\(name)\n\u{5df2}\u{4fdd}\u{5b58}\u{5230} SignalASI \u{4e0b}\u{8f7d}\u{3002}"
         : "Download complete: \(name)\nSaved in SignalASI Downloads."
-      richOutput = AgentRichContentCodec.encode([fileBlock(for: completion, name: name)])
+      richOutput = AgentRichContentCodec.encode([
+        fileBlock(for: completion, name: name, relativePath: relativePath)
+      ])
     } else {
       let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
       content = zh
@@ -84,20 +88,25 @@ final class AgentIOSDownloadCompletionCoordinator {
     return recorded.isEmpty ? LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage) : recorded
   }
 
-  private func fileBlock(for completion: AgentIOSDownloadCompletion, name: String) -> AgentRichBlock {
+  private func fileBlock(
+    for completion: AgentIOSDownloadCompletion,
+    name: String,
+    relativePath: String
+  ) -> AgentRichBlock {
     let fileURL = completion.localFileURL
     return AgentRichBlock(
       id: "ios-download:\(completion.id)",
       type: .file,
       title: name,
-      text: humanSize(completion.bytesDownloaded),
+      text: relativePath,
       uri: fileURL?.absoluteString ?? "",
       mimeType: completion.mediaType,
       fallbackText: name,
       metadata: [
         "download_id": String(completion.id),
         "local_download": "true",
-        "relative_path": fileURL?.lastPathComponent ?? "",
+        "relative_path": relativePath,
+        "size": humanSize(completion.bytesDownloaded),
         "saved_to_downloads": "true",
         "size_bytes": String(max(0, completion.bytesDownloaded)),
         "source": "ios_system_download",
