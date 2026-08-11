@@ -994,6 +994,11 @@ final class SignalASIStore: ObservableObject {
     next.desktopId = requestDesktopId
     next.desktopName = request.desktopName
     next.identityFingerprint = request.identityFingerprint
+    next.deviceName = request.deviceName.nonEmpty
+    next.deviceManufacturer = request.deviceManufacturer.nonEmpty
+    next.deviceModel = request.deviceModel.nonEmpty
+    next.devicePlatformVersion = request.devicePlatformVersion.nonEmpty
+    next.deviceProfileName = request.deviceProfileName.nonEmpty
     next.mqttTopic = request.mqttTopic
     next.mqttInboxTopic = request.mqttInboxTopic
     next.signalBundleRef = request.signalBundleRef
@@ -1268,6 +1273,72 @@ final class SignalASIStore: ObservableObject {
       contacts[contactIndex].updatedAt = Date()
     }
     save()
+  }
+
+  @discardableResult
+  func updatePairedDesktopDevice(from payload: [String: Any], link: ServerLink? = nil) -> Bool {
+    let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    guard !desktopId.isEmpty else { return false }
+    let device = payload.dictionary("desktop_device") ?? [:]
+    let defaultName = payload.string("desktop_display_name")
+      .ifBlank(device.string("display_name"))
+      .ifBlank(payload.string("desktop_name"))
+      .ifBlank(link?.desktopName ?? "SignalASI Desktop")
+    let fingerprint = payload.string("desktop_fingerprint")
+      .ifBlank(device.string("identity_fingerprint"))
+      .ifBlank(payload.string("identity_fingerprint"))
+    let now = Date()
+    var contact = contact(id: desktopId) ?? SignalASIContact(
+      id: desktopId,
+      signalASIId: desktopId,
+      name: defaultName,
+      displayName: defaultName,
+      type: "device",
+      agentKind: "device",
+      deliveryMode: .pcConnector,
+      trustState: .verified,
+      desktopId: desktopId,
+      desktopName: defaultName,
+      identityFingerprint: fingerprint,
+      setupStatus: "ready",
+      setupDetail: "SignalASI Link is paired",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    contact.signalASIId = desktopId
+    contact.type = "device"
+    contact.agentKind = "device"
+    contact.deliveryMode = .pcConnector
+    contact.trustState = .verified
+    contact.desktopId = desktopId
+    contact.desktopName = defaultName
+    contact.identityFingerprint = fingerprint
+    contact.deviceName = device.string("device_name").ifBlank(defaultName).nonEmpty
+    contact.deviceManufacturer = device.string("device_manufacturer")
+      .ifBlank(device.string("manufacturer")).nonEmpty
+    contact.deviceModel = device.string("device_model")
+      .ifBlank(device.string("model")).nonEmpty
+    contact.devicePlatformVersion = device.string("platform_version").nonEmpty
+    contact.deviceProfileName = device.string("profile_name").nonEmpty
+    contact.setupStatus = "ready"
+    contact.setupDetail = "SignalASI Link is paired"
+    contact.desktopAccessProfile = payload.string("desktop_access_profile")
+      .ifBlank(link?.accessProfile ?? "").nonEmpty
+    let scopes = payload.stringArray("desktop_access_scopes")
+      .ifEmpty(Array(link?.accessScopes ?? []).sorted())
+    contact.desktopAccessScopes = scopes.isEmpty ? nil : scopes
+    contact.mqttTopic = link?.routes.upTopic
+    contact.mqttInboxTopic = link?.routes.downTopic
+    contact.deleted = false
+    contact.deletedAt = nil
+    contact.updatedAt = now
+    upsert(contact)
+    save()
+    return true
   }
 
   @discardableResult
