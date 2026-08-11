@@ -171,6 +171,13 @@ struct ChatListView: View {
                     ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
                   }
                   .buttonStyle(.plain)
+                  .contextMenu {
+                    Button(role: .destructive) {
+                      contactPendingChatDeletion = contact
+                    } label: {
+                      Label(t("delete_chat_title", "Delete Chat"), systemImage: "trash")
+                    }
+                  }
                   .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
                       contactPendingChatDeletion = contact
