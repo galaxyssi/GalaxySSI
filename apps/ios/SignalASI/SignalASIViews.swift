@@ -120,7 +120,7 @@ struct ChatListView: View {
   var showsBackButton = true
 
   private var filteredContacts: [SignalASIContact] {
-    store.visibleContacts(matching: searchText)
+    store.chatContacts(matching: searchText)
   }
 
   var body: some View {
