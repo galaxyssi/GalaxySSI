@@ -97,10 +97,20 @@ struct AgentHomeView: View {
     let targetId = modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
     if targetId == "local-llm" {
       let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
-      let ready = LocalModelRuntimeSettings.isProfileEnabled(profile) &&
+      let enabled = LocalModelRuntimeSettings.isProfileEnabled(profile)
+      let ready = enabled &&
         LocalModelInferenceRuntime.shared.ready(profile: profile)
       guard !ready else {
         return nil
+      }
+      if enabled && LocalModelWhisperResourceArbiter.shared.asrHasPriority() {
+        return (
+          t("signalasi.agent.route.voice_priority_title", "Voice input has priority"),
+          t(
+            "signalasi.agent.route.voice_priority",
+            "Local Whisper is kept ready for instant voice input. Choose another route or finish voice input before using the local model."
+          )
+        )
       }
       return (
         t("signalasi.agent.route.unavailable_title", "Selected route unavailable"),
