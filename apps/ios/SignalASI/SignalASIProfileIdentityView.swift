@@ -4,6 +4,7 @@ import UIKit
 struct SignalASIProfileIdentityView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var statusMessage = ""
   @State private var showingQRCode = false
   @State private var showingAvatarPicker = false
@@ -112,7 +113,8 @@ struct SignalASIProfileIdentityView: View {
         text: Binding(
           get: { store.profile.name },
           set: { store.updateProfileName($0) }
-        )
+        ),
+        onSubmit: publishProfileUpdate
       )
       SignalASISecurityActionRow(
         title: t("signalasi.profile.avatar", "Profile Photo"),
@@ -167,6 +169,19 @@ struct SignalASIProfileIdentityView: View {
       ) {
         showingQRCode = true
       }
+    }
+  }
+
+  private func publishProfileUpdate() {
+    Task {
+      let delivered = await coordinator.publishProfileUpdates()
+      let saved = t("signalasi.profile.name_saved", "Profile updated")
+      statusMessage = delivered > 0
+        ? String(
+          format: t("signalasi.profile.updated_notified", "Profile updated and shared with %d verified contacts"),
+          delivered
+        )
+        : saved
     }
   }
 
@@ -395,6 +410,7 @@ private struct SignalASIProfileNicknameRow: View {
   var subtitle: String
   var badge: String
   @Binding var text: String
+  var onSubmit: () -> Void = {}
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -410,6 +426,7 @@ private struct SignalASIProfileNicknameRow: View {
         .foregroundColor(.signalASITextPrimary)
         .textInputAutocapitalization(.words)
         .disableAutocorrection(true)
+        .onSubmit { onSubmit() }
         .padding(.horizontal, 12)
         .frame(minHeight: 46)
         .background(Color.signalASISurface)
