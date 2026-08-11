@@ -3261,6 +3261,7 @@
 "delivery_trace_queued" = "已入队";
 "delivery_trace_sent" = "已发送";
 "delivery_trace_delivered" = "已送达";
+"delivery_trace_read" = "已读";
 "delivery_trace_failed" = "失败";
 "delivery_trace_mqtt_published" = "已发布到 MQTT";
 "delivery_trace_publish_failed" = "发布失败";

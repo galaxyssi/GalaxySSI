@@ -519,6 +519,7 @@ enum ChatDeliveryStatus: String, Codable, Equatable {
   case queued
   case sent
   case delivered
+  case read
   case failed
 }
 
@@ -542,6 +543,7 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
     case "queued": return "Queued"
     case "sent": return "Sent"
     case "delivered": return "Delivered"
+    case "read": return "Read"
     case "failed": return "Failed"
     case "mqtt_published": return "Published to MQTT"
     case "publish_failed": return "Publish failed"
