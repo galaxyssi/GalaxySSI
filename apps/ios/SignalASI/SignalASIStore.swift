@@ -1015,6 +1015,7 @@ final class SignalASIStore: ObservableObject {
     next.deviceName = request.deviceName.nonEmpty
     next.deviceManufacturer = request.deviceManufacturer.nonEmpty
     next.deviceModel = request.deviceModel.nonEmpty
+    next.devicePlatform = request.devicePlatform.nonEmpty
     next.devicePlatformVersion = request.devicePlatformVersion.nonEmpty
     next.deviceProfileName = request.deviceProfileName.nonEmpty
     next.deviceHostName = request.deviceHostName.nonEmpty
@@ -1361,6 +1362,8 @@ final class SignalASIStore: ObservableObject {
       .ifBlank(device.string("manufacturer")).nonEmpty
     contact.deviceModel = device.string("device_model")
       .ifBlank(device.string("model")).nonEmpty
+    contact.devicePlatform = SignalASIDesktopDeviceMetadata.from(payload: payload)?.platform.nonEmpty
+      ?? device.string("platform").nonEmpty
     contact.devicePlatformVersion = device.string("platform_version").nonEmpty
     contact.deviceProfileName = device.string("profile_name").nonEmpty
     contact.deviceHostName = SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName.nonEmpty

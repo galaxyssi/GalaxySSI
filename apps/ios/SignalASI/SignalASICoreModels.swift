@@ -105,6 +105,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var deviceName: String? = nil
   var deviceManufacturer: String? = nil
   var deviceModel: String? = nil
+  var devicePlatform: String? = nil
   var devicePlatformVersion: String? = nil
   var deviceProfileName: String? = nil
   var deviceHostName: String? = nil
@@ -248,6 +249,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var deviceName: String
   var deviceManufacturer: String
   var deviceModel: String
+  var devicePlatform: String
   var devicePlatformVersion: String
   var deviceProfileName: String
   var deviceHostName: String
@@ -287,6 +289,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     deviceName: String = "",
     deviceManufacturer: String = "",
     deviceModel: String = "",
+    devicePlatform: String = "",
     devicePlatformVersion: String = "",
     deviceProfileName: String = "",
     deviceHostName: String = "",
@@ -325,6 +328,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.deviceName = deviceName
     self.deviceManufacturer = deviceManufacturer
     self.deviceModel = deviceModel
+    self.devicePlatform = devicePlatform
     self.devicePlatformVersion = devicePlatformVersion
     self.deviceProfileName = deviceProfileName
     self.deviceHostName = deviceHostName
@@ -365,6 +369,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case deviceName = "device_name"
     case deviceManufacturer = "device_manufacturer"
     case deviceModel = "device_model"
+    case devicePlatform = "platform"
     case devicePlatformVersion = "platform_version"
     case deviceProfileName = "profile_name"
     case deviceHostName = "host_name"
@@ -406,6 +411,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
     deviceManufacturer = try container.decodeIfPresent(String.self, forKey: .deviceManufacturer) ?? ""
     deviceModel = try container.decodeIfPresent(String.self, forKey: .deviceModel) ?? ""
+    devicePlatform = try container.decodeIfPresent(String.self, forKey: .devicePlatform) ?? ""
     devicePlatformVersion = try container.decodeIfPresent(String.self, forKey: .devicePlatformVersion) ?? ""
     deviceProfileName = try container.decodeIfPresent(String.self, forKey: .deviceProfileName) ?? ""
     deviceHostName = try container.decodeIfPresent(String.self, forKey: .deviceHostName) ?? ""

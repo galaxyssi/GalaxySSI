@@ -164,6 +164,7 @@ struct ContactDetailView: View {
       contact.deviceName,
       contact.deviceManufacturer,
       contact.deviceModel,
+      contact.devicePlatform,
       contact.devicePlatformVersion,
       contact.deviceProfileName,
       contact.deviceHostName
@@ -190,6 +191,15 @@ struct ContactDetailView: View {
             systemImage: "cpu",
             tint: .teal,
             badge: t("signalasi.contact_detail.hardware", "Hardware")
+          )
+        }
+        if let platform = contact.devicePlatform?.nonEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.platform", "Platform"),
+            subtitle: platform,
+            systemImage: "globe",
+            tint: .teal,
+            badge: t("signalasi.contact_detail.device", "Device")
           )
         }
         if let version = contact.devicePlatformVersion?.nonEmpty {
