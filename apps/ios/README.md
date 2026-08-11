@@ -207,7 +207,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 
 ## Compatibility Note
 
-Android uses libsignal-backed Signal sessions after the encrypted pairing claim is accepted. This iOS foundation keeps the same protocol boundaries and pairing claim format, but the full libsignal Swift bridge still needs to be wired before paired desktop chat can be considered end-to-end encrypted parity.
+Android uses libsignal-backed Signal sessions after the encrypted pairing claim is accepted. iOS now has the matching `LibSignalClient` CocoaPod integration, an encrypted persistent Signal store, bundle exchange, and `prekey`/`signal` MQTT wire adapter. Run CocoaPods from `apps/ios` before building so `canImport(LibSignalClient)` enables the native session path; without the Pod, the app keeps the explicitly labelled legacy preview transport for development compatibility.
 
 ## iOS Version
 

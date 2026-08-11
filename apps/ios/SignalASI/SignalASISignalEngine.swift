@@ -1,0 +1,211 @@
+import CryptoKit
+import Foundation
+
+struct SignalASISignalIdentity {
+  let name: String
+  let fingerprint: String
+  let publicKey: String
+  let bundle: [String: Any]?
+}
+
+#if canImport(LibSignalClient)
+import LibSignalClient
+
+final class SignalASISignalEngine {
+  static let isAvailable = true
+
+  private let store: SignalASISignalProtocolStore
+  private let context = SignalASISignalStoreContext()
+  private let localName: String
+  private let localDeviceId: UInt32 = 1
+
+  init(
+    profileName: String,
+    defaults: UserDefaults = .standard,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
+  ) {
+    store = SignalASISignalProtocolStore(defaults: defaults, secrets: secrets)
+    let fingerprint = Self.sha256(store.identityKeyPair.publicKey.serialize())
+    localName = "signalasi:\(fingerprint.prefix(16))"
+  }
+
+  var identity: SignalASISignalIdentity {
+    let identityKey = store.identityKeyPair.publicKey.serialize()
+    let fingerprint = Self.sha256(identityKey)
+    return SignalASISignalIdentity(
+      name: localName,
+      fingerprint: fingerprint,
+      publicKey: identityKey.base64EncodedString(),
+      bundle: localBundle()
+    )
+  }
+
+  func localBundle() -> [String: Any]? {
+    guard let preKey = try? store.loadPreKey(id: 1, context: context),
+          let signedPreKey = try? store.loadSignedPreKey(id: 1, context: context),
+          let kyberPreKey = try? store.loadKyberPreKey(id: 1, context: context),
+          let preKeyPublic = try? preKey.publicKey(),
+          let signedPreKeyPublic = try? signedPreKey.publicKey(),
+          let kyberPreKeyPublic = try? kyberPreKey.publicKey() else { return nil }
+    let identityKey = store.identityKeyPair.publicKey.serialize()
+    return [
+      "version": 1,
+      "scheme": "signal",
+      "name": localName,
+      "deviceId": localDeviceId,
+      "registrationId": store.registrationId,
+      "identityKey": identityKey.base64EncodedString(),
+      "identityKeySha256": Self.sha256(identityKey),
+      "preKeyId": 1,
+      "preKey": preKeyPublic.serialize().base64EncodedString(),
+      "signedPreKeyId": 1,
+      "signedPreKey": signedPreKeyPublic.serialize().base64EncodedString(),
+      "signedPreKeySignature": signedPreKey.signature.base64EncodedString(),
+      "kyberPreKeyId": 1,
+      "kyberPreKey": kyberPreKeyPublic.serialize().base64EncodedString(),
+      "kyberPreKeySignature": kyberPreKey.signature.base64EncodedString()
+    ]
+  }
+
+  func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool {
+    do {
+      let name = (json["name"] as? String).ifBlank(remoteName)
+      guard !name.isEmpty else { return false }
+      let deviceId = UInt32(json["deviceId"] as? Int ?? 1)
+      let bundle = try PreKeyBundle(
+        registrationId: UInt32(json["registrationId"] as? Int ?? 0),
+        deviceId: deviceId,
+        prekeyId: UInt32(json["preKeyId"] as? Int ?? 1),
+        prekey: try PublicKey(bytes: decode(json.string("preKey"))),
+        signedPrekeyId: UInt32(json["signedPreKeyId"] as? Int ?? 1),
+        signedPrekey: try PublicKey(bytes: decode(json.string("signedPreKey"))),
+        signedPrekeySignature: decode(json.string("signedPreKeySignature")),
+        identity: IdentityKey(bytes: decode(json.string("identityKey"))),
+        kyberPrekeyId: UInt32(json["kyberPreKeyId"] as? Int ?? 1),
+        kyberPrekey: try KEMPublicKey(decode(json.string("kyberPreKey"))),
+        kyberPrekeySignature: decode(json.string("kyberPreKeySignature"))
+      )
+      let address = try ProtocolAddress(name: name, deviceId: deviceId)
+      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+      try processPreKeyBundle(
+        bundle,
+        for: address,
+        ourAddress: localAddress,
+        sessionStore: store,
+        identityStore: store,
+        context: context
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool {
+    store.containsSession(name: remoteName, deviceId: deviceId)
+  }
+
+  func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? {
+    guard hasSession(remoteName: remoteName, deviceId: deviceId),
+          let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
+    do {
+      let address = try ProtocolAddress(name: remoteName, deviceId: deviceId)
+      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+      let message = try signalEncrypt(
+        message: data,
+        for: address,
+        localAddress: localAddress,
+        sessionStore: store,
+        identityStore: store,
+        context: context
+      )
+      return [
+        "version": 1,
+        "scheme": "signal",
+        "from": localName,
+        "to": remoteName,
+        "device_id": deviceId,
+        "signal_type": message.messageType == .preKey ? "prekey" : "signal",
+        "message_type": Int(message.messageType.rawValue),
+        "body": message.serialize().base64EncodedString(),
+        "time": Int64(Date().timeIntervalSince1970 * 1_000)
+      ]
+    } catch {
+      return nil
+    }
+  }
+
+  func decrypt(_ envelope: [String: Any]) -> [String: Any]? {
+    guard envelope.string("scheme") == "signal",
+          let from = envelope["from"] as? String,
+          !from.isEmpty,
+          let body = Data(base64Encoded: envelope.string("body")) else { return nil }
+    do {
+      let remoteAddress = try ProtocolAddress(name: from, deviceId: UInt32(envelope["device_id"] as? Int ?? 1))
+      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+      let type = envelope.string("signal_type")
+      let plaintext: Data
+      if type == "prekey" || (envelope["message_type"] as? Int) == Int(CiphertextMessage.MessageType.preKey.rawValue) {
+        plaintext = try signalDecryptPreKey(
+          message: PreKeySignalMessage(bytes: body),
+          from: remoteAddress,
+          localAddress: localAddress,
+          sessionStore: store,
+          identityStore: store,
+          preKeyStore: store,
+          signedPreKeyStore: store,
+          kyberPreKeyStore: store,
+          context: context
+        )
+      } else {
+        plaintext = try signalDecrypt(
+          message: SignalMessage(bytes: body),
+          from: remoteAddress,
+          to: localAddress,
+          sessionStore: store,
+          identityStore: store,
+          context: context
+        )
+      }
+      return try JSONSerialization.jsonObject(with: plaintext) as? [String: Any]
+    } catch {
+      return nil
+    }
+  }
+
+  private func decode(_ value: String) throws -> Data {
+    guard let data = Data(base64Encoded: value), !data.isEmpty else {
+      throw SignalASIError.invalidPayload("Invalid Signal bundle encoding")
+    }
+    return data
+  }
+
+  private static func sha256(_ data: Data) -> String {
+    Data(CryptoKit.SHA256.hash(data: data)).map { String(format: "%02x", $0) }.joined()
+  }
+}
+#else
+final class SignalASISignalEngine {
+  static let isAvailable = false
+  init(profileName: String, defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {}
+  var identity: SignalASISignalIdentity { SignalASISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
+  func localBundle() -> [String: Any]? { nil }
+  func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool { false }
+  func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
+  func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
+  func decrypt(_ envelope: [String: Any]) -> [String: Any]? { nil }
+}
+#endif
+
+private extension String? {
+  func ifBlank(_ fallback: String) -> String {
+    guard let value = self?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return fallback }
+    return value
+  }
+}
+
+private extension Dictionary where Key == String, Value == Any {
+  func string(_ key: String) -> String {
+    (self[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  }
+}
