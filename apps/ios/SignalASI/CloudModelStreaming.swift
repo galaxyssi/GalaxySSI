@@ -64,22 +64,47 @@ struct ModelStreamRequest: Codable, Equatable {
   }
 }
 
+enum ToolCallArgumentsMode: String, Codable, Equatable {
+  case delta
+  case snapshot
+}
+
 struct ToolCallPayload: Codable, Equatable {
   var callId: String
   var index: Int
   var nameDelta: String
   var argumentsDelta: String
+  var argumentsMode: ToolCallArgumentsMode
+
+  private enum CodingKeys: String, CodingKey {
+    case callId
+    case index
+    case nameDelta
+    case argumentsDelta
+    case argumentsMode
+  }
 
   init(
     callId: String,
     index: Int,
     nameDelta: String = "",
-    argumentsDelta: String = ""
+    argumentsDelta: String = "",
+    argumentsMode: ToolCallArgumentsMode = .delta
   ) {
     self.callId = callId
     self.index = index
     self.nameDelta = nameDelta
     self.argumentsDelta = argumentsDelta
+    self.argumentsMode = argumentsMode
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    callId = try container.decode(String.self, forKey: .callId)
+    index = try container.decode(Int.self, forKey: .index)
+    nameDelta = try container.decodeIfPresent(String.self, forKey: .nameDelta) ?? ""
+    argumentsDelta = try container.decodeIfPresent(String.self, forKey: .argumentsDelta) ?? ""
+    argumentsMode = try container.decodeIfPresent(ToolCallArgumentsMode.self, forKey: .argumentsMode) ?? .delta
   }
 }
 
@@ -211,8 +236,8 @@ final class ToolCallDeltaAssembler {
          !payload.callId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         call.callId = payload.callId
       }
-      appendNonRepeated(target: call.name, delta: payload.nameDelta)
-      appendNonRepeated(target: call.arguments, delta: payload.argumentsDelta)
+      appendName(target: call.name, delta: payload.nameDelta)
+      appendArguments(target: call.arguments, value: payload.argumentsDelta, mode: payload.argumentsMode)
     }
   }
 
@@ -239,7 +264,7 @@ final class ToolCallDeltaAssembler {
     }
   }
 
-  private func appendNonRepeated(target: NSMutableString, delta: String) {
+  private func appendName(target: NSMutableString, delta: String) {
     guard !delta.isEmpty else { return }
     let current = target as String
     if current.isEmpty {
@@ -250,6 +275,19 @@ final class ToolCallDeltaAssembler {
       target.setString(delta)
     } else {
       target.append(delta)
+    }
+  }
+
+  private func appendArguments(
+    target: NSMutableString,
+    value: String,
+    mode: ToolCallArgumentsMode
+  ) {
+    guard !value.isEmpty else { return }
+    if mode == .snapshot {
+      target.setString(value)
+    } else {
+      appendName(target: target, delta: value)
     }
   }
 
