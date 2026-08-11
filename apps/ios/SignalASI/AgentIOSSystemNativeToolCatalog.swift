@@ -177,8 +177,8 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       telephonyDialHandoff,
-      "Open Android dialer",
-      "Android dialer handoff descriptor retained for planning; iOS needs a separate user-visible tel URL executor.",
+      "Open iOS dialer",
+      "Prepares a user-visible iOS telephone handoff. The user reviews the number before placing a call.",
       .medium,
       ["telephony.dial_handoff"],
       inputSchema: input(["phone_number": stringSchema(maxLength: 64)], required: ["phone_number"])
@@ -195,7 +195,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       smsSend,
       "Send SMS message",
-      "Prepares a user-visible iOS Messages compose handoff for the Android direct SMS send tool; iOS requires the user to review and send.",
+      "Prepares a user-visible iOS Messages compose handoff. The user reviews and sends the message.",
       .high,
       ["sms.send"],
       ["android.permission.SEND_SMS"],
@@ -212,7 +212,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       contactsSearch,
-      "Search Android contacts",
+      "Search iOS contacts",
       "Searches iOS Contacts phone numbers after the app-visible Contacts permission gate.",
       .low,
       ["contacts.read"],
@@ -221,7 +221,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       contactsUpsert,
-      "Create or update Android contact",
+      "Create or update iOS contact",
       "Creates or updates one iOS Contacts record after the Contacts permission and explicit consent gates.",
       .high,
       ["contacts.write"],
@@ -235,8 +235,8 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       contactsDelete,
-      "Delete Android contact",
-      "Deletes one iOS Contacts record selected by the stable Android-compatible contact id.",
+      "Delete iOS contact",
+      "Deletes one iOS Contacts record selected by its stable contact id.",
       .high,
       ["contacts.delete"],
       ["android.permission.WRITE_CONTACTS"],
@@ -245,7 +245,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       calendarsList,
-      "List Android calendars",
+      "List iOS calendars",
       "Lists iOS EventKit calendars after the app-visible Calendar permission gate.",
       .low,
       ["calendar.read"],
@@ -253,7 +253,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       calendarEventsQuery,
-      "Query Android calendar events",
+      "Query iOS calendar events",
       "Queries iOS EventKit calendar events in a bounded time range after the Calendar permission gate.",
       .low,
       ["calendar.read"],
@@ -286,7 +286,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       calendarEventDelete,
       "Delete calendar event",
-      "Deletes one iOS EventKit calendar event selected by the stable Android-compatible event id.",
+      "Deletes one iOS EventKit calendar event selected by its stable event id.",
       .high,
       ["calendar.delete"],
       ["android.permission.WRITE_CALENDAR"],
@@ -320,15 +320,15 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       wifiPanelOpen,
-      "Open Internet panel",
-      "Android Internet panel descriptor retained for planning; iOS requires a separate Settings handoff executor.",
+      "Open Wi-Fi settings",
+      "Prepares a user-visible iOS Settings handoff for Wi-Fi connectivity.",
       .medium,
       ["wifi.settings_handoff"]
     ),
     spec(
       wifiHotspotPanelOpen,
-      "Open hotspot settings",
-      "Android hotspot settings descriptor retained for planning; iOS personal hotspot settings are not exposed as the same Android panel.",
+      "Open Personal Hotspot settings",
+      "Prepares a user-visible iOS Settings handoff for Personal Hotspot settings.",
       .medium,
       ["wifi.hotspot.settings_handoff"]
     ),
@@ -341,7 +341,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       audioVolumeSet,
-      "Set Android stream volume",
+      "Request audio volume change",
       "Returns a structured iOS audio-control boundary result; iOS cannot set global system stream volumes directly.",
       .medium,
       ["audio.volume"],
@@ -351,7 +351,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       audioMuteSet,
-      "Set Android stream mute",
+      "Request audio mute change",
       "Returns a structured iOS audio-control boundary result; iOS cannot mute arbitrary global audio streams directly.",
       .medium,
       ["audio.mute"],
@@ -361,7 +361,7 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       downloadEnqueue,
-      "Enqueue Android download",
+      "Enqueue app-managed download",
       "Enqueues one public HTTPS download through the iOS app-managed URLSession download store.",
       .medium,
       ["download.enqueue"],
@@ -371,15 +371,15 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       downloadQuery,
-      "Query Android download",
-      "Queries one app-managed iOS URLSession download record using Android DownloadManager-compatible fields.",
+      "Query app-managed download",
+      "Queries one app-managed iOS URLSession download record using stable cross-platform fields.",
       .low,
       ["download.query"],
       inputSchema: input(["download_id": integerSchema(minimum: 1)], required: ["download_id"])
     ),
     spec(
       downloadRemove,
-      "Remove Android download",
+      "Remove app-managed download",
       "Cancels or removes one app-managed iOS download record and its cached file.",
       .high,
       ["download.remove"],
@@ -398,7 +398,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       biometricEnrollmentOpen,
       "Open biometric enrollment",
-      "Android biometric enrollment descriptor retained for planning; iOS can only hand off to allowed Settings surfaces through a separate executor.",
+      "Prepares a user-visible iOS Settings handoff for Face ID, Touch ID, or passcode enrollment.",
       .medium,
       ["biometric.enrollment_handoff"]
     ),
@@ -411,8 +411,8 @@ enum AgentIOSSystemNativeToolCatalog {
     ),
     spec(
       vpnConsentOpen,
-      "Request Android VPN consent",
-      "Android VPN consent descriptor retained for planning; iOS requires Network Extension entitlements and a separate setup flow.",
+      "Open VPN settings",
+      "Prepares a user-visible iOS Settings handoff for VPN configuration review.",
       .medium,
       ["vpn.consent_handoff"]
     ),
@@ -665,14 +665,14 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     let platform = AgentNativePermissionRequirement(
       id: androidSystemPermission,
-      title: "Android system API",
-      description: "This Android framework tool is cataloged for planning but is unavailable inside the iOS 15+ app sandbox."
+      title: "Cross-platform system compatibility",
+      description: "This cross-platform wire tool is fulfilled by its bounded iOS executor or user-visible handoff when available."
     )
     let mirrored = specification.permissions.map { permission in
       AgentNativePermissionRequirement(
         id: permission,
         title: permission.replacingOccurrences(of: "android.permission.", with: ""),
-        description: "Android permission mirrored from AgentAndroidSystemNativeTools for cross-platform policy decisions."
+        description: "Cross-platform permission metadata retained for policy decisions."
       )
     }
     return ([platform] + mirrored).sorted { $0.id < $1.id }
@@ -681,7 +681,7 @@ enum AgentIOSSystemNativeToolCatalog {
   private static func consentRequirements(_ specification: Specification) -> [AgentNativeConsentRequirement] {
     let compatibility = AgentNativeConsentRequirement(
       id: compatibilityConsent,
-      title: "Android compatibility boundary",
+      title: "Cross-platform compatibility adaptation",
       description: compatibilityConsentDescription(specification.id),
       required: false
     )
@@ -689,7 +689,7 @@ enum AgentIOSSystemNativeToolCatalog {
       AgentNativeConsentRequirement(
         id: consent,
         title: consent.replacingOccurrences(of: "signalasi.consent.", with: "").replacingOccurrences(of: "_", with: " "),
-        description: "Android consent requirement mirrored for cross-platform policy decisions."
+        description: "Cross-platform consent metadata retained for policy decisions."
       )
     }
     return ([compatibility] + mirrored).sorted { $0.id < $1.id }
