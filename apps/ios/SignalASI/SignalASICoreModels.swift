@@ -821,16 +821,67 @@ enum WakeWordPolicy {
   static let configuredWords = [wakeWord]
 
   static func matches(_ transcript: String) -> Bool {
-    transcript
-      .lowercased(with: Locale(identifier: "en_US_POSIX"))
-      .split(whereSeparator: { !isWakeLetter($0) })
-      .contains { String($0) == wakeWord }
+    matches(transcript, wakeWords: configuredWords)
   }
 
-  private static func isWakeLetter(_ character: Character) -> Bool {
-    character.unicodeScalars.allSatisfy { scalar in
-      scalar.value >= 97 && scalar.value <= 122
+  static func matches(_ transcript: String, wakeWords: [String]) -> Bool {
+    commandText(from: transcript, removing: wakeWords) != nil
+  }
+
+  /// Returns the spoken command after removing the configured wake phrase.
+  static func commandText(from transcript: String, removing wakeWords: [String]) -> String? {
+    let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedTranscript.isEmpty else { return nil }
+
+    for wakeWord in normalizedWords(wakeWords) {
+      guard let range = trimmedTranscript.range(
+        of: wakeWord,
+        options: [.caseInsensitive, .diacriticInsensitive],
+        range: nil,
+        locale: Locale.current
+      ) else {
+        continue
+      }
+      guard !requiresWordBoundaries(wakeWord) ||
+        hasPhraseBoundaries(in: trimmedTranscript, range: range) else {
+        continue
+      }
+      let command = (String(trimmedTranscript[..<range.lowerBound]) +
+        String(trimmedTranscript[range.upperBound...]))
+        .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+      return command.isEmpty ? "" : command
     }
+    return nil
+  }
+
+  private static func normalizedWords(_ words: [String]) -> [String] {
+    words
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .sorted { $0.count > $1.count }
+  }
+
+  private static func hasPhraseBoundaries(
+    in transcript: String,
+    range: Range<String.Index>
+  ) -> Bool {
+    let beforeIsWord = range.lowerBound > transcript.startIndex &&
+      isLetterOrNumber(transcript[transcript.index(before: range.lowerBound)])
+    let afterIsWord = range.upperBound < transcript.endIndex &&
+      isLetterOrNumber(transcript[range.upperBound])
+    return !beforeIsWord && !afterIsWord
+  }
+
+  private static func requiresWordBoundaries(_ phrase: String) -> Bool {
+    phrase.unicodeScalars.allSatisfy { scalar in
+      (scalar.value >= 48 && scalar.value <= 57) ||
+        (scalar.value >= 65 && scalar.value <= 90) ||
+        (scalar.value >= 97 && scalar.value <= 122)
+    }
+  }
+
+  private static func isLetterOrNumber(_ character: Character) -> Bool {
+    character.isLetter || character.isNumber
   }
 }
 
