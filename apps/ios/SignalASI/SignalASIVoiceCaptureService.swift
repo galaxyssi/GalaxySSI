@@ -1,0 +1,422 @@
+import AVFoundation
+import Foundation
+import Speech
+import SwiftUI
+
+private enum SpeechCaptureServiceError: LocalizedError {
+  case recognizerUnavailable
+  case requestUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .recognizerUnavailable:
+      return "Speech recognition is unavailable for this locale."
+    case .requestUnavailable:
+      return "Speech recognition could not start a capture request."
+    }
+  }
+}
+
+private enum SpeechCaptureLiveWhisperFinalizationError: LocalizedError {
+  case sessionUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .sessionUnavailable:
+      return "Live Whisper session is unavailable for final transcription."
+    }
+  }
+}
+
+final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
+  @Published private(set) var transcript = ""
+  @Published private(set) var isRecording = false
+  private(set) var stableTranscript = ""
+  private(set) var unstableTranscript = ""
+  var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?
+
+  private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
+  private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
+  private let liveWhisperController: VoiceLiveWhisperCaptureController
+  private let audioEngine = AVAudioEngine()
+  private let audioLevelLock = NSLock()
+  private var request: SFSpeechAudioBufferRecognitionRequest?
+  private var task: SFSpeechRecognitionTask?
+  private var recognizer: SFSpeechRecognizer?
+  private var currentRecognitionModelProfileId = ""
+  private var currentIOSSpeechTranscript = ""
+  private var currentRuntimeChannel = VoiceRuntimeChannel.androidSystemASR
+  private var pcmTapPipeline: VoicePcmTapPipeline?
+  private var pcmTapSpeechStarted = false
+  private var pcmTapSpeechEnded = false
+  private var pcmTapEndpointRequested = false
+  private var liveWhisperActive = false
+  private var latestAudioLevel: Float = 0
+
+  var currentAudioLevel: Float {
+    audioLevelLock.lock()
+    defer { audioLevelLock.unlock() }
+    return latestAudioLevel
+  }
+
+  init(
+    coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge(),
+    liveWhisperScheduler: VoiceWhisperDecodeScheduling? = nil,
+    liveWhisperController: VoiceLiveWhisperCaptureController? = nil
+  ) {
+    self.coordinatorBridge = coordinatorBridge
+    self.liveWhisperScheduler = liveWhisperScheduler ??
+      VoiceWhisperRuntimeDecodeSchedulerAdapter(runtime: DefaultVoiceLocalWhisperRuntime()).makeScheduler()
+    self.liveWhisperController = liveWhisperController ??
+      VoiceLiveWhisperCaptureController(
+        coordinatorBridge: VoiceLiveWhisperCoordinatorBridge(coordinatorBridge: coordinatorBridge)
+      )
+    super.init()
+    self.liveWhisperController.setUpdateHandler { [weak self] update in
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self, self.liveWhisperActive else { return }
+        self.stableTranscript = update.transcript.stableText
+        self.unstableTranscript = update.transcript.unstableText
+        let displayText = update.transcript.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.transcript = displayText
+      }
+    }
+    self.liveWhisperController.setTransitionHandler { [weak self] transition in
+      DispatchQueue.main.async { [weak self] in
+        self?.emitCommands(transition)
+      }
+    }
+  }
+
+  func requestAuthorization(localeIdentifier: String) async -> Bool {
+    recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
+    let speechGranted = await withCheckedContinuation { continuation in
+      SFSpeechRecognizer.requestAuthorization { status in
+        continuation.resume(returning: status == .authorized)
+      }
+    }
+    let micGranted = await AVAudioSession.sharedInstance().requestRecordPermission()
+    return speechGranted && micGranted
+  }
+
+  @MainActor
+  func start(localeIdentifier: String) throws {
+    try start(localeIdentifier: localeIdentifier, settings: nil, coordinatorConfig: nil)
+  }
+
+  @MainActor
+  func start(settings: VoiceSettings, source: String = "ios_hold_to_talk") throws {
+    let normalized = settings.normalized
+    try start(
+      localeIdentifier: normalized.preferredLocaleIdentifier,
+      settings: normalized,
+      coordinatorConfig: VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
+    )
+  }
+
+  @MainActor
+  private func start(
+    localeIdentifier: String,
+    settings: VoiceSettings?,
+    coordinatorConfig: VoiceSessionConfig?
+  ) throws {
+    if let coordinatorConfig = coordinatorConfig {
+      coordinatorBridge.begin(config: coordinatorConfig)
+    }
+    recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
+    guard let recognizer = recognizer else {
+      let error = SpeechCaptureServiceError.recognizerUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_recognizer_unavailable", detail: error.localizedDescription)
+      }
+      throw error
+    }
+    transcript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
+    currentIOSSpeechTranscript = ""
+    updateAudioLevel(0)
+    currentRecognitionModelProfileId = localeIdentifier
+    request = SFSpeechAudioBufferRecognitionRequest()
+    guard let request = request else {
+      let error = SpeechCaptureServiceError.requestUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_request_unavailable", detail: error.localizedDescription)
+      }
+      throw error
+    }
+    request.shouldReportPartialResults = true
+    let input = audioEngine.inputNode
+    let format = input.outputFormat(forBus: 0)
+    let pcmCaptureEnabled = coordinatorConfig != nil && VoiceFeatureFlags.isPcmCaptureEnabled()
+    if pcmCaptureEnabled {
+      pcmTapPipeline = VoicePcmTapPipeline(
+        config: VoiceAudioSessionConfig(
+          capture: PcmCaptureConfig(sampleRateHz: max(1, Int(format.sampleRate.rounded()))),
+          endpoint: AdaptiveEndpointConfig(),
+          autoEndpoint: coordinatorConfig?.source.localizedCaseInsensitiveContains("wake") == true
+        )
+      )
+    } else {
+      pcmTapPipeline = nil
+    }
+    pcmTapSpeechStarted = false
+    pcmTapSpeechEnded = false
+    pcmTapEndpointRequested = false
+    liveWhisperActive = false
+    let voiceSessionId = coordinatorBridge.sessionId()
+    if let settings = settings,
+       pcmCaptureEnabled,
+       settings.asrProvider == .localWhisperCpp,
+       !voiceSessionId.isEmpty {
+      liveWhisperActive = liveWhisperController.start(
+        voiceSessionId: voiceSessionId,
+        settings: settings,
+        scheduler: liveWhisperScheduler,
+        queue: liveWhisperScheduler.queueSnapshot()
+      )
+    }
+    input.removeTap(onBus: 0)
+    input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+      request.append(buffer)
+      self?.processPcmTap(buffer)
+    }
+    currentRuntimeChannel = settings?.asrProvider == .localWhisperCpp ? .localWhisperASR : .androidSystemASR
+    VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
+    do {
+      try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
+      try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+      audioEngine.prepare()
+      try audioEngine.start()
+    } catch {
+      VoiceRuntimeHealthRegistry.failure(currentRuntimeChannel, reason: error.localizedDescription)
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
+      }
+      throw error
+    }
+    isRecording = true
+    if coordinatorConfig != nil {
+      coordinatorBridge.capturePrepared()
+      if pcmTapPipeline == nil {
+        coordinatorBridge.speechStarted()
+      }
+    }
+    task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        if let result = result {
+          let text = result.bestTranscription.formattedString
+          self.currentIOSSpeechTranscript = text
+          if !self.liveWhisperActive {
+            self.transcript = text
+          }
+          if result.isFinal {
+            if !self.liveWhisperActive {
+              self.stableTranscript = text
+              self.unstableTranscript = ""
+              self.emitCommands(
+                self.coordinatorBridge.finishWithBestTranscript(
+                  text,
+                  provider: iosSpeechProviderId,
+                  modelProfileId: self.currentRecognitionModelProfileId
+                )
+              )
+            }
+          } else {
+            if !self.liveWhisperActive {
+              let transition = self.coordinatorBridge.transcriptPartial(
+                text,
+                provider: iosSpeechProviderId,
+                modelProfileId: self.currentRecognitionModelProfileId
+              )
+              self.stableTranscript = transition.current.stableText
+              self.unstableTranscript = transition.current.partialText
+            }
+          }
+        }
+        if let error = error, self.isRecording {
+          if self.liveWhisperActive {
+            VoiceRuntimeHealthRegistry.failure(.androidSystemASR, reason: error.localizedDescription)
+          } else {
+            VoiceRuntimeHealthRegistry.failure(self.currentRuntimeChannel, reason: error.localizedDescription)
+            self.coordinatorBridge.failCurrent(
+              code: "ios_speech_capture_failed",
+              detail: error.localizedDescription
+            )
+          }
+        } else if result?.isFinal == true, !self.liveWhisperActive {
+          VoiceRuntimeHealthRegistry.success(self.currentRuntimeChannel)
+        }
+        if (error != nil || result?.isFinal == true), !self.liveWhisperActive {
+          Task { @MainActor in self.stop() }
+        }
+      }
+    }
+  }
+
+  @MainActor
+  func stop() {
+    let wasRecording = isRecording
+    let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
+    let fallbackModelProfileId = currentRecognitionModelProfileId
+    let runtimeChannel = currentRuntimeChannel
+    let liveFinalSnapshot = wasRecording && liveWhisperActive ? pcmTapPipeline?.snapshot() : nil
+    let shouldRunLiveFinal = liveFinalSnapshot?.samples.isEmpty == false
+    isRecording = false
+    if wasRecording, !shouldRunLiveFinal {
+      emitCommands(
+        coordinatorBridge.finishStoppedCapture(
+          transcript: fallbackTranscript,
+          provider: iosSpeechProviderId,
+          modelProfileId: fallbackModelProfileId
+        )
+      )
+    } else if wasRecording {
+      coordinatorBridge.finalizationStarted()
+    }
+    audioEngine.stop()
+    audioEngine.inputNode.removeTap(onBus: 0)
+    request?.endAudio()
+    task?.cancel()
+    task = nil
+    request = nil
+    currentRecognitionModelProfileId = ""
+    currentIOSSpeechTranscript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
+    updateAudioLevel(0)
+    pcmTapPipeline = nil
+    pcmTapSpeechStarted = false
+    pcmTapSpeechEnded = false
+    pcmTapEndpointRequested = false
+    if shouldRunLiveFinal, let liveFinalSnapshot = liveFinalSnapshot {
+      finalizeStoppedLiveWhisperCapture(
+        snapshot: liveFinalSnapshot,
+        fallbackTranscript: fallbackTranscript,
+        fallbackModelProfileId: fallbackModelProfileId,
+        runtimeChannel: runtimeChannel
+      )
+    } else {
+      liveWhisperController.close()
+      liveWhisperActive = false
+      if wasRecording {
+        VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+      }
+    }
+  }
+
+  private func finalizeStoppedLiveWhisperCapture(
+    snapshot: PcmSnapshot,
+    fallbackTranscript: String,
+    fallbackModelProfileId: String,
+    runtimeChannel: VoiceRuntimeChannel
+  ) {
+    let controller = liveWhisperController
+    Task {
+      do {
+        guard let result = try await controller.finish(snapshot) else {
+          throw SpeechCaptureLiveWhisperFinalizationError.sessionUnavailable
+        }
+        await MainActor.run {
+          let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !text.isEmpty {
+            self.transcript = text
+          }
+          controller.close()
+          self.liveWhisperActive = false
+          VoiceRuntimeHealthRegistry.success(runtimeChannel)
+          VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        }
+      } catch {
+        await MainActor.run {
+          controller.close()
+          self.liveWhisperActive = false
+          var isIncompleteFinal = false
+          if let failure = error as? VoiceLiveWhisperTranscriptionSessionFailure {
+            if case .finalTranscriptIncomplete = failure {
+              isIncompleteFinal = true
+            }
+          }
+          if isIncompleteFinal {
+            // The system recognizer fallback remains usable when Whisper coverage is incomplete.
+            VoiceRuntimeHealthRegistry.success(runtimeChannel)
+          } else {
+            VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+          }
+          self.emitCommands(
+            self.coordinatorBridge.finishStoppedCapture(
+              transcript: fallbackTranscript,
+              provider: iosSpeechProviderId,
+              modelProfileId: fallbackModelProfileId
+            )
+          )
+          VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        }
+      }
+    }
+  }
+
+  private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
+    guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
+    updateAudioLevel(Float(update.decision.peak) / Float(Int16.max))
+    coordinatorBridge.dispatchAudioLevel(update.decision.rms)
+    if update.endpoint.speechStarted, !pcmTapSpeechStarted {
+      pcmTapSpeechStarted = true
+      coordinatorBridge.speechStarted(atElapsedNs: update.frame.captureTimeNanos)
+      if liveWhisperActive {
+        liveWhisperController.handleSpeechStarted(nowMillis: update.frame.captureTimeNanos / 1_000_000)
+      }
+    }
+    if liveWhisperActive {
+      liveWhisperController.handleAudioLevel(
+        isSpeech: update.decision.isSpeech,
+        nowMillis: update.frame.captureTimeNanos / 1_000_000
+      ) { [weak self] windowMillis in
+        self?.pcmTapPipeline?.snapshotWindow(maxDurationMs: windowMillis)
+      }
+    }
+    if update.endpoint.speechEndedCandidate, !pcmTapSpeechEnded {
+      pcmTapSpeechEnded = true
+      coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
+    }
+    guard let reason = update.endpoint.endpointReason else { return }
+    let code = reason == .noSpeechTimeout ? "no_speech_timeout" :
+      reason == .maxDuration ? "max_duration" : "trailing_silence"
+    if reason != .noSpeechTimeout, !pcmTapSpeechEnded {
+      pcmTapSpeechEnded = true
+      coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
+    }
+    guard !pcmTapEndpointRequested else { return }
+    pcmTapEndpointRequested = true
+    Task { [weak self] in
+      await MainActor.run {
+        guard let self = self, self.isRecording else { return }
+        if reason == .noSpeechTimeout {
+          _ = self.coordinatorBridge.cancelCurrent(reasonCode: code)
+        }
+        self.stop()
+      }
+    }
+  }
+
+  private func updateAudioLevel(_ value: Float) {
+    audioLevelLock.lock()
+    latestAudioLevel = min(max(value, 0), 1)
+    audioLevelLock.unlock()
+  }
+
+  private func emitCommands(_ transition: VoiceInteractionTransition) {
+    transition.commands.forEach { onVoiceCommand?($0) }
+  }
+}
+
+private extension AVAudioSession {
+  func requestRecordPermission() async -> Bool {
+    await withCheckedContinuation { continuation in
+      requestRecordPermission { granted in
+        continuation.resume(returning: granted)
+      }
+    }
+  }
+}
