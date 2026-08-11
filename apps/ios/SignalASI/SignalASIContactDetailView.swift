@@ -338,6 +338,22 @@ struct ContactDetailView: View {
         tint: .orange,
         isOn: $deleteMessagesWhenDeleting
       )
+      if contact.type == "device",
+         let desktopId = contact.desktopId.nonEmpty,
+         store.serverLinks.contains(where: { $0.paired && $0.desktopId == desktopId }) {
+        SignalASISecurityNavigationRow(
+          title: t("signalasi.security_center.revoke_this_pc", "Revoke this computer"),
+          subtitle: t(
+            "signalasi.security_center.revoke_this_pc_subtitle",
+            "Delete this computer's Agent trust and sessions; scan again to connect"
+          ),
+          systemImage: "trash",
+          tint: .red,
+          badge: t("signalasi.security_center.revoke", "Revoke")
+        ) {
+          SignalASIRevokeDevicePairingView(desktopId: desktopId)
+        }
+      }
       SignalASISecurityActionRow(
         title: t("delete_contact_title", "Delete Contact"),
         subtitle: t("delete_contact_subtitle", "Add and verify this contact again before communicating."),
