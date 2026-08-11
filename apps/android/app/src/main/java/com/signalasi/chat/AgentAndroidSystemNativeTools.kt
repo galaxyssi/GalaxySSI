@@ -596,17 +596,22 @@ object AgentAndroidSystemNativeTools {
     }
 
     private fun downloadEnqueue(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
-        val url = invocation.text("url", 4_096)
-        val uri = runCatching { Uri.parse(url) }.getOrNull()
-        if (uri?.scheme?.lowercase(Locale.US) != "https") return failure("invalid_download_url", "Only HTTPS downloads are allowed")
+        val suppliedUrl = invocation.text("url", 4_096)
+        val url = AgentPublicDownloadPolicy.normalizeHttpsUrl(suppliedUrl)
+            ?: return failure("invalid_download_url", "A valid public HTTPS download URL is required")
+        val uri = Uri.parse(url)
         val request = DownloadManager.Request(uri)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
+        AgentDynamicArticleRequestPolicy.headers(url).forEach(request::addRequestHeader)
         invocation.text("title", 240).takeIf { it.isNotBlank() }?.let(request::setTitle)
         invocation.text("description", 500).takeIf { it.isNotBlank() }?.let(request::setDescription)
         val id = context.getSystemService(DownloadManager::class.java).enqueue(request)
-        return success(mapOf("download_id" to id, "url" to url), "Download enqueued")
+        return success(
+            mapOf("download_id" to id, "url" to url, "url_normalized" to (url != suppliedUrl.trim())),
+            "Download started; Android will report completion in the download notification"
+        )
     }
 
     private fun downloadQuery(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
