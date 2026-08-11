@@ -1377,13 +1377,20 @@ final class SignalASIStore: ObservableObject {
       upsert(hermes)
     }
     for contactIndex in contacts.indices {
-      guard contacts[contactIndex].desktopId == desktopId,
-            contacts[contactIndex].type == "agent" else {
+      guard contacts[contactIndex].desktopId == desktopId else {
         continue
       }
-      contacts[contactIndex].trustState = .unverified
-      contacts[contactIndex].setupStatus = "needs_pairing"
-      contacts[contactIndex].setupDetail = "Desktop pairing revoked"
+      if contacts[contactIndex].type == "device" {
+        contacts[contactIndex].deleted = true
+        contacts[contactIndex].deletedAt = Date()
+        contacts[contactIndex].trustState = .deleted
+      } else if contacts[contactIndex].type == "agent" {
+        contacts[contactIndex].trustState = .unverified
+        contacts[contactIndex].setupStatus = "needs_pairing"
+        contacts[contactIndex].setupDetail = "Desktop pairing revoked"
+      } else {
+        continue
+      }
       contacts[contactIndex].updatedAt = Date()
     }
     save()

@@ -316,6 +316,7 @@
 "signalasi.cloud.switch.needs_setup" = "需设置";
 "signalasi.device.management_title" = "设备管理";
 "signalasi.device.management_subtitle" = "人、AI 与设备安全连接";
+"signalasi.device.section_paired_desktops" = "已配对桌面连接";
 "signalasi.device.contacts_title" = "我的设备";
 "signalasi.device.contacts_subtitle" = "已验证的设备联系人和已配对桌面连接";
 "signalasi.device.contacts_count" = "%d 台设备";
