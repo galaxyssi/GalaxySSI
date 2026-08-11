@@ -49,6 +49,30 @@ class ModelDirectedSearchTests(unittest.TestCase):
         self.assertEqual(10 * 1024 * 1024, calls[0][1]["max_bytes"])
         self.assertEqual("model_selected_direct_web_read", calls[0][2]["source"])
 
+    def test_dynamic_fetch_strips_prose_after_an_explicit_url(self):
+        calls = []
+
+        class Registry:
+            def invoke(self, _tool_id, arguments, _context):
+                calls.append(arguments)
+                return {
+                    "status": "succeeded",
+                    "output": {"documents": [{
+                        "title": "Article",
+                        "url": arguments["url"],
+                        "content": "Evidence",
+                    }]},
+                }
+
+        response = execute_codex_dynamic_fetch(
+            {"urls": ["https://mp.weixin.qq.com/s/example\uff0c\u8bf7\u4e0b\u8f7d\u4fdd\u5b58"]},
+            "task-normalize",
+            registry=Registry(),
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual("https://mp.weixin.qq.com/s/example", calls[0]["url"])
+
     def test_engine_query_keeps_intent_but_drops_expanded_current_date(self):
         query = _engine_query(
             "北京今天（2026年8月6日）天气、气温和降雨情况；优先权威来源"
