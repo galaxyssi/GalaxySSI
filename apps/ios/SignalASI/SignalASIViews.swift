@@ -276,8 +276,8 @@ struct ConversationView: View {
     AgentDeviceProfileDetector.detect().inputTargetPolicy
   }
 
-  private var canSend: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+  private var isSystemNoticeContact: Bool {
+    contact.id == "system"
   }
 
   private var displayedMessages: [ChatMessage] {
@@ -389,19 +389,21 @@ struct ConversationView: View {
           }
         }
       }
-      Divider()
-        .background(Color.signalASISeparator)
-      SignalASIConversationComposer(
-        draft: $draft,
-        attachments: $attachments,
-        attachmentError: $attachmentError,
-        attachmentMenuPresented: $attachmentMenuPresented,
-        deviceInputPolicy: deviceInputPolicy,
-        voiceSettings: store.voiceSettings,
-        onSend: sendCurrentMessage,
-        onVoiceTranscript: sendVoiceTranscript,
-        t: t
-      )
+      if !isSystemNoticeContact {
+        Divider()
+          .background(Color.signalASISeparator)
+        SignalASIConversationComposer(
+          draft: $draft,
+          attachments: $attachments,
+          attachmentError: $attachmentError,
+          attachmentMenuPresented: $attachmentMenuPresented,
+          deviceInputPolicy: deviceInputPolicy,
+          voiceSettings: store.voiceSettings,
+          onSend: sendCurrentMessage,
+          onVoiceTranscript: sendVoiceTranscript,
+          t: t
+        )
+      }
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .background(navigationShortcuts)
