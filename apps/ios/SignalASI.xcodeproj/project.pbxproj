@@ -140,6 +140,7 @@
     A10000000000000000001360 /* SignalASIVoiceProviderPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001360 /* SignalASIVoiceProviderPagesView.swift */; };
     A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* SignalASIAndroidParityUI.swift */; };
     A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */; };
+    A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */; };
     A10000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */; };
     A10000000000000000000898 /* SignalASISharedUIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000898 /* SignalASISharedUIComponents.swift */; };
     A10000000000000000000895 /* SignalASIAgentTaskCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000895 /* SignalASIAgentTaskCards.swift */; };
@@ -947,6 +948,7 @@
     A20000000000000000001360 /* SignalASIVoiceProviderPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceProviderPagesView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* SignalASIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidParityUI.swift; sourceTree = "<group>"; };
     A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeVoiceActions.swift; sourceTree = "<group>"; };
+    A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeInputBridges.swift; sourceTree = "<group>"; };
     A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPublicPageHTMLExportDocument.swift; sourceTree = "<group>"; };
     A20000000000000000000898 /* SignalASISharedUIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASISharedUIComponents.swift; sourceTree = "<group>"; };
     A20000000000000000000895 /* SignalASIAgentTaskCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentTaskCards.swift; sourceTree = "<group>"; };
@@ -2094,6 +2096,7 @@
         A41000000000000000000890 /* Localizable.strings */,
         A20000000000000000000888 /* SignalASIAndroidParityUI.swift */,
         A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */,
+        A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */,
         A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */,
         A20000000000000000000898 /* SignalASISharedUIComponents.swift */,
         A20000000000000000000895 /* SignalASIAgentTaskCards.swift */,
@@ -3024,6 +3027,7 @@
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */,
+        A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */,
         A10000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift in Sources */,
         A10000000000000000000898 /* SignalASISharedUIComponents.swift in Sources */,
         A10000000000000000000895 /* SignalASIAgentTaskCards.swift in Sources */,
