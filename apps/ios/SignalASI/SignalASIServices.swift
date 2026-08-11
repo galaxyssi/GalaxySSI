@@ -5336,6 +5336,9 @@ final class MessageCoordinator: ObservableObject {
     _ payload: [String: Any],
     link: ServerLink
   ) throws -> (messageId: String, wireText: String, wireData: Data) {
+    guard !SignalASITransportPrivacyPolicy.isLocalOnly(payload) else {
+      throw SignalASIError.invalidPayload("Local-only Agent state cannot be sent over SignalASI Link.")
+    }
     var appPayload = payload
     let messageId = appPayload.string("message_id").ifBlank(UUID().uuidString)
     appPayload["message_id"] = messageId
@@ -5398,6 +5401,42 @@ final class MessageCoordinator: ObservableObject {
     dispatchIncomingWire(topic: topic, object: object, originalPayload: String(decoding: payload, as: UTF8.self), allowStage: true)
   }
 
+  private func handleLocalOnlyTransportPayload(
+    _ payload: [String: Any],
+    object: [String: Any],
+    originalPayload: String,
+    link: ServerLink?,
+    allowStage: Bool
+  ) {
+    guard allowStage else { return }
+    let messageId = payload.string("message_id")
+    guard !messageId.isEmpty else { return }
+    let digest = ciphertextReplayDigest(for: object)
+    if !digest.isEmpty,
+       let known = deliveryStore.messageForCiphertext(digest: digest) {
+      if known.receiptRequired {
+        publishInboundReceipt(link: link, receivedMessageId: known.messageId)
+      }
+      return
+    }
+    switch deliveryStore.stageIncoming(messageId: messageId, payload: originalPayload) {
+    case .invalid:
+      return
+    case .completed, .pending:
+      publishInboundReceipt(link: link, receivedMessageId: messageId)
+    case .staged:
+      if !digest.isEmpty {
+        try? deliveryStore.bindCiphertext(
+          digest: digest,
+          messageId: messageId,
+          receiptRequired: true
+        )
+      }
+      publishInboundReceipt(link: link, receivedMessageId: messageId)
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+  }
+
   private func dispatchIncomingWire(
     topic: String,
     object: [String: Any],
@@ -5448,6 +5487,16 @@ final class MessageCoordinator: ObservableObject {
       appPayload = unwrapped
     } else {
       appPayload = object
+    }
+    if SignalASITransportPrivacyPolicy.isLocalOnly(appPayload) {
+      handleLocalOnlyTransportPayload(
+        appPayload,
+        object: object,
+        originalPayload: originalPayload,
+        link: link,
+        allowStage: allowStage
+      )
+      return
     }
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
