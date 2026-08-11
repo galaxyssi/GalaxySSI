@@ -6,8 +6,22 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
+final class SignalASIAppDelegate: NSObject, UIApplicationDelegate {
+  func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    AgentIOSDefaultDownloadProvider.shared.handleBackgroundEvents(
+      identifier: identifier,
+      completionHandler: completionHandler
+    )
+  }
+}
+
 @main
 struct SignalASIApp: App {
+  @UIApplicationDelegateAdaptor(SignalASIAppDelegate.self) private var appDelegate
   @StateObject private var store: SignalASIStore
   @StateObject private var coordinator: MessageCoordinator
   @StateObject private var agentStartupRecovery: AgentStartupRecoveryCoordinator
