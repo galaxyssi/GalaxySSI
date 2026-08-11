@@ -212,15 +212,44 @@ extension SignalASIStore {
       )
     }
 
-    let sourceMessages = agentSessionMessages(source.id).filter { !$0.isSystem }
+    let sourceMessages = agentSessionMessages(source.id)
+      .filter { !$0.isSystem }
+      .sorted { left, right in
+        if left.createdAt == right.createdAt {
+          return left.id.uuidString < right.id.uuidString
+        }
+        return left.createdAt < right.createdAt
+      }
+    var targetMessageIDs = Set(
+      messagesByContact.values
+        .flatMap { $0 }
+        .filter { $0.conversationId == target.id }
+        .map(\.id)
+    )
+    var copiedMessageCount = 0
+    var skippedMessageCount = 0
     for message in sourceMessages {
+      let originConversationId = message.sourceConversationId.ifBlank(source.id)
+      guard let stableID = AgentConversationMergePolicy.stableMergedMessageID(
+        targetId: target.id,
+        sourceId: originConversationId,
+        messageId: message.id
+      ) else {
+        skippedMessageCount += 1
+        continue
+      }
+      guard targetMessageIDs.insert(stableID).inserted else {
+        skippedMessageCount += 1
+        continue
+      }
       var copy = message
-      copy.id = UUID()
+      copy.id = stableID
       copy.conversationId = target.id
       copy.remoteMessageId = ""
-      copy.sourceConversationId = source.id
-      copy.sourceConversationTitle = source.title
+      copy.sourceConversationId = originConversationId
+      copy.sourceConversationTitle = message.sourceConversationTitle.ifBlank(source.title)
       messagesByContact[copy.contactId, default: []].append(copy)
+      copiedMessageCount += 1
     }
 
     let now = Self.nowMillis()
@@ -255,8 +284,8 @@ extension SignalASIStore {
       merged: true,
       sourceConversation: mergedSource,
       targetConversation: mergedTarget,
-      copiedEntryCount: sourceMessages.count,
-      skippedEntryCount: 0,
+      copiedEntryCount: copiedMessageCount,
+      skippedEntryCount: skippedMessageCount,
       failure: .none
     )
   }
