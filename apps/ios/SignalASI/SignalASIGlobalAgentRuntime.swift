@@ -524,6 +524,13 @@ enum SignalASIGlobalAgentRuntimeBridge {
       next.updatedAtMillis = nowMillis
       return next
     }
+    if let completed {
+      _ = SignalASIGlobalAutonomousRunPlanner.upsertRun(
+        store: deliberationStore,
+        task: completed,
+        nowMillis: nowMillis
+      )
+    }
     return completed.map {
       SignalASIGlobalCognitionExecutionResult(
         taskId: $0.id,
