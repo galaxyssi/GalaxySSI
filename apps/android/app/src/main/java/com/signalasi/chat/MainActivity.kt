@@ -532,6 +532,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var recordingStartedAt = 0L
     internal var recordingPurpose = ""
     internal var recordingVoiceTraceId = ""
+    internal var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot? = null
     internal var activeVoiceTraceId = ""
     internal var pcmVoiceAudioHub: VoiceAudioHub? = null
     internal var pcmVoiceSession: VoiceAudioSession? = null
