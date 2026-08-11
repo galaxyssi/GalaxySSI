@@ -490,21 +490,14 @@ struct ConversationView: View {
   private var conversationHeader: some View {
     HStack(spacing: 8) {
       SignalASIBackButton()
-      AvatarView(contact: contact, size: 30)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(contact.displayName)
-          .font(.system(size: 16, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
-        HStack(spacing: 5) {
-          Circle()
-            .fill(contact.isCommunicable ? Color.signalASIAccent : Color.signalASITextSecondary)
-            .frame(width: 7, height: 7)
-          Text(contactStatusText)
-            .font(.system(size: 11))
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
+      if isSystemNoticeContact {
+        contactIdentityHeader
+      } else {
+        NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+          contactIdentityHeader
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("contact_detail_title", "Contact Profile")))
       }
       Spacer(minLength: 8)
       if contact.deliveryMode == .cloudAPI {
@@ -540,6 +533,27 @@ struct ConversationView: View {
     .padding(.horizontal, 8)
     .frame(height: 56)
     .background(Color.signalASIBarBackground)
+  }
+
+  private var contactIdentityHeader: some View {
+    HStack(spacing: 8) {
+      AvatarView(contact: contact, size: 30)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(contact.displayName)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .lineLimit(1)
+        HStack(spacing: 5) {
+          Circle()
+            .fill(contact.isCommunicable ? Color.signalASIAccent : Color.signalASITextSecondary)
+            .frame(width: 7, height: 7)
+          Text(contactStatusText)
+            .font(.system(size: 11))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+        }
+      }
+    }
   }
 
   @ViewBuilder
