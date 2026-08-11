@@ -60,6 +60,10 @@ enum AgentAttachmentKnowledgeImporter {
     let result: String?
     if isImage(attachment, extensionName: extensionName) {
       result = extractImageText(from: attachment)
+    } else if isHTML(attachment, extensionName: extensionName) {
+      result = readableText(from: attachment.data).map {
+        AgentIOSPublicArticleParser.plainText(from: $0)
+      }
     } else {
       switch extensionName {
       case "pdf":
@@ -136,6 +140,11 @@ enum AgentAttachmentKnowledgeImporter {
 
   private static func isImage(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
     attachment.mimeType.lowercased().hasPrefix("image/") || imageExtensions.contains(extensionName)
+  }
+
+  private static func isHTML(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    ["text/html", "application/xhtml+xml"].contains(attachment.mimeType.lowercased()) ||
+      ["htm", "html", "xhtml"].contains(extensionName)
   }
 
   private static func knowledgeTags(for attachment: AgentAttachmentKnowledgeInput) -> [String] {
