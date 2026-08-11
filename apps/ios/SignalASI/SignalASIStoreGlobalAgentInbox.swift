@@ -1,5 +1,12 @@
 import Foundation
 
+private enum GlobalProactiveDigestDelivery {
+  static let minimumItems = 3
+  static let maximumItems = 12
+  static let maximumCharacters = 12_000
+  static let maximumWaitMillis: Int64 = 12 * 60 * 60 * 1_000
+}
+
 extension SignalASIStore {
   func globalProactiveInboxItems(limit: Int = 50) -> [GlobalProactiveInboxItem] {
     GlobalProactiveInboxPolicy.project(
@@ -102,7 +109,95 @@ extension SignalASIStore {
         history.countedDeliveryGroupIds.append(groupId)
       }
     }
+
+    let digestMessages = GlobalProactiveDeliveryPolicy.digestBatch(
+      messages: globalProactiveMessages,
+      settings: settings,
+      profile: profile,
+      history: globalProactiveInterventionHistory(),
+      nowMillis: nowMillis,
+      minimumItems: GlobalProactiveDigestDelivery.minimumItems,
+      maximumItems: GlobalProactiveDigestDelivery.maximumItems,
+      maximumWaitMillis: GlobalProactiveDigestDelivery.maximumWaitMillis
+    )
+    if !digestMessages.isEmpty {
+      delivered.append(contentsOf: deliverGlobalProactiveDigest(
+        messages: digestMessages,
+        settings: settings,
+        nowMillis: nowMillis
+      ))
+    }
     return delivered
+  }
+
+  private func deliverGlobalProactiveDigest(
+    messages: [GlobalProactiveMessage],
+    settings: GlobalAgentSettings,
+    nowMillis: Int64
+  ) -> [GlobalProactiveMessage] {
+    let chinese = messages.contains { GlobalAgentText.containsCjk($0.content) }
+    let title = chinese ? "SignalASI \u{6458}\u{8981}" : "SignalASI digest"
+    let topicKey = GlobalProactiveConversationRouter.topicKey("global-digest")
+    let conversations = agentSessions(includeArchived: true)
+    let existing = conversations
+      .filter {
+        GlobalProactiveConversationRouter.isEligible($0) && $0.globalTopicKey == topicKey
+      }
+      .max { $0.updatedAt < $1.updatedAt }
+
+    let target: AgentConversation?
+    if let existing {
+      target = existing
+    } else if settings.autoCreateConversationsEnabled {
+      target = createAgentConversation(title: title, globalTopicKey: topicKey)
+    } else {
+      target = conversations.first(where: { GlobalProactiveConversationRouter.isEligible($0) })
+    }
+    guard let target else { return [] }
+
+    let messageIds = Set(messages.map(\.id))
+    let groupId = messages
+      .compactMap { $0.deliveryGroupId.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first(where: { !$0.isEmpty })
+      ?? GlobalAgentText.stableKey(
+        "global-digest",
+        messages.map(\.id).sorted().joined(separator: "|")
+      )
+    let claimed = claimGlobalProactiveMessages(
+      messageIds: messageIds,
+      conversationId: target.id,
+      deliveryGroupId: groupId,
+      nowMillis: nowMillis
+    )
+    guard claimed.count == messageIds.count else { return [] }
+
+    let content = messages.enumerated().map { index, message in
+      let topic = message.topic.trimmingCharacters(in: .whitespacesAndNewlines)
+      let topicPrefix = topic.isEmpty ? "" : "[\(topic)] "
+      return "\(index + 1). \(topicPrefix)\(message.content.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }.joined(separator: "\n\n")
+    let dedupeKey = "global-agent-digest:\(groupId)"
+    let alreadyPersisted = agentSessionMessages(target.id).contains {
+      $0.remoteMessageId == dedupeKey || $0.turnId == "digest:\(groupId)"
+    }
+    if !alreadyPersisted {
+      _ = appendIncoming(
+        "\(title)\n\n\(String(content.prefix(GlobalProactiveDigestDelivery.maximumCharacters)))",
+        from: "hermes",
+        remoteMessageId: dedupeKey,
+        traceStage: "global_agent_digest_delivery",
+        conversationId: target.id,
+        turnId: "digest:\(groupId)"
+      )
+    }
+
+    return completeGlobalProactiveMessages(
+      messageIds: messageIds,
+      conversationId: target.id,
+      deliveryGroupId: groupId,
+      countBudget: claimed.allSatisfy { !$0.deliveryBudgetCounted },
+      nowMillis: nowMillis
+    )
   }
 
   @discardableResult
@@ -126,6 +221,35 @@ extension SignalASIStore {
     return true
   }
 
+  private func claimGlobalProactiveMessages(
+    messageIds: Set<String>,
+    conversationId: String,
+    deliveryGroupId: String,
+    nowMillis: Int64,
+    leaseMillis: Int64 = 120_000
+  ) -> [GlobalProactiveMessage] {
+    guard !messageIds.isEmpty else { return [] }
+    let indexes = globalProactiveMessages.indices.filter { messageIds.contains(globalProactiveMessages[$0].id) }
+    guard indexes.count == messageIds.count,
+          indexes.allSatisfy({ GlobalProactiveDeliveryPolicy.isRecoverable(globalProactiveMessages[$0], nowMillis: nowMillis) }) else {
+      return []
+    }
+
+    var updated = globalProactiveMessages
+    for index in indexes {
+      var message = updated[index]
+      message.status = .delivering
+      message.deliveryConversationId = conversationId
+      message.deliveryGroupId = deliveryGroupId
+      message.deliveryLeaseExpiresAtMillis = max(nowMillis, 0) + max(leaseMillis, 1)
+      message.deliveryAttemptCount += 1
+      message.lastDeliveryError = ""
+      updated[index] = message
+    }
+    globalProactiveMessages = updated
+    return indexes.map { updated[$0] }
+  }
+
   @discardableResult
   private func completeGlobalProactiveMessage(
     messageId: String,
@@ -147,6 +271,39 @@ extension SignalASIStore {
     message.lastDeliveryError = ""
     globalProactiveMessages[index] = message
     return true
+  }
+
+  private func completeGlobalProactiveMessages(
+    messageIds: Set<String>,
+    conversationId: String,
+    deliveryGroupId: String,
+    countBudget: Bool,
+    nowMillis: Int64
+  ) -> [GlobalProactiveMessage] {
+    guard !messageIds.isEmpty else { return [] }
+    let indexes = globalProactiveMessages.indices.filter { messageIds.contains(globalProactiveMessages[$0].id) }
+    guard indexes.count == messageIds.count,
+          indexes.allSatisfy({
+            let message = globalProactiveMessages[$0]
+            return message.status == .delivering && message.deliveryConversationId == conversationId
+          }) else {
+      return []
+    }
+
+    var updated = globalProactiveMessages
+    for index in indexes {
+      var message = updated[index]
+      message.status = .delivered
+      message.deliveryLeaseExpiresAtMillis = 0
+      message.deliveredAtMillis = max(nowMillis, 0)
+      message.deliveredConversationId = conversationId
+      message.deliveryGroupId = deliveryGroupId
+      message.deliveryBudgetCounted = message.deliveryBudgetCounted || countBudget
+      message.lastDeliveryError = ""
+      updated[index] = message
+    }
+    globalProactiveMessages = updated
+    return indexes.map { updated[$0] }
   }
 
   private func resolveGlobalProactiveRoute(
