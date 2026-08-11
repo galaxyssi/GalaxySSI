@@ -94,10 +94,11 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     description: String,
     nowMillis: Int64
   ) -> AgentNativeToolExecutionResult {
-    guard let downloadURL = validatedHTTPSURL(url) else {
+    let suppliedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let downloadURL = AgentIOSPublicDownloadPolicy.normalizeHTTPSURL(suppliedURL) else {
       return AgentNativeToolExecutionResult.failure(
         code: "invalid_download_url",
-        message: "Only HTTPS downloads are allowed"
+        message: "A valid public HTTPS download URL is required"
       )
     }
 
@@ -122,7 +123,11 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
       return id
     }
 
-    let task = session.downloadTask(with: downloadURL) { [weak self] temporaryURL, response, error in
+    var request = URLRequest(url: downloadURL)
+    for (name, value) in AgentIOSPublicArticleRequestPolicy.headers(for: downloadURL) {
+      request.setValue(value, forHTTPHeaderField: name)
+    }
+    let task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
       self?.finishDownload(
         id: downloadId,
         originalURL: downloadURL,
@@ -140,11 +145,13 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     task.resume()
 
     let record = queue.sync { records[downloadId] }
-    return AgentNativeToolExecutionResult.success(
-      output: record?.output(observedAtEpochMillis: nowMillis) ?? [
+    var output = record?.output(observedAtEpochMillis: nowMillis) ?? [
         "download_id": .int(downloadId),
         "url": .string(downloadURL.absoluteString)
-      ],
+      ]
+    output["url_normalized"] = .bool(downloadURL.absoluteString != suppliedURL)
+    return AgentNativeToolExecutionResult.success(
+      output: output,
       message: "Download enqueued",
       metadata: [
         "implementation": .string("URLSession"),
@@ -277,18 +284,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
         self.records[id] = record
       }
     }
-  }
-
-  private func validatedHTTPSURL(_ value: String) -> URL? {
-    let trimmed = bounded(value, 4_096)
-    guard let components = URLComponents(string: trimmed),
-          components.scheme?.lowercased() == "https",
-          let host = components.host,
-          !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          let url = components.url else {
-      return nil
-    }
-    return url
   }
 
   private func safeFilename(id: Int64, response: URLResponse?, originalURL: URL) -> String {
