@@ -502,7 +502,9 @@ struct AgentHomeView: View {
       attachments: attachments,
       attachmentError: attachmentError,
       canSend: canSend,
-      hasPendingPrimaryAction: primaryAgentTask != nil,
+      hasPendingPrimaryAction: primaryActionResumesTask ||
+        primaryActionApprovesTask ||
+        primaryActionNeedsHighRiskConfirmation,
       pendingPrimaryActionResumesTask: primaryActionResumesTask,
       pendingPrimaryActionApprovesTask: primaryActionApprovesTask,
       pendingPrimaryActionWaitingForResponse: primaryActionWaitingForResponse,
