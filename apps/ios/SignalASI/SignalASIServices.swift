@@ -300,6 +300,7 @@ final class MessageCoordinator: ObservableObject {
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
+    guard SignalASIGlobalAgentBackgroundPolicy.allowsAutomaticCycles else { return }
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
     _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
