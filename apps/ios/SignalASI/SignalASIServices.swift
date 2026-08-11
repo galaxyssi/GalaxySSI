@@ -37,8 +37,9 @@ final class MessageCoordinator: ObservableObject {
     foregroundApp: "SignalASI iOS",
     pageTitle: "Agent"
   )
-  private var localNativeToolRuntime: AgentPhoneNativeToolRuntime? {
-    let settingsStore = store
+  private lazy var localNativeToolRuntime: AgentPhoneNativeToolRuntime? = { [weak self] in
+    guard let self else { return nil }
+    let settingsStore = self.store
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: AgentIOSNativeActionExecutor(
         knowledgeStore: { item in settingsStore.upsertAgentKnowledge(item) },
@@ -67,7 +68,7 @@ final class MessageCoordinator: ObservableObject {
         settingsStore.homeAssistantSettings
       }
     )
-  }
+  }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
