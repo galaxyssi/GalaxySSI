@@ -29,6 +29,7 @@ struct AgentHomeView: View {
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
   @State private var scanShortcutActive = false
+  @State private var scanSelectionRequestID = UUID()
   @State private var agentSessionsShortcutActive = false
   @State private var agentSettingsShortcutActive = false
   @State private var agentPermissionsShortcutActive = false
@@ -2592,6 +2593,9 @@ struct AgentHomeView: View {
   }
 
   private func focusScannedAgents(_ targetIDs: [String]) {
+    // A later scan must take precedence over delayed contact/capability refreshes from an earlier one.
+    let requestID = UUID()
+    scanSelectionRequestID = requestID
     let normalizedIDs = targetIDs
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
@@ -2605,12 +2609,18 @@ struct AgentHomeView: View {
     }
 
     Task { @MainActor in
-      for delay in [UInt64(0), 300_000_000, 900_000_000, 1_800_000_000, 3_000_000_000, 5_000_000_000] {
+      let retryOffsets: [UInt64] = [0, 300_000_000, 900_000_000, 1_800_000_000, 3_000_000_000, 5_000_000_000]
+      var priorOffset: UInt64 = 0
+      for offset in retryOffsets {
+        let delay = offset - priorOffset
         if delay > 0 {
           try? await Task.sleep(nanoseconds: delay)
         }
+        priorOffset = offset
+        guard scanSelectionRequestID == requestID else { return }
         for targetID in normalizedIDs {
           if focusScannedAgentIfAvailable(targetID) {
+            guard scanSelectionRequestID == requestID else { return }
             scanStatus = t(
               "signalasi.agent.scan.selected",
               "Agent added and selected for this session."
@@ -2620,6 +2630,7 @@ struct AgentHomeView: View {
           }
         }
       }
+      guard scanSelectionRequestID == requestID else { return }
       scanStatus = t(
         "signalasi.agent.scan.not_ready",
         "Agent was added, but is not ready to communicate yet. Check the Agent connection in Contacts."
