@@ -708,7 +708,12 @@ final class SignalASIStore: ObservableObject {
       richOutputJson: richOutputJson
     )
     messagesByContact[contactId, default: []].append(message)
-    recordAgentConversationActivity(conversationId: conversationId, contactId: contactId, content: content, at: createdAt)
+    recordAgentConversationActivity(
+      conversationId: conversationId,
+      contactId: contactId,
+      content: AgentSessionTitlePolicy.titleSource(content),
+      at: createdAt
+    )
     save()
     return message
   }
