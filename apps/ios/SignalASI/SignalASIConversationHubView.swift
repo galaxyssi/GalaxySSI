@@ -12,34 +12,53 @@ struct SignalASIConversationHubView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
-  @State private var selectedTab: SignalASIConversationHubTab = .conversations
+  @State private var selectedTab: SignalASIConversationHubTab
   @State private var searchText = ""
   @State private var showingArchived = false
   @State private var addContactPresented = false
   @State private var openScannerOnAdd = false
   @State private var pendingFriendRequestsPresented = false
+  private let showsBackButton: Bool
+
+  init(
+    initialTab: SignalASIConversationHubTab = .conversations,
+    showsBackButton: Bool = true
+  ) {
+    _selectedTab = State(initialValue: initialTab)
+    self.showsBackButton = showsBackButton
+  }
   @State private var pendingContactDeletion: SignalASIContact?
 
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
-        title: t("signalasi.conversation_hub.title", "Conversations"),
-        leading: { SignalASIBackButton() },
-        trailing: {
-          Button {
-            if selectedTab == .contacts {
-              openScannerOnAdd = false
-              addContactPresented = true
-            } else {
-              _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-            }
-          } label: {
-            Image(systemName: "plus")
-              .font(.system(size: 19, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
+        title: hubTitle,
+        leading: {
+          if showsBackButton {
+            SignalASIBackButton()
+          } else {
+            Color.clear
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel(Text(t("signalasi.common.add", "Add")))
+        },
+        trailing: {
+          if selectedTab == .groups {
+            Color.clear
+          } else {
+            Button {
+              if selectedTab == .contacts {
+                openScannerOnAdd = false
+                addContactPresented = true
+              } else {
+                _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+              }
+            } label: {
+              Image(systemName: "plus")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.common.add", "Add")))
+          }
         }
       )
 
@@ -388,6 +407,17 @@ struct SignalASIConversationHubView: View {
     selectedTab == .contacts
       ? t("signalasi.conversation_hub.search_contacts", "Search contacts")
       : t("signalasi.conversation_hub.search_conversations", "Search conversations")
+  }
+
+  private var hubTitle: String {
+    switch selectedTab {
+    case .conversations:
+      return t("signalasi.conversation_hub.title", "Conversations")
+    case .contacts:
+      return t("signalasi.conversation_hub.tab_contacts", "Contacts")
+    case .groups:
+      return t("signalasi.conversation_hub.tab_groups", "Groups")
+    }
   }
 
   private func sessionTitle(_ session: AgentConversation) -> String {
