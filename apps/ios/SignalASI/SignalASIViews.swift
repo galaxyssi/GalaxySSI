@@ -398,20 +398,22 @@ struct ConversationView: View {
               )
                 .id(message.id)
                 .contextMenu {
-                  Button {
-                    selectedMessageForDetails = message
-                  } label: {
-                    Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-                  }
-                  Button {
-                    UIPasteboard.general.string = message.content
-                  } label: {
-                    Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-                  }
-                  Button(role: .destructive) {
-                    store.deleteMessage(message.id, contactId: contact.id)
-                  } label: {
-                    Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+                  if !message.isSystem {
+                    Button {
+                      selectedMessageForDetails = message
+                    } label: {
+                      Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
+                    }
+                    Button {
+                      UIPasteboard.general.string = message.content
+                    } label: {
+                      Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+                    }
+                    Button(role: .destructive) {
+                      store.deleteMessage(message.id, contactId: contact.id)
+                    } label: {
+                      Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+                    }
                   }
                 }
               if waitingMessageIDs.contains(message.id) {
@@ -955,8 +957,16 @@ struct MessageBubble: View {
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   var body: some View {
-    HStack(alignment: .bottom, spacing: 8) {
-      if !message.isMine, !message.isSystem, let remoteContact {
+    if message.isSystem {
+      Text(message.content)
+        .font(.caption)
+        .foregroundColor(.signalASITextSecondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    } else {
+      HStack(alignment: .bottom, spacing: 8) {
+      if !message.isMine, let remoteContact {
         AvatarView(contact: remoteContact, size: 36)
           .accessibilityHidden(true)
       }
@@ -1000,13 +1010,11 @@ struct MessageBubble: View {
           .accessibilityHidden(true)
       }
       if !message.isMine { Spacer(minLength: 48) }
+      }
     }
   }
 
   private var messageBubbleColor: Color {
-    if message.isSystem {
-      return Color.signalASIButtonSoft
-    }
     return message.isMine ? Color.signalASISentBubble : Color.signalASIIncomingBubble
   }
 
