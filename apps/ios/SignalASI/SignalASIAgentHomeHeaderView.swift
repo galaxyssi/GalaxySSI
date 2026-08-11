@@ -8,6 +8,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   var modelLogoLabel: String
   var brandSubtitle: String
   var modelSelectionDestination: ModelSelectionDestination
+  var onOpenSettings: () -> Void
 
   var body: some View {
     HStack(spacing: 8) {
@@ -46,7 +47,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         .buttonStyle(.plain)
       }
       .frame(width: 128, minHeight: 44, alignment: .trailing)
-      NavigationLink(destination: SettingsView()) {
+      Button(action: onOpenSettings) {
         Image(systemName: "ellipsis.horizontal")
           .font(.system(size: 22, weight: .bold))
           .foregroundColor(.signalASITextPrimary)

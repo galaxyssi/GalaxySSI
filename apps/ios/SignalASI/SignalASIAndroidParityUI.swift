@@ -4,6 +4,8 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct AgentHomeView: View {
+  var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: SignalASIStore
@@ -1752,8 +1754,28 @@ struct AgentHomeView: View {
       brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
       modelSelectionDestination: SignalASIAgentModelSelectionView {
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-      }
+      },
+      onOpenSettings: { openMainTab(.settings) }
     )
+  }
+
+  private func openMainTab(_ tab: SignalASIMainTab) {
+    if let onNavigateToMainTab {
+      onNavigateToMainTab(tab)
+      return
+    }
+    switch tab {
+    case .settings:
+      agentSettingsShortcutActive = true
+    case .messages:
+      chatListShortcutActive = true
+    case .contacts:
+      contactsShortcutActive = true
+    case .discover:
+      discoverShortcutActive = true
+    case .voice, .agent:
+      break
+    }
   }
 
   private var headerPresentation: SignalASIAgentHomeHeaderPresentation {
@@ -2490,13 +2512,13 @@ struct AgentHomeView: View {
     case "execution-paused":
       store.updateAgentSafetySettings { $0.executionPaused.toggle() }
     case "settings", "launch-settings":
-      agentSettingsShortcutActive = true
+      openMainTab(.settings)
     case "messages", "launch-messages":
-      chatListShortcutActive = true
+      openMainTab(.messages)
     case "contacts", "launch-contacts":
-      contactsShortcutActive = true
+      openMainTab(.contacts)
     case "discover", "launch-discover":
-      discoverShortcutActive = true
+      openMainTab(.discover)
     case "agent", "launch-agent":
       break
     default:

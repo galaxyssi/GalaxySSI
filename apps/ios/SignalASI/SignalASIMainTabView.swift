@@ -20,7 +20,7 @@ struct SignalASIMainTabView: View {
     case .voice:
       SignalASIVoiceTabView()
     case .agent:
-      AgentHomeView()
+      AgentHomeView(onNavigateToMainTab: { selectedTab = $0 })
     case .messages:
       ChatListView(showsBackButton: false)
     case .contacts:
