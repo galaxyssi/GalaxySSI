@@ -64,9 +64,14 @@ final class VoiceWhisperModelDownloadService {
   @discardableResult
   func start(
     _ model: VoiceWhisperModelProfile,
-    allowsCellularAccess: Bool = true
+    allowsCellularAccess: Bool = true,
+    meteredConfirmed: Bool = false
   ) async throws -> VoiceWhisperModelDownloadState {
-    let requests = try manager.downloadRequests(for: model, allowsCellularAccess: allowsCellularAccess)
+    let requests = try manager.downloadRequests(
+      for: model,
+      allowsCellularAccess: allowsCellularAccess,
+      meteredConfirmed: meteredConfirmed
+    )
     _ = manager.recordProgress(model, downloadedBytes: 0, totalBytes: 0)
     var lastError: Error?
     for (index, request) in requests.enumerated() {

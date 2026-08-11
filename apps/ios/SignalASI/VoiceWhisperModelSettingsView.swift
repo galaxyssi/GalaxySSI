@@ -17,6 +17,8 @@ struct VoiceWhisperModelSettingsView: View {
   @State private var activeBenchmarkIds: Set<String> = []
   @State private var benchmarkDetails: VoiceWhisperBenchmarkDetailsPresentation?
   @State private var statusMessage = ""
+  @State private var pendingMeteredModel: VoiceWhisperModelProfile?
+  @State private var showingMeteredDownloadConfirmation = false
 
   init(
     modelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
@@ -97,6 +99,24 @@ struct VoiceWhisperModelSettingsView: View {
         dismissButton: .default(Text(t("Done", "Done")))
       )
     }
+    .alert(
+      t("voice_asr_metered_download_title", "Download model over metered network?"),
+      isPresented: $showingMeteredDownloadConfirmation
+    ) {
+      Button(t("voice_asr_metered_download_confirm", "Download")) {
+        guard let model = pendingMeteredModel else { return }
+        pendingMeteredModel = nil
+        Task { await download(model, meteredConfirmed: true) }
+      }
+      Button(t("common_cancel", "Cancel"), role: .cancel) {
+        pendingMeteredModel = nil
+      }
+    } message: {
+      Text(String(format: t(
+        "voice_asr_metered_download_message",
+        "%@ is a large model. Downloading it over cellular or a metered connection may use significant data."
+      ), pendingMeteredModel?.displayName ?? "Whisper"))
+    }
   }
 
   private var rows: [VoiceWhisperModelRowPresentation] {
@@ -155,7 +175,10 @@ struct VoiceWhisperModelSettingsView: View {
   }
 
   @MainActor
-  private func download(_ model: VoiceWhisperModelProfile) async {
+  private func download(
+    _ model: VoiceWhisperModelProfile,
+    meteredConfirmed: Bool = false
+  ) async {
     guard !activeDownloadIds.contains(model.id) else { return }
     activeDownloadIds.insert(model.id)
     statusMessage = String(format: t("voice_asr_model_download_started", "Downloading %@"), model.displayName)
@@ -165,12 +188,23 @@ struct VoiceWhisperModelSettingsView: View {
       refreshModelState()
     }
     do {
-      _ = try await downloadService.start(model)
+      _ = try await downloadService.start(model, meteredConfirmed: meteredConfirmed)
       store.updateVoiceSettings {
         $0.asrModelId = model.id
         $0.asrRuntimeMode = .manual
       }
       statusMessage = String(format: t("voice_asr_model_ready", "%@ downloaded and selected"), model.displayName)
+    } catch let error as VoiceWhisperModelManagerError {
+      if case .meteredDownloadConfirmationRequired = error {
+        pendingMeteredModel = model
+        showingMeteredDownloadConfirmation = true
+        statusMessage = t(
+          "voice_asr_metered_download_required",
+          "Confirm the metered-network download to continue."
+        )
+      } else {
+        statusMessage = t("voice_asr_model_download_failed", "Model download failed. Tap to retry.")
+      }
     } catch {
       statusMessage = t("voice_asr_model_download_failed", "Model download failed. Tap to retry.")
     }
