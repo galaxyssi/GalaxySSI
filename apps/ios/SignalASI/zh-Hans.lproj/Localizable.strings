@@ -204,6 +204,7 @@
 "signalasi.agent_runtime.audit_summary" = "%d 个事件";
 "signalasi.agent_runtime.audit_detail" = "%@ / %@ / %@";
 "signalasi.agent.task_control.cancel" = "取消任务";
+"signalasi.agent.task_details" = "详情";
 "signalasi.agent_runtime.collapse" = "收起";
 "signalasi.agent_runtime.expand" = "展开";
 "signalasi.agent_runtime.requirement_detail" = "%@ / %@";

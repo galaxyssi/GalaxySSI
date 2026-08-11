@@ -117,6 +117,7 @@ struct SignalASIAgentRetryCard: View {
 }
 
 struct SignalASIAgentExecutionStatusCard: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var detailsExpanded = false
   var executor: String
   var status: String
@@ -182,7 +183,7 @@ struct SignalASIAgentExecutionStatusCard: View {
           detailsExpanded.toggle()
         } label: {
           Label(
-            detailsTitle.ifBlank("Details"),
+            detailsTitle.ifBlank(t("signalasi.agent.task_details", "Details")),
             systemImage: detailsExpanded ? "chevron.up" : "chevron.down"
           )
           .font(.system(size: 12, weight: .semibold))
@@ -240,7 +241,7 @@ struct SignalASIAgentExecutionStatusCard: View {
                 .frame(width: 42, height: 36)
             }
             .menuStyle(.borderedButton)
-            .accessibilityLabel(Text("Task controls"))
+            .accessibilityLabel(Text(t("signalasi.agent.task_control.title", "Task controls")))
           }
         }
       }
@@ -254,6 +255,10 @@ struct SignalASIAgentExecutionStatusCard: View {
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .contain)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
