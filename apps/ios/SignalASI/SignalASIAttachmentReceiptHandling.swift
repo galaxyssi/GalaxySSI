@@ -1,0 +1,90 @@
+import Foundation
+
+/// Handles the receipt side of the Agent attachment protocol independently
+/// from the main message and response coordinator.
+extension MessageCoordinator {
+  func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
+    let transferId = payload.string("transfer_id").lowercased()
+    guard let link,
+          let transfer = attachmentTransferStore.find(transferId),
+          transfer.scope.desktopId == link.desktopId,
+          transfer.scope.clientRouteId == link.routes.clientRouteId,
+          payload.string("client_route_id") == transfer.scope.clientRouteId else {
+      return
+    }
+    if payload.string("status") == "stored" {
+      guard attachmentTransferStore.acknowledgeStored(
+        payload: payload,
+        deliveryStore: deliveryStore
+      ) != nil else {
+        return
+      }
+      scheduleOutboxFlush(after: 0)
+      return
+    }
+    guard payload.string("status") == "missing",
+          let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
+            payload["missing_ranges"],
+            chunkCount: transfer.chunkCount
+          ),
+          !requested.isEmpty else {
+      return
+    }
+    for index in requested {
+      guard let chunkPayload = try? transfer.chunkPayload(index: index) else {
+        continue
+      }
+      try? enqueueLinkPayload(
+        chunkPayload,
+        link: link,
+        topic: link.routes.upTopic,
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
+        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
+        contactId: transfer.scope.contactId
+      )
+    }
+    scheduleOutboxFlush(after: 0)
+  }
+
+  func handleDeliveryAck(_ payload: [String: Any]) {
+    let acknowledgedIds = [
+      SignalASILinkDeliveryAckPolicy.transportMessageId(payload: payload),
+      SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload: payload)
+    ].filter { !$0.isEmpty }
+    acknowledgedIds.forEach { messageId in
+      deliveryStore.acknowledge(messageId: messageId)
+      if let uuid = UUID(uuidString: messageId) {
+        store.appendDeliveryTrace(uuid, stage: "desktop_broker_ack", detail: "Delivery ACK", status: .delivered)
+      }
+    }
+    scheduleOutboxFlushFromStore()
+  }
+
+  func publishInboundReceipt(link: ServerLink?, receivedMessageId: String) {
+    guard let link, !receivedMessageId.isEmpty else { return }
+    let ackPayload: [String: Any] = [
+      "type": "delivery_ack",
+      "transport_message_id": receivedMessageId,
+      "source_message_id": receivedMessageId,
+      "delivery_status": "accepted",
+      "sender": "system",
+      "time": Int64(Date().timeIntervalSince1970 * 1000)
+    ]
+    guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
+      payload: ackPayload,
+      sourceId: store.profile.signalASIId,
+      targetId: link.desktopId
+    ),
+      let wire = try? SignalASILinkProtocol.jsonData([
+        "scheme": "signalasi-link-ios-preview",
+        "from": store.profile.signalASIId,
+        "to": link.desktopId,
+        "envelope": envelope
+      ]) else {
+      return
+    }
+    Task {
+      _ = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire)
+    }
+  }
+}
