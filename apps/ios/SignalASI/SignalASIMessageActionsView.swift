@@ -5,7 +5,10 @@ struct SignalASIMessageActionsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var statusMessage = ""
+  @State private var statusIsError = false
+  @State private var cancellingRemoteTaskIDs = Set<String>()
 
   var message: ChatMessage
   var contact: SignalASIContact
@@ -31,10 +34,12 @@ struct SignalASIMessageActionsView: View {
           if !statusMessage.isEmpty {
             SignalASISecurityStatusRow(
               title: statusMessage,
-              subtitle: t("signalasi.message.actions_status_detail", "The local message action completed on this device"),
-              systemImage: "checkmark.circle",
-              tint: .signalASIAccent,
-              badge: t("voice_health_ready", "Ready")
+              subtitle: t("signalasi.message.actions_status_detail", "Action status for this message"),
+              systemImage: statusIsError ? "exclamationmark.circle" : "checkmark.circle",
+              tint: statusIsError ? .orange : .signalASIAccent,
+              badge: statusIsError
+                ? t("signalasi.status.error", "Error")
+                : t("voice_health_ready", "Ready")
             )
           }
           actionsSection
@@ -104,6 +109,24 @@ struct SignalASIMessageActionsView: View {
       ) {
         UIPasteboard.general.string = message.content
         statusMessage = t("toast_copied", "Copied")
+        statusIsError = false
+      }
+      if let remoteTask = remoteAgentTask, remoteTask.isCancellable {
+        let cancelling = cancellingRemoteTaskIDs.contains(remoteTask.id)
+        SignalASISecurityActionRow(
+          title: cancelling
+            ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+            : t("signalasi.agent.remote_status.cancel", "Cancel task"),
+          subtitle: t("signalasi.message.cancel_task_subtitle", "Ask the connected Agent to stop this task"),
+          systemImage: "xmark.circle",
+          tint: .orange,
+          badge: cancelling
+            ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
+            : t("signalasi.agent.remote_status.cancel", "Cancel task")
+        ) {
+          cancelRemoteAgentTask(remoteTask)
+        }
+        .disabled(cancelling)
       }
       SignalASISecurityActionRow(
         title: t("message_delete_title", "Delete Message"),
@@ -114,6 +137,7 @@ struct SignalASIMessageActionsView: View {
       ) {
         _ = store.deleteMessage(message.id, contactId: contact.id)
         statusMessage = t("toast_deleted", "Deleted")
+        statusIsError = false
         dismiss()
       }
     }
@@ -192,6 +216,55 @@ struct SignalASIMessageActionsView: View {
 
   private var messageSenderTitle: String {
     message.isMine ? t("message_sent_by_me", "Sent by Me") : contact.displayName
+  }
+
+  private var remoteAgentTask: AgentRemoteTaskStatusSnapshot? {
+    let conversationID = message.conversationId.ifBlank(store.activeAgentConversationId)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationID.isEmpty else { return nil }
+    let turnID = message.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let remoteMessageID = message.remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return coordinator.remoteAgentTaskStatuses.values
+      .filter { snapshot in
+        guard snapshot.conversationId == conversationID,
+              !AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) else {
+          return false
+        }
+        let turnMatches = !turnID.isEmpty &&
+          (snapshot.taskId == turnID || snapshot.turnId == turnID)
+        let sourceID = snapshot.sourceMessageId > 0 ? String(snapshot.sourceMessageId) : ""
+        let sourceMatches = !remoteMessageID.isEmpty && !sourceID.isEmpty &&
+          (remoteMessageID == sourceID || remoteMessageID == "agent-stream-\(sourceID)")
+        return turnMatches || sourceMatches
+      }
+      .max { lhs, rhs in
+        if lhs.updatedAtMillis != rhs.updatedAtMillis {
+          return lhs.updatedAtMillis < rhs.updatedAtMillis
+        }
+        return lhs.id < rhs.id
+      }
+  }
+
+  private func cancelRemoteAgentTask(_ task: AgentRemoteTaskStatusSnapshot) {
+    guard cancellingRemoteTaskIDs.insert(task.id).inserted else { return }
+    statusMessage = t("signalasi.agent.remote_status.cancelling", "Sending cancellation...")
+    statusIsError = false
+    Task { @MainActor in
+      let sent = await coordinator.cancelRemoteAgentTask(task)
+      cancellingRemoteTaskIDs.remove(task.id)
+      guard sent else {
+        statusMessage = t("signalasi.agent.remote_status.cancel_failed", "The cancellation could not be sent.")
+        statusIsError = true
+        return
+      }
+      _ = store.appendDeliveryTrace(
+        message.id,
+        contactId: contact.id,
+        stage: "agent_cancelling",
+        detail: task.taskId
+      )
+      statusMessage = t("signalasi.agent.remote_status.cancel_sent", "Cancellation sent.")
+    }
   }
 
   private var heroTint: Color {

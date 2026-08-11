@@ -3251,7 +3251,9 @@
 "message_delivery_trace" = "投递轨迹";
 "toast_copied" = "已复制";
 "toast_deleted" = "已删除";
-"signalasi.message.actions_status_detail" = "本机消息操作已完成";
+"signalasi.message.actions_status_detail" = "此消息的操作状态";
+"signalasi.message.cancel_task_subtitle" = "请求已连接的 Agent 停止此任务";
+"signalasi.status.error" = "错误";
 "signalasi.identifier.message" = "消息";
 "delivery_trace_empty" = "暂无轨迹";
 "delivery_trace_created" = "已创建";
