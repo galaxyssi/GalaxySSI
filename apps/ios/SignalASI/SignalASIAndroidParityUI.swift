@@ -953,6 +953,7 @@ struct AgentHomeView: View {
       )
       richActionStatus = t("signalasi.agent.approval_status.approved", "The Agent action was approved.")
     }
+    resumePendingAgentDeliveryAfterTaskAction()
   }
 
   private func handleRemotePermissionAction(_ rawDecision: String) {
@@ -1308,6 +1309,12 @@ struct AgentHomeView: View {
     richActionStatus = coordinator.resumeLocalNativeAction(taskId: task.taskId)
       ? t("signalasi.agent.task_control.resumed", "Task resumed")
       : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
+    resumePendingAgentDeliveryAfterTaskAction()
+  }
+
+  private func resumePendingAgentDeliveryAfterTaskAction() {
+    coordinator.resumePendingAgentDelivery()
+    coordinator.refreshAgentHomeState()
   }
 
   private func agentTimelineActions(for task: AgentTaskRecord) -> [AgentExecutionLoopTimelineAction] {
@@ -1346,6 +1353,7 @@ struct AgentHomeView: View {
       richActionStatus = coordinator.pauseLocalNativeAction(taskId: task.taskId)
         ? t("signalasi.agent.task_control.paused", "Task paused")
         : t("signalasi.agent.task_control.pause_failed", "This task could not be paused")
+      resumePendingAgentDeliveryAfterTaskAction()
     case .resume:
       resumeActiveAgentTask(task)
     case .cancel:
@@ -1391,6 +1399,7 @@ struct AgentHomeView: View {
     richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
       ? t("signalasi.agent.task_control.cancelled", "Task cancelled")
       : t("signalasi.agent.task_control.cancel_failed", "This task could not be cancelled")
+    resumePendingAgentDeliveryAfterTaskAction()
   }
 
   private func agentTask(for message: ChatMessage) -> AgentTaskRecord? {
@@ -1714,6 +1723,7 @@ struct AgentHomeView: View {
          await coordinator.replanLocalNativeAction(taskId: task.taskId) {
         retryingAgentTaskIDs.remove(task.taskId)
         richActionStatus = t("signalasi.agent.task_control.replanned", "Task re-planned")
+        resumePendingAgentDeliveryAfterTaskAction()
         return
       }
       if let destination = store.agentSessionDestination(id: task.sessionId) {
@@ -1721,6 +1731,7 @@ struct AgentHomeView: View {
       }
       let sent = await coordinator.send(request, to: contact)
       retryingAgentTaskIDs.remove(task.taskId)
+      resumePendingAgentDeliveryAfterTaskAction()
       if !sent {
         richActionStatus = t(
           "signalasi.agent_tasks.retry_failed",
@@ -1844,6 +1855,7 @@ struct AgentHomeView: View {
       return false
     }
     coordinator.approveLocalNativeAction(taskId: task.taskId, remember: remember)
+    resumePendingAgentDeliveryAfterTaskAction()
     return true
   }
 
@@ -1860,6 +1872,7 @@ struct AgentHomeView: View {
       taskId: current.taskId,
       highRiskConfirmed: true
     )
+    resumePendingAgentDeliveryAfterTaskAction()
     pendingHighRiskApprovalTask = nil
   }
 
@@ -1929,16 +1942,19 @@ struct AgentHomeView: View {
       richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
         ? t("signalasi.agent.task_control.cancelled", "Task cancelled")
         : t("signalasi.agent.task_control.cancel_failed", "This task could not be cancelled")
+      resumePendingAgentDeliveryAfterTaskAction()
     case .resume:
       richActionStatus = coordinator.resumeLocalNativeAction(taskId: task.taskId)
         ? t("signalasi.agent.task_control.resumed", "Task resumed")
         : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
+      resumePendingAgentDeliveryAfterTaskAction()
     case .retry:
       retryAgentTask(task, mode: .retry)
     case .rollback:
       richActionStatus = coordinator.rollbackLastLocalNativeAction(taskId: task.taskId)
         ? t("signalasi.agent.task_control.rollback_requested", "Rollback requested")
         : t("signalasi.agent.task_control.rollback_failed", "This action cannot be rolled back")
+      resumePendingAgentDeliveryAfterTaskAction()
     case .copy:
       copyAgentRuntimeTask(task)
     case .viewLog:
