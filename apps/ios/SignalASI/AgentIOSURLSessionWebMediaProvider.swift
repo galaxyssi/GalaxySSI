@@ -580,9 +580,23 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }
       case .webOpen, .browserRender:
         let html = decode(resource.body, charset: charset)
-        output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
+        let article = AgentIOSPublicArticleParser.parse(url: URL(string: resource.finalURL) ?? url, source: html)
+        output["text"] = .string(article?.content ?? boundedText(
+          readableText(html),
+          maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters
+        ))
         output["html_sha256"] = .string(sha256(resource.body))
         output["render_mode"] = .string("bounded_http")
+        if let article = article {
+          output["title"] = .string(article.title)
+          output["article"] = .object([
+            "source_type": .string(article.sourceType),
+            "author": .string(article.author),
+            "published_at": .string(article.publishedAt),
+            "links": .array(article.links.map(AgentMcpJSONValue.string)),
+            "images": .array(article.imageURLs.map(AgentMcpJSONValue.string))
+          ])
+        }
       case .contentExtract, .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
            .fileDownload, .webDownload, .ocrRecognizeContent:
         break
