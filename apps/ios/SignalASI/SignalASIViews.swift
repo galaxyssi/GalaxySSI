@@ -1623,10 +1623,7 @@ struct VoiceSettingsView: View {
           ))
         }
         Section(t("voice_settings_section_wake", "Wake")) {
-          TextField(t("voice_wake_words", "Wake Words"), text: Binding(
-            get: { store.voiceSettings.wakeWordsText },
-            set: { value in store.updateVoiceSettings { $0.wakeWords = VoiceSettings.wakeWords(from: value) } }
-          ))
+          LabeledContent(t("voice_wake_words", "Wake Words"), value: WakeWordPolicy.wakeWord)
           VStack(alignment: .leading, spacing: 6) {
             HStack {
               Text(t("voice_wake_threshold", "Wake Threshold"))
