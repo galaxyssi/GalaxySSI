@@ -294,6 +294,8 @@
 "signalasi.conversation_hub.scan_add" = "扫描添加";
 "signalasi.conversation_hub.scan_add_subtitle" = "添加 Agent、可信联系人或设备";
 "signalasi.conversation_hub.new_friends_subtitle" = "查看待处理的联系人请求";
+"signalasi.conversation_hub.add_cloud_model" = "添加云端大模型";
+"signalasi.conversation_hub.add_cloud_model_subtitle" = "在手机端配置 Provider、模型和 API Key";
 "signalasi.conversation_hub.groups_empty" = "暂无群组";
 "signalasi.conversation_hub.groups_empty_subtitle" = "群组会话可用后会显示在这里。";
 "signalasi.conversation_hub.delete_contact" = "删除联系人";
