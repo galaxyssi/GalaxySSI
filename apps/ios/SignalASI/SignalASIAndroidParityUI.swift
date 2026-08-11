@@ -17,8 +17,8 @@ struct AgentHomeView: View {
   @State var voiceTranscriptionPending = false
   @State private var transcriptAutoFollow = true
   @State private var transcriptShowLatestButton = false
-  @State private var pendingAgentSwipeDirection = ""
-  @State private var agentSwipeRequest = 0
+  @State var pendingAgentSwipeDirection = ""
+  @State var agentSwipeRequest = 0
   @State private var transcriptContentMinY: CGFloat = 0
   @State private var transcriptTopLoadTriggered = false
   @State private var visibleAgentMessageLimit = 24
@@ -50,7 +50,7 @@ struct AgentHomeView: View {
   @State var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
-  @State private var composerFocusRequest = 0
+  @State var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
@@ -2146,7 +2146,7 @@ struct AgentHomeView: View {
     )
   }
 
-  private func refreshAgentScreenContext() {
+  func refreshAgentScreenContext() {
     let capturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     agentScreenContextCapturedAtMillis = capturedAtMillis
     let source = AgentIOSOwnedNotificationStore.shared.snapshot(limit: 6)
@@ -2261,141 +2261,6 @@ struct AgentHomeView: View {
   private func createAgentConversation() {
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
-  }
-
-  private func installComposerInputBridge() {
-    AgentIOSComposerInputBridge.shared.install { action in
-      applyComposerInputAction(action)
-    }
-  }
-
-  private func applyComposerInputAction(_ action: AgentAction) -> AgentActionResult {
-    let metadata = [
-      "platform": "ios",
-      "surface": "signalasi_agent_composer",
-      "field": "agent_goal",
-      "completion_verified": "true"
-    ]
-    switch action.kind {
-    case .typeText:
-      let text = action.parameters["text"] ?? ""
-      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-        return AgentActionResult(
-          actionId: action.id,
-          success: false,
-          message: t("signalasi.agent.input.text_missing", "No text was provided."),
-          metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
-        )
-      }
-      draft = text
-      actionTrayPresented = false
-      composerFocusRequest += 1
-      refreshAgentScreenContext()
-      return AgentActionResult(
-        actionId: action.id,
-        success: true,
-        message: t("signalasi.agent.input.text_entered", "Text entered in the Agent composer."),
-        metadata: metadata
-      )
-
-    case .deleteText:
-      draft = ""
-      actionTrayPresented = false
-      composerFocusRequest += 1
-      refreshAgentScreenContext()
-      return AgentActionResult(
-        actionId: action.id,
-        success: true,
-        message: t("signalasi.agent.input.text_cleared", "Agent composer text cleared."),
-        metadata: metadata
-      )
-
-    case .pasteText:
-      let text = UIPasteboard.general.string ?? ""
-      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-        return AgentActionResult(
-          actionId: action.id,
-          success: false,
-          message: t("signalasi.agent.input.clipboard_empty", "Clipboard is empty."),
-          metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
-        )
-      }
-      draft = text
-      actionTrayPresented = false
-      composerFocusRequest += 1
-      refreshAgentScreenContext()
-      return AgentActionResult(
-        actionId: action.id,
-        success: true,
-        message: t("signalasi.agent.input.clipboard_pasted", "Clipboard text pasted in the Agent composer."),
-        metadata: metadata
-      )
-
-    default:
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t("signalasi.agent.input.unsupported", "This action is not supported by the Agent composer."),
-        metadata: metadata.merging(["completion_verified": "false"]) { _, next in next }
-      )
-    }
-  }
-
-  private func installAgentHomeSwipeBridge() {
-    AgentIOSAgentHomeSwipeBridge.shared.install { action in
-      applyAgentHomeSwipeAction(action)
-    }
-  }
-
-  private func applyAgentHomeSwipeAction(_ action: AgentAction) -> AgentActionResult {
-    guard let direction = AgentIOSAgentSwipeDirection.resolve(parameters: action.parameters) else {
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.swipe.invalid_direction",
-          "The Agent transcript swipe direction is invalid."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_transcript",
-          "completion_verified": "false"
-        ]
-      )
-    }
-    guard direction == .up || direction == .down else {
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.swipe.vertical_only",
-          "The Agent transcript supports only vertical swipes."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_transcript",
-          "direction": direction.rawValue,
-          "completion_verified": "false"
-        ]
-      )
-    }
-
-    pendingAgentSwipeDirection = direction.rawValue
-    agentSwipeRequest += 1
-    return AgentActionResult(
-      actionId: action.id,
-      success: true,
-      message: t(
-        "signalasi.agent.swipe.completed",
-        "Agent transcript moved."
-      ),
-      metadata: [
-        "platform": "ios",
-        "surface": "signalasi_agent_transcript",
-        "direction": direction.rawValue,
-        "completion_verified": "true"
-      ]
-    )
   }
 
   private func installAgentHomeTapBridge() {
