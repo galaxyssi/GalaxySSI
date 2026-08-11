@@ -36,6 +36,7 @@ final class MessageCoordinator: ObservableObject {
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
   private var globalResearchResponseToken: UUID?
   private var globalCognitionResponseToken: UUID?
+  private var globalAutonomousResponseToken: UUID?
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "SignalASI iOS",
@@ -172,6 +173,18 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
+    self.globalAutonomousResponseToken = connectorResponseBus.addListener { [weak self] response in
+      Task { @MainActor in
+        guard let self else { return }
+        let consumed = SignalASIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
+          response,
+          settings: self.store.globalAgentSettings
+        )
+        if consumed {
+          self.refreshAgentHomeState()
+        }
+      }
+    }
     GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
@@ -216,6 +229,9 @@ final class MessageCoordinator: ObservableObject {
       connectorResponseBus.removeListener(token)
     }
     if let token = globalCognitionResponseToken {
+      connectorResponseBus.removeListener(token)
+    }
+    if let token = globalAutonomousResponseToken {
       connectorResponseBus.removeListener(token)
     }
   }
@@ -273,10 +289,7 @@ final class MessageCoordinator: ObservableObject {
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
     _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
-    _ = SignalASIGlobalAgentRuntimeBridge.processAutonomousCycle(
-      store: store,
-      toolRegistry: localNativeToolRuntime?.registry
-    )
+    _ = runGlobalAutonomousCycle()
     Task { @MainActor [weak self] in
       _ = await self?.runGlobalResearchCycle()
       _ = await self?.runGlobalCognitionCycle()
@@ -287,11 +300,140 @@ final class MessageCoordinator: ObservableObject {
   func runGlobalAutonomousCycle(
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
-    SignalASIGlobalAgentRuntimeBridge.processAutonomousCycle(
+    guard let result = SignalASIGlobalAgentRuntimeBridge.processAutonomousCycle(
       store: store,
       toolRegistry: localNativeToolRuntime?.registry,
       nowMillis: nowMillis
-    ) != nil
+    ) else {
+      return false
+    }
+    guard let request = result.dispatchRequest else { return true }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      guard await self.dispatchGlobalAutonomousRequest(request) else {
+        _ = SignalASIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
+          AgentConnectorResponse(
+            sourceMessageId: request.sourceMessageId,
+            contactId: request.contactId,
+            content: "Global autonomous request could not be dispatched",
+            conversationId: request.conversationId,
+            turnId: request.turnId,
+            taskId: request.runId,
+            success: false,
+            receivedAtMillis: nowMillis
+          ),
+          settings: self.store.globalAgentSettings,
+          nowMillis: nowMillis
+        )
+        self.refreshAgentHomeState()
+      }
+    }
+    return true
+  }
+
+  private func dispatchGlobalAutonomousRequest(
+    _ request: SignalASIGlobalAutonomousDispatchRequest
+  ) async -> Bool {
+    guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
+    let nowMillis = GlobalRealtimeClock.nowMillis()
+    switch request.transport {
+    case .pairedAgent:
+      let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let link = requestedDesktopId.isEmpty
+        ? store.serverLinks.first(where: { $0.paired })
+        : store.serverLinks.first(where: { $0.paired && $0.desktopId == requestedDesktopId })
+      guard let link else { return false }
+      let payload: [String: Any] = [
+        "type": "text",
+        "message_id": "global-autonomous-\(request.sourceMessageId)",
+        "source_message_id": request.sourceMessageId,
+        "content": "\(request.systemPrompt)\n\n\(request.prompt)",
+        "contact_id": contact.id,
+        "task_id": request.runId,
+        "conversation_id": request.conversationId,
+        "turn_id": request.turnId,
+        "client_route_id": link.routes.clientRouteId,
+        "client_message_id": request.sourceMessageId,
+        "agent_id": contact.connectorAgentId,
+        "desktop_id": contact.desktopId,
+        "sender": store.profile.signalASIId,
+        "response_language": LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage),
+        "execution_mode": AgentTaskExecutionMode.autoComplete.rawValue,
+        "original_goal": String(request.prompt.prefix(500)),
+        "time": nowMillis,
+        "_signalasi_task_id": request.runId,
+        "_signalasi_turn_id": request.turnId,
+        "_signalasi_conversation_id": request.conversationId
+      ]
+      do {
+        _ = try enqueueLinkPayload(
+          payload,
+          link: link,
+          topic: link.routes.upTopic,
+          clientSourceMessageId: String(request.sourceMessageId),
+          contactId: contact.id
+        )
+        scheduleOutboxFlushFromStore()
+        return true
+      } catch {
+        lastError = error.localizedDescription
+        return false
+      }
+    case .cloudModel:
+      guard contact.deliveryMode == .cloudAPI else { return false }
+      let turn = ChatMessage(
+        contactId: contact.id,
+        content: "\(request.systemPrompt)\n\n\(request.prompt)",
+        isMine: true,
+        deliveryStatus: .local,
+        conversationId: request.conversationId,
+        turnId: request.turnId
+      )
+      var accumulated = ""
+      do {
+        for try await event in cloudStreamEngine.streamConversation(
+          contact: contact,
+          store: store,
+          turns: [turn],
+          images: [],
+          requestId: "global-autonomous-\(request.sourceMessageId)"
+        ) {
+          switch event {
+          case .textDelta(let delta): accumulated += delta.text
+          case .failed(let failure):
+            _ = connectorResponseBus.publish(AgentConnectorResponse(
+              sourceMessageId: request.sourceMessageId,
+              contactId: contact.id,
+              content: failure.error.message,
+              conversationId: request.conversationId,
+              turnId: request.turnId,
+              taskId: request.runId,
+              success: false,
+              receivedAtMillis: nowMillis
+            ))
+            return true
+          case .connected, .usage, .toolCallDelta, .completed:
+            continue
+          }
+        }
+        let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return false }
+        _ = connectorResponseBus.publish(AgentConnectorResponse(
+          sourceMessageId: request.sourceMessageId,
+          contactId: contact.id,
+          content: content,
+          conversationId: request.conversationId,
+          turnId: request.turnId,
+          taskId: request.runId,
+          success: true,
+          receivedAtMillis: nowMillis
+        ))
+        return true
+      } catch {
+        lastError = error.localizedDescription
+        return false
+      }
+    }
   }
 
   @discardableResult
