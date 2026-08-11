@@ -476,9 +476,19 @@ extension SignalASIGlobalAgentRuntimeBridge {
         }
       } else if candidate.attemptCount < 3 {
         next.status = .pending
+        if !candidate.resourceId.isBlank,
+           !next.attemptedResourceIds.contains(candidate.resourceId) {
+          next.attemptedResourceIds.append(candidate.resourceId)
+        }
+        next.resourceId = ""
         next.lastError = response.content.ifBlank("The delegated Agent returned no result")
       } else {
         next.status = .failed
+        if !candidate.resourceId.isBlank,
+           !next.attemptedResourceIds.contains(candidate.resourceId) {
+          next.attemptedResourceIds.append(candidate.resourceId)
+        }
+        next.resourceId = ""
         next.lastError = response.content.ifBlank("The delegated Agent returned no result")
       }
       return next
@@ -493,6 +503,7 @@ extension SignalASIGlobalAgentRuntimeBridge {
     store.upsertAutonomousRun(updated)
 
     if let completedAction = updated.actions.first(where: { $0.id == action.id }),
+       (succeeded || completedAction.status == .failed),
        settings.dynamicAutonomousReplanningEnabled,
        GlobalAutonomousReplanPolicy.shouldReview(
          run: updated,
