@@ -646,6 +646,7 @@
     A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */; };
     A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */; };
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
+    A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */; };
     A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */; };
     A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */; };
     A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */; };
@@ -1413,6 +1414,7 @@
     A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareBluetoothDiscoveryProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareStatusProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
     A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleRequestPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCompletionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionBrowserSessionStore.swift; sourceTree = "<group>"; };
@@ -1658,6 +1660,7 @@
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
+        A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */,
         A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */,
@@ -2869,6 +2872,7 @@
         A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */,
         A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
+        A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */,
         A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */,
