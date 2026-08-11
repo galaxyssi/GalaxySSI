@@ -375,13 +375,16 @@ struct SignalASIVoiceTabView: View {
           badge: lastVoiceTargetName
         )
         if let reply = latestVoiceReply {
-          SignalASISecurityStatusRow(
-            title: t("signalasi.voice.reply", "Reply"),
-            subtitle: reply.content,
-            systemImage: "text.bubble.fill",
-            tint: .signalASIAccent,
-            badge: t("signalasi.voice.reply_received", "Received")
-          )
+          if replySpeech.isSpeaking {
+            Button(action: handleWakeOrbTap) {
+              voiceReplyStatusRow(reply)
+            }
+            .buttonStyle(.plain)
+            .disabled(wakeListener.isCommandCapturing)
+            .accessibilityLabel(Text(t("signalasi.voice.barge_in_action", "Interrupt reply and speak")))
+          } else {
+            voiceReplyStatusRow(reply)
+          }
         } else if !submitStatus.isEmpty {
           SignalASISecurityStatusRow(
             title: t("signalasi.voice.reply", "Reply"),
@@ -393,6 +396,16 @@ struct SignalASIVoiceTabView: View {
         }
       }
     }
+  }
+
+  private func voiceReplyStatusRow(_ reply: ChatMessage) -> some View {
+    SignalASISecurityStatusRow(
+      title: t("signalasi.voice.reply", "Reply"),
+      subtitle: reply.content,
+      systemImage: "text.bubble.fill",
+      tint: .signalASIAccent,
+      badge: t("signalasi.voice.reply_received", "Received")
+    )
   }
 
   private var quickControlsSection: some View {
