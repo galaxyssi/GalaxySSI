@@ -6,6 +6,7 @@ struct SignalASIVoiceTabView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
+  @StateObject private var wakeListener = SignalASIVoiceWakeController()
   @State private var voiceState = VoiceInteractionCoordinatorRegistry.coordinator.snapshot()
   @State private var observerId = ""
   @State private var submitStatus = ""
@@ -32,7 +33,13 @@ struct SignalASIVoiceTabView: View {
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
       .navigationBarHidden(true)
-      .onAppear(perform: startObserving)
+      .onAppear {
+        startObserving()
+        wakeListener.activate(settings: settings, onWakeCommand: submitVoiceTranscript)
+      }
+      .onChange(of: settings) { value in
+        wakeListener.update(settings: value)
+      }
       .onDisappear(perform: stopObserving)
     }
     .navigationViewStyle(StackNavigationViewStyle())
@@ -56,7 +63,7 @@ struct SignalASIVoiceTabView: View {
       }
 
       SignalASIVoiceWakeOrb(
-        isActive: settings.wakeListeningEnabled || holdToTalk.isRecording,
+        isActive: wakeListener.isListening || wakeListener.isPreparing || holdToTalk.isRecording,
         isRecording: holdToTalk.isRecording
       )
 
@@ -105,9 +112,9 @@ struct SignalASIVoiceTabView: View {
   private var wakeStatusPill: some View {
     HStack(spacing: 7) {
       Circle()
-        .fill(settings.wakeListeningEnabled ? Color.signalASIAccent : Color.orange)
+        .fill(wakeListener.isListening ? Color.signalASIAccent : Color.orange)
         .frame(width: 8, height: 8)
-      Text(settings.wakeListeningEnabled
+      Text(wakeListener.isListening
         ? t("voice_status_low_power", "Low-power listening")
         : t("common_off", "Off"))
         .font(.system(size: 13, weight: .bold))
@@ -353,6 +360,7 @@ struct SignalASIVoiceTabView: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
+        wakeListener.pauseForManualCapture()
         holdToTalk.dragChanged(
           translation: value.translation,
           settings: settings,
@@ -366,6 +374,7 @@ struct SignalASIVoiceTabView: View {
       }
       .onEnded { value in
         holdToTalk.dragEnded(translation: value.translation)
+        wakeListener.resumeAfterManualCapture()
       }
   }
 
@@ -450,6 +459,7 @@ struct SignalASIVoiceTabView: View {
   }
 
   private func stopObserving() {
+    wakeListener.deactivate()
     holdToTalk.cancelFromView()
     guard !observerId.isEmpty else { return }
     VoiceInteractionCoordinatorRegistry.coordinator.removeObserver(observerId)
