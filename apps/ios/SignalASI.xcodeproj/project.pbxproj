@@ -654,6 +654,7 @@
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
     A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */; };
     A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */; };
+    A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */; };
     A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */; };
     A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */; };
     A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */; };
@@ -1428,6 +1429,7 @@
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
     A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleRequestPolicy.swift; sourceTree = "<group>"; };
+    A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicDownloadPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCompletionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionBrowserSessionStore.swift; sourceTree = "<group>"; };
     A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaDownloadWriter.swift; sourceTree = "<group>"; };
@@ -1677,6 +1679,7 @@
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
+        A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
         A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */,
         A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */,
         A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */,
@@ -2895,6 +2898,7 @@
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
+        A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
         A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */,
         A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */,
         A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */,
