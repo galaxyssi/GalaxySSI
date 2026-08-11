@@ -55,15 +55,18 @@ struct SignalASILogoView: View {
 
 struct SignalASITopBar<Leading: View, Trailing: View>: View {
   var title: String
+  var onTitleTap: (() -> Void)? = nil
   let leading: Leading
   let trailing: Trailing
 
   init(
     title: String,
+    onTitleTap: (() -> Void)? = nil,
     @ViewBuilder leading: () -> Leading,
     @ViewBuilder trailing: () -> Trailing
   ) {
     self.title = title
+    self.onTitleTap = onTitleTap
     self.leading = leading()
     self.trailing = trailing()
   }
@@ -72,16 +75,28 @@ struct SignalASITopBar<Leading: View, Trailing: View>: View {
     HStack(spacing: 0) {
       leading
         .frame(width: 40, height: 56)
-      Text(title)
-        .font(.system(size: 17, weight: .bold))
-        .foregroundColor(.signalASITextPrimary)
-        .frame(maxWidth: .infinity, minHeight: 56)
+      if let onTitleTap {
+        Button(action: onTitleTap) {
+          titleLabel
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+      } else {
+        titleLabel
+      }
       trailing
         .frame(width: 40, height: 56)
     }
     .padding(.horizontal, 16)
     .frame(height: 56)
     .background(Color.signalASIBarBackground)
+  }
+
+  private var titleLabel: some View {
+    Text(title)
+      .font(.system(size: 17, weight: .bold))
+      .foregroundColor(.signalASITextPrimary)
+      .frame(maxWidth: .infinity, minHeight: 56)
   }
 }
 
