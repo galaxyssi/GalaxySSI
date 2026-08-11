@@ -9,10 +9,7 @@ struct SignalASIAgentHomeQuickActionsView: View {
   var onAddFile: () -> Void
 
   var body: some View {
-    LazyVGrid(
-      columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-      spacing: 8
-    ) {
+    HStack(spacing: 0) {
       action(
         title: t("agent_attachment_new_task", "New session"),
         systemImage: "square.and.pencil",
@@ -39,8 +36,8 @@ struct SignalASIAgentHomeQuickActionsView: View {
         action: onAddFile
       )
     }
-    .padding(.horizontal, 12)
-    .padding(.bottom, 2)
+    .frame(height: 96)
+    .padding(.horizontal, 8)
   }
 
   private func action(
@@ -49,25 +46,19 @@ struct SignalASIAgentHomeQuickActionsView: View {
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      HStack(spacing: 8) {
+      VStack(spacing: 6) {
         Image(systemName: systemImage)
-          .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(.signalASIAccent)
-          .frame(width: 20, height: 20)
+          .font(.system(size: 21, weight: .semibold))
+          .frame(width: 25, height: 25)
         Text(title)
-          .font(.system(size: 12.5, weight: .semibold))
+          .font(.system(size: 11.5, weight: .regular))
           .foregroundColor(.signalASITextPrimary)
           .lineLimit(1)
-          .minimumScaleFactor(0.78)
-        Spacer(minLength: 4)
-        Image(systemName: "chevron.right")
-          .font(.system(size: 10, weight: .bold))
-          .foregroundColor(.signalASITextSecondary)
+          .minimumScaleFactor(0.65)
       }
-      .padding(.horizontal, 10)
-      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-      .background(Color.signalASISurface)
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .foregroundColor(.signalASITextPrimary)
+      .frame(maxWidth: .infinity, minHeight: 84)
+      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
