@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 
 struct SignalASIVoiceTabView: View {
+  var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -56,6 +58,20 @@ struct SignalASIVoiceTabView: View {
       HStack(spacing: 10) {
         wakeStatusPill
         Spacer(minLength: 8)
+        if let onNavigateToMainTab {
+          Button {
+            onNavigateToMainTab(.messages)
+          } label: {
+            Image(systemName: "message.fill")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.white)
+              .frame(width: 40, height: 40)
+              .background(Color.white.opacity(0.12))
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(t("signalasi.voice.open_messages", "Open messages")))
+        }
         NavigationLink(destination: SignalASIVoiceAssistantSettingsView()) {
           Image(systemName: "gearshape.fill")
             .font(.system(size: 17, weight: .semibold))
