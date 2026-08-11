@@ -71,7 +71,7 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
   static let publicWebConsent = "signalasi.consent.public_web"
   static let cacheConsent = "signalasi.consent.web_intelligence_cache"
 
-  static let maxFetchBytes: Int64 = 1_048_576
+  static let maxFetchBytes = AgentIOSWebMediaNativeToolCatalog.maxFetchBytes
   static let maxContentCharacters: Int64 = 240_000
   static let maxCacheTtlMillis: Int64 = 30 * 24 * 60 * 60 * 1_000
 
