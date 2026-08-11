@@ -243,10 +243,10 @@ struct AddContactView: View {
     .onAppear {
       guard autoOpenScanner, !scannerAutoOpened else { return }
       scannerAutoOpened = true
-      // Wait for the navigation push to finish before presenting the camera.
-      // This avoids a presentation race when the scan action is launched from
-      // the composer, directory, or another pushed iOS 15 view.
-      DispatchQueue.main.async {
+      // A next-run-loop dispatch is still inside a NavigationLink or sheet
+      // transition on iOS 15, so UIKit can discard the camera presentation.
+      // Wait for that transition to settle before opening the scanner.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
         guard autoOpenScanner else { return }
         contactScannerPresented = true
       }
