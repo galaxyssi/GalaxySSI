@@ -3777,6 +3777,7 @@
 "signalasi.agent.model_selection.cloud_section" = "云模型";
 "signalasi.agent.model_selection.current" = "当前";
 "signalasi.agent.model_selection.unavailable" = "不可用";
+"signalasi.agent.model_selection.unavailable_subtitle" = "所选目标当前不可用。请选择自动模式或其他已就绪的目标。";
 "signalasi.agent.model_selection.no_models" = "没有就绪模型";
 "signalasi.agent.model_selection.no_models_subtitle" = "请在设置中配置云模型、安装本机模型或连接 Agent。";
 "signalasi.agent.cancel_task" = "取消任务";
@@ -3861,6 +3862,7 @@
 "signalasi.agent.task_control.replan" = "重新规划任务";
 "signalasi.agent.task_control.replan_prompt" = "重新规划并继续此 Agent 任务：%@";
 "signalasi.agent.task_control.title" = "任务控制";
+"signalasi.agent.task_control.unavailable" = "此任务操作已不可用";
 "signalasi.agent.task_control.rollback" = "回滚上一个动作";
 "signalasi.agent.task_control.rollback_requested" = "已请求回滚上一个动作";
 "signalasi.agent.task_control.rollback_failed" = "当前没有可回滚的动作";
