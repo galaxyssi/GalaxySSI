@@ -72,7 +72,7 @@ enum SignalASIGlobalAutonomousModelRuntime {
     let budget = SignalASIGlobalAutonomousBudgetRuntime.acquire(
       store: appStore,
       runId: run.id,
-      actionId: action.id,
+      actionId: "\(action.id):attempt:\(action.attemptCount)",
       kind: .autonomousAction,
       resourceId: resource.id,
       systemPrompt: actionSystemPrompt,
@@ -164,7 +164,7 @@ enum SignalASIGlobalAutonomousModelRuntime {
     let budget = SignalASIGlobalAutonomousBudgetRuntime.acquire(
       store: appStore,
       runId: run.id,
-      actionId: "revision:\(run.revision)",
+      actionId: "revision:\(run.revision):attempt:\(run.review.attemptCount)",
       kind: .planReview,
       resourceId: resource.id,
       systemPrompt: planReviewSystemPrompt,
@@ -431,7 +431,7 @@ extension SignalASIGlobalAgentRuntimeBridge {
 
     SignalASIGlobalAutonomousBudgetRuntime.complete(
       runId: run.id,
-      actionId: action.id,
+      actionId: "\(action.id):attempt:\(action.attemptCount)",
       kind: .autonomousAction,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
@@ -521,7 +521,7 @@ extension SignalASIGlobalAgentRuntimeBridge {
   ) -> Bool {
     SignalASIGlobalAutonomousBudgetRuntime.complete(
       runId: run.id,
-      actionId: "revision:\(run.revision)",
+      actionId: "revision:\(run.revision):attempt:\(run.review.attemptCount)",
       kind: .planReview,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
