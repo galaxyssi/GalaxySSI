@@ -192,6 +192,8 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       "retry_attempt": String(max(0, retryAttempt)),
       "foreground_app": screen.foregroundApp,
       "page_title": screen.pageTitle,
+      "contact_id": clean(action.parameters["_signalasi_contact_id"] ?? ""),
+      "response_language": clean(action.parameters["response_language"] ?? ""),
       AgentNativeToolRegistry.legacyActionIdAttribute: action.id
     ]
   }
