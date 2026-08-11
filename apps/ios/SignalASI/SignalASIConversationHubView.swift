@@ -41,26 +41,7 @@ struct SignalASIConversationHubView: View {
             Color.clear
           }
         },
-        trailing: {
-          if selectedTab == .groups {
-            Color.clear
-          } else {
-            Button {
-              if selectedTab == .contacts {
-                openScannerOnAdd = false
-                addContactPresented = true
-              } else {
-                _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-              }
-            } label: {
-              Image(systemName: "plus")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundColor(.signalASITextPrimary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(t("signalasi.common.add", "Add")))
-          }
-        }
+        trailing: { Color.clear }
       )
 
       Picker("", selection: $selectedTab) {
@@ -218,15 +199,6 @@ struct SignalASIConversationHubView: View {
 
     return VStack(alignment: .leading, spacing: 8) {
       hubActionRow(
-        title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
-        subtitle: t("signalasi.conversation_hub.scan_add_subtitle", "Add an Agent, trusted contact, or device"),
-        systemImage: "qrcode.viewfinder",
-        tint: .signalASIAccent
-      ) {
-        openScannerOnAdd = true
-        addContactPresented = true
-      }
-      hubActionRow(
         title: t("signalasi.new_friends", "New Friends"),
         subtitle: t("signalasi.conversation_hub.new_friends_subtitle", "Review pending contact requests"),
         systemImage: "person.badge.plus",
@@ -245,6 +217,15 @@ struct SignalASIConversationHubView: View {
         tint: .signalASIInsightText
       ) {
         cloudModelPresented = true
+      }
+      hubActionRow(
+        title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
+        subtitle: t("signalasi.conversation_hub.scan_add_subtitle", "Add an Agent, trusted contact, or device"),
+        systemImage: "qrcode.viewfinder",
+        tint: .signalASIAccent
+      ) {
+        openScannerOnAdd = true
+        addContactPresented = true
       }
 
       if sections.isEmpty {
