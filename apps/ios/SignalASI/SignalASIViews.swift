@@ -377,70 +377,17 @@ struct ConversationView: View {
       }
       Divider()
         .background(Color.signalASISeparator)
-      VStack(spacing: 8) {
-        if !attachments.isEmpty {
-          AttachmentPreviewStrip(attachments: attachments) { attachment in
-            attachments.removeAll { $0.id == attachment.id }
-          }
-        }
-        if !attachmentError.isEmpty {
-          Text(attachmentError)
-            .font(.caption)
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        HStack(spacing: 8) {
-          Button {
-            withAnimation(.easeOut(duration: 0.16)) {
-              attachmentMenuPresented = true
-            }
-          } label: {
-            Image(systemName: "plus")
-              .font(.system(size: 20, weight: .semibold))
-              .foregroundColor(.signalASITextPrimary)
-          }
-          .agentDeviceTouchTarget(deviceInputPolicy)
-          TextField(t("signalasi.message.input", "Message"), text: $draft)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 36)
-            .background(Color.signalASISearchBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-              RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
-            )
-          Button {
-            let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            let outgoingAttachments = attachments
-            let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
-            let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
-              ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
-              : ""
-            draft = ""
-            attachments.removeAll()
-            attachmentError = ""
-            Task {
-              await coordinator.send(
-                text,
-                to: contact,
-                attachments: outgoingAttachments,
-                agentGoalOverride: agentGoal
-              )
-            }
-          } label: {
-            Image(systemName: "arrow.up")
-              .font(.system(size: 17, weight: .bold))
-              .foregroundColor(canSend ? .white : .signalASITextSecondary)
-              .frame(width: 32, height: 32)
-              .background(Circle().fill(canSend ? Color.signalASIAccent : Color.signalASIButtonSoft))
-          }
-          .agentDeviceTouchTarget(deviceInputPolicy)
-          .disabled(!canSend)
-        }
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .background(Color.signalASIBarBackground)
+      SignalASIConversationComposer(
+        draft: $draft,
+        attachments: $attachments,
+        attachmentError: $attachmentError,
+        attachmentMenuPresented: $attachmentMenuPresented,
+        deviceInputPolicy: deviceInputPolicy,
+        voiceSettings: store.voiceSettings,
+        onSend: sendCurrentMessage,
+        onVoiceTranscript: sendVoiceTranscript,
+        t: t
+      )
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .background(navigationShortcuts)
@@ -714,6 +661,27 @@ struct ConversationView: View {
       attachmentMenuPresented = false
     }
     action()
+  }
+
+  private func sendCurrentMessage() {
+    let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    let outgoingAttachments = attachments
+    let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
+    let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
+      ? t("agent_attachment_default_goal", "The user attached files without stating a task. Ask one concise question about what to do and offer four to six concrete actions suited to the file types. Mention only the file names; do not inspect, summarize, or return the attachments.")
+      : ""
+    draft = ""
+    attachments.removeAll()
+    attachmentError = ""
+    Task {
+      await coordinator.send(text, to: contact, attachments: outgoingAttachments, agentGoalOverride: agentGoal)
+    }
+  }
+
+  private func sendVoiceTranscript(_ text: String) {
+    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanText.isEmpty else { return }
+    Task { await coordinator.send(cleanText, to: contact) }
   }
 
   private func createAgentConversation() {
