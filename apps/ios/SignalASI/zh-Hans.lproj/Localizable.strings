@@ -32,7 +32,7 @@
 "agent_quick_save_screen" = "记忆";
 "agent_quick_search_knowledge" = "知识库";
 "agent_quick_permissions" = "控制";
-"signalasi.settings.agent_tools.understand_subtitle" = "屏幕理解、App 适配器与可见界面状态";
+"signalasi.settings.agent_tools.understand_subtitle" = "屏幕理解、可见界面、通知与设备状态";
 "signalasi.settings.agent_tools.controls_subtitle" = "权限、本机访问与操作边界";
 "agent_section_screen_details" = "屏幕详情";
 "agent_screen_context_value" = "屏幕：%d 段文字 / %d 个动作 / %d 个输入框";

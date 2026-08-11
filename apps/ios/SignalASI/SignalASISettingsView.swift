@@ -199,12 +199,12 @@ struct SettingsView: View {
       SettingsSectionTitle(title: t("settings_agent_tools", "Agent tools"))
       SettingsNavigationRow(
         title: t("agent_quick_understand", "Understand"),
-        subtitle: t("signalasi.settings.agent_tools.understand_subtitle", "Screen understanding, app adapters, and visible UI readiness"),
+        subtitle: t("signalasi.settings.agent_tools.understand_subtitle", "Screen understanding, visible UI, notifications, and device status"),
         systemImage: "rectangle.on.rectangle",
         tint: .signalASIInsightText,
         badge: t("signalasi.common.view", "View")
       ) {
-        SignalASIAppAdaptersView()
+        SignalASIAgentScreenUnderstandingView()
       }
       SettingsNavigationRow(
         title: t("agent_quick_save_screen", "Memory"),
