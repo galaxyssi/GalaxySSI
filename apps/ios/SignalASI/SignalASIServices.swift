@@ -33,6 +33,7 @@ final class MessageCoordinator: ObservableObject {
   private let richContentMaterializer: AgentRichContentMaterializer
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
+  private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "SignalASI iOS",
@@ -147,6 +148,12 @@ final class MessageCoordinator: ObservableObject {
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.downloadCompletionCoordinator = AgentIOSDownloadCompletionCoordinator(store: store)
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
+    self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { [weak self] in
+      Task { @MainActor in
+        _ = self?.store.deliverPendingGlobalProactiveMessages()
+      }
+    }
+    GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
         self?.handleIncoming(topic: topic, payload: payload)
@@ -182,6 +189,10 @@ final class MessageCoordinator: ObservableObject {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
       self?.refreshAgentHomeState()
     }
+  }
+
+  deinit {
+    GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
   }
 
   @discardableResult
@@ -234,6 +245,7 @@ final class MessageCoordinator: ObservableObject {
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
+    _ = store.deliverPendingGlobalProactiveMessages()
   }
 
   /// Mirrors Android's profile update fan-out for verified person contacts that
