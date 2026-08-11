@@ -675,8 +675,12 @@ struct SignalASIConversationHubView: View {
       hubRowContent(
         title: contact.displayName,
         subtitle: contact.id,
-        systemImage: contact.type == "agent" ? "cpu" : "person.fill",
-        tint: contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary,
+        systemImage: contact.type == "device"
+          ? "iphone"
+          : (contact.type == "agent" ? "cpu" : "person.fill"),
+        tint: contact.type == "device"
+          ? .blue
+          : (contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary),
         trailing: "chevron.right"
       )
     }
