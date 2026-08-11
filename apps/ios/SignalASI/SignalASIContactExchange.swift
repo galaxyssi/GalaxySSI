@@ -394,6 +394,7 @@ enum SignalASIContactExchange {
     let connectorProtocols = connectorStringArray(object, key: "protocols")
     let connectorProtocolFeatures = connectorStringArray(object, key: "protocol_features")
       .ifEmpty(connectorStringArray(object.dictionary("adapter") ?? [:], key: "features"))
+    let deviceMetadata = SignalASIDesktopDeviceMetadata.from(payload: object)
     return SignalASIFriendRequest(
       id: "req_\(Int64(now.timeIntervalSince1970 * 1000))",
       signalASIId: signalASIId,
@@ -415,6 +416,7 @@ enum SignalASIContactExchange {
         .ifBlank(object.string("model")),
       devicePlatformVersion: object.string("platform_version"),
       deviceProfileName: object.string("profile_name"),
+      deviceHostName: deviceMetadata?.hostName ?? "",
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
       setupNextStep: object.string("setup_next_step").ifBlank(object.string("setup")),
       desktopAccessProfile: object.string("desktop_access_profile")

@@ -1610,6 +1610,8 @@
 "signalasi.contact_detail.hardware" = "硬件";
 "signalasi.contact_detail.platform_version" = "系统版本";
 "signalasi.contact_detail.platform" = "平台";
+"signalasi.contact_detail.host_name" = "主机名";
+"signalasi.contact_detail.host" = "主机";
 "signalasi.contact_detail.device" = "设备";
 "signalasi.contact_detail.delete_with_chat_message" = "此联系人和聊天记录将从本机删除。";
 "signalasi.contact_detail.agent_id" = "智能体 ID";

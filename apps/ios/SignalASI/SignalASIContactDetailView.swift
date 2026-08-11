@@ -165,7 +165,8 @@ struct ContactDetailView: View {
       contact.deviceManufacturer,
       contact.deviceModel,
       contact.devicePlatformVersion,
-      contact.deviceProfileName
+      contact.deviceProfileName,
+      contact.deviceHostName
     ].contains { value in
       !(value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -198,6 +199,15 @@ struct ContactDetailView: View {
             systemImage: "gearshape",
             tint: .orange,
             badge: contact.deviceProfileName?.nonEmpty ?? t("signalasi.contact_detail.platform", "Platform")
+          )
+        }
+        if let hostName = contact.deviceHostName?.nonEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.host_name", "Host Name"),
+            subtitle: hostName,
+            systemImage: "network",
+            tint: .indigo,
+            badge: t("signalasi.contact_detail.host", "Host")
           )
         }
       }
