@@ -58,6 +58,14 @@ struct SignalASIDesktopDeviceMetadata: Codable, Equatable, Hashable {
     return metadata.isEmpty ? nil : metadata
   }
 
+  static func displayName(from payload: [String: Any], fallback: String = "") -> String {
+    let device = payload.dictionary("desktop_device") ?? [:]
+    return payload.string("desktop_display_name")
+      .ifBlank(device.string("display_name"))
+      .ifBlank(payload.string("desktop_name"))
+      .ifBlank(fallback)
+  }
+
   func merged(with newer: SignalASIDesktopDeviceMetadata) -> SignalASIDesktopDeviceMetadata {
     SignalASIDesktopDeviceMetadata(
       deviceName: newer.deviceName.ifBlank(deviceName),

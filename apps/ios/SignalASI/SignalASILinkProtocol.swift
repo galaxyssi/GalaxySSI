@@ -124,7 +124,10 @@ enum SignalASILinkProtocol {
     let authorizationToken = qr.dictionary("desktop_control_authorization")?.string("token") ?? ""
     return PairingQRCode(
       desktopId: qr.string("desktop_id"),
-      desktopName: qr.string("desktop_name").ifBlank("SignalASI Desktop"),
+      desktopName: SignalASIDesktopDeviceMetadata.displayName(
+        from: qr,
+        fallback: "SignalASI Desktop"
+      ),
       desktopFingerprint: qr.string("identity_key_sha256"),
       serverRouteId: serverRouteId,
       pairingTopic: expectedTopic,

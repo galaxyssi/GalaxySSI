@@ -659,7 +659,7 @@ enum SignalASIContactExchange {
   }
 
   private static func desktopName(from object: [String: Any]) -> String {
-    object.string("desktop_name")
+    SignalASIDesktopDeviceMetadata.displayName(from: object)
       .ifBlank(desktopServerObject(from: object)?.string("desktop_name") ?? "")
       .ifBlank(desktopServerObject(from: object)?.string("name") ?? "")
   }
