@@ -1002,110 +1002,49 @@ struct AgentHomeView: View {
       onExecutionStateChanged: refreshAgentRuntimeAuditRecords
     ) {
       LazyVStack(spacing: 5) {
-          if !scanStatus.isEmpty {
-            SignalASIAgentScanStatusView(
-              message: scanStatus,
-              isError: scanStatusIsError,
-              dismissTitle: t("signalasi.agent.scan.dismiss", "Dismiss"),
-              retryTitle: t("signalasi.agent.scan.retry", "Scan again"),
-              onRetry: {
-                scanStatus = ""
-                scanShortcutActive = true
-              },
-              onDismiss: { scanStatus = "" }
-            )
-          }
-          if !activeVoiceAgentRuns.isEmpty {
-            NavigationLink(destination: SignalASIVoiceAgentRunsView()) {
-              SignalASIAgentVoiceRunSummaryCard(runs: activeVoiceAgentRuns)
+          SignalASIAgentHomeExecutionAlertsView(
+            scanStatus: scanStatus,
+            scanStatusIsError: scanStatusIsError,
+            activeVoiceAgentRuns: activeVoiceAgentRuns,
+            cancellableVoiceAgentRuns: activeVoiceAgentRuns.filter {
+              voiceRunRemoteTask($0)?.isCancellable == true
+            },
+            cancellingVoiceRunIDs: cancellingVoiceRunIDs,
+            manualRouteWarning: manualRouteWarning,
+            automaticRouteWarning: automaticRouteWarning,
+            hasOlderTranscriptMessages: hasOlderTranscriptMessages,
+            pendingConfirmationTask: pendingConfirmationTask,
+            blockedAgentTask: blockedAgentTask,
+            retryingAgentTaskIDs: retryingAgentTaskIDs,
+            t: t,
+            onRetryScan: {
+              scanStatus = ""
+              scanShortcutActive = true
+            },
+            onDismissScan: { scanStatus = "" },
+            onCancelVoiceRun: cancelVoiceAgentRun,
+            onOpenModelSelection: {
+              modelSelection = AgentModelSelectionSettings.selection(
+                for: store.activeAgentConversationId
+              )
+            },
+            onLoadOlderTranscriptMessages: loadOlderTranscriptMessages,
+            onApproveOnce: { task in
+              requestAgentTaskApproval(task)
+            },
+            onApproveAlways: { task in
+              requestAgentTaskApproval(task, remember: true)
+            },
+            onDeny: { task in
+              coordinator.denyLocalNativeAction(taskId: task.taskId)
+            },
+            onRetryBlockedTask: retryBlockedAgentTask,
+            onReplanBlockedTask: { task in
+              retryAgentTask(task, mode: .replan)
             }
-            .buttonStyle(.plain)
-            ForEach(activeVoiceAgentRuns.filter { voiceRunRemoteTask($0)?.isCancellable == true }) { run in
-              Button(role: .destructive) {
-                cancelVoiceAgentRun(run)
-              } label: {
-                Label(
-                  cancellingVoiceRunIDs.contains(run.runId)
-                    ? t("signalasi.agent.remote_status.cancelling", "Cancelling...")
-                    : t("signalasi.agent.remote_status.cancel", "Cancel task"),
-                  systemImage: "xmark.circle"
-                )
-                .frame(maxWidth: .infinity, alignment: .trailing)
-              }
-              .buttonStyle(.bordered)
-              .disabled(cancellingVoiceRunIDs.contains(run.runId))
-            }
-          }
-          if let routeWarning = manualRouteWarning {
-            SignalASISecurityNavigationRow(
-              title: routeWarning.title,
-              subtitle: routeWarning.subtitle,
-              systemImage: "exclamationmark.triangle.fill",
-              tint: .orange,
-              badge: t("signalasi.agent.model_selection.choose", "Choose")
-            ) {
-              SignalASIAgentModelSelectionView {
-                modelSelection = AgentModelSelectionSettings.selection(
-                  for: store.activeAgentConversationId
-                )
-              }
-            }
-          }
-          if let routeWarning = automaticRouteWarning {
-            SignalASISecurityNavigationRow(
-              title: routeWarning.title,
-              subtitle: routeWarning.subtitle,
-              systemImage: "exclamationmark.triangle.fill",
-              tint: .orange,
-              badge: t("signalasi.agent.model_selection.choose", "Choose")
-            ) {
-              SignalASIAgentModelSelectionView {
-                modelSelection = AgentModelSelectionSettings.selection(
-                  for: store.activeAgentConversationId
-                )
-              }
-            }
-          }
+          )
           if let recoverableAgentTask = recoverableAgentTasksFromOtherSessions.first {
             recoverableAgentTaskBanner(recoverableAgentTask)
-          }
-          if hasOlderTranscriptMessages {
-            SignalASIAgentLoadOlderButton(
-              title: t("signalasi.agent.load_older", "Load earlier messages"),
-              action: loadOlderTranscriptMessages
-            )
-          }
-          if let pendingConfirmationTask {
-            SignalASIAgentConfirmationCard(
-              task: pendingConfirmationTask,
-              onApproveOnce: {
-                requestAgentTaskApproval(pendingConfirmationTask)
-              },
-              onApproveAlways: {
-                requestAgentTaskApproval(pendingConfirmationTask, remember: true)
-              },
-              onDeny: {
-                coordinator.denyLocalNativeAction(taskId: pendingConfirmationTask.taskId)
-              }
-            )
-          }
-          if let blockedAgentTask {
-            SignalASIAgentBlockedTaskCard(
-              title: t("signalasi.agent.blocked.title", "Agent task blocked"),
-              goal: blockedAgentTask.goal,
-              subtitle: t(
-                "signalasi.agent.blocked.subtitle",
-                "This task could not continue. Retry or re-plan the original goal."
-              ),
-              retryTitle: t("signalasi.common.retry", "Retry"),
-              replanTitle: t("signalasi.agent.task_control.replan", "Re-plan task"),
-              retryingTitle: t("signalasi.agent_tasks.retrying", "Retrying task..."),
-              isRetrying: retryingAgentTaskIDs.contains(blockedAgentTask.taskId)
-            ) {
-              retryBlockedAgentTask(blockedAgentTask)
-            } onReplan: {
-              retryAgentTask(blockedAgentTask, mode: .replan)
-            }
           }
           if messages.isEmpty &&
               !voiceTranscriptionPending &&
