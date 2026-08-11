@@ -240,7 +240,7 @@ struct OnDeviceAgentPermissionsView: View {
             ) {
               SignalASIAppAdaptersView()
             }
-            OnDeviceAgentStatusRow(
+            OnDeviceAgentNavigationRow(
               title: t("signalasi.on_device_agent.visual_model", "On-device Visual Model"),
               subtitle: t(
                 "signalasi.on_device_agent.visual_model_subtitle",
@@ -251,7 +251,9 @@ struct OnDeviceAgentPermissionsView: View {
               badge: store.agentSafetySettings.screenObservationAllowed
                 ? t("signalasi.status.ready", "Ready")
                 : t("signalasi.permission.needs_setup", "Needs setup")
-            )
+            ) {
+              SignalASIAgentScreenUnderstandingView()
+            }
             OnDeviceAgentToggleRow(
               title: t("signalasi.on_device_agent.allow_screen_observation", "Screen Understanding"),
               subtitle: t(

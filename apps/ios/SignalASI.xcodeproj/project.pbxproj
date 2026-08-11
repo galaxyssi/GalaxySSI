@@ -189,6 +189,7 @@
     A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001435 /* SignalASIAgentComposerView.swift */; };
     A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */; };
     A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */; };
+    A10000000000000000001769 /* SignalASIAgentScreenUnderstandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001769 /* SignalASIAgentScreenUnderstandingView.swift */; };
     A10000000000000000001440 /* SignalASIAgentRuntimePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */; };
     A10000000000000000001450 /* SignalASIAgentRuntimeTaskDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001450 /* SignalASIAgentRuntimeTaskDetailSheet.swift */; };
     A10000000000000000001451 /* SignalASIAgentRuntimeActionEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001451 /* SignalASIAgentRuntimeActionEditorSheet.swift */; };
@@ -1022,6 +1023,7 @@
     A20000000000000000001435 /* SignalASIAgentComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerView.swift; sourceTree = "<group>"; };
     A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentComposerUiPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScreenContextView.swift; sourceTree = "<group>"; };
+    A20000000000000000001769 /* SignalASIAgentScreenUnderstandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScreenUnderstandingView.swift; sourceTree = "<group>"; };
     A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRuntimePanelView.swift; sourceTree = "<group>"; };
     A20000000000000000001450 /* SignalASIAgentRuntimeTaskDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRuntimeTaskDetailSheet.swift; sourceTree = "<group>"; };
     A20000000000000000001451 /* SignalASIAgentRuntimeActionEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRuntimeActionEditorSheet.swift; sourceTree = "<group>"; };
@@ -2188,6 +2190,7 @@
         A20000000000000000001435 /* SignalASIAgentComposerView.swift */,
         A20000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift */,
         A20000000000000000001439 /* SignalASIAgentScreenContextView.swift */,
+        A20000000000000000001769 /* SignalASIAgentScreenUnderstandingView.swift */,
         A20000000000000000001440 /* SignalASIAgentRuntimePanelView.swift */,
         A20000000000000000001450 /* SignalASIAgentRuntimeTaskDetailSheet.swift */,
         A20000000000000000001451 /* SignalASIAgentRuntimeActionEditorSheet.swift */,
@@ -3144,6 +3147,7 @@
         A10000000000000000001435 /* SignalASIAgentComposerView.swift in Sources */,
         A10000000000000000001502 /* SignalASIAgentComposerUiPolicy.swift in Sources */,
         A10000000000000000001439 /* SignalASIAgentScreenContextView.swift in Sources */,
+        A10000000000000000001769 /* SignalASIAgentScreenUnderstandingView.swift in Sources */,
         A10000000000000000001440 /* SignalASIAgentRuntimePanelView.swift in Sources */,
         A10000000000000000001450 /* SignalASIAgentRuntimeTaskDetailSheet.swift in Sources */,
         A10000000000000000001451 /* SignalASIAgentRuntimeActionEditorSheet.swift in Sources */,
