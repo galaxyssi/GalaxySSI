@@ -18,6 +18,7 @@
     A10000000000000000000066 /* SignalASIStoreTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000066 /* SignalASIStoreTasks.swift */; };
     A10000000000000000000067 /* SignalASIStoreTaskMutations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000067 /* SignalASIStoreTaskMutations.swift */; };
     A10000000000000000000068 /* SignalASIStoreTaskProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000068 /* SignalASIStoreTaskProjection.swift */; };
+    A10000000000000000000070 /* SignalASIStoreMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* SignalASIStoreMemory.swift */; };
     A10000000000000000000069 /* SignalASIStoreKnowledge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000069 /* SignalASIStoreKnowledge.swift */; };
     A10000000000000000000065 /* SignalASIStoreSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000065 /* SignalASIStoreSessions.swift */; };
     A10000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift */; };
@@ -795,6 +796,7 @@
     A20000000000000000000066 /* SignalASIStoreTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreTasks.swift; sourceTree = "<group>"; };
     A20000000000000000000067 /* SignalASIStoreTaskMutations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreTaskMutations.swift; sourceTree = "<group>"; };
     A20000000000000000000068 /* SignalASIStoreTaskProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreTaskProjection.swift; sourceTree = "<group>"; };
+    A20000000000000000000070 /* SignalASIStoreMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreMemory.swift; sourceTree = "<group>"; };
     A20000000000000000000069 /* SignalASIStoreKnowledge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreKnowledge.swift; sourceTree = "<group>"; };
     A20000000000000000000065 /* SignalASIStoreSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStoreSessions.swift; sourceTree = "<group>"; };
     A20000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentReceiptHandling.swift; sourceTree = "<group>"; };
@@ -2001,6 +2003,7 @@
         A20000000000000000000066 /* SignalASIStoreTasks.swift */,
         A20000000000000000000067 /* SignalASIStoreTaskMutations.swift */,
         A20000000000000000000068 /* SignalASIStoreTaskProjection.swift */,
+        A20000000000000000000070 /* SignalASIStoreMemory.swift */,
         A20000000000000000000069 /* SignalASIStoreKnowledge.swift */,
         A20000000000000000000065 /* SignalASIStoreSessions.swift */,
         A20000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift */,
@@ -2903,6 +2906,7 @@
         A10000000000000000000066 /* SignalASIStoreTasks.swift in Sources */,
         A10000000000000000000067 /* SignalASIStoreTaskMutations.swift in Sources */,
         A10000000000000000000068 /* SignalASIStoreTaskProjection.swift in Sources */,
+        A10000000000000000000070 /* SignalASIStoreMemory.swift in Sources */,
         A10000000000000000000069 /* SignalASIStoreKnowledge.swift in Sources */,
         A10000000000000000000065 /* SignalASIStoreSessions.swift in Sources */,
         A10000000000000000000063 /* SignalASIAttachmentReceiptHandling.swift in Sources */,
