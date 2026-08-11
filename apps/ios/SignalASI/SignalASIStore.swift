@@ -298,7 +298,6 @@ final class SignalASIStore: ObservableObject {
   let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
-  private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
@@ -313,7 +312,11 @@ final class SignalASIStore: ObservableObject {
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
-    if let data = defaults.data(forKey: storageKey),
+    let encryptedState = SignalASIEncryptedStateStore.load(defaults: defaults, secrets: secrets)
+    let legacyState = defaults.data(forKey: SignalASIEncryptedStateStore.legacyStateKey)
+    let stateData = encryptedState ?? legacyState
+    let shouldMigrateLegacyState = encryptedState == nil && legacyState != nil
+    if let data = stateData,
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
       contacts = state.contacts
@@ -359,6 +362,9 @@ final class SignalASIStore: ObservableObject {
       )
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
+      if shouldMigrateLegacyState {
+        save()
+      }
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -639,7 +645,7 @@ final class SignalASIStore: ObservableObject {
     }
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
-    defaults.removeObject(forKey: storageKey)
+    SignalASIEncryptedStateStore.destroy(defaults: defaults, secrets: secrets)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     agentMemoryStore.clear()
@@ -2057,7 +2063,7 @@ final class SignalASIStore: ObservableObject {
       globalAgentSettings: globalAgentSettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
-      defaults.set(data, forKey: storageKey)
+      _ = SignalASIEncryptedStateStore.write(data, defaults: defaults, secrets: secrets)
     }
   }
 
