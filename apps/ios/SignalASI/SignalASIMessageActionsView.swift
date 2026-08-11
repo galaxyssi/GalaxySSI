@@ -231,9 +231,14 @@ struct SignalASIMessageActionsView: View {
     if message.isMine {
       return t("message_sent_by_me", "Sent by Me")
     }
-    return contact.id == "system"
-      ? t("chat_system_notice", "System Notifications")
-      : contact.displayName
+    switch contact.id {
+    case "system":
+      return t("chat_system_notice", "System Notifications")
+    case "me":
+      return t("chat_me", "Me")
+    default:
+      return contact.displayName
+    }
   }
 
   private func remoteTaskStepSuffix(_ task: AgentRemoteTaskStatusSnapshot) -> String {
