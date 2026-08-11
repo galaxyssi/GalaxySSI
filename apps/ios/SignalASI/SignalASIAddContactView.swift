@@ -240,16 +240,14 @@ struct AddContactView: View {
         }
       )
     }
-    .onAppear {
+    .task {
       guard autoOpenScanner, !scannerAutoOpened else { return }
       scannerAutoOpened = true
-      // A next-run-loop dispatch is still inside a NavigationLink or sheet
-      // transition on iOS 15, so UIKit can discard the camera presentation.
-      // Wait for that transition to settle before opening the scanner.
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-        guard autoOpenScanner else { return }
-        contactScannerPresented = true
-      }
+      // SwiftUI cancels this task when the Add page disappears, so a delayed
+      // scanner presentation cannot outlive the sheet that requested it.
+      try? await Task.sleep(nanoseconds: 350_000_000)
+      guard !Task.isCancelled, autoOpenScanner else { return }
+      contactScannerPresented = true
     }
   }
 
