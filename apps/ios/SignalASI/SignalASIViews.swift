@@ -251,7 +251,7 @@ struct ContactRow: View {
       AvatarView(contact: contact)
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
-          Text(contact.displayName)
+          Text(contactTitle)
             .font(.system(size: 16, weight: summary.hasUnreadMessages ? .semibold : .regular))
             .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)
@@ -290,6 +290,12 @@ struct ContactRow: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private var contactTitle: String {
+    contact.id == "system"
+      ? t("chat_system_notice", "System Notifications")
+      : contact.displayName
   }
 }
 
@@ -347,6 +353,9 @@ struct ConversationView: View {
   }
 
   private var contactStatusText: String {
+    if isSystemNoticeContact {
+      return t("chat_system_notice", "System Notifications")
+    }
     let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
     switch contact.deliveryMode {
     case .cloudAPI:
@@ -579,7 +588,7 @@ struct ConversationView: View {
     HStack(spacing: 8) {
       AvatarView(contact: contact, size: 30)
       VStack(alignment: .leading, spacing: 3) {
-        Text(contact.displayName)
+        Text(contactTitle)
           .font(.system(size: 16, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
           .lineLimit(1)
@@ -594,6 +603,12 @@ struct ConversationView: View {
         }
       }
     }
+  }
+
+  private var contactTitle: String {
+    isSystemNoticeContact
+      ? t("chat_system_notice", "System Notifications")
+      : contact.displayName
   }
 
   @ViewBuilder

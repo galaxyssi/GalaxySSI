@@ -215,7 +215,12 @@ struct SignalASIMessageActionsView: View {
   }
 
   private var messageSenderTitle: String {
-    message.isMine ? t("message_sent_by_me", "Sent by Me") : contact.displayName
+    if message.isMine {
+      return t("message_sent_by_me", "Sent by Me")
+    }
+    return contact.id == "system"
+      ? t("chat_system_notice", "System Notifications")
+      : contact.displayName
   }
 
   private var remoteAgentTask: AgentRemoteTaskStatusSnapshot? {
