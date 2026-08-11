@@ -68,7 +68,12 @@ enum SignalASIGlobalAutonomousModelRuntime {
     }
 
     let sourceMessageId = correlationId([run.id, action.id], nowMillis: nowMillis)
-    let prompt = actionPrompt(run: run, action: action)
+    let assignment = GlobalAutonomousSpecialistContractPolicy.assignment(
+      run: run,
+      action: action,
+      resourceId: resource.id
+    )
+    let prompt = actionPrompt(run: run, action: action, assignment: assignment)
     let budget = SignalASIGlobalAutonomousBudgetRuntime.acquire(
       store: appStore,
       runId: run.id,
@@ -254,9 +259,12 @@ enum SignalASIGlobalAutonomousModelRuntime {
 
   private static func actionPrompt(
     run: GlobalAutonomousRun,
-    action: GlobalAutonomousAction
+    action: GlobalAutonomousAction,
+    assignment: GlobalAutonomousSpecialistAssignment
   ) -> String {
     """
+    \(GlobalAutonomousSpecialistContractPolicy.promptBlock(assignment))
+
     Run goal: \(run.goal)
     Topic: \(run.topic)
     Requested step kind: \(action.kind.rawValue)
@@ -443,25 +451,27 @@ extension SignalASIGlobalAgentRuntimeBridge {
       nowMillis: nowMillis
     )
 
-    let succeeded = response.success && !response.content.isBlank
+    let assignment = GlobalAutonomousSpecialistContractPolicy.assignment(
+      run: run,
+      action: action,
+      resourceId: action.resourceId
+    )
+    let completion = GlobalAutonomousSpecialistContractPolicy.evaluate(
+      raw: response.content,
+      assignment: assignment,
+      createdAtMillis: nowMillis
+    )
+    let succeeded = response.success && completion.successful
     var updated = run
     updated.actions = run.actions.map { candidate in
       guard candidate.id == action.id else { return candidate }
       var next = candidate
       next.sourceMessageId = 0
       next.leaseExpiresAtMillis = 0
-      next.result = String(response.content.prefix(12_000))
       next.completedAtMillis = nowMillis
       if succeeded {
-        let evidence = GlobalActionEvidence(
-          kind: .delegatedResult,
-          summary: String(response.content.prefix(2_000)),
-          sourceRef: "encrypted://global-agent/autonomous/\(run.id)/\(action.id)",
-          confidence: 0.86,
-          verified: true,
-          createdAtMillis: nowMillis
-        )
-        next.evidence = Array((candidate.evidence + [evidence]).suffix(24))
+        next.result = completion.resultText
+        next.evidence = Array((candidate.evidence + completion.evidence).suffix(24))
         let contract = candidate.verificationContract.criteria.isEmpty
           ? GlobalActionVerificationPolicy.defaultContract(action: candidate)
           : candidate.verificationContract
@@ -484,7 +494,9 @@ extension SignalASIGlobalAgentRuntimeBridge {
           next.attemptedResourceIds.append(candidate.resourceId)
         }
         next.resourceId = ""
-        next.lastError = response.content.ifBlank("The delegated Agent returned no result")
+        next.result = ""
+        next.completedAtMillis = 0
+        next.lastError = completion.failureReason.ifBlank(response.content.ifBlank("The delegated Agent returned no result"))
       } else {
         next.status = .failed
         if !candidate.resourceId.isBlank,
@@ -492,33 +504,52 @@ extension SignalASIGlobalAgentRuntimeBridge {
           next.attemptedResourceIds.append(candidate.resourceId)
         }
         next.resourceId = ""
-        next.lastError = response.content.ifBlank("The delegated Agent returned no result")
+        next.lastError = completion.failureReason.ifBlank(response.content.ifBlank("The delegated Agent returned no result"))
       }
       return next
     }
+    let completedAction = updated.actions.first(where: { $0.id == action.id }) ?? action
     updated.status = GlobalAutonomousRunPolicy.terminalStatus(updated.actions) ?? .queued
     updated.nextAttemptAtMillis = updated.status == .queued
       ? nowMillis + (succeeded ? 0 : GlobalAutonomousRunPolicy.retryDelayMillis(action.attemptCount))
       : 0
     updated.leaseExpiresAtMillis = 0
-    updated.lastError = succeeded ? "" : response.content.ifBlank("The delegated Agent returned no result")
+    updated.lastError = succeeded ? "" : completedAction.lastError
     updated.updatedAtMillis = nowMillis
     store.upsertAutonomousRun(updated)
 
-    if let completedAction = updated.actions.first(where: { $0.id == action.id }),
-       (succeeded || completedAction.status == .failed),
+    var finalized = updated
+    if completedAction.status == .completed {
+      let conflicts = GlobalAutonomousSpecialistConflictPolicy.detect(
+        run: updated,
+        candidateAction: completedAction,
+        candidateClaims: completion.result.claims
+      )
+      finalized = GlobalAutonomousSpecialistConflictPolicy.ensureVerifier(
+        run: updated,
+        candidateAction: completedAction,
+        conflicts: conflicts,
+        nowMillis: nowMillis
+      )
+      if finalized != updated {
+        store.upsertAutonomousRun(finalized)
+      }
+    }
+
+    if let finalizedAction = finalized.actions.first(where: { $0.id == action.id }),
+       [.completed, .failed].contains(finalizedAction.status),
        settings.dynamicAutonomousReplanningEnabled,
        GlobalAutonomousReplanPolicy.shouldReview(
-         run: updated,
-         action: completedAction,
-         succeeded: succeeded,
-         result: response.content,
-         enabled: true,
+         run: finalized,
+         action: finalizedAction,
+         succeeded: finalizedAction.status == .completed,
+         result: completion.resultText.ifBlank(response.content),
+         enabled: settings.dynamicAutonomousReplanningEnabled,
          maxReplans: settings.maxAutonomousReplans
        ) {
       store.upsertAutonomousRun(GlobalAutonomousReplanPolicy.requestReview(
-        run: updated,
-        reason: succeeded
+        run: finalized,
+        reason: finalizedAction.status == .completed
           ? "The delegated result may change the remaining plan"
           : "The delegated autonomous step failed",
         nowMillis: nowMillis
