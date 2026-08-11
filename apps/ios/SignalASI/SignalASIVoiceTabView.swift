@@ -10,6 +10,10 @@ struct SignalASIVoiceTabView: View {
   @State private var voiceState = VoiceInteractionCoordinatorRegistry.coordinator.snapshot()
   @State private var observerId = ""
   @State private var submitStatus = ""
+  @State private var lastVoiceTranscript = ""
+  @State private var lastVoiceTargetId = ""
+  @State private var lastVoiceTargetName = ""
+  @State private var lastVoiceSubmissionAt = Date.distantFuture
 
   private var settings: VoiceSettings { store.voiceSettings }
 
@@ -25,6 +29,7 @@ struct SignalASIVoiceTabView: View {
             statusStrip
           }
           liveTranscriptSection
+          voiceReplySection
           quickControlsSection
           liveHealthSection
         }
@@ -311,6 +316,39 @@ struct SignalASIVoiceTabView: View {
     }
   }
 
+  @ViewBuilder
+  private var voiceReplySection: some View {
+    if !lastVoiceTranscript.isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        SignalASISecuritySectionTitle(title: t("signalasi.voice.activity", "Voice Activity"))
+        SignalASISecurityStatusRow(
+          title: t("signalasi.voice.transcript", "You said"),
+          subtitle: lastVoiceTranscript,
+          systemImage: "mic.fill",
+          tint: .blue,
+          badge: lastVoiceTargetName
+        )
+        if let reply = latestVoiceReply {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.voice.reply", "Reply"),
+            subtitle: reply.content,
+            systemImage: "text.bubble.fill",
+            tint: .signalASIAccent,
+            badge: t("signalasi.voice.reply_received", "Received")
+          )
+        } else if !submitStatus.isEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.voice.reply", "Reply"),
+            subtitle: submitStatus,
+            systemImage: "arrow.triangle.2.circlepath",
+            tint: .signalASIInsightText,
+            badge: t("signalasi.voice.reply_pending", "Waiting")
+          )
+        }
+      }
+    }
+  }
+
   private var quickControlsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.voice.quick_controls", "Quick Controls"))
@@ -463,18 +501,33 @@ struct SignalASIVoiceTabView: View {
       SignalASIContact.hermes()
   }
 
+  private var latestVoiceReply: ChatMessage? {
+    guard !lastVoiceTargetId.isEmpty else { return nil }
+    return store.messages(for: lastVoiceTargetId)
+      .reversed()
+      .first { message in
+        !message.isMine && !message.isSystem && message.createdAt >= lastVoiceSubmissionAt
+      }
+  }
+
   private func submitVoiceTranscript(_ text: String) {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty else { return }
     let contact = voiceTargetContact
+    lastVoiceTranscript = cleanText
+    lastVoiceTargetId = contact.id
+    lastVoiceTargetName = contact.displayName
+    lastVoiceSubmissionAt = Date()
     submitStatus = String(
       format: t("Sending voice transcript to %@", "Sending voice transcript to %@"),
       contact.displayName
     )
     Task {
-      await coordinator.send(cleanText, to: contact, agentGoalOverride: cleanText)
+      let sent = await coordinator.send(cleanText, to: contact, agentGoalOverride: cleanText)
       await MainActor.run {
-        submitStatus = t("signalasi.voice.sent", "Voice transcript sent")
+        submitStatus = sent
+          ? t("signalasi.voice.sent", "Voice transcript sent")
+          : coordinator.lastError.ifBlank(t("signalasi.voice.send_failed", "Voice transcript could not be sent"))
       }
     }
   }
