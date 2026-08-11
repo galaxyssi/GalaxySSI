@@ -85,7 +85,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
   static let browserSessionConsent = "signalasi.consent.browser_session"
   static let localContentExtractConsent = "signalasi.consent.local_content_extract"
 
-  static let maxFetchBytes: Int64 = 1_048_576
+  static let maxFetchBytes: Int64 = 10 * 1_048_576
   static let maxDownloadBytes: Int64 = 12 * 1_048_576
   static let maxContentCharacters: Int64 = 240_000
   static let maxUrlCharacters: Int64 = 4_096
