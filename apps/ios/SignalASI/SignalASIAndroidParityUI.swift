@@ -61,6 +61,9 @@ struct AgentHomeView: View {
   @State private var runtimeArtifactExportSourceURI = ""
   @State private var runtimeArtifactError = ""
   @State private var runtimeArtifactStatus = ""
+  @State private var publicPageExportDocument: SignalASIRuntimeArtifactDocument?
+  @State private var publicPageExportPresented = false
+  @State private var publicPageExportFilename = ""
   @State private var richActionStatus = ""
   @State private var recoveringAgentTaskIDs: Set<String> = []
   @State private var approvalActionsInFlight: Set<String> = []
@@ -502,6 +505,7 @@ struct AgentHomeView: View {
       )
       .onAppear {
         ensureActiveAgentSession()
+        presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
         store.markContactRead(contact.id)
         _ = coordinator.requestCapabilityManifestRefresh()
@@ -561,6 +565,9 @@ struct AgentHomeView: View {
       .onChange(of: coordinator.artifactDownloadFailure) { failure in
         guard !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         runtimeArtifactError = failure
+      }
+      .onChange(of: coordinator.pendingPhonePublicPageExport) { _ in
+        presentPendingPhonePublicPageExport()
       }
       .signalASIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,
@@ -632,6 +639,23 @@ struct AgentHomeView: View {
       )
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .fileExporter(
+      isPresented: $publicPageExportPresented,
+      document: publicPageExportDocument,
+      contentType: .data,
+      defaultFilename: publicPageExportFilename
+    ) { result in
+      if case .failure(let error) = result {
+        runtimeArtifactError = error.localizedDescription
+      }
+    }
+  }
+
+  private func presentPendingPhonePublicPageExport() {
+    guard let export = coordinator.consumePendingPhonePublicPageExport() else { return }
+    publicPageExportDocument = SignalASIRuntimeArtifactDocument(data: export.data)
+    publicPageExportFilename = export.displayName
+    publicPageExportPresented = true
   }
 
   private var runtimeArtifactManagedRoots: [URL] {

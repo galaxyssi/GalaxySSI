@@ -14,6 +14,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var artifactDownloadCompletedRevision = 0
   @Published private(set) var artifactDownloadSavedPath = ""
   @Published private(set) var artifactDownloadFailure = ""
+  @Published private(set) var pendingPhonePublicPageExport: AgentIOSPhonePublicHTMLExport?
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
   var onIncomingMessage: ((ChatMessage) -> Void)?
@@ -89,6 +90,11 @@ final class MessageCoordinator: ObservableObject {
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
+
+  func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
+    defer { pendingPhonePublicPageExport = nil }
+    return pendingPhonePublicPageExport
+  }
 
   private struct ActiveAgentTurnCandidate {
     var goal: String
@@ -1405,6 +1411,9 @@ final class MessageCoordinator: ObservableObject {
           )
         }.value
         let remoteAttachments = publicPage.map { effectiveAttachments + [$0.attachment] } ?? effectiveAttachments
+        if let export = publicPage?.export {
+          pendingPhonePublicPageExport = export
+        }
         let remoteRequestText = publicPage.map {
           requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: $0)
         } ?? requestText
