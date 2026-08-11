@@ -77,8 +77,11 @@ struct SignalASIApp: App {
 
 struct RootView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @State private var systemLocaleRevision = 0
 
   private var interfaceLanguage: String {
+    // Re-evaluate automatic language after iOS reports a locale or time change.
+    _ = systemLocaleRevision
     LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
   }
 
@@ -87,6 +90,15 @@ struct RootView: View {
       .accentColor(.signalASIAccent)
       .signalASIInterfaceLanguage(interfaceLanguage)
       .id(interfaceLanguage)
+      .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
+        systemLocaleRevision &+= 1
+      }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+        systemLocaleRevision &+= 1
+      }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+        systemLocaleRevision &+= 1
+      }
   }
 }
 
