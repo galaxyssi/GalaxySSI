@@ -22,19 +22,23 @@ struct QRCodeScannerView: UIViewControllerRepresentable {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var onCode: (String) -> Void
   var onError: (String) -> Void = { _ in }
+  var onCancel: () -> Void = {}
 
   init(
     onCode: @escaping (String) -> Void,
-    onError: @escaping (String) -> Void = { _ in }
+    onError: @escaping (String) -> Void = { _ in },
+    onCancel: @escaping () -> Void = {}
   ) {
     self.onCode = onCode
     self.onError = onError
+    self.onCancel = onCancel
   }
 
   func makeUIViewController(context: Context) -> QRScannerViewController {
     QRScannerViewController(
       onCode: onCode,
       onError: onError,
+      onCancel: onCancel,
       messages: QRScannerMessages(
         cameraAccessRequired: t(
           "signalasi.scanner.camera_access_required",
@@ -88,6 +92,7 @@ fileprivate struct QRScannerMessages {
 final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate, PHPickerViewControllerDelegate {
   private let onCode: (String) -> Void
   private let onError: (String) -> Void
+  private let onCancel: () -> Void
   private let messages: QRScannerMessages
   private let session = AVCaptureSession()
   private let sessionQueue = DispatchQueue(label: "signalasi.qr-scanner.session")
@@ -99,10 +104,12 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   fileprivate init(
     onCode: @escaping (String) -> Void,
     onError: @escaping (String) -> Void,
+    onCancel: @escaping () -> Void,
     messages: QRScannerMessages
   ) {
     self.onCode = onCode
     self.onError = onError
+    self.onCancel = onCancel
     self.messages = messages
     super.init(nibName: nil, bundle: nil)
   }
@@ -227,6 +234,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     guard !didFinish else { return }
     didFinish = true
     stopSession()
+    onCancel()
     dismiss(animated: true)
   }
 
