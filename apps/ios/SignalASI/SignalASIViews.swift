@@ -248,6 +248,7 @@ struct ContactRow: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var contact: SignalASIContact
   var summary: ContactConversationSummary
+  var showsSummary = true
 
   private var kindPresentation: SignalASIContactKindPresentation? {
     SignalASIContactKindPresentation.forContact(contact, t: t)
@@ -255,11 +256,11 @@ struct ContactRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      AvatarView(contact: contact)
+      AvatarView(contact: contact, size: showsSummary ? 44 : 36)
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
           Text(contactTitle)
-            .font(.system(size: 16, weight: summary.hasUnreadMessages ? .semibold : .regular))
+            .font(.system(size: showsSummary ? 15.5 : 15, weight: summary.hasUnreadMessages ? .semibold : .regular))
             .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
@@ -267,7 +268,7 @@ struct ContactRow: View {
             SignalASIContactKindBadge(presentation: kindPresentation)
           }
           Spacer()
-          if let latestMessage = summary.lastMessage {
+          if showsSummary, let latestMessage = summary.lastMessage {
             Text(
               SignalASIChatListTimeFormatter.string(
                 for: latestMessage.createdAt,
@@ -278,12 +279,14 @@ struct ContactRow: View {
               .foregroundColor(.signalASITextSecondary)
           }
         }
-        Text(summary.lastMessage?.content ?? contact.setupDetail)
-          .lineLimit(1)
-          .font(.system(size: 14))
-          .foregroundColor(summary.hasUnreadMessages ? .signalASITextPrimary : .signalASITextSecondary)
+        if showsSummary {
+          Text(summary.lastMessage?.content ?? contact.setupDetail)
+            .lineLimit(1)
+            .font(.system(size: 14))
+            .foregroundColor(summary.hasUnreadMessages ? .signalASITextPrimary : .signalASITextSecondary)
+        }
       }
-      if summary.hasUnreadMessages {
+      if showsSummary, summary.hasUnreadMessages {
         Text(summary.unreadCount > 99 ? "99+" : "\(summary.unreadCount)")
           .font(.caption2.weight(.semibold))
           .monospacedDigit()
@@ -296,7 +299,8 @@ struct ContactRow: View {
       }
     }
     .padding(.horizontal, 12)
-    .padding(.vertical, 10)
+    .padding(.vertical, showsSummary ? 10 : 8)
+    .frame(minHeight: showsSummary ? 70 : 56)
     .background(Color.signalASISurface)
   }
 
@@ -1242,13 +1246,17 @@ struct ContactsView: View {
                             .id(contactSectionAnchor(section.id))
                           ForEach(section.contacts) { contact in
                             NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-                              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+                              ContactRow(
+                                contact: contact,
+                                summary: store.conversationSummary(for: contact.id),
+                                showsSummary: false
+                              )
                             }
                             .buttonStyle(.plain)
                             if contact.id != section.contacts.last?.id {
                               Divider()
                                 .background(Color.signalASISeparator)
-                                .padding(.leading, 66)
+                                .padding(.leading, 60)
                             }
                           }
                         }
