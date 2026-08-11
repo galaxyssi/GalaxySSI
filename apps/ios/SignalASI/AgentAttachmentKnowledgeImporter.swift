@@ -64,24 +64,21 @@ enum AgentAttachmentKnowledgeImporter {
       result = readableText(from: attachment.data).map {
         AgentIOSPublicArticleParser.plainText(from: $0)
       }
-    } else {
-      switch extensionName {
-      case "pdf":
-        result = PDFDocument(data: attachment.data).map { document in
-          (0..<document.pageCount)
-            .compactMap { document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-        }
-      case "docx":
-        result = try? AgentOfficeDocumentExtractor.extractDocx(attachment.data)
-      case "xlsx":
-        result = try? AgentOfficeDocumentExtractor.extractXlsx(attachment.data)
-      case "pptx":
-        result = try? AgentOfficeDocumentExtractor.extractPptx(attachment.data)
-      default:
-        result = readableText(from: attachment.data)
+    } else if isPDF(attachment, extensionName: extensionName) {
+      result = PDFDocument(data: attachment.data).map { document in
+        (0..<document.pageCount)
+          .compactMap { document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) }
+          .filter { !$0.isEmpty }
+          .joined(separator: "\n\n")
       }
+    } else if isDocx(attachment, extensionName: extensionName) {
+      result = try? AgentOfficeDocumentExtractor.extractDocx(attachment.data)
+    } else if isXlsx(attachment, extensionName: extensionName) {
+      result = try? AgentOfficeDocumentExtractor.extractXlsx(attachment.data)
+    } else if isPptx(attachment, extensionName: extensionName) {
+      result = try? AgentOfficeDocumentExtractor.extractPptx(attachment.data)
+    } else {
+      result = readableText(from: attachment.data)
     }
     let clean = result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return clean.isEmpty ? nil : String(clean.prefix(AgentKnowledgeImportPolicy.maxExtractedCharacters))
@@ -139,12 +136,39 @@ enum AgentAttachmentKnowledgeImporter {
   }
 
   private static func isImage(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
-    attachment.mimeType.lowercased().hasPrefix("image/") || imageExtensions.contains(extensionName)
+    normalizedMimeType(attachment).hasPrefix("image/") || imageExtensions.contains(extensionName)
   }
 
   private static func isHTML(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
-    ["text/html", "application/xhtml+xml"].contains(attachment.mimeType.lowercased()) ||
+    ["text/html", "application/xhtml+xml"].contains(normalizedMimeType(attachment)) ||
       ["htm", "html", "xhtml"].contains(extensionName)
+  }
+
+  private static func isPDF(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    extensionName == "pdf" || normalizedMimeType(attachment) == "application/pdf"
+  }
+
+  private static func isDocx(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    extensionName == "docx" ||
+      normalizedMimeType(attachment) == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  }
+
+  private static func isXlsx(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    extensionName == "xlsx" ||
+      normalizedMimeType(attachment) == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  }
+
+  private static func isPptx(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    extensionName == "pptx" ||
+      normalizedMimeType(attachment) == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  }
+
+  private static func normalizedMimeType(_ attachment: AgentAttachmentKnowledgeInput) -> String {
+    let rawType = attachment.mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let first = rawType.split(separator: ";", maxSplits: 1).first else {
+      return ""
+    }
+    return String(first).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
   private static func knowledgeTags(for attachment: AgentAttachmentKnowledgeInput) -> [String] {
