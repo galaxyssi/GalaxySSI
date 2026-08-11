@@ -821,6 +821,20 @@ struct AgentConversationMergeMutation: Codable, Equatable {
 }
 
 enum AgentConversationMergePolicy {
+  static func stableMergedMessageID(
+    targetId: String,
+    sourceId: String,
+    messageId: UUID
+  ) -> UUID? {
+    UUID(
+      uuidString: stableMergedEntryId(
+        targetId: targetId,
+        sourceId: sourceId,
+        entryId: messageId.uuidString
+      )
+    )
+  }
+
   static func mergeIntoParent(
     conversations: [AgentConversation],
     entries: [AgentTranscriptEntry],
