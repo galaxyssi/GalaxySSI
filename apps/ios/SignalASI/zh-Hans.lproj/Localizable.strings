@@ -39,6 +39,7 @@
 "agent_screen_search_hint" = "搜索屏幕文字、操作或输入框";
 "agent_screen_summary" = "页面：%@ / 延迟：%d 秒";
 "agent_screen_refresh" = "刷新屏幕上下文";
+"agent_screen_action_refresh_screen_detail" = "更新当前屏幕上下文";
 "agent_screen_texts" = "可见文字";
 "agent_screen_selected_text" = "已选中文字";
 "agent_screen_focused_input" = "当前输入框";

@@ -463,6 +463,16 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: "show screen context"
       ),
       commandRow(
+        id: "refresh-screen-context",
+        title: t("agent_screen_refresh", "Refresh context"),
+        detail: t(
+          "agent_screen_action_refresh_screen_detail",
+          "refresh the current screen context"
+        ),
+        systemImage: "arrow.clockwise",
+        command: "refresh screen context"
+      ),
+      commandRow(
         id: "insights",
         title: t("agent_screen_action_insights", "New insights"),
         detail: t("agent_screen_action_insights_detail", "open new Agent findings"),

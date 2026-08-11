@@ -2479,6 +2479,8 @@ struct AgentHomeView: View {
       agentKnowledgeShortcutActive = true
     case "screen-context":
       agentScreenContextShortcutActive = true
+    case "refresh-screen-context":
+      refreshAgentScreenContext()
     case "insights":
       agentInsightsShortcutActive = true
     case "recent-tasks":
