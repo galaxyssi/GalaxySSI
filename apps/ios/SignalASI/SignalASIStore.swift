@@ -298,7 +298,6 @@ final class SignalASIStore: ObservableObject {
   let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
-  private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
@@ -313,7 +312,11 @@ final class SignalASIStore: ObservableObject {
     self.agentWorkspaceStore = FileAgentWorkspaceStore()
     self.agentPreferenceModeStore = preferenceModeStore
     self.workflowExecutionHistoryStore = AgentWorkflowExecutionHistoryStore(defaults: defaults)
-    if let data = defaults.data(forKey: storageKey),
+    let encryptedState = SignalASIEncryptedStateStore.load(defaults: defaults, secrets: secrets)
+    let legacyState = defaults.data(forKey: SignalASIEncryptedStateStore.legacyStateKey)
+    let stateData = encryptedState ?? legacyState
+    let shouldMigrateLegacyState = encryptedState == nil && legacyState != nil
+    if let data = stateData,
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
       contacts = state.contacts
@@ -359,6 +362,9 @@ final class SignalASIStore: ObservableObject {
       )
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
+      if shouldMigrateLegacyState {
+        save()
+      }
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -541,6 +547,13 @@ final class SignalASIStore: ObservableObject {
   @discardableResult
   func deleteContact(id: String, deleteMessages: Bool = false, now: Date = Date()) -> Bool {
     guard id != "system" else { return false }
+    let deviceDesktopId = contacts.first { contact in
+      (contact.id == id || contact.signalASIId == id) && contact.type == "device"
+    }?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let deviceDesktopId, !deviceDesktopId.isEmpty {
+      // Android treats deleting a device contact as revoking its desktop pairing.
+      removeServer(desktopId: deviceDesktopId)
+    }
     var deletedIds = Set([id])
     var changed = false
 
@@ -632,7 +645,7 @@ final class SignalASIStore: ObservableObject {
     }
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
-    defaults.removeObject(forKey: storageKey)
+    SignalASIEncryptedStateStore.destroy(defaults: defaults, secrets: secrets)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     agentMemoryStore.clear()
@@ -994,6 +1007,11 @@ final class SignalASIStore: ObservableObject {
     next.desktopId = requestDesktopId
     next.desktopName = request.desktopName
     next.identityFingerprint = request.identityFingerprint
+    next.deviceName = request.deviceName.nonEmpty
+    next.deviceManufacturer = request.deviceManufacturer.nonEmpty
+    next.deviceModel = request.deviceModel.nonEmpty
+    next.devicePlatformVersion = request.devicePlatformVersion.nonEmpty
+    next.deviceProfileName = request.deviceProfileName.nonEmpty
     next.mqttTopic = request.mqttTopic
     next.mqttInboxTopic = request.mqttInboxTopic
     next.signalBundleRef = request.signalBundleRef
@@ -1271,6 +1289,72 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func updatePairedDesktopDevice(from payload: [String: Any], link: ServerLink? = nil) -> Bool {
+    let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    guard !desktopId.isEmpty else { return false }
+    let device = payload.dictionary("desktop_device") ?? [:]
+    let defaultName = payload.string("desktop_display_name")
+      .ifBlank(device.string("display_name"))
+      .ifBlank(payload.string("desktop_name"))
+      .ifBlank(link?.desktopName ?? "SignalASI Desktop")
+    let fingerprint = payload.string("desktop_fingerprint")
+      .ifBlank(device.string("identity_fingerprint"))
+      .ifBlank(payload.string("identity_fingerprint"))
+    let now = Date()
+    var contact = contact(id: desktopId) ?? SignalASIContact(
+      id: desktopId,
+      signalASIId: desktopId,
+      name: defaultName,
+      displayName: defaultName,
+      type: "device",
+      agentKind: "device",
+      deliveryMode: .pcConnector,
+      trustState: .verified,
+      desktopId: desktopId,
+      desktopName: defaultName,
+      identityFingerprint: fingerprint,
+      setupStatus: "ready",
+      setupDetail: "SignalASI Link is paired",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    contact.signalASIId = desktopId
+    contact.type = "device"
+    contact.agentKind = "device"
+    contact.deliveryMode = .pcConnector
+    contact.trustState = .verified
+    contact.desktopId = desktopId
+    contact.desktopName = defaultName
+    contact.identityFingerprint = fingerprint
+    contact.deviceName = device.string("device_name").ifBlank(defaultName).nonEmpty
+    contact.deviceManufacturer = device.string("device_manufacturer")
+      .ifBlank(device.string("manufacturer")).nonEmpty
+    contact.deviceModel = device.string("device_model")
+      .ifBlank(device.string("model")).nonEmpty
+    contact.devicePlatformVersion = device.string("platform_version").nonEmpty
+    contact.deviceProfileName = device.string("profile_name").nonEmpty
+    contact.setupStatus = "ready"
+    contact.setupDetail = "SignalASI Link is paired"
+    contact.desktopAccessProfile = payload.string("desktop_access_profile")
+      .ifBlank(link?.accessProfile ?? "").nonEmpty
+    let scopes = payload.stringArray("desktop_access_scopes")
+      .ifEmpty(Array(link?.accessScopes ?? []).sorted())
+    contact.desktopAccessScopes = scopes.isEmpty ? nil : scopes
+    contact.mqttTopic = link?.routes.upTopic
+    contact.mqttInboxTopic = link?.routes.downTopic
+    contact.deleted = false
+    contact.deletedAt = nil
+    contact.updatedAt = now
+    upsert(contact)
+    save()
+    return true
+  }
+
+  @discardableResult
   func markCapabilityManifestReceived(desktopId: String, version: Int) -> ServerLink? {
     guard let index = serverLinks.firstIndex(where: { $0.desktopId == desktopId }) else {
       return nil
@@ -1306,13 +1390,20 @@ final class SignalASIStore: ObservableObject {
       upsert(hermes)
     }
     for contactIndex in contacts.indices {
-      guard contacts[contactIndex].desktopId == desktopId,
-            contacts[contactIndex].type == "agent" else {
+      guard contacts[contactIndex].desktopId == desktopId else {
         continue
       }
-      contacts[contactIndex].trustState = .unverified
-      contacts[contactIndex].setupStatus = "needs_pairing"
-      contacts[contactIndex].setupDetail = "Desktop pairing revoked"
+      if contacts[contactIndex].type == "device" {
+        contacts[contactIndex].deleted = true
+        contacts[contactIndex].deletedAt = Date()
+        contacts[contactIndex].trustState = .deleted
+      } else if contacts[contactIndex].type == "agent" {
+        contacts[contactIndex].trustState = .unverified
+        contacts[contactIndex].setupStatus = "needs_pairing"
+        contacts[contactIndex].setupDetail = "Desktop pairing revoked"
+      } else {
+        continue
+      }
       contacts[contactIndex].updatedAt = Date()
     }
     save()
@@ -1972,7 +2063,7 @@ final class SignalASIStore: ObservableObject {
       globalAgentSettings: globalAgentSettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
-      defaults.set(data, forKey: storageKey)
+      _ = SignalASIEncryptedStateStore.write(data, defaults: defaults, secrets: secrets)
     }
   }
 

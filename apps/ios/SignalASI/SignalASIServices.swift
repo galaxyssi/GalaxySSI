@@ -4959,6 +4959,7 @@ final class MessageCoordinator: ObservableObject {
       "identity_public_key": store.profile.identityPublicKey,
       "identity_fingerprint": store.profile.identityFingerprint
     ]
+    let device = SignalASIDeviceIdentity.current(profile: store.profile)
     let claim: [String: Any] = [
       "protocol": SignalASILinkProtocol.name,
       "version": SignalASILinkProtocol.version,
@@ -4969,12 +4970,18 @@ final class MessageCoordinator: ObservableObject {
       "signal_device_id": 1,
       "server_route_id": link.routes.serverRouteId,
       "client_route_id": link.routes.clientRouteId,
-      "client_name": store.profile.name,
+      "client_name": device.displayName,
       "platform": "ios",
       "signalasi_id": signalIdentity.name.ifBlank(fallbackSignalName),
       "identity_fingerprint": signalIdentity.fingerprint.ifBlank(store.profile.identityFingerprint),
       "identity_public_key": signalIdentity.publicKey.ifBlank(store.profile.identityPublicKey),
       "signal_bundle": signalIdentity.bundle ?? fallbackSignalBundle,
+      "client_device_id": device.deviceId,
+      "device_name": device.deviceName,
+      "device_manufacturer": device.manufacturer,
+      "device_model": device.model,
+      "platform_version": device.platformVersion,
+      "profile_name": device.profileName,
       "desktop_control_authorization_token": qr.controlAuthorizationToken,
       "requested_access_profile": qr.access.profile,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
@@ -5400,6 +5407,7 @@ final class MessageCoordinator: ObservableObject {
           remoteName: object.string("desktop_id")
         )
       }
+      _ = store.updatePairedDesktopDevice(from: object, link: serverLink(for: topic, payload: object) ?? link)
       _ = store.updateDesktopAgentContacts(from: object, link: serverLink(for: topic, payload: object) ?? link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
@@ -6221,6 +6229,7 @@ final class MessageCoordinator: ObservableObject {
         store.markServerPaired(desktopId: desktopId, access: access)
         link = serverLink(for: "", payload: ["desktop_id": desktopId]) ?? link
       }
+      _ = store.updatePairedDesktopDevice(from: payload, link: link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
       requestCapabilityManifestRefresh(force: true)
