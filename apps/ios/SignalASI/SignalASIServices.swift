@@ -1396,10 +1396,12 @@ final class MessageCoordinator: ObservableObject {
           currentRequest: originalRequestText,
           recentUserMessages: recentUserMessages
         )
+        let interfaceLanguage = store.languagePolicy.interfaceLanguage
         let publicPage = await Task.detached(priority: .userInitiated) {
           AgentIOSPhonePublicHTMLAttachment.prepare(
             turnId: homeTurnId,
-            currentRequest: publicPageRequest
+            currentRequest: publicPageRequest,
+            interfaceLanguage: interfaceLanguage
           )
         }.value
         let remoteAttachments = publicPage.map { effectiveAttachments + [$0.attachment] } ?? effectiveAttachments
