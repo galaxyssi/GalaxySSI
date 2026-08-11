@@ -100,7 +100,8 @@ extension SignalASIStore {
   @discardableResult
   func switchAgentSession(_ conversationId: String) -> Bool {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard var session = agentSession(id: clean) else { return false }
+    guard let destination = agentSessionDestination(id: clean),
+          var session = agentSession(id: destination) else { return false }
     if session.status == .archived {
       session.status = .active
       session.updatedAt = Self.nowMillis()
