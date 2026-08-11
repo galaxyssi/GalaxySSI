@@ -73,11 +73,11 @@ struct AgentHomeView: View {
   @State private var cancellingVoiceRunIDs: Set<String> = []
   @State var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State var homeTaskPendingDeletion: AgentTaskRecord?
-  @State private var agentClipboardContext = AgentClipboardContext()
-  @State private var agentDeviceStatusContext = AgentDeviceStatusContext()
-  @State private var agentScreenContextCapturedAtMillis =
+  @State var agentClipboardContext = AgentClipboardContext()
+  @State var agentDeviceStatusContext = AgentDeviceStatusContext()
+  @State var agentScreenContextCapturedAtMillis =
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-  @State private var agentNotificationContext = AgentNotificationContext()
+  @State var agentNotificationContext = AgentNotificationContext()
 
   private var contact: SignalASIContact {
     store.contact(id: "hermes") ?? SignalASIContact.hermes()
@@ -172,7 +172,7 @@ struct AgentHomeView: View {
     )
   }
 
-  private var messages: [ChatMessage] {
+  var messages: [ChatMessage] {
     let allMessages = store.messages(for: contact.id)
     guard let session = activeAgentSession else {
       return allMessages
@@ -187,7 +187,7 @@ struct AgentHomeView: View {
     }
   }
 
-  private static let agentTranscriptPageSize = 24
+  static let agentTranscriptPageSize = 24
 
   private var transcriptMessages: [ChatMessage] {
     guard messages.count > visibleAgentMessageLimit else { return messages }
@@ -225,7 +225,7 @@ struct AgentHomeView: View {
     }
   }
 
-  private var unreadTotal: Int {
+  var unreadTotal: Int {
     store.visibleContacts.reduce(0) { total, contact in
       total + store.conversationSummary(for: contact.id).unreadCount
     }
@@ -1814,69 +1814,6 @@ struct AgentHomeView: View {
         attachmentError = coordinator.lastError
       }
     }
-  }
-
-  var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
-    makeAgentScreenSnapshot(snapshotAgeMillis: agentScreenContextSnapshotAgeMillis)
-  }
-
-  private var agentScreenContextSnapshotAgeMillis: Int64 {
-    max(
-      0,
-      Int64((Date().timeIntervalSince1970 * 1_000).rounded()) -
-        agentScreenContextCapturedAtMillis
-    )
-  }
-
-  private func makeAgentScreenSnapshot(
-    snapshotAgeMillis: Int64
-  ) -> SignalASIAgentScreenContextSnapshot {
-    SignalASIAgentScreenContextSnapshotBuilder.make(
-      messages: messages,
-      draft: draft,
-      attachments: attachments,
-      unreadTotal: unreadTotal,
-      screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
-      snapshotAgeMillis: snapshotAgeMillis,
-      t: t,
-      clipboard: agentClipboardContext,
-      notifications: agentNotificationContext,
-      deviceStatus: agentDeviceStatusContext
-    )
-  }
-
-  func refreshAgentScreenContext() {
-    let capturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    agentScreenContextCapturedAtMillis = capturedAtMillis
-    let source = AgentIOSOwnedNotificationStore.shared.snapshot(limit: 6)
-    var sensitiveFlags: [String] = []
-    for flag in source.items.flatMap(\.sensitiveFlags) where !sensitiveFlags.contains(flag) {
-      sensitiveFlags.append(flag)
-    }
-    agentNotificationContext = AgentNotificationContext(
-      hasAccess: source.hasAccess,
-      items: source.items.map { item in
-        AgentNotificationItem(
-          key: item.key,
-          packageName: item.packageName,
-          title: item.title,
-          textPreview: item.textPreview,
-          category: item.category,
-          postedAtMillis: item.postedAtMillis,
-          canReply: item.canReply,
-          sensitiveFlags: item.sensitiveFlags
-        )
-      },
-      sensitiveFlags: sensitiveFlags,
-      totalCount: source.totalCount
-    )
-    agentClipboardContext = store.agentSafetySettings.screenObservationAllowed
-      ? AgentClipboardContext.fromText(UIPasteboard.general.string ?? "")
-      : AgentClipboardContext()
-    agentDeviceStatusContext = store.agentSafetySettings.screenObservationAllowed
-      ? SignalASIAgentScreenContextSnapshotBuilder.currentDeviceStatus()
-      : AgentDeviceStatusContext()
-    coordinator.updateAgentScreenContext(makeAgentScreenSnapshot(snapshotAgeMillis: 0).screen)
   }
 
   func prefillAgentScreenCommand(_ command: String) {
