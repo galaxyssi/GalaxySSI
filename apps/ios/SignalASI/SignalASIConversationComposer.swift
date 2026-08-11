@@ -100,6 +100,11 @@ struct SignalASIConversationComposer: View {
 
   private var textInput: some View {
     TextField(t("signalasi.message.input", "Message"), text: $draft)
+      .submitLabel(.send)
+      .onSubmit {
+        guard canSend else { return }
+        onSend()
+      }
       .padding(.horizontal, 12)
       .frame(minHeight: 36)
       .background(Color.signalASISearchBackground)
