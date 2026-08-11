@@ -371,7 +371,7 @@ struct SignalASIIdentityRecoveryExportView: View {
   }
 }
 
-private struct SignalASIProfileAvatar: View {
+struct SignalASIProfileAvatar: View {
   var data: Data?
   var size: CGFloat
 

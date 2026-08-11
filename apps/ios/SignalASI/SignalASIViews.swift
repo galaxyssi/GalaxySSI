@@ -324,7 +324,11 @@ struct ConversationView: View {
         ScrollView {
           LazyVStack(spacing: 10) {
             ForEach(displayedMessages) { message in
-              MessageBubble(message: message, onAction: handleRichAction)
+              MessageBubble(
+                message: message,
+                myAvatarData: store.profile.avatarData,
+                onAction: handleRichAction
+              )
                 .id(message.id)
                 .contextMenu {
                   Button {
@@ -844,12 +848,13 @@ struct MessageDetailView: View {
 
 struct MessageBubble: View {
   var message: ChatMessage
+  var myAvatarData: Data? = nil
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   var body: some View {
-    HStack {
+    HStack(alignment: .bottom, spacing: 8) {
       if message.isMine { Spacer(minLength: 48) }
       VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
         SignalASIRichContentView(
@@ -884,6 +889,10 @@ struct MessageBubble: View {
         }
         .font(.caption2)
         .foregroundColor(.signalASITextSecondary)
+      }
+      if message.isMine {
+        SignalASIProfileAvatar(data: myAvatarData, size: 32)
+          .accessibilityHidden(true)
       }
       if !message.isMine { Spacer(minLength: 48) }
     }
