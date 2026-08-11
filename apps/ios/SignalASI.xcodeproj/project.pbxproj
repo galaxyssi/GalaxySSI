@@ -31,6 +31,7 @@
     A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
+    A10000000000000000001763 /* SignalASIEncryptedUserDefaultsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001763 /* SignalASIEncryptedUserDefaultsStore.swift */; };
     A10000000000000000001762 /* SignalASIEncryptedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001762 /* SignalASIEncryptedStateStore.swift */; };
     A10000000000000000001761 /* SignalASIContactRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001761 /* SignalASIContactRowView.swift */; };
     A10000000000000000001760 /* SignalASIContactAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001760 /* SignalASIContactAvatarView.swift */; };
@@ -858,6 +859,7 @@
     A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
+    A20000000000000000001763 /* SignalASIEncryptedUserDefaultsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIEncryptedUserDefaultsStore.swift; sourceTree = "<group>"; };
     A20000000000000000001762 /* SignalASIEncryptedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIEncryptedStateStore.swift; sourceTree = "<group>"; };
     A20000000000000000001761 /* SignalASIContactRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactRowView.swift; sourceTree = "<group>"; };
     A20000000000000000001760 /* SignalASIContactAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactAvatarView.swift; sourceTree = "<group>"; };
@@ -2286,6 +2288,7 @@
         A20000000000000000000A00 /* SignalASIRichContentView.swift */,
         A20000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
+        A20000000000000000001763 /* SignalASIEncryptedUserDefaultsStore.swift */,
         A20000000000000000001762 /* SignalASIEncryptedStateStore.swift */,
         A20000000000000000001761 /* SignalASIContactRowView.swift */,
         A20000000000000000001760 /* SignalASIContactAvatarView.swift */,
@@ -3236,6 +3239,7 @@
         A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */,
         A10000000000000000000A01 /* SignalASIAsyncAnimatedImageView.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
+        A10000000000000000001763 /* SignalASIEncryptedUserDefaultsStore.swift in Sources */,
         A10000000000000000001762 /* SignalASIEncryptedStateStore.swift in Sources */,
         A10000000000000000001761 /* SignalASIContactRowView.swift in Sources */,
         A10000000000000000001760 /* SignalASIContactAvatarView.swift in Sources */,
