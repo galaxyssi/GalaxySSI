@@ -166,7 +166,10 @@ def verify_signal_identity(payload: bytes, signature: str) -> bool:
 
 
 def desktop_name() -> str:
-    return os.environ.get("SIGNALASI_DESKTOP_NAME") or socket.gethostname() or "SignalASI Desktop"
+    from device_identity import desktop_device_profile
+
+    bundle = get_signal_bundle()
+    return str(desktop_device_profile(str(bundle.get("identityKeySha256") or ""))["display_name"])
 
 
 def desktop_id() -> str:
@@ -175,13 +178,18 @@ def desktop_id() -> str:
 
 
 def get_signal_verification_payload() -> dict[str, Any]:
+    from device_identity import desktop_device_profile
+
     bundle = get_signal_bundle()
+    device_profile = desktop_device_profile(str(bundle.get("identityKeySha256") or ""))
     return {
         "type": "signalasi_verify",
         "version": 1,
         "device": "pc",
         "desktop_id": f"desktop_{str(bundle.get('identityKeySha256', 'unknown'))[:16]}",
         "desktop_name": desktop_name(),
+        "desktop_display_name": device_profile["display_name"],
+        "desktop_device": device_profile,
         "device_id": bundle.get("deviceId", 1),
         "identity_key": bundle["identityKey"],
         "identity_key_sha256": bundle["identityKeySha256"],

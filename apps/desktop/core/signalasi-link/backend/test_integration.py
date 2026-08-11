@@ -150,6 +150,7 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "/api/agents/diagnostics",
                 "/api/pairing/status",
                 "/api/pairing/qr",
+                "/api/pairing/rename",
                 "/api/desktop-tools",
                 "/api/tool-marketplace",
                 "/api/tool-marketplace/{item_id}/install",
@@ -164,6 +165,19 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "/ws/{contact_id}",
             }
             assert required.issubset(routes), required - routes
+            """
+        )
+
+    def test_pairing_qr_includes_readable_desktop_device_identity(self) -> None:
+        self.run_isolated(
+            """
+            from main import signalasi_pairing_qr
+
+            pairing = signalasi_pairing_qr()
+            assert pairing["image_data_url"].startswith("data:image/png;base64,")
+            assert pairing["desktop_device"]["kind"] == "desktop"
+            assert pairing["desktop_device"]["display_name"]
+            assert pairing["expires_at"] > 0
             """
         )
 

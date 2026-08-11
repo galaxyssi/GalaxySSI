@@ -17,6 +17,7 @@ const required = [
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
   "core/signalasi-link/backend/desktop_control.py",
+  "core/signalasi-link/backend/device_identity.py",
   "core/signalasi-link/backend/desktop_run_control.py",
   "core/signalasi-link/backend/acp_runtime.py",
   "core/signalasi-link/backend/pairing_access.py",
@@ -176,6 +177,10 @@ const sidecarSettingsGradle = fs.readFileSync(path.join(sidecarDir, "settings.gr
 const backendSecureState = fs.readFileSync(path.join(backendDir, "secure_state.py"), "utf8");
 const backendToolPermissions = fs.readFileSync(path.join(backendDir, "tool_permission_policy.py"), "utf8");
 const androidMainActivity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MainActivity.kt"), "utf8");
+const androidChatSources = listFilesRecursive(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat"))
+  .filter((file) => file.endsWith(".kt"))
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
 const androidMessageService = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MessageService.kt"), "utf8");
 const androidChatHistoryStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryStore.kt"), "utf8");
 const androidChatHistoryDatabase = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryDatabase.kt"), "utf8");
@@ -266,7 +271,7 @@ for (const [name, source] of [
   }
 }
 if (
-  !androidMainActivity.includes("signalasi_debug_secure_state_probe_b64")
+  !androidChatSources.includes("signalasi_debug_secure_state_probe_b64")
   || !androidDebugSecureStateProbe.includes("android-keystore-aes-gcm")
   || !androidDebugSecureStateProbe.includes("ApplicationInfo.FLAG_DEBUGGABLE")
   || !androidSecureStateProbeScript.includes("snapshotSecureState")
@@ -725,7 +730,7 @@ for (const executionPresentationContract of [
   [androidExecutionPresentation, "data class AgentExecutionPresentation"],
   [androidExecutionPresentation, "fun isCancellable"],
   [androidMainActivity, "agentExecutionPresentations"],
-  [androidMainActivity, "agent_execution_cancel"]
+  [androidChatSources, "agent_execution_cancel"]
 ]) {
   if (!executionPresentationContract[0].includes(executionPresentationContract[1])) {
     throw new Error(`Unified Agent execution presentation is incomplete: ${executionPresentationContract[1]}`);
@@ -852,7 +857,7 @@ for (const recoveryContract of [
   [backendMqtt, "\"recovery_actions\""],
   [androidAgentFailureRecovery, "enum class AgentFailureRecoveryAction"],
   [androidAgentFailureRecovery, "object AgentFailureRecoveryPolicy"],
-  [androidMainActivity, "\"recover_agent_task\""]
+  [androidChatSources, "\"recover_agent_task\""]
 ]) {
   if (!recoveryContract[0].includes(recoveryContract[1])) {
     throw new Error(`Cross-platform failure recovery is incomplete: ${recoveryContract[1]}`);
@@ -866,7 +871,7 @@ for (const responseSelfCheckContract of [
   [backendMqtt, "schedule_response_repair("],
   [backendDesktopSuperAgent, "\"response_self_check\""],
   [androidResponseSelfCheck, "object AgentResponseSelfCheck"],
-  [androidMainActivity, "AgentResponseSelfCheck.evaluate("]
+  [androidChatSources, "AgentResponseSelfCheck.evaluate("]
 ]) {
   if (!responseSelfCheckContract[0].includes(responseSelfCheckContract[1])) {
     throw new Error(`Cross-platform latest-request response self-check is incomplete: ${responseSelfCheckContract[1]}`);
@@ -1226,7 +1231,7 @@ for (const requiredText of [
   "taskStatusSeq",
   "smoke:agent-lifecycle"
 ]) {
-if (![main, preload, html, renderer, workspaceRenderer, packageJson, packager, androidAdb, smoke, smokePairing, smokeUi, smokeAndroidUi, smokeAndroidFriends, smokeAndroidContactTags, smokeAndroidLanguage, smokeAndroidCloudModels, smokeAndroidBackground, smokeAndroidAgentReplies, smokeAndroidBackup, smokeAndroidVoiceReply, smokeAndroidReset, smokeMqttPersistence, smokeAgentPush, smokeAgentLifecycle, smokeVoiceStt, smokeE2e, smokePackaged, smokeLock, connectorStatus, statusDoc, backendMain, backendMqtt, backendPairing, backendLinkProtocol, backendGateway, backendTaskManager, backendAgentConfig, backendPushAuth, backendSignalasiNotify, backendStt, androidMainActivity, androidMqtt, androidMessageService, androidChatHistoryStore, androidChatHistoryDatabase, androidDebugChatHistoryProbe, androidChatHistoryProbeScript, androidSignalStore, androidForegroundTracker, androidAppStore].some((content) => content.includes(requiredText))) {
+if (![main, preload, html, renderer, workspaceRenderer, packageJson, packager, androidAdb, smoke, smokePairing, smokeUi, smokeAndroidUi, smokeAndroidFriends, smokeAndroidContactTags, smokeAndroidLanguage, smokeAndroidCloudModels, smokeAndroidBackground, smokeAndroidAgentReplies, smokeAndroidBackup, smokeAndroidVoiceReply, smokeAndroidReset, smokeMqttPersistence, smokeAgentPush, smokeAgentLifecycle, smokeVoiceStt, smokeE2e, smokePackaged, smokeLock, connectorStatus, statusDoc, backendMain, backendMqtt, backendPairing, backendLinkProtocol, backendGateway, backendTaskManager, backendAgentConfig, backendPushAuth, backendSignalasiNotify, backendStt, androidChatSources, androidMqtt, androidMessageService, androidChatHistoryStore, androidChatHistoryDatabase, androidDebugChatHistoryProbe, androidChatHistoryProbeScript, androidSignalStore, androidForegroundTracker, androidAppStore].some((content) => content.includes(requiredText))) {
     throw new Error(`Missing desktop connector capability: ${requiredText}`);
   }
 }
@@ -1307,7 +1312,7 @@ for (const requiredDeferredGroupText of [
   "group_feature_status_subtitle",
   "Group chat implementation is not enabled in this version"
 ]) {
-  if (![androidMainActivity, androidStringsEn].some((content) => content.includes(requiredDeferredGroupText))) {
+  if (![androidChatSources, androidStringsEn].some((content) => content.includes(requiredDeferredGroupText))) {
     throw new Error(`Deferred group UI marker missing: ${requiredDeferredGroupText}`);
   }
 }
@@ -1339,7 +1344,7 @@ if (androidMqtt.includes("hermeschat-android")) {
   throw new Error("Android MQTT client id must use SignalASI naming");
 }
 
-if ([androidMainActivity, androidAppStore, androidStringsZh, androidStringsEn].some((content) => content.includes("hermes_backup"))) {
+if ([androidChatSources, androidAppStore, androidStringsZh, androidStringsEn].some((content) => content.includes("hermes_backup"))) {
   throw new Error("New Android backup artifacts must use SignalASI naming, not hermes_backup");
 }
 
@@ -1367,7 +1372,7 @@ for (const requiredAndroidSignalasiText of [
   "signalasi_contact",
   "SignalASI ID"
 ]) {
-  if (![androidMainActivity, androidAppStore, androidCrypto, androidMqtt, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredAndroidSignalasiText))) {
+  if (![androidChatSources, androidAppStore, androidCrypto, androidMqtt, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredAndroidSignalasiText))) {
     throw new Error(`Android SignalASI identity migration missing: ${requiredAndroidSignalasiText}`);
   }
 }
@@ -1381,7 +1386,7 @@ for (const requiredVoicePipelineText of [
   "SUPPORTED_WAKE_MODELS",
   "DEFAULT_WAKE_MODEL"
 ]) {
-  if (![androidMainActivity, androidVoiceSettings, androidLocalWhisper, androidWhisperModels, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredVoicePipelineText))) {
+  if (![androidChatSources, androidVoiceSettings, androidLocalWhisper, androidWhisperModels, androidStringsZh, androidStringsEn].some((content) => content.includes(requiredVoicePipelineText))) {
     throw new Error(`Android voice pipeline missing: ${requiredVoicePipelineText}`);
   }
 }
@@ -1460,7 +1465,7 @@ for (const requiredSchedulerText of [
   }
 }
 
-if ([androidMainActivity, androidVoiceSettings].some((content) => content.includes("signalasi.onnx"))) {
+if ([androidChatSources, androidVoiceSettings].some((content) => content.includes("signalasi.onnx"))) {
   throw new Error("Android voice wake settings must not expose unbundled wake model signalasi.onnx");
 }
 

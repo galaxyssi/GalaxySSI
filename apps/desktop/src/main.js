@@ -1584,8 +1584,21 @@ async function getPairingQr(grantDesktopExecutor = false) {
   return {
     imageDataUrl,
     fingerprint: pairing.fingerprint || "",
-    pairingAccess: pairing.pairing_access || {}
+    pairingAccess: pairing.pairing_access || {},
+    desktopDevice: pairing.desktop_device || {},
+    expiresAt: Number(pairing.expires_at || 0)
   };
+}
+
+async function renamePairedClient(clientRouteId, displayName) {
+  await startBackend();
+  return fetchJson("/api/pairing/rename", {
+    method: "POST",
+    body: JSON.stringify({
+      client_route_id: String(clientRouteId || ""),
+      display_name: String(displayName || "")
+    })
+  });
 }
 
 async function clearPairing(clientRouteId = "") {
@@ -2100,6 +2113,8 @@ ipcMain.handle("pairing:status", getPairingStatus);
 ipcMain.handle("pairing:qr", (_event, grantDesktopExecutor = false) =>
   getPairingQr(Boolean(grantDesktopExecutor)));
 ipcMain.handle("pairing:clear", (_event, clientRouteId = "") => clearPairing(clientRouteId));
+ipcMain.handle("pairing:rename", (_event, clientRouteId, displayName) =>
+  renamePairedClient(clientRouteId, displayName));
 ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);
 ipcMain.handle("link:transport-diagnostics", getLinkTransportDiagnostics);

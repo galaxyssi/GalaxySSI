@@ -4021,30 +4021,56 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             delivery = None
             execution_error = None
             try:
-                delivery = deliver_agent_sync(
-                    current_agent_id,
-                    next_prompt,
-                    task_id=task.task_id,
-                    conversation_id=backend_conversation_id,
-                    source_message_id=source_message_id,
-                    return_path=_wire_down_topic(wire_payload),
-                    desktop_access_profile=(
-                        DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
-                    ),
-                    response_language=preferred_response_language,
-                    execution_prompt=current_user_request,
-                    execution_policy=execution_policy.public(),
-                    client_route_id=client_route_id,
-                    turn_id=client_turn_id,
-                    run_id=(
-                        ""
-                        if recovery_attempts == 0
-                        else f"{task.task_id}:recovery:{recovery_attempts}:{current_agent_id}"
-                    ),
-                    invocation_mode="direct" if recovery_attempts == 0 else "handoff",
-                    caller_agent_id=agent_id if recovery_attempts else "",
-                    parent_run_id=task.task_id if recovery_attempts else "",
-                )
+                if current_agent_id == "desktop":
+                    from desktop_super_agent import DesktopSuperAgent
+                    from task_workspace import task_workspace
+
+                    workspace = task_workspace(task.task_id, agent_id)
+                    desktop_attachments = [
+                        path.relative_to(workspace).as_posix()
+                        for path in sorted((workspace / "downloads" / "input").glob("*"))
+                        if path.is_file()
+                    ]
+
+                    outcome = DesktopSuperAgent(
+                        task_manager=agent_task_manager,
+                        diagnostics=connector_diagnostics,
+                        deliver=deliver_agent_sync,
+                    ).run(
+                        task_id=task.task_id,
+                        conversation_id=backend_conversation_id,
+                        prompt=current_user_request,
+                        compiled_prompt=next_prompt,
+                        attachments=desktop_attachments,
+                        response_language=preferred_response_language,
+                        execution_policy=execution_policy,
+                    )
+                    delivery = {"reply": outcome.reply}
+                else:
+                    delivery = deliver_agent_sync(
+                        current_agent_id,
+                        next_prompt,
+                        task_id=task.task_id,
+                        conversation_id=backend_conversation_id,
+                        source_message_id=source_message_id,
+                        return_path=_wire_down_topic(wire_payload),
+                        desktop_access_profile=(
+                            DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
+                        ),
+                        response_language=preferred_response_language,
+                        execution_prompt=current_user_request,
+                        execution_policy=execution_policy.public(),
+                        client_route_id=client_route_id,
+                        turn_id=client_turn_id,
+                        run_id=(
+                            ""
+                            if recovery_attempts == 0
+                            else f"{task.task_id}:recovery:{recovery_attempts}:{current_agent_id}"
+                        ),
+                        invocation_mode="direct" if recovery_attempts == 0 else "handoff",
+                        caller_agent_id=agent_id if recovery_attempts else "",
+                        parent_run_id=task.task_id if recovery_attempts else "",
+                    )
             except Exception as exc:
                 execution_error = exc
             if execution_error is not None:
@@ -6278,13 +6304,28 @@ def handle_pairing_claim(mqttc, payload: dict):
         revoke_client(previous_route_id, "replaced_by_new_pairing")
         _unsubscribe_client(mqttc, previous_client)
         _close_phone_tool_sessions(previous_route_id, "pairing replaced")
+    retained_alias = next(
+        (
+            str(item.get("display_name") or "")
+            for item in replaced_clients
+            if item.get("user_renamed") and str(item.get("display_name") or "").strip()
+        ),
+        "",
+    )
     paired_client = record_pairing_success(
         fingerprint=fingerprint,
         remote_name=signal_name,
         remote_device_id=int(payload.get("signal_device_id") or 1),
         client_route_id=client_route_id,
-        display_name=str(payload.get("client_name") or "SignalASI Client")[:120],
+        display_name=(retained_alias or str(payload.get("client_name") or "SignalASI Client"))[:120],
         platform=str(payload.get("platform") or "unknown")[:32],
+        device_id=str(payload.get("client_device_id") or "")[:120],
+        device_name=str(payload.get("device_name") or payload.get("client_name") or "")[:120],
+        device_manufacturer=str(payload.get("device_manufacturer") or "")[:120],
+        device_model=str(payload.get("device_model") or "")[:120],
+        platform_version=str(payload.get("platform_version") or "")[:64],
+        profile_name=str(payload.get("profile_name") or "")[:120],
+        user_renamed=bool(retained_alias),
         access_grant=access_grant,
     )
     control_authorization = None
@@ -6308,12 +6349,19 @@ def handle_pairing_claim(mqttc, payload: dict):
     _subscribe_client(mqttc, paired_client)
     log.info(f"MQTT pairing claim accepted fingerprint={fingerprint[:16]} result={result}")
 
+    from device_identity import desktop_device_profile
+
+    desktop_device = desktop_device_profile(
+        str(get_signal_bundle().get("identityKeySha256") or "")
+    )
     ack_payload = {
         "type": "pairing_confirmed",
         "content": "SignalASI Desktop completed a new secure pairing.",
         "contact_id": "system",
         "desktop_id": desktop_id(),
         "desktop_name": desktop_name(),
+        "desktop_display_name": desktop_device["display_name"],
+        "desktop_device": desktop_device,
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "protocol": PROTOCOL_NAME,
         "version": PROTOCOL_VERSION,

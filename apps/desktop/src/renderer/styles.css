@@ -856,6 +856,8 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-toggle.on::after { transform: translateX(12px); }
 
 .gateway-summary { min-height: 54px; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.gateway-summary-actions { display: flex; align-items: center; gap: 6px; }
+.pair-device-button { color: var(--green); border-color: #b9dfce; background: var(--green-soft); }
 .status-orb { width: 7px; height: 7px; border-radius: 50%; background: #9ba2a9; }
 .status-orb.online { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
 .gateway-summary strong { display: block; font-size: 0.9rem; }
@@ -868,6 +870,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .paired-client small { display: block; }
 .paired-client strong { font-size: 0.9rem; }
 .paired-client small { margin-top: 3px; color: var(--muted); font-size: 0.8rem; }
+.paired-client-actions { display: flex; align-items: center; gap: 5px; }
 .paired-client button { height: 25px; padding: 0 7px; border: 0; border-radius: 5px; background: #f0f3f5; color: #59636c; font-size: 0.8rem; }
 .authorized-app-list { display: grid; gap: 3px; padding-top: 5px; }
 .authorized-app-row { min-height: 60px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 7px 2px; border-bottom: 1px solid var(--line); }
@@ -881,6 +884,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .authorized-app-actions small.revoked { color: var(--muted); }
 .authorized-app-actions button { height: 25px; padding: 0 7px; border: 0; border-radius: 5px; background: #f0f3f5; color: #59636c; font-size: 0.8rem; }
 .pairing-qr-surface { display: grid; justify-items: center; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.pairing-qr-surface > strong { color: var(--ink); font-size: 0.9rem; text-align: center; }
 .pairing-qr-surface img { display: block; width: min(320px, 100%); height: auto; aspect-ratio: 1; object-fit: contain; background: #fff; }
 .pairing-qr-surface small { color: var(--text-muted); overflow-wrap: anywhere; }
 

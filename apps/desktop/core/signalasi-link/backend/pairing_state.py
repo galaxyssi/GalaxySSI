@@ -230,6 +230,13 @@ def record_pairing_success(
     client_route_id: str = "",
     display_name: str = "SignalASI Client",
     platform: str = "unknown",
+    device_id: str = "",
+    device_name: str = "",
+    device_manufacturer: str = "",
+    device_model: str = "",
+    platform_version: str = "",
+    profile_name: str = "",
+    user_renamed: bool = False,
     access_grant: dict | None = None,
 ) -> dict:
     if not fingerprint:
@@ -249,6 +256,13 @@ def record_pairing_success(
             "identity_fingerprint": fingerprint,
             "display_name": display_name or previous.get("display_name") or "SignalASI Client",
             "platform": platform or previous.get("platform") or "unknown",
+            "device_id": device_id or previous.get("device_id") or f"phone_{fingerprint[:16]}",
+            "device_name": device_name or previous.get("device_name") or display_name,
+            "device_manufacturer": device_manufacturer or previous.get("device_manufacturer") or "",
+            "device_model": device_model or previous.get("device_model") or "",
+            "platform_version": platform_version or previous.get("platform_version") or "",
+            "profile_name": profile_name or previous.get("profile_name") or "",
+            "user_renamed": bool(user_renamed or previous.get("user_renamed")),
             "access_profile": access["profile"],
             "access_scopes": list(access["scopes"]),
             "access_granted_at": int(access["issued_at"]),
@@ -258,6 +272,24 @@ def record_pairing_success(
             "revoked": False,
         }
         state["clients"][route_id] = client
+        state["updated_at"] = now
+        _write_state(state)
+        return client_status(client, state["server_route_id"])
+
+
+def rename_client(client_route_id: str, display_name: str) -> dict:
+    clean_name = " ".join(str(display_name or "").strip().split())[:120]
+    if not clean_name:
+        raise ValueError("display name required")
+    with _registry_lock:
+        state = _read_state()
+        client = state["clients"].get(client_route_id)
+        if not isinstance(client, dict) or client.get("revoked"):
+            raise KeyError("paired client not found")
+        now = time.time()
+        client["display_name"] = clean_name
+        client["user_renamed"] = True
+        client["updated_at"] = now
         state["updated_at"] = now
         _write_state(state)
         return client_status(client, state["server_route_id"])

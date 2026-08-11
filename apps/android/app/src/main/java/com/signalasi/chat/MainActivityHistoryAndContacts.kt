@@ -1085,7 +1085,10 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
 }
 
 internal fun MainActivity.showDesktopPairingConfirmPage(pairingQr: JSONObject) {
-    val desktopName = pairingQr.optString("desktop_name").ifBlank { "PC" }
+    val desktopName = pairingQr.optString("desktop_display_name")
+        .ifBlank { pairingQr.optJSONObject("desktop_device")?.optString("display_name").orEmpty() }
+        .ifBlank { pairingQr.optString("desktop_name") }
+        .ifBlank { "PC" }
     val desktopId = pairingQr.optString("desktop_id").ifBlank {
         "desktop_${pairingQr.optString("identity_key_sha256").take(16)}"
     }
@@ -1156,7 +1159,10 @@ internal fun MainActivity.completeDesktopPairing(pairingQr: JSONObject) {
         return
     }
     AppStore.markDesktopVerified(this, pairingQr)
-    Toast.makeText(this, getString(R.string.pairing_desktop_added, pairingQr.optString("desktop_name", "PC")), Toast.LENGTH_LONG).show()
+    val pairedName = pairingQr.optString("desktop_display_name")
+        .ifBlank { pairingQr.optJSONObject("desktop_device")?.optString("display_name").orEmpty() }
+        .ifBlank { pairingQr.optString("desktop_name", "PC") }
+    Toast.makeText(this, getString(R.string.pairing_desktop_added, pairedName), Toast.LENGTH_LONG).show()
     refreshContactList()
     refreshDirectoryContacts()
     showMainTab(PAGE_CONTACTS)
@@ -1269,6 +1275,21 @@ internal fun MainActivity.showContactDetail(contact: Contact) {
     })
     featureContent.addView(featureRow(getString(R.string.settings_signalasi_id), id, R.drawable.ic_protocol_link, getString(R.string.common_copy)))
     featureContent.addView(featureRow(getString(R.string.settings_fingerprint), formatFingerprint(identity).ifBlank { getString(R.string.contact_fingerprint_unverified) }, R.drawable.ic_security_shield, getString(R.string.common_copy)))
+    if (raw?.optString("type") == "device") {
+        addSectionTitle(getString(R.string.contact_device_details))
+        raw.optString("device_model").takeIf { it.isNotBlank() }?.let { model ->
+            featureContent.addView(featureRow(getString(R.string.contact_device_model), model, R.drawable.ic_device_node, ""))
+        }
+        val platform = listOf(raw.optString("platform"), raw.optString("platform_version"))
+            .filter(String::isNotBlank)
+            .joinToString(" ")
+        if (platform.isNotBlank()) {
+            featureContent.addView(featureRow(getString(R.string.contact_device_platform), platform, R.drawable.ic_device_node, ""))
+        }
+        raw.optString("host_name").takeIf { it.isNotBlank() }?.let { host ->
+            featureContent.addView(featureRow(getString(R.string.contact_device_host), host, R.drawable.ic_device_node, ""))
+        }
+    }
     if (raw?.optString("delivery_mode") == "pc_connector") {
         val setupStatus = when (raw.optString("setup_status")) {
             "ready" -> getString(R.string.common_ready)

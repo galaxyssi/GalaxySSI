@@ -113,6 +113,30 @@ class PairingStateDurabilityTests(unittest.TestCase):
         self.assertNotIn("a" * 64, raw)
         self.assertNotIn("desktop.executor.full", raw)
 
+    def test_device_metadata_and_user_alias_are_persisted(self):
+        paired = pairing_state.record_pairing_success(
+            "b" * 64,
+            "signalasi:device",
+            client_route_id=new_route_id(),
+            display_name="S26 Ultra · 4F2A",
+            platform="android",
+            device_id="phone-stable-id",
+            device_name="S26 Ultra",
+            device_manufacturer="Samsung",
+            device_model="SM-S9480",
+            platform_version="17",
+            profile_name="Me",
+        )
+
+        renamed = pairing_state.rename_client(paired["client_route_id"], "My primary phone")
+        self._simulate_restart()
+        restored = pairing_state.get_client(paired["client_route_id"])
+
+        self.assertEqual("phone-stable-id", restored["device_id"])
+        self.assertEqual("SM-S9480", restored["device_model"])
+        self.assertEqual("My primary phone", renamed["display_name"])
+        self.assertTrue(restored["user_renamed"])
+
 
 if __name__ == "__main__":
     unittest.main()
