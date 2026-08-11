@@ -5,6 +5,21 @@ struct SignalASIGlobalAutonomousExecutionResult: Equatable {
   var actionId: String
   var status: GlobalAutonomousRunStatus
   var detail: String
+  var dispatchRequest: SignalASIGlobalAutonomousDispatchRequest?
+
+  init(
+    runId: String,
+    actionId: String = "",
+    status: GlobalAutonomousRunStatus,
+    detail: String = "",
+    dispatchRequest: SignalASIGlobalAutonomousDispatchRequest? = nil
+  ) {
+    self.runId = runId
+    self.actionId = actionId
+    self.status = status
+    self.detail = detail
+    self.dispatchRequest = dispatchRequest
+  }
 }
 
 enum SignalASIGlobalAutonomousRunPlanner {
@@ -71,9 +86,10 @@ extension SignalASIGlobalAgentRuntimeBridge {
     }
 
     if claim.planReview {
-      return finishPlanReview(
+      return SignalASIGlobalAutonomousModelRuntime.dispatchPlanReview(
         run: run,
-        store: deliberationStore,
+        appStore: store,
+        deliberationStore: deliberationStore,
         nowMillis: nowMillis
       )
     }
@@ -141,20 +157,13 @@ extension SignalASIGlobalAgentRuntimeBridge {
       }
       return settle(run: updated, store: deliberationStore, nowMillis: nowMillis)
     case .analyze, .draft, .readOnlyCheck:
-      let result = "Prepared locally: \(String(action.goal.prefix(1_200)))"
-      let updated = complete(
+      return SignalASIGlobalAutonomousModelRuntime.dispatchAction(
         run: run,
         action: action,
-        result: result,
-        evidence: localEvidence(
-          summary: result,
-          sourceRef: "ios://global-agent/preparation/\(run.id)/\(action.id)",
-          nowMillis: nowMillis,
-          kind: .delegatedResult
-        ),
+        appStore: store,
+        deliberationStore: deliberationStore,
         nowMillis: nowMillis
       )
-      return settle(run: updated, store: deliberationStore, nowMillis: nowMillis)
     }
   }
 
