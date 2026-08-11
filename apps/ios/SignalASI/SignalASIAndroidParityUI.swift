@@ -8,13 +8,13 @@ struct AgentHomeView: View {
 
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
-  @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @ObservedObject private var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
-  @State private var draft = ""
-  @State private var attachments: [SignalASIDraftAttachment] = []
-  @State private var actionTrayPresented = false
-  @State private var voiceTranscriptionPending = false
+  @State var draft = ""
+  @State var attachments: [SignalASIDraftAttachment] = []
+  @State var actionTrayPresented = false
+  @State var voiceTranscriptionPending = false
   @State private var transcriptAutoFollow = true
   @State private var transcriptShowLatestButton = false
   @State private var pendingAgentSwipeDirection = ""
@@ -47,15 +47,15 @@ struct AgentHomeView: View {
   @State private var scanStatusIsError = false
   @State private var recentTasksShortcutActive = false
   @State private var recentTaskForDetails: AgentTaskRecord?
-  @State private var attachmentError = ""
+  @State var attachmentError = ""
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @State private var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State private var modelSelection = AgentModelSelection()
-  @State private var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
-  @State private var voicePendingAttachments: [SignalASIDraftAttachment] = []
-  @State private var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
+  @State var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
+  @State var voicePendingAttachments: [SignalASIDraftAttachment] = []
+  @State var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
@@ -2071,7 +2071,7 @@ struct AgentHomeView: View {
       !agentRuntimeTasks.isEmpty
   }
 
-  private func sendAgentMessage(
+  func sendAgentMessage(
     voiceAttachmentSnapshot: [SignalASIDraftAttachment]? = nil
   ) {
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
@@ -2115,66 +2115,6 @@ struct AgentHomeView: View {
         attachmentError = coordinator.lastError
       }
     }
-  }
-
-  private func sendAgentVoiceTranscript(_ transcript: String) {
-    let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-    let draftSnapshot = agentVoiceDraftSnapshot
-    agentVoiceDraftSnapshot = nil
-    let capturedAttachments = voiceAttachmentSnapshot
-    voiceAttachmentSnapshot.removeAll()
-    guard !cleanTranscript.isEmpty else {
-      voiceTranscriptionPending = false
-      voicePendingAttachments.removeAll()
-      restoreAgentVoiceAttachments(capturedAttachments)
-      attachmentError = t("voice_no_speech", "No speech captured.")
-      return
-    }
-    if let draftSnapshot {
-      voiceTranscriptionPending = false
-      voicePendingAttachments.removeAll()
-      guard draftSnapshot.conversationID == store.activeAgentConversationId else { return }
-      let currentDraft = draft.ifBlank(draftSnapshot.text)
-      let mergedDraft = AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(
-        draft: currentDraft,
-        transcript: cleanTranscript
-      )
-      guard !mergedDraft.isEmpty else { return }
-      draft = mergedDraft
-      actionTrayPresented = false
-      attachmentError = ""
-      return
-    }
-    voiceTranscriptionPending = true
-    voicePendingAttachments = capturedAttachments
-    draft = cleanTranscript
-    sendAgentMessage(voiceAttachmentSnapshot: capturedAttachments)
-  }
-
-  private func beginAgentVoiceCapture() {
-    voiceAttachmentSnapshot.removeAll()
-    agentVoiceDraftSnapshot = AgentVoiceTranscriptPolicy.draftSnapshot(
-      conversationID: store.activeAgentConversationId,
-      text: draft
-    )
-    guard agentVoiceDraftSnapshot == nil else { return }
-    voiceAttachmentSnapshot = attachments
-    let capturedIDs = Set(attachments.map(\.id))
-    attachments.removeAll { capturedIDs.contains($0.id) }
-  }
-
-  private func restoreAgentVoiceAttachments(_ captured: [SignalASIDraftAttachment]? = nil) {
-    let values = captured ?? voiceAttachmentSnapshot
-    guard !values.isEmpty else {
-      voiceAttachmentSnapshot.removeAll()
-      return
-    }
-    let existingIDs = Set(attachments.map(\.id))
-    let restored = values.filter { !existingIDs.contains($0.id) }
-    if !restored.isEmpty {
-      attachments.insert(contentsOf: restored, at: 0)
-    }
-    voiceAttachmentSnapshot.removeAll()
   }
 
   private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
@@ -2834,7 +2774,7 @@ struct AgentHomeView: View {
     attachmentError = ""
   }
 
-  private func t(_ key: String, _ fallback: String) -> String {
+  func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 
