@@ -225,6 +225,10 @@ struct SignalASILocalModelLabView: View {
     switch state {
     case .downloading:
       return t("signalasi.local_model.download_active", "Downloading")
+    case .verifying:
+      return t("signalasi.local_model.download_verifying", "Verifying")
+    case .installing:
+      return t("signalasi.local_model.download_installing", "Installing")
     case .paused:
       return t("signalasi.local_model.download_resume", "Resume")
     case .notInstalled:
@@ -513,7 +517,7 @@ struct SignalASILocalModelLabView: View {
       statusMessage = downloads.state(for: artifact) == .failed
         ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
         : t("signalasi.local_model.download_resumed", "Download resumed")
-    case .downloading:
+    case .downloading, .verifying, .installing:
       downloads.cancel(artifact)
       statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
     case .ready:

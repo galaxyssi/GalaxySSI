@@ -2283,6 +2283,8 @@
 "signalasi.local_model.download_cancel" = "取消";
 "signalasi.local_model.download_ready" = "已就绪";
 "signalasi.local_model.download_active" = "下载中";
+"signalasi.local_model.download_verifying" = "校验中";
+"signalasi.local_model.download_installing" = "安装中";
 "signalasi.local_model.download_delete" = "删除";
 "signalasi.local_model.download_started" = "已开始下载";
 "signalasi.local_model.download_cancelled" = "下载已取消";

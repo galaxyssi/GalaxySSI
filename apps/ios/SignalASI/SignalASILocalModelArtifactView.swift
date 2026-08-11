@@ -19,6 +19,8 @@ enum LocalModelArtifactInstallState: String, Equatable {
   case notInstalled
   case paused
   case downloading
+  case verifying
+  case installing
   case ready
   case failed
 }
@@ -54,7 +56,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
       return .ready
     }
     let saved = states[artifact.id] ?? .notInstalled
-    if saved == .downloading && tasks[artifact.id] == nil {
+    if [.downloading, .verifying, .installing].contains(saved) && tasks[artifact.id] == nil {
       return partialBytes(for: profile) > 0 ? .paused : .notInstalled
     }
     if saved == .notInstalled && partialBytes(for: profile) > 0 {
@@ -107,6 +109,12 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
         guard let self else { return }
         let temporaryURL = try await self.downloadToStaging(artifact, profile: profile)
         try Task.checkCancellation()
+        self.progress[artifact.id] = LocalModelArtifactProgress(
+          bytesDownloaded: artifact.sizeBytes,
+          totalBytes: artifact.sizeBytes
+        )
+        self.states[artifact.id] = .verifying
+        self.persistStates()
         let size = try self.fileManager.attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber
         guard size?.int64Value == artifact.sizeBytes else {
           throw LocalModelArtifactDownloadError.sizeMismatch
@@ -115,6 +123,9 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
         guard actualHash == artifact.sha256.lowercased() else {
           throw LocalModelArtifactDownloadError.sha256Mismatch
         }
+        try Task.checkCancellation()
+        self.states[artifact.id] = .installing
+        self.persistStates()
         _ = try self.storage.installVerifiedFile(
           temporaryURL,
           profile: profile,
@@ -575,7 +586,7 @@ struct SignalASILocalModelHubArtifactView: View {
       badge: stateLabel(state, progress: artifactProgress)
     ) {
       switch state {
-      case .downloading:
+      case .downloading, .verifying, .installing:
         downloads.cancel(artifact)
         statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
       case .ready:
@@ -628,6 +639,10 @@ struct SignalASILocalModelHubArtifactView: View {
     switch state {
     case .downloading, .paused:
       return "\(progress.percent)% - \(formatBytes(progress.bytesDownloaded)) / \(formatBytes(artifact.sizeBytes)) - \(details)"
+    case .verifying:
+      return "\(t(\"signalasi.local_model.download_verifying\", \"Verifying\")) - \(details)"
+    case .installing:
+      return "\(t(\"signalasi.local_model.download_installing\", \"Installing\")) - \(details)"
     case .notInstalled, .ready, .failed:
       return details + failure
     }
@@ -638,6 +653,8 @@ struct SignalASILocalModelHubArtifactView: View {
     case .notInstalled: return t("signalasi.local_model.download_action", "Download")
     case .paused: return t("signalasi.local_model.download_resume", "Resume")
     case .downloading: return "\(progress.percent)%"
+    case .verifying: return t("signalasi.local_model.download_verifying", "Verifying")
+    case .installing: return t("signalasi.local_model.download_installing", "Installing")
     case .ready: return t("signalasi.local_model.download_delete", "Delete")
     case .failed: return t("signalasi.common.retry", "Retry")
     }
