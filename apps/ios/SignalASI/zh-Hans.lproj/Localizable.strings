@@ -3970,3 +3970,4 @@
 "signalasi.profile.avatar_remove" = "移除头像";
 "signalasi.profile.avatar_remove_subtitle" = "恢复默认头像";
 "signalasi.profile.avatar_removed" = "头像已移除";
+"signalasi.agent_session.name_placeholder" = "会话名称";
