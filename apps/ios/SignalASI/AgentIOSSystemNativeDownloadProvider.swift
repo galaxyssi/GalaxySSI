@@ -5,13 +5,49 @@ protocol AgentIOSDownloadManaging {
     url: String,
     title: String,
     description: String,
+    context: AgentIOSDownloadContext,
     nowMillis: Int64
   ) -> AgentNativeToolExecutionResult
   func queryDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
   func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
-final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
+struct AgentIOSDownloadContext {
+  var contactId: String
+  var conversationId: String
+  var turnId: String
+  var languageTag: String
+
+  init(contactId: String = "", conversationId: String = "", turnId: String = "", languageTag: String = "") {
+    self.contactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.conversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.turnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.languageTag = languageTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+}
+
+struct AgentIOSDownloadCompletion {
+  var id: Int64
+  var succeeded: Bool
+  var title: String
+  var reason: Int64
+  var bytesDownloaded: Int64
+  var totalBytes: Int64
+  var localFileURL: URL?
+  var mediaType: String
+  var contactId: String
+  var conversationId: String
+  var turnId: String
+  var languageTag: String
+}
+
+protocol AgentIOSDownloadCompletionReporting: AnyObject {
+  func setCompletionHandler(_ handler: @escaping (AgentIOSDownloadCompletion) -> Void)
+  func pendingCompletions() -> [AgentIOSDownloadCompletion]
+  func markCompletionDelivered(id: Int64, nowMillis: Int64)
+}
+
+final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSDownloadCompletionReporting {
   static let shared = AgentIOSDefaultDownloadProvider()
 
   private struct DownloadRecord: Codable {
@@ -27,6 +63,11 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     var mediaType: String
     var createdAtEpochMillis: Int64
     var updatedAtEpochMillis: Int64
+    var contactId: String?
+    var conversationId: String?
+    var turnId: String?
+    var languageTag: String?
+    var completionDeliveredAtEpochMillis: Int64?
 
     func output(observedAtEpochMillis: Int64) -> AgentMcpJSONObject {
       [
@@ -69,6 +110,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
   private var nextId: Int64 = 1
   private var records: [Int64: DownloadRecord] = [:]
   private var tasks: [Int64: URLSessionDownloadTask] = [:]
+  private var completionHandler: ((AgentIOSDownloadCompletion) -> Void)?
 
   init(
     session: URLSession = .shared,
@@ -92,6 +134,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     url: String,
     title: String,
     description: String,
+    context: AgentIOSDownloadContext,
     nowMillis: Int64
   ) -> AgentNativeToolExecutionResult {
     let suppliedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -117,7 +160,12 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
         localFileURL: nil,
         mediaType: "",
         createdAtEpochMillis: nowMillis,
-        updatedAtEpochMillis: nowMillis
+        updatedAtEpochMillis: nowMillis,
+        contactId: context.contactId.nilIfEmpty,
+        conversationId: context.conversationId.nilIfEmpty,
+        turnId: context.turnId.nilIfEmpty,
+        languageTag: context.languageTag.nilIfEmpty,
+        completionDeliveredAtEpochMillis: nil
       )
       persistLocked()
       return id
@@ -220,6 +268,29 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
     )
   }
 
+  func setCompletionHandler(_ handler: @escaping (AgentIOSDownloadCompletion) -> Void) {
+    queue.sync {
+      completionHandler = handler
+    }
+    notifyPendingCompletions()
+  }
+
+  func pendingCompletions() -> [AgentIOSDownloadCompletion] {
+    queue.sync {
+      records.values.compactMap(completion(for:))
+    }
+  }
+
+  func markCompletionDelivered(id: Int64, nowMillis: Int64) {
+    queue.sync {
+      guard var record = records[id], completion(for: record) != nil else { return }
+      record.completionDeliveredAtEpochMillis = max(0, nowMillis)
+      record.updatedAtEpochMillis = max(record.updatedAtEpochMillis, max(0, nowMillis))
+      records[id] = record
+      persistLocked()
+    }
+  }
+
   private func finishDownload(
     id: Int64,
     originalURL: URL,
@@ -231,8 +302,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
       guard var record = self.records[id] else {
         return
       }
-      defer { self.persistLocked() }
-      defer { self.tasks.removeValue(forKey: id) }
       record.updatedAtEpochMillis = self.currentMillis()
       record.mediaType = self.bounded(response?.mimeType ?? "", 255)
 
@@ -240,49 +309,88 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
         record.status = Status.failed
         record.reason = Int64((error as NSError).code)
         self.records[id] = record
-        return
-      }
-
-      if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
         record.status = Status.failed
         record.reason = Int64(http.statusCode)
         self.records[id] = record
-        return
-      }
-
-      guard let temporaryURL else {
+      } else if temporaryURL == nil {
         record.status = Status.failed
         record.reason = -1
         self.records[id] = record
-        return
-      }
-
-      do {
-        try FileManager.default.createDirectory(
-          at: self.storageDirectory,
-          withIntermediateDirectories: true
-        )
-        let destination = self.storageDirectory.appendingPathComponent(
-          self.safeFilename(id: id, response: response, originalURL: originalURL),
-          isDirectory: false
-        )
-        if FileManager.default.fileExists(atPath: destination.path) {
-          try FileManager.default.removeItem(at: destination)
+      } else if let temporaryURL {
+        do {
+          try FileManager.default.createDirectory(
+            at: self.storageDirectory,
+            withIntermediateDirectories: true
+          )
+          let destination = self.storageDirectory.appendingPathComponent(
+            self.safeFilename(id: id, response: response, originalURL: originalURL),
+            isDirectory: false
+          )
+          if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+          }
+          try FileManager.default.moveItem(at: temporaryURL, to: destination)
+          let size = self.fileSize(destination)
+          record.status = Status.successful
+          record.reason = 0
+          record.bytesDownloaded = size
+          let expected = response?.expectedContentLength ?? -1
+          record.totalBytes = expected >= 0 ? expected : size
+          record.localFileURL = destination
+          self.records[id] = record
+        } catch {
+          record.status = Status.failed
+          record.reason = Int64((error as NSError).code)
+          self.records[id] = record
         }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
-        let size = self.fileSize(destination)
-        record.status = Status.successful
-        record.reason = 0
-        record.bytesDownloaded = size
-        let expected = response?.expectedContentLength ?? -1
-        record.totalBytes = expected >= 0 ? expected : size
-        record.localFileURL = destination
-        self.records[id] = record
-      } catch {
-        record.status = Status.failed
-        record.reason = Int64((error as NSError).code)
-        self.records[id] = record
       }
+      self.persistLocked()
+      self.tasks.removeValue(forKey: id)
+      self.notifyCompletionLocked(for: record)
+    }
+  }
+
+  private func completion(for record: DownloadRecord) -> AgentIOSDownloadCompletion? {
+    guard record.completionDeliveredAtEpochMillis == nil,
+          record.status == Status.successful || record.status == Status.failed,
+          let conversationId = record.conversationId?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !conversationId.isEmpty else {
+      return nil
+    }
+    return AgentIOSDownloadCompletion(
+      id: record.id,
+      succeeded: record.status == Status.successful,
+      title: record.title,
+      status: record.status,
+      reason: record.reason,
+      bytesDownloaded: record.bytesDownloaded,
+      totalBytes: record.totalBytes,
+      localFileURL: record.localFileURL,
+      mediaType: record.mediaType,
+      contactId: record.contactId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      conversationId: conversationId,
+      turnId: record.turnId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      languageTag: record.languageTag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    )
+  }
+
+  private func notifyPendingCompletions() {
+    let notification = queue.sync { () -> ([AgentIOSDownloadCompletion], ((AgentIOSDownloadCompletion) -> Void)?) in
+      (records.values.compactMap(completion(for:)), completionHandler)
+    }
+    guard let handler = notification.1 else { return }
+    for completion in notification.0 {
+      DispatchQueue.main.async {
+        handler(completion)
+      }
+    }
+  }
+
+  private func notifyCompletionLocked(for record: DownloadRecord) {
+    guard let completion = completion(for: record), let handler = completionHandler else { return }
+    DispatchQueue.main.async {
+      handler(completion)
     }
   }
 

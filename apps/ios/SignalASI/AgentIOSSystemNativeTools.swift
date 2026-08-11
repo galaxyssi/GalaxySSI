@@ -305,6 +305,12 @@ struct AgentIOSSystemNativeToolExecutor {
       url: url,
       title: boundedString(invocation.input["title"]?.stringValue, limit: 240),
       description: boundedString(invocation.input["description"]?.stringValue, limit: 500),
+      context: AgentIOSDownloadContext(
+        contactId: invocation.context.attributes["contact_id"] ?? "",
+        conversationId: invocation.context.conversationId,
+        turnId: invocation.context.turnId,
+        languageTag: invocation.context.attributes["response_language"] ?? ""
+      ),
       nowMillis: max(0, nowMillis())
     )
     return annotatedSystemResult(result, invocation: invocation)

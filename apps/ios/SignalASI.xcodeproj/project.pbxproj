@@ -641,6 +641,7 @@
     A10000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */; };
     A10000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */; };
     A10000000000000000000301 /* AgentIOSSystemNativeDownloadProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000301 /* AgentIOSSystemNativeDownloadProvider.swift */; };
+    F10000000000000000000001 /* AgentIOSDownloadCompletionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* AgentIOSDownloadCompletionCoordinator.swift */; };
     A10000000000000000000302 /* AgentIOSSystemNativeContactsWriteProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000302 /* AgentIOSSystemNativeContactsWriteProvider.swift */; };
     A10000000000000000000303 /* AgentIOSSystemNativeCalendarWriteProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000303 /* AgentIOSSystemNativeCalendarWriteProvider.swift */; };
     A10000000000000000000304 /* AgentIOSSystemNativeCommunicationHandoffProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000304 /* AgentIOSSystemNativeCommunicationHandoffProvider.swift */; };
@@ -1421,6 +1422,7 @@
     A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolProviders.swift; sourceTree = "<group>"; };
     A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000301 /* AgentIOSSystemNativeDownloadProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeDownloadProvider.swift; sourceTree = "<group>"; };
+    F20000000000000000000001 /* AgentIOSDownloadCompletionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDownloadCompletionCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000302 /* AgentIOSSystemNativeContactsWriteProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeContactsWriteProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000303 /* AgentIOSSystemNativeCalendarWriteProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeCalendarWriteProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000304 /* AgentIOSSystemNativeCommunicationHandoffProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeCommunicationHandoffProvider.swift; sourceTree = "<group>"; };
@@ -2000,6 +2002,7 @@
         A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */,
         A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */,
         A20000000000000000000301 /* AgentIOSSystemNativeDownloadProvider.swift */,
+        F20000000000000000000001 /* AgentIOSDownloadCompletionCoordinator.swift */,
         A20000000000000000000302 /* AgentIOSSystemNativeContactsWriteProvider.swift */,
         A20000000000000000000303 /* AgentIOSSystemNativeCalendarWriteProvider.swift */,
         A20000000000000000000304 /* AgentIOSSystemNativeCommunicationHandoffProvider.swift */,
@@ -2899,6 +2902,7 @@
         A10000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift in Sources */,
         A10000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift in Sources */,
         A10000000000000000000301 /* AgentIOSSystemNativeDownloadProvider.swift in Sources */,
+        F10000000000000000000001 /* AgentIOSDownloadCompletionCoordinator.swift in Sources */,
         A10000000000000000000302 /* AgentIOSSystemNativeContactsWriteProvider.swift in Sources */,
         A10000000000000000000303 /* AgentIOSSystemNativeCalendarWriteProvider.swift in Sources */,
         A10000000000000000000304 /* AgentIOSSystemNativeCommunicationHandoffProvider.swift in Sources */,

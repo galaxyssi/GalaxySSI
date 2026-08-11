@@ -32,6 +32,7 @@ final class MessageCoordinator: ObservableObject {
   private let connectorResponseBus: AgentConnectorResponseBus
   private let richContentMaterializer: AgentRichContentMaterializer
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "SignalASI iOS",
@@ -144,6 +145,7 @@ final class MessageCoordinator: ObservableObject {
     )
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
+    self.downloadCompletionCoordinator = AgentIOSDownloadCompletionCoordinator(store: store)
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
@@ -231,6 +233,7 @@ final class MessageCoordinator: ObservableObject {
   func refreshAgentHomeState() {
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
+    downloadCompletionCoordinator.deliverPendingCompletions()
   }
 
   /// Mirrors Android's profile update fan-out for verified person contacts that
@@ -3924,6 +3927,10 @@ final class MessageCoordinator: ObservableObject {
     executionAction.parameters["_signalasi_session_id"] = task.sessionId
     executionAction.parameters["_signalasi_conversation_id"] = outgoing.conversationId
     executionAction.parameters["_signalasi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    executionAction.parameters["_signalasi_contact_id"] = outgoing.contactId
+    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
+      store.languagePolicy.responseLanguage
+    )
     executionAction.parameters["_signalasi_workspace_id"] = AgentWorkspaceScope.id(
       conversationId: outgoing.conversationId,
       sessionId: task.sessionId
