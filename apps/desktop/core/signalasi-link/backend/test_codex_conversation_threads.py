@@ -475,6 +475,10 @@ class CodexConversationThreadTests(unittest.TestCase):
                 codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
                 thread_start["dynamicTools"][0]["name"],
             )
+            self.assertEqual(
+                codex_app_server.CODEX_DYNAMIC_FETCH_TOOL,
+                thread_start["dynamicTools"][1]["name"],
+            )
             self.assertIn(
                 "Decide for yourself whether current external information is needed",
                 thread_start["developerInstructions"],
@@ -714,6 +718,50 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertFalse(any(event.get("status") == "waiting_input" for event in event_payloads))
         self.assertEqual("model_directed_search_completed", event_payloads[-1]["trace_stage"])
         self.assertIn("Zhuhai current weather", event_payloads[-1]["trace_detail"])
+
+    def test_dynamic_fetch_request_reads_the_url_on_desktop(self):
+        server, run, events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append((request_id, result))
+        request = {
+            "id": "dynamic-fetch-1",
+            "method": "item/tool/call",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "callId": "call-fetch-1",
+                "tool": codex_app_server.CODEX_DYNAMIC_FETCH_TOOL,
+                "arguments": {"urls": ["https://mp.weixin.qq.com/s/example"]},
+            },
+        }
+        result = {
+            "success": True,
+            "contentItems": [{"type": "inputText", "text": "Desktop article evidence"}],
+        }
+
+        class ImmediateThread:
+            def __init__(self, target, args=(), **_kwargs):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                self.target(*self.args)
+
+        with patch.object(
+            codex_app_server,
+            "execute_codex_dynamic_fetch",
+            return_value=result,
+        ) as fetch, patch.object(codex_app_server.threading, "Thread", ImmediateThread):
+            server._handle_event(request)
+
+        self.assertEqual([("dynamic-fetch-1", result)], responses)
+        fetch.assert_called_once_with(
+            {"urls": ["https://mp.weixin.qq.com/s/example"]},
+            run.task_id,
+        )
+        event_payloads = [event for _task_id, event in events]
+        self.assertEqual("model_directed_fetch_completed", event_payloads[-1]["trace_stage"])
+        self.assertIn("https://mp.weixin.qq.com/s/example", event_payloads[-1]["trace_detail"])
 
     def test_missing_persisted_thread_is_recreated(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(

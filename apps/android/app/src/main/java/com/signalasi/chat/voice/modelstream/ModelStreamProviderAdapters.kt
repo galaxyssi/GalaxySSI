@@ -242,7 +242,8 @@ private class GeminiModelStreamAdapter : ModelStreamProviderAdapter {
                 callId = function.optString("id").ifBlank { "gemini-$index" },
                 index = index,
                 nameDelta = function.optString("name"),
-                argumentsDelta = function.optJSONObject("args")?.toString().orEmpty()
+                argumentsDelta = function.optJSONObject("args")?.toString().orEmpty(),
+                argumentsMode = ToolCallArgumentsMode.SNAPSHOT
             )
         }
         val finishReason = candidate?.optString("finishReason")?.takeIf(String::isNotBlank)

@@ -153,7 +153,7 @@ class AgentPinnedOkHttpWebTransport(
 
 data class AgentWebPolicy(
     val maxRedirects: Int = 4,
-    val maxFetchBytes: Long = 1_048_576L,
+    val maxFetchBytes: Long = AGENT_WEB_MAX_FETCH_BYTES,
     val maxDownloadBytes: Long = 12L * 1_048_576L,
     val maxTimeoutMillis: Long = 15_000L,
     val maxDnsAddresses: Int = 16,
@@ -494,7 +494,7 @@ class AgentBoundedWebService(
             val name = rawName.trim()
             val value = rawValue.trim()
             if (
-                name.lowercase(Locale.ROOT) in ALLOWED_ADDITIONAL_REQUEST_HEADERS &&
+                name.lowercase(Locale.ROOT) in AGENT_WEB_ADDITIONAL_REQUEST_HEADERS &&
                 value.length in 1..MAX_HEADER_VALUE_CHARS &&
                 '\r' !in value &&
                 '\n' !in value
@@ -522,15 +522,6 @@ class AgentBoundedWebService(
 
     companion object {
         private const val MAX_HEADER_VALUE_CHARS = 2_048
-        private val ALLOWED_ADDITIONAL_REQUEST_HEADERS = setOf(
-            "accept",
-            "api-key",
-            "authorization",
-            "referer",
-            "user-agent",
-            "x-github-api-version",
-            "x-subscription-token"
-        )
         private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
         private val SELECTED_RESPONSE_HEADERS = listOf(
             "Content-Type",
@@ -1006,7 +997,7 @@ object AgentWebMediaNativeTools {
     const val CONTENT_URI_WRITE_CONSENT = "signalasi.consent.content_uri_write"
     const val MEDIA_PLAYBACK_CONSENT = "signalasi.consent.media_playback"
 
-    const val MAX_FETCH_BYTES = 1_048_576L
+    const val MAX_FETCH_BYTES = AGENT_WEB_MAX_FETCH_BYTES
     const val MAX_DOWNLOAD_BYTES = 12L * 1_048_576L
     const val MAX_CONTENT_URI_CHARS = 4_096
     const val MAX_OCR_SOURCE_BYTES = 12L * 1_048_576L

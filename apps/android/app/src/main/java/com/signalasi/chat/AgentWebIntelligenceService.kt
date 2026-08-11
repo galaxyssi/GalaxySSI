@@ -833,7 +833,7 @@ class AgentWebIntelligenceService(
                 "expires_at_millis" to document.expiresAtMillis
             ) + store.stats()),
             "metadata" to linkedMapOf(
-                "fetch_tier" to "bounded_public_https",
+                "fetch_tier" to document.metadata["fetch_tier"].orEmptyString("bounded_public_https"),
                 "challenge_detected" to challengeDetected(document.content)
             )
         )
@@ -1343,23 +1343,34 @@ class AgentWebIntelligenceService(
     ): AgentWebIntelligenceDocument {
         val source = fetched.body.toString(Charsets.UTF_8)
         val html = fetched.contentType.contains("html", true) || Regex("<html\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
-        val title = if (html) {
+        val article = if (html) AgentPublicArticleParser.parse(fetched.url, source) else null
+        val title = article?.title ?: if (html) {
             Regex("<title[^>]*>([\\s\\S]*?)</title>", RegexOption.IGNORE_CASE)
                 .find(source)?.groupValues?.get(1)?.let { AgentWebIntelligenceText.clean(it, 2_048) }.orEmpty()
         } else ""
-        val links = if (html) extractLinks(source, fetched.url) else emptyList()
-        val content = if (html) readableText(source) else source.trim().take(MAX_CONTENT_CHARS)
+        val links = article?.links ?: if (html) extractLinks(source, fetched.url) else emptyList()
+        val content = article?.content ?: if (html) readableText(source) else source.trim().take(MAX_CONTENT_CHARS)
+        val articleMetadata = article?.let {
+            linkedMapOf<String, Any?>(
+                "article_source" to it.sourceType,
+                "author" to it.author,
+                "published_at" to it.publishedAt,
+                "image_count" to it.images.size,
+                "images" to it.images,
+                "lead_image_url" to it.images.firstOrNull()?.get("url")
+            ).filterValues { value -> value != null && value != "" }
+        }.orEmpty()
         return documentFromContent(
             fetched.url,
             title.ifBlank { URI(fetched.url).host.orEmpty() },
             content,
             fetched.contentType,
             links,
-            linkedMapOf(
-                "fetch_tier" to "bounded_public_https",
+            linkedMapOf<String, Any?>(
+                "fetch_tier" to if (article == null) "bounded_public_https" else "mobile_article_https",
                 "duration_millis" to fetched.durationMillis,
                 "challenge_detected" to challengeDetected(content)
-            ),
+            ) + articleMetadata,
             ttlMillis
         )
     }
@@ -1427,7 +1438,7 @@ class AgentWebIntelligenceService(
     )
 
     companion object {
-        const val MAX_FETCH_BYTES = 1_048_576L
+        const val MAX_FETCH_BYTES = AGENT_WEB_MAX_FETCH_BYTES
         const val MAX_CONTENT_CHARS = 240_000
         const val MAX_LINKS = 2_000
         const val DEFAULT_CACHE_TTL_MILLIS = 6L * 60L * 60L * 1_000L
@@ -1437,7 +1448,7 @@ class AgentWebIntelligenceService(
             context: Context,
             web: AgentBoundedWebService
         ): AgentWebIntelligenceService = AgentWebIntelligenceService(
-            fetcher = AgentBoundedWebIntelligenceFetcher(web),
+            fetcher = AgentDynamicWebArticleFetcher(AgentBoundedWebIntelligenceFetcher(web)),
             store = AgentEncryptedWebIntelligenceStore(context),
             ranker = AgentWebIntelligenceRanker.fromAssets(context),
             credentialProvider = AgentEncryptedWebIntelligenceCredentials(context)
@@ -1480,9 +1491,14 @@ private fun challengeDetected(content: String): Boolean {
         "enable javascript",
         "captcha",
         "access denied",
-        "checking your browser"
+        "checking your browser",
+        "\u73af\u5883\u5f02\u5e38",
+        "\u8bbf\u95ee\u8fc7\u4e8e\u9891\u7e41",
+        "wappoc_appmsgcaptcha"
     ).any(lower::contains)
 }
+
+private fun Any?.orEmptyString(default: String): String = this as? String ?: default
 
 private fun origin(url: String): String = runCatching {
     val uri = URI(url)

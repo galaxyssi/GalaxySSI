@@ -27,8 +27,11 @@ from agent_execution_harness import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from model_directed_search import (
+    CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
+    codex_dynamic_fetch_tool_spec,
     codex_dynamic_search_tool_spec,
+    execute_codex_dynamic_fetch,
     execute_codex_dynamic_search,
 )
 
@@ -48,6 +51,7 @@ SignalASI execution policy:
 - Decide for yourself whether current external information is needed.
 - Prefer Codex native live web search when current external information is needed. Choose the query, search, open the best pages, and inspect relevant passages until the evidence is sufficient for the requested depth.
 - If native web search is unavailable or its evidence remains insufficient, call `signalasi_parallel_web_search` once as a bounded multi-source fallback. Resolve follow-up wording from the full conversation into one concise, self-contained query, select the relevant content verticals yourself, and set read_pages=true when source-page facts are needed. Do not repeat equivalent searches through shell commands or MCP after either search path has returned sufficient evidence.
+- When the user supplies an explicit public URL and native page opening fails or returns a challenge, call `signalasi_fetch_public_pages` with that exact URL. Do not ask the phone to pre-fetch Desktop Agent evidence.
 - Never expose internal task workspace or attachment download paths. Refer to uploaded inputs by their original filename only.
 - For image review or homework grading, inspect the supplied image and return the findings before offering optional edits.
 - Camera photos may be sideways even when EXIF says normal; orient the content for reading before OCR or grading.
@@ -162,7 +166,7 @@ class CodexAppServer:
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
         self._loaded_thread_ids: set[str] = set()
         self._initialized_process_pid = 0
-        self._dynamic_tools = [codex_dynamic_search_tool_spec()]
+        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec()]
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -1521,7 +1525,17 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name != CODEX_DYNAMIC_SEARCH_TOOL:
+            if tool_name == CODEX_DYNAMIC_SEARCH_TOOL:
+                result = execute_codex_dynamic_search(
+                    arguments if isinstance(arguments, Mapping) else {},
+                    task_id,
+                )
+            elif tool_name == CODEX_DYNAMIC_FETCH_TOOL:
+                result = execute_codex_dynamic_fetch(
+                    arguments if isinstance(arguments, Mapping) else {},
+                    task_id,
+                )
+            else:
                 result = {
                     "success": False,
                     "contentItems": [{
@@ -1529,11 +1543,6 @@ class CodexAppServer:
                         "text": f"Unsupported SignalASI dynamic tool: {tool_name or 'unknown'}",
                     }],
                 }
-            else:
-                result = execute_codex_dynamic_search(
-                    arguments if isinstance(arguments, Mapping) else {},
-                    task_id,
-                )
         except Exception as exc:
             log.exception("SignalASI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
             result = {
@@ -1544,13 +1553,25 @@ class CodexAppServer:
                 }],
             }
         self._write_server_response(message.get("id"), result)
+        direct_fetch = tool_name == CODEX_DYNAMIC_FETCH_TOOL
+        direct_urls = arguments.get("urls") if isinstance(arguments, Mapping) else []
         self.on_event(task_id, {
             **dict(common),
             "status": "running",
-            "current_step": "Searched sources" if result.get("success") else "Search fallback available",
-            "trace_stage": "model_directed_search_completed",
+            "current_step": (
+                "Read source pages" if direct_fetch and result.get("success")
+                else "Source page unavailable" if direct_fetch
+                else "Searched sources" if result.get("success")
+                else "Search fallback available"
+            ),
+            "trace_stage": (
+                "model_directed_fetch_completed"
+                if direct_fetch
+                else "model_directed_search_completed"
+            ),
             "trace_detail": (
-                f"{tool_name}: {query}; verticals={verticals or 'general'}; "
+                f"{tool_name}: {','.join(str(url) for url in direct_urls[:3]) if direct_fetch and isinstance(direct_urls, list) else query}; "
+                f"verticals={verticals or 'general'}; "
                 f"read_pages={str(read_pages).lower()}; success={str(bool(result.get('success'))).lower()}"
             )[:1_200],
             "telemetry_only": True,

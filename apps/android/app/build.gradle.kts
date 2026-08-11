@@ -121,8 +121,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 429
-        versionName = "0.4.29"
+        versionCode = 430
+        versionName = "0.4.30"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -232,6 +232,7 @@ dependencies {
     implementation("org.signal:libsignal-android:0.86.5")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jsoup:jsoup:1.23.1")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("xyz.rementia:openwakeword:0.1.3") {
         exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")

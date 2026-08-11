@@ -1108,16 +1108,9 @@ class AgentWebIntelligenceSearchAdapter(
     ): AgentWebIntelligenceFetched {
         val requestFetcher = fetcher as? AgentWebIntelligenceRequestFetcher
         return if (requestFetcher != null) {
-            requestFetcher.fetch(
-                url,
-                1_048_576L,
-                timeoutMillis,
-                headers,
-                cancellationToken,
-                checkpoint
-            )
+            requestFetcher.fetch(url, AGENT_WEB_MAX_FETCH_BYTES, timeoutMillis, headers, cancellationToken, checkpoint)
         } else {
-            fetcher.fetch(url, 1_048_576L, timeoutMillis, cancellationToken, checkpoint)
+            fetcher.fetch(url, AGENT_WEB_MAX_FETCH_BYTES, timeoutMillis, cancellationToken, checkpoint)
         }
     }
 
