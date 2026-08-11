@@ -20,7 +20,8 @@ struct SignalASIVoiceTabView: View {
           wakeSurface
           if isVoiceProcessing {
             voiceProcessingStrip(title: voiceProcessingTitle, subtitle: voiceProcessingSubtitle)
-          } else if !submitStatus.isEmpty || !holdToTalk.statusMessage.isEmpty {
+          } else if !submitStatus.isEmpty || !holdToTalk.statusMessage.isEmpty ||
+              !wakeListener.failureDescription.isEmpty {
             statusStrip
           }
           liveTranscriptSection
@@ -68,18 +69,14 @@ struct SignalASIVoiceTabView: View {
       )
 
       VStack(spacing: 7) {
-        Text(settings.wakeListeningEnabled
-          ? t("voice_status_low_power", "Low-power listening")
-          : t("voice_status_disabled", "Voice wake is off"))
+        Text(wakeSurfaceTitle)
           .font(.system(size: 24, weight: .bold))
           .foregroundColor(.white)
           .multilineTextAlignment(.center)
           .lineLimit(2)
           .minimumScaleFactor(0.78)
 
-        Text(settings.wakeListeningEnabled
-          ? t("voice_hint_wake", "Say \"hello\" to start talking")
-          : t("voice_status_disabled_detail", "Enable it in Settings > Voice Wake & ASR/TTS"))
+        Text(wakeSurfaceSubtitle)
           .font(.system(size: 15, weight: .semibold))
           .foregroundColor(Color.white.opacity(0.82))
           .multilineTextAlignment(.center)
@@ -114,9 +111,7 @@ struct SignalASIVoiceTabView: View {
       Circle()
         .fill(wakeListener.isListening ? Color.signalASIAccent : Color.orange)
         .frame(width: 8, height: 8)
-      Text(wakeListener.isListening
-        ? t("voice_status_low_power", "Low-power listening")
-        : t("common_off", "Off"))
+      Text(wakeStatusLabel)
         .font(.system(size: 13, weight: .bold))
         .lineLimit(1)
         .minimumScaleFactor(0.78)
@@ -205,7 +200,7 @@ struct SignalASIVoiceTabView: View {
   }
 
   private var statusStrip: some View {
-    Text(submitStatus.ifBlank(holdToTalk.statusMessage))
+    Text(submitStatus.ifBlank(holdToTalk.statusMessage).ifBlank(wakeListener.failureDescription))
       .font(.system(size: 13, weight: .semibold))
       .foregroundColor(.signalASITextSecondary)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,6 +226,42 @@ struct SignalASIVoiceTabView: View {
     default:
       return false
     }
+  }
+
+  private var wakeSurfaceTitle: String {
+    if !settings.wakeListeningEnabled {
+      return t("voice_status_disabled", "Voice wake is off")
+    }
+    if wakeListener.isListening {
+      return t("voice_status_low_power", "Low-power listening")
+    }
+    if wakeListener.isPreparing {
+      return t("signalasi.voice.preparing_title", "Preparing voice input")
+    }
+    if !wakeListener.failureDescription.isEmpty {
+      return t("signalasi.voice.permission_missing", "Microphone or speech permission is missing.")
+    }
+    return t("signalasi.voice.preparing_title", "Preparing voice input")
+  }
+
+  private var wakeSurfaceSubtitle: String {
+    if !settings.wakeListeningEnabled {
+      return t("voice_status_disabled_detail", "Enable it in Settings > Voice Wake & ASR/TTS")
+    }
+    if !wakeListener.failureDescription.isEmpty {
+      return wakeListener.failureDescription
+    }
+    return t("voice_hint_wake", "Say \"hello\" to start talking")
+  }
+
+  private var wakeStatusLabel: String {
+    if wakeListener.isListening {
+      return t("voice_status_low_power", "Low-power listening")
+    }
+    if wakeListener.isPreparing {
+      return t("signalasi.voice.preparing_title", "Preparing voice input")
+    }
+    return t("common_off", "Off")
   }
 
   private var voiceProcessingTitle: String {
