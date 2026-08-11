@@ -22,15 +22,18 @@ struct SignalASIMainTabView: View {
     case .agent:
       AgentHomeView()
     case .messages:
-      ChatListView()
+      ChatListView(showsBackButton: false)
     case .contacts:
-      ContactsView()
+      ContactsView(showsBackButton: false)
     case .discover:
-      DiscoverView()
+      DiscoverView(showsBackButton: false)
     case .settings:
-      SettingsView { tab in
-        selectedTab = tab
-      }
+      SettingsView(
+        navigateToMainTab: { tab in
+          selectedTab = tab
+        },
+        showsBackButton: false
+      )
     }
   }
 }
