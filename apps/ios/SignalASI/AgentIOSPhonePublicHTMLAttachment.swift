@@ -160,7 +160,7 @@ enum AgentIOSPhonePublicHTMLAttachment {
 
   private static func safeFileStem(_ value: String) -> String {
     let stem = value
-      .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+      .replacingOccurrences(of: "[^\\p{L}\\p{N}._-]+", with: "-", options: .regularExpression)
       .trimmingCharacters(in: CharacterSet(charactersIn: "-."))
     return String(stem.prefix(64)).ifBlank("public-page")
   }
