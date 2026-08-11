@@ -986,6 +986,29 @@ internal fun MobileNativeAgent.renderAndroidSystemSummary(
         return if (max <= 0.0) 0 else ((value / max) * 100.0).toInt().coerceIn(0, 100)
     }
     return when (toolId) {
+        AgentAndroidSystemNativeTools.DOWNLOAD_ENQUEUE -> AgentAndroidDownloadPolicy.startedMessage(zh)
+        AgentAndroidSystemNativeTools.DOWNLOAD_QUERY -> {
+            val status = when (long("status")?.toInt()) {
+                android.app.DownloadManager.STATUS_PENDING -> if (zh) "\u7b49\u5f85\u4e2d" else "pending"
+                android.app.DownloadManager.STATUS_RUNNING -> if (zh) "\u4e0b\u8f7d\u4e2d" else "downloading"
+                android.app.DownloadManager.STATUS_PAUSED -> if (zh) "\u5df2\u6682\u505c" else "paused"
+                android.app.DownloadManager.STATUS_SUCCESSFUL -> if (zh) "\u5df2\u5b8c\u6210" else "complete"
+                android.app.DownloadManager.STATUS_FAILED -> if (zh) "\u5df2\u5931\u8d25" else "failed"
+                else -> if (zh) "\u72b6\u6001\u672a\u77e5" else "unknown"
+            }
+            val downloaded = long("bytes_downloaded") ?: 0L
+            val total = long("total_bytes") ?: 0L
+            val progress = if (total > 0L) " (${((downloaded * 100L) / total).coerceIn(0L, 100L)}%)" else ""
+            if (zh) "\u4e0b\u8f7d\u72b6\u6001\uff1a$status$progress\u3002" else "Download status: $status$progress."
+        }
+        AgentAndroidSystemNativeTools.DOWNLOAD_REMOVE -> {
+            val removed = long("removed") ?: 0L
+            if (zh) {
+                if (removed > 0L) "\u5df2\u5220\u9664\u4e0b\u8f7d\u8bb0\u5f55\u548c\u6587\u4ef6\u3002" else "\u6ca1\u6709\u627e\u5230\u53ef\u5220\u9664\u7684\u4e0b\u8f7d\u3002"
+            } else {
+                if (removed > 0L) "Download record and file removed." else "No removable download was found."
+            }
+        }
         AgentAndroidSystemNativeTools.TELEPHONY_STATUS -> {
             val operator = text("network_operator_name").ifBlank { if (zh) "\u672a\u77e5\u8fd0\u8425\u5546" else "unknown carrier" }
             val data = if (bool("data_enabled")) if (zh) "\u5df2\u5f00\u542f" else "on" else if (zh) "\u5df2\u5173\u95ed" else "off"
