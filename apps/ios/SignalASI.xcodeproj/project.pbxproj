@@ -15,6 +15,7 @@
     A10000000000000000000057 /* SignalASIMqttClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000057 /* SignalASIMqttClient.swift */; };
     A10000000000000000000060 /* SignalASIAgentHomeTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* SignalASIAgentHomeTranscriptView.swift */; };
     A10000000000000000000059 /* SignalASIVoiceCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */; };
+    A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A00 /* SignalASIRichContentView.swift */; };
@@ -783,6 +784,7 @@
     A20000000000000000000057 /* SignalASIMqttClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMqttClient.swift; sourceTree = "<group>"; };
     A20000000000000000000060 /* SignalASIAgentHomeTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeTranscriptView.swift; sourceTree = "<group>"; };
     A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIVoiceCaptureService.swift; sourceTree = "<group>"; };
+    A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000A00 /* SignalASIRichContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichContentView.swift; sourceTree = "<group>"; };
@@ -1980,6 +1982,7 @@
         A20000000000000000000057 /* SignalASIMqttClient.swift */,
         A20000000000000000000060 /* SignalASIAgentHomeTranscriptView.swift */,
         A20000000000000000000059 /* SignalASIVoiceCaptureService.swift */,
+        A20000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
         A41000000000000000000890 /* Localizable.strings */,
@@ -2873,6 +2876,7 @@
         A10000000000000000000057 /* SignalASIMqttClient.swift in Sources */,
         A10000000000000000000060 /* SignalASIAgentHomeTranscriptView.swift in Sources */,
         A10000000000000000000059 /* SignalASIVoiceCaptureService.swift in Sources */,
+        A10000000000000000000061 /* SignalASIAgentHomeHeaderPresentation.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000000898 /* SignalASISharedUIComponents.swift in Sources */,

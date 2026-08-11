@@ -1137,7 +1137,7 @@ struct AgentHomeView: View {
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
-              routeTitle: headerModelLabel,
+              routeTitle: headerPresentation.modelLogoLabel,
               routeSubtitle: hasManualSelection
                 ? t("signalasi.agent.route.manual", "Manual route")
                 : t("signalasi.agent.route.automatic", "Automatic route"),
@@ -1805,10 +1805,11 @@ struct AgentHomeView: View {
   }
 
   private var header: some View {
-    SignalASIAgentHomeHeaderView(
-      sessionTitle: headerSessionTitle,
-      modelStatusLabel: headerModelStatusLabel,
-      modelLogoLabel: headerModelLabel,
+    let presentation = headerPresentation
+    return SignalASIAgentHomeHeaderView(
+      sessionTitle: presentation.sessionTitle,
+      modelStatusLabel: presentation.modelStatusLabel,
+      modelLogoLabel: presentation.modelLogoLabel,
       brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
       modelSelectionDestination: SignalASIAgentModelSelectionView {
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
@@ -1816,114 +1817,15 @@ struct AgentHomeView: View {
     )
   }
 
-  private var headerModelLabel: String {
-    guard hasManualSelection else {
-      if let liveExecutionTargetLabel {
-        return liveExecutionTargetLabel
-      }
-      let sessionLabel = activeAgentSession?.selectedModelOrAgent
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")
-      guard !sessionLabel.isEmpty,
-            sessionLabel.caseInsensitiveCompare("automatic") != .orderedSame,
-            sessionLabel.caseInsensitiveCompare(contact.displayName) != .orderedSame else {
-        return automaticLabel
-      }
-      return sessionLabel
-    }
-    let automaticLabel = t("signalasi.agent.model_selection.automatic", "Automatic")
-    let targetId = modelSelection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let fallbackLabel = modelSelection.displayName
-      .ifBlank(modelSelection.modelId)
-      .ifBlank(targetId)
-      .ifBlank(automaticLabel)
-    if modelSelection.targetId == "local-llm" {
-      let profile = LocalModelRuntimeCatalog.find(modelSelection.modelId)
-      return profile.displayName
-        .ifBlank(modelSelection.displayName)
-        .ifBlank(modelSelection.modelId)
-        .ifBlank(fallbackLabel)
-    }
-    if let contact = store.contact(id: modelSelection.targetId),
-       contact.type == "agent" {
-      return modelSelection.displayName.ifBlank(contact.displayName).ifBlank(contact.id)
-    }
-    if let contact = store.contact(id: modelSelection.targetId),
-       let model = contact.selectedCloudModel {
-      return model.displayName
-        .ifBlank(model.modelId)
-        .ifBlank(modelSelection.displayName)
-        .ifBlank(fallbackLabel)
-    }
-    return fallbackLabel
-  }
-
-  private var headerModelStatusLabel: String {
-    let key: String
-    let fallback: String
-    if hasManualSelection {
-      key = "signalasi.agent.header.routing.manual"
-      fallback = "Manual · %@"
-    } else {
-      key = "signalasi.agent.header.routing.auto"
-      fallback = "Automatic · %@"
-    }
-    return String(format: t(key, fallback), headerModelLabel)
-  }
-
-  private var headerModelAssetName: String? {
-    let candidates = [
-      modelSelection.targetId,
-      modelSelection.displayName,
-      modelSelection.modelId,
-      headerModelLabel,
-      liveExecutionTargetLabel ?? ""
-    ]
-    for candidate in candidates {
-      if let assetName = routeLogoAssetName(for: candidate) {
-        return assetName
-      }
-    }
-    return nil
-  }
-
-  private func routeLogoAssetName(for value: String) -> String? {
-    let normalized = value.lowercased()
-    if normalized.contains("codex") { return "CodexLogo" }
-    if normalized.contains("claude") || normalized.contains("anthropic") {
-      return "ClaudeLogo"
-    }
-    if normalized.contains("hermes") { return "HermesLogo" }
-    if normalized.contains("deepseek") { return "CloudProviderDeepSeek" }
-    if normalized.contains("openrouter") { return "CloudProviderOpenRouter" }
-    if normalized.contains("qwen") { return "CloudProviderQwen" }
-    if normalized.contains("gemini") || normalized.contains("google") {
-      return "CloudProviderGemini"
-    }
-    if normalized.contains("openai") || normalized.contains("gpt") {
-      return "CloudProviderOpenAI"
-    }
-    return nil
-  }
-
-  private var headerSessionTitle: String {
-    let fallback = t("signalasi.agent.session.new", "New session")
-    guard let session = activeAgentSession else { return fallback }
-    let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
-      .ifBlank(fallback)
-    let sourceTitle = session.createdByAgent
-      ? String(
-          format: t("signalasi.agent_session.created_by_agent", "SignalASI · %@"),
-          title
-        )
-      : title
-    if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return sourceTitle + " · " + t("signalasi.agent_session.merged", "Merged")
-    }
-    if session.trackingPaused {
-      return sourceTitle + " · " + t("signalasi.agent_session.tracking_paused", "Tracking paused")
-    }
-    return sourceTitle
+  private var headerPresentation: SignalASIAgentHomeHeaderPresentation {
+    SignalASIAgentHomeHeaderPresentation.make(
+      session: activeAgentSession,
+      contact: contact,
+      selection: modelSelection,
+      liveExecutionTargetLabel: liveExecutionTargetLabel,
+      contacts: store.contacts,
+      language: interfaceLanguage
+    )
   }
 
   private var agentComposer: some View {
