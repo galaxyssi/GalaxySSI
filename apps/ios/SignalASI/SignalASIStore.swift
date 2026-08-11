@@ -1289,6 +1289,26 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func updateDesktopDeviceMetadata(
+    desktopId: String,
+    payload: [String: Any],
+    now: Date = Date()
+  ) -> Bool {
+    let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanDesktopId.isEmpty,
+          let metadata = SignalASIDesktopDeviceMetadata.from(payload: payload, now: now),
+          let index = serverLinks.firstIndex(where: { $0.desktopId == cleanDesktopId }) else {
+      return false
+    }
+    let merged = (serverLinks[index].deviceMetadata ?? SignalASIDesktopDeviceMetadata(lastSeenAt: now))
+      .merged(with: metadata)
+    serverLinks[index].deviceMetadata = merged
+    serverLinks[index].updatedAt = now
+    save()
+    return true
+  }
+
+  @discardableResult
   func updatePairedDesktopDevice(from payload: [String: Any], link: ServerLink? = nil) -> Bool {
     let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
     guard !desktopId.isEmpty else { return false }

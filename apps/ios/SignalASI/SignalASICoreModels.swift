@@ -760,6 +760,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
   var accessProfile: String
   var accessScopes: Set<String>
   var capabilityManifestVersion: Int
+  var deviceMetadata: SignalASIDesktopDeviceMetadata?
   var updatedAt: Date
 
   init(
@@ -772,6 +773,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
     accessProfile: String,
     accessScopes: Set<String>,
     capabilityManifestVersion: Int = 0,
+    deviceMetadata: SignalASIDesktopDeviceMetadata? = nil,
     updatedAt: Date
   ) {
     self.desktopId = desktopId
@@ -783,6 +785,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
     self.accessProfile = accessProfile
     self.accessScopes = accessScopes
     self.capabilityManifestVersion = max(capabilityManifestVersion, 0)
+    self.deviceMetadata = deviceMetadata
     self.updatedAt = updatedAt
   }
 
@@ -801,6 +804,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
     case accessProfile
     case accessScopes
     case capabilityManifestVersion = "capability_manifest_version"
+    case deviceMetadata = "device_metadata"
     case updatedAt
   }
 
@@ -816,6 +820,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
       accessProfile: try container.decode(String.self, forKey: .accessProfile),
       accessScopes: try container.decode(Set<String>.self, forKey: .accessScopes),
       capabilityManifestVersion: try container.decodeIfPresent(Int.self, forKey: .capabilityManifestVersion) ?? 0,
+      deviceMetadata: try container.decodeIfPresent(SignalASIDesktopDeviceMetadata.self, forKey: .deviceMetadata),
       updatedAt: try container.decode(Date.self, forKey: .updatedAt)
     )
   }
@@ -831,6 +836,7 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
     try container.encode(accessProfile, forKey: .accessProfile)
     try container.encode(accessScopes, forKey: .accessScopes)
     try container.encode(capabilityManifestVersion, forKey: .capabilityManifestVersion)
+    try container.encodeIfPresent(deviceMetadata, forKey: .deviceMetadata)
     try container.encode(updatedAt, forKey: .updatedAt)
   }
 }
