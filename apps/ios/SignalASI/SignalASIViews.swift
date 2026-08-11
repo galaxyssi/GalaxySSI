@@ -116,6 +116,7 @@ struct ChatListView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var searchText = ""
+  @State private var contactPendingChatDeletion: SignalASIContact?
   var showsBackButton = true
 
   private var filteredContacts: [SignalASIContact] {
@@ -162,6 +163,13 @@ struct ChatListView: View {
                     ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
                   }
                   .buttonStyle(.plain)
+                  .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                      contactPendingChatDeletion = contact
+                    } label: {
+                      Label(t("delete_chat_title", "Delete Chat"), systemImage: "trash")
+                    }
+                  }
                   if contact.id != filteredContacts.last?.id {
                     Divider()
                       .background(Color.signalASISeparator)
@@ -182,6 +190,38 @@ struct ChatListView: View {
       .navigationBarHidden(true)
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .alert(
+      t("delete_chat_title", "Delete Chat"),
+      isPresented: Binding(
+        get: { contactPendingChatDeletion != nil },
+        set: { visible in
+          if !visible {
+            contactPendingChatDeletion = nil
+          }
+        }
+      )
+    ) {
+      Button(role: .destructive) {
+        if let contact = contactPendingChatDeletion {
+          store.deleteMessages(for: contact.id)
+        }
+        contactPendingChatDeletion = nil
+      } label: {
+        Text(t("common_delete", "Delete"))
+      }
+      Button(role: .cancel) {
+        contactPendingChatDeletion = nil
+      } label: {
+        Text(t("common_cancel", "Cancel"))
+      }
+    } message: {
+      Text(
+        t(
+          "delete_chat_subtitle",
+          "Only local chat history is deleted. Contacts are not affected."
+        )
+      )
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
