@@ -16,7 +16,6 @@ struct SignalASIConversationHubView: View {
   @State private var searchText = ""
   @State private var showingArchived = false
   @State private var addContactPresentation: SignalASIAddContactPresentation?
-  @State private var cloudModelPresented = false
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
   @State private var editingSession: AgentConversation?
@@ -100,9 +99,6 @@ struct SignalASIConversationHubView: View {
       // Carry the route in the sheet item so SwiftUI cannot capture a stale
       // Boolean while the Hub presents the Add flow.
       AddContactView(autoOpenScanner: presentation == .scanner)
-    }
-    .sheet(isPresented: $cloudModelPresented) {
-      CloudModelProviderSelectionView()
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       ContactsView(showsBackButton: false)
@@ -302,17 +298,6 @@ struct SignalASIConversationHubView: View {
         badge: store.pendingFriendRequests.isEmpty ? "" : "\(store.pendingFriendRequests.count)"
       ) {
         pendingFriendRequestsPresented = true
-      }
-      hubActionRow(
-        title: t("signalasi.add_contact.cloud_title", "Add Cloud Model"),
-        subtitle: t(
-          "signalasi.add_contact.cloud_subtitle",
-          "Provider, model, and API key are configured directly on the phone."
-        ),
-        systemImage: "cloud.fill",
-        tint: .signalASIInsightText
-      ) {
-        cloudModelPresented = true
       }
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
