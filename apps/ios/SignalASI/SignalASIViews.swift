@@ -261,7 +261,12 @@ struct ContactRow: View {
           }
           Spacer()
           if let latestMessage = summary.lastMessage {
-            Text(latestMessage.createdAt, style: .time)
+            Text(
+              SignalASIChatListTimeFormatter.string(
+                for: latestMessage.createdAt,
+                language: interfaceLanguage
+              )
+            )
               .font(.system(size: 12))
               .foregroundColor(.signalASITextSecondary)
           }
