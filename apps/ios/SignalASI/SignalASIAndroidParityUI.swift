@@ -505,6 +505,7 @@ struct AgentHomeView: View {
         )
       )
       .onAppear {
+        coordinator.resumePendingAgentDelivery()
         ensureActiveAgentSession()
         presentPendingPhonePublicPageExport()
         voiceAgentRunRecovery.start()
