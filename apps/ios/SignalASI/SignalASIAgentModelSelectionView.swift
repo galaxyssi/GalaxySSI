@@ -200,6 +200,18 @@ struct SignalASIAgentModelSelectionView: View {
             SignalASISecuritySectionTitle(
               title: t("signalasi.agent.model_selection.local_section", "ON-DEVICE MODELS")
             )
+            SignalASISecurityNavigationRow(
+              title: t("signalasi.settings.local_model", "Local Model Settings"),
+              subtitle: t(
+                "signalasi.settings.local_model.status",
+                "Configure on-device inference"
+              ),
+              systemImage: "arrow.down.circle",
+              tint: .signalASIAccent,
+              badge: t("signalasi.common.manage", "Manage")
+            ) {
+              SignalASILocalModelLabView()
+            }
             ForEach(localProfiles) { profile in
               let selected = isSelectedLocal(profile)
               SignalASISecurityActionRow(
@@ -217,6 +229,22 @@ struct SignalASIAgentModelSelectionView: View {
               ) {
                 selectLocal(profile)
               }
+            }
+          } else {
+            SignalASISecuritySectionTitle(
+              title: t("signalasi.agent.model_selection.local_section", "ON-DEVICE MODELS")
+            )
+            SignalASISecurityNavigationRow(
+              title: t("signalasi.settings.local_model", "Local Model Settings"),
+              subtitle: t(
+                "signalasi.agent.model_selection.local_manage_subtitle",
+                "Download and prepare an on-device model for private Agent work"
+              ),
+              systemImage: "arrow.down.circle",
+              tint: .signalASIAccent,
+              badge: t("signalasi.common.manage", "Manage")
+            ) {
+              SignalASILocalModelLabView()
             }
           }
 
