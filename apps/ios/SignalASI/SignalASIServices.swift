@@ -34,6 +34,7 @@ final class MessageCoordinator: ObservableObject {
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
+  private var globalResearchResponseToken: UUID?
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var currentAgentScreenContext = AgentScreenContext(
     foregroundApp: "SignalASI iOS",
@@ -153,6 +154,15 @@ final class MessageCoordinator: ObservableObject {
         _ = self?.store.deliverPendingGlobalProactiveMessages()
       }
     }
+    self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
+      Task { @MainActor in
+        guard let self else { return }
+        _ = SignalASIGlobalAgentRuntimeBridge.consumeResearchResponse(
+          store: self.store,
+          response: response
+        )
+      }
+    }
     GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
@@ -193,6 +203,9 @@ final class MessageCoordinator: ObservableObject {
 
   deinit {
     GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
+    if let token = globalResearchResponseToken {
+      connectorResponseBus.removeListener(token)
+    }
   }
 
   @discardableResult
@@ -247,6 +260,152 @@ final class MessageCoordinator: ObservableObject {
     downloadCompletionCoordinator.deliverPendingCompletions()
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
+    Task { @MainActor [weak self] in
+      _ = await self?.runGlobalResearchCycle()
+    }
+  }
+
+  @discardableResult
+  func runGlobalResearchCycle(
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) async -> Int {
+    let cycle = SignalASIGlobalAgentRuntimeBridge.processResearchCycle(
+      store: store,
+      nowMillis: nowMillis
+    )
+    var dispatched = 0
+    for request in cycle.dispatchRequests {
+      guard await dispatchGlobalResearchRequest(request) else {
+        let failure = AgentConnectorResponse(
+          sourceMessageId: request.sourceMessageId,
+          contactId: request.contactId,
+          content: "Global research request could not be dispatched",
+          conversationId: request.conversationId,
+          turnId: request.turnId,
+          taskId: request.taskId,
+          success: false,
+          receivedAtMillis: nowMillis
+        )
+        _ = SignalASIGlobalAgentRuntimeBridge.consumeResearchResponse(
+          store: store,
+          response: failure,
+          nowMillis: nowMillis
+        )
+        continue
+      }
+      dispatched += 1
+    }
+    return dispatched
+  }
+
+  private func dispatchGlobalResearchRequest(
+    _ request: GlobalResearchDispatchRequest
+  ) async -> Bool {
+    guard let contact = store.contact(id: request.contactId), !contact.deleted else {
+      return false
+    }
+    let nowMillis = GlobalRealtimeClock.nowMillis()
+    switch request.transport {
+    case .pairedAgent:
+      let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let link = requestedDesktopId.isEmpty
+        ? store.serverLinks.first(where: { $0.paired })
+        : store.serverLinks.first(where: { $0.paired && $0.desktopId == requestedDesktopId })
+      guard let link else { return false }
+      var payload: [String: Any] = [
+        "type": "text",
+        "message_id": "global-research-\(request.sourceMessageId)",
+        "source_message_id": request.sourceMessageId,
+        "content": "\(request.systemPrompt)\n\n\(request.prompt)",
+        "contact_id": contact.id,
+        "task_id": request.taskId,
+        "conversation_id": request.conversationId,
+        "turn_id": request.turnId,
+        "client_route_id": link.routes.clientRouteId,
+        "client_message_id": request.sourceMessageId,
+        "agent_id": contact.connectorAgentId,
+        "desktop_id": contact.desktopId,
+        "sender": store.profile.signalASIId,
+        "response_language": LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage),
+        "execution_mode": AgentTaskExecutionMode.autoComplete.rawValue,
+        "original_goal": String(request.prompt.prefix(500)),
+        "time": nowMillis
+      ]
+      payload["_signalasi_task_id"] = request.taskId
+      payload["_signalasi_turn_id"] = request.turnId
+      payload["_signalasi_conversation_id"] = request.conversationId
+      do {
+        _ = try enqueueLinkPayload(
+          payload,
+          link: link,
+          topic: link.routes.upTopic,
+          clientSourceMessageId: String(request.sourceMessageId),
+          contactId: contact.id
+        )
+        scheduleOutboxFlushFromStore()
+        return true
+      } catch {
+        lastError = error.localizedDescription
+        return false
+      }
+
+    case .cloudModel:
+      guard contact.deliveryMode == .cloudAPI else { return false }
+      let prompt = "\(request.systemPrompt)\n\n\(request.prompt)"
+      let turn = ChatMessage(
+        contactId: contact.id,
+        content: prompt,
+        isMine: true,
+        deliveryStatus: .local,
+        conversationId: request.conversationId,
+        turnId: request.turnId
+      )
+      var accumulated = ""
+      do {
+        for try await event in cloudStreamEngine.streamConversation(
+          contact: contact,
+          store: store,
+          turns: [turn],
+          images: [],
+          requestId: "global-research-\(request.sourceMessageId)"
+        ) {
+          switch event {
+          case .textDelta(let delta):
+            accumulated += delta.text
+          case .failed(let failure):
+            _ = connectorResponseBus.publish(AgentConnectorResponse(
+              sourceMessageId: request.sourceMessageId,
+              contactId: contact.id,
+              content: failure.error.message,
+              conversationId: request.conversationId,
+              turnId: request.turnId,
+              taskId: request.taskId,
+              success: false,
+              receivedAtMillis: nowMillis
+            ))
+            return true
+          case .connected, .usage, .toolCallDelta, .completed:
+            continue
+          }
+        }
+        let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return false }
+        _ = connectorResponseBus.publish(AgentConnectorResponse(
+          sourceMessageId: request.sourceMessageId,
+          contactId: contact.id,
+          content: content,
+          conversationId: request.conversationId,
+          turnId: request.turnId,
+          taskId: request.taskId,
+          success: true,
+          receivedAtMillis: nowMillis
+        ))
+        return true
+      } catch {
+        lastError = error.localizedDescription
+        return false
+      }
+    }
   }
 
   /// Mirrors Android's profile update fan-out for verified person contacts that

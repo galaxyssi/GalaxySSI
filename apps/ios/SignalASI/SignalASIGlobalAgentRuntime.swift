@@ -1,5 +1,117 @@
 import Foundation
 
+struct SignalASIGlobalResearchCycleResult: Codable, Equatable {
+  var result: GlobalResearchExecutionResult?
+  var dispatchRequests: [GlobalResearchDispatchRequest]
+
+  init(
+    result: GlobalResearchExecutionResult? = nil,
+    dispatchRequests: [GlobalResearchDispatchRequest] = []
+  ) {
+    self.result = result
+    self.dispatchRequests = dispatchRequests
+  }
+}
+
+final class SignalASIGlobalResearchRuntimeStore {
+  private struct Snapshot: Codable {
+    var formatVersion: Int
+    var state: GlobalResearchExecutorState
+  }
+
+  private let fileURL: URL
+  private let fileManager: FileManager
+  private let lock = NSLock()
+  private(set) var lastErrorDescription: String = ""
+
+  init(
+    fileURL: URL = SignalASIGlobalResearchRuntimeStore.defaultFileURL(),
+    fileManager: FileManager = .default
+  ) {
+    self.fileURL = fileURL
+    self.fileManager = fileManager
+  }
+
+  static func defaultFileURL(
+    storageRootURL: URL = AgentNativeToolDefaultStorePaths.applicationSupportRootURL()
+  ) -> URL {
+    storageRootURL
+      .appendingPathComponent("global-research", isDirectory: true)
+      .appendingPathComponent("state.json", isDirectory: false)
+  }
+
+  static func destroyPersistentStore(
+    fileURL: URL = SignalASIGlobalResearchRuntimeStore.defaultFileURL(),
+    fileManager: FileManager = .default
+  ) {
+    try? fileManager.removeItem(at: fileURL)
+  }
+
+  func state() -> GlobalResearchExecutorState {
+    locked { load() }
+  }
+
+  func save(_ state: GlobalResearchExecutorState) {
+    locked { persist(bounded(state)) }
+  }
+
+  private func load() -> GlobalResearchExecutorState {
+    guard fileManager.fileExists(atPath: fileURL.path) else {
+      return GlobalResearchExecutorState()
+    }
+    do {
+      let data = try Data(contentsOf: fileURL)
+      guard !data.isEmpty else { return GlobalResearchExecutorState() }
+      let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
+      guard snapshot.formatVersion == formatVersion else {
+        lastErrorDescription = "Unsupported global research store format"
+        return GlobalResearchExecutorState()
+      }
+      lastErrorDescription = ""
+      return bounded(snapshot.state)
+    } catch {
+      lastErrorDescription = error.localizedDescription
+      return GlobalResearchExecutorState()
+    }
+  }
+
+  private func persist(_ state: GlobalResearchExecutorState) {
+    do {
+      try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let snapshot = Snapshot(formatVersion: formatVersion, state: bounded(state))
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      try encoder.encode(snapshot).write(to: fileURL, options: [.atomic])
+      lastErrorDescription = ""
+    } catch {
+      lastErrorDescription = error.localizedDescription
+    }
+  }
+
+  private func bounded(_ state: GlobalResearchExecutorState) -> GlobalResearchExecutorState {
+    var bounded = state
+    bounded.tasks = Array(state.tasks
+      .sorted {
+        if $0.createdAtMillis != $1.createdAtMillis { return $0.createdAtMillis < $1.createdAtMillis }
+        return $0.id < $1.id
+      }
+      .suffix(300))
+    bounded.dispatchRequests = Array(state.dispatchRequests.suffix(100))
+    bounded.proactiveMessages = Array(state.proactiveMessages.suffix(500))
+    bounded.events = Array(state.events.suffix(500))
+    bounded.healthUpdates = Array(state.healthUpdates.suffix(300))
+    return bounded
+  }
+
+  private func locked<T>(_ action: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return action()
+  }
+
+  private let formatVersion = 1
+}
+
 final class SignalASIGlobalLongHorizonRuntimeStore: GlobalLongHorizonRuntimeStore {
   private var settingsValue: GlobalAgentSettings
   private var worldValue: PersonalWorldModel
@@ -69,6 +181,174 @@ enum SignalASIGlobalAgentRuntimeBridge {
     let result = coordinator.processDue(nowMillis: nowMillis)
     runtimeStore.emittedProactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
     return result
+  }
+
+  @discardableResult
+  static func processResearchCycle(
+    store: SignalASIStore,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> SignalASIGlobalResearchCycleResult {
+    let stateStore = SignalASIGlobalResearchRuntimeStore()
+    var state = stateStore.state()
+    seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
+    let existingDispatchIds = Set(state.dispatchRequests.map(\.id))
+    let task = state.tasks.first {
+      [.queued, .scheduled, .waitingForResource].contains($0.status) && $0.nextAttemptAtMillis <= nowMillis
+    } ?? state.tasks.first(where: { $0.status == .running })
+    let context = researchContext(
+      store: store,
+      state: state,
+      task: task,
+      nowMillis: nowMillis
+    )
+    let resources = researchResources(from: store)
+    guard let step = GlobalResearchExecutorPolicy.executeNext(
+      state: state,
+      resources: resources,
+      context: context,
+      nowMillis: nowMillis
+    ) else {
+      stateStore.save(state)
+      return SignalASIGlobalResearchCycleResult()
+    }
+    stateStore.save(step.state)
+    step.state.proactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
+    let requests = step.state.dispatchRequests.filter { !existingDispatchIds.contains($0.id) }
+    return SignalASIGlobalResearchCycleResult(
+      result: step.result,
+      dispatchRequests: requests
+    )
+  }
+
+  @discardableResult
+  static func consumeResearchResponse(
+    store: SignalASIStore,
+    response: AgentConnectorResponse,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+  ) -> Bool {
+    let stateStore = SignalASIGlobalResearchRuntimeStore()
+    let state = stateStore.state()
+    let task = state.tasks.first {
+      $0.sourceMessageId == response.sourceMessageId ||
+        $0.researchPlan.synthesisSourceMessageId == response.sourceMessageId ||
+        $0.researchPlan.units.contains { $0.sourceMessageId == response.sourceMessageId }
+    }
+    let step = GlobalResearchExecutorPolicy.consumeConnectorResponse(
+      response,
+      state: state,
+      context: researchContext(store: store, state: state, task: task, nowMillis: nowMillis),
+      nowMillis: nowMillis
+    )
+    guard let step else { return false }
+    stateStore.save(step.state)
+    step.state.proactiveMessages.forEach { store.appendGlobalProactiveMessage($0) }
+    return true
+  }
+
+  static func researchState() -> GlobalResearchExecutorState {
+    SignalASIGlobalResearchRuntimeStore().state()
+  }
+
+  private static func seedResearchTasks(
+    from cognitionTasks: [GlobalCognitionTask],
+    into state: inout GlobalResearchExecutorState,
+    nowMillis: Int64
+  ) {
+    for cognition in cognitionTasks where cognition.baselineUnderstanding.externalResearchUseful {
+      let sourceEventId = cognition.sourceEvent.id
+      guard !sourceEventId.isBlank,
+            !state.tasks.contains(where: { $0.sourceEventId == sourceEventId && $0.status != .failed }) else {
+        continue
+      }
+      let understanding = cognition.result
+      let baseline = cognition.baselineUnderstanding
+      let depth: GlobalResearchDepth = baseline.complexity >= 0.62 ? .deepResearch : .quickFact
+      let topic = understanding.topic.ifBlank(baseline.topic).ifBlank(cognition.sourceEvent.conversationTitle)
+      let question = cognition.sourceEvent.content
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .ifBlank(understanding.topic)
+      state.upsert(GlobalResearchTask(
+        id: "ios-research:\(GlobalAgentText.stableKey(sourceEventId))",
+        sourceEventId: sourceEventId,
+        sourceConversationId: cognition.sourceEvent.conversationId,
+        topic: topic,
+        question: String(question.prefix(2_000)),
+        depth: depth,
+        preferredSources: ["official", "primary", "repository", "paper"],
+        causalEventIds: cognition.sourceEvent.causalEventIds,
+        status: .queued,
+        monitorIntervalMillis: depth == .continuousMonitor ? GlobalResearchTaskPolicy.monitorIntervalMillis(0) : 0,
+        createdAtMillis: cognition.createdAtMillis > 0 ? cognition.createdAtMillis : nowMillis,
+        updatedAtMillis: cognition.updatedAtMillis > 0 ? cognition.updatedAtMillis : nowMillis
+      ))
+    }
+  }
+
+  private static func researchResources(from store: SignalASIStore) -> [GlobalResearchExecutorResource] {
+    store.visibleContacts.compactMap { contact in
+      guard !contact.deleted else { return nil }
+      switch contact.deliveryMode {
+      case .cloudAPI:
+        guard let model = contact.selectedCloudModel,
+              AgentConnectorAvailability.cloudModelReady(
+                model: model,
+                apiKey: store.apiKey(for: model),
+                provider: contact.cloudProvider,
+                setupStatus: contact.setupStatus
+              ) else { return nil }
+        return GlobalResearchExecutorResource(
+          id: contact.id,
+          transport: .cloudModel,
+          contactId: contact.id,
+          capabilities: [.research, .reasoning, .liveData, .chat],
+          displayName: model.displayName.ifBlank(contact.displayName)
+        )
+      case .link, .pcConnector:
+        let setup = contact.setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard contact.trustState == .verified,
+              contact.deliveryMode.isSignalASILinkFamily,
+              setup == "ready" || setup == "verified" else { return nil }
+        return GlobalResearchExecutorResource(
+          id: contact.id,
+          transport: .pairedAgent,
+          contactId: contact.id,
+          capabilities: [.research, .reasoning, .liveData, .chat],
+          displayName: contact.displayName.ifBlank(contact.name).ifBlank(contact.id)
+        )
+      case .local:
+        return nil
+      }
+    }
+  }
+
+  private static func researchContext(
+    store: SignalASIStore,
+    state: GlobalResearchExecutorState,
+    task: GlobalResearchTask?,
+    nowMillis: Int64
+  ) -> GlobalResearchExecutionContext {
+    let conversationId = task?.sourceConversationId ?? ""
+    let conversationContext = store.agentSessionMessages(conversationId)
+      .filter { !$0.isSystem }
+      .suffix(12)
+      .map { message in
+        let role = message.isMine ? "User" : "Agent"
+        return "\(role): \(message.content)"
+      }
+      .joined(separator: "\n")
+    let realtime = GlobalRealtimeContextProvider(
+      researchTasksSource: { state.tasks }
+    ).build(
+      query: task?.question ?? "",
+      currentConversationId: conversationId,
+      maximumItems: 12,
+      maximumCharacters: GlobalResearchExecutorLimits.maxContextCharacters,
+      nowMillis: nowMillis
+    )
+    return GlobalResearchExecutionContext(
+      conversationContext: String(conversationContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters)),
+      realtimeContext: realtime
+    )
   }
 
   private static func worldModel(
