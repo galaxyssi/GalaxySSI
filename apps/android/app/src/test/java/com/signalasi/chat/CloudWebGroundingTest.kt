@@ -64,6 +64,33 @@ class CloudWebGroundingTest {
     }
 
     @Test
+    fun parsesDeepSeekWeatherFetchWithParameterMarkup() {
+        val content = """
+            Searching the current forecast.
+            <\uff5cDSML\uff5ctool_calls>
+            <\uff5cDSML\uff5cinvoke name="web_fetch">
+            <\uff5cDSML\uff5cparameter name="url" string="true">
+            https://api.open-meteo.com/v1/forecast?latitude=22.27&longitude=113.57&current=temperature_2m
+            </\uff5cDSML\uff5cparameter>
+            </\uff5cDSML\uff5cinvoke>
+            </\uff5cDSML\uff5ctool_calls>
+        """.trimIndent()
+
+        val calls = CloudWebGrounding.parseInlineToolCalls(content)
+
+        assertEquals(1, calls.size)
+        assertEquals("web_fetch", calls.single().name)
+        assertEquals(
+            "https://api.open-meteo.com/v1/forecast?latitude=22.27&longitude=113.57&current=temperature_2m",
+            calls.single().arguments.getString("url")
+        )
+        assertEquals(
+            "Searching the current forecast.",
+            CloudWebGrounding.stripInternalToolProtocol(content)
+        )
+    }
+
+    @Test
     fun preservesNormalAnswerWhileRemovingInlineToolMarkup() {
         val content = """
             I will verify the current sources.

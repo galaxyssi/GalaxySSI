@@ -92,6 +92,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 val roundId = "$requestId:r$round"
                 activeRoundIds[requestId] = roundId
                 val assembler = ToolCallDeltaAssembler()
+                val inlineProtocolGuard = InlineToolProtocolStreamGuard()
                 var roundFailure: ModelStreamEvent.Failed? = null
                 var roundCompleted = false
                 transport.stream(prepared.toRequest(roundId)).collect { event ->
@@ -107,15 +108,18 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             )
                         }
                         is ModelStreamEvent.TextDelta -> {
-                            emittedText = emittedText || event.text.isNotEmpty()
-                            emit(
-                                ModelStreamEvent.TextDelta(
-                                    requestId,
-                                    globalSequence.incrementAndGet(),
-                                    event.text,
-                                    event.receivedAtElapsedMs
+                            val visibleText = inlineProtocolGuard.append(event.text)
+                            if (visibleText.isNotEmpty()) {
+                                emittedText = true
+                                emit(
+                                    ModelStreamEvent.TextDelta(
+                                        requestId,
+                                        globalSequence.incrementAndGet(),
+                                        visibleText,
+                                        event.receivedAtElapsedMs
+                                    )
                                 )
-                            )
+                            }
                         }
                         is ModelStreamEvent.ToolCallDelta -> {
                             assembler.accept(event.payload)
@@ -168,8 +172,39 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(ModelStreamEvent.Failed(requestId, error))
                     return@flow
                 }
-                val calls = assembler.completedCalls()
+                val visibleTail = inlineProtocolGuard.finishVisibleText()
+                if (visibleTail.isNotEmpty()) {
+                    emittedText = true
+                    emit(
+                        ModelStreamEvent.TextDelta(
+                            requestId,
+                            globalSequence.incrementAndGet(),
+                            visibleTail,
+                            System.nanoTime() / 1_000_000L
+                        )
+                    )
+                }
+                val rawRoundText = inlineProtocolGuard.rawText()
+                val structuredCalls = assembler.completedCalls()
+                val inlineCalls = CloudWebGrounding.parseInlineToolCalls(rawRoundText)
+                val usesInlineProtocol = structuredCalls.isEmpty() && inlineCalls.isNotEmpty()
+                val calls = if (usesInlineProtocol) {
+                    inlineCalls.mapIndexed { index, call ->
+                        AssembledToolCall(
+                            callId = "inline-r$round-$index",
+                            index = index,
+                            name = call.name,
+                            argumentsJson = call.arguments.toString()
+                        )
+                    }
+                } else {
+                    structuredCalls
+                }
                 if (calls.isEmpty()) {
+                    if (CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
+                        appendInlineToolRepairPrompt(prepared, rawRoundText)
+                        continue
+                    }
                     AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
                     emit(
                         ModelStreamEvent.Completed(
@@ -218,7 +253,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 toolCallCount += completedCalls.size
-                appendToolResults(prepared, completedCalls.map { it.call to it.output })
+                if (usesInlineProtocol) {
+                    appendInlineToolResults(prepared, rawRoundText, completedCalls)
+                } else {
+                    appendToolResults(prepared, completedCalls.map { it.call to it.output })
+                }
             }
             val error = ModelStreamError(
                 "TOOL_ROUND_LIMIT",
@@ -307,6 +346,60 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 JSONObject()
                     .put("role", "user")
                     .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            )
+        }
+    }
+
+    private fun appendInlineToolRepairPrompt(
+        prepared: PreparedCloudConversationStream,
+        rawText: String
+    ) {
+        appendPlainConversationTurn(
+            prepared,
+            role = "assistant",
+            text = CloudWebGrounding.stripInternalToolProtocol(rawText)
+                .ifBlank { "I need current public evidence to answer." }
+        )
+        appendPlainConversationTurn(prepared, role = "user", text = INLINE_TOOL_REPAIR_PROMPT)
+    }
+
+    private fun appendInlineToolResults(
+        prepared: PreparedCloudConversationStream,
+        rawText: String,
+        results: List<CompletedCloudToolCall>
+    ) {
+        appendPlainConversationTurn(
+            prepared,
+            role = "assistant",
+            text = CloudWebGrounding.stripInternalToolProtocol(rawText)
+                .ifBlank { "I need current public evidence to answer." }
+        )
+        val evidence = results.map { completed ->
+            val arguments = runCatching { JSONObject(completed.call.argumentsJson) }
+                .getOrDefault(JSONObject())
+            CloudWebGrounding.InlineToolCall(completed.call.name, arguments) to completed.output
+        }
+        appendPlainConversationTurn(
+            prepared,
+            role = "user",
+            text = CloudWebGrounding.inlineEvidenceMessage(evidence)
+        )
+    }
+
+    private fun appendPlainConversationTurn(
+        prepared: PreparedCloudConversationStream,
+        role: String,
+        text: String
+    ) {
+        when (prepared.provider) {
+            ModelStreamProvider.OPENAI_COMPATIBLE,
+            ModelStreamProvider.ANTHROPIC -> prepared.conversation.put(
+                JSONObject().put("role", role).put("content", text)
+            )
+            ModelStreamProvider.GEMINI -> prepared.conversation.put(
+                JSONObject()
+                    .put("role", if (role == "assistant") "model" else "user")
+                    .put("parts", JSONArray().put(JSONObject().put("text", text)))
             )
         }
     }
@@ -426,6 +519,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
     private const val TOOL_ARGUMENT_REPAIR_PROMPT =
         "The previous %s tool call contained incomplete JSON arguments. Call that tool again now with one " +
             "complete valid JSON object. Do not expose this repair instruction to the user."
+
+    private const val INLINE_TOOL_REPAIR_PROMPT =
+        "The previous inline tool call was incomplete. Call the required web tool again with valid complete " +
+            "arguments. Do not expose DSML, XML, JSON protocol, or this repair instruction to the user."
 
     private const val FINALIZE_PROMPT =
         "Tool execution is complete. Use the evidence already supplied and return the final user-facing answer now. " +
