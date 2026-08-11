@@ -69,6 +69,25 @@ enum SignalASIGlobalAutonomousModelRuntime {
 
     let sourceMessageId = correlationId([run.id, action.id], nowMillis: nowMillis)
     let prompt = actionPrompt(run: run, action: action)
+    let budget = SignalASIGlobalAutonomousBudgetRuntime.acquire(
+      store: appStore,
+      runId: run.id,
+      actionId: action.id,
+      kind: .autonomousAction,
+      resourceId: resource.id,
+      systemPrompt: actionSystemPrompt,
+      prompt: prompt,
+      nowMillis: nowMillis
+    )
+    guard budget.granted else {
+      return waitForActionModelBudget(
+        run: run,
+        action: action,
+        store: deliberationStore,
+        decision: budget,
+        nowMillis: nowMillis
+      )
+    }
     let updated = deliberationStore.updateAutonomousRun(runId: run.id) { current in
       var next = current
       next.status = .running
@@ -141,6 +160,25 @@ enum SignalASIGlobalAutonomousModelRuntime {
       ["plan-review", run.id, String(run.revision)],
       nowMillis: nowMillis
     )
+    let reviewPrompt = planReviewPrompt(run: run)
+    let budget = SignalASIGlobalAutonomousBudgetRuntime.acquire(
+      store: appStore,
+      runId: run.id,
+      actionId: "revision:\(run.revision)",
+      kind: .planReview,
+      resourceId: resource.id,
+      systemPrompt: planReviewSystemPrompt,
+      prompt: reviewPrompt,
+      nowMillis: nowMillis
+    )
+    guard budget.granted else {
+      return waitForPlanReviewModelBudget(
+        run: run,
+        store: deliberationStore,
+        decision: budget,
+        nowMillis: nowMillis
+      )
+    }
     let updated = deliberationStore.updateAutonomousRun(runId: run.id) { current in
       var next = current
       next.status = .replanning
@@ -283,6 +321,75 @@ enum SignalASIGlobalAutonomousModelRuntime {
     )
   }
 
+  private static func waitForActionModelBudget(
+    run: GlobalAutonomousRun,
+    action: GlobalAutonomousAction,
+    store: GlobalAgentDeliberationStore,
+    decision: GlobalModelCallBudgetDecision,
+    nowMillis: Int64
+  ) -> SignalASIGlobalAutonomousExecutionResult {
+    let nextEligible = max(decision.nextEligibleAtMillis, nowMillis + 1_000)
+    let reason = "The background model-call budget is temporarily unavailable"
+    let updated = store.updateAutonomousRun(runId: run.id) { current in
+      var next = current
+      var reverted = false
+      next.actions = current.actions.map { candidate in
+        guard candidate.id == action.id,
+              candidate.status == .running,
+              candidate.sourceMessageId == 0 else { return candidate }
+        reverted = true
+        var copy = candidate
+        copy.status = .pending
+        copy.resourceId = ""
+        copy.attemptCount = max(copy.attemptCount - 1, 0)
+        copy.leaseExpiresAtMillis = 0
+        copy.lastError = reason
+        if copy.attemptCount == 0 { copy.startedAtMillis = 0 }
+        return copy
+      }
+      next.status = .waitingForResource
+      next.attemptCount = reverted ? max(current.attemptCount - 1, 0) : current.attemptCount
+      next.nextAttemptAtMillis = nextEligible
+      next.leaseExpiresAtMillis = 0
+      next.lastError = reason
+      next.updatedAtMillis = nowMillis
+      return next
+    } ?? run
+    return SignalASIGlobalAutonomousExecutionResult(
+      runId: updated.id,
+      actionId: action.id,
+      status: updated.status,
+      detail: reason
+    )
+  }
+
+  private static func waitForPlanReviewModelBudget(
+    run: GlobalAutonomousRun,
+    store: GlobalAgentDeliberationStore,
+    decision: GlobalModelCallBudgetDecision,
+    nowMillis: Int64
+  ) -> SignalASIGlobalAutonomousExecutionResult {
+    let nextEligible = max(decision.nextEligibleAtMillis, nowMillis + 1_000)
+    let reason = "The background model-call budget is temporarily unavailable"
+    var waiting = run
+    waiting.status = .replanning
+    waiting.review.status = .waitingForResource
+    waiting.review.sourceMessageId = 0
+    waiting.review.leaseExpiresAtMillis = 0
+    waiting.review.nextAttemptAtMillis = nextEligible
+    waiting.review.lastError = reason
+    waiting.nextAttemptAtMillis = nextEligible
+    waiting.leaseExpiresAtMillis = 0
+    waiting.lastError = reason
+    waiting.updatedAtMillis = nowMillis
+    store.upsertAutonomousRun(waiting)
+    return SignalASIGlobalAutonomousExecutionResult(
+      runId: waiting.id,
+      status: waiting.status,
+      detail: reason
+    )
+  }
+
   private static func correlationId(_ values: [String], nowMillis: Int64) -> Int64 {
     let digest = GlobalAgentText.stableKey(
       values.joined(separator: "|"),
@@ -321,6 +428,17 @@ extension SignalASIGlobalAgentRuntimeBridge {
     }) else {
       return false
     }
+
+    SignalASIGlobalAutonomousBudgetRuntime.complete(
+      runId: run.id,
+      actionId: action.id,
+      kind: .autonomousAction,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+      reportedCostMicros: response.costMicros,
+      responseText: response.content,
+      nowMillis: nowMillis
+    )
 
     let succeeded = response.success && !response.content.isBlank
     var updated = run
@@ -401,6 +519,16 @@ extension SignalASIGlobalAgentRuntimeBridge {
     store: GlobalAgentDeliberationStore,
     nowMillis: Int64
   ) -> Bool {
+    SignalASIGlobalAutonomousBudgetRuntime.complete(
+      runId: run.id,
+      actionId: "revision:\(run.revision)",
+      kind: .planReview,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+      reportedCostMicros: response.costMicros,
+      responseText: response.content,
+      nowMillis: nowMillis
+    )
     guard response.success,
           let decision = GlobalRunReplanParser.parse(response.content) else {
       var waiting = run
