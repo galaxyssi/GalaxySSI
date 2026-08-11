@@ -56,12 +56,16 @@ struct SignalASIConversationComposer: View {
   private var inputRow: some View {
     HStack(spacing: 8) {
       Button {
+        voiceMode.toggle()
         emojiPanelPresented = false
-        attachmentMenuPresented = true
       } label: {
-        Image(systemName: "plus")
+        Image(systemName: voiceMode ? "keyboard" : "mic")
       }
-      .composerIconButton(label: t("agent_attachment_add_file", "Add attachment"))
+      .composerIconButton(
+        label: voiceMode
+          ? t("signalasi.message.input", "Message")
+          : t("agent_voice_button", "Hold to talk")
+      )
 
       if voiceMode {
         voiceModeInput
@@ -74,26 +78,23 @@ struct SignalASIConversationComposer: View {
       }
       .composerIconButton(label: t("signalasi.message.emoji", "Emoji"))
 
-      Button {
-        voiceMode.toggle()
-        emojiPanelPresented = false
-      } label: {
-        Image(systemName: voiceMode ? "keyboard" : "mic")
+      if canSend {
+        Button(action: onSend) {
+          Image(systemName: "arrow.up")
+            .foregroundColor(.white)
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(Color.signalASIAccent))
+        }
+        .accessibilityLabel(Text(t("signalasi.common.send", "Send")))
+      } else {
+        Button {
+          emojiPanelPresented = false
+          attachmentMenuPresented = true
+        } label: {
+          Image(systemName: "plus")
+        }
+        .composerIconButton(label: t("agent_attachment_add_file", "Add attachment"))
       }
-      .composerIconButton(
-        label: voiceMode
-          ? t("signalasi.message.input", "Message")
-          : t("agent_voice_button", "Hold to talk")
-      )
-
-      Button(action: onSend) {
-        Image(systemName: "arrow.up")
-          .foregroundColor(canSend ? .white : .signalASITextSecondary)
-          .frame(width: 32, height: 32)
-          .background(Circle().fill(canSend ? Color.signalASIAccent : Color.signalASIButtonSoft))
-      }
-      .disabled(!canSend)
-      .accessibilityLabel(Text(t("signalasi.common.send", "Send")))
     }
   }
 
