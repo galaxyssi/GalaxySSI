@@ -109,18 +109,7 @@ struct SignalASIVoiceAssistantSettingsView: View {
         subtitle: settings.wakeWordsText,
         systemImage: "text.quote",
         tint: .blue,
-        badge: "\(settings.wakeWords.count)"
-      )
-      SignalASIVoiceTextFieldRow(
-        title: t("voice_wake_words", "Wake Word"),
-        subtitle: t("signalasi.voice.wake_words_edit", "Comma-separated wake phrases"),
-        systemImage: "pencil.line",
-        tint: .blue,
-        badge: t("common_edit", "Edit"),
-        text: Binding(
-          get: { settings.wakeWordsText },
-          set: { value in store.updateVoiceSettings { $0.wakeWords = VoiceSettings.wakeWords(from: value) } }
-        )
+        badge: ""
       )
       SignalASIVoiceMenuRow(
         title: t("voice_openwakeword_model", "openWakeWord Model"),

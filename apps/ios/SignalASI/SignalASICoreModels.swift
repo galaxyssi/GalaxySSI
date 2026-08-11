@@ -824,24 +824,20 @@ enum WakeWordPolicy {
   static let configuredWords = [wakeWord]
 
   static func matches(_ transcript: String) -> Bool {
-    matches(transcript, wakeWords: configuredWords)
+    commandText(from: transcript) != nil
   }
 
-  static func matches(_ transcript: String, wakeWords: [String]) -> Bool {
-    commandText(from: transcript, removing: wakeWords) != nil
-  }
-
-  /// Returns the spoken command after removing the configured wake phrase.
-  static func commandText(from transcript: String, removing wakeWords: [String]) -> String? {
+  /// Returns the spoken command after removing the fixed wake word.
+  static func commandText(from transcript: String) -> String? {
     let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedTranscript.isEmpty else { return nil }
 
-    for wakeWord in normalizedWords(wakeWords) {
+    for wakeWord in configuredWords {
       guard let range = trimmedTranscript.range(
         of: wakeWord,
-        options: [.caseInsensitive, .diacriticInsensitive],
+        options: [.caseInsensitive],
         range: nil,
-        locale: Locale.current
+        locale: Locale(identifier: "en_US_POSIX")
       ) else {
         continue
       }
@@ -855,13 +851,6 @@ enum WakeWordPolicy {
       return command.isEmpty ? "" : command
     }
     return nil
-  }
-
-  private static func normalizedWords(_ words: [String]) -> [String] {
-    words
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-      .sorted { $0.count > $1.count }
   }
 
   private static func hasPhraseBoundaries(
@@ -918,7 +907,7 @@ struct VoiceSettings: Codable, Equatable {
     textToSpeechEnabled: Bool,
     autoSendTranscripts: Bool,
     preferredLocaleIdentifier: String,
-    wakeWords: [String] = VoiceSettings.defaultWakeWords,
+    wakeWords _: [String] = VoiceSettings.defaultWakeWords,
     wakeProvider: VoiceWakeProvider = VoiceWakeProvider.defaultValue,
     wakeModel: String = VoiceSettings.defaultWakeModel,
     wakeThreshold: Double = 0.5,
@@ -941,7 +930,7 @@ struct VoiceSettings: Codable, Equatable {
     self.textToSpeechEnabled = textToSpeechEnabled
     self.autoSendTranscripts = autoSendTranscripts
     self.preferredLocaleIdentifier = preferredLocaleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Locale.current.identifier)
-    self.wakeWords = Self.normalizedWakeWords(wakeWords)
+    self.wakeWords = Self.defaultWakeWords
     self.wakeProvider = wakeProvider
     self.wakeModel = Self.normalizedWakeModel(wakeModel)
     self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
@@ -994,7 +983,7 @@ struct VoiceSettings: Codable, Equatable {
   static let defaultMicrosoftVoice = "zh-CN-XiaoxiaoNeural"
 
   var wakeWordsText: String {
-    wakeWords.joined(separator: ", ")
+    WakeWordPolicy.wakeWord
   }
 
   var normalized: VoiceSettings {
@@ -1080,14 +1069,8 @@ struct VoiceSettings: Codable, Equatable {
   }
 
   static func wakeWords(from text: String) -> [String] {
-    normalizedWakeWords(text.split(separator: ",").map(String.init))
-  }
-
-  private static func normalizedWakeWords(_ words: [String]) -> [String] {
-    let normalized = words
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-    return normalized.isEmpty ? defaultWakeWords : Array(normalized.prefix(12))
+    _ = text
+    return defaultWakeWords
   }
 
   private static func normalizedWakeModel(_ value: String) -> String {

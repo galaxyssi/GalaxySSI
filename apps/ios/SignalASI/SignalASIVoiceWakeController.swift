@@ -133,7 +133,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
       do {
         speech.onVoiceCommand = { [weak self] command in
           Task { @MainActor in
-            self?.handleVoiceCommand(command, settings: captureSettings)
+            self?.handleVoiceCommand(command)
           }
         }
         try speech.start(settings: captureSettings, source: "ios_voice_wake")
@@ -230,16 +230,17 @@ final class SignalASIVoiceWakeController: ObservableObject {
     }
   }
 
-  private func handleVoiceCommand(_ command: VoiceInteractionCommand, settings: VoiceSettings) {
+  private func handleVoiceCommand(_ command: VoiceInteractionCommand) {
     guard case let .routeFinalTranscript(sessionId, transcript, _) = command else { return }
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: sessionId))
-    guard let commandText = WakeWordPolicy.commandText(
-      from: transcript.text,
-      removing: settings.wakeWords
-    ), !commandText.isEmpty else {
+    guard let commandText = WakeWordPolicy.commandText(from: transcript.text) else {
       return
     }
     VoiceRuntimeHealthRegistry.success(.androidWakeASR)
+    guard !commandText.isEmpty else {
+      _ = beginTapToSpeak()
+      return
+    }
     onWakeCommand?(commandText)
   }
 
