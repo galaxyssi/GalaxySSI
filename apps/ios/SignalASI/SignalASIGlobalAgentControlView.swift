@@ -536,7 +536,7 @@ struct SignalASIGlobalAgentControlView: View {
     cognitionTasks = deliberationStore.cognitionTasks()
     autonomousRuns = deliberationStore.autonomousRuns()
     longHorizonGoals = longHorizonStore.goals()
-    researchState = GlobalResearchExecutorState()
+    researchState = SignalASIGlobalAgentRuntimeBridge.researchState()
   }
 
   private func processNow() {
@@ -569,6 +569,10 @@ struct SignalASIGlobalAgentControlView: View {
     )
     Task {
       await coordinator.runAutomationSchedulerCycle()
+    }
+    Task { @MainActor in
+      _ = await coordinator.runGlobalResearchCycle(nowMillis: now)
+      refreshRuntime()
     }
     refreshRuntime()
     statusMessage = String(
