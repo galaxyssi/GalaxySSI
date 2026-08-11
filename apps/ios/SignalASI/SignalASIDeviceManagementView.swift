@@ -94,6 +94,22 @@ struct DeviceManagementView: View {
               CustomDeviceConnectorEditorView(connector: CustomDeviceConnector())
             }
           }
+          if !pairedDesktopLinks.isEmpty {
+            sectionTitle(t("signalasi.device.section_paired_desktops", "Paired Desktop Connections"))
+            VStack(spacing: 8) {
+              ForEach(pairedDesktopLinks) { link in
+                DeviceManagementNavigationRow(
+                  title: link.desktopName.ifBlank(t("signalasi.security_center.pc", "PC")),
+                  subtitle: link.accessProfile.ifBlank(link.desktopId),
+                  systemImage: "trash",
+                  tint: .red,
+                  badge: t("signalasi.security_center.revoke", "Revoke")
+                ) {
+                  SignalASIRevokeDevicePairingView(desktopId: link.desktopId)
+                }
+              }
+            }
+          }
           sectionTitle(t("signalasi.device.section_home_assistant", "Home Assistant"))
           VStack(spacing: 8) {
             DeviceManagementNavigationRow(

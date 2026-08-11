@@ -102,6 +102,11 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var connectorAdapterType: String? = nil
   var connectorProviderProfileJSON: Data? = nil
   var deletedAt: Date? = nil
+  var deviceName: String? = nil
+  var deviceManufacturer: String? = nil
+  var deviceModel: String? = nil
+  var devicePlatformVersion: String? = nil
+  var deviceProfileName: String? = nil
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
@@ -239,6 +244,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var desktopId: String
   var desktopName: String
   var deviceId: String
+  var deviceName: String
+  var deviceManufacturer: String
+  var deviceModel: String
+  var devicePlatformVersion: String
+  var deviceProfileName: String
   var setupDetail: String
   var setupNextStep: String
   var desktopAccessProfile: String
@@ -272,6 +282,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     desktopId: String = "",
     desktopName: String = "",
     deviceId: String = "",
+    deviceName: String = "",
+    deviceManufacturer: String = "",
+    deviceModel: String = "",
+    devicePlatformVersion: String = "",
+    deviceProfileName: String = "",
     setupDetail: String = "",
     setupNextStep: String = "",
     desktopAccessProfile: String = "",
@@ -304,6 +319,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.desktopId = desktopId
     self.desktopName = desktopName
     self.deviceId = deviceId
+    self.deviceName = deviceName
+    self.deviceManufacturer = deviceManufacturer
+    self.deviceModel = deviceModel
+    self.devicePlatformVersion = devicePlatformVersion
+    self.deviceProfileName = deviceProfileName
     self.setupDetail = setupDetail
     self.setupNextStep = setupNextStep
     self.desktopAccessProfile = desktopAccessProfile
@@ -338,6 +358,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case desktopId = "desktop_id"
     case desktopName = "desktop_name"
     case deviceId = "device_id"
+    case deviceName = "device_name"
+    case deviceManufacturer = "device_manufacturer"
+    case deviceModel = "device_model"
+    case devicePlatformVersion = "platform_version"
+    case deviceProfileName = "profile_name"
     case setupDetail = "setup_detail"
     case setupNextStep = "setup_next_step"
     case desktopAccessProfile = "desktop_access_profile"
@@ -373,6 +398,11 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     desktopId = try container.decodeIfPresent(String.self, forKey: .desktopId) ?? ""
     desktopName = try container.decodeIfPresent(String.self, forKey: .desktopName) ?? ""
     deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? ""
+    deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
+    deviceManufacturer = try container.decodeIfPresent(String.self, forKey: .deviceManufacturer) ?? ""
+    deviceModel = try container.decodeIfPresent(String.self, forKey: .deviceModel) ?? ""
+    devicePlatformVersion = try container.decodeIfPresent(String.self, forKey: .devicePlatformVersion) ?? ""
+    deviceProfileName = try container.decodeIfPresent(String.self, forKey: .deviceProfileName) ?? ""
     setupDetail = try container.decodeIfPresent(String.self, forKey: .setupDetail) ?? ""
     setupNextStep = try container.decodeIfPresent(String.self, forKey: .setupNextStep) ?? ""
     desktopAccessProfile = try container.decodeIfPresent(String.self, forKey: .desktopAccessProfile) ?? ""

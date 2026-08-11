@@ -48,12 +48,12 @@ struct SignalASIContactDirectoryActionsView: View {
       SignalASIDirectoryDivider()
       SignalASIDirectoryMenuLink(
         title: t("signalasi.my_devices", "My Devices"),
-        subtitle: t("signalasi.device.management_subtitle", "Secure connection between people, AI, and devices"),
+        subtitle: deviceSubtitle,
         systemImage: "desktopcomputer",
         tint: .blue,
-        badge: t("signalasi.common.view", "View")
+        badge: deviceCount > 0 ? "\(deviceCount)" : t("signalasi.common.view", "View")
       ) {
-        DeviceManagementView()
+        SignalASIDeviceContactsView()
       }
     }
     .background(Color.signalASISurface)
@@ -75,6 +75,27 @@ struct SignalASIContactDirectoryActionsView: View {
 
   private var agentCount: Int {
     SignalASIAgentDirectorySnapshot(store: store, language: interfaceLanguage).items.count
+  }
+
+  private var deviceCount: Int {
+    let deviceContacts = store.contactList(matching: "").filter { contact in
+      contact.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "device" ||
+        contact.agentKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "device"
+    }
+    let representedDesktopIds = Set(deviceContacts.flatMap { contact in
+      [contact.desktopId, contact.signalASIId].filter { !$0.isEmpty }
+    })
+    let unrepresentedPairedLinks = store.serverLinks.filter { link in
+      link.paired && !representedDesktopIds.contains(link.desktopId)
+    }
+    return deviceContacts.count + unrepresentedPairedLinks.count
+  }
+
+  private var deviceSubtitle: String {
+    guard deviceCount > 0 else {
+      return t("signalasi.device.management_subtitle", "Secure connection between people, AI, and devices")
+    }
+    return String(format: t("signalasi.device.contacts_count", "%d devices"), deviceCount)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

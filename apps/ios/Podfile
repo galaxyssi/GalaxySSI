@@ -1,0 +1,8 @@
+platform :ios, '15.0'
+
+use_frameworks!
+
+target 'SignalASI' do
+  # Keep the iOS transport on the same libsignal protocol as Android.
+  pod 'LibSignalClient', git: 'https://github.com/signalapp/libsignal.git', tag: 'v0.94.2'
+end

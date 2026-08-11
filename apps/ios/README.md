@@ -6,6 +6,8 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 
 - SwiftUI app target and XCTest target in `SignalASI.xcodeproj`
 - Chats and contacts backed by a local Codable store, including searchable chat/contact lists, unread conversation summaries, local message deletion, chat history clearing, message details, and delivery trace inspection
+- Android-style encrypted Agent transcript persistence with deferred content chunks, Keychain-held per-store keys, and legacy UserDefaults migration
+- Android-style encrypted local state persistence for chats, contacts, pairing links, Agent settings, and durable task metadata, with Keychain-held AES-GCM keys and one-time migration from the legacy UserDefaults state
 - Android-compatible SignalASI Link v1 QR validation, route generation, pairing claim encryption, envelope creation, and envelope validation
 - Native MQTT 3.1.1 transport over TLS for pairing topics, Link topics, and background message delivery handoff
 - Durable Link outbox, exponential retry, delivery acknowledgements, Android-style delivery trace stages, inbound dedupe, and Android-compatible `signal-chunk` MQTT payload chunking
@@ -207,7 +209,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 
 ## Compatibility Note
 
-Android uses libsignal-backed Signal sessions after the encrypted pairing claim is accepted. This iOS foundation keeps the same protocol boundaries and pairing claim format, but the full libsignal Swift bridge still needs to be wired before paired desktop chat can be considered end-to-end encrypted parity.
+Android uses libsignal-backed Signal sessions after the encrypted pairing claim is accepted. iOS now has the matching `LibSignalClient` CocoaPod integration, an encrypted persistent Signal store, bundle exchange, and `prekey`/`signal` MQTT wire adapter. Run CocoaPods from `apps/ios` before building so `canImport(LibSignalClient)` enables the native session path; without the Pod, the app keeps the explicitly labelled legacy preview transport for development compatibility.
 
 ## iOS Version
 
