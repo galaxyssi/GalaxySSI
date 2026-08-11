@@ -855,7 +855,10 @@ struct MessageDetailView: View {
           Text(message.content)
             .textSelection(.enabled)
           detailRow(t("signalasi.message.sent_time", "Sent Time"), message.createdAt.formatted(date: .abbreviated, time: .standard))
-          detailRow(t("signalasi.common.status", "Status"), message.deliveryStatus.rawValue)
+          detailRow(
+            t("signalasi.common.status", "Status"),
+            SignalASIChatDeliveryStatus.title(message.deliveryStatus, language: interfaceLanguage)
+          )
         }
         Section(t("signalasi.security.status", "Security Status")) {
           Text(securityStatusText)
@@ -942,6 +945,8 @@ struct MessageDetailView: View {
 }
 
 struct MessageBubble: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+
   var message: ChatMessage
   var myAvatarData: Data? = nil
   var remoteContact: SignalASIContact? = nil
@@ -984,7 +989,7 @@ struct MessageBubble: View {
         HStack(spacing: 4) {
           Text(message.createdAt, style: .time)
           if message.isMine {
-            Text(message.deliveryStatus.rawValue)
+            Text(SignalASIChatDeliveryStatus.title(message.deliveryStatus, language: interfaceLanguage))
           }
         }
         .font(.caption2)

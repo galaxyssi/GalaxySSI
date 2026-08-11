@@ -3301,6 +3301,11 @@
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
 "delivery_status_local_saved" = "本地保存";
+"delivery_status_queued" = "已排队";
+"delivery_status_sent" = "已发送";
+"delivery_status_delivered" = "已送达";
+"delivery_status_read" = "已读";
+"delivery_status_failed" = "失败";
 "section_current" = "当前";
 "settings_language_use" = "使用";
 "voice_asr_recognition_mode_section" = "识别模式";
