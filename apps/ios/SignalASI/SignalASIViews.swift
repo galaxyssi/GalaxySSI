@@ -116,6 +116,7 @@ struct ChatListView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var searchText = ""
+  var showsBackButton = true
 
   private var filteredContacts: [SignalASIContact] {
     store.visibleContacts(matching: searchText)
@@ -126,7 +127,13 @@ struct ChatListView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: "SignalASI",
-          leading: { SignalASIBackButton() },
+          leading: {
+            if showsBackButton {
+              SignalASIBackButton()
+            } else {
+              Color.clear
+            }
+          },
           trailing: { Color.clear }
         )
         VStack(spacing: 10) {
@@ -1001,6 +1008,7 @@ struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var contactSearchText = ""
+  var showsBackButton = true
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
     let normalized = contactSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1058,7 +1066,13 @@ struct ContactsView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.tab.contacts", "Contacts"),
-          leading: { SignalASIBackButton() },
+          leading: {
+            if showsBackButton {
+              SignalASIBackButton()
+            } else {
+              Color.clear
+            }
+          },
           trailing: {
             NavigationLink(destination: AddContactView()) {
               Image(systemName: "plus")

@@ -1,8 +1,111 @@
 import SwiftUI
 
 struct SignalASIMainTabView: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var selectedTab: SignalASIMainTab = .agent
+
   var body: some View {
-    AgentHomeView()
+    selectedContent
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        SignalASIMainTabBar(
+          selection: $selectedTab,
+          interfaceLanguage: interfaceLanguage
+        )
+      }
+  }
+
+  @ViewBuilder
+  private var selectedContent: some View {
+    switch selectedTab {
+    case .voice:
+      SignalASIVoiceTabView()
+    case .agent:
+      AgentHomeView()
+    case .messages:
+      ChatListView()
+    case .contacts:
+      ContactsView()
+    case .discover:
+      DiscoverView()
+    case .settings:
+      SettingsView { tab in
+        selectedTab = tab
+      }
+    }
+  }
+}
+
+private struct SignalASIMainTabBar: View {
+  @Binding var selection: SignalASIMainTab
+  let interfaceLanguage: String
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(SignalASIMainTab.allCases) { tab in
+        SignalASIMainTabButton(
+          tab: tab,
+          selected: selection == tab,
+          title: title(for: tab)
+        ) {
+          selection = tab
+        }
+      }
+    }
+    .padding(.top, 5)
+    .padding(.bottom, 6)
+    .background(Color.signalASIBarBackground)
+    .overlay(alignment: .top) {
+      Rectangle()
+        .fill(Color.signalASISeparator)
+        .frame(height: 0.5)
+    }
+  }
+
+  private func title(for tab: SignalASIMainTab) -> String {
+    SignalASILocalization.string(
+      tab.titleKey,
+      fallback: tab.fallbackTitle,
+      language: interfaceLanguage
+    )
+  }
+}
+
+private struct SignalASIMainTabButton: View {
+  let tab: SignalASIMainTab
+  let selected: Bool
+  let title: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 3) {
+        tabIcon
+          .frame(width: 25, height: 25)
+        Text(title)
+          .font(.system(size: 10, weight: selected ? .semibold : .regular))
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+      }
+      .foregroundColor(selected ? .signalASIAccent : .signalASITextSecondary)
+      .frame(maxWidth: .infinity, minHeight: 45)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(Text(title))
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  @ViewBuilder
+  private var tabIcon: some View {
+    if let assetName = selected ? tab.selectedIconAssetName : tab.iconAssetName {
+      Image(assetName)
+        .resizable()
+        .renderingMode(.template)
+        .scaledToFit()
+    } else {
+      Image(systemName: selected ? tab.selectedSystemIconName : tab.systemIconName)
+        .font(.system(size: 21, weight: .semibold))
+    }
   }
 }
 

@@ -9,13 +9,20 @@ struct SettingsView: View {
   @State private var statusIsError = false
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
   var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+  var showsBackButton = true
 
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.tab.settings", "Settings"),
-          leading: { SignalASIBackButton() },
+          leading: {
+            if showsBackButton {
+              SignalASIBackButton()
+            } else {
+              Color.clear
+            }
+          },
           trailing: { Color.clear }
         )
         ScrollView {

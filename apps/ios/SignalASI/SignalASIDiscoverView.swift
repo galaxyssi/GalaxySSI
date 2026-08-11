@@ -4,13 +4,20 @@ struct DiscoverView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var myQRCodePresented = false
+  var showsBackButton = true
 
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: t("signalasi.discover.title", "Discover"),
-          leading: { SignalASIBackButton() },
+          leading: {
+            if showsBackButton {
+              SignalASIBackButton()
+            } else {
+              Color.clear
+            }
+          },
           trailing: { Color.clear }
         )
         ScrollView {
