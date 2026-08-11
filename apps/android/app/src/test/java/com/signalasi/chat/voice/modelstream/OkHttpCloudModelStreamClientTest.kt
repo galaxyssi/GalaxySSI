@@ -126,6 +126,51 @@ class OkHttpCloudModelStreamClientTest {
     }
 
     @Test
+    fun `repeated append-only argument characters are preserved`() {
+        val assembler = ToolCallDeltaAssembler()
+        listOf(
+            "{\"query\":\"he",
+            "l",
+            "l",
+            "o\",\"filters\":{\"recent\":true",
+            "}",
+            "}"
+        ).forEach { delta ->
+            assembler.accept(ToolCallPayload("call-repeat", 0, "web_search", delta))
+        }
+
+        assertEquals(
+            "{\"query\":\"hello\",\"filters\":{\"recent\":true}}",
+            assembler.completedCalls().single().argumentsJson
+        )
+    }
+
+    @Test
+    fun `snapshot tool arguments replace the prior snapshot`() {
+        val assembler = ToolCallDeltaAssembler()
+        assembler.accept(
+            ToolCallPayload(
+                "gemini-0",
+                0,
+                "web_search",
+                "{\"query\":\"old\"}",
+                ToolCallArgumentsMode.SNAPSHOT
+            )
+        )
+        assembler.accept(
+            ToolCallPayload(
+                "gemini-0",
+                0,
+                "web_search",
+                "{\"query\":\"new\"}",
+                ToolCallArgumentsMode.SNAPSHOT
+            )
+        )
+
+        assertEquals("{\"query\":\"new\"}", assembler.completedCalls().single().argumentsJson)
+    }
+
+    @Test
     fun `partial stream ending without terminal is marked interrupted`() = runBlocking {
         server.enqueue(
             MockResponse()

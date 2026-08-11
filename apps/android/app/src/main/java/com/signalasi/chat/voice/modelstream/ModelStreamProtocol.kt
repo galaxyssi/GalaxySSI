@@ -45,8 +45,11 @@ data class ToolCallPayload(
     val callId: String,
     val index: Int,
     val nameDelta: String = "",
-    val argumentsDelta: String = ""
+    val argumentsDelta: String = "",
+    val argumentsMode: ToolCallArgumentsMode = ToolCallArgumentsMode.DELTA
 )
+
+enum class ToolCallArgumentsMode { DELTA, SNAPSHOT }
 
 data class ModelUsage(
     val inputTokens: Long = 0L,
@@ -129,8 +132,8 @@ class ToolCallDeltaAssembler {
             MutableCall(payload.callId, payload.index)
         }
         if (call.callId.isBlank() && payload.callId.isNotBlank()) call.callId = payload.callId
-        appendNonRepeated(call.name, payload.nameDelta)
-        appendNonRepeated(call.arguments, payload.argumentsDelta)
+        appendName(call.name, payload.nameDelta)
+        appendArguments(call.arguments, payload.argumentsDelta, payload.argumentsMode)
     }
 
     @Synchronized
@@ -150,7 +153,7 @@ class ToolCallDeltaAssembler {
     @Synchronized
     fun clear() = calls.clear()
 
-    private fun appendNonRepeated(target: StringBuilder, delta: String) {
+    private fun appendName(target: StringBuilder, delta: String) {
         if (delta.isEmpty()) return
         val current = target.toString()
         when {
@@ -163,5 +166,15 @@ class ToolCallDeltaAssembler {
             current.endsWith(delta) -> Unit
             else -> target.append(delta)
         }
+    }
+
+    private fun appendArguments(
+        target: StringBuilder,
+        value: String,
+        mode: ToolCallArgumentsMode
+    ) {
+        if (value.isEmpty()) return
+        if (mode == ToolCallArgumentsMode.SNAPSHOT) target.setLength(0)
+        target.append(value)
     }
 }

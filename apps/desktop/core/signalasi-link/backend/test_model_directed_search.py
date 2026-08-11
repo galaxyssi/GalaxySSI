@@ -1,9 +1,12 @@
 import unittest
 
 from model_directed_search import (
+    CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
     _engine_query,
+    codex_dynamic_fetch_tool_spec,
     codex_dynamic_search_tool_spec,
+    execute_codex_dynamic_fetch,
     execute_codex_dynamic_search,
     render_search_evidence,
     retrieve_model_selected_evidence,
@@ -11,6 +14,41 @@ from model_directed_search import (
 
 
 class ModelDirectedSearchTests(unittest.TestCase):
+    def test_dynamic_fetch_tool_reads_explicit_url_and_preserves_images(self):
+        calls = []
+
+        class Registry:
+            def invoke(self, tool_id, arguments, context):
+                calls.append((tool_id, arguments, context))
+                return {
+                    "status": "succeeded",
+                    "output": {
+                        "documents": [{
+                            "title": "Public article",
+                            "url": arguments["url"],
+                            "content": "Article evidence from the Desktop.",
+                            "metadata": {
+                                "images": [{"url": "https://mmbiz.qpic.cn/article/image.png"}],
+                            },
+                        }],
+                    },
+                }
+
+        spec = codex_dynamic_fetch_tool_spec()
+        response = execute_codex_dynamic_fetch(
+            {"urls": ["https://mp.weixin.qq.com/s/example"]},
+            "task-fetch",
+            registry=Registry(),
+        )
+
+        self.assertEqual(CODEX_DYNAMIC_FETCH_TOOL, spec["name"])
+        self.assertTrue(response["success"])
+        evidence = response["contentItems"][0]["text"]
+        self.assertIn("Article evidence from the Desktop.", evidence)
+        self.assertIn("https://mmbiz.qpic.cn/article/image.png", evidence)
+        self.assertEqual(10 * 1024 * 1024, calls[0][1]["max_bytes"])
+        self.assertEqual("model_selected_direct_web_read", calls[0][2]["source"])
+
     def test_engine_query_keeps_intent_but_drops_expanded_current_date(self):
         query = _engine_query(
             "北京今天（2026年8月6日）天气、气温和降雨情况；优先权威来源"

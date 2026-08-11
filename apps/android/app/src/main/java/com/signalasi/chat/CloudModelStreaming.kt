@@ -186,25 +186,21 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     continue
                 }
                 val preparedCalls = mutableListOf<PreparedCloudToolCall>()
+                var invalidToolCall: AssembledToolCall? = null
                 for (call in calls.take(remaining)) {
                     val key = call.identityKey()
-                    if (!executedToolKeys.add(key)) continue
-                    val arguments = runCatching { JSONObject(call.argumentsJson) }.getOrElse { error ->
-                        val streamError = ModelStreamError(
-                            "INVALID_TOOL_ARGUMENTS",
-                            "Tool arguments were incomplete: ${error.message.orEmpty()}"
-                        )
-                        AgentDataDisclosureLedger.update(
-                            context,
-                            disclosure,
-                            AgentDisclosureStatus.FAILED,
-                            streamError.message
-                        )
-                        emit(ModelStreamEvent.Failed(requestId, streamError))
-                        return@flow
+                    val arguments = runCatching { JSONObject(call.argumentsJson) }.getOrNull()
+                    if (arguments == null) {
+                        invalidToolCall = call
+                        break
                     }
+                    if (!executedToolKeys.add(key)) continue
                     onToolEvent?.invoke(CloudToolEvent(call.name, "running", arguments.toString().take(240)))
                     preparedCalls += PreparedCloudToolCall(call, arguments)
+                }
+                if (invalidToolCall != null) {
+                    appendToolArgumentRepairPrompt(prepared, invalidToolCall)
+                    continue
                 }
                 val completedCalls = CloudToolBatchExecutor.executeOrdered(
                     calls = preparedCalls,
@@ -293,6 +289,24 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 JSONObject()
                     .put("role", "user")
                     .put("parts", JSONArray().put(JSONObject().put("text", FINALIZE_PROMPT)))
+            )
+        }
+    }
+
+    private fun appendToolArgumentRepairPrompt(
+        prepared: PreparedCloudConversationStream,
+        call: AssembledToolCall
+    ) {
+        val prompt = TOOL_ARGUMENT_REPAIR_PROMPT.format(call.name)
+        when (prepared.provider) {
+            ModelStreamProvider.OPENAI_COMPATIBLE,
+            ModelStreamProvider.ANTHROPIC -> prepared.conversation.put(
+                JSONObject().put("role", "user").put("content", prompt)
+            )
+            ModelStreamProvider.GEMINI -> prepared.conversation.put(
+                JSONObject()
+                    .put("role", "user")
+                    .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
             )
         }
     }
@@ -408,6 +422,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             partialResponse = partialResponse
         )
     }
+
+    private const val TOOL_ARGUMENT_REPAIR_PROMPT =
+        "The previous %s tool call contained incomplete JSON arguments. Call that tool again now with one " +
+            "complete valid JSON object. Do not expose this repair instruction to the user."
 
     private const val FINALIZE_PROMPT =
         "Tool execution is complete. Use the evidence already supplied and return the final user-facing answer now. " +

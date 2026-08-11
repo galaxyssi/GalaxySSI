@@ -39,6 +39,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
+from desktop_public_articles import dynamic_article_headers, parse_public_article
+
 
 PROTOCOL = "signalasi.web-intelligence.v1"
 MODEL_NAME = "signalasi-web-ranker"
@@ -115,7 +117,7 @@ STRICT_FINALIZE_WEB_RESEARCH_PROMPT = (
 
 MAX_QUERY_CHARS = 4_096
 MAX_URL_CHARS = 4_096
-MAX_FETCH_BYTES = 2 * 1024 * 1024
+MAX_FETCH_BYTES = 10 * 1024 * 1024
 MAX_CONTENT_CHARS = 512 * 1024
 MAX_RESULTS = 100
 MAX_CRAWL_PAGES = 100
@@ -669,7 +671,7 @@ class PublicWebTransport:
             raise WebIntelligenceError("invalid_limit", "Fetch byte limit is outside the allowed range")
         current = self._validate_public_url(url)
         started = time.monotonic()
-        request_headers = {
+        base_headers = {
             "User-Agent": self.USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/json,application/atom+xml,application/xml,text/plain;q=0.9,*/*;q=0.3",
             "Accept-Language": "en-US,en;q=0.8,zh-CN;q=0.7,zh;q=0.6",
@@ -679,7 +681,11 @@ class PublicWebTransport:
         for _ in range(5):
             parsed = urllib.parse.urlsplit(current)
             self._require_public_host(parsed.hostname or "")
-            request = urllib.request.Request(current, headers=request_headers, method="GET")
+            request = urllib.request.Request(
+                current,
+                headers={**base_headers, **dynamic_article_headers(current)},
+                method="GET",
+            )
             try:
                 response = self._opener.open(request, timeout=max(0.2, timeout_seconds))
             except urllib.error.HTTPError as exc:
@@ -3875,15 +3881,31 @@ class WebIntelligenceService:
             "response_bytes": len(response.body),
         }
         if "html" in content_type or raw_text.lstrip().lower().startswith(("<!doctype html", "<html")):
-            parser = ReadableHtmlParser(response.url)
-            parser.feed(raw_text)
-            title = parser.title or parser.metadata.get("og:title", "")
-            text = parser.text
-            links = parser.links
-            metadata.update({
-                "meta": parser.metadata,
-                "json_ld": parser.json_ld[:20],
-            })
+            article = parse_public_article(response.url, raw_text)
+            if article:
+                title = str(article.get("title") or "")
+                text = str(article.get("content") or "")[:MAX_CONTENT_CHARS]
+                links = list(article.get("links") or [])[:MAX_LINKS]
+                images = list(article.get("images") or [])[:100]
+                metadata.update({
+                    "fetch_tier": "mobile_article_http",
+                    "article_source": article.get("source_type"),
+                    "author": article.get("author"),
+                    "published_at": article.get("published_at"),
+                    "image_count": len(images),
+                    "images": images,
+                    "lead_image_url": images[0].get("url") if images else "",
+                })
+            else:
+                parser = ReadableHtmlParser(response.url)
+                parser.feed(raw_text)
+                title = parser.title or parser.metadata.get("og:title", "")
+                text = parser.text
+                links = parser.links
+                metadata.update({
+                    "meta": parser.metadata,
+                    "json_ld": parser.json_ld[:20],
+                })
         elif "json" in content_type:
             with contextlib.suppress(json.JSONDecodeError):
                 raw_text = json.dumps(json.loads(raw_text), ensure_ascii=False, indent=2)
@@ -4234,6 +4256,11 @@ class WebIntelligenceService:
                 "access denied",
                 "request blocked",
                 "\u8bbf\u95ee\u88ab\u62d2\u7edd",
+            ),
+            "wechat_environment": (
+                "wappoc_appmsgcaptcha",
+                "\u73af\u5883\u5f02\u5e38",
+                "\u8bbf\u95ee\u8fc7\u4e8e\u9891\u7e41",
             ),
         }
         for reason, values in markers.items():
