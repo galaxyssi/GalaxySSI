@@ -151,7 +151,7 @@ struct AgentIOSSystemNativeToolExecutor {
     default:
       return AgentNativeToolExecutionResult.failure(
         code: "ios_system_tool_unavailable",
-        message: "This Android system native tool has no iOS handoff executor."
+        message: "This system native tool has no iOS executor."
       )
     }
   }
