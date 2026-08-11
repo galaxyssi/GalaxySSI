@@ -118,6 +118,7 @@ struct ChatListView: View {
   @State private var searchText = ""
   @State private var contactPendingChatDeletion: SignalASIContact?
   var showsBackButton = true
+  var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
 
   private var filteredContacts: [SignalASIContact] {
     store.chatContacts(matching: searchText)
@@ -128,6 +129,9 @@ struct ChatListView: View {
       VStack(spacing: 0) {
         SignalASITopBar(
           title: "SignalASI",
+          onTitleTap: showsBackButton ? nil : {
+            onNavigateToMainTab?(.voice)
+          },
           leading: {
             if showsBackButton {
               SignalASIBackButton()
