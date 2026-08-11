@@ -530,6 +530,7 @@
     A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */; };
     A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
+    A10000000000000000000B02 /* AgentVoiceDraftPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */; };
     A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
     A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
     A10000000000000000000120 /* AgentRuntimePackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000120 /* AgentRuntimePackModels.swift */; };
@@ -1255,6 +1256,7 @@
     A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggerCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVoiceDraftPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
     A20000000000000000000120 /* AgentRuntimePackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackModels.swift; sourceTree = "<group>"; };
@@ -1772,6 +1774,7 @@
         A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */,
         A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
+        A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */,
         A20000000000000000000695 /* AgentTaskIdentity.swift */,
         A20000000000000000000696 /* AgentTaskIntent.swift */,
         A20000000000000000000429 /* AgentInlineMarkdown.swift */,
@@ -2649,6 +2652,7 @@
         A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */,
         A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
+        A10000000000000000000B02 /* AgentVoiceDraftPolicy.swift in Sources */,
         A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */,
         A10000000000000000000696 /* AgentTaskIntent.swift in Sources */,
         A10000000000000000000429 /* AgentInlineMarkdown.swift in Sources */,
