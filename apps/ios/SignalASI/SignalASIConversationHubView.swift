@@ -17,6 +17,7 @@ struct SignalASIConversationHubView: View {
   @State private var showingArchived = false
   @State private var addContactPresented = false
   @State private var openScannerOnAdd = false
+  @State private var cloudModelPresented = false
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
 
@@ -101,6 +102,9 @@ struct SignalASIConversationHubView: View {
     .navigationBarHidden(true)
     .sheet(isPresented: $addContactPresented) {
       AddContactView(autoOpenScanner: openScannerOnAdd)
+    }
+    .sheet(isPresented: $cloudModelPresented) {
+      CloudModelProviderSelectionView()
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       ContactsView(showsBackButton: false)
@@ -230,6 +234,17 @@ struct SignalASIConversationHubView: View {
         badge: store.pendingFriendRequests.isEmpty ? "" : "\(store.pendingFriendRequests.count)"
       ) {
         pendingFriendRequestsPresented = true
+      }
+      hubActionRow(
+        title: t("signalasi.add_contact.cloud_title", "Add Cloud Model"),
+        subtitle: t(
+          "signalasi.add_contact.cloud_subtitle",
+          "Provider, model, and API key are configured directly on the phone."
+        ),
+        systemImage: "cloud.fill",
+        tint: .signalASIInsightText
+      ) {
+        cloudModelPresented = true
       }
 
       if sections.isEmpty {
