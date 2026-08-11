@@ -1,7 +1,7 @@
 import Foundation
 
 struct CloudImagePayload: Equatable {
-  static let maximumBytes = 100_000
+  static let maximumBytes = 64 * 1_024 * 1_024
 
   var displayName: String
   var mimeType: String
