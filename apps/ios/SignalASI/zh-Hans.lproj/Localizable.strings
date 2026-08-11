@@ -1379,7 +1379,7 @@
 "agent_attachment_remove" = "移除附件";
 "agent_attachment_count" = "%d 个附件";
 "agent_attachment_default_goal" = "用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。";
-"agent_attachment_rejected" = "部分附件未添加。最多可添加 10 个文件，每个不超过 20 MB。";
+"agent_attachment_rejected" = "部分附件未添加。最多可添加 10 个文件，每个不超过 64 MB。";
 "agent_attachment_camera_unavailable" = "无法打开相机";
 "agent_attachment_photo_marker" = "[照片]";
 "signalasi.message.section" = "消息";

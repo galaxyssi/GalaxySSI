@@ -330,7 +330,7 @@ enum AgentAnimatedImageTiming {
 
 enum SignalASIAttachmentPayloadBuilder {
   static let maximumAttachmentCount = 10
-  static let maximumAttachmentBytes = 20 * 1024 * 1024
+  static let maximumAttachmentBytes = 64 * 1024 * 1024
   static let maximumInlineBytes = 320 * 1024
 
   static func accepted(_ attachment: SignalASIDraftAttachment, existing: [SignalASIDraftAttachment]) -> Bool {

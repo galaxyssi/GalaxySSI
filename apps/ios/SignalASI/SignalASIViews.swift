@@ -863,7 +863,7 @@ struct ConversationView: View {
 
   private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
     guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
-      attachmentError = t("agent_attachment_rejected", "Some attachments were skipped. You can add up to 10 files, 20 MB each.")
+      attachmentError = t("agent_attachment_rejected", "Some attachments were skipped. You can add up to 10 files, 64 MB each.")
       return
     }
     attachments.append(attachment)
