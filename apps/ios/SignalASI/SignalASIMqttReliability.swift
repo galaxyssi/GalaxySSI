@@ -13,7 +13,7 @@ final class MqttBrokerAckWatchdog {
 
   func onPublished(packetId: UInt16, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
     lock.lock()
-    publishedAtByPacketId[packetId] = now
+    publishedAtByPacketId[packetId] = publishedAtByPacketId[packetId] ?? now
     lock.unlock()
   }
 
