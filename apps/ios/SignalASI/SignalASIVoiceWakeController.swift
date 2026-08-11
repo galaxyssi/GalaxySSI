@@ -8,6 +8,7 @@ import SwiftUI
 final class SignalASIVoiceWakeController: ObservableObject {
   @Published private(set) var isListening = false
   @Published private(set) var isPreparing = false
+  @Published private(set) var isCommandCapturing = false
   @Published private(set) var failureDescription = ""
 
   private let speech = SpeechCaptureService()
@@ -58,6 +59,25 @@ final class SignalASIVoiceWakeController: ObservableObject {
     guard wantsListening else { return }
     manualCaptureActive = false
     refreshCapture(after: 500_000_000)
+  }
+
+  /// Starts an endpoint-detected foreground command after the user interrupts
+  /// a spoken reply from the Voice home surface.
+  @discardableResult
+  func beginTapToSpeak() -> Bool {
+    guard wantsListening,
+          settings.speechRecognitionEnabled,
+          !isPreparing,
+          !isCommandCapturing else {
+      return false
+    }
+    manualCaptureActive = true
+    configurationGeneration += 1
+    restartTask?.cancel()
+    restartTask = nil
+    stopCapture()
+    startTapToSpeakCapture(generation: configurationGeneration)
+    return true
   }
 
   private var shouldListen: Bool {
@@ -129,6 +149,56 @@ final class SignalASIVoiceWakeController: ObservableObject {
     }
   }
 
+  private func startTapToSpeakCapture(generation: Int) {
+    guard generation == configurationGeneration,
+          wantsListening,
+          manualCaptureActive,
+          !speech.isRecording,
+          !isPreparing else {
+      return
+    }
+    isPreparing = true
+    failureDescription = ""
+    let captureSettings = settings
+    Task { @MainActor [weak self] in
+      guard let self = self else { return }
+      let granted = await speech.requestAuthorization(
+        localeIdentifier: captureSettings.preferredLocaleIdentifier
+      )
+      guard generation == configurationGeneration,
+            wantsListening,
+            manualCaptureActive else {
+        isPreparing = false
+        return
+      }
+      guard granted else {
+        isPreparing = false
+        failureDescription = "Microphone or speech permission is missing."
+        VoiceRuntimeHealthRegistry.failure(.androidWakeASR, reason: failureDescription)
+        completeTapToSpeakCapture(after: 0)
+        return
+      }
+      do {
+        speech.onVoiceCommand = { [weak self] command in
+          Task { @MainActor in
+            self?.handleTapToSpeakCommand(command)
+          }
+        }
+        try speech.start(settings: captureSettings, source: "ios_voice_wake_tap")
+        isPreparing = false
+        isListening = false
+        isCommandCapturing = true
+        VoiceRuntimeHealthRegistry.begin(.androidWakeASR)
+        observeTapToSpeakCaptureEnd(generation: generation)
+      } catch {
+        isPreparing = false
+        failureDescription = error.localizedDescription
+        VoiceRuntimeHealthRegistry.failure(.androidWakeASR, reason: failureDescription)
+        completeTapToSpeakCapture(after: 500_000_000)
+      }
+    }
+  }
+
   private func observeCaptureEnd(generation: Int) {
     restartTask?.cancel()
     restartTask = Task { @MainActor [weak self] in
@@ -139,6 +209,21 @@ final class SignalASIVoiceWakeController: ObservableObject {
         if !speech.isRecording && !isPreparing {
           isListening = false
           scheduleCaptureStart(after: 250_000_000, generation: generation)
+          return
+        }
+      }
+    }
+  }
+
+  private func observeTapToSpeakCaptureEnd(generation: Int) {
+    restartTask?.cancel()
+    restartTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard let self = self, generation == configurationGeneration else { return }
+        guard self.manualCaptureActive else { return }
+        if !self.speech.isRecording && !self.isPreparing {
+          self.completeTapToSpeakCapture(after: 500_000_000)
           return
         }
       }
@@ -158,12 +243,28 @@ final class SignalASIVoiceWakeController: ObservableObject {
     onWakeCommand?(commandText)
   }
 
+  private func handleTapToSpeakCommand(_ command: VoiceInteractionCommand) {
+    guard case let .routeFinalTranscript(_, transcript, _) = command else { return }
+    let commandText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !commandText.isEmpty else { return }
+    VoiceRuntimeHealthRegistry.success(.androidWakeASR)
+    onWakeCommand?(commandText)
+  }
+
+  private func completeTapToSpeakCapture(after delayNanoseconds: UInt64) {
+    guard wantsListening else { return }
+    isCommandCapturing = false
+    manualCaptureActive = false
+    refreshCapture(after: delayNanoseconds)
+  }
+
   private func stopCapture() {
     speech.onVoiceCommand = nil
     if speech.isRecording {
       speech.stop()
     }
     isPreparing = false
+    isCommandCapturing = false
     isListening = false
     VoiceRuntimeHealthRegistry.idle(.androidWakeASR)
   }

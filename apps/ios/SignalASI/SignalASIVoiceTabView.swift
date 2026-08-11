@@ -93,10 +93,16 @@ struct SignalASIVoiceTabView: View {
         .accessibilityLabel(Text(t("voice_settings_title", "Voice Wake & ASR/TTS")))
       }
 
-      SignalASIVoiceWakeOrb(
-        isActive: wakeListener.isListening || wakeListener.isPreparing || holdToTalk.isRecording,
-        isRecording: holdToTalk.isRecording
-      )
+      Button(action: handleWakeOrbTap) {
+        SignalASIVoiceWakeOrb(
+          isActive: wakeListener.isListening || wakeListener.isPreparing ||
+            wakeListener.isCommandCapturing || holdToTalk.isRecording,
+          isRecording: wakeListener.isCommandCapturing || holdToTalk.isRecording
+        )
+      }
+      .buttonStyle(.plain)
+      .disabled(!replySpeech.isSpeaking || wakeListener.isCommandCapturing)
+      .accessibilityLabel(Text(t("signalasi.voice.barge_in_action", "Interrupt reply and speak")))
 
       VStack(spacing: 7) {
         Text(wakeSurfaceTitle)
@@ -259,6 +265,12 @@ struct SignalASIVoiceTabView: View {
   }
 
   private var wakeSurfaceTitle: String {
+    if wakeListener.isCommandCapturing {
+      return t("signalasi.voice.listening_command", "Listening")
+    }
+    if replySpeech.isSpeaking {
+      return t("signalasi.voice.barge_in_title", "Speaking reply")
+    }
     if !settings.wakeListeningEnabled {
       return t("voice_status_disabled", "Voice wake is off")
     }
@@ -275,6 +287,12 @@ struct SignalASIVoiceTabView: View {
   }
 
   private var wakeSurfaceSubtitle: String {
+    if wakeListener.isCommandCapturing {
+      return t("signalasi.voice.listening_command_detail", "Speak naturally. Recording stops after a short pause.")
+    }
+    if replySpeech.isSpeaking {
+      return t("signalasi.voice.barge_in_subtitle", "Tap the voice icon to interrupt and speak.")
+    }
     if !settings.wakeListeningEnabled {
       return t("voice_status_disabled_detail", "Enable it in Settings > Voice Wake & ASR/TTS")
     }
@@ -285,6 +303,9 @@ struct SignalASIVoiceTabView: View {
   }
 
   private var wakeStatusLabel: String {
+    if wakeListener.isCommandCapturing {
+      return t("signalasi.voice.listening_command", "Listening")
+    }
     if wakeListener.isListening {
       return t("voice_status_low_power", "Low-power listening")
     }
@@ -471,6 +492,14 @@ struct SignalASIVoiceTabView: View {
         holdToTalk.dragEnded(translation: value.translation)
         wakeListener.resumeAfterManualCapture()
       }
+  }
+
+  private func handleWakeOrbTap() {
+    guard replySpeech.isSpeaking, !wakeListener.isCommandCapturing else { return }
+    interruptActiveVoiceReply()
+    if wakeListener.beginTapToSpeak() {
+      submitStatus = t("signalasi.voice.listening_command", "Listening")
+    }
   }
 
   private var holdToTalkMessages: SignalASIAgentHoldToTalkMessages {
