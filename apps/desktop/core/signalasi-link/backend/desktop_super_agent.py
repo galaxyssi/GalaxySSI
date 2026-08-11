@@ -65,6 +65,7 @@ PLAN_ONLY_READ_TOOLS = frozenset({
     SYSTEM_STATUS,
     WEB_FETCH,
 })
+PHONE_PUBLIC_HTML_MARKER = "[SIGNALASI_PHONE_PUBLIC_HTML_V1]"
 
 
 @dataclass(frozen=True)
@@ -1135,7 +1136,7 @@ class DesktopSuperAgent:
             return calls, "runtime"
 
         url_match = re.search(r"https?://[^\s<>\]\[\"']+", str(prompt or ""), re.IGNORECASE)
-        if url_match:
+        if url_match and PHONE_PUBLIC_HTML_MARKER not in str(prompt or ""):
             url = url_match.group(0).rstrip(".,;:!?)\u3002\uff0c\uff1b\uff01\uff09")
             open_terms = ("open in browser", "open the page", "open website", "\u6d4f\u89c8\u5668\u6253\u5f00", "\u6253\u5f00\u7f51\u9875", "\u6253\u5f00\u7f51\u5740")
             if any(term in normalized for term in open_terms):

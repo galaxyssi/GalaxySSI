@@ -13,6 +13,7 @@ from agent_execution_harness import (
 )
 from desktop_agent_loop import AgentLoopBudget
 from desktop_super_agent import DesktopSuperAgent
+from desktop_native_tools import FILE_READ_TEXT, WEB_FETCH
 from task_workspace import task_artifacts, task_workspace
 
 
@@ -162,6 +163,19 @@ class DesktopSuperAgentTest(unittest.TestCase):
     def tearDown(self):
         self.workspace_environment.stop()
         self.temporary_workspace.cleanup()
+
+    def test_reads_phone_captured_html_without_refetching_source_url(self):
+        coordinator = DesktopSuperAgent.__new__(DesktopSuperAgent)
+
+        calls, _ = coordinator._local_plan(
+            "Read https://mp.weixin.qq.com/s/example\n"
+            "[SIGNALASI_PHONE_PUBLIC_HTML_V1]",
+            ["inputs/article.html"],
+            "task-phone-html",
+        )
+
+        self.assertFalse(any(tool_id == WEB_FETCH for tool_id, _, _ in calls))
+        self.assertTrue(any(tool_id == FILE_READ_TEXT for tool_id, _, _ in calls))
 
     def test_launches_named_application_as_a_direct_desktop_action(self):
         manager = FakeTaskManager()

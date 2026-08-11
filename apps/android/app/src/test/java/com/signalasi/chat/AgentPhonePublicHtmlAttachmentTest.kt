@@ -1,0 +1,91 @@
+package com.signalasi.chat
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentPhonePublicHtmlAttachmentTest {
+    @Test
+    fun extractsOneExplicitPublicHttpsUrl() {
+        assertEquals(
+            listOf("https://mp.weixin.qq.com/s/example?a=1"),
+            AgentPhonePublicHtmlAttachment.explicitPublicUrls(
+                "Read https://mp.weixin.qq.com/s/example?a=1, then summarize https://example.com/other"
+            )
+        )
+    }
+
+    @Test
+    fun ignoresNonHttpsUrls() {
+        assertTrue(AgentPhonePublicHtmlAttachment.explicitPublicUrls("http://example.com/a").isEmpty())
+    }
+
+    @Test
+    fun prefersArticleUrlFromEarlierConversationContext() {
+        assertEquals(
+            "https://mp.weixin.qq.com/s/article",
+            AgentPhonePublicHtmlAttachment.preferredPublicUrl(
+                "User: https://mp.weixin.qq.com/s/article\nAssistant: source https://example.com/help\nUser: save it"
+            )
+        )
+    }
+
+    @Test
+    fun onlyUsesHistoryForAContinuationRequest() {
+        assertTrue(AgentPhonePublicHtmlAttachment.shouldUseConversationContext("save it"))
+        assertTrue(AgentPhonePublicHtmlAttachment.shouldUseConversationContext("\u628a\u5b83\u4fdd\u5b58\u4e0b\u6765"))
+        assertFalse(AgentPhonePublicHtmlAttachment.shouldUseConversationContext("hello"))
+    }
+
+    @Test
+    fun recognizesExplicitSaveRequests() {
+        assertTrue(AgentPhonePublicHtmlAttachment.isSaveRequest("download this page"))
+        assertTrue(AgentPhonePublicHtmlAttachment.isSaveRequest("\u4fdd\u5b58\u8fd9\u4e2a\u7f51\u9875"))
+        assertFalse(AgentPhonePublicHtmlAttachment.isSaveRequest("summarize this page"))
+    }
+
+    @Test
+    fun followUpRestoresLatestPublicUrlFromRawUserMessages() {
+        val request = AgentPhonePublicHtmlAttachment.captureRequest(
+            currentRequest = "save it",
+            recentUserMessages = listOf(
+                "Read https://example.com/older",
+                "Read https://mp.weixin.qq.com/s/latest-article",
+                "save it"
+            )
+        )
+
+        assertTrue(request.contains("https://mp.weixin.qq.com/s/latest-article"))
+    }
+
+    @Test
+    fun unrelatedRequestDoesNotRestoreHistoricalUrl() {
+        val request = AgentPhonePublicHtmlAttachment.captureRequest(
+            currentRequest = "hello",
+            recentUserMessages = listOf("Read https://example.com/older")
+        )
+
+        assertEquals("hello", request)
+    }
+
+    @Test
+    fun rendersReadableUntrustedHtml() {
+        val html = AgentPhonePublicHtmlAttachment.render(
+            AgentPhonePublicHtmlDocument(
+                url = "https://example.com/article?a=1&b=2",
+                title = "A <title>",
+                content = "First paragraph.\n\nSecond <paragraph>.",
+                author = "Author & Editor",
+                images = listOf(mapOf("url" to "https://example.com/image.jpg", "alt" to "Chart"))
+            )
+        )
+
+        assertTrue(html.contains("<!doctype html>"))
+        assertTrue(html.contains("untrusted-public-source"))
+        assertTrue(html.contains("A &lt;title&gt;"))
+        assertTrue(html.contains("Second &lt;paragraph&gt;."))
+        assertTrue(html.contains("https://example.com/image.jpg"))
+        assertFalse(html.contains("Second <paragraph>."))
+    }
+}
