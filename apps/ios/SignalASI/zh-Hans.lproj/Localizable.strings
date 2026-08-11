@@ -1581,6 +1581,13 @@
 "cloud_no_models_subtitle" = "请先添加一个模型配置";
 "signalasi.contact_detail.not_found_title" = "未找到联系人。";
 "signalasi.contact_detail.not_found_subtitle" = "此联系人可能已被删除，或来自较旧的备份。";
+"signalasi.contact_detail.device_section" = "设备";
+"signalasi.contact_detail.device_name" = "设备名称";
+"signalasi.contact_detail.device_model" = "型号";
+"signalasi.contact_detail.hardware" = "硬件";
+"signalasi.contact_detail.platform_version" = "系统版本";
+"signalasi.contact_detail.platform" = "平台";
+"signalasi.contact_detail.device" = "设备";
 "signalasi.contact_detail.delete_with_chat_message" = "此联系人和聊天记录将从本机删除。";
 "signalasi.contact_detail.agent_id" = "智能体 ID";
 "signalasi.contact_detail.access_profile" = "访问配置";

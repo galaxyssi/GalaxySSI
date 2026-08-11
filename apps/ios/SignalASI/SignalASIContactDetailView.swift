@@ -39,6 +39,7 @@ struct ContactDetailView: View {
             )
             primaryChatButton(contact)
             identitySection(contact)
+            deviceSection(contact)
             connectorSection(contact)
             routeSection(contact)
             cloudModelSection(contact)
@@ -154,6 +155,52 @@ struct ContactDetailView: View {
         onCopy: setStatus
       )
       statusRowIfNeeded
+    }
+  }
+
+  @ViewBuilder
+  private func deviceSection(_ contact: SignalASIContact) -> some View {
+    let hasDeviceMetadata = [
+      contact.deviceName,
+      contact.deviceManufacturer,
+      contact.deviceModel,
+      contact.devicePlatformVersion,
+      contact.deviceProfileName
+    ].contains { value in
+      !(value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    if contact.type == "device" || hasDeviceMetadata {
+      VStack(alignment: .leading, spacing: 8) {
+        SignalASISecuritySectionTitle(title: t("signalasi.contact_detail.device_section", "Device"))
+        if let deviceName = contact.deviceName?.nonEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.device_name", "Device Name"),
+            subtitle: deviceName,
+            systemImage: "iphone",
+            tint: .blue,
+            badge: t("signalasi.contact_detail.device", "Device")
+          )
+        }
+        if let model = contact.deviceModel?.nonEmpty {
+          let manufacturer = contact.deviceManufacturer?.nonEmpty
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.device_model", "Model"),
+            subtitle: manufacturer.map { "\($0) \(model)" } ?? model,
+            systemImage: "cpu",
+            tint: .teal,
+            badge: t("signalasi.contact_detail.hardware", "Hardware")
+          )
+        }
+        if let version = contact.devicePlatformVersion?.nonEmpty {
+          SignalASISecurityStatusRow(
+            title: t("signalasi.contact_detail.platform_version", "Platform Version"),
+            subtitle: version,
+            systemImage: "gearshape",
+            tint: .orange,
+            badge: contact.deviceProfileName?.nonEmpty ?? t("signalasi.contact_detail.platform", "Platform")
+          )
+        }
+      }
     }
   }
 
