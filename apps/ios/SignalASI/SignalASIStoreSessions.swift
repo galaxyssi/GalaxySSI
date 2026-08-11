@@ -269,7 +269,7 @@ extension SignalASIStore {
       conversation.status = .archived
     }
     if changed && shouldClearActive {
-      activeAgentConversationId = ""
+      ensureActiveAgentSession()
     }
     return changed
   }
@@ -297,13 +297,24 @@ extension SignalASIStore {
         messagesByContact[contactId] = messages
       }
     }
-    if activeAgentConversationId == clean {
-      activeAgentConversationId = agentSessions().first?.id ?? ""
-    }
     guard beforeConversations != agentConversations.count || removedMessages > 0 else { return false }
+    if activeAgentConversationId == clean {
+      ensureActiveAgentSession()
+    }
     AgentModelSelectionSettings.clearConversation(clean)
     save()
     return true
+  }
+
+  private func ensureActiveAgentSession() {
+    if let active = agentSession(id: activeAgentConversationId), active.status == .active {
+      return
+    }
+    if let next = agentSessions().first {
+      activeAgentConversationId = next.id
+      return
+    }
+    _ = createAgentSession(title: "New session")
   }
 
   func agentSessionMessages(_ conversationId: String) -> [ChatMessage] {
