@@ -50,7 +50,8 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
       onOpenSessions: onOpenSessions,
       onScan: onScan,
       onTakePhoto: onTakePhoto,
-      onAddFile: onAddFile
+      onAddFile: onAddFile,
+      onRefreshScreenContext: onRefreshScreenContext
     )
     SignalASIAgentHomeReadinessView(
       runningTasks: runningTasks,
