@@ -101,7 +101,7 @@ enum AgentModelPlanningPrompt {
     to prompt: inout String,
     request: AgentModelPlanningPromptRequest
   ) {
-    if request.allowsPhoneRuntimeTools {
+    if allowsPhoneRuntimeTools(for: request) {
       append(&prompt, "This goal is eligible for the app-private workspace and on-device runtime. ")
       append(&prompt, "Use workspace_id=current for signalasi.workspace.* calls; the phone binds it to this conversation and rejects cross-workspace access. ")
       append(&prompt, "Inspect runtime readiness, install only trusted signed runtime packs when required, create or update project files, execute the appropriate language or FFmpeg tool, and verify the result. ")
@@ -317,13 +317,14 @@ enum AgentModelPlanningPrompt {
   private static func prioritizedNativeTools(
     request: AgentModelPlanningPromptRequest
   ) -> [AgentNativeToolDescriptor] {
+    let allowsPhoneRuntimeTools = allowsPhoneRuntimeTools(for: request)
     let priority = Dictionary(uniqueKeysWithValues: developmentToolPriority.enumerated().map { pair in
       (pair.element, pair.offset)
     })
     return request.planRequest.nativeTools
       .filter {
         $0.availability.status == .available &&
-          (request.allowsPhoneRuntimeTools || !isPhoneRuntimeTool($0.id))
+          (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool($0.id))
       }
       .sorted {
         let firstPriority = priority[$0.id] ?? Int.max
@@ -335,8 +336,11 @@ enum AgentModelPlanningPrompt {
       }
   }
 
-  private static func isPhoneRuntimeTool(_ id: String) -> Bool {
-    id.hasPrefix("signalasi.runtime.") || id.hasPrefix("signalasi.workspace.")
+  private static func allowsPhoneRuntimeTools(
+    for request: AgentModelPlanningPromptRequest
+  ) -> Bool {
+    request.allowsPhoneRuntimeTools &&
+      AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
   }
 
   private static func safePlannerOutput(_ value: String) -> String {
