@@ -205,7 +205,7 @@ enum AgentFailureRecoveryRichContent {
     advertisedActions: [AgentFailureRecoveryAdvertisedAction] = [],
     chinese: Bool = false
   ) -> AgentRichBlock? {
-    let display = AgentNoReplyReasonPolicy.display(for: signal)
+    let display = AgentNoReplyReasonPolicy.display(for: signal, chinese: chinese)
     return recoveryBlock(
       taskId: taskId,
       conversationId: conversationId,
