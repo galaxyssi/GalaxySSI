@@ -55,7 +55,7 @@ struct DeviceManagementView: View {
             )
             DeviceManagementNavigationRow(
               title: t("signalasi.device.pc_agent", "PC Agent"),
-              subtitle: t("signalasi.device.pc_agent_subtitle", "Windows backend and file service"),
+              subtitle: pcAgentSubtitle,
               systemImage: "desktopcomputer",
               tint: .blue,
               badge: desktopStatusLabel
@@ -92,6 +92,22 @@ struct DeviceManagementView: View {
               badge: "+"
             ) {
               CustomDeviceConnectorEditorView(connector: CustomDeviceConnector())
+            }
+          }
+          if !pairedDesktopLinks.isEmpty {
+            sectionTitle(t("signalasi.device.section_paired_desktops", "Paired Desktop Connections"))
+            VStack(spacing: 8) {
+              ForEach(pairedDesktopLinks) { link in
+                DeviceManagementNavigationRow(
+                  title: link.desktopName.ifBlank(t("signalasi.security_center.pc", "PC")),
+                  subtitle: link.accessProfile.ifBlank(link.desktopId),
+                  systemImage: "trash",
+                  tint: .red,
+                  badge: t("signalasi.security_center.revoke", "Revoke")
+                ) {
+                  SignalASIRevokeDevicePairingView(desktopId: link.desktopId)
+                }
+              }
             }
           }
           sectionTitle(t("signalasi.device.section_home_assistant", "Home Assistant"))
@@ -180,6 +196,15 @@ struct DeviceManagementView: View {
       return t("signalasi.status.disconnected", "Disconnected")
     }
     return t("signalasi.status.needs_setup", "Needs Setup")
+  }
+
+  private var pcAgentSubtitle: String {
+    let descriptions = pairedDesktopLinks.compactMap { link -> String? in
+      let detail = link.deviceMetadata?.displayLabel ?? ""
+      return detail.isEmpty ? nil : detail
+    }
+    return descriptions.first
+      ?? t("signalasi.device.pc_agent_subtitle", "Windows backend and file service")
   }
 
   private var homeAssistantStatusLabel: String {

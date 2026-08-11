@@ -34,6 +34,7 @@ final class MessageCoordinator: ObservableObject {
   fileprivate let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
+  let signalEngine: SignalASISignalEngine
   private var globalResearchResponseToken: UUID?
   private var globalCognitionResponseToken: UUID?
   private var globalAutonomousResponseToken: UUID?
@@ -150,6 +151,7 @@ final class MessageCoordinator: ObservableObject {
     self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.downloadCompletionCoordinator = AgentIOSDownloadCompletionCoordinator(store: store)
+    self.signalEngine = SignalASISignalEngine(profileName: store.profile.signalASIId)
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { [weak self] in
       Task { @MainActor in
@@ -298,6 +300,7 @@ final class MessageCoordinator: ObservableObject {
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
+    guard SignalASIGlobalAgentBackgroundPolicy.allowsAutomaticCycles else { return }
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
     _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
@@ -4950,26 +4953,36 @@ final class MessageCoordinator: ObservableObject {
     let qr = try SignalASILinkProtocol.decodePairingQRCode(from: qrText)
     let link = try store.addServerLink(from: qr, rotateClientRoute: true)
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
+    let signalIdentity = signalEngine.identity
+    let fallbackSignalName = "signalasi:\(store.profile.identityFingerprint.prefix(16))"
+    let fallbackSignalBundle: [String: Any] = [
+      "type": "ios-cryptokit-p256-v1",
+      "identity_public_key": store.profile.identityPublicKey,
+      "identity_fingerprint": store.profile.identityFingerprint
+    ]
+    let device = SignalASIDeviceIdentity.current(profile: store.profile)
     let claim: [String: Any] = [
       "protocol": SignalASILinkProtocol.name,
       "version": SignalASILinkProtocol.version,
       "type": "signalasi_pairing_claim",
       "pairing_token": qr.pairingToken,
-      "from": store.profile.signalASIId,
-      "signal_name": store.profile.signalASIId,
+      "from": signalIdentity.name.ifBlank(fallbackSignalName),
+      "signal_name": signalIdentity.name.ifBlank(fallbackSignalName),
       "signal_device_id": 1,
       "server_route_id": link.routes.serverRouteId,
       "client_route_id": link.routes.clientRouteId,
-      "client_name": store.profile.name,
+      "client_name": device.displayName,
       "platform": "ios",
-      "signalasi_id": store.profile.signalASIId,
-      "identity_fingerprint": store.profile.identityFingerprint,
-      "identity_public_key": store.profile.identityPublicKey,
-      "signal_bundle": [
-        "type": "ios-cryptokit-p256-v1",
-        "identity_public_key": store.profile.identityPublicKey,
-        "identity_fingerprint": store.profile.identityFingerprint
-      ],
+      "signalasi_id": signalIdentity.name.ifBlank(fallbackSignalName),
+      "identity_fingerprint": signalIdentity.fingerprint.ifBlank(store.profile.identityFingerprint),
+      "identity_public_key": signalIdentity.publicKey.ifBlank(store.profile.identityPublicKey),
+      "signal_bundle": signalIdentity.bundle ?? fallbackSignalBundle,
+      "client_device_id": device.deviceId,
+      "device_name": device.deviceName,
+      "device_manufacturer": device.manufacturer,
+      "device_model": device.model,
+      "platform_version": device.platformVersion,
+      "profile_name": device.profileName,
       "desktop_control_authorization_token": qr.controlAuthorizationToken,
       "requested_access_profile": qr.access.profile,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
@@ -5325,6 +5338,16 @@ final class MessageCoordinator: ObservableObject {
       sourceId: store.profile.signalASIId,
       targetId: link.desktopId
     )
+    if SignalASISignalEngine.isAvailable {
+      guard let encrypted = signalEngine.encrypt(appPayload, remoteName: link.desktopId) else {
+        throw SignalASIError.invalidPayload("Signal session is not ready for this Link.")
+      }
+      var signalWire = encrypted
+      signalWire["message_id"] = messageId
+      signalWire["_client_route_id"] = link.routes.clientRouteId
+      let signalWireData = try SignalASILinkProtocol.jsonData(signalWire)
+      return (messageId, String(decoding: signalWireData, as: UTF8.self), signalWireData)
+    }
     let wireData = try SignalASILinkProtocol.jsonData([
       "scheme": "signalasi-link-ios-preview",
       "from": store.profile.signalASIId,
@@ -5379,6 +5402,13 @@ final class MessageCoordinator: ObservableObject {
     if object.string("type") == "pairing_confirmed" {
       let access = SignalASILinkProtocol.pairingAccess(from: object.dictionary("pairing_access"))
       store.markServerPaired(desktopId: object.string("desktop_id"), access: access)
+      if let bundle = object.dictionary("signal_bundle") {
+        _ = signalEngine.processBundle(
+          bundle,
+          remoteName: object.string("desktop_id")
+        )
+      }
+      _ = store.updatePairedDesktopDevice(from: object, link: serverLink(for: topic, payload: object) ?? link)
       _ = store.updateDesktopAgentContacts(from: object, link: serverLink(for: topic, payload: object) ?? link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
@@ -5386,7 +5416,19 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let appPayload: [String: Any]
-    if let envelope = object.dictionary("envelope") {
+    if object.string("scheme") == "signal" {
+      guard let unwrapped = signalEngine.decrypt(object) else {
+        recordLinkDiagnostic(
+          .decryptFailure,
+          link: link,
+          topic: topic,
+          messageIdentity: object.string("message_id").ifBlank(ciphertextReplayDigest(for: object)),
+          detailCode: "signal_decrypt_failed"
+        )
+        return
+      }
+      appPayload = unwrapped
+    } else if let envelope = object.dictionary("envelope") {
       guard let unwrapped = SignalASILinkProtocol.unwrapEnvelope(envelope) else {
         recordLinkDiagnostic(
           .decryptFailure,
@@ -6173,14 +6215,20 @@ final class MessageCoordinator: ObservableObject {
     }
     let connectorAgentSource = SignalASIContactExchange.connectorAgentSource(from: payload)
     let hasConnectorAgents = connectorAgentSource?.agents.isEmpty == false
+    let hasDeviceMetadata = SignalASIDesktopDeviceMetadata.from(payload: payload) != nil
     let suppliedManifestVersion = payload.int("manifest_version")
     let manifestVersion = suppliedManifestVersion > 0
       ? suppliedManifestVersion
       : payload.int("capability_manifest_version")
     let hasManifestVersion = type == "capability_manifest" && manifestVersion > 0
-    guard hasConnectorAgents || type == "pairing_confirmed" || hasManifestVersion else { return false }
+    guard hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else { return false }
 
     var link = incomingLink
+    let deviceDesktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    if !deviceDesktopId.isEmpty {
+      _ = store.updateDesktopDeviceMetadata(desktopId: deviceDesktopId, payload: payload)
+      link = serverLink(for: "", payload: ["desktop_id": deviceDesktopId]) ?? link
+    }
     if type == "pairing_confirmed" {
       let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
       let access = SignalASILinkProtocol.pairingAccess(from: payload.dictionary("pairing_access"))
@@ -6188,6 +6236,7 @@ final class MessageCoordinator: ObservableObject {
         store.markServerPaired(desktopId: desktopId, access: access)
         link = serverLink(for: "", payload: ["desktop_id": desktopId]) ?? link
       }
+      _ = store.updatePairedDesktopDevice(from: payload, link: link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
       requestCapabilityManifestRefresh(force: true)

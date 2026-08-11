@@ -249,17 +249,25 @@ enum SignalASIContactExchange {
     now: Date = Date()
   ) -> [String: Any] {
     let inboxTopic = localInboxTopic(serverLinks: serverLinks)
+    let device = SignalASIDeviceIdentity.current(profile: profile)
     return [
       "type": contactType,
       "version": version,
-      "name": profile.name.ifBlank("Me"),
+      "name": device.displayName,
+      "display_name": device.displayName,
       "signalasi_id": profile.signalASIId,
       "identity_public_key": profile.identityPublicKey,
       "identity_fingerprint": profile.identityFingerprint,
       "mqtt_topic": inboxTopic,
       "mqtt_inbox_topic": inboxTopic,
       "signal_bundle_ref": "mqtt:\(inboxTopic):\(profile.signalASIId)",
-      "device_id": "ios-\(profile.identityFingerprint.prefix(16))",
+      "device_id": device.deviceId,
+      "device_name": device.deviceName,
+      "device_manufacturer": device.manufacturer,
+      "device_model": device.model,
+      "platform": "ios",
+      "platform_version": device.platformVersion,
+      "profile_name": device.profileName,
       "created_at": Int64(now.timeIntervalSince1970 * 1000)
     ]
   }
@@ -400,6 +408,13 @@ enum SignalASIContactExchange {
       desktopId: desktopId(from: object),
       desktopName: desktopName(from: object),
       deviceId: object.string("device_id"),
+      deviceName: object.string("device_name"),
+      deviceManufacturer: object.string("device_manufacturer")
+        .ifBlank(object.string("manufacturer")),
+      deviceModel: object.string("device_model")
+        .ifBlank(object.string("model")),
+      devicePlatformVersion: object.string("platform_version"),
+      deviceProfileName: object.string("profile_name"),
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
       setupNextStep: object.string("setup_next_step").ifBlank(object.string("setup")),
       desktopAccessProfile: object.string("desktop_access_profile")
