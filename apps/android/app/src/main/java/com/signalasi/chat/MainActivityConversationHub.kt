@@ -272,6 +272,18 @@ private fun MainActivity.renderConversationHubContacts(body: LinearLayout, query
         R.drawable.ic_tab_contacts
     ) { showFriendRequestsDialog() })
     body.addView(conversationHubActionRow(
+        getString(R.string.add_cloud_model_title),
+        getString(R.string.add_cloud_model_subtitle),
+        R.drawable.ic_avatar_cloud_model
+    ) {
+        dialog.dismiss()
+        showCloudProviderPage()
+        setFeatureBackAction {
+            hideFeaturePage()
+            showConversationHub(ConversationHubTab.CONTACTS)
+        }
+    })
+    body.addView(conversationHubActionRow(
         getString(R.string.conversation_hub_scan_add),
         getString(R.string.conversation_hub_scan_add_subtitle),
         R.drawable.ic_scan
