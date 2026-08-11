@@ -13,8 +13,7 @@ enum AgentAttachmentKnowledgeImporter {
     attachments
       .filter { attachment in
         let mime = attachment.mimeType.lowercased()
-        return !mime.hasPrefix("image/") &&
-          !mime.hasPrefix("video/") &&
+        return !mime.hasPrefix("video/") &&
           !mime.hasPrefix("audio/")
       }
       .map {
@@ -59,25 +58,51 @@ enum AgentAttachmentKnowledgeImporter {
   private static func extractText(from attachment: AgentAttachmentKnowledgeInput) -> String? {
     let extensionName = URL(fileURLWithPath: attachment.displayName).pathExtension.lowercased()
     let result: String?
-    switch extensionName {
-    case "pdf":
-      result = PDFDocument(data: attachment.data).map { document in
-        (0..<document.pageCount)
-          .compactMap { document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) }
-          .filter { !$0.isEmpty }
-          .joined(separator: "\n\n")
+    if isImage(attachment, extensionName: extensionName) {
+      result = extractImageText(from: attachment)
+    } else {
+      switch extensionName {
+      case "pdf":
+        result = PDFDocument(data: attachment.data).map { document in
+          (0..<document.pageCount)
+            .compactMap { document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        }
+      case "docx":
+        result = try? AgentOfficeDocumentExtractor.extractDocx(attachment.data)
+      case "xlsx":
+        result = try? AgentOfficeDocumentExtractor.extractXlsx(attachment.data)
+      case "pptx":
+        result = try? AgentOfficeDocumentExtractor.extractPptx(attachment.data)
+      default:
+        result = readableText(from: attachment.data)
       }
-    case "docx":
-      result = try? AgentOfficeDocumentExtractor.extractDocx(attachment.data)
-    case "xlsx":
-      result = try? AgentOfficeDocumentExtractor.extractXlsx(attachment.data)
-    case "pptx":
-      result = try? AgentOfficeDocumentExtractor.extractPptx(attachment.data)
-    default:
-      result = readableText(from: attachment.data)
     }
     let clean = result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return clean.isEmpty ? nil : String(clean.prefix(AgentKnowledgeImportPolicy.maxExtractedCharacters))
+  }
+
+  private static func extractImageText(from attachment: AgentAttachmentKnowledgeInput) -> String? {
+    guard Int64(attachment.data.count) <= AgentIOSWebMediaNativeToolCatalog.maxOcrSourceBytes else {
+      return nil
+    }
+    let content = AgentIOSWebMediaContent(
+      contentURI: "agent-attachment:\(attachment.id)",
+      contentType: attachment.mimeType.ifBlank("image/unknown"),
+      displayName: attachment.displayName,
+      data: attachment.data
+    )
+    let request = AgentIOSWebMediaOCRRequest(
+      contentURI: content.contentURI,
+      sourceKind: "image",
+      scriptHint: "auto",
+      maxSourceBytes: AgentIOSWebMediaNativeToolCatalog.maxOcrSourceBytes,
+      timeoutMillis: AgentIOSWebMediaNativeToolCatalog.maxToolTimeoutMillis
+    )
+    return try? AgentIOSVisionTextOCRRecognizer()
+      .recognize(content: content, request: request)
+      .text
   }
 
   private static func readableText(from data: Data) -> String? {
@@ -109,9 +134,17 @@ enum AgentAttachmentKnowledgeImporter {
     }
   }
 
+  private static func isImage(_ attachment: AgentAttachmentKnowledgeInput, extensionName: String) -> Bool {
+    attachment.mimeType.lowercased().hasPrefix("image/") || imageExtensions.contains(extensionName)
+  }
+
   private static func knowledgeTags(for attachment: AgentAttachmentKnowledgeInput) -> [String] {
     let extensionName = URL(fileURLWithPath: attachment.displayName).pathExtension.lowercased()
     return ["agent_attachment", extensionName, attachment.mimeType.lowercased()]
       .filter { !$0.isEmpty }
   }
+
+  private static let imageExtensions: Set<String> = [
+    "apng", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"
+  ]
 }
