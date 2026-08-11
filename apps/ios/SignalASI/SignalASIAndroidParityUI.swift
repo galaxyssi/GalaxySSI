@@ -27,29 +27,29 @@ struct AgentHomeView: View {
   @State private var retryingAgentTaskIDs: Set<String> = []
   @State private var timelineActionTaskIDsInFlight: Set<String> = []
   @State private var pendingPrimaryActionTaskID: String?
-  @State private var fileImporterPresented = false
+  @State var fileImporterPresented = false
   @State var cameraPickerPresented = false
-  @State private var scanShortcutActive = false
+  @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
-  @State private var agentSessionsShortcutActive = false
+  @State var agentSessionsShortcutActive = false
   @State private var agentSettingsShortcutActive = false
-  @State private var agentPermissionsShortcutActive = false
-  @State private var agentModelSelectionShortcutActive = false
-  @State private var agentNativeToolsShortcutActive = false
-  @State private var agentMemoryShortcutActive = false
-  @State private var agentKnowledgeShortcutActive = false
-  @State private var agentScreenContextShortcutActive = false
-  @State private var agentInsightsShortcutActive = false
+  @State var agentPermissionsShortcutActive = false
+  @State var agentModelSelectionShortcutActive = false
+  @State var agentNativeToolsShortcutActive = false
+  @State var agentMemoryShortcutActive = false
+  @State var agentKnowledgeShortcutActive = false
+  @State var agentScreenContextShortcutActive = false
+  @State var agentInsightsShortcutActive = false
   @State private var chatListShortcutActive = false
   @State private var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
   @State var scanStatus = ""
   @State var scanStatusIsError = false
-  @State private var recentTasksShortcutActive = false
-  @State private var recentTaskForDetails: AgentTaskRecord?
+  @State var recentTasksShortcutActive = false
+  @State var recentTaskForDetails: AgentTaskRecord?
   @State var attachmentError = ""
-  @State private var selectedMessageForDetails: ChatMessage?
-  @State private var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
+  @State var selectedMessageForDetails: ChatMessage?
+  @State var homeActionEditorSelection: SignalASIAgentRuntimeActionSelection?
   @State var composerFocusRequest = 0
   @State private var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State var modelSelection = AgentModelSelection()
@@ -71,7 +71,7 @@ struct AgentHomeView: View {
   @State private var approvalActionsInFlight: Set<String> = []
   @State private var cancellingRemoteTaskIDs: Set<String> = []
   @State private var cancellingVoiceRunIDs: Set<String> = []
-  @State private var pendingHighRiskApprovalTask: AgentTaskRecord?
+  @State var pendingHighRiskApprovalTask: AgentTaskRecord?
   @State private var homeTaskPendingDeletion: AgentTaskRecord?
   @State private var agentClipboardContext = AgentClipboardContext()
   @State private var agentDeviceStatusContext = AgentDeviceStatusContext()
@@ -1766,7 +1766,7 @@ struct AgentHomeView: View {
     )
   }
 
-  private func openMainTab(_ tab: SignalASIMainTab) {
+  func openMainTab(_ tab: SignalASIMainTab) {
     if let onNavigateToMainTab {
       onNavigateToMainTab(tab)
       return
@@ -2117,7 +2117,7 @@ struct AgentHomeView: View {
     }
   }
 
-  private var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
+  var agentScreenSnapshot: SignalASIAgentScreenContextSnapshot {
     makeAgentScreenSnapshot(snapshotAgeMillis: agentScreenContextSnapshotAgeMillis)
   }
 
@@ -2189,7 +2189,7 @@ struct AgentHomeView: View {
     composerFocusRequest += 1
   }
 
-  private func cycleAgentPermissionMode() {
+  func cycleAgentPermissionMode() {
     let modes = AgentPermissionMode.allCases
     guard let index = modes.firstIndex(of: store.agentSafetySettings.permissionMode) else {
       store.updateAgentSafetySettings { $0.permissionMode = .askBeforeAction }
@@ -2258,228 +2258,9 @@ struct AgentHomeView: View {
     refreshAgentRuntimeAuditRecords()
   }
 
-  private func createAgentConversation() {
+  func createAgentConversation() {
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
-  }
-
-  private func installAgentHomeTapBridge() {
-    AgentIOSAgentHomeActionBridge.shared.installTapHandler { action in
-      applyAgentHomeTapAction(action)
-    }
-  }
-
-  private func installAgentHomeLongPressBridge() {
-    AgentIOSAgentHomeActionBridge.shared.installLongPressHandler { action in
-      applyAgentHomeLongPressAction(action)
-    }
-  }
-
-  private func installAgentHomeBackBridge() {
-    AgentIOSAgentHomeActionBridge.shared.installBackHandler { action in
-      applyAgentHomeBackAction(action)
-    }
-  }
-
-  private func applyAgentHomeTapAction(_ action: AgentAction) -> AgentActionResult {
-    let bounds = action.parameters["bounds"] ?? ""
-    let matchedLabel = action.parameters["matched_label"] ?? ""
-    let resolvedBounds = bounds.isEmpty
-      ? agentScreenSnapshot.screen.clickableElements.first { $0.label == matchedLabel }?.bounds ?? ""
-      : bounds
-    let prefix = "logical://AgentHomeView/"
-    guard resolvedBounds.hasPrefix(prefix) else {
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.tap.unsupported_target",
-          "This Agent action does not target a SignalASI home control."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_home",
-          "completion_verified": "false",
-          "ios_boundary": "owned_agent_home_only"
-        ]
-      )
-    }
-    let targetID = String(resolvedBounds.dropFirst(prefix.count))
-    guard !targetID.isEmpty, !targetID.contains("/") else {
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.tap.invalid_target",
-          "The SignalASI home control target is invalid."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_home",
-          "completion_verified": "false"
-        ]
-      )
-    }
-
-    switch targetID {
-    case "new-session":
-      createAgentConversation()
-    case "sessions":
-      agentSessionsShortcutActive = true
-    case "scan":
-      scanShortcutActive = true
-    case "take-photo":
-      openCameraAttachmentPicker()
-    case "add-file":
-      fileImporterPresented = true
-    case "permissions":
-      agentPermissionsShortcutActive = true
-    case "model-selection":
-      agentModelSelectionShortcutActive = true
-    case "native-tools":
-      agentNativeToolsShortcutActive = true
-    case "memory":
-      agentMemoryShortcutActive = true
-    case "knowledge":
-      agentKnowledgeShortcutActive = true
-    case "screen-context":
-      agentScreenContextShortcutActive = true
-    case "refresh-screen-context":
-      refreshAgentScreenContext()
-    case "insights":
-      agentInsightsShortcutActive = true
-    case "recent-tasks":
-      recentTaskForDetails = nil
-      recentTasksShortcutActive = true
-    case "permission-mode":
-      cycleAgentPermissionMode()
-    case "task-execution-mode":
-      let modes = AgentTaskExecutionMode.allCases
-      if let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) {
-        store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
-      } else {
-        store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
-      }
-    case "high-risk-guard":
-      store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
-    case "memory-capture":
-      store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
-    case "execution-paused":
-      store.updateAgentSafetySettings { $0.executionPaused.toggle() }
-    case "settings", "launch-settings":
-      openMainTab(.settings)
-    case "messages", "launch-messages":
-      openMainTab(.messages)
-    case "contacts", "launch-contacts":
-      openMainTab(.contacts)
-    case "discover", "launch-discover":
-      openMainTab(.discover)
-    case "agent", "launch-agent":
-      break
-    default:
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.tap.unknown_target",
-          "This SignalASI home control is not available."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_home",
-          "target_id": targetID,
-          "completion_verified": "false"
-        ]
-      )
-    }
-
-    actionTrayPresented = false
-    return AgentActionResult(
-      actionId: action.id,
-      success: true,
-      message: t(
-        "signalasi.agent.tap.completed",
-        "SignalASI home control activated."
-      ),
-      metadata: [
-        "platform": "ios",
-        "surface": "signalasi_agent_home",
-        "target_id": targetID,
-        "completion_verified": "true"
-      ]
-    )
-  }
-
-  private func applyAgentHomeLongPressAction(_ action: AgentAction) -> AgentActionResult {
-    let tapResult = applyAgentHomeTapAction(action)
-    var metadata = tapResult.metadata
-    metadata["interaction"] = "long_press"
-    return AgentActionResult(
-      actionId: tapResult.actionId,
-      success: tapResult.success,
-      message: tapResult.success
-        ? t("signalasi.agent.long_press.completed", "SignalASI home control long-pressed.")
-        : tapResult.message,
-      metadata: metadata
-    )
-  }
-
-  private func applyAgentHomeBackAction(_ action: AgentAction) -> AgentActionResult {
-    let dismissedSurface: String?
-    if actionTrayPresented {
-      actionTrayPresented = false
-      dismissedSurface = "action_tray"
-    } else if scanShortcutActive {
-      scanShortcutActive = false
-      dismissedSurface = "scan_sheet"
-    } else if cameraPickerPresented {
-      cameraPickerPresented = false
-      dismissedSurface = "camera_sheet"
-    } else if fileImporterPresented {
-      fileImporterPresented = false
-      dismissedSurface = "file_importer"
-    } else if selectedMessageForDetails != nil {
-      selectedMessageForDetails = nil
-      dismissedSurface = "message_details"
-    } else if homeActionEditorSelection != nil {
-      homeActionEditorSelection = nil
-      dismissedSurface = "action_editor"
-    } else if pendingHighRiskApprovalTask != nil {
-      pendingHighRiskApprovalTask = nil
-      dismissedSurface = "high_risk_confirmation"
-    } else {
-      dismissedSurface = nil
-    }
-
-    guard let dismissedSurface else {
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.back.nothing_to_dismiss",
-          "There is no open SignalASI Agent surface to dismiss."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_home",
-          "completion_verified": "false"
-        ]
-      )
-    }
-    return AgentActionResult(
-      actionId: action.id,
-      success: true,
-      message: t(
-        "signalasi.agent.back.completed",
-        "SignalASI Agent surface dismissed."
-      ),
-      metadata: [
-        "platform": "ios",
-        "surface": "signalasi_agent_home",
-        "dismissed_surface": dismissedSurface,
-        "completion_verified": "true"
-      ]
-    )
   }
 
   func t(_ key: String, _ fallback: String) -> String {
