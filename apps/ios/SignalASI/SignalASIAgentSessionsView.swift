@@ -633,12 +633,12 @@ struct SignalASIAgentSessionsView: View {
   }
 }
 
-private enum AgentSessionEditMode {
+enum AgentSessionEditMode {
   case rename
   case summary
 }
 
-private struct AgentSessionEditDraft: Identifiable {
+struct AgentSessionEditDraft: Identifiable {
   var id: String
   var mode: AgentSessionEditMode
   var sheetTitle: String
@@ -859,7 +859,7 @@ private struct AgentSessionActionRow: View {
   }
 }
 
-private struct AgentSessionTextEditSheet: View {
+struct AgentSessionTextEditSheet: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   var title: String
@@ -918,7 +918,7 @@ private struct AgentSessionTextEditSheet: View {
   }
 }
 
-private struct AgentSessionContextPolicySheet: View {
+struct AgentSessionContextPolicySheet: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   var session: AgentConversation
@@ -982,7 +982,7 @@ private struct AgentSessionContextPolicySheet: View {
   }
 }
 
-private struct AgentSessionDetailsSheet: View {
+struct AgentSessionDetailsSheet: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   var session: AgentConversation
