@@ -313,7 +313,14 @@ struct AgentIOSSystemNativeToolExecutor {
       ),
       nowMillis: max(0, nowMillis())
     )
-    return annotatedSystemResult(result, invocation: invocation)
+    return annotatedSystemResult(
+      localizedDownloadResult(
+        result,
+        toolId: AgentIOSSystemNativeToolCatalog.downloadEnqueue,
+        invocation: invocation
+      ),
+      invocation: invocation
+    )
   }
 
   private func downloadQuery(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -322,7 +329,14 @@ struct AgentIOSSystemNativeToolExecutor {
       id: id,
       nowMillis: max(0, nowMillis())
     )
-    return annotatedSystemResult(result, invocation: invocation)
+    return annotatedSystemResult(
+      localizedDownloadResult(
+        result,
+        toolId: AgentIOSSystemNativeToolCatalog.downloadQuery,
+        invocation: invocation
+      ),
+      invocation: invocation
+    )
   }
 
   private func downloadRemove(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -331,7 +345,14 @@ struct AgentIOSSystemNativeToolExecutor {
       id: id,
       nowMillis: max(0, nowMillis())
     )
-    return annotatedSystemResult(result, invocation: invocation)
+    return annotatedSystemResult(
+      localizedDownloadResult(
+        result,
+        toolId: AgentIOSSystemNativeToolCatalog.downloadRemove,
+        invocation: invocation
+      ),
+      invocation: invocation
+    )
   }
 
   private func devicePolicyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -417,6 +438,58 @@ struct AgentIOSSystemNativeToolExecutor {
     result.metadata["tool_id"] = .string(invocation.descriptor.id)
     result.metadata["platform"] = result.metadata["platform"] ?? .string("ios")
     return result
+  }
+
+  private func localizedDownloadResult(
+    _ result: AgentNativeToolExecutionResult,
+    toolId: String,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    guard result.isSuccess else { return result }
+    var localized = result
+    let chinese = LanguagePolicySettings.resolve(
+      invocation.context.attributes["response_language"] ?? ""
+    ).hasPrefix("zh")
+    switch toolId {
+    case AgentIOSSystemNativeToolCatalog.downloadEnqueue:
+      localized.message = chinese
+        ? "\u{5DF2}\u{5F00}\u{59CB}\u{4E0B}\u{8F7D}\u{3002}\u{5B8C}\u{6210}\u{540E}\u{6587}\u{4EF6}\u{4F1A}\u{4FDD}\u{5B58}\u{5230} SignalASI \u{4E0B}\u{8F7D}\u{FF0C}\u{5E76}\u{663E}\u{793A}\u{5728}\u{5F53}\u{524D}\u{4F1A}\u{8BDD}\u{4E2D}\u{3002}"
+        : "Download started. When it finishes, the file will be saved in SignalASI Downloads and shown in this conversation."
+    case AgentIOSSystemNativeToolCatalog.downloadQuery:
+      let status = downloadStatusLabel(
+        result.output["status"]?.intValue ?? 0,
+        chinese: chinese
+      )
+      let downloaded = result.output["bytes_downloaded"]?.intValue ?? 0
+      let total = result.output["total_bytes"]?.intValue ?? 0
+      let progress = total > 0
+        ? " (\(min(100, max(0, downloaded * 100 / total)))%)"
+        : ""
+      localized.message = chinese
+        ? "\u{4E0B}\u{8F7D}\u{72B6}\u{6001}\u{FF1A}\(status)\(progress)\u{3002}"
+        : "Download status: \(status)\(progress)."
+    case AgentIOSSystemNativeToolCatalog.downloadRemove:
+      let removed = result.output["removed"]?.intValue ?? 0
+      localized.message = chinese
+        ? (removed > 0
+          ? "\u{5DF2}\u{5220}\u{9664}\u{4E0B}\u{8F7D}\u{8BB0}\u{5F55}\u{548C}\u{6587}\u{4EF6}\u{3002}"
+          : "\u{6CA1}\u{6709}\u{627E}\u{5230}\u{53EF}\u{5220}\u{9664}\u{7684}\u{4E0B}\u{8F7D}\u{3002}")
+        : (removed > 0 ? "Download record and file removed." : "No removable download was found.")
+    default:
+      break
+    }
+    return localized
+  }
+
+  private func downloadStatusLabel(_ status: Int64, chinese: Bool) -> String {
+    switch status {
+    case 1: return chinese ? "\u{7B49}\u{5F85}\u{4E2D}" : "pending"
+    case 2: return chinese ? "\u{4E0B}\u{8F7D}\u{4E2D}" : "downloading"
+    case 4: return chinese ? "\u{5DF2}\u{6682}\u{505C}" : "paused"
+    case 8: return chinese ? "\u{5DF2}\u{5B8C}\u{6210}" : "complete"
+    case 16: return chinese ? "\u{5DF2}\u{5931}\u{8D25}" : "failed"
+    default: return chinese ? "\u{72B6}\u{6001}\u{672A}\u{77E5}" : "unknown"
+    }
   }
 
   private func dialHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
