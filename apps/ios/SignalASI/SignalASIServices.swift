@@ -6173,14 +6173,20 @@ final class MessageCoordinator: ObservableObject {
     }
     let connectorAgentSource = SignalASIContactExchange.connectorAgentSource(from: payload)
     let hasConnectorAgents = connectorAgentSource?.agents.isEmpty == false
+    let hasDeviceMetadata = SignalASIDesktopDeviceMetadata.from(payload: payload) != nil
     let suppliedManifestVersion = payload.int("manifest_version")
     let manifestVersion = suppliedManifestVersion > 0
       ? suppliedManifestVersion
       : payload.int("capability_manifest_version")
     let hasManifestVersion = type == "capability_manifest" && manifestVersion > 0
-    guard hasConnectorAgents || type == "pairing_confirmed" || hasManifestVersion else { return false }
+    guard hasConnectorAgents || hasDeviceMetadata || type == "pairing_confirmed" || hasManifestVersion else { return false }
 
     var link = incomingLink
+    let deviceDesktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    if !deviceDesktopId.isEmpty {
+      _ = store.updateDesktopDeviceMetadata(desktopId: deviceDesktopId, payload: payload)
+      link = serverLink(for: "", payload: ["desktop_id": deviceDesktopId]) ?? link
+    }
     if type == "pairing_confirmed" {
       let desktopId = payload.string("desktop_id").ifBlank(link?.desktopId ?? "")
       let access = SignalASILinkProtocol.pairingAccess(from: payload.dictionary("pairing_access"))
