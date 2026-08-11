@@ -13,6 +13,7 @@ struct SignalASIConversationComposer: View {
 
   @StateObject private var voiceRecorder = SignalASIChatVoiceRecorder()
   @State private var emojiPanelPresented = false
+  @State private var voiceMode = false
 
   private var canSend: Bool {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
@@ -62,26 +63,28 @@ struct SignalASIConversationComposer: View {
       }
       .composerIconButton(label: t("agent_attachment_add_file", "Add attachment"))
 
-      TextField(t("signalasi.message.input", "Message"), text: $draft)
-        .padding(.horizontal, 12)
-        .frame(minHeight: 36)
-        .background(Color.signalASISearchBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
-        )
+      if voiceMode {
+        voiceModeInput
+      } else {
+        textInput
+      }
 
       Button { emojiPanelPresented.toggle() } label: {
         Image(systemName: "face.smiling")
       }
       .composerIconButton(label: t("signalasi.message.emoji", "Emoji"))
 
-      Button {} label: {
-        Image(systemName: "mic")
+      Button {
+        voiceMode.toggle()
+        emojiPanelPresented = false
+      } label: {
+        Image(systemName: voiceMode ? "keyboard" : "mic")
       }
-      .composerIconButton(label: t("agent_voice_button", "Hold to talk"))
-      .simultaneousGesture(holdToTalkGesture)
+      .composerIconButton(
+        label: voiceMode
+          ? t("signalasi.message.input", "Message")
+          : t("agent_voice_button", "Hold to talk")
+      )
 
       Button(action: onSend) {
         Image(systemName: "arrow.up")
@@ -92,6 +95,36 @@ struct SignalASIConversationComposer: View {
       .disabled(!canSend)
       .accessibilityLabel(Text(t("signalasi.common.send", "Send")))
     }
+  }
+
+  private var textInput: some View {
+    TextField(t("signalasi.message.input", "Message"), text: $draft)
+      .padding(.horizontal, 12)
+      .frame(minHeight: 36)
+      .background(Color.signalASISearchBackground)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+      )
+  }
+
+  private var voiceModeInput: some View {
+    Button {} label: {
+      Text(t("agent_voice_button", "Hold to talk"))
+        .font(.system(size: 15, weight: .medium))
+        .foregroundColor(.signalASITextPrimary)
+        .frame(maxWidth: .infinity, minHeight: 36)
+        .background(Color.signalASISearchBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+        )
+    }
+    .buttonStyle(.plain)
+    .simultaneousGesture(holdToTalkGesture)
+    .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
   }
 
   private var voiceCaptureSurface: some View {
