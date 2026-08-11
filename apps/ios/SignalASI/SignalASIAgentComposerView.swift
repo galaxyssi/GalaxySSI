@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignalASIAgentComposerView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @Environment(\.scenePhase) private var scenePhase
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
   @Binding var voiceTranscriptionPending: Bool
@@ -109,6 +110,13 @@ struct SignalASIAgentComposerView: View {
     .onChange(of: focusRequest) { _ in
       actionTrayPresented = false
       inputFocused = true
+    }
+    .onChange(of: scenePhase) { phase in
+      guard phase != .active,
+            holdToTalk.isPending || holdToTalk.isRecording else { return }
+      voiceTranscriptionPending = false
+      onVoiceCancelled()
+      holdToTalk.cancelFromView()
     }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
