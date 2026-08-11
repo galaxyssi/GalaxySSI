@@ -295,21 +295,24 @@ enum SignalASIGlobalAutonomousModelRuntime {
     nowMillis: Int64
   ) -> SignalASIGlobalAutonomousExecutionResult {
     var failed = run
+    let retry = action.attemptCount < 3
     failed.actions = run.actions.map { candidate in
       guard candidate.id == action.id else { return candidate }
       var copy = candidate
-      copy.status = .failed
+      copy.status = retry ? .pending : .failed
       copy.leaseExpiresAtMillis = 0
       copy.sourceMessageId = 0
       copy.lastError = reason
       copy.result = reason
-      copy.verificationStatus = .insufficient
-      copy.completedAtMillis = nowMillis
+      copy.verificationStatus = retry ? .pending : .insufficient
+      copy.completedAtMillis = retry ? 0 : nowMillis
       return copy
     }
     failed.status = GlobalAutonomousRunPolicy.terminalStatus(failed.actions) ?? .waitingForResource
     failed.lastError = reason
-    failed.nextAttemptAtMillis = 0
+    failed.nextAttemptAtMillis = retry
+      ? nowMillis + GlobalAutonomousRunPolicy.retryDelayMillis(attemptCount: action.attemptCount)
+      : 0
     failed.leaseExpiresAtMillis = 0
     failed.updatedAtMillis = nowMillis
     store.upsertAutonomousRun(failed)
