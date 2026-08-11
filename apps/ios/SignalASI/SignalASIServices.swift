@@ -909,11 +909,16 @@ final class MessageCoordinator: ObservableObject {
         dataB64 = attachment.data.base64EncodedString()
         remainingInlineBytes -= attachment.data.count
       }
+      let localAudioURL = URL(string: attachment.sourceDescription)
+        .flatMap { url in
+          url.isFileURL && FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
       return AgentRichBlock(
         id: attachment.id,
-        type: attachment.isImage ? .image : .file,
+        type: attachment.isImage ? .image : attachment.isAudio ? .audio : .file,
         title: attachment.displayName,
         text: attachment.isImage ? "" : attachment.humanSize,
+        uri: attachment.isAudio ? localAudioURL?.absoluteString ?? "" : "",
         dataB64: dataB64,
         mimeType: attachment.mimeType,
         fallbackText: attachment.displayName,

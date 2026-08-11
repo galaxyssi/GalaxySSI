@@ -3910,6 +3910,7 @@
 "agent_safety_task_execution_value" = "任务执行方式：%@";
 "signalasi.message.yesterday" = "昨天";
 "signalasi.message.emoji" = "表情";
+"signalasi.message.voice" = "语音消息";
 "signalasi.profile.avatar" = "头像";
 "signalasi.profile.avatar_subtitle" = "显示在您发出的消息旁";
 "signalasi.profile.avatar_edit" = "更换头像";
