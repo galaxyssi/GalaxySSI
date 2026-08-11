@@ -70,19 +70,30 @@ extension MessageCoordinator {
       "sender": "system",
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
-    guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
+    let wire: Data?
+    if SignalASISignalEngine.isAvailable {
+      if var encrypted = signalEngine.encrypt(ackPayload, remoteName: link.desktopId) {
+        encrypted["message_id"] = receivedMessageId
+        encrypted["_client_route_id"] = link.routes.clientRouteId
+        wire = try? SignalASILinkProtocol.jsonData(encrypted)
+      } else {
+        wire = nil
+      }
+    } else if let envelope = try? SignalASILinkProtocol.makeEnvelope(
       payload: ackPayload,
       sourceId: store.profile.signalASIId,
       targetId: link.desktopId
-    ),
-      let wire = try? SignalASILinkProtocol.jsonData([
+    ) {
+      wire = try? SignalASILinkProtocol.jsonData([
         "scheme": "signalasi-link-ios-preview",
         "from": store.profile.signalASIId,
         "to": link.desktopId,
         "envelope": envelope
-      ]) else {
-      return
+      ])
+    } else {
+      wire = nil
     }
+    guard let wire else { return }
     Task {
       _ = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire)
     }

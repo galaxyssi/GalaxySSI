@@ -108,22 +108,26 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
 
   private let defaults: UserDefaults
   private let key: String
+  private let secrets: SignalASISecretStore
   private let lock = NSLock()
 
   init(
     defaults: UserDefaults = .standard,
-    key: String = UserDefaultsAgentTranscriptEntryStore.defaultKey
+    key: String = UserDefaultsAgentTranscriptEntryStore.defaultKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
     self.defaults = defaults
     self.key = key
+    self.secrets = secrets
     normalizePersistedState()
   }
 
   static func destroyPersistentStore(
     defaults: UserDefaults = .standard,
-    key: String = UserDefaultsAgentTranscriptEntryStore.defaultKey
+    key: String = UserDefaultsAgentTranscriptEntryStore.defaultKey,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
-    defaults.removeObject(forKey: key)
+    SignalASIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
   }
 
   @discardableResult
@@ -244,7 +248,7 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
 
   func clear() {
     locked {
-      defaults.removeObject(forKey: key)
+      SignalASIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
     }
   }
 
@@ -422,17 +426,27 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
   }
 
   private func load() -> Document {
-    guard let data = defaults.data(forKey: key),
+    let encryptedData = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: key,
+      secrets: secrets
+    )
+    let data = encryptedData ?? defaults.data(forKey: key)
+    guard let data,
           let decoded = try? JSONDecoder().decode(Document.self, from: data) else {
       return Document(version: 1, nextSequence: 1, rows: [], chunks: [])
     }
     let nextSequence = max(decoded.nextSequence, (decoded.rows.map(\.sequence).max() ?? 0) + 1)
-    return Document(
+    let normalized = Document(
       version: 1,
       nextSequence: nextSequence,
       rows: Self.orderedRows(decoded.rows),
       chunks: Self.orderedChunks(decoded.chunks)
     )
+    if encryptedData == nil {
+      persist(normalized)
+    }
+    return normalized
   }
 
   private func persist(_ document: Document) {
@@ -443,7 +457,12 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
       chunks: Self.orderedChunks(document.chunks)
     )
     if let data = try? JSONEncoder().encode(normalized) {
-      defaults.set(data, forKey: key)
+      _ = SignalASIEncryptedUserDefaultsStore.write(
+        data,
+        defaults: defaults,
+        key: key,
+        secrets: secrets
+      )
     }
   }
 
