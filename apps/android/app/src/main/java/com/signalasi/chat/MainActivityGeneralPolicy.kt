@@ -697,7 +697,6 @@ internal fun MainActivity.validatedInternetAvailable(): Boolean {
 }
 
 internal fun MainActivity.renderControlCenterAppServicesPage() {
-    val contactCount = storedContacts().size
     showControlCenterFeature(
         getString(R.string.cc_app_services_page_title),
         ControlCenterPageSpec(
@@ -706,7 +705,6 @@ internal fun MainActivity.renderControlCenterAppServicesPage() {
                     getString(R.string.cc_section_core_modules),
                     listOf(
                         ControlCenterRowSpec("apps.messages", getString(R.string.cc_messages_title), getString(R.string.cc_messages_subtitle), R.drawable.ic_tab_chat, getString(R.string.cc_status_normal), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("apps.contacts", getString(R.string.cc_contacts_title), getString(R.string.cc_contacts_subtitle), R.drawable.ic_tab_contacts_outline, contactCount.toString(), ControlCenterTone.BLUE),
                         ControlCenterRowSpec("apps.discover", getString(R.string.cc_discover_title), getString(R.string.cc_discover_subtitle), R.drawable.ic_tab_discover, "", ControlCenterTone.VIOLET)
                     )
                 ),
