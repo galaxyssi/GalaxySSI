@@ -62,6 +62,11 @@ struct AgentStagedAttachment: Codable, Equatable {
   }
 }
 
+struct AgentRestoredAttachment: Equatable {
+  var attachment: SignalASIDraftAttachment
+  var staged: AgentStagedAttachment
+}
+
 enum AgentAttachmentWorkspaceStagingError: LocalizedError, Equatable {
   case invalidTurnId
   case unsafePath
@@ -146,6 +151,29 @@ enum AgentAttachmentWorkspaceStager {
   static let maximumAttachmentBytes: Int64 = 256 * 1024 * 1024
   static let maximumTurnBytes: Int64 = 10 * 64 * 1024 * 1024
 
+  private struct AttachmentManifest: Codable {
+    var version: Int
+    var attachments: [AttachmentManifestRecord]
+  }
+
+  private struct AttachmentManifestRecord: Codable {
+    var attachmentId: String
+    var name: String
+    var relativePath: String
+    var mimeType: String
+    var sizeBytes: Int64
+    var sha256: String
+
+    enum CodingKeys: String, CodingKey {
+      case attachmentId = "attachment_id"
+      case name
+      case relativePath = "relative_path"
+      case mimeType = "mime_type"
+      case sizeBytes = "size_bytes"
+      case sha256
+    }
+  }
+
   static func stage(
     conversationId: String,
     turnId: String,
@@ -206,12 +234,143 @@ enum AgentAttachmentWorkspaceStager {
           )
         )
       }
+      try writeManifest(
+        directory: inputDirectory,
+        attachments: attachments,
+        staged: staged,
+        fileManager: fileManager
+      )
       return staged
+    }
+  }
+
+  static func restore(
+    conversationId: String,
+    turnId: String,
+    blocks: [AgentRichBlock],
+    projectRoot: URL? = nil,
+    fileManager: FileManager = .default
+  ) -> [AgentRestoredAttachment] {
+    guard turnId.range(of: safeIdPattern, options: .regularExpression) != nil,
+          !blocks.isEmpty else {
+      return []
+    }
+    let workspaceId = AgentWorkspaceScope.id(conversationId: conversationId)
+    return AgentWorkspaceScope.withLock(workspaceId: workspaceId) {
+      guard let root = try? (projectRoot ?? defaultProjectRoot(fileManager: fileManager)) else {
+        return []
+      }
+      let workspace = root.appendingPathComponent(workspaceId, isDirectory: true).standardizedFileURL
+      let inputDirectory = workspace
+        .appendingPathComponent("inputs", isDirectory: true)
+        .appendingPathComponent(turnId, isDirectory: true)
+        .standardizedFileURL
+      var isDirectory: ObjCBool = false
+      guard inputDirectory.path.hasPrefix(workspace.path + pathSeparator),
+            fileManager.fileExists(atPath: inputDirectory.path, isDirectory: &isDirectory),
+            isDirectory.boolValue else {
+        return []
+      }
+      var unused = readManifest(directory: inputDirectory, fileManager: fileManager)
+      guard !unused.isEmpty else { return [] }
+      return blocks
+        .filter { attachmentTypes.contains($0.type) && $0.metadata["source"] == "user_attachment" }
+        .prefix(maximumRestoredAttachments)
+        .compactMap { block in
+          let recordIndex = unused.firstIndex { record in
+            !block.id.isEmpty && record.attachmentId == block.id
+          } ?? unused.firstIndex { record in
+            record.name.caseInsensitiveCompare(block.title) == .orderedSame
+          }
+          guard let recordIndex else { return nil }
+          let record = unused.remove(at: recordIndex)
+          let expectedPrefix = "inputs/\(turnId)/"
+          guard record.attachmentId.count <= 256,
+                record.relativePath.hasPrefix(expectedPrefix),
+                record.relativePath.range(of: "^inputs/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/[^/]+$", options: .regularExpression) != nil,
+                record.sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                record.sizeBytes > 0,
+                record.sizeBytes <= maximumAttachmentBytes else {
+            return nil
+          }
+          let source = workspace.appendingPathComponent(record.relativePath, isDirectory: false).standardizedFileURL
+          guard source.path.hasPrefix(inputDirectory.path + pathSeparator),
+                fileManager.fileExists(atPath: source.path),
+                let data = try? Data(contentsOf: source, options: [.mappedIfSafe]),
+                Int64(data.count) == record.sizeBytes,
+                SignalASIAttachmentPayloadBuilder.sha256(data) == record.sha256 else {
+            return nil
+          }
+          let attachmentID = block.id.ifBlank(record.attachmentId)
+          guard !attachmentID.isEmpty else { return nil }
+          let attachment = SignalASIDraftAttachment(
+            id: attachmentID,
+            displayName: record.name,
+            mimeType: record.mimeType.ifBlank(block.mimeType),
+            data: data,
+            sourceDescription: source.absoluteString
+          )
+          return AgentRestoredAttachment(
+            attachment: attachment,
+            staged: AgentStagedAttachment(
+              name: record.name,
+              relativePath: record.relativePath,
+              mimeType: record.mimeType,
+              sizeBytes: record.sizeBytes,
+              sha256: record.sha256
+            )
+          )
+        }
     }
   }
 
   static func sanitizeName(_ value: String) -> String {
     SignalASIAttachmentPayloadBuilder.sanitizeName(value)
+  }
+
+  private static func writeManifest(
+    directory: URL,
+    attachments: [SignalASIDraftAttachment],
+    staged: [AgentStagedAttachment],
+    fileManager: FileManager
+  ) throws {
+    guard attachments.count == staged.count else {
+      throw AgentAttachmentWorkspaceStagingError.commitFailed
+    }
+    let records = zip(attachments, staged).map { attachment, staged in
+      AttachmentManifestRecord(
+        attachmentId: String(attachment.id.prefix(256)),
+        name: staged.name,
+        relativePath: staged.relativePath,
+        mimeType: staged.mimeType,
+        sizeBytes: staged.sizeBytes,
+        sha256: staged.sha256
+      )
+    }
+    let target = directory.appendingPathComponent(manifestFile, isDirectory: false)
+    let temporary = directory.appendingPathComponent("\(manifestFile).tmp", isDirectory: false)
+    defer { try? fileManager.removeItem(at: temporary) }
+    do {
+      try JSONEncoder().encode(AttachmentManifest(version: 1, attachments: records))
+        .write(to: temporary, options: [.atomic])
+      if fileManager.fileExists(atPath: target.path) {
+        try fileManager.removeItem(at: target)
+      }
+      try fileManager.moveItem(at: temporary, to: target)
+    } catch {
+      throw AgentAttachmentWorkspaceStagingError.commitFailed
+    }
+  }
+
+  private static func readManifest(directory: URL, fileManager: FileManager) -> [AttachmentManifestRecord] {
+    let target = directory.appendingPathComponent(manifestFile, isDirectory: false)
+    guard fileManager.fileExists(atPath: target.path),
+          let data = try? Data(contentsOf: target),
+          let manifest = try? JSONDecoder().decode(AttachmentManifest.self, from: data),
+          manifest.version == 1 else {
+      return []
+    }
+    return Array(manifest.attachments.prefix(maximumRestoredAttachments))
   }
 
   private static func defaultProjectRoot(fileManager: FileManager) throws -> URL {
@@ -246,6 +405,9 @@ enum AgentAttachmentWorkspaceStager {
 
   private static let safeIdPattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#
   private static let pathSeparator = "/"
+  private static let manifestFile = ".signalasi-attachments.json"
+  private static let maximumRestoredAttachments = 10
+  private static let attachmentTypes: Set<AgentRichBlockType> = [.image, .file, .video, .audio]
 }
 
 struct AgentAnimatedImageFrames {

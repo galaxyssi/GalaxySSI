@@ -997,24 +997,47 @@ final class MessageCoordinator: ObservableObject {
         sourceMessageId: outgoing.id.uuidString
       )
     }
+    var effectiveAttachments = attachments
     var stagedAttachments: [AgentStagedAttachment] = []
-    if !attachments.isEmpty {
+    var reusedPriorAttachments = false
+    if effectiveAttachments.isEmpty,
+       store.agentSession(id: outgoing.conversationId) != nil {
+      let reuse = AgentConversationAttachmentContinuity.resolve(
+        conversationId: outgoing.conversationId,
+        currentTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+        request: originalRequestText,
+        messages: store.agentSessionMessages(outgoing.conversationId)
+      )
+      if !reuse.attachments.isEmpty {
+        effectiveAttachments = reuse.attachments
+        stagedAttachments = reuse.stagedAttachments
+        reusedPriorAttachments = true
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "agent_attachment_reused",
+          detail: "\(effectiveAttachments.count) attachment(s) from a prior turn",
+          status: .delivered
+        )
+      }
+    }
+    if !effectiveAttachments.isEmpty && !reusedPriorAttachments {
       stagedAttachments = await stageAgentAttachments(
         conversationId: outgoing.conversationId,
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-        attachments: attachments
+        attachments: effectiveAttachments
       )
       store.appendDeliveryTrace(
         outgoing.id,
         contactId: contact.id,
         stage: stagedAttachments.isEmpty ? "agent_attachment_staging_failed" : "agent_attachment_staged",
-        detail: "\(stagedAttachments.count)/\(attachments.count) attachment(s)",
+        detail: "\(stagedAttachments.count)/\(effectiveAttachments.count) attachment(s)",
         status: stagedAttachments.isEmpty ? .failed : .delivered
       )
     }
-    if contact.id == "hermes", !attachments.isEmpty {
+    if contact.id == "hermes", !effectiveAttachments.isEmpty, !reusedPriorAttachments {
       let importedCount = AgentAttachmentKnowledgeImporter.importDocuments(
-        AgentAttachmentKnowledgeImporter.inputs(from: attachments),
+        AgentAttachmentKnowledgeImporter.inputs(from: effectiveAttachments),
         conversationId: outgoing.conversationId,
         store: store
       )
@@ -1031,7 +1054,7 @@ final class MessageCoordinator: ObservableObject {
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
-      if attachments.isEmpty,
+      if effectiveAttachments.isEmpty,
          let command = AgentTaskControlCommand.parse(requestText) {
         return await handleAgentTaskControlCommand(
           command,
@@ -1041,7 +1064,7 @@ final class MessageCoordinator: ObservableObject {
       }
       let clarification = AgentClarificationPolicy.decide(
         goal: requestText,
-        hasAttachments: !attachments.isEmpty,
+        hasAttachments: !effectiveAttachments.isEmpty,
         hasConversationContext: previousSessionMessages.contains { !$0.content.isBlank },
         preferenceMode: store.agentPreferenceMode
       )
@@ -1066,7 +1089,7 @@ final class MessageCoordinator: ObservableObject {
         return true
       }
       if clarification.mode == .askWithModel {
-        requestText = attachmentClarificationGoal(attachments)
+        requestText = attachmentClarificationGoal(effectiveAttachments)
       }
       if taskExecutionMode != .planOnly,
          let active = activeAgentTurn(for: outgoing.conversationId) {
@@ -1112,19 +1135,19 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
-    if !attachments.isEmpty {
+    if !effectiveAttachments.isEmpty {
       requestText = agentAttachmentExecutionGoal(
         baseGoal: requestText,
         conversationId: outgoing.conversationId,
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
-        attachments: attachments,
+        attachments: effectiveAttachments,
         staged: stagedAttachments,
         hasUserGoal: !trimmed.isEmpty
       )
     }
     if taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
-       attachments.isEmpty,
+       effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -1152,7 +1175,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
-       attachments.isEmpty,
+       effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowCommandRouter.handle(displayText)
         ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
@@ -1176,7 +1199,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
-       attachments.isEmpty,
+       effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -1204,7 +1227,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
-       attachments.isEmpty,
+       effectiveAttachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -1272,7 +1295,7 @@ final class MessageCoordinator: ObservableObject {
         try await receiveLocalModelReply(
           profile: LocalModelRuntimeSettings.selectedProfile(),
           requestText: requestText,
-          attachments: attachments,
+          attachments: effectiveAttachments,
           outgoing: outgoing,
           initialPlan: directPlan
         )
@@ -1285,7 +1308,7 @@ final class MessageCoordinator: ObservableObject {
           runtimeTarget: localProfile.displayName
         )
         if taskExecutionMode != .planOnly,
-           attachments.isEmpty,
+           effectiveAttachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
              store: store,
@@ -1316,7 +1339,7 @@ final class MessageCoordinator: ObservableObject {
         try await receiveLocalModelReply(
           profile: localProfile,
           requestText: requestText,
-          attachments: attachments,
+          attachments: effectiveAttachments,
           outgoing: outgoing
         )
         finishPendingAgentReply(for: outgoing)
@@ -1331,8 +1354,8 @@ final class MessageCoordinator: ObservableObject {
           contactId: cloudContact.id,
           runtimeTarget: cloudModelLabel.ifBlank(cloudContact.displayName)
         )
-        let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
-        let cloudText = cloudPrompt(text: requestText, attachments: attachments)
+        let cloudImages = try CloudImagePayloadFactory.prepare(effectiveAttachments)
+        let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
@@ -1373,7 +1396,7 @@ final class MessageCoordinator: ObservableObject {
           providerId: agentContact.signalASIId,
           title: agentContact.displayName,
           text: requestText,
-          attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+          attachments: effectiveAttachments.map { AgentDataDisclosureAttachment($0) },
           conversationId: outgoing.conversationId,
           taskId: outgoing.id.uuidString,
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1386,7 +1409,7 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: agentContact,
           outgoing: outgoing,
-          attachments: attachments,
+          attachments: effectiveAttachments,
           voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
@@ -1407,8 +1430,8 @@ final class MessageCoordinator: ObservableObject {
       }
       switch contact.deliveryMode {
       case .cloudAPI:
-        let cloudImages = try CloudImagePayloadFactory.prepare(attachments)
-        let cloudText = cloudPrompt(text: requestText, attachments: attachments)
+        let cloudImages = try CloudImagePayloadFactory.prepare(effectiveAttachments)
+        let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
@@ -1440,7 +1463,7 @@ final class MessageCoordinator: ObservableObject {
           providerId: contact.signalASIId,
           title: contact.displayName,
           text: requestText,
-          attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+          attachments: effectiveAttachments.map { AgentDataDisclosureAttachment($0) },
           conversationId: outgoing.conversationId,
           taskId: outgoing.id.uuidString,
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -1452,7 +1475,7 @@ final class MessageCoordinator: ObservableObject {
           requestText,
           contact: contact,
           outgoing: outgoing,
-          attachments: attachments,
+          attachments: effectiveAttachments,
           voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
