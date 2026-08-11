@@ -218,6 +218,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let finalRound = forceFinalRound || round == Self.maxToolRounds - 1
         let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
         let assembler = ToolCallDeltaAssembler()
+        let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
         var roundFailure: ModelStreamFailed?
         setActiveRound(roundId, for: requestId)
@@ -239,18 +240,21 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             )
 
           case .textDelta(let value):
-            emittedText = emittedText || !value.text.isEmpty
-            emittedSequence += 1
-            continuation.yield(
-              .textDelta(
-                ModelStreamTextDelta(
-                  requestId: requestId,
-                  sequence: emittedSequence,
-                  text: value.text,
-                  receivedAtElapsedMs: value.receivedAtElapsedMs
+            let visibleText = inlineProtocolGuard.append(value.text)
+            if !visibleText.isEmpty {
+              emittedText = true
+              emittedSequence += 1
+              continuation.yield(
+                .textDelta(
+                  ModelStreamTextDelta(
+                    requestId: requestId,
+                    sequence: emittedSequence,
+                    text: visibleText,
+                    receivedAtElapsedMs: value.receivedAtElapsedMs
+                  )
                 )
               )
-            )
+            }
 
           case .toolCallDelta(let value):
             assembler.accept(value.payload)
@@ -321,8 +325,41 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return
         }
 
-        let calls = assembler.completedCalls()
+        let visibleTail = inlineProtocolGuard.finishVisibleText()
+        if !visibleTail.isEmpty {
+          emittedText = true
+          emittedSequence += 1
+          continuation.yield(
+            .textDelta(
+              ModelStreamTextDelta(
+                requestId: requestId,
+                sequence: emittedSequence,
+                text: visibleTail,
+                receivedAtElapsedMs: elapsedMillis()
+              )
+            )
+          )
+        }
+
+        let rawRoundText = inlineProtocolGuard.rawText()
+        let structuredCalls = assembler.completedCalls()
+        let inlineCalls = CloudWebGrounding.parseInlineToolCalls(rawRoundText)
+        let usesInlineProtocol = structuredCalls.isEmpty && !inlineCalls.isEmpty
+        let calls = usesInlineProtocol
+          ? inlineCalls.enumerated().map { index, call in
+            AssembledToolCall(
+              callId: "inline-r\(round)-\(index)",
+              index: index,
+              name: call.name,
+              argumentsJson: Self.inlineArgumentsJSON(call.arguments)
+            )
+          }
+          : structuredCalls
         if calls.isEmpty {
+          if CloudWebGrounding.containsInternalToolProtocol(rawRoundText) {
+            prepared.appendInlineToolRepairPrompt(rawRoundText)
+            continue
+          }
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
           continuation.yield(
             .completed(
@@ -381,6 +418,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         if results.isEmpty {
           forceFinalRound = true
+        } else if usesInlineProtocol {
+          prepared.appendInlineToolResults(rawRoundText, results: results)
         } else {
           try prepared.appendToolResults(results)
         }
@@ -541,6 +580,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       retryable: false,
       partialResponse: partialResponse
     )
+  }
+
+  private static func inlineArgumentsJSON(_ arguments: AgentMcpJSONObject) -> String {
+    guard let data = try? JSONEncoder().encode(arguments) else { return "{}" }
+    return String(decoding: data, as: UTF8.self)
   }
 
   private static func defaultElapsedMillis() -> Int64 {
