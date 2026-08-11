@@ -54,6 +54,10 @@ enum AgentIOSPublicArticleParser {
     )
   }
 
+  static func plainText(from html: String) -> String {
+    plainText(html)
+  }
+
   private static func element(withID id: String, in source: String) -> String? {
     element(matching: #"<([A-Za-z][A-Za-z0-9]*)\b[^>]*\bid\s*=\s*[\"']"# +
       NSRegularExpression.escapedPattern(for: id) + #"[\"'][^>]*>"#, in: source)
