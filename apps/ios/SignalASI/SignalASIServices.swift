@@ -31,7 +31,7 @@ final class MessageCoordinator: ObservableObject {
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let connectorResponseBus: AgentConnectorResponseBus
   private let richContentMaterializer: AgentRichContentMaterializer
-  private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  fileprivate let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
   private var globalResearchResponseToken: UUID?
@@ -80,9 +80,9 @@ final class MessageCoordinator: ObservableObject {
   private lazy var localRecordedRunStore = UserDefaultsAgentRecordedRunStore()
   private lazy var localSkillRuntime = AgentSkillRuntime(store: UserDefaultsAgentSkillStore())
   let mqttClient: SignalASIMqttClient
-  private var outboxRetryTask: Task<Void, Never>?
-  private var outboxFlushInProgress = false
-  private var outboxFlushRequested = false
+  fileprivate var outboxRetryTask: Task<Void, Never>?
+  fileprivate var outboxFlushInProgress = false
+  fileprivate var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
@@ -92,7 +92,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v7-flow-control"
-  private static let maximumOutboxDeliveryAttempts = 6
+  fileprivate static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
@@ -1311,7 +1311,7 @@ final class MessageCoordinator: ObservableObject {
     store.setAgentSessionSelectedModelOrAgent(id: conversation, label: label)
   }
 
-  private func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
+  fileprivate func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
     var handled = Set<String>()
     for failure in failures {
       let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
@@ -6277,63 +6277,6 @@ final class MessageCoordinator: ObservableObject {
       }
       dispatchIncomingWire(topic: "", object: object, originalPayload: pending.payload, allowStage: false)
       deliveryStore.completeIncoming(messageId: pending.messageId)
-    }
-  }
-
-  private func flushPendingOutbox() async {
-    guard !outboxFlushInProgress else {
-      outboxFlushRequested = true
-      return
-    }
-    outboxFlushInProgress = true
-    defer {
-      outboxFlushInProgress = false
-      if outboxFlushRequested {
-        outboxFlushRequested = false
-        scheduleOutboxFlush(after: 0)
-      } else {
-        scheduleOutboxFlushFromStore()
-      }
-    }
-    let discardedTransfers = attachmentTransferStore.prune()
-    if !discardedTransfers.isEmpty {
-      _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
-    }
-    handleExhaustedDeliveries(
-      deliveryStore.discardExhausted(maxAttempts: Self.maximumOutboxDeliveryAttempts)
-    )
-    let mediaProfile = mediaNetworkProfileProvider()
-    let pending = deliveryStore.pending(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
-      maxAttempts: Self.maximumOutboxDeliveryAttempts
-    )
-    guard !pending.isEmpty else { return }
-    for item in pending {
-      deliveryStore.markAttempt(messageId: item.messageId)
-      let result = await mqttClient.publish(topic: item.topic, payload: Data(item.wirePayload.utf8))
-      if result == .published {
-        deliveryStore.markPublished(messageId: item.messageId)
-      }
-    }
-  }
-
-  func scheduleOutboxFlushFromStore() {
-    let mediaProfile = mediaNetworkProfileProvider()
-    if let delay = deliveryStore.nextRetryDelay(
-      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
-      maxAttempts: Self.maximumOutboxDeliveryAttempts
-    ) {
-      scheduleOutboxFlush(after: delay)
-    }
-  }
-
-  func scheduleOutboxFlush(after delay: TimeInterval) {
-    outboxRetryTask?.cancel()
-    outboxRetryTask = Task { [weak self] in
-      if delay > 0 {
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-      }
-      await self?.flushPendingOutbox()
     }
   }
 
