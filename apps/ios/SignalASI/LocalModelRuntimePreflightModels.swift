@@ -35,7 +35,7 @@ enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
     switch self {
     case .modelFileMissing, .modelFileInvalid, .systemLowMemory, .insufficientMemory, .deviceTooHot:
       return true
-    case .contextReduced, .thermalPressure, .lowBattery, .powerSaveMode:
+    case .contextReduced, .thermalPressure, .lowBattery, .criticalBattery, .powerSaveMode:
       return false
     }
   }

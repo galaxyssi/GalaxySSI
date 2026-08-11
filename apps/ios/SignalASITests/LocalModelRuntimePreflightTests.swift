@@ -33,14 +33,11 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     XCTAssertFalse(estimate.launchAllowed)
   }
 
-  func testLocalModelRuntimeEstimatorAppliesLowMemoryThermalBatteryAndPowerPolicies() {
+  func testLocalModelRuntimeEstimatorAppliesMemoryAndThermalPoliciesWithoutEnergyGating() {
     let lowMemory = estimate(device: device(systemLowMemory: true))
     let moderate = estimate(device: device(thermalStatus: 2))
     let severe = estimate(device: device(thermalStatus: 3))
     let hotBattery = estimate(device: device(batteryTemperatureCelsius: 45.0))
-    let lowBattery = estimate(device: device(batteryPercent: 15, charging: false))
-    let criticalBattery = estimate(device: device(batteryPercent: 5, charging: false))
-    let charging = estimate(device: device(batteryPercent: 5, charging: true))
     let saver = estimate(device: device(powerSaveMode: true))
 
     XCTAssertEqual(lowMemory.readiness, .blocked)
@@ -50,13 +47,11 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     XCTAssertTrue(moderate.issues.contains(.thermalPressure))
     XCTAssertEqual(severe.readiness, .blocked)
     XCTAssertEqual(hotBattery.readiness, .blocked)
-    XCTAssertEqual(lowBattery.readiness, .caution)
-    XCTAssertEqual(lowBattery.recommendedThreads, 2)
-    XCTAssertTrue(lowBattery.issues.contains(.lowBattery))
-    XCTAssertEqual(criticalBattery.readiness, .blocked)
-    XCTAssertFalse(charging.issues.contains(.criticalBattery))
-    XCTAssertEqual(saver.readiness, .caution)
-    XCTAssertEqual(saver.recommendedThreads, 2)
+    XCTAssertEqual(saver.readiness, .ready)
+    XCTAssertEqual(saver.recommendedThreads, 6)
+    XCTAssertFalse(saver.issues.contains(.lowBattery))
+    XCTAssertFalse(saver.issues.contains(.criticalBattery))
+    XCTAssertFalse(saver.issues.contains(.powerSaveMode))
   }
 
   func testLocalModelRuntimePreflightRequiresRealModelFileBeforeLaunch() throws {
@@ -134,7 +129,7 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     )
     XCTAssertEqual((object["recommended_threads"] as? NSNumber)?.intValue ?? 0, 2)
     XCTAssertTrue(issues.contains("THERMAL_PRESSURE"))
-    XCTAssertTrue(issues.contains("POWER_SAVE_MODE"))
+    XCTAssertFalse(issues.contains("POWER_SAVE_MODE"))
     XCTAssertEqual(nestedDevice["system_low_memory"] as? Bool, false)
     XCTAssertEqual((nestedDevice["battery_temperature_celsius"] as? NSNumber)?.doubleValue ?? -1, 32.0)
     XCTAssertEqual((requestObject["requested_context_tokens"] as? NSNumber)?.intValue ?? 0, 8_192)
