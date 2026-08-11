@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
     A10000000000000000000001 /* SignalASIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SignalASIModels.swift */; };
+    A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001133 /* SignalASIConversationDateDivider.swift */; };
     A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* SignalASILinkProtocol.swift */; };
     A10000000000000000000003 /* SignalASIStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* SignalASIStore.swift */; };
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
@@ -792,6 +793,7 @@
 
 /* Begin PBXFileReference section */
     A20000000000000000000001 /* SignalASIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIModels.swift; sourceTree = "<group>"; };
+    A20000000000000000001133 /* SignalASIConversationDateDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationDateDivider.swift; sourceTree = "<group>"; };
     A20000000000000000000002 /* SignalASILinkProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkProtocol.swift; sourceTree = "<group>"; };
     A20000000000000000000003 /* SignalASIStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStore.swift; sourceTree = "<group>"; };
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
@@ -1595,6 +1597,7 @@
       isa = PBXGroup;
       children = (
         A20000000000000000000001 /* SignalASIModels.swift */,
+        A20000000000000000001133 /* SignalASIConversationDateDivider.swift */,
         A20000000000000000000101 /* SignalASICoreModels.swift */,
         A20000000000000000000706 /* CloudModelCredentialPolicy.swift */,
         A20000000000000000000779 /* CloudModelStreaming.swift */,
@@ -2506,6 +2509,7 @@
       buildActionMask = 2147483647;
       files = (
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
+        A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */,
         A10000000000000000000101 /* SignalASICoreModels.swift in Sources */,
         A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */,
         A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */,

@@ -323,7 +323,16 @@ struct ConversationView: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 10) {
-            ForEach(displayedMessages) { message in
+            ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+              if SignalASIConversationDateDivider.shouldShow(
+                for: message.createdAt,
+                previous: index > 0 ? displayedMessages[index - 1].createdAt : nil
+              ) {
+                SignalASIConversationDateDivider(
+                  date: message.createdAt,
+                  language: interfaceLanguage
+                )
+              }
               MessageBubble(
                 message: message,
                 myAvatarData: store.profile.avatarData,
