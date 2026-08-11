@@ -297,7 +297,7 @@ final class SignalASILinkDeliveryStore {
     allowValidatedNetworkMessages: Bool = true,
     maxAttempts: Int = Int.max
   ) -> [PendingLinkMessage] {
-    state.outbox
+    let ready = state.outbox
       .compactMap { item -> PendingLinkMessage? in
         if !item.blockedByAttachmentTransferIds.isEmpty {
           return nil
@@ -320,6 +320,27 @@ final class SignalASILinkDeliveryStore {
         }
         return left.nextAttemptAt < right.nextAttemptAt
       }
+    var routeQueues: [String: [PendingLinkMessage]] = [:]
+    var activeRoutes: [String] = []
+    for item in ready {
+      let route = Self.routeScope(item.topic)
+      if routeQueues[route] == nil {
+        routeQueues[route] = []
+        activeRoutes.append(route)
+      }
+      routeQueues[route, default: []].append(item)
+    }
+    var result: [PendingLinkMessage] = []
+    while !activeRoutes.isEmpty {
+      let route = activeRoutes.removeFirst()
+      guard var queue = routeQueues[route], !queue.isEmpty else { continue }
+      result.append(queue.removeFirst())
+      if !queue.isEmpty {
+        activeRoutes.append(route)
+      }
+      routeQueues[route] = queue
+    }
+    return result
   }
 
   func nextRetryDelay(
@@ -511,6 +532,14 @@ final class SignalASILinkDeliveryStore {
       inline: item.wirePayload,
       fileName: item.wirePayloadFile
     ).isEmpty
+  }
+
+  private static func routeScope(_ topic: String) -> String {
+    let segments = topic.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard segments.count >= 5, segments[0] == "signalasichat" else {
+      return topic
+    }
+    return "\(segments[2])/\(segments[3])"
   }
 
   private func deleteWirePayload(_ item: PendingLinkMessage) {
