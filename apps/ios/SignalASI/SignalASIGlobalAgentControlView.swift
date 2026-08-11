@@ -461,6 +461,19 @@ struct SignalASIGlobalAgentControlView: View {
         }
       )
     }
+    if kind == .runs {
+      return AnyView(
+        SignalASISecurityNavigationRow(
+          title: title,
+          subtitle: subtitle,
+          systemImage: systemImage,
+          tint: tint,
+          badge: "\(snapshot.count(for: kind))"
+        ) {
+          SignalASIGlobalAgentRunsView()
+        }
+      )
+    }
     return AnyView(
       SignalASISecurityNavigationRow(
         title: title,
