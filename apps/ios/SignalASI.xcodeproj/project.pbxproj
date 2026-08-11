@@ -11,6 +11,7 @@
     A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* SignalASILinkProtocol.swift */; };
     A10000000000000000000003 /* SignalASIStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* SignalASIStore.swift */; };
     A10000000000000000000004 /* SignalASIServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SignalASIServices.swift */; };
+    A10000000000000000000058 /* CloudModelClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000058 /* CloudModelClient.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
     A10000000000000000000005 /* SignalASIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SignalASIViews.swift */; };
     A10000000000000000000A00 /* SignalASIRichContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A00 /* SignalASIRichContentView.swift */; };
@@ -775,6 +776,7 @@
     A20000000000000000000002 /* SignalASILinkProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkProtocol.swift; sourceTree = "<group>"; };
     A20000000000000000000003 /* SignalASIStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIStore.swift; sourceTree = "<group>"; };
     A20000000000000000000004 /* SignalASIServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIServices.swift; sourceTree = "<group>"; };
+    A20000000000000000000058 /* CloudModelClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClient.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* SignalASIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIViews.swift; sourceTree = "<group>"; };
     A20000000000000000000A00 /* SignalASIRichContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRichContentView.swift; sourceTree = "<group>"; };
@@ -1968,6 +1970,7 @@
         A20000000000000000000014 /* SignalASIBackup.swift */,
         A20000000000000000000003 /* SignalASIStore.swift */,
         A20000000000000000000004 /* SignalASIServices.swift */,
+        A20000000000000000000058 /* CloudModelClient.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
         A41000000000000000000890 /* Localizable.strings */,
@@ -2857,6 +2860,7 @@
         A10000000000000000000012 /* SignalASIBackup.swift in Sources */,
         A10000000000000000000003 /* SignalASIStore.swift in Sources */,
         A10000000000000000000004 /* SignalASIServices.swift in Sources */,
+        A10000000000000000000058 /* CloudModelClient.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
         A10000000000000000000888 /* SignalASIAndroidParityUI.swift in Sources */,
         A10000000000000000000898 /* SignalASISharedUIComponents.swift in Sources */,
