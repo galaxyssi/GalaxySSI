@@ -248,6 +248,7 @@ internal fun MainActivity.startAgentVoiceInput() {
         return
     }
     preemptBackgroundWhisperForInteractiveVoice()
+    captureAgentVoiceDraftSnapshot()
     stopVoiceAssistant()
     ensureSpeechRecognizer()
     val config = VoiceAssistantSettings.get(this)
@@ -267,6 +268,7 @@ internal fun MainActivity.startAgentVoiceInput() {
         speechRecognizer?.startListening(intent)
     }.onFailure {
         agentVoiceListening = false
+        clearAgentVoiceDraftSnapshot()
         agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
         Toast.makeText(this, it.message ?: getString(R.string.voice_status_retry_later), Toast.LENGTH_SHORT).show()
     }
@@ -275,6 +277,7 @@ internal fun MainActivity.startAgentVoiceInput() {
 internal fun MainActivity.stopAgentVoiceInput() {
     if (!agentVoiceListening) return
     agentVoiceListening = false
+    clearAgentVoiceDraftSnapshot()
     runCatching { speechRecognizer?.cancel() }
     agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
 }
@@ -283,13 +286,19 @@ internal fun MainActivity.handleAgentVoiceResult(text: String) {
     agentVoiceListening = false
     agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
     if (text.isBlank()) {
+        clearAgentVoiceDraftSnapshot()
         Toast.makeText(this, getString(R.string.voice_error_no_valid_speech), Toast.LENGTH_SHORT).show()
         return
     }
-    submitAgentGoal(
-        goalOverride = text,
-        attachmentsOverride = agentInputAttachments.toList()
-    )
+    val draftSnapshot = consumeAgentVoiceDraftSnapshot()
+    if (draftSnapshot != null) {
+        appendAgentVoiceTranscriptToDraft(draftSnapshot, text)
+    } else {
+        submitAgentGoal(
+            goalOverride = text,
+            attachmentsOverride = agentInputAttachments.toList()
+        )
+    }
 }
 
 internal fun MainActivity.configureWakePage() {
@@ -488,6 +497,7 @@ internal fun MainActivity.ensureSpeechRecognizer() {
                 }
                 if (agentVoiceListening) {
                     agentVoiceListening = false
+                    clearAgentVoiceDraftSnapshot()
                     agentRecordingInstruction.text = getString(R.string.agent_voice_recording_hint)
                     Toast.makeText(this@ensureSpeechRecognizer, errorDetail, Toast.LENGTH_SHORT).show()
                     return

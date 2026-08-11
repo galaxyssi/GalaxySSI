@@ -293,7 +293,9 @@ internal data class ActiveCloudStream(
 internal data class PendingAgentVoiceTranscription(
     val conversationId: String,
     val dedupeKey: String,
-    val attachments: List<AgentInputAttachment>
+    val attachments: List<AgentInputAttachment>,
+    val draftSnapshot: AgentVoiceDraftSnapshot? = null,
+    val pendingEntryVisible: Boolean = true
 )
 
 internal data class VoiceTurnContext(val conversationId: String, val turnId: String)

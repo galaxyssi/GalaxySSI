@@ -303,8 +303,12 @@ internal fun MainActivity.stopAgentInputRecording(send: Boolean) {
         stopPcmRecording(send, if (send) "release_send" else "user_cancelled")
         return
     }
-    val activeRecorder = recorder ?: return
+    val activeRecorder = recorder ?: run {
+        if (!send) clearAgentVoiceDraftSnapshot()
+        return
+    }
     val purpose = recordingPurpose
+    if (!send) clearAgentVoiceDraftSnapshot()
     val traceId = recordingVoiceTraceId
     val coordinatorSessionId = recordingVoiceCoordinatorSessionId.ifBlank {
         voiceCoordinatorSession(traceId)
@@ -386,18 +390,51 @@ internal fun MainActivity.requestAgentInputTranscription(
         sampleRateHz = sampleRateHz,
         purpose = "agent_input",
         onSuccess = { transcript ->
-            submitAgentGoal(
-                voiceTraceId = traceId,
-                pendingVoiceDedupeKey = pendingVoice.dedupeKey,
-                pendingVoiceConversationId = pendingVoice.conversationId,
-                goalOverride = transcript,
-                attachmentsOverride = pendingVoice.attachments
-            )
+            val draftSnapshot = pendingVoice.draftSnapshot
+            if (draftSnapshot != null) {
+                appendAgentVoiceTranscriptToDraft(draftSnapshot, transcript)
+            } else {
+                submitAgentGoal(
+                    voiceTraceId = traceId,
+                    pendingVoiceDedupeKey = pendingVoice.dedupeKey,
+                    pendingVoiceConversationId = pendingVoice.conversationId,
+                    goalOverride = transcript,
+                    attachmentsOverride = pendingVoice.attachments
+                )
+            }
         },
         onFailure = {
             dismissAgentVoiceTranscriptionPending(pendingVoice)
         }
     )
+    return true
+}
+
+internal fun MainActivity.captureAgentVoiceDraftSnapshot() {
+    agentVoiceDraftSnapshot = AgentVoiceTranscriptPolicy.draftSnapshot(
+        conversationId = agentTranscriptStore.activeConversation().id,
+        text = agentGoalInput.text?.toString().orEmpty()
+    )
+}
+
+internal fun MainActivity.consumeAgentVoiceDraftSnapshot(): AgentVoiceDraftSnapshot? =
+    agentVoiceDraftSnapshot.also { agentVoiceDraftSnapshot = null }
+
+internal fun MainActivity.clearAgentVoiceDraftSnapshot() {
+    agentVoiceDraftSnapshot = null
+}
+
+internal fun MainActivity.appendAgentVoiceTranscriptToDraft(
+    snapshot: AgentVoiceDraftSnapshot,
+    transcript: String
+): Boolean {
+    if (snapshot.conversationId != agentTranscriptStore.activeConversation().id) return false
+    val currentDraft = agentGoalInput.text?.toString().orEmpty().ifBlank { snapshot.text }
+    val merged = AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(currentDraft, transcript)
+    if (merged.isBlank()) return false
+    agentGoalInput.setText(merged)
+    agentGoalInput.setSelection(merged.length)
+    updateAgentSubmitButtonAppearance(true)
     return true
 }
 
@@ -861,7 +898,12 @@ internal fun MainActivity.showVoiceRiskConfirmation(
             voiceRiskConfirmationCancellation = null
             voiceExecutionLedger.markUserEdited(sessionId)
             voiceCorrectionJournal.markUserEdited(sessionId)
-            agentGoalInput.setText(chosen.text)
+            agentGoalInput.setText(
+                AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(
+                    agentGoalInput.text?.toString().orEmpty(),
+                    chosen.text
+                )
+            )
             agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
             cancelVoiceBeforeExecution(purpose, traceId, onFailure = {})
         }

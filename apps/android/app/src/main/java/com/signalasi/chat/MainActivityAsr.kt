@@ -649,9 +649,12 @@ internal fun MainActivity.closeLiveWhisperSession(traceId: String) {
 
 internal fun MainActivity.startRecording(purpose: String): Boolean {
     if (isVoiceCaptureActive()) return false
+    if (purpose == "agent_input") captureAgentVoiceDraftSnapshot()
     preemptBackgroundWhisperForInteractiveVoice()
     if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
-        return startPcmRecording(purpose, autoEndpoint = false)
+        return startPcmRecording(purpose, autoEndpoint = false).also { started ->
+            if (!started && purpose == "agent_input") clearAgentVoiceDraftSnapshot()
+        }
     }
     val mediaProfile = AgentMediaNetworkDetector.detect(this)
     val traceId = VoiceLatencyTelemetry.startSession(
@@ -717,6 +720,7 @@ internal fun MainActivity.startRecording(purpose: String): Boolean {
         recordingPurpose = ""
         recordingVoiceTraceId = ""
         recordingVoiceCoordinatorSessionId = ""
+        if (purpose == "agent_input") clearAgentVoiceDraftSnapshot()
         file.delete()
         failVoiceCoordinator(traceId, it.javaClass.simpleName)
         VoiceLatencyTelemetry.record(
@@ -1016,12 +1020,17 @@ internal fun MainActivity.showAgentVoiceTranscriptionPending(
 ): PendingAgentVoiceTranscription {
     val conversationId = agentTranscriptStore.activeConversation().id
     val identity = traceId.ifBlank { UUID.randomUUID().toString() }
-    val attachments = agentInputAttachments.toList()
+    val draftSnapshot = consumeAgentVoiceDraftSnapshot()
+    val appendToDraft = draftSnapshot != null
+    val attachments = if (appendToDraft) emptyList() else agentInputAttachments.toList()
     val pending = PendingAgentVoiceTranscription(
         conversationId = conversationId,
         dedupeKey = AgentVoiceTranscriptPolicy.dedupeKey(identity),
-        attachments = attachments
+        attachments = attachments,
+        draftSnapshot = draftSnapshot,
+        pendingEntryVisible = !appendToDraft
     )
+    if (appendToDraft) return pending
     if (attachments.isNotEmpty()) {
         val attachmentIds = attachments.mapTo(hashSetOf(), AgentInputAttachment::id)
         agentInputAttachments.removeAll { it.id in attachmentIds }
@@ -1043,7 +1052,9 @@ internal fun MainActivity.dismissAgentVoiceTranscriptionPending(
     pending: PendingAgentVoiceTranscription?
 ) {
     pending ?: return
-    deleteAgentTranscriptByDedupeKey(pending.conversationId, pending.dedupeKey)
+    if (pending.pendingEntryVisible) {
+        deleteAgentTranscriptByDedupeKey(pending.conversationId, pending.dedupeKey)
+    }
     if (pending.attachments.isNotEmpty()) {
         val existingUris = agentInputAttachments.mapTo(hashSetOf()) { it.uri.toString() }
         val availableSlots = (MAX_AGENT_ATTACHMENTS - agentInputAttachments.size).coerceAtLeast(0)
@@ -1066,6 +1077,7 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
     pcmCaptureStopping = true
     val purpose = recordingPurpose
     val traceId = recordingVoiceTraceId
+    if (!send && purpose == "agent_input") clearAgentVoiceDraftSnapshot()
     val pendingAgentVoice = if (send && purpose == "agent_input") {
         showAgentVoiceTranscriptionPending(traceId)
     } else {
