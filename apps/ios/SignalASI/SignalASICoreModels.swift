@@ -65,6 +65,7 @@ struct SignalASIProfile: Codable, Equatable {
   var name: String
   var identityFingerprint: String
   var identityPublicKey: String
+  var avatarData: Data? = nil
 }
 
 struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {

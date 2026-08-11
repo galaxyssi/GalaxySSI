@@ -461,6 +461,19 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func updateProfileAvatar(data: Data?) -> Bool {
+    guard let data, !data.isEmpty else {
+      profile.avatarData = nil
+      save()
+      return true
+    }
+    guard data.count <= 2 * 1024 * 1024 else { return false }
+    profile.avatarData = data
+    save()
+    return true
+  }
+
+  @discardableResult
   func renameContact(id: String, displayName: String) -> Bool {
     let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleaned.isEmpty,

@@ -6,6 +6,7 @@ struct SignalASIProfileIdentityView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var statusMessage = ""
   @State private var showingQRCode = false
+  @State private var showingAvatarPicker = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -44,11 +45,25 @@ struct SignalASIProfileIdentityView: View {
     .sheet(isPresented: $showingQRCode) {
       MyContactQRCodeView()
     }
+    .sheet(isPresented: $showingAvatarPicker) {
+      PhotoLibraryPickerView { attachment in
+        guard let avatarData = profileAvatarData(from: attachment.data),
+              store.updateProfileAvatar(data: avatarData) else {
+          statusMessage = t("signalasi.profile.avatar_failed", "Profile photo could not be saved")
+          return
+        }
+        statusMessage = t("signalasi.profile.avatar_saved", "Profile photo updated")
+      }
+    }
   }
 
   private var hero: some View {
     HStack(alignment: .center, spacing: 12) {
-      SignalASILogoView(size: 58, cornerRadius: 10)
+      Button { showingAvatarPicker = true } label: {
+        SignalASIProfileAvatar(data: store.profile.avatarData, size: 58)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("signalasi.profile.avatar_edit", "Change profile photo")))
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
           Text(store.profile.name.ifBlank(t("signalasi.settings.profile", "Profile")))
@@ -77,6 +92,16 @@ struct SignalASIProfileIdentityView: View {
     .padding(.vertical, 4)
   }
 
+  private func profileAvatarData(from data: Data) -> Data? {
+    guard let image = UIImage(data: data) else { return nil }
+    let longestSide = max(image.size.width, image.size.height)
+    let scale = min(1, 1_024 / max(longestSide, 1))
+    let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    let renderer = UIGraphicsImageRenderer(size: targetSize)
+    let rendered = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
+    return rendered.jpegData(compressionQuality: 0.78) ?? rendered.jpegData(compressionQuality: 0.55)
+  }
+
   private var identitySection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_identity", "Identity"))
@@ -89,6 +114,27 @@ struct SignalASIProfileIdentityView: View {
           set: { store.updateProfileName($0) }
         )
       )
+      SignalASISecurityActionRow(
+        title: t("signalasi.profile.avatar", "Profile Photo"),
+        subtitle: t("signalasi.profile.avatar_subtitle", "Shown with your outgoing messages"),
+        systemImage: "person.crop.circle",
+        tint: .blue,
+        badge: t("common_edit", "Edit")
+      ) {
+        showingAvatarPicker = true
+      }
+      if store.profile.avatarData != nil {
+        SignalASISecurityActionRow(
+          title: t("signalasi.profile.avatar_remove", "Remove Profile Photo"),
+          subtitle: t("signalasi.profile.avatar_remove_subtitle", "Restore the default identity image"),
+          systemImage: "trash",
+          tint: .red,
+          badge: t("signalasi.common.remove", "Remove")
+        ) {
+          store.updateProfileAvatar(data: nil)
+          statusMessage = t("signalasi.profile.avatar_removed", "Profile photo removed")
+        }
+      }
       SignalASISecurityActionRow(
         title: t("settings_signalasi_id", "SignalASI ID"),
         subtitle: store.profile.signalASIId.ifBlank(t("signalasi.status.unknown", "Unknown")),
@@ -322,6 +368,25 @@ struct SignalASIIdentityRecoveryExportView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIProfileAvatar: View {
+  var data: Data?
+  var size: CGFloat
+
+  var body: some View {
+    Group {
+      if let data, let image = UIImage(data: data) {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFill()
+      } else {
+        SignalASILogoView(size: size, cornerRadius: 10)
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
   }
 }
 
