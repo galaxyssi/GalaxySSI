@@ -61,7 +61,7 @@ struct AgentHomeView: View {
   @State private var runtimeArtifactExportSourceURI = ""
   @State private var runtimeArtifactError = ""
   @State private var runtimeArtifactStatus = ""
-  @State private var publicPageExportDocument: SignalASIRuntimeArtifactDocument?
+  @State private var publicPageExportDocument: SignalASIPublicPageHTMLExportDocument?
   @State private var publicPageExportPresented = false
   @State private var publicPageExportFilename = ""
   @State private var richActionStatus = ""
@@ -642,7 +642,7 @@ struct AgentHomeView: View {
     .fileExporter(
       isPresented: $publicPageExportPresented,
       document: publicPageExportDocument,
-      contentType: .data,
+      contentType: .html,
       defaultFilename: publicPageExportFilename
     ) { result in
       if case .failure(let error) = result {
@@ -653,7 +653,7 @@ struct AgentHomeView: View {
 
   private func presentPendingPhonePublicPageExport() {
     guard let export = coordinator.consumePendingPhonePublicPageExport() else { return }
-    publicPageExportDocument = SignalASIRuntimeArtifactDocument(data: export.data)
+    publicPageExportDocument = SignalASIPublicPageHTMLExportDocument(data: export.data)
     publicPageExportFilename = export.displayName
     publicPageExportPresented = true
   }
