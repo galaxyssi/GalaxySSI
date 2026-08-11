@@ -557,11 +557,18 @@ struct SignalASIGlobalAgentControlView: View {
         queued += 1
       }
     }
+    let longHorizon = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(
+      store: store,
+      nowMillis: now
+    )
     Task {
       await coordinator.runAutomationSchedulerCycle()
     }
     refreshRuntime()
-    statusMessage = String(format: t("cc_global_processed_result", "Processed %d events"), queued)
+    statusMessage = String(
+      format: t("cc_global_processed_result", "Processed %d events"),
+      queued + longHorizon.queuedCheckpointCount
+    )
   }
 
   private func compactNumber(_ value: Int64) -> String {
