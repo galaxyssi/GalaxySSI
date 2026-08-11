@@ -594,7 +594,24 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             "author": .string(article.author),
             "published_at": .string(article.publishedAt),
             "links": .array(article.links.map(AgentMcpJSONValue.string)),
-            "images": .array(article.imageURLs.map(AgentMcpJSONValue.string))
+            "image_count": .int(Int64(article.images.count)),
+            "lead_image_url": .string(article.images.first?.url ?? ""),
+            "images": .array(article.images.map { image in
+              var value: AgentMcpJSONObject = [
+                "index": .int(Int64(image.index)),
+                "url": .string(image.url)
+              ]
+              if !image.alt.isEmpty {
+                value["alt"] = .string(image.alt)
+              }
+              if let width = image.width {
+                value["width"] = .int(Int64(width))
+              }
+              if let height = image.height {
+                value["height"] = .int(Int64(height))
+              }
+              return .object(value)
+            })
           ])
         }
       case .contentExtract, .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,

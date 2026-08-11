@@ -6,8 +6,16 @@ struct AgentIOSPublicArticle {
   var publishedAt: String
   var content: String
   var links: [String]
-  var imageURLs: [String]
+  var images: [AgentIOSPublicArticleImage]
   var sourceType: String
+}
+
+struct AgentIOSPublicArticleImage {
+  var index: Int
+  var url: String
+  var alt: String
+  var width: Int?
+  var height: Int?
 }
 
 enum AgentIOSPublicArticleParser {
@@ -41,7 +49,7 @@ enum AgentIOSPublicArticleParser {
       publishedAt: String(publishedAt.prefix(256)),
       content: String(plainText(body).prefix(240_000)),
       links: urls(in: body, tag: "a", attribute: "href", baseURL: url, limit: 100),
-      imageURLs: urls(in: body, tag: "img", attributes: ["data-src", "data-original", "src"], baseURL: url, limit: 100),
+      images: images(in: body, baseURL: url, limit: 100),
       sourceType: "wechat_public_account"
     )
   }
@@ -151,6 +159,37 @@ enum AgentIOSPublicArticleParser {
     return result
   }
 
+  private static func images(in source: String, baseURL: URL, limit: Int) -> [AgentIOSPublicArticleImage] {
+    let pattern = #"<img\b[^>]*>"#
+    guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+      return []
+    }
+    var result: [AgentIOSPublicArticleImage] = []
+    var seen: Set<String> = []
+    for (index, match) in expression.matches(in: source, range: fullRange(source)).enumerated() {
+      guard result.count < limit, let range = Range(match.range, in: source) else { continue }
+      let tag = String(source[range])
+      guard let raw = ["data-src", "data-original", "src"]
+        .lazy
+        .map({ attribute($0, in: tag) })
+        .first(where: { !$0.isEmpty }),
+        let resolved = publicHTTPSURL(raw, baseURL: baseURL),
+        seen.insert(resolved).inserted else {
+        continue
+      }
+      result.append(AgentIOSPublicArticleImage(
+        index: index,
+        url: resolved,
+        alt: String(decodeHTMLEntities(attribute("alt", in: tag)).prefix(500)),
+        width: positiveDimension(attribute("data-w", in: tag))
+          ?? positiveDimension(attribute("width", in: tag)),
+        height: positiveDimension(attribute("data-h", in: tag))
+          ?? positiveDimension(attribute("height", in: tag))
+      ))
+    }
+    return result
+  }
+
   private static func publicHTTPSURL(_ value: String, baseURL: URL) -> String? {
     let decoded = decodeHTMLEntities(value).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !decoded.isEmpty, !decoded.lowercased().hasPrefix("data:"),
@@ -179,6 +218,10 @@ enum AgentIOSPublicArticleParser {
       }
     }
     return ""
+  }
+
+  private static func positiveDimension(_ value: String) -> Int? {
+    Int(value.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0 > 0 ? $0 : nil }
   }
 
   private static func text(in html: String?) -> String {
