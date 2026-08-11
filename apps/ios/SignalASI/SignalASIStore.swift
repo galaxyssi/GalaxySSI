@@ -541,6 +541,13 @@ final class SignalASIStore: ObservableObject {
   @discardableResult
   func deleteContact(id: String, deleteMessages: Bool = false, now: Date = Date()) -> Bool {
     guard id != "system" else { return false }
+    let deviceDesktopId = contacts.first { contact in
+      (contact.id == id || contact.signalASIId == id) && contact.type == "device"
+    }?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let deviceDesktopId, !deviceDesktopId.isEmpty {
+      // Android treats deleting a device contact as revoking its desktop pairing.
+      removeServer(desktopId: deviceDesktopId)
+    }
     var deletedIds = Set([id])
     var changed = false
 
