@@ -223,6 +223,7 @@ final class MessageCoordinator: ObservableObject {
     deliveryStore.makePendingImmediatelyRetryable()
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
     replayPendingIncoming()
+    replayPendingConnectorResponses()
     scheduleOutboxFlush(after: 0)
     startAutomationScheduler()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -6286,6 +6287,33 @@ final class MessageCoordinator: ObservableObject {
       }
       dispatchIncomingWire(topic: "", object: object, originalPayload: pending.payload, allowStage: false)
       deliveryStore.completeIncoming(messageId: pending.messageId)
+    }
+  }
+
+  private func replayPendingConnectorResponses() {
+    connectorResponseBus.pending().forEach { response in
+      let payload: [String: Any] = [
+        "type": "agent_connector_response",
+        "source_message_id": String(response.sourceMessageId),
+        "contact_id": response.contactId,
+        "content": response.content,
+        "conversation_id": response.conversationId,
+        "turn_id": response.turnId,
+        "task_id": response.taskId,
+        "success": response.success,
+        "input_tokens": String(response.inputTokens),
+        "output_tokens": String(response.outputTokens),
+        "cost_micros": String(response.costMicros),
+        "rich_output": response.richOutputJson,
+        "received_at_millis": String(response.receivedAtMillis)
+      ]
+      dispatchIncomingWire(
+        topic: "",
+        object: payload,
+        originalPayload: "",
+        allowStage: false
+      )
+      connectorResponseBus.remove(response)
     }
   }
 
