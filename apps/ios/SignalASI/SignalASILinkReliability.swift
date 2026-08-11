@@ -593,6 +593,44 @@ enum SignalASILinkDeliveryAckPolicy {
   }
 }
 
+enum SignalASITransportPrivacyPolicy {
+  private static let localOnlyTypePrefixes = [
+    "evolution_",
+    "self_evolution",
+    "memory_evolution",
+    "global_agent",
+    "global_memory",
+    "global_cognition",
+    "global_research"
+  ]
+
+  private static let localOnlyConversationPrefixes = [
+    "global-cognition:",
+    "global-research:",
+    "global-run:",
+    "global-replan:",
+    "self-evolution:",
+    "memory-evolution:"
+  ]
+
+  static func isLocalOnly(_ payload: [String: Any]) -> Bool {
+    let type = payload.string("type").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if localOnlyTypePrefixes.contains(where: { type.hasPrefix($0) }) {
+      return true
+    }
+    let conversationId = payload.string("conversation_id")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    if localOnlyConversationPrefixes.contains(where: { conversationId.hasPrefix($0) }) {
+      return true
+    }
+    let taskKind = payload.string("task_kind")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return ["self_evolution", "memory_evolution", "global_agent"].contains(taskKind)
+  }
+}
+
 enum SignalASILinkCiphertextReplayPolicy {
   private static let encryptedFields = [
     "scheme",
