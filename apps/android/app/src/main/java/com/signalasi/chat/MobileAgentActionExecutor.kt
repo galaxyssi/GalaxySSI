@@ -939,6 +939,51 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val topic = AppStore.outgoingTopicForContact(context, contactId)
             ?: return AgentActionResult(action.id, false, "${action.target} is not verified")
         traceDispatchStage("route_ready")
+        val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+        val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
+        val recentUserMessages = if (
+            AgentPhonePublicHtmlAttachment.shouldUseConversationContext(directCaptureRequest)
+        ) {
+            action.parameters[INTERNAL_CONVERSATION_ID].orEmpty().takeIf(String::isNotBlank)
+                ?.let { conversationId ->
+                    AgentTranscriptStore(context).page(conversationId, pageSize = 40).entries
+                        .asSequence()
+                        .filter { entry -> entry.role == AgentTranscriptRole.USER }
+                        .map(AgentTranscriptEntry::text)
+                        .toList()
+                }.orEmpty()
+        } else {
+            emptyList()
+        }
+        val captureRequest = AgentPhonePublicHtmlAttachment.captureRequest(
+            currentRequest = directCaptureRequest,
+            recentUserMessages = recentUserMessages
+        )
+        val phoneHtml = if (AppStore.usesPcConnectorTunnel(context, contactId)) {
+            AgentPhonePublicHtmlAttachment.prepare(
+                context = context,
+                turnId = turnId,
+                currentRequest = captureRequest,
+                saveRequested = AgentPhonePublicHtmlAttachment.isSaveRequest(directCaptureRequest)
+            ).onFailure { failure ->
+                Log.w("SignalASIPhoneWeb", "Phone public page capture failed; continuing without HTML", failure)
+            }.getOrNull()
+        } else {
+            null
+        }
+        if (phoneHtml != null) {
+            val existing = AgentTurnAttachmentRegistry.get(turnId)
+            AgentTurnAttachmentRegistry.put(
+                turnId,
+                (existing + phoneHtml.attachment).distinctBy(AgentInputAttachment::id)
+            )
+        }
+        val connectorPrompt = if (phoneHtml == null) {
+            prompt
+        } else {
+            prompt + "\n\n" + AgentPhonePublicHtmlAttachment.instruction(phoneHtml)
+        }
+        traceDispatchStage("phone_web_ready")
         val historyPrompt = displayPromptForAction(action, prompt)
         val trace = JSONArray()
             .put(JSONObject()
@@ -1000,7 +1045,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val promptAssemblyStartedAt = SystemClock.elapsedRealtime()
         val outboundPrompt = promptWithConversationContext(
             action,
-            promptWithObservedContext(prompt, observed),
+            promptWithObservedContext(connectorPrompt, observed),
             managedByDesktop = AppStore.usesPcConnectorTunnel(context, contactId)
         )
         Log.i(
@@ -1078,7 +1123,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     "resource_started_at" to System.currentTimeMillis().toString(),
                     "has_attachments" to (
                         action.id.startsWith("attachment-") ||
-                            action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
+                            action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true" ||
+                            AgentTurnAttachmentRegistry.get(clientTurnId).isNotEmpty()
                         ).toString(),
                     "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
                     "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
