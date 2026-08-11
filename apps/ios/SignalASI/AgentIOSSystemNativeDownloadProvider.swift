@@ -47,8 +47,29 @@ protocol AgentIOSDownloadCompletionReporting: AnyObject {
   func markCompletionDelivered(id: Int64, nowMillis: Int64)
 }
 
+private final class AgentIOSDownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
+  weak var owner: AgentIOSDefaultDownloadProvider?
+
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    owner?.backgroundDownloadFinished(task: downloadTask, location: location)
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    owner?.backgroundDownloadCompleted(task: task, error: error)
+  }
+
+  func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+    owner?.backgroundSessionDidFinishEvents()
+  }
+}
+
 final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSDownloadCompletionReporting {
   static let shared = AgentIOSDefaultDownloadProvider()
+  static let backgroundSessionIdentifier = "com.signalasi.chat.ios.agent-downloads"
 
   private struct DownloadRecord: Codable {
     var id: Int64
@@ -105,18 +126,37 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
 
   private let queue = DispatchQueue(label: "signalasi.ios.system.downloads")
   private let session: URLSession
+  private let sessionDelegate: AgentIOSDownloadSessionDelegate?
   private let storageDirectory: URL
   private let stateURL: URL
   private var nextId: Int64 = 1
   private var records: [Int64: DownloadRecord] = [:]
   private var tasks: [Int64: URLSessionDownloadTask] = [:]
   private var completionHandler: ((AgentIOSDownloadCompletion) -> Void)?
+  private var backgroundCompletionHandler: (() -> Void)?
 
   init(
-    session: URLSession = .shared,
+    session: URLSession? = nil,
     storageDirectory: URL? = nil
   ) {
-    self.session = session
+    if let session {
+      self.session = session
+      self.sessionDelegate = nil
+    } else {
+      let delegate = AgentIOSDownloadSessionDelegate()
+      let configuration = URLSessionConfiguration.background(
+        withIdentifier: Self.backgroundSessionIdentifier
+      )
+      configuration.sessionSendsLaunchEvents = true
+      configuration.discretionary = false
+      configuration.allowsCellularAccess = true
+      if #available(iOS 13.0, *) {
+        configuration.allowsExpensiveNetworkAccess = true
+        configuration.allowsConstrainedNetworkAccess = true
+      }
+      self.session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+      self.sessionDelegate = delegate
+    }
     if let storageDirectory {
       self.storageDirectory = storageDirectory
     } else {
@@ -127,6 +167,34 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     self.stateURL = self.storageDirectory.appendingPathComponent("downloads.json", isDirectory: false)
     queue.sync {
       restoreStateLocked()
+    }
+    sessionDelegate?.owner = self
+    session.getAllTasks { [weak self] tasks in
+      guard let self else { return }
+      self.queue.async {
+        tasks.compactMap { task -> (Int64, URLSessionDownloadTask)? in
+          guard let downloadTask = task as? URLSessionDownloadTask,
+                let id = self.downloadID(for: downloadTask) else {
+            return nil
+          }
+          return (id, downloadTask)
+        }.forEach { id, task in
+          self.tasks[id] = task
+        }
+      }
+    }
+  }
+
+  func handleBackgroundEvents(
+    identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    guard identifier == Self.backgroundSessionIdentifier else {
+      completionHandler()
+      return
+    }
+    queue.async {
+      self.backgroundCompletionHandler = completionHandler
     }
   }
 
@@ -175,14 +243,20 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     for (name, value) in AgentIOSPublicArticleRequestPolicy.headers(for: downloadURL) {
       request.setValue(value, forHTTPHeaderField: name)
     }
-    let task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
-      self?.finishDownload(
-        id: downloadId,
-        originalURL: downloadURL,
-        temporaryURL: temporaryURL,
-        response: response,
-        error: error
-      )
+    let task: URLSessionDownloadTask
+    if sessionDelegate != nil {
+      task = session.downloadTask(with: request)
+      task.taskDescription = String(downloadId)
+    } else {
+      task = session.downloadTask(with: request) { [weak self] temporaryURL, response, error in
+        self?.finishDownload(
+          id: downloadId,
+          originalURL: downloadURL,
+          temporaryURL: temporaryURL,
+          response: response,
+          error: error
+        )
+      }
     }
     queue.sync {
       tasks[downloadId] = task
@@ -291,6 +365,47 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     }
   }
 
+  fileprivate func backgroundDownloadFinished(task: URLSessionDownloadTask, location: URL) {
+    guard let id = downloadID(for: task),
+          let originalURL = queue.sync(execute: { records[id]?.url }).flatMap(URL.init(string:)) else {
+      return
+    }
+    finishDownload(
+      id: id,
+      originalURL: originalURL,
+      temporaryURL: location,
+      response: task.response,
+      error: nil
+    )
+  }
+
+  fileprivate func backgroundDownloadCompleted(task: URLSessionTask, error: Error?) {
+    guard let error,
+          let id = downloadID(for: task),
+          let originalURL = queue.sync(execute: { records[id]?.url }).flatMap(URL.init(string:)) else {
+      return
+    }
+    finishDownload(
+      id: id,
+      originalURL: originalURL,
+      temporaryURL: nil,
+      response: task.response,
+      error: error
+    )
+  }
+
+  fileprivate func backgroundSessionDidFinishEvents() {
+    let handler = queue.sync { () -> (() -> Void)? in
+      let handler = backgroundCompletionHandler
+      backgroundCompletionHandler = nil
+      return handler
+    }
+    guard let handler else { return }
+    DispatchQueue.main.async {
+      handler()
+    }
+  }
+
   private func finishDownload(
     id: Int64,
     originalURL: URL,
@@ -299,7 +414,9 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     error: Error?
   ) {
     queue.async {
-      guard var record = self.records[id] else {
+      guard var record = self.records[id],
+            record.status != Status.successful,
+            record.status != Status.failed else {
         return
       }
       record.updatedAtEpochMillis = self.currentMillis()
@@ -373,6 +490,15 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       turnId: record.turnId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
       languageTag: record.languageTag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     )
+  }
+
+  private func downloadID(for task: URLSessionTask) -> Int64? {
+    guard let taskDescription = task.taskDescription,
+          let id = Int64(taskDescription),
+          id > 0 else {
+      return nil
+    }
+    return id
   }
 
   private func notifyPendingCompletions() {
