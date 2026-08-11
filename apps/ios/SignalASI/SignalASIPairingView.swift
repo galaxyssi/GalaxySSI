@@ -70,6 +70,9 @@ struct PairingView: View {
           scannerPresented = false
           errorText = message
           pairingNoticeIsError = true
+        },
+        onCancel: {
+          scannerPresented = false
         }
       )
     }

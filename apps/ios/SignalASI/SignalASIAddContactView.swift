@@ -234,6 +234,9 @@ struct AddContactView: View {
         onError: { message in
           contactScannerPresented = false
           setImportStatus(message, isError: true)
+        },
+        onCancel: {
+          contactScannerPresented = false
         }
       )
     }
