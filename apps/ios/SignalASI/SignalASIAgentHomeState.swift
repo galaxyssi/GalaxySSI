@@ -114,14 +114,25 @@ extension AgentHomeView {
   var waitingMessageIDs: Set<UUID> {
     AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
       messages: transcriptMessages,
-      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds,
+      stoppedTurnIds: stoppedAgentReplyTurnIds
     )
   }
 
   var unboundWaitingTurnIDs: [String] {
     AgentReplyWaitingIndicatorPolicy.unboundTurnIDs(
       messages: transcriptMessages,
-      pendingTurnIds: coordinator.pendingAgentReplyTurnIds
+      pendingTurnIds: coordinator.pendingAgentReplyTurnIds,
+      stoppedTurnIds: stoppedAgentReplyTurnIds
+    )
+  }
+
+  var stoppedAgentReplyTurnIds: Set<String> {
+    Set(
+      activeSessionTasks
+        .filter { AgentReplyWaitingIndicatorPolicy.stopsFor($0.phase) }
+        .map { $0.taskId.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
     )
   }
 

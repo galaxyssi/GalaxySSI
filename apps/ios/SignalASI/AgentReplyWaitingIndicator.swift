@@ -34,11 +34,22 @@ enum AgentReplyWaitingIndicatorPolicy {
     "\(dedupePrefix)\(turnID)"
   }
 
+  static func stopsFor(_ phase: AgentPhase) -> Bool {
+    switch phase {
+    case .waitingConfirmation, .paused, .blocked, .completed, .failed, .cancelled:
+      return true
+    case .observing, .planning, .executing, .verifying, .waitingResponse:
+      return false
+    }
+  }
+
   static func state(
     messages: [ChatMessage],
-    pendingTurnIds: Set<String>
+    pendingTurnIds: Set<String>,
+    stoppedTurnIds: Set<String> = []
   ) -> AgentReplyWaitingIndicatorState {
-    guard !pendingTurnIds.isEmpty else {
+    let visiblePendingTurnIds = pendingTurnIds.subtracting(stoppedTurnIds)
+    guard !visiblePendingTurnIds.isEmpty else {
       return AgentReplyWaitingIndicatorState(messageIDs: [], unboundTurnIDs: [])
     }
     let assistantTurnIds = Set(
@@ -56,12 +67,12 @@ enum AgentReplyWaitingIndicatorPolicy {
         .filter { message in
           message.isMine &&
             !message.isSystem &&
-            pendingTurnIds.contains(turnKey(for: message)) &&
+            visiblePendingTurnIds.contains(turnKey(for: message)) &&
             !assistantTurnIds.contains(turnKey(for: message))
         }
         .map(\.id)
     )
-    let unboundTurnIDs = pendingTurnIds
+    let unboundTurnIDs = visiblePendingTurnIds
       .filter { !assistantTurnIds.contains($0) && !userTurnIds.contains($0) }
       .sorted()
     return AgentReplyWaitingIndicatorState(
@@ -72,16 +83,26 @@ enum AgentReplyWaitingIndicatorPolicy {
 
   static func waitingMessageIDs(
     messages: [ChatMessage],
-    pendingTurnIds: Set<String>
+    pendingTurnIds: Set<String>,
+    stoppedTurnIds: Set<String> = []
   ) -> Set<UUID> {
-    state(messages: messages, pendingTurnIds: pendingTurnIds).messageIDs
+    state(
+      messages: messages,
+      pendingTurnIds: pendingTurnIds,
+      stoppedTurnIds: stoppedTurnIds
+    ).messageIDs
   }
 
   static func unboundTurnIDs(
     messages: [ChatMessage],
-    pendingTurnIds: Set<String>
+    pendingTurnIds: Set<String>,
+    stoppedTurnIds: Set<String> = []
   ) -> [String] {
-    state(messages: messages, pendingTurnIds: pendingTurnIds).unboundTurnIDs
+    state(
+      messages: messages,
+      pendingTurnIds: pendingTurnIds,
+      stoppedTurnIds: stoppedTurnIds
+    ).unboundTurnIDs
   }
 }
 
