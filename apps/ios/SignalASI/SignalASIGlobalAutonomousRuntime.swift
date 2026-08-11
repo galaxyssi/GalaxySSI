@@ -128,17 +128,38 @@ extension SignalASIGlobalAgentRuntimeBridge {
         nowMillis: nowMillis
       )
       return settle(run: updated, store: deliberationStore, nowMillis: nowMillis)
-    case .startResearch, .startMonitor:
+    case .startResearch:
+      guard let task = queueResearch(run: run, action: action, nowMillis: nowMillis) else {
+        var failed = run
+        failed.actions = failed.actions.map { candidate in
+          guard candidate.id == action.id else { return candidate }
+          var copy = candidate
+          copy.status = .failed
+          copy.result = "The research task could not be queued"
+          copy.verificationStatus = .insufficient
+          copy.lastError = "The research task could not be queued"
+          copy.completedAtMillis = nowMillis
+          return copy
+        }
+        return settle(run: failed, store: deliberationStore, nowMillis: nowMillis)
+      }
+      return waitForResearchEvidence(
+        run: run,
+        action: action,
+        task: task,
+        store: deliberationStore,
+        nowMillis: nowMillis
+      )
+    case .startMonitor:
       let task = queueResearch(run: run, action: action, nowMillis: nowMillis)
       let updated = complete(
         run: run,
         action: action,
-        result: task == nil ? "The research task could not be queued" : "Research was queued",
+        result: task == nil ? "The monitoring task could not be queued" : "Monitoring was scheduled",
         evidence: localEvidence(
-          summary: task == nil ? "The research task could not be queued" : "Research was queued",
+          summary: task == nil ? "The monitoring task could not be queued" : "Monitoring was scheduled",
           sourceRef: task.map { "research:\($0.id)" } ?? "research:unavailable",
-          nowMillis: nowMillis,
-          kind: .researchLedger
+          nowMillis: nowMillis
         ),
         nowMillis: nowMillis
       )
@@ -148,9 +169,9 @@ extension SignalASIGlobalAgentRuntimeBridge {
           guard candidate.id == action.id else { return candidate }
           var copy = candidate
           copy.status = .failed
-          copy.result = "The research task could not be queued"
+          copy.result = "The monitoring task could not be queued"
           copy.verificationStatus = .insufficient
-          copy.lastError = "The research task could not be queued"
+          copy.lastError = "The monitoring task could not be queued"
           return copy
         }
         return settle(run: failed, store: deliberationStore, nowMillis: nowMillis)
@@ -376,6 +397,38 @@ extension SignalASIGlobalAgentRuntimeBridge {
     state.upsert(task)
     researchStore.save(state)
     return task
+  }
+
+  private static func waitForResearchEvidence(
+    run: GlobalAutonomousRun,
+    action: GlobalAutonomousAction,
+    task: GlobalResearchTask,
+    store: GlobalAgentDeliberationStore,
+    nowMillis: Int64
+  ) -> SignalASIGlobalAutonomousExecutionResult {
+    var waiting = run
+    waiting.actions = run.actions.map { candidate in
+      guard candidate.id == action.id else { return candidate }
+      var copy = candidate
+      copy.status = .running
+      copy.resourceId = task.id
+      copy.sourceMessageId = 0
+      copy.leaseExpiresAtMillis = 0
+      copy.result = "Research was queued"
+      copy.lastError = ""
+      return copy
+    }
+    waiting.status = .waitingForResource
+    waiting.nextAttemptAtMillis = 0
+    waiting.leaseExpiresAtMillis = 0
+    waiting.updatedAtMillis = nowMillis
+    store.upsertAutonomousRun(waiting)
+    return SignalASIGlobalAutonomousExecutionResult(
+      runId: run.id,
+      actionId: action.id,
+      status: .waitingForResource,
+      detail: "Research was queued"
+    )
   }
 
   private static func localEvidence(
