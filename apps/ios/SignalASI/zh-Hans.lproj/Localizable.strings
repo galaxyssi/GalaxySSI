@@ -3793,6 +3793,7 @@
 "signalasi.agent.model_selection.automatic_subtitle" = "根据任务、速度、隐私和可用性自动选择";
 "signalasi.agent.model_selection.local_section" = "本机模型";
 "signalasi.agent.model_selection.local_subtitle" = "已安装并可在此 iPhone 上运行";
+"signalasi.agent.model_selection.local_manage_subtitle" = "下载并准备供 Agent 私密使用的本机模型";
 "signalasi.agent.model_selection.on_device" = "本机";
 "signalasi.agent.model_selection.cloud_section" = "云模型";
 "signalasi.agent.model_selection.current" = "当前";
