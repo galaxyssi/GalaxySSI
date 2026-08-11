@@ -327,6 +327,7 @@ struct ConversationView: View {
               MessageBubble(
                 message: message,
                 myAvatarData: store.profile.avatarData,
+                remoteContact: contact,
                 onAction: handleRichAction
               )
                 .id(message.id)
@@ -849,12 +850,17 @@ struct MessageDetailView: View {
 struct MessageBubble: View {
   var message: ChatMessage
   var myAvatarData: Data? = nil
+  var remoteContact: SignalASIContact? = nil
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   var body: some View {
     HStack(alignment: .bottom, spacing: 8) {
+      if !message.isMine, !message.isSystem, let remoteContact {
+        AvatarView(contact: remoteContact, size: 36)
+          .accessibilityHidden(true)
+      }
       if message.isMine { Spacer(minLength: 48) }
       VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
         SignalASIRichContentView(
@@ -891,7 +897,7 @@ struct MessageBubble: View {
         .foregroundColor(.signalASITextSecondary)
       }
       if message.isMine {
-        SignalASIProfileAvatar(data: myAvatarData, size: 32)
+        SignalASIProfileAvatar(data: myAvatarData, size: 36)
           .accessibilityHidden(true)
       }
       if !message.isMine { Spacer(minLength: 48) }
