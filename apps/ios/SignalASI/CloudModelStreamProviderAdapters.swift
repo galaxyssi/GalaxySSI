@@ -262,7 +262,8 @@ private final class GeminiModelStreamAdapter: ModelStreamProviderAdapter {
           callId: function.string("id").ifBlank("gemini-\(index)"),
           index: index,
           nameDelta: function.string("name"),
-          argumentsDelta: function.object("args")?.jsonString() ?? ""
+          argumentsDelta: function.object("args")?.jsonString() ?? "",
+          argumentsMode: .snapshot
         )
       )
     }
