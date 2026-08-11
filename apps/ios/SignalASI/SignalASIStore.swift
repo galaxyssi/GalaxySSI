@@ -136,7 +136,7 @@ final class SignalASIStore: ObservableObject {
   @Published internal(set) var activeAgentConversationId: String {
     didSet { save() }
   }
-  @Published private(set) var agentMemoryItems: [AgentMemoryItem]
+  @Published internal(set) var agentMemoryItems: [AgentMemoryItem]
   @Published internal(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
     didSet { save() }
   }
@@ -293,8 +293,8 @@ final class SignalASIStore: ObservableObject {
 
   private let defaults: UserDefaults
   private let secrets: SignalASISecretStore
-  private let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
-  private let agentMemoryStore: UserDefaultsAgentMemoryStore
+  let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
+  let agentMemoryStore: UserDefaultsAgentMemoryStore
   let agentWorkspaceStore: AgentWorkspaceStore
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
@@ -579,17 +579,6 @@ final class SignalASIStore: ObservableObject {
     save()
   }
 
-  func exportAgentMemoryItems() -> [AgentMemoryItem] {
-    agentMemoryStore.exportItems()
-  }
-
-  func agentMemorySnapshot() -> AgentMemorySnapshot {
-    agentMemoryStore.snapshot()
-  }
-
-  func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
-    memoryDeletionIndex.snapshot()
-  }
 
 
 
@@ -597,59 +586,6 @@ final class SignalASIStore: ObservableObject {
 
 
 
-  @discardableResult
-  func rememberAgentMemory(_ item: AgentMemoryItem) -> AgentMemoryWriteResult {
-    let result = agentMemoryStore.remember(item)
-    agentMemoryItems = agentMemoryStore.exportItems()
-    return result
-  }
-
-  @discardableResult
-  func updateAgentMemory(id itemId: String, value: String, key: String) -> AgentMemoryWriteResult? {
-    let result = agentMemoryStore.update(itemId: itemId, value: value, key: key)
-    if result != nil {
-      agentMemoryItems = agentMemoryStore.exportItems()
-    }
-    return result
-  }
-
-  @discardableResult
-  func setAgentMemoryImportant(id itemId: String, important: Bool) -> Bool {
-    let changed = agentMemoryStore.setImportant(itemId: itemId, important: important)
-    if changed {
-      agentMemoryItems = agentMemoryStore.exportItems()
-    }
-    return changed
-  }
-
-  @discardableResult
-  func resolveAgentMemoryConflict(groupId: String, selectedItemId: String, mergedValue: String?) -> AgentMemoryItem? {
-    let resolved = agentMemoryStore.resolveConflict(
-      groupId: groupId,
-      selectedItemId: selectedItemId,
-      mergedValue: mergedValue
-    )
-    if resolved != nil {
-      agentMemoryItems = agentMemoryStore.exportItems()
-    }
-    return resolved
-  }
-
-  @discardableResult
-  func replaceAgentMemoryItems(_ items: [AgentMemoryItem]) -> Int {
-    let count = agentMemoryStore.replaceAll(items)
-    agentMemoryItems = agentMemoryStore.exportItems()
-    return count
-  }
-
-  @discardableResult
-  func deleteAgentMemory(id itemId: String, deletedAtMillis: Int64 = AgentMemoryClock.nowMillis()) -> Bool {
-    let deleted = agentMemoryStore.deleteById(itemId, deletedAtMillis: deletedAtMillis)
-    if deleted {
-      agentMemoryItems = agentMemoryStore.exportItems()
-    }
-    return deleted
-  }
 
   func updateVoiceSettings(_ mutate: (inout VoiceSettings) -> Void) {
     var next = voiceSettings
