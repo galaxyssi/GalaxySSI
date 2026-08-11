@@ -15,16 +15,16 @@ struct AgentHomeView: View {
   @State var attachments: [SignalASIDraftAttachment] = []
   @State var actionTrayPresented = false
   @State var voiceTranscriptionPending = false
-  @State private var transcriptAutoFollow = true
-  @State private var transcriptShowLatestButton = false
+  @State var transcriptAutoFollow = true
+  @State var transcriptShowLatestButton = false
   @State var pendingAgentSwipeDirection = ""
   @State var agentSwipeRequest = 0
   @State private var transcriptContentMinY: CGFloat = 0
-  @State private var transcriptTopLoadTriggered = false
-  @State private var visibleAgentMessageLimit = 24
-  @State private var olderTranscriptAnchor: UUID?
+  @State var transcriptTopLoadTriggered = false
+  @State var visibleAgentMessageLimit = 24
+  @State var olderTranscriptAnchor: UUID?
   @State var retryingAgentMessageIDs: Set<UUID> = []
-  @State private var retryingAgentTaskIDs: Set<String> = []
+  @State var retryingAgentTaskIDs: Set<String> = []
   @State var timelineActionTaskIDsInFlight: Set<String> = []
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
@@ -1265,62 +1265,6 @@ struct AgentHomeView: View {
       return
     }
     store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
-  }
-
-  private func refreshAgentRuntimeAuditRecords() {
-    agentRuntimeAuditRecords = AgentNativeToolDefaultStores
-      .makePersistentStores()
-      .auditStore
-      .list(limit: 12, toolId: "", status: nil)
-  }
-
-  private func refreshAgentRouteState() {
-    modelSelection = AgentModelSelectionSettings.selection(
-      for: store.activeAgentConversationId
-    )
-    refreshAgentRuntimeAuditRecords()
-    refreshAgentScreenContext()
-  }
-
-  func resetAgentSessionPresentation() {
-    agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    draft = ""
-    attachments.removeAll()
-    voiceAttachmentSnapshot.removeAll()
-    voicePendingAttachments.removeAll()
-    agentVoiceDraftSnapshot = nil
-    voiceTranscriptionPending = false
-    actionTrayPresented = false
-    attachmentError = ""
-    selectedMessageForDetails = nil
-    composerFocusRequest += 1
-    visibleAgentMessageLimit = Self.agentTranscriptPageSize
-    olderTranscriptAnchor = nil
-    transcriptTopLoadTriggered = false
-    transcriptAutoFollow = true
-    transcriptShowLatestButton = false
-    retryingAgentMessageIDs.removeAll()
-    retryingAgentTaskIDs.removeAll()
-    runtimeArtifactPreview = nil
-    runtimeArtifactDocument = nil
-    runtimeArtifactExportPresented = false
-    runtimeArtifactExportFilename = ""
-    runtimeArtifactExportSourceURI = ""
-    runtimeArtifactError = ""
-    runtimeArtifactStatus = ""
-    richActionStatus = ""
-    recoveringAgentTaskIDs.removeAll()
-    approvalActionsInFlight.removeAll()
-    cancellingRemoteTaskIDs.removeAll()
-    cancellingVoiceRunIDs.removeAll()
-    pendingHighRiskApprovalTask = nil
-    modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
-    refreshAgentRuntimeAuditRecords()
-  }
-
-  func createAgentConversation() {
-    _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
-    resetAgentSessionPresentation()
   }
 
   func t(_ key: String, _ fallback: String) -> String {
