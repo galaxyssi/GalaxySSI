@@ -752,7 +752,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           url: currentURL,
           timeoutMillis: remainingMillis,
           maxBodyBytes: maxBodyBytes,
-          headers: [:]
+          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL)
         )
       )
       if invocation.isCancellationRequested {
