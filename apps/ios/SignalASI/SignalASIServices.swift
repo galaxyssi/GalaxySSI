@@ -163,6 +163,13 @@ final class MessageCoordinator: ObservableObject {
           store: self.store,
           response: response
         )
+        let consumedAutonomous = SignalASIGlobalAgentRuntimeBridge.consumeAutonomousResearchResponse(
+          response,
+          settings: self.store.globalAgentSettings
+        )
+        if consumedAutonomous {
+          self.refreshAgentHomeState()
+        }
       }
     }
     self.globalCognitionResponseToken = connectorResponseBus.addListener { [weak self] response in
@@ -462,6 +469,14 @@ final class MessageCoordinator: ObservableObject {
           response: failure,
           nowMillis: nowMillis
         )
+        let consumedAutonomous = SignalASIGlobalAgentRuntimeBridge.consumeAutonomousResearchResponse(
+          failure,
+          settings: store.globalAgentSettings,
+          nowMillis: nowMillis
+        )
+        if consumedAutonomous {
+          refreshAgentHomeState()
+        }
         continue
       }
       dispatched += 1
