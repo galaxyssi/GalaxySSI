@@ -1160,7 +1160,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "general.about" -> openExistingControlCenterPage { showAboutSignalASIPage() }
         "general.advanced" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.ADVANCED))
         "apps.messages" -> exitControlCenterToTab(PAGE_MESSAGES)
-        "apps.contacts" -> exitControlCenterToTab(PAGE_CONTACTS)
         "apps.discover" -> exitControlCenterToTab(PAGE_DISCOVER)
         "apps.chat_history" -> showAgentSessionsPage()
         "security.manage" -> openExistingControlCenterPage { showSecurityFeaturePage() }
