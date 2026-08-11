@@ -8,6 +8,13 @@ enum SignalASIConversationHubTab: String, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
+  case normal
+  case scanner
+
+  var id: String { rawValue }
+}
+
 struct SignalASIConversationHubView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -16,8 +23,7 @@ struct SignalASIConversationHubView: View {
   @State private var selectedTab: SignalASIConversationHubTab
   @State private var searchText = ""
   @State private var showingArchived = false
-  @State private var addContactPresented = false
-  @State private var openScannerOnAdd = false
+  @State private var addContactPresentation: SignalASIAddContactPresentation?
   @State private var cloudModelPresented = false
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
@@ -98,8 +104,10 @@ struct SignalASIConversationHubView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .sheet(isPresented: $addContactPresented) {
-      AddContactView(autoOpenScanner: openScannerOnAdd)
+    .sheet(item: $addContactPresentation) { presentation in
+      // Carry the route in the sheet item so SwiftUI cannot capture a stale
+      // Boolean while the Hub presents the Add flow.
+      AddContactView(autoOpenScanner: presentation == .scanner)
     }
     .sheet(isPresented: $cloudModelPresented) {
       CloudModelProviderSelectionView()
@@ -320,8 +328,7 @@ struct SignalASIConversationHubView: View {
         systemImage: "qrcode.viewfinder",
         tint: .signalASIAccent
       ) {
-        openScannerOnAdd = true
-        addContactPresented = true
+        addContactPresentation = .scanner
       }
 
       if sections.isEmpty {
