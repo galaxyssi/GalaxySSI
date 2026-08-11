@@ -1417,6 +1417,13 @@
 "agent_attachment_remove" = "移除附件";
 "agent_attachment_count" = "%d 个附件";
 "agent_attachment_default_goal" = "用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。";
+"agent_clarify_task_goal" = "你希望我完成什么具体目标？";
+"agent_clarify_code_outcome" = "你希望代码最终实现什么结果？";
+"agent_clarify_control_action" = "你希望我控制哪个设备并执行什么操作？";
+"agent_clarify_research_topic" = "你希望我研究或搜索哪个主题？";
+"agent_clarify_file_action" = "你希望我对附件执行什么操作？";
+"agent_clarify_memory_content" = "你希望我记住什么内容？";
+"agent_clarify_automation_details" = "请说明自动化任务的触发条件和要执行的动作。";
 "agent_attachment_rejected" = "部分附件未添加。最多可添加 10 个文件，每个不超过 64 MB。";
 "agent_attachment_camera_unavailable" = "无法打开相机";
 "agent_attachment_photo_marker" = "[照片]";

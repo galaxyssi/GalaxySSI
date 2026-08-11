@@ -4497,36 +4497,36 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func localClarificationQuestion(_ question: AgentClarificationQuestion) -> String {
-    let zh = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
-    let english: String
-    let chinese: String
+    let language = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    let key: String
+    let fallback: String
     switch question {
     case .taskGoal:
-      english = "What specific goal would you like me to complete?"
-      chinese = "你希望我完成什么具体目标？"
+      key = "agent_clarify_task_goal"
+      fallback = "What specific goal would you like me to complete?"
     case .codeOutcome:
-      english = "What result should the code achieve?"
-      chinese = "你希望代码最终实现什么结果？"
+      key = "agent_clarify_code_outcome"
+      fallback = "What result should the code achieve?"
     case .controlAction:
-      english = "Which device should I control, and what action should I perform?"
-      chinese = "你希望我控制哪个设备并执行什么操作？"
+      key = "agent_clarify_control_action"
+      fallback = "Which device should I control, and what action should I perform?"
     case .researchTopic:
-      english = "What topic would you like me to research?"
-      chinese = "你希望我研究或搜索哪个主题？"
+      key = "agent_clarify_research_topic"
+      fallback = "What topic would you like me to research?"
     case .fileAction:
-      english = "What would you like me to do with the attached file?"
-      chinese = "你希望我对附件执行什么操作？"
+      key = "agent_clarify_file_action"
+      fallback = "What would you like me to do with the attached file?"
     case .memoryContent:
-      english = "What should I remember?"
-      chinese = "你希望我记住什么内容？"
+      key = "agent_clarify_memory_content"
+      fallback = "What should I remember?"
     case .automationDetails:
-      english = "What trigger and action should this automation use?"
-      chinese = "请说明自动化任务的触发条件和要执行的动作。"
+      key = "agent_clarify_automation_details"
+      fallback = "What trigger and action should this automation use?"
     case .none:
-      english = "What would you like me to do?"
-      chinese = "你希望我做什么？"
+      key = "agent_clarify_task_goal"
+      fallback = "What would you like me to do?"
     }
-    return zh ? chinese : english
+    return SignalASILocalization.string(key, fallback: fallback, language: language)
   }
 
   private func attachmentClarificationGoal(_ attachments: [SignalASIDraftAttachment]) -> String {
