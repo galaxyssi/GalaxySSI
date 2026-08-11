@@ -441,7 +441,12 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
             withIntermediateDirectories: true
           )
           let destination = self.storageDirectory.appendingPathComponent(
-            self.safeFilename(id: id, response: response, originalURL: originalURL),
+            self.safeFilename(
+              id: id,
+              title: record.title,
+              response: response,
+              originalURL: originalURL
+            ),
             isDirectory: false
           )
           if FileManager.default.fileExists(atPath: destination.path) {
@@ -520,13 +525,48 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     }
   }
 
-  private func safeFilename(id: Int64, response: URLResponse?, originalURL: URL) -> String {
-    let candidate = response?.suggestedFilename ?? originalURL.lastPathComponent
-    let sanitized = bounded(candidate, 160)
+  private func safeFilename(
+    id: Int64,
+    title: String,
+    response: URLResponse?,
+    originalURL: URL
+  ) -> String {
+    let suppliedTitle = bounded(title, 160)
+    let genericTitle = ["download", "signalasi download"].contains {
+      $0.caseInsensitiveCompare(suppliedTitle) == .orderedSame
+    }
+    let sourceFilename = response?.suggestedFilename ?? originalURL.lastPathComponent
+    let sourceExtension = sourceFilename.range(
+      of: #"\.[A-Za-z0-9]{1,10}$"#,
+      options: .regularExpression
+    ).map { String(sourceFilename[$0]).lowercased() } ?? ""
+    let titleExtension = suppliedTitle.range(
+      of: #"\.[A-Za-z0-9]{1,10}$"#,
+      options: .regularExpression
+    ).map { String(suppliedTitle[$0]).lowercased() } ?? ""
+    let titleHasExtension = !titleExtension.isEmpty
+    let baseCandidate: String
+    if !suppliedTitle.isEmpty && !genericTitle {
+      baseCandidate = titleHasExtension
+        ? suppliedTitle.replacingOccurrences(
+          of: #"\.[A-Za-z0-9]{1,10}$"#,
+          with: "",
+          options: .regularExpression
+        )
+        : suppliedTitle
+    } else if !sourceFilename.isEmpty {
+      baseCandidate = sourceExtension.isEmpty
+        ? sourceFilename
+        : String(sourceFilename.dropLast(sourceExtension.count))
+    } else {
+      baseCandidate = "download"
+    }
+    let sanitized = bounded(baseCandidate, 160)
       .replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
       .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-    let suffix = sanitized.isEmpty ? "download" : String(sanitized.prefix(120))
-    return "download-\(id)-\(suffix)"
+    let base = sanitized.isEmpty ? "download" : String(sanitized.prefix(120))
+    let `extension` = titleExtension.isEmpty ? sourceExtension : titleExtension
+    return "download-\(id)-\(base)\(extension)"
   }
 
   private func fileSize(_ url: URL) -> Int64 {
