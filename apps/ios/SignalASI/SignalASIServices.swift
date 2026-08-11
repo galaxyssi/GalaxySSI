@@ -1395,9 +1395,14 @@ final class MessageCoordinator: ObservableObject {
             .ifBlank(agentContact.id)
         )
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-        let recentUserMessages = store.agentSessionMessages(outgoing.conversationId)
-          .filter { $0.isMine && !$0.isSystem && $0.id != outgoing.id }
-          .map(\.content)
+        let recentUserMessages: [String]
+        if AgentIOSPhonePublicHTMLAttachment.shouldUseConversationContext(originalRequestText) {
+          recentUserMessages = store.agentSessionMessages(outgoing.conversationId)
+            .filter { $0.isMine && !$0.isSystem && $0.id != outgoing.id }
+            .map(\.content)
+        } else {
+          recentUserMessages = []
+        }
         let publicPageRequest = AgentIOSPhonePublicHTMLAttachment.captureRequest(
           currentRequest: originalRequestText,
           recentUserMessages: recentUserMessages
