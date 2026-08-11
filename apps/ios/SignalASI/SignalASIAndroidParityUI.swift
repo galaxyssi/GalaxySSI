@@ -23,9 +23,9 @@ struct AgentHomeView: View {
   @State private var transcriptTopLoadTriggered = false
   @State private var visibleAgentMessageLimit = 24
   @State private var olderTranscriptAnchor: UUID?
-  @State private var retryingAgentMessageIDs: Set<UUID> = []
+  @State var retryingAgentMessageIDs: Set<UUID> = []
   @State private var retryingAgentTaskIDs: Set<String> = []
-  @State private var timelineActionTaskIDsInFlight: Set<String> = []
+  @State var timelineActionTaskIDsInFlight: Set<String> = []
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
   @State var cameraPickerPresented = false
@@ -983,116 +983,6 @@ struct AgentHomeView: View {
     transcriptTopLoadTriggered = transcriptContentMinY >= -8
     olderTranscriptAnchor = transcriptMessages.first?.id
     visibleAgentMessageLimit += Self.agentTranscriptPageSize
-  }
-
-  private func retryAgentMessage(_ message: ChatMessage) {
-    guard message.isMine,
-          message.deliveryStatus == .failed,
-          !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          retryingAgentMessageIDs.insert(message.id).inserted else {
-      return
-    }
-    Task { @MainActor in
-      _ = await coordinator.send(message.content, to: contact)
-      retryingAgentMessageIDs.remove(message.id)
-    }
-  }
-
-  private func resumeActiveAgentTask(_ task: AgentTaskRecord) {
-    richActionStatus = coordinator.resumeLocalNativeAction(taskId: task.taskId)
-      ? t("signalasi.agent.task_control.resumed", "Task resumed")
-      : t("signalasi.agent.task_control.resume_failed", "This task could not be resumed")
-    resumePendingAgentDeliveryAfterTaskAction()
-  }
-
-  func resumePendingAgentDeliveryAfterTaskAction() {
-    coordinator.resumePendingAgentDelivery()
-    coordinator.refreshAgentHomeState()
-  }
-
-  private func agentTimelineActions(for task: AgentTaskRecord) -> [AgentExecutionLoopTimelineAction] {
-    AgentExecutionLoopTimelinePolicy.actionsForPhase(task.phase).filter { action in
-      switch action {
-      case .pause:
-        return AgentTaskCenterPolicy.pauseable(task)
-      case .resume:
-        return AgentTaskCenterPolicy.resumable(task)
-      case .cancel:
-        return AgentTaskCenterPolicy.cancellable(task)
-      case .retry, .replan:
-        return AgentTaskCenterPolicy.isReusableGoal(task.goal)
-      }
-    }
-  }
-
-  private func runAgentTimelineAction(
-    _ action: AgentExecutionLoopTimelineAction,
-    task: AgentTaskRecord
-  ) {
-    guard timelineActionTaskIDsInFlight.insert(task.taskId).inserted else { return }
-    defer { timelineActionTaskIDsInFlight.remove(task.taskId) }
-
-    let currentTask = store.agentTask(id: task.taskId) ?? task
-    guard agentTimelineActions(for: currentTask).contains(where: { $0.rawValue == action.rawValue }) else {
-      richActionStatus = t(
-        "signalasi.agent.task_control.unavailable",
-        "This task action is no longer available"
-      )
-      return
-    }
-
-    switch action {
-    case .pause:
-      richActionStatus = coordinator.pauseLocalNativeAction(taskId: task.taskId)
-        ? t("signalasi.agent.task_control.paused", "Task paused")
-        : t("signalasi.agent.task_control.pause_failed", "This task could not be paused")
-      resumePendingAgentDeliveryAfterTaskAction()
-    case .resume:
-      resumeActiveAgentTask(task)
-    case .cancel:
-      cancelActiveAgentTask(task)
-    case .retry:
-      retryAgentTask(task, mode: .retry)
-    case .replan:
-      retryAgentTask(task, mode: .replan)
-    }
-  }
-
-  private func agentTimelineActionTitle(_ action: AgentExecutionLoopTimelineAction) -> String {
-    switch action {
-    case .pause:
-      return t("signalasi.agent.task_control.pause", "Pause task")
-    case .resume:
-      return t("signalasi.agent.resume_task", "Resume task")
-    case .retry:
-      return t("signalasi.common.retry", "Retry")
-    case .replan:
-      return t("signalasi.agent.task_control.replan", "Re-plan task")
-    case .cancel:
-      return t("signalasi.common.cancel_task", "Cancel task")
-    }
-  }
-
-  private func agentTimelineActionIcon(_ action: AgentExecutionLoopTimelineAction) -> String {
-    switch action {
-    case .pause:
-      return "pause.fill"
-    case .resume:
-      return "play.fill"
-    case .retry:
-      return "arrow.clockwise"
-    case .replan:
-      return "arrow.triangle.2.circlepath"
-    case .cancel:
-      return "xmark.circle"
-    }
-  }
-
-  private func cancelActiveAgentTask(_ task: AgentTaskRecord) {
-    richActionStatus = coordinator.cancelLocalAgentTask(taskId: task.taskId)
-      ? t("signalasi.agent.task_control.cancelled", "Task cancelled")
-      : t("signalasi.agent.task_control.cancel_failed", "This task could not be cancelled")
-    resumePendingAgentDeliveryAfterTaskAction()
   }
 
   private func agentTask(for message: ChatMessage) -> AgentTaskRecord? {
