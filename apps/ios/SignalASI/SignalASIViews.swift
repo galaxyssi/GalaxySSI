@@ -280,7 +280,7 @@ struct ContactRow: View {
           }
         }
         if showsSummary {
-          Text(summary.lastMessage?.content ?? contact.setupDetail)
+          Text(summary.lastMessage?.content ?? t("chat_no_messages", "No messages yet"))
             .lineLimit(1)
             .font(.system(size: 14))
             .foregroundColor(summary.hasUnreadMessages ? .signalASITextPrimary : .signalASITextSecondary)
@@ -309,9 +309,14 @@ struct ContactRow: View {
   }
 
   private var contactTitle: String {
-    contact.id == "system"
-      ? t("chat_system_notice", "System Notifications")
-      : contact.displayName
+    switch contact.id {
+    case "system":
+      return t("chat_system_notice", "System Notifications")
+    case "me":
+      return t("chat_me", "Me")
+    default:
+      return contact.displayName
+    }
   }
 }
 
@@ -624,9 +629,14 @@ struct ConversationView: View {
   }
 
   private var contactTitle: String {
-    isSystemNoticeContact
-      ? t("chat_system_notice", "System Notifications")
-      : contact.displayName
+    switch contact.id {
+    case "system":
+      return t("chat_system_notice", "System Notifications")
+    case "me":
+      return t("chat_me", "Me")
+    default:
+      return contact.displayName
+    }
   }
 
   @ViewBuilder
