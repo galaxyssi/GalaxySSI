@@ -67,7 +67,7 @@ final class AgentIOSDownloadCompletionCoordinator {
       remoteMessageId: remoteMessageId,
       status: succeeded ? .delivered : .failed,
       traceStage: succeeded ? "ios_download_completed" : "ios_download_failed",
-      conversationId: completion.conversationId,
+      conversationId: conversationId(for: completion),
       turnId: completion.turnId,
       richOutputJson: richOutput
     )
@@ -75,12 +75,32 @@ final class AgentIOSDownloadCompletionCoordinator {
   }
 
   private func contactId(for completion: AgentIOSDownloadCompletion) -> String? {
-    if !completion.contactId.isEmpty, store.contact(id: completion.contactId) != nil {
+    if !completion.contactId.isEmpty,
+       let contact = store.contact(id: completion.contactId),
+       !contact.deleted {
       return completion.contactId
     }
+    if let matched = store.contacts.first(where: { contact in
+      !contact.deleted && store.messages(for: contact.id).contains {
+        $0.conversationId == completion.conversationId
+      }
+    }) {
+      return matched.id
+    }
+    if let hermes = store.contact(id: "hermes"), !hermes.deleted {
+      return hermes.id
+    }
     return store.contacts.first { contact in
-      store.messages(for: contact.id).contains { $0.conversationId == completion.conversationId }
+      !contact.deleted && (contact.type == "agent" || contact.deliveryMode == .cloudAPI)
     }?.id
+  }
+
+  private func conversationId(for completion: AgentIOSDownloadCompletion) -> String {
+    let requested = completion.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let session = store.agentSession(id: requested) {
+      return session.id
+    }
+    return store.activeAgentConversationId
   }
 
   private func languageTag(for completion: AgentIOSDownloadCompletion) -> String {
