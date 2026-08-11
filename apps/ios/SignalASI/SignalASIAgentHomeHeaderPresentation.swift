@@ -1,0 +1,144 @@
+import Foundation
+
+struct SignalASIAgentHomeHeaderPresentation {
+  let sessionTitle: String
+  let modelStatusLabel: String
+  let modelLogoLabel: String
+
+  static func make(
+    session: AgentConversation?,
+    contact: SignalASIContact,
+    selection: AgentModelSelection,
+    liveExecutionTargetLabel: String?,
+    contacts: [SignalASIContact],
+    language: String
+  ) -> SignalASIAgentHomeHeaderPresentation {
+    let modelLogoLabel = modelLabel(
+      session: session,
+      contact: contact,
+      selection: selection,
+      liveExecutionTargetLabel: liveExecutionTargetLabel,
+      contacts: contacts,
+      language: language
+    )
+    let manual = hasManualSelection(selection)
+    let statusKey = manual
+      ? "signalasi.agent.header.routing.manual"
+      : "signalasi.agent.header.routing.auto"
+    let statusFallback = manual ? "Manual · %@" : "Automatic · %@"
+    let modelStatusLabel = String(
+      format: localized(statusKey, fallback: statusFallback, language: language),
+      modelLogoLabel
+    )
+    return SignalASIAgentHomeHeaderPresentation(
+      sessionTitle: sessionTitle(session, language: language),
+      modelStatusLabel: modelStatusLabel,
+      modelLogoLabel: modelLogoLabel
+    )
+  }
+
+  private static func hasManualSelection(_ selection: AgentModelSelection) -> Bool {
+    selection.mode == .manual &&
+      !selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private static func modelLabel(
+    session: AgentConversation?,
+    contact: SignalASIContact,
+    selection: AgentModelSelection,
+    liveExecutionTargetLabel: String?,
+    contacts: [SignalASIContact],
+    language: String
+  ) -> String {
+    guard hasManualSelection(selection) else {
+      if let liveExecutionTargetLabel,
+         !liveExecutionTargetLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return liveExecutionTargetLabel
+      }
+      let sessionLabel = session?.selectedModelOrAgent
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let automaticLabel = localized(
+        "signalasi.agent.model_selection.automatic",
+        fallback: "Automatic",
+        language: language
+      )
+      guard !sessionLabel.isEmpty,
+            sessionLabel.caseInsensitiveCompare("automatic") != .orderedSame,
+            sessionLabel.caseInsensitiveCompare(contact.displayName) != .orderedSame else {
+        return automaticLabel
+      }
+      return sessionLabel
+    }
+
+    let automaticLabel = localized(
+      "signalasi.agent.model_selection.automatic",
+      fallback: "Automatic",
+      language: language
+    )
+    let targetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallbackLabel = selection.displayName
+      .ifBlank(selection.modelId)
+      .ifBlank(targetId)
+      .ifBlank(automaticLabel)
+
+    if targetId == "local-llm" {
+      let profile = LocalModelRuntimeCatalog.find(selection.modelId)
+      return profile.displayName
+        .ifBlank(selection.displayName)
+        .ifBlank(selection.modelId)
+        .ifBlank(fallbackLabel)
+    }
+    if let target = contacts.first(where: { $0.id == targetId }),
+       target.type == "agent" {
+      return selection.displayName.ifBlank(target.displayName).ifBlank(target.id)
+    }
+    if let target = contacts.first(where: { $0.id == targetId }),
+       let model = target.selectedCloudModel {
+      return model.displayName
+        .ifBlank(model.modelId)
+        .ifBlank(selection.displayName)
+        .ifBlank(fallbackLabel)
+    }
+    return fallbackLabel
+  }
+
+  private static func sessionTitle(_ session: AgentConversation?, language: String) -> String {
+    let fallback = localized(
+      "signalasi.agent.session.new",
+      fallback: "New session",
+      language: language
+    )
+    guard let session else { return fallback }
+    let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(fallback)
+    let sourceTitle = session.createdByAgent
+      ? String(
+        format: localized(
+          "signalasi.agent_session.created_by_agent",
+          fallback: "SignalASI · %@",
+          language: language
+        ),
+        title
+      )
+      : title
+    if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return sourceTitle + " · " + localized(
+        "signalasi.agent_session.merged",
+        fallback: "Merged",
+        language: language
+      )
+    }
+    if session.trackingPaused {
+      return sourceTitle + " · " + localized(
+        "signalasi.agent_session.tracking_paused",
+        fallback: "Tracking paused",
+        language: language
+      )
+    }
+    return sourceTitle
+  }
+
+  private static func localized(_ key: String, fallback: String, language: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: language)
+  }
+}
