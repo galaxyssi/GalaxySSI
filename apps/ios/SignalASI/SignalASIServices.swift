@@ -260,6 +260,7 @@ final class MessageCoordinator: ObservableObject {
     downloadCompletionCoordinator.deliverPendingCompletions()
     _ = store.deliverPendingGlobalProactiveMessages()
     _ = SignalASIGlobalAgentRuntimeBridge.processLongHorizonCycle(store: store)
+    _ = SignalASIGlobalAgentRuntimeBridge.processProactiveDiscoveryCycle(store: store)
     Task { @MainActor [weak self] in
       _ = await self?.runGlobalResearchCycle()
     }
