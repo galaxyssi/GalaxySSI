@@ -63,10 +63,9 @@ struct SignalASIConversationComposer: View {
       }
       .composerIconButton(label: t("agent_attachment_add_file", "Add attachment"))
 
-      TextField(t("signalasi.message.input", "Message"), text: $draft, axis: .vertical)
-        .lineLimit(1...4)
+      TextField(t("signalasi.message.input", "Message"), text: $draft)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(minHeight: 36)
         .background(Color.signalASISearchBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
