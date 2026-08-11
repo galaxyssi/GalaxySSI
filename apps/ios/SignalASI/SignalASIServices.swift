@@ -226,6 +226,40 @@ final class MessageCoordinator: ObservableObject {
     _ = reconcileStaleAgentConnectorReplies()
   }
 
+  /// Mirrors Android's profile update fan-out for verified person contacts that
+  /// have supplied a direct MQTT route.
+  @discardableResult
+  func publishProfileUpdates() async -> Int {
+    let profile = store.profile
+    let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Me")
+    let recipients = store.visibleContacts.filter { contact in
+      contact.type.caseInsensitiveCompare("person") == .orderedSame &&
+        contact.isCommunicable &&
+        !(contact.mqttTopic ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var delivered = 0
+    for contact in recipients {
+      guard let topic = contact.mqttTopic?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !topic.isEmpty,
+            let data = try? JSONSerialization.data(withJSONObject: [
+              "type": "profile_update",
+              "message_id": UUID().uuidString,
+              "contact_id": contact.id,
+              "sender": profile.signalASIId,
+              "name": name,
+              "signalasi_id": profile.signalASIId,
+              "identity_fingerprint": profile.identityFingerprint,
+              "time": Int64(Date().timeIntervalSince1970 * 1_000)
+            ]) else {
+        continue
+      }
+      if (await mqttClient.publish(topic: topic, payload: data)).accepted {
+        delivered += 1
+      }
+    }
+    return delivered
+  }
+
   private func startAutomationScheduler() {
     automationSchedulerTask?.cancel()
     registerAutomationBackgroundTask()
@@ -4963,6 +4997,9 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    if handleProfileUpdatePayload(appPayload, messageId: messageId) {
+      return
+    }
     if let response = AgentConnectorResponse.fromPayload(appPayload),
        connectorResponseBus.publish(response) {
       if !messageId.isEmpty {
@@ -5574,6 +5611,32 @@ final class MessageCoordinator: ObservableObject {
       return nil
     }
     return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+  }
+
+  private func handleProfileUpdatePayload(_ payload: [String: Any], messageId: String) -> Bool {
+    guard payload.string("type") == "profile_update" else { return false }
+
+    let senderId = payload.string("sender")
+      .ifBlank(payload.string("signalasi_id"))
+      .ifBlank(payload.string("hermes_id"))
+    let name = String(payload.string("name").trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+    if !senderId.isEmpty, !name.isEmpty {
+      _ = store.renameContact(id: senderId, displayName: name)
+    }
+
+    let label = name.ifBlank(senderId).ifBlank("Contact")
+    let message = store.appendSystem(
+      localReply(
+        english: "Profile updated: \(label)",
+        chinese: "资料已更新：\(label)"
+      ),
+      to: "system"
+    )
+    onIncomingMessage?(message)
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
+    return true
   }
 
   private func handleConnectorAgentStatus(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
