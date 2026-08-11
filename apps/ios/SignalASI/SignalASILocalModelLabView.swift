@@ -3,6 +3,7 @@ import CoreLocation
 import Foundation
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct SignalASILocalModelLabView: View {
@@ -20,6 +21,7 @@ struct SignalASILocalModelLabView: View {
   @State private var notificationStatus = ""
   @State private var statusMessage = ""
   @State private var catalogRevision = 0
+  @State private var showingModelImporter = false
   @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
 
   private let whisperModelManager = VoiceWhisperModelManager()
@@ -134,6 +136,12 @@ struct SignalASILocalModelLabView: View {
     .onChange(of: downloads.states) { _ in
       refreshSnapshots()
     }
+    .fileImporter(
+      isPresented: $showingModelImporter,
+      allowedContentTypes: [.data, .item],
+      allowsMultipleSelection: false,
+      onCompletion: importModelFile
+    )
   }
 
   private var manageSection: some View {
@@ -147,6 +155,18 @@ struct SignalASILocalModelLabView: View {
         badge: t("signalasi.local_model.search_action", "Search")
       ) {
         SignalASILocalModelSearchView()
+      }
+      SignalASILocalModelLabNavigationRow(
+        title: t("signalasi.local_model.import_title", "Import verified model"),
+        subtitle: t(
+          "signalasi.local_model.import_subtitle",
+          "Import a trusted GGUF file from Files"
+        ),
+        systemImage: "square.and.arrow.down",
+        tint: .signalASIAccent,
+        badge: t("signalasi.local_model.import_action", "Files")
+      ) {
+        showingModelImporter = true
       }
       ForEach(localModelProfiles) { profile in
         let artifact = LocalModelRuntimeCatalog.artifact(for: profile)
@@ -561,6 +581,38 @@ struct SignalASILocalModelLabView: View {
     inferenceSnapshot = LocalModelInferenceRuntime.shared.snapshot()
     catalogRevision += 1
     refreshPermissionStatuses()
+  }
+
+  private func importModelFile(_ result: Result<[URL], Error>) {
+    switch result {
+    case .failure(let error):
+      statusMessage = error.localizedDescription
+    case .success(let urls):
+      guard let url = urls.first else { return }
+      statusMessage = t("signalasi.local_model.import_verifying", "Verifying model file...")
+      Task.detached(priority: .userInitiated) {
+        do {
+          let imported = try LocalModelVerifiedFileImporter.install(from: url)
+          await MainActor.run {
+            let profile = LocalModelRuntimeCatalog.find(imported.profileId)
+            LocalModelRuntimeSettings.setSelectedProfile(profile.id)
+            LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: true)
+            statusMessage = String(
+              format: t("signalasi.local_model.import_success", "%@ imported and enabled"),
+              imported.profileName
+            )
+            refreshSnapshots()
+          }
+        } catch {
+          await MainActor.run {
+            statusMessage = String(
+              format: t("signalasi.local_model.import_failed", "Model import failed: %@"),
+              error.localizedDescription
+            )
+          }
+        }
+      }
+    }
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
