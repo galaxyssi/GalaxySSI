@@ -33,6 +33,10 @@ struct SignalASIDraftAttachment: Identifiable, Equatable {
     mimeType.lowercased().hasPrefix("image/")
   }
 
+  var isAudio: Bool {
+    mimeType.lowercased().hasPrefix("audio/")
+  }
+
   var humanSize: String {
     SignalASIAttachmentPayloadBuilder.humanSize(sizeBytes)
   }

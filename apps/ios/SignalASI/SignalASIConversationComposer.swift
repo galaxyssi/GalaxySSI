@@ -7,12 +7,11 @@ struct SignalASIConversationComposer: View {
   @Binding var attachmentMenuPresented: Bool
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
-  var voiceSettings: VoiceSettings
   var onSend: () -> Void
-  var onVoiceTranscript: (String) -> Void
+  var onVoiceAttachment: (SignalASIDraftAttachment, TimeInterval) -> Void
   var t: (String, String) -> String
 
-  @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
+  @StateObject private var voiceRecorder = SignalASIChatVoiceRecorder()
   @State private var emojiPanelPresented = false
 
   private var canSend: Bool {
@@ -32,25 +31,25 @@ struct SignalASIConversationComposer: View {
           .foregroundColor(.red)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if !holdToTalk.statusMessage.isEmpty {
-        Text(holdToTalk.statusMessage)
+      if !voiceRecorder.statusMessage.isEmpty {
+        Text(voiceRecorder.statusMessage)
           .font(.caption)
           .foregroundColor(.signalASITextSecondary)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if holdToTalk.isPending || holdToTalk.isRecording {
+      if voiceRecorder.isPending || voiceRecorder.isRecording {
         voiceCaptureSurface
       } else {
         inputRow
       }
-      if emojiPanelPresented && !holdToTalk.isRecording {
+      if emojiPanelPresented && !voiceRecorder.isRecording {
         emojiPanel
       }
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 8)
     .background(Color.signalASIBarBackground)
-    .onDisappear { holdToTalk.cancelFromView() }
+    .onDisappear { voiceRecorder.cancelFromView() }
   }
 
   private var inputRow: some View {
@@ -97,17 +96,17 @@ struct SignalASIConversationComposer: View {
 
   private var voiceCaptureSurface: some View {
     VStack(spacing: 8) {
-      Text(holdToTalk.isPending
+      Text(voiceRecorder.isPending
         ? t("signalasi.voice.preparing_title", "Preparing voice input")
-        : holdToTalk.cancelPending
+        : voiceRecorder.cancelPending
           ? t("voice_release_to_cancel", "Release to cancel")
           : t("agent_voice_recording_hint", "Release to send / Swipe up to cancel"))
         .font(.system(size: 14, weight: .semibold))
         .foregroundColor(.signalASITextPrimary)
-      if holdToTalk.isRecording {
-        SignalASIChatVoiceWaveform(phase: holdToTalk.waveformPhase, cancelPending: holdToTalk.cancelPending)
+      if voiceRecorder.isRecording {
+        SignalASIChatVoiceWaveform(phase: voiceRecorder.waveformPhase, cancelPending: voiceRecorder.cancelPending)
           .frame(height: 24)
-        Text(holdToTalk.transcript.ifBlank(holdToTalk.elapsedLabel))
+        Text(voiceRecorder.elapsedLabel)
           .font(.caption)
           .foregroundColor(.signalASITextSecondary)
           .lineLimit(1)
@@ -137,23 +136,18 @@ struct SignalASIConversationComposer: View {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
         emojiPanelPresented = false
-        holdToTalk.dragChanged(
+        voiceRecorder.dragChanged(
           translation: value.translation,
-          settings: voiceSettings,
-          messages: SignalASIAgentHoldToTalkMessages(
-            permissionDenied: t("signalasi.voice.permission_missing", "Microphone or speech permission is missing."),
-            speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
-            speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
-            noSpeech: t("voice_no_speech", "No speech captured."),
+          messages: SignalASIChatVoiceRecorderMessages(
+            permissionDenied: t("signalasi.voice.permission_missing", "Microphone permission is missing."),
+            recordingFailed: t("signalasi.voice.recording_failed", "Could not start voice recording."),
             tooShort: t("voice_too_short", "Hold a little longer."),
             cancelled: t("voice_cancelled", "Voice cancelled.")
           ),
-          onStart: {},
-          onFinish: onVoiceTranscript,
-          onCancel: {}
+          onFinish: onVoiceAttachment
         )
       }
-      .onEnded { value in holdToTalk.dragEnded(translation: value.translation) }
+      .onEnded { value in voiceRecorder.dragEnded(translation: value.translation) }
   }
 }
 
