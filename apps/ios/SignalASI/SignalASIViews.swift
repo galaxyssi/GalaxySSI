@@ -1124,6 +1124,7 @@ struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @State private var contactSearchText = ""
+  @State private var contactPendingDeletion: SignalASIContact?
   var showsBackButton = true
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
@@ -1263,6 +1264,24 @@ struct ContactsView: View {
                               )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                              if contact.id != "system" {
+                                Button(role: .destructive) {
+                                  contactPendingDeletion = contact
+                                } label: {
+                                  Label(t("delete_contact_title", "Delete Contact"), systemImage: "trash")
+                                }
+                              }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                              if contact.id != "system" {
+                                Button(role: .destructive) {
+                                  contactPendingDeletion = contact
+                                } label: {
+                                  Label(t("delete_contact_title", "Delete Contact"), systemImage: "trash")
+                                }
+                              }
+                            }
                             if contact.id != section.contacts.last?.id {
                               Divider()
                                 .background(Color.signalASISeparator)
@@ -1300,6 +1319,33 @@ struct ContactsView: View {
       .navigationBarHidden(true)
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .alert(
+      t("delete_contact_title", "Delete Contact"),
+      isPresented: Binding(
+        get: { contactPendingDeletion != nil },
+        set: { visible in
+          if !visible {
+            contactPendingDeletion = nil
+          }
+        }
+      )
+    ) {
+      Button(role: .destructive) {
+        if let contact = contactPendingDeletion {
+          _ = store.deleteContact(id: contact.id)
+        }
+        contactPendingDeletion = nil
+      } label: {
+        Text(t("common_delete", "Delete"))
+      }
+      Button(role: .cancel) {
+        contactPendingDeletion = nil
+      } label: {
+        Text(t("common_cancel", "Cancel"))
+      }
+    } message: {
+      Text(t("delete_contact_subtitle", "Add and verify this contact again before communicating."))
+    }
   }
 
   private func sectionTitle(_ title: String) -> some View {
