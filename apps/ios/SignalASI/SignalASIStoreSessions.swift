@@ -154,6 +154,24 @@ extension SignalASIStore {
   }
 
   @discardableResult
+  func recordAgentSessionUsage(
+    id conversationId: String,
+    inputTokens: Int64,
+    outputTokens: Int64,
+    costMicros: Int64 = 0
+  ) -> Bool {
+    let input = max(inputTokens, 0)
+    let output = max(outputTokens, 0)
+    let cost = max(costMicros, 0)
+    guard input > 0 || output > 0 || cost > 0 else { return false }
+    return mutateAgentConversation(id: conversationId) { conversation in
+      conversation.inputTokens = saturatingAdd(conversation.inputTokens, input)
+      conversation.outputTokens = saturatingAdd(conversation.outputTokens, output)
+      conversation.costMicros = saturatingAdd(conversation.costMicros, cost)
+    }
+  }
+
+  @discardableResult
   func mergeAgentSessionIntoParent(id conversationId: String) -> AgentConversationMergeResult {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let source = agentSession(id: clean) else {

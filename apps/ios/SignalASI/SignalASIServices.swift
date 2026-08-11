@@ -5513,12 +5513,21 @@ final class MessageCoordinator: ObservableObject {
     if handleProfileUpdatePayload(appPayload, messageId: messageId) {
       return
     }
-    if let response = AgentConnectorResponse.fromPayload(appPayload),
-       connectorResponseBus.publish(response) {
-      if !messageId.isEmpty {
-        deliveryStore.completeIncoming(messageId: messageId)
+    if let response = AgentConnectorResponse.fromPayload(appPayload) {
+      let conversationId = store.agentSessionDestination(id: response.conversationId)
+        ?? response.conversationId
+      _ = store.recordAgentSessionUsage(
+        id: conversationId,
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        costMicros: response.costMicros
+      )
+      if connectorResponseBus.publish(response) {
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+        return
       }
-      return
     }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let responseTurnId = appPayload.string("turn_id")
