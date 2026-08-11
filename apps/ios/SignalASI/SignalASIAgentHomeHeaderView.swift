@@ -23,7 +23,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       }
       Spacer(minLength: 8)
       VStack(alignment: .trailing, spacing: 2) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
+        NavigationLink(destination: SignalASIConversationHubView()) {
           Text(sessionTitle)
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(.signalASIAgentSessionTitle)
