@@ -54,6 +54,7 @@ struct AgentHomeView: View {
   @State private var modelSelection = AgentModelSelection()
   @State private var voiceAttachmentSnapshot: [SignalASIDraftAttachment] = []
   @State private var voicePendingAttachments: [SignalASIDraftAttachment] = []
+  @State private var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
   @State private var runtimeArtifactDocument: SignalASIRuntimeArtifactDocument?
   @State private var runtimeArtifactExportPresented = false
@@ -1804,6 +1805,7 @@ struct AgentHomeView: View {
       onVoiceCancelled: {
         voiceTranscriptionPending = false
         voicePendingAttachments.removeAll()
+        agentVoiceDraftSnapshot = nil
         restoreAgentVoiceAttachments()
       },
       onVoiceTranscript: sendAgentVoiceTranscript,
@@ -2077,6 +2079,8 @@ struct AgentHomeView: View {
 
   private func sendAgentVoiceTranscript(_ transcript: String) {
     let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    let draftSnapshot = agentVoiceDraftSnapshot
+    agentVoiceDraftSnapshot = nil
     let capturedAttachments = voiceAttachmentSnapshot
     voiceAttachmentSnapshot.removeAll()
     guard !cleanTranscript.isEmpty else {
@@ -2086,6 +2090,21 @@ struct AgentHomeView: View {
       attachmentError = t("voice_no_speech", "No speech captured.")
       return
     }
+    if let draftSnapshot {
+      voiceTranscriptionPending = false
+      voicePendingAttachments.removeAll()
+      guard draftSnapshot.conversationID == store.activeAgentConversationId else { return }
+      let currentDraft = draft.ifBlank(draftSnapshot.text)
+      let mergedDraft = AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(
+        draft: currentDraft,
+        transcript: cleanTranscript
+      )
+      guard !mergedDraft.isEmpty else { return }
+      draft = mergedDraft
+      actionTrayPresented = false
+      attachmentError = ""
+      return
+    }
     voiceTranscriptionPending = true
     voicePendingAttachments = capturedAttachments
     draft = cleanTranscript
@@ -2093,6 +2112,12 @@ struct AgentHomeView: View {
   }
 
   private func beginAgentVoiceCapture() {
+    voiceAttachmentSnapshot.removeAll()
+    agentVoiceDraftSnapshot = AgentVoiceTranscriptPolicy.draftSnapshot(
+      conversationID: store.activeAgentConversationId,
+      text: draft
+    )
+    guard agentVoiceDraftSnapshot == nil else { return }
     voiceAttachmentSnapshot = attachments
     let capturedIDs = Set(attachments.map(\.id))
     attachments.removeAll { capturedIDs.contains($0.id) }
@@ -2223,6 +2248,7 @@ struct AgentHomeView: View {
     attachments.removeAll()
     voiceAttachmentSnapshot.removeAll()
     voicePendingAttachments.removeAll()
+    agentVoiceDraftSnapshot = nil
     voiceTranscriptionPending = false
     actionTrayPresented = false
     attachmentError = ""
