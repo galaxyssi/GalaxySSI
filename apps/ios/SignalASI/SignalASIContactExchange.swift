@@ -414,6 +414,7 @@ enum SignalASIContactExchange {
         .ifBlank(object.string("manufacturer")),
       deviceModel: object.string("device_model")
         .ifBlank(object.string("model")),
+      devicePlatform: deviceMetadata?.platform ?? object.string("platform"),
       devicePlatformVersion: object.string("platform_version"),
       deviceProfileName: object.string("profile_name"),
       deviceHostName: deviceMetadata?.hostName ?? "",
