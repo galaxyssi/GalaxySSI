@@ -436,7 +436,7 @@ struct SignalASIAgentComposerView: View {
         title: t("agent_attachment_sessions", "Sessions"),
         systemImage: "tray.full",
         minimumTouchSize: minimumTouchSize,
-        destination: SignalASIAgentSessionsView()
+        destination: SignalASIConversationHubView()
       ) {
         closeTray()
       }
