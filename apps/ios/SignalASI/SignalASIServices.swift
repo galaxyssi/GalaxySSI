@@ -2844,10 +2844,16 @@ final class MessageCoordinator: ObservableObject {
         throw LocalModelInferenceError.emptyResponse
       }
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
+      let actualProfile = LocalModelRuntimeCatalog.find(result.profileId)
+      let actualModelLabel = actualProfile.displayName.ifBlank(result.profileId)
+      updateAgentExecutionTarget(
+        conversationId: outgoing.conversationId,
+        runtimeTarget: actualModelLabel
+      )
       task.phase = .completed
       task.result = response
       task.executionRuntimeId = result.profileId
-      task.targetTitle = LocalModelRuntimeCatalog.find(result.profileId).displayName
+      task.targetTitle = actualModelLabel
       task.verification = "Local model response received and stored"
       task.executionLog.append("Local model response completed via \(result.backend)")
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -2856,7 +2862,7 @@ final class MessageCoordinator: ObservableObject {
         outgoing.id,
         contactId: outgoing.contactId,
         stage: "local_model_reply",
-        detail: "\(profile.id); \(result.backend)",
+        detail: "\(result.profileId); \(result.backend)",
         status: .delivered
       )
       _ = store.appendIncoming(
@@ -2865,7 +2871,7 @@ final class MessageCoordinator: ObservableObject {
         remoteMessageId: outgoing.turnId,
         status: .delivered,
         traceStage: "local_model_reply_received",
-        detail: profile.displayName,
+        detail: actualModelLabel,
         conversationId: outgoing.conversationId,
         turnId: outgoing.turnId
       )
