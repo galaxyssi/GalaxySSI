@@ -152,6 +152,7 @@
     A10000000000000000001980 /* SignalASIAgentHomeSessionLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001980 /* SignalASIAgentHomeSessionLifecycle.swift */; };
     A10000000000000000001990 /* SignalASIAgentHomeMessageSubmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001990 /* SignalASIAgentHomeMessageSubmission.swift */; };
     A10000000000000000002000 /* SignalASIAgentHomeOutputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002000 /* SignalASIAgentHomeOutputView.swift */; };
+    A10000000000000000002019 /* SignalASIAgentHomeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002019 /* SignalASIAgentHomeState.swift */; };
     A10000000000000000001930 /* SignalASIAgentHomeRecoveryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001930 /* SignalASIAgentHomeRecoveryActions.swift */; };
     A10000000000000000001950 /* SignalASIAgentHomeExecutionPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001950 /* SignalASIAgentHomeExecutionPresentation.swift */; };
     A10000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */; };
@@ -973,6 +974,7 @@
     A20000000000000000001980 /* SignalASIAgentHomeSessionLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeSessionLifecycle.swift; sourceTree = "<group>"; };
     A20000000000000000001990 /* SignalASIAgentHomeMessageSubmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeMessageSubmission.swift; sourceTree = "<group>"; };
     A20000000000000000002000 /* SignalASIAgentHomeOutputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeOutputView.swift; sourceTree = "<group>"; };
+    A20000000000000000002019 /* SignalASIAgentHomeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeState.swift; sourceTree = "<group>"; };
     A20000000000000000001930 /* SignalASIAgentHomeRecoveryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeRecoveryActions.swift; sourceTree = "<group>"; };
     A20000000000000000001950 /* SignalASIAgentHomeExecutionPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeExecutionPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPublicPageHTMLExportDocument.swift; sourceTree = "<group>"; };
@@ -2134,6 +2136,7 @@
         A20000000000000000001980 /* SignalASIAgentHomeSessionLifecycle.swift */,
         A20000000000000000001990 /* SignalASIAgentHomeMessageSubmission.swift */,
         A20000000000000000002000 /* SignalASIAgentHomeOutputView.swift */,
+        A20000000000000000002019 /* SignalASIAgentHomeState.swift */,
         A20000000000000000001930 /* SignalASIAgentHomeRecoveryActions.swift */,
         A20000000000000000001950 /* SignalASIAgentHomeExecutionPresentation.swift */,
         A20000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift */,
@@ -3078,6 +3081,7 @@
         A10000000000000000001980 /* SignalASIAgentHomeSessionLifecycle.swift in Sources */,
         A10000000000000000001990 /* SignalASIAgentHomeMessageSubmission.swift in Sources */,
         A10000000000000000002000 /* SignalASIAgentHomeOutputView.swift in Sources */,
+        A10000000000000000002019 /* SignalASIAgentHomeState.swift in Sources */,
         A10000000000000000001930 /* SignalASIAgentHomeRecoveryActions.swift in Sources */,
         A10000000000000000001950 /* SignalASIAgentHomeExecutionPresentation.swift in Sources */,
         A10000000000000000000B01 /* SignalASIPublicPageHTMLExportDocument.swift in Sources */,
