@@ -1017,6 +1017,7 @@ final class SignalASIStore: ObservableObject {
     next.deviceModel = request.deviceModel.nonEmpty
     next.devicePlatformVersion = request.devicePlatformVersion.nonEmpty
     next.deviceProfileName = request.deviceProfileName.nonEmpty
+    next.deviceHostName = request.deviceHostName
     next.mqttTopic = request.mqttTopic
     next.mqttInboxTopic = request.mqttInboxTopic
     next.signalBundleRef = request.signalBundleRef
@@ -1362,6 +1363,8 @@ final class SignalASIStore: ObservableObject {
       .ifBlank(device.string("model")).nonEmpty
     contact.devicePlatformVersion = device.string("platform_version").nonEmpty
     contact.deviceProfileName = device.string("profile_name").nonEmpty
+    contact.deviceHostName = SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName.nonEmpty
+      ?? device.string("host_name").nonEmpty
     contact.setupStatus = "ready"
     contact.setupDetail = "SignalASI Link is paired"
     contact.desktopAccessProfile = payload.string("desktop_access_profile")

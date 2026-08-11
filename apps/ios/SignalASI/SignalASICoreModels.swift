@@ -107,6 +107,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var deviceModel: String? = nil
   var devicePlatformVersion: String? = nil
   var deviceProfileName: String? = nil
+  var deviceHostName: String? = nil
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
@@ -249,6 +250,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var deviceModel: String
   var devicePlatformVersion: String
   var deviceProfileName: String
+  var deviceHostName: String? = nil
   var setupDetail: String
   var setupNextStep: String
   var desktopAccessProfile: String
@@ -287,6 +289,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     deviceModel: String = "",
     devicePlatformVersion: String = "",
     deviceProfileName: String = "",
+    deviceHostName: String? = nil,
     setupDetail: String = "",
     setupNextStep: String = "",
     desktopAccessProfile: String = "",
@@ -324,6 +327,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.deviceModel = deviceModel
     self.devicePlatformVersion = devicePlatformVersion
     self.deviceProfileName = deviceProfileName
+    self.deviceHostName = deviceHostName
     self.setupDetail = setupDetail
     self.setupNextStep = setupNextStep
     self.desktopAccessProfile = desktopAccessProfile
@@ -363,6 +367,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case deviceModel = "device_model"
     case devicePlatformVersion = "platform_version"
     case deviceProfileName = "profile_name"
+    case deviceHostName = "host_name"
     case setupDetail = "setup_detail"
     case setupNextStep = "setup_next_step"
     case desktopAccessProfile = "desktop_access_profile"

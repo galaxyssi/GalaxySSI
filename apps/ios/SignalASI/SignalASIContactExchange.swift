@@ -415,6 +415,7 @@ enum SignalASIContactExchange {
         .ifBlank(object.string("model")),
       devicePlatformVersion: object.string("platform_version"),
       deviceProfileName: object.string("profile_name"),
+      deviceHostName: SignalASIDesktopDeviceMetadata.from(payload: object)?.hostName.nonEmpty,
       setupDetail: object.string("setup_detail").ifBlank(object.string("detail")),
       setupNextStep: object.string("setup_next_step").ifBlank(object.string("setup")),
       desktopAccessProfile: object.string("desktop_access_profile")
