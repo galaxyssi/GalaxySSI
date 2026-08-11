@@ -3174,6 +3174,7 @@
 "signalasi.voice.reply_pending" = "等待中";
 "signalasi.voice.send_failed" = "语音转写发送失败";
 "signalasi.voice.open_messages" = "打开消息";
+"signalasi.voice.session_failed" = "无法启动语音请求";
 "signalasi.voice.no_live_transcript" = "唤醒或录音后的语音活动会显示在这里。";
 "signalasi.voice.quick_controls" = "快捷控制";
 "signalasi.voice.target" = "目标";
