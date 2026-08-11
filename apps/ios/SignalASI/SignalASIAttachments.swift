@@ -144,7 +144,7 @@ enum AgentWorkspaceScope {
 
 enum AgentAttachmentWorkspaceStager {
   static let maximumAttachmentBytes: Int64 = 256 * 1024 * 1024
-  static let maximumTurnBytes: Int64 = 512 * 1024 * 1024
+  static let maximumTurnBytes: Int64 = 10 * 64 * 1024 * 1024
 
   static func stage(
     conversationId: String,
