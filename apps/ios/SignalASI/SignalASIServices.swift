@@ -19,10 +19,10 @@ final class MessageCoordinator: ObservableObject {
   var onIncomingMessage: ((ChatMessage) -> Void)?
   var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
-  private let store: SignalASIStore
+  let store: SignalASIStore
   let desktopArtifactStore: AgentDesktopArtifactStore
-  private let deliveryStore: SignalASILinkDeliveryStore
-  private let attachmentTransferStore: AgentOutboundAttachmentTransferStore
+  let deliveryStore: SignalASILinkDeliveryStore
+  let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
@@ -4734,7 +4734,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  private func enqueueLinkPayload(
+  func enqueueLinkPayload(
     _ payload: [String: Any],
     link: ServerLink,
     topic: String,
@@ -5642,63 +5642,6 @@ final class MessageCoordinator: ObservableObject {
     _ = desktopMarketplaceStore.update(payload: object)
   }
 
-  private func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
-    let transferId = payload.string("transfer_id").lowercased()
-    guard let link,
-          let transfer = attachmentTransferStore.find(transferId),
-          transfer.scope.desktopId == link.desktopId,
-          transfer.scope.clientRouteId == link.routes.clientRouteId,
-          payload.string("client_route_id") == transfer.scope.clientRouteId else {
-      return
-    }
-    if payload.string("status") == "stored" {
-      guard attachmentTransferStore.acknowledgeStored(
-        payload: payload,
-        deliveryStore: deliveryStore
-      ) != nil else {
-        return
-      }
-      scheduleOutboxFlush(after: 0)
-      return
-    }
-    guard payload.string("status") == "missing",
-          let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
-            payload["missing_ranges"],
-            chunkCount: transfer.chunkCount
-          ),
-          !requested.isEmpty else {
-      return
-    }
-    for index in requested {
-      guard let chunkPayload = try? transfer.chunkPayload(index: index) else {
-        continue
-      }
-      try? enqueueLinkPayload(
-        chunkPayload,
-        link: link,
-        topic: link.routes.upTopic,
-        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
-        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
-        contactId: transfer.scope.contactId
-      )
-    }
-    scheduleOutboxFlush(after: 0)
-  }
-
-  private func handleDeliveryAck(_ payload: [String: Any]) {
-    let acknowledgedIds = [
-      SignalASILinkDeliveryAckPolicy.transportMessageId(payload: payload),
-      SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload: payload)
-    ].filter { !$0.isEmpty }
-    acknowledgedIds.forEach { messageId in
-      deliveryStore.acknowledge(messageId: messageId)
-      if let uuid = UUID(uuidString: messageId) {
-        store.appendDeliveryTrace(uuid, stage: "desktop_broker_ack", detail: "Delivery ACK", status: .delivered)
-      }
-    }
-    scheduleOutboxFlushFromStore()
-  }
-
   private func shouldValidateAgentTaskIdentity(_ payload: [String: Any]) -> Bool {
     guard !payload.string("task_id").isEmpty else { return false }
     return Self.taskIdentityValidatedTypes.contains(payload.string("type"))
@@ -5725,34 +5668,6 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     return true
-  }
-
-  private func publishInboundReceipt(link: ServerLink?, receivedMessageId: String) {
-    guard let link, !receivedMessageId.isEmpty else { return }
-    let ackPayload: [String: Any] = [
-      "type": "delivery_ack",
-      "transport_message_id": receivedMessageId,
-      "source_message_id": receivedMessageId,
-      "delivery_status": "accepted",
-      "sender": "system",
-      "time": Int64(Date().timeIntervalSince1970 * 1000)
-    ]
-    guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
-      payload: ackPayload,
-      sourceId: store.profile.signalASIId,
-      targetId: link.desktopId
-    ),
-      let wire = try? SignalASILinkProtocol.jsonData([
-        "scheme": "signalasi-link-ios-preview",
-        "from": store.profile.signalASIId,
-        "to": link.desktopId,
-        "envelope": envelope
-      ]) else {
-      return
-    }
-    Task {
-      _ = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire)
-    }
   }
 
   private func recordLinkDiagnostic(
@@ -5821,7 +5736,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func scheduleOutboxFlushFromStore() {
+  func scheduleOutboxFlushFromStore() {
     let mediaProfile = mediaNetworkProfileProvider()
     if let delay = deliveryStore.nextRetryDelay(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
@@ -5831,7 +5746,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func scheduleOutboxFlush(after delay: TimeInterval) {
+  func scheduleOutboxFlush(after delay: TimeInterval) {
     outboxRetryTask?.cancel()
     outboxRetryTask = Task { [weak self] in
       if delay > 0 {
