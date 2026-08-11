@@ -400,14 +400,48 @@ final class SignalASIStore: ObservableObject {
       }
   }
 
+  var chatContacts: [SignalASIContact] {
+    let contactsForChat = contacts
+      .filter { !$0.deleted && $0.id != "system" }
+      .sorted { left, right in
+        let leftPriority = chatContactPriority(left.id)
+        let rightPriority = chatContactPriority(right.id)
+        if leftPriority != rightPriority {
+          return leftPriority < rightPriority
+        }
+        return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
+      }
+    guard let systemContact = contacts.first(where: { !$0.deleted && $0.id == "system" }) else {
+      return contactsForChat
+    }
+    return contactsForChat + [systemContact]
+  }
+
   func visibleContacts(matching query: String) -> [SignalASIContact] {
     visibleContacts.filter { contactMatchesSearch($0, query: query) }
+  }
+
+  func chatContacts(matching query: String) -> [SignalASIContact] {
+    chatContacts.filter { contactMatchesSearch($0, query: query) }
   }
 
   func contactList(matching query: String) -> [SignalASIContact] {
     contacts
       .filter { !$0.deleted && $0.id != "system" }
       .filter { contactMatchesSearch($0, query: query) }
+  }
+
+  private func chatContactPriority(_ id: String) -> Int {
+    switch id {
+    case "hermes": return 0
+    case "codex": return 1
+    case "claude": return 2
+    case "openclaw": return 3
+    case "local-llm": return 4
+    case "custom-agent": return 6
+    default:
+      return id.hasPrefix("cloud:") ? 5 : 20
+    }
   }
 
   var cloudModelContacts: [SignalASIContact] {
