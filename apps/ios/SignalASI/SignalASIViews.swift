@@ -883,7 +883,7 @@ struct MessageDetailView: View {
     NavigationView {
       Form {
         Section(t("signalasi.message.section", "Message")) {
-          Text(message.isMine ? t("signalasi.message.sent_by_me", "Sent by me") : contact.displayName)
+          Text(messageSenderName)
           Text(message.content)
             .textSelection(.enabled)
           detailRow(t("signalasi.message.sent_time", "Sent Time"), message.createdAt.formatted(date: .abbreviated, time: .standard))
@@ -953,6 +953,20 @@ struct MessageDetailView: View {
       return t("signalasi.security.cloud", "Protected locally; cloud model requests use the configured provider endpoint")
     case .local:
       return t("signalasi.security.local", "Stored locally on this device")
+    }
+  }
+
+  private var messageSenderName: String {
+    if message.isMine {
+      return t("signalasi.message.sent_by_me", "Sent by me")
+    }
+    switch contact.id {
+    case "system":
+      return t("chat_system_notice", "System Notifications")
+    case "me":
+      return t("chat_me", "Me")
+    default:
+      return contact.displayName
     }
   }
 
