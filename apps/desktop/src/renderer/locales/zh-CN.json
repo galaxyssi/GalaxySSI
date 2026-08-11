@@ -992,4 +992,11 @@
 , "Established": "\u6837\u672c\u5145\u8db3"
 , "Measured": "\u5df2\u6d4b\u91cf"
 , "Samples": "\u6837\u672c"
+, "Checking device connections": "\u6b63\u5728\u68c0\u67e5\u8bbe\u5907\u8fde\u63a5"
+, "Pair device": "\u914d\u5bf9\u8bbe\u5907"
+, "Pair a phone": "\u914d\u5bf9\u624b\u673a"
+, "{count} verified device(s) connected": "\u5df2\u8fde\u63a5 {count} \u53f0\u5df2\u9a8c\u8bc1\u8bbe\u5907"
+, "Rename": "\u91cd\u547d\u540d"
+, "Device name": "\u8bbe\u5907\u540d\u79f0"
+, "This Desktop": "\u8fd9\u53f0\u7535\u8111"
 }

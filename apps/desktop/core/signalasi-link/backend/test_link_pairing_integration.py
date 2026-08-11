@@ -33,6 +33,10 @@ class FakeMqtt:
     def subscribe(self, topic, **kwargs):
         self.subscriptions.append((topic, kwargs))
 
+    def unsubscribe(self, topic):
+        self.subscriptions = [item for item in self.subscriptions if item[0] != topic]
+        return FakeInfo(len(self.publishes) + 1)
+
 
 class FakeMessage:
     def __init__(self, topic: str, payload: dict):
@@ -52,6 +56,12 @@ def client_claim(token: str, server_route: str, client_route: str, identity: byt
         "client_route_id": client_route,
         "client_name": name,
         "platform": "android",
+        "client_device_id": f"phone-{fingerprint[:12]}",
+        "device_name": name,
+        "device_manufacturer": "Samsung",
+        "device_model": "SM-TEST",
+        "platform_version": "17",
+        "profile_name": "Me",
         "from": signal_name,
         "signalasi_id": signal_name,
         "signal_name": signal_name,
@@ -111,6 +121,49 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         pairing_state.revoke_client(first_route)
         self.assertIsNone(pairing_state.get_client(first_route))
         self.assertIsNotNone(pairing_state.get_client(second_route))
+
+    def test_repairing_same_phone_rotates_only_its_route_and_keeps_alias(self):
+        server = pairing_state.server_route_id()
+        identity = b"same physical phone"
+        first_route = link_protocol.new_route_id()
+        first_pairing = pairing_state.new_pairing_session()
+        first_claim = client_claim(first_pairing["token"], server, first_route, identity, "S26 Ultra")
+        mqtt_bridge.on_message(
+            self.mqtt,
+            None,
+            FakeMessage(
+                link_protocol.LinkTopics(server).pairing,
+                link_protocol.encrypt_pairing_claim(
+                    first_claim,
+                    first_pairing["token"],
+                    first_pairing["secret"],
+                    server,
+                ),
+            ),
+        )
+        pairing_state.rename_client(first_route, "My S26U")
+
+        second_route = link_protocol.new_route_id()
+        second_pairing = pairing_state.new_pairing_session()
+        second_claim = client_claim(second_pairing["token"], server, second_route, identity, "S26 Ultra")
+        mqtt_bridge.on_message(
+            self.mqtt,
+            None,
+            FakeMessage(
+                link_protocol.LinkTopics(server).pairing,
+                link_protocol.encrypt_pairing_claim(
+                    second_claim,
+                    second_pairing["token"],
+                    second_pairing["secret"],
+                    server,
+                ),
+            ),
+        )
+
+        self.assertIsNone(pairing_state.get_client(first_route))
+        replacement = pairing_state.get_client(second_route)
+        self.assertEqual("My S26U", replacement["display_name"])
+        self.assertTrue(replacement["user_renamed"])
 
     def test_pairing_token_is_the_authority_for_restricted_or_executor_access(self):
         server = pairing_state.server_route_id()

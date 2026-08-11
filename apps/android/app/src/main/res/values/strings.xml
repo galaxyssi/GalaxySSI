@@ -2582,4 +2582,8 @@
     <string name="agent_model_selection_agent_section">Desktop Agents</string>
     <string name="agent_model_selection_agent_subtitle">Available · Paired Desktop</string>
     <string name="agent_model_selection_cloud_section">Cloud models</string>
+    <string name="contact_device_details">Device</string>
+    <string name="contact_device_model">Model</string>
+    <string name="contact_device_platform">System</string>
+    <string name="contact_device_host">Host name</string>
 </resources>

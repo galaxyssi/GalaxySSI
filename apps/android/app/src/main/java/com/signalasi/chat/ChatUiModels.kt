@@ -536,6 +536,7 @@ internal class MessageAdapter(
 // ===== Top-level Helpers =====
 internal fun contactAvatarRes(contact: Contact): Int {
     if (contact.id.startsWith("cloud:")) return cloudProviderLogoRes(contact.id.substringAfter("cloud:"))
+    if (contact.id.startsWith("desktop_") && !contact.id.contains(":")) return R.drawable.ic_avatar_device
     val agentId = agentIdFromContactId(contact.id)
     return when (agentId) {
         "me" -> R.drawable.ic_avatar_user

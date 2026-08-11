@@ -955,6 +955,11 @@ object SignalASIMqttClient {
         )
         subscribe()
         val profile = AppStore.profile(context)
+        val device = SignalASIDeviceIdentity.current(
+            context,
+            profile,
+            SignalASICrypto.localIdentitySha256()
+        )
         DesktopRemoteControl.markPairingOffer(context, pairingQr)
         val controlAuthorizationToken = pairingQr
             .optJSONObject("desktop_control_authorization")
@@ -969,8 +974,14 @@ object SignalASIMqttClient {
             .put("signal_device_id", 1)
             .put("server_route_id", link.routes.serverRouteId)
             .put("client_route_id", link.routes.clientRouteId)
-            .put("client_name", profile.optString("name", "Me"))
+            .put("client_name", device.displayName)
             .put("platform", "android")
+            .put("client_device_id", device.deviceId)
+            .put("device_name", device.deviceName)
+            .put("device_manufacturer", device.manufacturer)
+            .put("device_model", device.model)
+            .put("platform_version", device.platformVersion)
+            .put("profile_name", device.profileName)
             .put("signalasi_id", profile.optString("signalasi_id"))
             .put("identity_fingerprint", SignalASICrypto.localIdentitySha256())
             .put("identity_public_key", SignalASICrypto.localIdentityPublicKey())
@@ -1973,6 +1984,7 @@ object SignalASIMqttClient {
                 setSecureReady(true)
             }
         }
+        AppStore.updateDesktopDeviceContact(context, json)
         json.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
         listeners.forEach { listener -> listener.onMessage(json.toString()) }
     }

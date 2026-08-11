@@ -2489,4 +2489,8 @@
     <string name="agent_model_selection_agent_section">桌面 Agent</string>
     <string name="agent_model_selection_agent_subtitle">可用 · 已配对电脑</string>
     <string name="agent_model_selection_cloud_section">云端模型</string>
+    <string name="contact_device_details">&#x8BBE;&#x5907;</string>
+    <string name="contact_device_model">&#x578B;&#x53F7;</string>
+    <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>
+    <string name="contact_device_host">&#x4E3B;&#x673A;&#x540D;</string>
 </resources>

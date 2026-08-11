@@ -139,10 +139,10 @@
     </section>
 
     <section id="gatewayPanel" class="drawer-panel">
-      <div id="gatewaySummary" class="gateway-summary"><span class="status-orb"></span><div><strong>SignalASI Link</strong><p data-i18n="Checking phone connections">Checking phone connections</p></div><button id="refreshGatewayButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div>
+      <div id="gatewaySummary" class="gateway-summary"><span class="status-orb"></span><div><strong>SignalASI Link</strong><p data-i18n="Checking device connections">Checking device connections</p></div><div class="gateway-summary-actions"><button id="pairDeviceButton" class="secondary-button pair-device-button" data-i18n="Pair device">Pair device</button><button id="refreshGatewayButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div></div>
       <div id="pairedClientList" class="paired-client-list"></div>
       <details id="pairingDetails" class="drawer-details pairing-details">
-        <summary data-i18n="Pair another phone">Pair another phone</summary>
+        <summary data-i18n="Pair a phone">Pair a phone</summary>
         <label class="setting-row compact-setting pairing-executor-setting">
           <span>
             <strong data-i18n="Start Desktop Executor">Start Desktop Executor</strong>
@@ -151,6 +151,7 @@
           <input id="pairingDesktopExecutorEnabled" type="checkbox">
         </label>
         <div class="pairing-qr-surface">
+          <strong id="pairingDeviceName"></strong>
           <img id="pairingFrame" alt="SignalASI pairing QR">
           <small id="pairingFingerprint"></small>
           <small id="pairingAccessSummary"></small>

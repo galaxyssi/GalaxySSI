@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import shutil
+import time
 import uuid
 from dataclasses import asdict
 from typing import Any
@@ -155,6 +156,8 @@ def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
         "pairing_type": payload["type"],
         "agent_count": len(mobile_connector_agents()),
         "pairing_access": payload["pairing_access"],
+        "desktop_device": payload.get("desktop_device") or {},
+        "expires_at": int(time.time()) + 10 * 60,
     }
 
 @asynccontextmanager
@@ -496,6 +499,24 @@ def api_execute_unified_command(req: UnifiedCommandReq, request: Request):
 def api_pairing_status():
     from pairing_state import pairing_status
     return pairing_status()
+
+
+class PairingClientRenameReq(BaseModel):
+    client_route_id: str
+    display_name: str
+
+
+@app.post("/api/pairing/rename")
+def api_pairing_rename(req: PairingClientRenameReq, request: Request):
+    require_loopback(request)
+    from pairing_state import rename_client
+
+    try:
+        return {"ok": True, "client": rename_client(req.client_route_id, req.display_name)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 

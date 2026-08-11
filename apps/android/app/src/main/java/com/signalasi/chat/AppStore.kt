@@ -240,6 +240,13 @@ object AppStore {
 
     fun deleteContact(context: Context, hermesId: String, deleteMessages: Boolean = false) {
         ensureInitialized(context)
+        val targetContact = contactById(context, hermesId)
+        val targetDesktopId = targetContact?.optString("desktop_id").orEmpty()
+        if (targetContact?.optString("type") == "device" && targetDesktopId.isNotBlank()) {
+            revokeDesktopConnector(context, targetDesktopId)
+            if (deleteMessages) removeChatHistory(context, hermesId)
+            return
+        }
         if (hermesId == "hermes") {
             SignalASICrypto.clearPcTrust(context)
             SignalASIMqttClient.forgetSecureChannel()
@@ -594,13 +601,13 @@ object AppStore {
     fun markDesktopVerified(context: Context, pairingQr: JSONObject) {
         ensureInitialized(context)
         val link = SignalASILinkProtocol.ensureServerLink(context, pairingQr)
-        val contacts = contacts(context)
         val desktopId = pairingQr.optString("desktop_id")
             .ifBlank { "desktop_${pairingQr.optString("identity_key_sha256").take(16)}" }
         val desktopName = pairingQr.optString("desktop_name").ifBlank { context.getString(R.string.default_desktop_name) }
         val fingerprint = pairingQr.optString("identity_key_sha256")
             .ifBlank { pairingQr.optString("identity_fingerprint") }
         val now = System.currentTimeMillis()
+        upsertDesktopDeviceContact(context, pairingQr, link, now)
         val agents = pairingQr.optJSONArray("connector_agents")
         if (agents != null && agents.length() > 0) {
             updateConnectorAgentStatuses(context, agents)
@@ -635,6 +642,67 @@ object AppStore {
             )
         }
         updateConnectorAgentStatuses(context, fallbackAgents)
+    }
+
+    fun updateDesktopDeviceContact(context: Context, payload: JSONObject): Boolean {
+        ensureInitialized(context)
+        val desktopId = payload.optString("desktop_id")
+        val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
+        return upsertDesktopDeviceContact(context, payload, link, System.currentTimeMillis())
+    }
+
+    private fun upsertDesktopDeviceContact(
+        context: Context,
+        payload: JSONObject,
+        link: SignalASILinkProtocol.ServerLink,
+        now: Long
+    ): Boolean {
+        val desktopId = payload.optString("desktop_id").ifBlank { link.desktopId }
+        if (desktopId.isBlank()) return false
+        val device = payload.optJSONObject("desktop_device") ?: JSONObject()
+        val defaultName = payload.optString("desktop_display_name")
+            .ifBlank { device.optString("display_name") }
+            .ifBlank { payload.optString("desktop_name") }
+            .ifBlank { context.getString(R.string.default_desktop_name) }
+        val fingerprint = payload.optString("desktop_fingerprint")
+            .ifBlank { payload.optString("identity_key_sha256") }
+            .ifBlank { payload.optString("identity_fingerprint") }
+        val contacts = contacts(context)
+        val existing = findContactBySignalasiId(contacts, desktopId)
+        val contact = existing ?: JSONObject()
+        if (!contact.optBoolean("user_renamed", false)) {
+            contact.put("name", defaultName)
+            contact.put("display_name", defaultName)
+        }
+        contact.put("id", desktopId)
+        putSignalasiId(contact, desktopId)
+        contact.put("default_display_name", defaultName)
+        contact.put("type", "device")
+        contact.put("agent_kind", "device")
+        contact.put("agent_id", "desktop")
+        contact.put("device_type", "desktop")
+        contact.put("desktop_id", desktopId)
+        contact.put("desktop_name", defaultName)
+        contact.put("device_name", device.optString("device_name", defaultName))
+        contact.put("device_manufacturer", device.optString("manufacturer"))
+        contact.put("device_model", device.optString("model"))
+        contact.put("platform", device.optString("platform", "desktop"))
+        contact.put("platform_version", device.optString("platform_version"))
+        contact.put("host_name", device.optString("host_name"))
+        contact.put("delivery_mode", "pc_connector")
+        contact.put("mqtt_topic", link.routes.up)
+        contact.put("identity_fingerprint", fingerprint)
+        contact.put("desktop_fingerprint", fingerprint)
+        contact.put("trust_state", "verified")
+        contact.put("signal_session", "pc_tunnel")
+        contact.put("setup_status", "ready")
+        contact.put("setup_detail", context.getString(R.string.common_paired))
+        contact.put("updated_at", now)
+        contact.put("created_at", contact.optLong("created_at").takeIf { it > 0 } ?: now)
+        contact.put("deleted", false)
+        upsertContact(contacts, contact)
+        writeArray(context, KEY_CONTACTS, contacts)
+        return true
     }
 
     fun updateConnectorAgentStatuses(context: Context, agents: JSONArray): Boolean {
@@ -1118,7 +1186,11 @@ object AppStore {
             val isFlatDesktopContact = id.startsWith("desktop_") &&
                 id.contains(":") &&
                 contact.optString("desktop_id").isNotBlank()
-            if (shouldRemoveHermes || (isPcConnector && !isFlatDesktopContact)) {
+            val isDesktopDeviceContact = id.startsWith("desktop_") &&
+                !id.contains(":") &&
+                contact.optString("type") == "device" &&
+                contact.optString("desktop_id") == id
+            if (shouldRemoveHermes || (isPcConnector && !isFlatDesktopContact && !isDesktopDeviceContact)) {
                 changed = true
                 continue
             }
