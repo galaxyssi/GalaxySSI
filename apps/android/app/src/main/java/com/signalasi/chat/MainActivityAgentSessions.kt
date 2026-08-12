@@ -237,15 +237,62 @@ internal fun MainActivity.createAgentConversation() {
     if (featurePage.visibility == View.VISIBLE) hideFeaturePage()
 }
 
+private data class AgentModelSelectionContent(
+    val conversationId: String,
+    val targets: List<AgentCallableTarget>,
+    val selection: AgentModelSelection,
+    val localProfiles: List<LocalModelRuntimeProfile>
+)
+
 internal fun MainActivity.showAgentModelSelectionPage() {
-    val conversationId = agentTranscriptStore.activeConversation().id
-    val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
-    val selection = AgentModelSelectionSettings.selection(this, conversationId)
+    showFeaturePage(getString(R.string.agent_model_selection_title))
+    setFeatureBackAction { hideFeaturePage() }
+    val generation = navigationContentGate.begin()
+    val fastConversationId = agentRenderedConversationId
+    val fastTargets = lastRenderedAgentState?.callableTargets.orEmpty()
+    if (fastConversationId.isNotBlank() && fastTargets.isNotEmpty()) {
+        renderAgentModelSelectionPage(
+            AgentModelSelectionContent(
+                conversationId = fastConversationId,
+                targets = fastTargets,
+                selection = AgentModelSelectionSettings.selection(this, fastConversationId),
+                localProfiles = emptyList()
+            )
+        )
+    } else {
+        featureContent.addView(featureValueRow(
+            getString(R.string.navigation_content_loading),
+            "",
+            R.drawable.ic_settings_model,
+            ""
+        ))
+    }
+    navigationContentExecutor.execute {
+        val content = runCatching {
+            val conversationId = agentTranscriptStore.activeConversation().id
+            AgentModelSelectionContent(
+                conversationId = conversationId,
+                targets = AppStoreAgentConnectorRegistry(this).availableTargets(),
+                selection = AgentModelSelectionSettings.selection(this, conversationId),
+                localProfiles = LocalModelRuntimeSettings.activeProfiles(this)
+            )
+        }.getOrNull()
+        handler.post {
+            if (content != null && navigationContentGate.isCurrent(generation) && featurePage.visibility == View.VISIBLE) {
+                renderAgentModelSelectionPage(content)
+            }
+        }
+    }
+}
+
+private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelectionContent) {
+    val conversationId = content.conversationId
+    val targets = content.targets
+    val selection = content.selection
     val preferredTargetId = AgentModelSelectionPolicy.preferredTargetId(selection, targets)
     val automaticSelected = selection.mode == AgentModelSelectionMode.AUTO || preferredTargetId.isBlank()
 
-    showFeaturePage(getString(R.string.agent_model_selection_title))
-    setFeatureBackAction { hideFeaturePage() }
+    featureContent.removeAllViews()
     featureContent.addView(
         agentModelSelectionRow(
             title = getString(R.string.agent_model_selection_automatic),
@@ -255,14 +302,14 @@ internal fun MainActivity.showAgentModelSelectionPage() {
             selected = automaticSelected
         ).apply {
             setOnClickListener {
-                AgentModelSelectionSettings.selectAuto(this@showAgentModelSelectionPage, conversationId)
+                AgentModelSelectionSettings.selectAuto(this@renderAgentModelSelectionPage, conversationId)
                 refreshAgentConversationHeader()
                 hideFeaturePage()
             }
         }
     )
 
-    val localProfiles = LocalModelRuntimeSettings.activeProfiles(this)
+    val localProfiles = content.localProfiles
     if (localProfiles.isNotEmpty()) {
         addSectionTitle(getString(R.string.agent_model_selection_local_section))
         localProfiles.forEach { profile ->
@@ -276,9 +323,9 @@ internal fun MainActivity.showAgentModelSelectionPage() {
                     selected = selected
                 ).apply {
                     setOnClickListener {
-                        LocalModelRuntimeSettings.setSelectedProfile(this@showAgentModelSelectionPage, profile.id)
+                        LocalModelRuntimeSettings.setSelectedProfile(this@renderAgentModelSelectionPage, profile.id)
                         AgentModelSelectionSettings.selectManual(
-                            this@showAgentModelSelectionPage,
+                            this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
                             targetId = "local-llm",
                             modelId = profile.id,
@@ -307,7 +354,7 @@ internal fun MainActivity.showAgentModelSelectionPage() {
                 ).apply {
                     setOnClickListener {
                         AgentModelSelectionSettings.selectManual(
-                            this@showAgentModelSelectionPage,
+                            this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
                             targetId = target.id,
                             modelId = "",
@@ -349,7 +396,7 @@ internal fun MainActivity.showAgentModelSelectionPage() {
                 ).apply {
                     setOnClickListener {
                         AgentModelSelectionSettings.selectManual(
-                            this@showAgentModelSelectionPage,
+                            this@renderAgentModelSelectionPage,
                             conversationId = conversationId,
                             targetId = target.id,
                             modelId = providerProfile.modelId,

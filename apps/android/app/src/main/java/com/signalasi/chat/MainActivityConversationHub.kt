@@ -32,6 +32,9 @@ internal fun MainActivity.showConversationHub(
     agentSessionsDialog = dialog
     var selectedTab = initialTab
     var archivedMode = showArchived
+    var conversations: List<AgentConversation>? = null
+    var contacts: List<Contact>? = null
+    val contentGeneration = navigationContentGate.begin()
 
     val root = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -126,21 +129,27 @@ internal fun MainActivity.showConversationHub(
     renderBody = {
         body.removeAllViews()
         when (selectedTab) {
-            ConversationHubTab.CONVERSATIONS -> renderConversationHubConversations(
-                body = body,
-                query = searchInput.text?.toString().orEmpty(),
-                archived = archivedMode,
-                dialog = dialog,
-                onArchivedChanged = {
-                    archivedMode = it
-                    renderBody()
-                }
-            )
-            ConversationHubTab.CONTACTS -> renderConversationHubContacts(
-                body,
-                searchInput.text?.toString().orEmpty(),
-                dialog
-            )
+            ConversationHubTab.CONVERSATIONS -> conversations?.let { snapshot ->
+                renderConversationHubConversations(
+                    body = body,
+                    query = searchInput.text?.toString().orEmpty(),
+                    archived = archivedMode,
+                    dialog = dialog,
+                    conversations = snapshot,
+                    onArchivedChanged = {
+                        archivedMode = it
+                        renderBody()
+                    }
+                )
+            } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
+            ConversationHubTab.CONTACTS -> contacts?.let { snapshot ->
+                renderConversationHubContacts(
+                    body,
+                    searchInput.text?.toString().orEmpty(),
+                    dialog,
+                    snapshot
+                )
+            } ?: body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
             ConversationHubTab.GROUPS -> renderConversationHubGroups(body)
         }
     }
@@ -149,11 +158,11 @@ internal fun MainActivity.showConversationHub(
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderBody()
         override fun afterTextChanged(s: Editable?) = Unit
     })
-    renderTabs()
-    renderBody()
-
     dialog.setContentView(root)
-    dialog.setOnDismissListener { if (agentSessionsDialog === dialog) agentSessionsDialog = null }
+    dialog.setOnDismissListener {
+        if (agentSessionsDialog === dialog) agentSessionsDialog = null
+        navigationContentGate.invalidateIfCurrent(contentGeneration)
+    }
     dialog.window?.apply {
         setBackgroundDrawable(android.graphics.drawable.ColorDrawable(getColorCompat(R.color.page_bg)))
         statusBarColor = getColorCompat(R.color.page_bg)
@@ -164,6 +173,21 @@ internal fun MainActivity.showConversationHub(
     }
     dialog.show()
     dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    renderTabs()
+    renderBody()
+    navigationContentExecutor.execute {
+        val conversationSnapshot = runCatching {
+            agentTranscriptStore.conversations(includeArchived = true)
+        }.getOrDefault(emptyList())
+        val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
+        handler.post {
+            if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
+                conversations = conversationSnapshot
+                contacts = contactSnapshot
+                renderBody()
+            }
+        }
+    }
 }
 
 private fun MainActivity.conversationHubHeader(onClose: () -> Unit): View = FrameLayout(this).apply {
@@ -192,9 +216,10 @@ private fun MainActivity.renderConversationHubConversations(
     query: String,
     archived: Boolean,
     dialog: Dialog,
+    conversations: List<AgentConversation>,
     onArchivedChanged: (Boolean) -> Unit
 ) {
-    val all = agentTranscriptStore.conversations(includeArchived = true)
+    val all = conversations
     if (archived) {
         body.addView(conversationHubActionRow(
             getString(R.string.conversation_hub_back_to_conversations),
@@ -265,7 +290,12 @@ private fun MainActivity.conversationHubConversationRow(
     }
 )
 
-private fun MainActivity.renderConversationHubContacts(body: LinearLayout, query: String, dialog: Dialog) {
+private fun MainActivity.renderConversationHubContacts(
+    body: LinearLayout,
+    query: String,
+    dialog: Dialog,
+    contactsSnapshot: List<Contact>
+) {
     body.addView(conversationHubActionRow(
         getString(R.string.new_friends),
         getString(R.string.conversation_hub_new_friends_subtitle),
@@ -280,7 +310,7 @@ private fun MainActivity.renderConversationHubContacts(body: LinearLayout, query
         startSecurityScan()
     })
 
-    val contacts = ConversationHubModels.contacts(buildDirectoryContacts(), query)
+    val contacts = ConversationHubModels.contacts(contactsSnapshot, query)
     if (contacts.isEmpty()) {
         addConversationHubSection(body, getString(R.string.conversation_hub_contacts_section))
         body.addView(conversationHubEmptyRow(getString(R.string.conversation_hub_no_contacts)))

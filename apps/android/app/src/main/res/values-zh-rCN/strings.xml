@@ -2069,6 +2069,7 @@
     <string name="rich_output_show_less">收起</string>
     <string name="rich_output_more_rows">还有 %1$d 行</string>
     <string name="rich_output_loading">正在加载预览</string>
+    <string name="navigation_content_loading">正在载入…</string>
     <string name="rich_output_load_failed">无法显示预览</string>
     <string name="rich_output_play">播放</string>
     <string name="rich_output_pause">暂停</string>

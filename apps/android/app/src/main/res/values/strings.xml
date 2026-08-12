@@ -2162,6 +2162,7 @@
     <string name="rich_output_show_less">Show less</string>
     <string name="rich_output_more_rows">%1$d more rows</string>
     <string name="rich_output_loading">Loading preview</string>
+    <string name="navigation_content_loading">Loading…</string>
     <string name="rich_output_load_failed">Preview unavailable</string>
     <string name="rich_output_play">Play</string>
     <string name="rich_output_pause">Pause</string>
