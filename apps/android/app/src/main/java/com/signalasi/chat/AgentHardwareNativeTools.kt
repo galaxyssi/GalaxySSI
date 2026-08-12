@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicReference
 enum class AgentHardwareCapability {
     BATTERY,
     POWER,
+    MEMORY,
     STORAGE,
     NETWORK,
     FOREGROUND_LOCATION,
@@ -72,6 +73,14 @@ data class AgentPowerSnapshot(
     val powerSaveMode: Boolean,
     val deviceIdleMode: Boolean,
     val ignoringBatteryOptimizations: Boolean,
+    val observedAtEpochMillis: Long
+)
+
+data class AgentDeviceMemorySnapshot(
+    val totalBytes: Long,
+    val availableBytes: Long,
+    val lowMemory: Boolean,
+    val lowMemoryThresholdBytes: Long,
     val observedAtEpochMillis: Long
 )
 
@@ -211,6 +220,7 @@ interface AgentHardwarePlatformFacade {
     fun availability(capability: AgentHardwareCapability): AgentNativeToolAvailability
     fun battery(): AgentBatterySnapshot
     fun power(): AgentPowerSnapshot
+    fun memory(): AgentDeviceMemorySnapshot
     fun storage(): AgentStorageSnapshot
     fun network(): AgentNetworkSnapshot
 
@@ -258,6 +268,9 @@ class AgentAndroidHardwarePlatformFacade(
 
             AgentHardwareCapability.POWER ->
                 serviceUnavailable(PowerManager::class.java, "Power service is unavailable")
+
+            AgentHardwareCapability.MEMORY ->
+                serviceUnavailable(ActivityManager::class.java, "Activity service is unavailable")
 
             AgentHardwareCapability.STORAGE ->
                 if (appContext.filesDir == null) "App-private storage is unavailable" else null
@@ -381,6 +394,21 @@ class AgentAndroidHardwarePlatformFacade(
             powerSaveMode = manager.isPowerSaveMode,
             deviceIdleMode = manager.isDeviceIdleMode,
             ignoringBatteryOptimizations = manager.isIgnoringBatteryOptimizations(appContext.packageName),
+            observedAtEpochMillis = clock.nowEpochMillis()
+        )
+    }
+
+    override fun memory(): AgentDeviceMemorySnapshot {
+        val manager = appContext.getSystemService(ActivityManager::class.java)
+            ?: throw AgentHardwareNativeException("memory_unavailable", "Activity service is unavailable")
+        val memory = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(memory)
+        val total = memory.totalMem.coerceAtLeast(0L)
+        return AgentDeviceMemorySnapshot(
+            totalBytes = total,
+            availableBytes = memory.availMem.coerceIn(0L, total),
+            lowMemory = memory.lowMemory,
+            lowMemoryThresholdBytes = memory.threshold.coerceIn(0L, total),
             observedAtEpochMillis = clock.nowEpochMillis()
         )
     }
@@ -1032,6 +1060,7 @@ class AgentAndroidHardwarePlatformFacade(
 object AgentHardwareNativeTools {
     const val BATTERY_STATUS = "signalasi.hardware.battery.status"
     const val POWER_STATUS = "signalasi.hardware.power.status"
+    const val MEMORY_STATUS = "signalasi.hardware.memory.status"
     const val STORAGE_STATUS = "signalasi.hardware.storage.status"
     const val NETWORK_STATUS = "signalasi.hardware.network.status"
     const val LOCATION_FOREGROUND_READ = "signalasi.hardware.location.foreground.read"
@@ -1081,6 +1110,7 @@ object AgentHardwareNativeTools {
     val toolIds: Set<String> = linkedSetOf(
         BATTERY_STATUS,
         POWER_STATUS,
+        MEMORY_STATUS,
         STORAGE_STATUS,
         NETWORK_STATUS,
         LOCATION_FOREGROUND_READ,
@@ -1108,6 +1138,7 @@ object AgentHardwareNativeTools {
     fun definitions(platform: AgentHardwarePlatformFacade): List<AgentNativeToolDefinition> = listOf(
         batteryDefinition(platform),
         powerDefinition(platform),
+        memoryDefinition(platform),
         storageDefinition(platform),
         networkDefinition(platform),
         locationDefinition(platform),
@@ -1297,6 +1328,71 @@ object AgentHardwareNativeTools {
                     "observed_at_epoch_ms" to snapshot.observedAtEpochMillis.coerceAtLeast(0L)
                 ),
                 message = "App-private storage volume status read"
+            )
+        }
+    )
+
+    private fun memoryDefinition(platform: AgentHardwarePlatformFacade) = definition(
+        platform = platform,
+        capability = AgentHardwareCapability.MEMORY,
+        descriptor = descriptor(
+            id = MEMORY_STATUS,
+            title = "Read phone memory status",
+            description = "Reads Android's current device RAM totals and low-memory signal without enumerating processes.",
+            outputSchema = objectSchema(
+                properties = mapOf(
+                    "scope" to AgentNativeJsonSchema.string(enumValues = listOf("device_ram")),
+                    "total_bytes" to AgentNativeJsonSchema.integer(0),
+                    "available_bytes" to AgentNativeJsonSchema.integer(0),
+                    "used_bytes" to AgentNativeJsonSchema.integer(0),
+                    "used_percent" to AgentNativeJsonSchema.integer(0, 100),
+                    "low_memory" to AgentNativeJsonSchema.boolean(),
+                    "low_memory_threshold_bytes" to AgentNativeJsonSchema.integer(0),
+                    "observed_at_epoch_ms" to epochSchema()
+                ),
+                required = setOf(
+                    "scope",
+                    "total_bytes",
+                    "available_bytes",
+                    "used_bytes",
+                    "used_percent",
+                    "low_memory",
+                    "low_memory_threshold_bytes",
+                    "observed_at_epoch_ms"
+                )
+            ),
+            capabilities = setOf("memory.device_ram.read", "memory.no_process_enumeration")
+        ),
+        execute = {
+            val snapshot = platform.memory()
+            if (
+                snapshot.totalBytes < 0L ||
+                snapshot.availableBytes !in 0L..snapshot.totalBytes ||
+                snapshot.lowMemoryThresholdBytes !in 0L..snapshot.totalBytes
+            ) {
+                throw AgentHardwareNativeException(
+                    "invalid_platform_result",
+                    "Platform memory values were outside valid bounds"
+                )
+            }
+            val used = snapshot.totalBytes - snapshot.availableBytes
+            val usedPercent = if (snapshot.totalBytes == 0L) {
+                0L
+            } else {
+                (used * 100L / snapshot.totalBytes).coerceIn(0L, 100L)
+            }
+            AgentNativeToolExecutionResult.success(
+                output = mapOf(
+                    "scope" to "device_ram",
+                    "total_bytes" to snapshot.totalBytes,
+                    "available_bytes" to snapshot.availableBytes,
+                    "used_bytes" to used,
+                    "used_percent" to usedPercent,
+                    "low_memory" to snapshot.lowMemory,
+                    "low_memory_threshold_bytes" to snapshot.lowMemoryThresholdBytes,
+                    "observed_at_epoch_ms" to snapshot.observedAtEpochMillis.coerceAtLeast(0L)
+                ),
+                message = "Phone memory status read"
             )
         }
     )

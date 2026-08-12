@@ -702,6 +702,14 @@ internal fun MobileNativeAgent.renderNativeToolResult(
         }
         AgentHardwareNativeTools.POWER_STATUS ->
             "Screen is ${if (bool("interactive")) "on" else "off"}. Battery Saver is ${if (bool("power_save_mode")) "on" else "off"}; Doze is ${if (bool("device_idle_mode")) "active" else "inactive"}."
+        AgentHardwareNativeTools.MEMORY_STATUS -> {
+            val used = formatBytes(long("used_bytes") ?: 0L)
+            val total = formatBytes(long("total_bytes") ?: 0L)
+            val available = formatBytes(long("available_bytes") ?: 0L)
+            val percent = long("used_percent") ?: 0L
+            "Phone memory: $used used of $total, $available available ($percent%). " +
+                if (bool("low_memory")) "Android reports low memory." else "Memory status is normal."
+        }
         AgentHardwareNativeTools.STORAGE_STATUS -> {
             val available = formatBytes(long("available_bytes") ?: 0L)
             val total = formatBytes(long("total_bytes") ?: 0L)
@@ -1176,6 +1184,14 @@ internal fun MobileNativeAgent.renderNativeToolResultChinese(
             "\u5c4f\u5e55${if (bool("interactive")) "\u5df2\u70b9\u4eae" else "\u5df2\u7184\u706d"}\uff0c" +
                 "\u7701\u7535\u6a21\u5f0f${if (bool("power_save_mode")) "\u5df2\u5f00\u542f" else "\u672a\u5f00\u542f"}\uff0c" +
                 "Doze ${if (bool("device_idle_mode")) "\u5df2\u542f\u7528" else "\u672a\u542f\u7528"}\u3002"
+        AgentHardwareNativeTools.MEMORY_STATUS -> {
+            val used = formatBytes(long("used_bytes") ?: 0L)
+            val total = formatBytes(long("total_bytes") ?: 0L)
+            val available = formatBytes(long("available_bytes") ?: 0L)
+            val percent = long("used_percent") ?: 0L
+            "\u624b\u673a\u5185\u5b58\uff1a\u5df2\u7528 $used / $total\uff0c\u53ef\u7528 $available\uff08$percent%\uff09\uff1b" +
+                if (bool("low_memory")) "Android \u62a5\u544a\u5185\u5b58\u4e0d\u8db3\u3002" else "\u7cfb\u7edf\u5185\u5b58\u72b6\u6001\u6b63\u5e38\u3002"
+        }
         AgentHardwareNativeTools.STORAGE_STATUS ->
             "\u5e94\u7528\u6240\u5728\u5b58\u50a8\u5377\u5269\u4f59 ${formatBytes(long("available_bytes") ?: 0L)}\uff0c" +
                 "\u5171 ${formatBytes(long("total_bytes") ?: 0L)}\u3002"

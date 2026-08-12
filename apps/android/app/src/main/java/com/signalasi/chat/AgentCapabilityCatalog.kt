@@ -1007,6 +1007,7 @@ object AgentDefaultCapabilityCatalog {
                 summary = "Summarize battery, storage, power, and network health",
                 tools = listOf(
                     AgentHardwareNativeTools.BATTERY_STATUS,
+                    AgentHardwareNativeTools.MEMORY_STATUS,
                     AgentHardwareNativeTools.STORAGE_STATUS,
                     AgentHardwareNativeTools.NETWORK_STATUS
                 )

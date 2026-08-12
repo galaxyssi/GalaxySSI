@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import android.Manifest
+import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.ClipboardManager
 import android.content.Context
@@ -31,6 +32,7 @@ enum class AgentPhoneCapabilityId {
     BLUETOOTH,
     NFC,
     BATTERY,
+    DEVICE_MEMORY,
     NETWORK,
     INSTALLED_APPS,
     INTENT_LAUNCH,
@@ -161,6 +163,9 @@ object AgentPhoneCapabilityNativeCoverage {
         AgentPhoneCapabilityId.BATTERY to setOf(
             AgentHardwareNativeTools.BATTERY_STATUS,
             AgentHardwareNativeTools.POWER_STATUS
+        ),
+        AgentPhoneCapabilityId.DEVICE_MEMORY to setOf(
+            AgentHardwareNativeTools.MEMORY_STATUS
         ),
         AgentPhoneCapabilityId.NETWORK to setOf(
             AgentHardwareNativeTools.NETWORK_STATUS,
@@ -367,6 +372,14 @@ object AgentPhoneCapabilityCatalog {
             risk = AgentRisk.LOW,
             normalAppCanExecute = true,
             limitation = "Only app-visible battery and charging signals are available; health, per-app attribution, and vendor diagnostics may be absent or privileged."
+        ),
+        AgentPhoneCapabilityBoundary(
+            id = AgentPhoneCapabilityId.DEVICE_MEMORY,
+            executionLocation = AgentPhoneExecutionLocation.ANDROID_SYSTEM_SERVICE,
+            availability = AgentPhoneCapabilityAvailability.READY,
+            risk = AgentRisk.LOW,
+            normalAppCanExecute = true,
+            limitation = "Reports device-wide RAM totals and Android's low-memory signal; process enumeration and private per-app memory are excluded."
         ),
         AgentPhoneCapabilityBoundary(
             id = AgentPhoneCapabilityId.NETWORK,
@@ -660,6 +673,11 @@ object AgentPhoneCapabilityCatalog {
         AgentPhoneCapabilityId.BATTERY -> AgentPhoneCapabilityObservation(
             platformSupported = context.getSystemService(BatteryManager::class.java) != null,
             evidence = "BatteryManager available"
+        )
+
+        AgentPhoneCapabilityId.DEVICE_MEMORY -> AgentPhoneCapabilityObservation(
+            platformSupported = context.getSystemService(ActivityManager::class.java) != null,
+            evidence = "ActivityManager memory service available"
         )
 
         AgentPhoneCapabilityId.NETWORK -> AgentPhoneCapabilityObservation(

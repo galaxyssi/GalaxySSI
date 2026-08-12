@@ -59,12 +59,13 @@ class AgentHardwareNativeToolsTest {
     }
 
     @Test
-    fun readsBatteryPowerStorageAndIdentifierFreeNetworkState() {
+    fun readsBatteryPowerMemoryStorageAndIdentifierFreeNetworkState() {
         val platform = FakeHardwarePlatform()
         val registry = AgentHardwareNativeTools.createRegistry(platform)
 
         val battery = registry.invoke(AgentHardwareNativeTools.BATTERY_STATUS, emptyMap())
         val power = registry.invoke(AgentHardwareNativeTools.POWER_STATUS, emptyMap())
+        val memory = registry.invoke(AgentHardwareNativeTools.MEMORY_STATUS, emptyMap())
         val storage = registry.invoke(AgentHardwareNativeTools.STORAGE_STATUS, emptyMap())
         val network = registry.invoke(
             AgentHardwareNativeTools.NETWORK_STATUS,
@@ -78,6 +79,11 @@ class AgentHardwareNativeToolsTest {
         assertEquals("app_visible", battery.output["scope"])
         assertTrue(power.toJson(), power.isSuccess)
         assertEquals(false, power.output["settings_changed"])
+        assertTrue(memory.toJson(), memory.isSuccess)
+        assertEquals(8_000L, memory.output["used_bytes"])
+        assertEquals(80L, memory.output["used_percent"])
+        assertEquals("device_ram", memory.output["scope"])
+        assertEquals(false, memory.output["low_memory"])
         assertTrue(storage.toJson(), storage.isSuccess)
         assertEquals(700L, storage.output["used_bytes"])
         assertEquals("app_private_volume", storage.output["scope"])
@@ -504,6 +510,14 @@ class AgentHardwareNativeToolsTest {
             powerSaveMode = false,
             deviceIdleMode = false,
             ignoringBatteryOptimizations = false,
+            observedAtEpochMillis = 1_000L
+        )
+
+        override fun memory() = AgentDeviceMemorySnapshot(
+            totalBytes = 10_000L,
+            availableBytes = 2_000L,
+            lowMemory = false,
+            lowMemoryThresholdBytes = 1_000L,
             observedAtEpochMillis = 1_000L
         )
 

@@ -482,6 +482,7 @@ class AgentSystemToolPlannerTest {
             nativeDescriptor(AgentHardwareNativeTools.FLASHLIGHT_SET, "Request flashlight state", AgentNativeToolRisk.MEDIUM),
             nativeDescriptor(AgentHardwareNativeTools.BATTERY_STATUS, "Read battery status", AgentNativeToolRisk.LOW),
             nativeDescriptor(AgentHardwareNativeTools.POWER_STATUS, "Read power status", AgentNativeToolRisk.LOW),
+            nativeDescriptor(AgentHardwareNativeTools.MEMORY_STATUS, "Read phone memory status", AgentNativeToolRisk.LOW),
             nativeDescriptor(AgentHardwareNativeTools.STORAGE_STATUS, "Read storage status", AgentNativeToolRisk.LOW),
             nativeDescriptor(AgentHardwareNativeTools.NETWORK_STATUS, "Read network status", AgentNativeToolRisk.LOW),
             nativeDescriptor(AgentWebMediaNativeTools.WEB_SEARCH, "Search the public web", AgentNativeToolRisk.LOW),
@@ -544,6 +545,15 @@ class AgentSystemToolPlannerTest {
             AgentHardwareNativeTools.POWER_STATUS,
             planner.deterministicLocalAction(request("Check battery saver status", screen, nativeTools))?.parameters?.get("tool_id")
         )
+        listOf(
+            "\u67e5\u4e0b\u624b\u673a\u5185\u5b58",
+            "\u8fd9\u53f0\u624b\u673a\u8fd8\u6709\u591a\u5c11\u8fd0\u884c\u5185\u5b58\uff1f",
+            "Check available RAM on this phone"
+        ).forEach { goal ->
+            val action = requireNotNull(planner.deterministicLocalAction(request(goal, screen, nativeTools)))
+            assertEquals(goal, AgentHardwareNativeTools.MEMORY_STATUS, action.parameters["tool_id"])
+            assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(action))
+        }
         assertEquals(
             AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET,
             planner.deterministicLocalAction(request("\u628a\u97f3\u91cf\u8bbe\u7f6e\u4e3a50", screen, nativeTools))?.parameters?.get("tool_id")
@@ -563,6 +573,7 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(sms))
         mapOf(
             "\u67e5\u770b\u7701\u7535\u6a21\u5f0f" to AgentHardwareNativeTools.POWER_STATUS,
+            "\u67e5\u770b\u624b\u673a\u5185\u5b58" to AgentHardwareNativeTools.MEMORY_STATUS,
             "\u67e5\u770b\u624b\u673a\u5b58\u50a8" to AgentHardwareNativeTools.STORAGE_STATUS,
             "\u67e5\u770b\u624b\u673a\u7f51\u7edc\u72b6\u6001" to AgentHardwareNativeTools.NETWORK_STATUS,
             "\u83b7\u53d6\u5f53\u524d\u4f4d\u7f6e" to AgentHardwareNativeTools.LOCATION_FOREGROUND_READ,
