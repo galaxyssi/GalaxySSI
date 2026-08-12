@@ -1,5 +1,7 @@
 package com.signalasi.chat
 
+import android.content.Context
+import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -10,6 +12,30 @@ data class PeerChatAttachment(
     val uri: String = "",
     val artifactUri: String = ""
 ) {
+    fun resolvedUri(context: Context): Uri? {
+        val source = if (artifactUri.isNotBlank()) {
+            AgentDesktopArtifactStore.resolveBlock(
+                context,
+                AgentRichBlock(
+                    id = artifactUri,
+                    type = if (mimeType.startsWith("image/")) {
+                        AgentRichBlockType.IMAGE
+                    } else {
+                        AgentRichBlockType.FILE
+                    },
+                    title = name,
+                    uri = artifactUri,
+                    mimeType = mimeType,
+                    metadata = mapOf("artifact_source_uri" to artifactUri)
+                )
+            ).uri
+        } else {
+            uri
+        }
+        if (source.isBlank() || source.startsWith("signalasi-artifact://")) return null
+        return Uri.parse(source)
+    }
+
     fun json(): JSONObject = JSONObject()
         .put("name", name)
         .put("mime_type", mimeType)
@@ -36,5 +62,20 @@ data class PeerChatAttachment(
         fun encode(values: List<PeerChatAttachment>): JSONArray = JSONArray().apply {
             values.forEach { put(it.json()) }
         }
+    }
+}
+
+internal object PeerChatPresentation {
+    fun incomingContent(payload: String, json: JSONObject?): String {
+        if (json?.optString("type") == "peer_message") {
+            return json.optString("content")
+        }
+        return json?.optString("content", payload)?.takeIf(String::isNotBlank) ?: payload
+    }
+
+    fun storedContent(content: String): String {
+        val envelope = runCatching { JSONObject(content) }.getOrNull() ?: return content
+        if (envelope.optString("type") != "peer_message") return content
+        return envelope.optString("content")
     }
 }

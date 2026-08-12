@@ -531,7 +531,7 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
 internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject): ChatMessage? {
     val contact = contactById(contactId) ?: return null
     val savedId = item.optLong("id", 0L)
-    val savedContent = item.optString("content")
+    val savedContent = PeerChatPresentation.storedContent(item.optString("content"))
     val attachments = PeerChatAttachment.decode(item.optJSONArray("attachments"))
     if (savedId <= 0L || (savedContent.isBlank() && attachments.isEmpty())) return null
     val messageContact = contactById(item.optString("contactId", contactId)) ?: contact

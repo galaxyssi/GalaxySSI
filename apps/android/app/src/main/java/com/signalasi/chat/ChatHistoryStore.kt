@@ -404,7 +404,7 @@ object ChatHistoryStore {
                 )
             }
             else -> {
-                val content = json?.optString("content", payload)?.takeIf { it.isNotBlank() } ?: payload
+                val content = PeerChatPresentation.incomingContent(payload, json)
                 val sender = json?.optString("sender", CONTACT_HERMES) ?: CONTACT_HERMES
                 val contactId = when {
                     sender == "system" -> CONTACT_SYSTEM

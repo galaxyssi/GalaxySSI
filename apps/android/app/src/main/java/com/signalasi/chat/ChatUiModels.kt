@@ -446,27 +446,13 @@ internal class MessageAdapter(
         holder.attachments.removeAllViews()
         holder.attachments.visibility = if (message.attachments.isEmpty()) View.GONE else View.VISIBLE
         message.attachments.forEach { attachment ->
-            holder.attachments.addView(TextView(holder.itemView.context).apply {
-                val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
-                text = if (size.isBlank()) attachment.name else "${attachment.name}\n$size"
-                textSize = 13f
-                maxWidth = holder.itemView.dp(252)
-                minWidth = holder.itemView.dp(190)
-                setTextColor(holder.itemView.context.getColor(R.color.text_primary))
-                setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
-                background = holder.itemView.context.getDrawable(
-                    if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
-                )
-                setOnClickListener { onOpenAttachment?.invoke(attachment) }
-                setOnLongClickListener {
-                    onMessageActions?.invoke(position)
-                    true
+            holder.attachments.addView(
+                if (attachment.mimeType.startsWith("image/")) {
+                    peerImageAttachment(holder, attachment, position)
+                } else {
+                    peerFileAttachment(holder, message, attachment, position)
                 }
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = holder.itemView.dp(4) }
-            })
+            )
         }
 
         if (message.content.startsWith(holder.itemView.context.getString(R.string.message_voice_prefix)) || message.content.startsWith("[\u8bed\u97f3]")) {
@@ -514,6 +500,89 @@ internal class MessageAdapter(
     }
 
     override fun getItemCount(): Int = messages.size
+
+    private fun peerImageAttachment(
+        holder: VH,
+        attachment: PeerChatAttachment,
+        position: Int
+    ): ImageView {
+        val context = holder.itemView.context
+        val initialSize = agentImageThumbnailSize(1, 2)
+        return ImageView(context).apply {
+            val requestKey = "${attachment.artifactUri}|${attachment.uri}"
+            tag = requestKey
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = attachment.name
+            setImageResource(R.drawable.ic_process_image)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#8B929A"))
+            setPadding(dp(34), dp(50), dp(34), dp(50))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(AGENT_IMAGE_THUMBNAIL_RADIUS_DP).toFloat()
+                setColor(Color.parseColor("#F4F6F8"))
+            }
+            clipToOutline = true
+            setOnClickListener { onOpenAttachment?.invoke(attachment) }
+            setOnLongClickListener {
+                onMessageActions?.invoke(position)
+                true
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                dp(initialSize.widthDp),
+                dp(initialSize.heightDp)
+            ).apply { topMargin = dp(4) }
+            attachment.resolvedUri(context)?.let { source ->
+                thread(name = "signalasi-peer-image-thumbnail") {
+                    val bitmap = AgentImagePipeline.loadPreview(
+                        context.applicationContext,
+                        source,
+                        dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2),
+                        dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2)
+                    )
+                    post {
+                        if (tag == requestKey && bitmap != null) {
+                            imageTintList = null
+                            setPadding(0, 0, 0, 0)
+                            setImageBitmap(bitmap)
+                            val size = agentImageThumbnailSize(bitmap.width, bitmap.height)
+                            layoutParams = layoutParams.apply {
+                                width = dp(size.widthDp)
+                                height = dp(size.heightDp)
+                            }
+                        } else {
+                            bitmap?.recycle()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun peerFileAttachment(
+        holder: VH,
+        message: ChatMessage,
+        attachment: PeerChatAttachment,
+        position: Int
+    ): TextView = TextView(holder.itemView.context).apply {
+        val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
+        text = if (size.isBlank()) attachment.name else "${attachment.name}\n$size"
+        textSize = 13f
+        maxWidth = holder.itemView.dp(252)
+        minWidth = holder.itemView.dp(190)
+        setTextColor(holder.itemView.context.getColor(R.color.text_primary))
+        setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
+        background = holder.itemView.context.getDrawable(
+            if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
+        )
+        setOnClickListener { onOpenAttachment?.invoke(attachment) }
+        setOnLongClickListener {
+            onMessageActions?.invoke(position)
+            true
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = holder.itemView.dp(4) }
+    }
 
     internal fun moveAvatarToEnd(holder: VH) {
         if (holder.row.indexOfChild(holder.avatar) < holder.row.indexOfChild(holder.container)) {
