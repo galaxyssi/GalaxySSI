@@ -391,7 +391,8 @@ final class AgentModelToolLoop {
         "tool_manifest_sha256": state.manifestSha256,
         "model_round": String(state.rounds),
         "tool_depth": String(call.depth),
-        "retry_attempt": String(attempt - 1)
+        "retry_attempt": String(attempt - 1),
+        "response_language": LanguagePolicySettings.resolve(state.request.responseLanguage)
       ]
       if let confirmationId {
         attributes["confirmation_id"] = confirmationId

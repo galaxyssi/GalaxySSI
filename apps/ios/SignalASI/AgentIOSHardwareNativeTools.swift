@@ -734,13 +734,26 @@ struct AgentIOSHardwareNativeToolExecutor {
       )
       return AgentNativeToolExecutionResult.success(
         output: output,
-        message: AgentIOSDeviceHealthStatusPresentation.message(output: output, language: "en"),
+        message: AgentIOSDeviceHealthStatusPresentation.message(
+          output: output,
+          language: responseLanguage(invocation)
+        ),
         metadata: ["background_capture": .bool(false), "identifiers_included": .bool(false)]
       )
     case AgentIOSHardwareNativeToolCatalog.batteryStatus:
-      return status(provider.batteryStatus(nowMillis: now), "Battery status read")
+      return status(
+        provider.batteryStatus(nowMillis: now),
+        english: "Battery status read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{7535}\u{6C60}\u{72B6}\u{6001}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.powerStatus:
-      return status(provider.powerStatus(nowMillis: now), "Power status read")
+      return status(
+        provider.powerStatus(nowMillis: now),
+        english: "Power status read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{7535}\u{6E90}\u{72B6}\u{6001}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.memoryStatus:
       let output = AgentIOSDeviceMemoryStatusPresentation.output(
         snapshot: memoryProvider.snapshot(),
@@ -748,13 +761,26 @@ struct AgentIOSHardwareNativeToolExecutor {
       )
       return AgentNativeToolExecutionResult.success(
         output: output,
-        message: AgentIOSDeviceMemoryStatusPresentation.message(output: output, language: "en"),
+        message: AgentIOSDeviceMemoryStatusPresentation.message(
+          output: output,
+          language: responseLanguage(invocation)
+        ),
         metadata: ["background_capture": .bool(false), "process_enumeration": .bool(false)]
       )
     case AgentIOSHardwareNativeToolCatalog.storageStatus:
-      return status(provider.storageStatus(nowMillis: now), "Storage status read")
+      return status(
+        provider.storageStatus(nowMillis: now),
+        english: "Storage status read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{5B58}\u{50A8}\u{72B6}\u{6001}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.networkStatus:
-      return status(provider.networkStatus(nowMillis: now), "Network status read")
+      return status(
+        provider.networkStatus(nowMillis: now),
+        english: "Network status read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{7F51}\u{7EDC}\u{72B6}\u{6001}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.locationForegroundRead:
       let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis
       return locationProvider.foregroundLocation(
@@ -765,7 +791,9 @@ struct AgentIOSHardwareNativeToolExecutor {
       let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxSensorResults))
       return status(
         provider.sensorsList(limit: limit, nowMillis: now),
-        "Device sensor metadata listed"
+        english: "Device sensor metadata listed",
+        chinese: "\u{5DF2}\u{5217}\u{51FA}\u{8BBE}\u{5907}\u{4F20}\u{611F}\u{5668}\u{4FE1}\u{606F}",
+        invocation: invocation
       )
     case AgentIOSHardwareNativeToolCatalog.sensorSample:
       let type = boundedString(invocation.input["type"]?.stringValue, limit: 64)
@@ -784,7 +812,12 @@ struct AgentIOSHardwareNativeToolExecutor {
         nowMillis: now
       )
     case AgentIOSHardwareNativeToolCatalog.bluetoothStatus:
-      return status(provider.bluetoothStatus(nowMillis: now), "Bluetooth adapter status boundary read")
+      return status(
+        provider.bluetoothStatus(nowMillis: now),
+        english: "Bluetooth adapter status boundary read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{84DD}\u{7259}\u{9002}\u{914D}\u{5668}\u{72B6}\u{6001}\u{8FB9}\u{754C}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground:
       let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults))
       let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis
@@ -797,7 +830,12 @@ struct AgentIOSHardwareNativeToolExecutor {
         nowMillis: now
       )
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
-      return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")
+      return status(
+        provider.nfcStatus(nowMillis: now),
+        english: "NFC capability status read",
+        chinese: "\u{5DF2}\u{8BFB}\u{53D6} NFC \u{80FD}\u{529B}\u{72B6}\u{6001}",
+        invocation: invocation
+      )
     case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:
       return AgentNativeToolExecutionResult.success(
         output: [
@@ -809,7 +847,9 @@ struct AgentIOSHardwareNativeToolExecutor {
           "platform": .string("ios"),
           "tool_id": .string(invocation.descriptor.id)
         ],
-        message: "Bluetooth settings handoff prepared; iOS requires user-controlled pairing.",
+        message: isChinese(invocation)
+          ? "\u{5DF2}\u{51C6}\u{5907}\u{84DD}\u{7259}\u{8BBE}\u{7F6E}\u{4EA4}\u{63A5}\u{FF1B}iOS \u{9700}\u{8981}\u{7528}\u{6237}\u{624B}\u{52A8}\u{5B8C}\u{6210}\u{914D}\u{5BF9}\u{3002}"
+          : "Bluetooth settings handoff prepared; iOS requires user-controlled pairing.",
         metadata: ["handoff_required": .bool(true), "background_capture": .bool(false)]
       )
     case AgentIOSHardwareNativeToolCatalog.installedAppsList:
@@ -824,12 +864,25 @@ struct AgentIOSHardwareNativeToolExecutor {
     }
   }
 
-  private func status(_ output: AgentMcpJSONObject, _ message: String) -> AgentNativeToolExecutionResult {
+  private func status(
+    _ output: AgentMcpJSONObject,
+    english: String,
+    chinese: String,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: output,
-      message: message,
+      message: isChinese(invocation) ? chinese : english,
       metadata: ["background_capture": .bool(false), "identifiers_included": .bool(false)]
     )
+  }
+
+  private func responseLanguage(_ invocation: AgentNativeToolInvocation) -> String {
+    LanguagePolicySettings.resolve(invocation.context.attributes["response_language"] ?? "")
+  }
+
+  private func isChinese(_ invocation: AgentNativeToolInvocation) -> Bool {
+    responseLanguage(invocation).lowercased().hasPrefix("zh")
   }
 
   private func installedAppsBoundary(
