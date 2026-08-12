@@ -537,7 +537,8 @@ struct SignalASIConversationHubView: View {
           systemImage: contact.type == "device" ? "iphone" : "person.crop.circle",
           tint: contact.type == "device" ? .blue : .signalASITextSecondary,
           trailing: "",
-          updatedAt: item.updatedAt
+          updatedAt: item.updatedAt,
+          leadingView: AnyView(AvatarView(contact: contact, size: 34))
         )
       }
       .buttonStyle(.plain)
@@ -848,7 +849,8 @@ struct SignalASIConversationHubView: View {
         tint: contact.type == "device"
           ? .blue
           : (contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary),
-        trailing: "chevron.right"
+        trailing: "chevron.right",
+        leadingView: AnyView(AvatarView(contact: contact, size: 34))
       )
     }
     .buttonStyle(.plain)
@@ -887,15 +889,24 @@ struct SignalASIConversationHubView: View {
     systemImage: String,
     tint: Color,
     trailing: String,
-    updatedAt: Date? = nil
+    updatedAt: Date? = nil,
+    leadingView: AnyView? = nil
   ) -> some View {
     HStack(spacing: 10) {
-      Image(systemName: systemImage)
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundColor(tint)
-        .frame(width: 34, height: 34)
-        .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if let leadingView {
+        leadingView
+          .overlay(
+            Circle()
+              .stroke(Color.signalASISeparator, lineWidth: 0.5)
+          )
+      } else {
+        Image(systemName: systemImage)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundColor(tint)
+          .frame(width: 34, height: 34)
+          .background(tint.opacity(0.12))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      }
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
           .font(.system(size: 15, weight: .semibold))
