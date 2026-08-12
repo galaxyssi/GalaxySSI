@@ -10,6 +10,9 @@ struct SignalASIControlCenterView: View {
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
+  private let globalDeliberationStore = GlobalAgentDeliberationStore()
+  private let globalLongHorizonStore = GlobalLongHorizonGoalStore()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -105,6 +108,7 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligentCoreSection: some View {
+    let dashboard = globalAgentDashboard
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_intelligent_core", "Intelligent Core"))
       SignalASIControlCenterNavigationRow(
@@ -117,6 +121,25 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_global_agent_title", "Global Super Agent"),
+        subtitle: String(
+          format: t(
+            "cc_global_agent_home_subtitle",
+            "%d topics - %d active goals - %d new insights"
+          ),
+          dashboard.topicCount,
+          dashboard.activeGoalCount,
+          dashboard.pendingInsightCount
+        ),
+        systemImage: "brain.head.profile",
+        tint: dashboard.settings.enabled ? .purple : .orange,
+        badge: dashboard.settings.enabled
+          ? t("cc_status_online", "Online")
+          : t("signalasi.status.paused", "Paused")
+      ) {
+        SignalASIGlobalAgentControlView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
         subtitle: modelPlannerSummary,
         systemImage: "slider.horizontal.3",
@@ -124,6 +147,20 @@ struct SignalASIControlCenterView: View {
         badge: resourcesBadge
       ) {
         SignalASIResourceRoutingView()
+      }
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_nodes_local_model_title", "Local Model Runtime"),
+        subtitle: t(
+          "cc_nodes_local_model_subtitle",
+          "On-device model lab, routing plans, and local inference settings"
+        ),
+        systemImage: "memorychip",
+        tint: localModelReady ? .signalASIAccent : .blue,
+        badge: localModelReady
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("status_needs_setup", "Needs Setup")
+      ) {
+        SignalASILocalModelLabView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_memory_title", "Memory & Personalization"),
@@ -214,6 +251,15 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentRecentTasksView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_learning_title", "Learning & Skill Evolution"),
+        subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
+        systemImage: "sparkles.rectangle.stack",
+        tint: learningPendingCount > 0 ? .purple : .signalASIAccent,
+        badge: "\(learningPendingCount)"
+      ) {
+        SignalASILearningSkillEvolutionView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_evolution_title", "Self evolution"),
         subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
         systemImage: "arrow.triangle.2.circlepath",
@@ -226,8 +272,22 @@ struct SignalASIControlCenterView: View {
   }
 
   private var connectionTrustSection: some View {
+    let needsAttention = systemStatusNeedsAttention
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_connection_trust", "Connection & Trust"))
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_system_status_title", "System Status"),
+        subtitle: needsAttention
+          ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+          : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+        systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
+        tint: needsAttention ? .orange : .signalASIAccent,
+        badge: needsAttention
+          ? t("cc_status_degraded", "Degraded")
+          : t("cc_status_normal", "Normal")
+      ) {
+        SignalASISystemStatusView()
+      }
       SignalASIControlCenterNavigationRow(
         title: t("cc_nodes_title", "Agents, Models & Nodes"),
         subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
@@ -336,6 +396,25 @@ struct SignalASIControlCenterView: View {
     store.agentMemorySnapshot()
   }
 
+  private var globalAgentDashboard: SignalASIGlobalAgentDashboardSnapshot {
+    SignalASIGlobalAgentDashboardSnapshot.make(
+      settings: store.globalAgentSettings,
+      agentTasks: store.recentAgentTasks(limit: 200),
+      sessions: store.agentSessions(includeArchived: true),
+      memory: memorySnapshot,
+      knowledgeStats: store.agentKnowledgeStats,
+      knowledgeAudit: store.agentKnowledgeAccessAudit,
+      automationTasks: store.automationTasks(),
+      automationRuns: store.recentAutomationRuns(limit: 80),
+      proactiveMessages: store.globalProactiveMessages,
+      proactiveFeedback: store.globalAgentFeedback,
+      cognitionTasks: globalDeliberationStore.cognitionTasks(),
+      autonomousRuns: globalDeliberationStore.autonomousRuns(),
+      longHorizonGoals: globalLongHorizonStore.goals(),
+      researchState: SignalASIGlobalAgentRuntimeBridge.researchState()
+    )
+  }
+
   private var recentTasks: [AgentTaskRecord] {
     store.recentAgentTasks(limit: 200)
   }
@@ -352,6 +431,10 @@ struct SignalASIControlCenterView: View {
     recentTasks.filter {
       [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
     }.count
+  }
+
+  private var learningPendingCount: Int {
+    learningProposalStore.loadProposals().filter { $0.status == .pending }.count
   }
 
   private var selfEvolutionSummary: (review: Int, active: Int, attention: Int) {
@@ -377,6 +460,23 @@ struct SignalASIControlCenterView: View {
     store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
   }
 
+  private var systemStatusAvailableResourceCount: Int {
+    store.cloudModelContacts.count +
+      store.serverLinks.filter(\.paired).count +
+      store.customDeviceConnectors.filter(\.enabled).count
+  }
+
+  private var systemStatusLinkReady: Bool {
+    store.serverLinks.contains(where: \.paired) &&
+      SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
+  }
+
+  private var systemStatusNeedsAttention: Bool {
+    store.agentSafetySettings.executionPaused ||
+      !systemStatusLinkReady ||
+      systemStatusAvailableResourceCount == 0
+  }
+
   private var resourcesBadge: String {
     intelligenceResourceCount > 0 ? t("cc_status_available", "Available") : t("status_needs_setup", "Needs Setup")
   }
@@ -389,6 +489,10 @@ struct SignalASIControlCenterView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var localModelReady: Bool {
+    LocalModelInferenceRuntime.shared.ready()
   }
 
   private var homeAssistantTint: Color {
