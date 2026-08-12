@@ -579,6 +579,18 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isDeviceStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.deviceStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "device-status",
+        target: "Device Status",
+        description: "Read current device status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isBatteryStatusGoal(lower),
        let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.batteryStatus, in: request) {
       return nativeAction(
@@ -990,6 +1002,14 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isBatteryStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, ["battery level", "battery status", "read battery", "\u{7535}\u{91cf}"])
+  }
+
+  private static func isDeviceStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "device status", "phone status", "device health", "phone health",
+      "\u{8BBE}\u{5907}\u{72B6}\u{6001}", "\u{624B}\u{673A}\u{72B6}\u{6001}",
+      "\u{8BBE}\u{5907}\u{5065}\u{5EB7}", "\u{624B}\u{673A}\u{5065}\u{5EB7}"
+    ])
   }
 
   private static func isSMSComposeGoal(_ lower: String) -> Bool {

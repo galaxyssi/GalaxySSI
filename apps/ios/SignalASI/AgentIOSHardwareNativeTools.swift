@@ -1,6 +1,7 @@
 import Foundation
 
 enum AgentIOSHardwareNativeToolCatalog {
+  static let deviceStatus = "signalasi.hardware.device.status"
   static let batteryStatus = AgentPhoneCapabilityNativeCoverage.batteryStatus
   static let powerStatus = AgentPhoneCapabilityNativeCoverage.powerStatus
   static let memoryStatus = AgentPhoneCapabilityNativeCoverage.memoryStatus
@@ -48,6 +49,7 @@ enum AgentIOSHardwareNativeToolCatalog {
   ]
 
   static let executableToolIds: Set<String> = [
+    deviceStatus,
     batteryStatus,
     powerStatus,
     memoryStatus,
@@ -97,6 +99,12 @@ enum AgentIOSHardwareNativeToolCatalog {
   }
 
   private static let specifications: [Specification] = [
+    statusSpec(
+      deviceStatus,
+      "Read device status",
+      "Summarizes app-visible iOS battery, power, memory, storage, and network status without changing settings.",
+      ["device.status.read", "device.no_identifiers"]
+    ),
     statusSpec(batteryStatus, "Read battery status", "Reads app-visible iOS battery status without vendor diagnostics.", ["battery.status"]),
     statusSpec(powerStatus, "Read power status", "Reads app-visible iOS power and thermal status without changing settings.", ["power.status"]),
     memoryStatusSpec(),
@@ -712,6 +720,23 @@ struct AgentIOSHardwareNativeToolExecutor {
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     let now = max(0, nowMillis())
     switch invocation.descriptor.id {
+    case AgentIOSHardwareNativeToolCatalog.deviceStatus:
+      let output = AgentIOSDeviceHealthStatusPresentation.output(
+        battery: provider.batteryStatus(nowMillis: now),
+        power: provider.powerStatus(nowMillis: now),
+        memory: AgentIOSDeviceMemoryStatusPresentation.output(
+          snapshot: memoryProvider.snapshot(),
+          nowMillis: now
+        ),
+        storage: provider.storageStatus(nowMillis: now),
+        network: provider.networkStatus(nowMillis: now),
+        nowMillis: now
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: AgentIOSDeviceHealthStatusPresentation.message(output: output, language: "en"),
+        metadata: ["background_capture": .bool(false), "identifiers_included": .bool(false)]
+      )
     case AgentIOSHardwareNativeToolCatalog.batteryStatus:
       return status(provider.batteryStatus(nowMillis: now), "Battery status read")
     case AgentIOSHardwareNativeToolCatalog.powerStatus:
