@@ -85,6 +85,34 @@ class PairingRegistryTests(unittest.TestCase):
         self.assertIsNotNone(pairing_state.get_client(second_id))
         self.assertTrue(pairing_state.is_paired())
 
+    def test_clear_pairing_permanently_forgets_only_selected_client(self):
+        first_id = link_protocol.new_route_id()
+        second_id = link_protocol.new_route_id()
+        pairing_state.record_pairing_success("a" * 64, "signalasi:first", client_route_id=first_id)
+        pairing_state.record_pairing_success("b" * 64, "signalasi:second", client_route_id=second_id)
+
+        status = pairing_state.clear_pairing_state(first_id)
+
+        self.assertEqual(1, status["client_count"])
+        self.assertIsNone(pairing_state.get_client(first_id, include_revoked=True))
+        self.assertIsNotNone(pairing_state.get_client(second_id))
+        pairing_state._last_good_state = None
+        pairing_state._last_good_path = ""
+        self.assertIsNone(pairing_state.get_client(first_id, include_revoked=True))
+        self.assertIsNotNone(pairing_state.get_client(second_id))
+
+    def test_clear_all_pairings_removes_revoked_history_too(self):
+        first_id = link_protocol.new_route_id()
+        second_id = link_protocol.new_route_id()
+        pairing_state.record_pairing_success("a" * 64, "signalasi:first", client_route_id=first_id)
+        pairing_state.record_pairing_success("b" * 64, "signalasi:second", client_route_id=second_id)
+        pairing_state.revoke_client(first_id)
+
+        pairing_state.clear_pairing_state()
+
+        self.assertEqual([], pairing_state.list_clients(include_revoked=True))
+        self.assertFalse(pairing_state.is_paired())
+
     def test_identity_lookup_only_returns_active_replaced_routes(self):
         first_id = link_protocol.new_route_id()
         second_id = link_protocol.new_route_id()

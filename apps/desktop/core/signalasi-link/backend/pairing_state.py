@@ -378,13 +378,31 @@ def revoke_client(client_route_id: str, reason: str = "forgotten_by_desktop") ->
         return client_status(client, state["server_route_id"])
 
 
+def forget_client(client_route_id: str) -> bool:
+    """Permanently remove one client after all transport state has been revoked."""
+    route_id = str(client_route_id or "").strip()
+    if not route_id:
+        return False
+    with _registry_lock:
+        state = _read_state()
+        if route_id not in state["clients"]:
+            return False
+        state["clients"].pop(route_id, None)
+        state["updated_at"] = time.time()
+        _write_state(state)
+        return True
+
+
 def clear_pairing_state(client_route_id: str = "") -> dict:
-    state = _read_state()
-    if client_route_id:
-        revoke_client(client_route_id)
+    route_id = str(client_route_id or "").strip()
+    if route_id:
+        forget_client(route_id)
     else:
-        for route_id in list(state["clients"]):
-            revoke_client(route_id)
+        with _registry_lock:
+            state = _read_state()
+            state["clients"] = {}
+            state["updated_at"] = time.time()
+            _write_state(state)
     return pairing_status()
 
 
