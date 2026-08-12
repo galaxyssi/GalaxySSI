@@ -298,6 +298,18 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentsModelsNodesView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("desktop_control_title", "Control Computer"),
+        subtitle: t(
+          "desktop_control_home_subtitle",
+          "View the computer screen and send approved mouse or keyboard actions from this phone"
+        ),
+        systemImage: "desktopcomputer",
+        tint: desktopControlTint,
+        badge: desktopControlBadge
+      ) {
+        SignalASIDesktopControlView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_security_title", "Security & Trust"),
         subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
         systemImage: "checkmark.shield",
@@ -503,6 +515,20 @@ struct SignalASIControlCenterView: View {
 
   private var securityTint: Color {
     store.profile.identityFingerprint.isEmpty ? .orange : .signalASIAccent
+  }
+
+  private var desktopControlCount: Int {
+    store.serverLinks.filter(\.paired).count
+  }
+
+  private var desktopControlBadge: String {
+    desktopControlCount > 0
+      ? String(format: t("cc_trusted_devices_badge", "%d trusted"), desktopControlCount)
+      : t("status_needs_setup", "Needs Setup")
+  }
+
+  private var desktopControlTint: Color {
+    desktopControlCount > 0 ? .signalASIAccent : .orange
   }
 
   private var agentCoreBadge: String {
