@@ -307,6 +307,30 @@ struct SignalASIAgentModelSelectionView: View {
               tint: .orange,
               badge: t("signalasi.status.needs_setup", "Needs Setup")
             )
+            SignalASISecurityNavigationRow(
+              title: t("signalasi.discover.add_cloud_model", "Add Cloud Model"),
+              subtitle: t(
+                "signalasi.discover.add_cloud_model_subtitle",
+                "Call OpenAI, Claude, Gemini, DeepSeek, Qwen, and other APIs directly on the phone"
+              ),
+              systemImage: "cloud.fill",
+              tint: .signalASIInsightText,
+              badge: t("signalasi.common.add", "Add")
+            ) {
+              CloudModelProviderSelectionView()
+            }
+            SignalASISecurityNavigationRow(
+              title: t("signalasi.agent_connection.scan_qr", "Scan or Paste Agent QR"),
+              subtitle: t(
+                "signalasi.agent_connection.scan_qr_subtitle",
+                "Pair a trusted Desktop Agent or local model through the Android-compatible QR flow"
+              ),
+              systemImage: "qrcode.viewfinder",
+              tint: .orange,
+              badge: t("security_scan", "Scan")
+            ) {
+              AddContactView(autoOpenScanner: true)
+            }
           }
         }
         .padding(.horizontal, 12)
