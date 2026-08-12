@@ -98,6 +98,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private let sessionQueue = DispatchQueue(label: "signalasi.qr-scanner.session")
   private var configured = false
   private var didFinish = false
+  private var previewLayer: AVCaptureVideoPreviewLayer?
   private var photoButton: UIButton?
   private var statusLabel: UILabel?
 
@@ -192,8 +193,9 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     output.metadataObjectTypes = [.qr]
     let preview = AVCaptureVideoPreviewLayer(session: session)
     preview.videoGravity = .resizeAspectFill
-    preview.frame = view.bounds
     view.layer.addSublayer(preview)
+    previewLayer = preview
+    updatePreviewLayout()
     configured = true
     startSession()
   }
@@ -385,8 +387,31 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    view.layer.sublayers?.compactMap { $0 as? AVCaptureVideoPreviewLayer }.forEach {
-      $0.frame = view.bounds
+    updatePreviewLayout()
+  }
+
+  private func updatePreviewLayout() {
+    previewLayer?.frame = view.bounds
+    guard let orientation = captureVideoOrientation else { return }
+    if let previewConnection = previewLayer?.connection,
+       previewConnection.isVideoOrientationSupported {
+      previewConnection.videoOrientation = orientation
+    }
+    if let metadataConnection = session.outputs
+      .compactMap({ $0 as? AVCaptureMetadataOutput })
+      .first?.connection,
+       metadataConnection.isVideoOrientationSupported {
+      metadataConnection.videoOrientation = orientation
+    }
+  }
+
+  private var captureVideoOrientation: AVCaptureVideoOrientation? {
+    switch view.window?.windowScene?.interfaceOrientation {
+    case .portrait: return .portrait
+    case .portraitUpsideDown: return .portraitUpsideDown
+    case .landscapeLeft: return .landscapeLeft
+    case .landscapeRight: return .landscapeRight
+    default: return nil
     }
   }
 
@@ -407,6 +432,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private func finish(with value: String) {
     guard !didFinish else { return }
     didFinish = true
+    stopSession()
     statusLabel?.removeFromSuperview()
     onCode(value)
   }
