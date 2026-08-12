@@ -64,7 +64,7 @@ struct PairingView: View {
         onCode: { value in
           qrText = value
           scannerPresented = false
-          handleScannedQR(value)
+          handleScannedQR(value, autoConfirmPairing: true)
         },
         onError: { message in
           scannerPresented = false
@@ -386,7 +386,7 @@ struct PairingView: View {
     handleScannedQR(value)
   }
 
-  private func handleScannedQR(_ value: String) {
+  private func handleScannedQR(_ value: String, autoConfirmPairing: Bool = false) {
     do {
       errorText = ""
       pairingNoticeIsError = false
@@ -394,6 +394,9 @@ struct PairingView: View {
       case .desktopPairing(let pairing):
         pendingPairing = pairing
         errorText = t("signalasi.pairing.ready_to_confirm", "Review fingerprints, then save trust.")
+        if autoConfirmPairing, SignalASILinkProtocol.hasVerifiedDesktopIdentity(pairing) {
+          Task { await submitPairing(value, pairing: pairing) }
+        }
       case .contact(let request):
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
@@ -416,7 +419,10 @@ struct PairingView: View {
     }
   }
 
-  private func submitPairing(_ contents: String? = nil) async {
+  private func submitPairing(
+    _ contents: String? = nil,
+    pairing: PairingQRCode? = nil
+  ) async {
     do {
       let value = (contents ?? qrText).trimmingCharacters(in: .whitespacesAndNewlines)
       guard !value.isEmpty else { return }
@@ -425,7 +431,7 @@ struct PairingView: View {
       try await coordinator.pair(using: value)
       errorText = String(
         format: t("signalasi.pairing.desktop_added", "%@ added"),
-        pendingPairing?.desktopName ?? t("signalasi.pairing.title", "Pairing")
+        pairing?.desktopName ?? pendingPairing?.desktopName ?? t("signalasi.pairing.title", "Pairing")
       )
       pairingNoticeIsError = false
       pendingPairing = nil

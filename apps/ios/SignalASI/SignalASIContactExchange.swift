@@ -273,7 +273,8 @@ enum SignalASIContactExchange {
   }
 
   static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
-    let object = try decodeQRCodeObject(contents, label: "QR")
+    let rawObject = try decodeQRCodeObject(contents, label: "QR")
+    let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject) ?? rawObject
     let type = normalized(object.string("type"))
     let isPairingQRCode = type == verifyType &&
       (
