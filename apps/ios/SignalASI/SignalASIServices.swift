@@ -6431,8 +6431,7 @@ final class MessageCoordinator: ObservableObject {
       ]
     )
     let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
-    let rawContent = payload.string("content")
-      .ifBlank(payload.string("text"))
+    let rawContent = AgentPeerChatTransport.incomingContent(from: payload)
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
     let content = rawContent
     guard !content.isEmpty || !richOutputJson.isEmpty else {
