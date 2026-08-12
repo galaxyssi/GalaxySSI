@@ -11,6 +11,8 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
+  @Published private(set) var lastRevokedContactIds: Set<String> = []
+  @Published private(set) var pairingRevocationRevision = 0
   @Published private(set) var transportConnected = false
   @Published private(set) var artifactRevision = 0
   @Published private(set) var artifactDownloadCompletedRevision = 0
@@ -103,6 +105,11 @@ final class MessageCoordinator: ObservableObject {
   func consumePendingPhonePublicPageExport() -> AgentIOSPhonePublicHTMLExport? {
     defer { pendingPhonePublicPageExport = nil }
     return pendingPhonePublicPageExport
+  }
+
+  func recordPairingRevocation(contactIds: Set<String>) {
+    lastRevokedContactIds = contactIds
+    pairingRevocationRevision &+= 1
   }
 
   private struct ActiveAgentTurnCandidate {
@@ -5661,9 +5668,19 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "pairing_revoked" {
       let desktopId = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      var revokedContactIds = Set(
+        (appPayload["revoked_contact_ids"] as? [Any] ?? [])
+          .compactMap { $0 as? String }
+          .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+          .filter { !$0.isEmpty }
+      )
       if !desktopId.isEmpty {
-        _ = removeDesktopPairingState(desktopId: desktopId)
+        revokedContactIds.formUnion(removeDesktopPairingState(desktopId: desktopId))
+      } else if let hermes = store.contact(id: "hermes") {
+        revokedContactIds.insert(hermes.id)
+        _ = store.deleteContact(id: hermes.id, deleteMessages: true)
       }
+      recordPairingRevocation(contactIds: revokedContactIds)
       let content = appPayload.string("content")
         .ifBlank("This Desktop pairing was revoked. Scan the SignalASI QR code again before communicating.")
       let systemMessage = store.appendSystem(
@@ -5677,7 +5694,8 @@ final class MessageCoordinator: ObservableObject {
         body: content,
         userInfo: [
           "signalasi_notification_type": "pairing_revoked",
-          "desktop_id": desktopId
+          "desktop_id": desktopId,
+          "revoked_contact_ids": Array(revokedContactIds).sorted()
         ]
       )
       if !appPayload.string("message_id").isEmpty {
