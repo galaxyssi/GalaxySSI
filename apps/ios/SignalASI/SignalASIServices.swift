@@ -93,7 +93,7 @@ final class MessageCoordinator: ObservableObject {
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
-  private let transportEpoch = "v7-flow-control"
+  private let transportEpoch = "v10-peer-message-uuid"
   fileprivate static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
@@ -222,6 +222,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
+    handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable()
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
@@ -1354,6 +1355,41 @@ final class MessageCoordinator: ObservableObject {
         )
       }
       lastError = detail
+    }
+  }
+
+  private func handleInterruptedDeliveries(_ failures: [ExhaustedLinkMessage]) {
+    var handled = Set<String>()
+    for failure in failures {
+      let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
+      let key = "\(failure.contactId)|\(sourceId)"
+      guard handled.insert(key).inserted else { continue }
+      let detail = "Message sending was interrupted before the transport confirmed it."
+      if !failure.contactId.isEmpty {
+        store.markMessage(
+          sourceUUID,
+          contactId: failure.contactId,
+          status: .failed,
+          detail: detail
+        )
+      } else {
+        store.markMessage(sourceUUID, status: .failed, detail: detail)
+      }
+      let outgoing = failure.contactId.isEmpty
+        ? nil
+        : store.messages(for: failure.contactId).first { $0.id == sourceUUID }
+      if let outgoing {
+        finishPendingAgentReply(for: outgoing)
+        agentHomeDisplayContactIdsByTurnId.removeValue(
+          forKey: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        store.appendSystem(
+          detail,
+          to: outgoing.contactId,
+          conversationId: outgoing.conversationId
+        )
+      }
     }
   }
 
@@ -5106,7 +5142,7 @@ final class MessageCoordinator: ObservableObject {
     let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
       "type": peerChat ? "peer_message" : "text",
-      "message_id": sourceMessageId,
+      "message_id": peerChat ? UUID().uuidString : sourceMessageId,
       "content": text,
       "contact_id": peerChat ? link.desktopId : contact.id,
       "task_id": taskIdentity.taskId,
@@ -5375,7 +5411,7 @@ final class MessageCoordinator: ObservableObject {
       throw SignalASIError.invalidPayload("Local-only Agent state cannot be sent over SignalASI Link.")
     }
     var appPayload = payload
-    let messageId = appPayload.string("message_id").ifBlank(UUID().uuidString)
+    let messageId = SignalASILinkProtocol.normalizedMessageId(appPayload.string("message_id"))
     appPayload["message_id"] = messageId
     let envelope = try SignalASILinkProtocol.makeEnvelope(
       payload: appPayload,
@@ -6293,6 +6329,7 @@ final class MessageCoordinator: ObservableObject {
       ?? advertisedContactId.ifBlank(desktopId).ifBlank("hermes")
     let rawAttachments = payload["attachments"] as? [[String: Any]] ?? []
     let richOutputJson = AgentPeerChatTransport.richOutput(for: rawAttachments)
+    let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
     let content = payload.string("content")
       .ifBlank(payload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
@@ -6317,6 +6354,14 @@ final class MessageCoordinator: ObservableObject {
       turnId: turnId,
       richOutputJson: richOutputJson
     )
+    for entry in remoteDeliveryTrace where !["received", "decrypted"].contains(entry.stage) {
+      store.appendDeliveryTrace(
+        incoming.id,
+        contactId: contactId,
+        stage: entry.stage,
+        detail: entry.detail
+      )
+    }
     store.appendDeliveryTrace(
       incoming.id,
       contactId: contactId,
@@ -6547,7 +6592,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private var mqttClientId: String {
-    "signalasi-ios-v1-\(store.profile.identityFingerprint.prefix(16))"
+    "signalasi-ios-\(transportEpoch)-\(store.profile.identityFingerprint.prefix(16))"
   }
 
   private static let taskIdentityValidatedTypes: Set<String> = [

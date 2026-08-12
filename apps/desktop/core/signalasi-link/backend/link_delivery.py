@@ -379,6 +379,39 @@ def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
             db.close()
 
 
+def discard_route(client_route_id: str) -> dict[str, int]:
+    """Remove transient delivery state owned by a revoked client route."""
+    normalized_route_id = str(client_route_id or "").strip()
+    if not normalized_route_id:
+        return {
+            "inbound_messages": 0,
+            "inbound_ciphertexts": 0,
+            "outbound_messages": 0,
+            "task_results": 0,
+        }
+    sealed_route_id = _route(normalized_route_id)
+    tables = {
+        "inbound_messages": "inbound_messages",
+        "inbound_ciphertexts": "inbound_ciphertexts",
+        "outbound_messages": "outbound_messages",
+        "task_results": "task_result_outbox",
+    }
+    removed: dict[str, int] = {}
+    with _lock:
+        db = _connect()
+        try:
+            for result_key, table_name in tables.items():
+                cursor = db.execute(
+                    f"DELETE FROM {table_name} WHERE client_route_id=?",
+                    (sealed_route_id,),
+                )
+                removed[result_key] = max(0, int(cursor.rowcount or 0))
+            db.commit()
+        finally:
+            db.close()
+    return removed
+
+
 def outbound_status(client_route_id: str, message_id: str) -> str | None:
     """Return the durable delivery state without making the message replayable."""
     with _lock:
