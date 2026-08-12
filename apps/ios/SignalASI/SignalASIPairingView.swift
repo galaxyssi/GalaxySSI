@@ -9,6 +9,7 @@ struct PairingView: View {
   @State private var errorText = ""
   @State private var pairingNoticeIsError = false
   @State private var scannerPresented = false
+  @State private var myQRCodePresented = false
   @State private var pendingPairing: PairingQRCode?
 
   var body: some View {
@@ -76,6 +77,9 @@ struct PairingView: View {
         }
       )
     }
+    .sheet(isPresented: $myQRCodePresented) {
+      MyContactQRCodeView()
+    }
   }
 
   private var desktopSection: some View {
@@ -135,6 +139,18 @@ struct PairingView: View {
         badge: t("signalasi.pairing.action_scan", "Scan")
       ) {
         scannerPresented = true
+      }
+      SignalASISecurityActionRow(
+        title: t("signalasi.pairing.action_show_qr", "My QR Code"),
+        subtitle: t(
+          "signalasi.pairing.show_qr_subtitle",
+          "Show this device identity so another SignalASI client can add it"
+        ),
+        systemImage: "qrcode",
+        tint: .signalASITextPrimary,
+        badge: t("signalasi.common.show", "Show")
+      ) {
+        myQRCodePresented = true
       }
       VStack(alignment: .leading, spacing: 8) {
         Text(t("signalasi.pairing.paste_qr_payload", "Paste QR Payload"))
