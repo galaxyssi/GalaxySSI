@@ -292,6 +292,24 @@ final class SignalASILinkDeliveryStore {
     return exhausted
   }
 
+  @discardableResult
+  func recoverInterruptedPublishing() -> [ExhaustedLinkMessage] {
+    let interruptedStatuses: Set<String> = ["preparing", "publishing", "sending"]
+    let interrupted = state.outbox.filter { interruptedStatuses.contains($0.status) }
+    guard !interrupted.isEmpty else { return [] }
+    interrupted.forEach(deleteWirePayload)
+    state.outbox.removeAll { interruptedStatuses.contains($0.status) }
+    save()
+    return interrupted.map {
+      ExhaustedLinkMessage(
+        messageId: $0.messageId,
+        clientSourceMessageId: $0.clientSourceMessageId,
+        contactId: $0.contactId,
+        attempts: $0.attempts
+      )
+    }
+  }
+
   func pending(
     now: Date = Date(),
     allowValidatedNetworkMessages: Bool = true,

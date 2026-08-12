@@ -12,6 +12,21 @@ import java.util.UUID
 
 class SignalASILinkProtocolTest {
     @Test
+    fun envelopeBoundaryReplacesNonUuidMessageIds() {
+        val envelope = SignalASILinkProtocol.makeEnvelope(
+            JSONObject()
+                .put("type", "peer_message")
+                .put("message_id", "local-row-42")
+                .put("content", "hello"),
+            sourceId = "phone",
+            targetId = "desktop"
+        )
+
+        assertTrue(runCatching { UUID.fromString(envelope.getString("message_id")) }.isSuccess)
+        assertNotEquals("local-row-42", envelope.getString("message_id"))
+    }
+
+    @Test
     fun privateGlobalStateNeverEntersTheTransport() {
         assertTrue(
             SignalASITransportPrivacyPolicy.isLocalOnly(

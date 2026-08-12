@@ -106,6 +106,18 @@ struct SignalASIAdvancedOptionsView: View {
       ) {
         SignalASIPermissionsAuditView()
       }
+      SignalASISecurityNavigationRow(
+        title: t("self_model_title", "Agent self model"),
+        subtitle: t(
+          "self_model_subtitle",
+          "Review learned strengths, limitations, and route calibration from completed tasks"
+        ),
+        systemImage: "brain.head.profile",
+        tint: .signalASIInsightText,
+        badge: String(format: t("self_model_runs_badge", "%d runs"), UserDefaultsAgentSelfModelStore.shared.snapshot().totalRuns)
+      ) {
+        SignalASIAgentSelfModelView()
+      }
     }
   }
 
