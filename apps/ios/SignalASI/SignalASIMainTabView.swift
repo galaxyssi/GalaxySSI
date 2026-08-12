@@ -11,14 +11,18 @@ struct SignalASIMainTabView: View {
   private var selectedContent: some View {
     switch selectedTab {
     case .voice:
-      SignalASIVoiceTabView(onNavigateToMainTab: { selectedTab = $0 })
+      SignalASIVoiceTabView(
+        onNavigateToMainTab: { selectedTab = $0 },
+        onBackToSettings: { selectedTab = .settings }
+      )
     case .agent:
       AgentHomeView(onNavigateToMainTab: { selectedTab = $0 })
     case .messages:
       NavigationView {
         SignalASIConversationHubView(
           initialTab: .conversations,
-          showsBackButton: false
+          showsBackButton: false,
+          onBackToSettings: { selectedTab = .settings }
         )
       }
       .navigationViewStyle(StackNavigationViewStyle())
@@ -26,12 +30,16 @@ struct SignalASIMainTabView: View {
       NavigationView {
         SignalASIConversationHubView(
           initialTab: .contacts,
-          showsBackButton: false
+          showsBackButton: false,
+          onBackToSettings: { selectedTab = .settings }
         )
       }
       .navigationViewStyle(StackNavigationViewStyle())
     case .discover:
-      DiscoverView(showsBackButton: false)
+      DiscoverView(
+        showsBackButton: false,
+        onBackToSettings: { selectedTab = .settings }
+      )
     case .settings:
       SettingsView(
         navigateToMainTab: { tab in

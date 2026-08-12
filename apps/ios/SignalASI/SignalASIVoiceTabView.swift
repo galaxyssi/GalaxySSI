@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SignalASIVoiceTabView: View {
   var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+  var onBackToSettings: (() -> Void)? = nil
 
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
@@ -65,6 +66,18 @@ struct SignalASIVoiceTabView: View {
   private var wakeSurface: some View {
     VStack(spacing: 18) {
       HStack(spacing: 10) {
+        if let onBackToSettings {
+          Button(action: onBackToSettings) {
+            Image(systemName: "chevron.left")
+              .font(.system(size: 19, weight: .semibold))
+              .foregroundColor(.white)
+              .frame(width: 40, height: 40)
+              .background(Color.white.opacity(0.12))
+              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
+        }
         wakeStatusPill
         Spacer(minLength: 8)
         if let onNavigateToMainTab {
