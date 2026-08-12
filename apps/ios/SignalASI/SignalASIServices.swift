@@ -92,7 +92,7 @@ final class MessageCoordinator: ObservableObject {
   private var liveConnectorSequenceByKey: [String: Int64] = [:]
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
-  private let transportEpoch = "v7-flow-control"
+  private let transportEpoch = "v10-peer-message-uuid"
   fileprivate static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
@@ -6573,7 +6573,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private var mqttClientId: String {
-    "signalasi-ios-v1-\(store.profile.identityFingerprint.prefix(16))"
+    "signalasi-ios-\(transportEpoch)-\(store.profile.identityFingerprint.prefix(16))"
   }
 
   private static let taskIdentityValidatedTypes: Set<String> = [
