@@ -2629,6 +2629,9 @@
 "signalasi.data_backup.import_messages_subtitle" = "%d 个会话 · %d 条消息";
 "signalasi.data_backup.import_agent_data" = "Agent 数据";
 "signalasi.data_backup.import_agent_data_subtitle" = "%d 条记忆 · %d 条知识 · %d 个任务 · %d 个会话";
+"signalasi.data_backup.import_global_agent" = "个人 ASI 状态";
+"signalasi.data_backup.global_agent_subtitle" = "%d 条运行记录 · 认知、自主、研究与记忆演化";
+"signalasi.data_backup.global_agent_not_included" = "未包含个人 ASI 运行状态";
 "signalasi.data_backup.import_language_voice" = "语言与语音";
 "signalasi.data_backup.import_language_voice_subtitle" = "%@ · 语音 %@ · %@ · ASR %@";
 "signalasi.data_backup.import_configuration" = "配置";
@@ -3092,6 +3095,7 @@
 "settings_my_signalasi" = "我的 SignalASI";
 "cc_product_subtitle" = "智能体操作系统 · 本机在线";
 "cc_core_ready" = "核心就绪";
+"cc_privacy_badge" = "隐私保护";
 "cc_metric_resources" = "智能资源";
 "cc_metric_today_tasks" = "最近任务";
 "cc_metric_security" = "安全状态";
@@ -3470,6 +3474,7 @@
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
 "delivery_status_local_saved" = "本地保存";
+"signalasi.peer.send_pending" = "正在发送到设备……";
 "delivery_status_queued" = "已排队";
 "delivery_status_sent" = "已发送";
 "delivery_status_delivered" = "已送达";
@@ -4105,3 +4110,5 @@
 "signalasi.profile.avatar_remove_subtitle" = "恢复默认头像";
 "signalasi.profile.avatar_removed" = "头像已移除";
 "signalasi.agent_session.name_placeholder" = "会话名称";
+"signalasi.agent.download.complete" = "下载完成：%@\n已保存到 SignalASI 下载。";
+"signalasi.agent.download.failed" = "下载失败：%@%@";

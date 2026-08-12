@@ -1107,19 +1107,28 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
   var author: String
   var downloads: Int
   var source: LocalModelHubSource = .huggingFace
+  var visionCapable: Bool = false
 
   enum CodingKeys: String, CodingKey {
     case id
     case modelId
     case author
     case downloads
+    case tags
   }
 
-  init(id: String, author: String, downloads: Int, source: LocalModelHubSource = .huggingFace) {
+  init(
+    id: String,
+    author: String,
+    downloads: Int,
+    source: LocalModelHubSource = .huggingFace,
+    visionCapable: Bool = false
+  ) {
     self.id = id
     self.author = author
     self.downloads = max(0, downloads)
     self.source = source
+    self.visionCapable = visionCapable
   }
 
   init(from decoder: Decoder) throws {
@@ -1129,6 +1138,8 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
       ""
     author = (try container.decodeIfPresent(String.self, forKey: .author)) ?? ""
     downloads = Self.decodeLossyInt(container, forKey: .downloads)
+    let tags = (try? container.decodeIfPresent([String].self, forKey: .tags)) ?? []
+    visionCapable = Self.isVisionCapable(tags)
   }
 
   var displayName: String {
@@ -1163,6 +1174,15 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
       return max(0, Int(value))
     }
     return 0
+  }
+
+  private static func isVisionCapable(_ tags: [String]) -> Bool {
+    tags.contains { tag in
+      let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return normalized == "image-text-to-text" ||
+        normalized == "task:image-text-to-text" ||
+        normalized == "vision"
+    }
   }
 }
 
@@ -1245,7 +1265,11 @@ private enum LocalModelHubSearchClient {
         id: id,
         author: id.split(separator: "/").first.map(String.init) ?? "",
         downloads: intValue(value["downloads"]),
-        source: .modelScope
+        source: .modelScope,
+        visionCapable: tags.contains { tag in
+          let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          return normalized == "task:image-text-to-text" || normalized == "vision"
+        }
       )
     }
   }

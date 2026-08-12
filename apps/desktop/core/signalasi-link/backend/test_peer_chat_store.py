@@ -68,6 +68,52 @@ class PeerChatStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.append(client_route_id="phone-a", direction="outbound")
 
+    def test_interrupted_sending_message_is_failed_on_reopen(self) -> None:
+        stored = self.store.append(
+            client_route_id="phone-a",
+            direction="outbound",
+            content="hello",
+            delivery_status="sending",
+        )
+
+        reopened = PeerChatStore(self.store.database_path)
+
+        self.assertEqual(
+            "failed",
+            reopened.get_message(stored["message_id"])["delivery_status"],
+        )
+
+    def test_delete_route_removes_only_revoked_device_history_and_files(self) -> None:
+        source = Path(self.temporary.name) / "attachment.txt"
+        source.write_text("private peer attachment", encoding="utf-8")
+        attachment = self.store.import_attachment(
+            client_route_id="phone-a",
+            message_id="message-a",
+            source=source,
+            name="attachment.txt",
+            mime_type="text/plain",
+            sha256="b" * 64,
+        )
+        stored = self.store.append(
+            client_route_id="phone-a",
+            direction="inbound",
+            content="remove me",
+            attachments=[attachment],
+            message_id="message-a",
+        )
+        attachment_path = self.store.attachment_path(stored["message_id"], 0)
+        self.store.append(
+            client_route_id="phone-b",
+            direction="inbound",
+            content="keep me",
+        )
+
+        self.assertEqual(1, self.store.delete_route("phone-a"))
+
+        self.assertEqual([], self.store.list_messages("phone-a"))
+        self.assertEqual("keep me", self.store.list_messages("phone-b")[0]["content"])
+        self.assertFalse(attachment_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

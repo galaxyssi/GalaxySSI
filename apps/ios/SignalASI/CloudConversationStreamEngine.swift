@@ -381,9 +381,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         var preparedCalls: [AssembledToolCall] = []
+        var invalidToolCall: AssembledToolCall?
         for call in calls.prefix(remaining) {
+          guard (try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson)) != nil else {
+            invalidToolCall = call
+            break
+          }
           guard executedToolKeys.insert(call.streamIdentityKey).inserted else { continue }
           preparedCalls.append(call)
+        }
+
+        if let invalidToolCall {
+          prepared.appendToolArgumentRepairPrompt(invalidToolCall)
+          continue
         }
 
         let outcomes = await executeToolCalls(

@@ -4,6 +4,7 @@ import UIKit
 struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var disclosureRecords: [AgentDataDisclosureRecord] = []
 
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
@@ -81,11 +82,34 @@ struct SignalASIControlCenterView: View {
             .frame(minHeight: 22)
             .background(agentCoreTint.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          Text(privacyBadge)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(privacyTint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 7)
+            .frame(minHeight: 22)
+            .background(privacyTint.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         Text(t("cc_product_subtitle", "Agent operating system - This device online"))
           .font(.system(size: 14))
           .foregroundColor(.signalASITextSecondary)
           .fixedSize(horizontal: false, vertical: true)
+        Text(
+          String(
+            format: t("cc_trusted_devices_badge", "%d trusted devices"),
+            trustedDeviceCount
+          )
+        )
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundColor(.blue)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+          .padding(.horizontal, 7)
+          .frame(minHeight: 22)
+          .background(Color.blue.opacity(0.12))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
       Spacer(minLength: 0)
     }
@@ -135,6 +159,18 @@ struct SignalASIControlCenterView: View {
         badge: agentCoreBadge
       ) {
         SignalASIAgentCoreView()
+      }
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_execution_policy_title", "Execution Policy"),
+        subtitle: executionPolicySummary,
+        systemImage: "checkmark.shield",
+        tint: executionPolicyTint,
+        badge: t(
+          store.agentSafetySettings.taskExecutionMode.displayTitle,
+          store.agentSafetySettings.taskExecutionMode.displayTitle
+        )
+      ) {
+        SignalASIExecutionPolicyView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_global_agent_title", "Global Super Agent"),
@@ -439,6 +475,10 @@ struct SignalASIControlCenterView: View {
     recentTasks.count
   }
 
+  private var trustedDeviceCount: Int {
+    store.serverLinks.filter(\.paired).count
+  }
+
   private var runtimeReady: Bool {
     runtimeProvider.availability(operation: .execute).status == .available
   }
@@ -473,7 +513,23 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligenceResourceCount: Int {
-    store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
+    let availableClouds = store.cloudModelContacts.filter { contact in
+      guard let model = contact.selectedCloudModel else { return false }
+      return CloudModelCredentialPolicy.isAutoRoutable(
+        model: model,
+        apiKey: store.apiKey(for: model),
+        provider: contact.cloudProvider,
+        setupStatus: contact.setupStatus
+      )
+    }.count
+    let onlineDesktops = store.serverLinks.filter { link in
+      link.paired && coordinator.mqttClient.isConnected
+    }.count
+    let configuredCustomDevices = store.customDeviceConnectors.filter {
+      $0.enabled && $0.configured
+    }.count
+    let configuredHomeAssistant = store.homeAssistantSettings.configured ? 1 : 0
+    return 1 + availableClouds + onlineDesktops + configuredCustomDevices + configuredHomeAssistant
   }
 
   private var systemStatusAvailableResourceCount: Int {
@@ -526,11 +582,32 @@ struct SignalASIControlCenterView: View {
   }
 
   private var securityBadge: String {
-    store.profile.identityFingerprint.isEmpty ? t("cc_status_degraded", "Degraded") : t("cc_status_secure", "Secure")
+    secureLinkReady ? t("cc_status_secure", "Secure") : t("cc_status_degraded", "Degraded")
   }
 
   private var securityTint: Color {
-    store.profile.identityFingerprint.isEmpty ? .orange : .signalASIAccent
+    secureLinkReady ? .signalASIAccent : .orange
+  }
+
+  private var secureLinkReady: Bool {
+    !store.profile.identityFingerprint.isEmpty &&
+      store.serverLinks.contains(where: \.paired) &&
+      coordinator.mqttClient.isConnected
+  }
+
+  private var privacyProtected: Bool {
+    !store.modelPlannerSettings.shareScreenText &&
+      !store.modelPlannerSettings.shareAgentOutputsWithPlanner
+  }
+
+  private var privacyBadge: String {
+    privacyProtected
+      ? t("cc_privacy_badge", "Privacy protected")
+      : t("cc_status_review", "Review")
+  }
+
+  private var privacyTint: Color {
+    privacyProtected ? .signalASIAccent : .orange
   }
 
   private var desktopControlCount: Int {
@@ -555,6 +632,22 @@ struct SignalASIControlCenterView: View {
 
   private var agentCoreTint: Color {
     store.agentSafetySettings.executionPaused ? .orange : .signalASIAccent
+  }
+
+  private var executionPolicySummary: String {
+    let executionMode = t(
+      store.agentSafetySettings.taskExecutionMode.displayTitle,
+      store.agentSafetySettings.taskExecutionMode.displayTitle
+    )
+    let permissionMode = t(
+      store.agentSafetySettings.permissionMode.displayTitle,
+      store.agentSafetySettings.permissionMode.displayTitle
+    )
+    return "\(t(\"cc_task_execution_mode_title\", \"Task execution\")): \(executionMode) / \(t(\"on_device_agent_permission_mode\", \"Execution Mode\")): \(permissionMode)"
+  }
+
+  private var executionPolicyTint: Color {
+    store.agentSafetySettings.highRiskGuard ? .signalASIAccent : .orange
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

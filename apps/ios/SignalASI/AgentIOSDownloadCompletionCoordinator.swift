@@ -29,6 +29,7 @@ final class AgentIOSDownloadCompletionCoordinator {
     defer { deliveryInFlight.remove(completion.id) }
 
     guard let contactId = contactId(for: completion) else {
+      notify(completion)
       reporter.markCompletionDelivered(id: completion.id, nowMillis: nowMillis())
       return
     }
@@ -39,7 +40,7 @@ final class AgentIOSDownloadCompletionCoordinator {
       return
     }
 
-    let zh = languageTag(for: completion).hasPrefix("zh")
+    let language = languageTag(for: completion)
     let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
     let succeeded = completion.succeeded
     let content: String
@@ -47,17 +48,28 @@ final class AgentIOSDownloadCompletionCoordinator {
     let relativePath = "SignalASI Downloads/\(fileName)"
     let richOutput: String
     if succeeded {
-      content = zh
-        ? "\u{4e0b}\u{8f7d}\u{5b8c}\u{6210}\u{ff1a}\(name)\n\u{5df2}\u{4fdd}\u{5b58}\u{5230} SignalASI \u{4e0b}\u{8f7d}\u{3002}"
-        : "Download complete: \(name)\nSaved in SignalASI Downloads."
+      content = String(
+        format: localized(
+          "signalasi.agent.download.complete",
+          "Download complete: %@\nSaved in SignalASI Downloads.",
+          language: language
+        ),
+        name
+      )
       richOutput = AgentRichContentCodec.encode([
         fileBlock(for: completion, name: name, relativePath: relativePath)
       ])
     } else {
       let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
-      content = zh
-        ? "\u{4e0b}\u{8f7d}\u{5931}\u{8d25}\u{ff1a}\(name)\(reason)"
-        : "Download failed: \(name)\(reason)"
+      content = String(
+        format: localized(
+          "signalasi.agent.download.failed",
+          "Download failed: %@%@",
+          language: language
+        ),
+        name,
+        reason
+      )
       richOutput = ""
     }
 
@@ -71,7 +83,39 @@ final class AgentIOSDownloadCompletionCoordinator {
       turnId: completion.turnId,
       richOutputJson: richOutput
     )
+    notify(completion)
     reporter.markCompletionDelivered(id: completion.id, nowMillis: nowMillis())
+  }
+
+  private func notify(_ completion: AgentIOSDownloadCompletion) {
+    let zh = languageTag(for: completion).hasPrefix("zh")
+    let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
+    let title: String
+    let body: String
+    if completion.succeeded {
+      title = zh ? "下载完成" : "Download complete"
+      body = zh
+        ? "\(name) 已保存到 SignalASI 下载。"
+        : "\(name) was saved to SignalASI Downloads."
+    } else {
+      title = zh ? "下载失败" : "Download failed"
+      let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
+      body = zh
+        ? "\(name) 下载失败\(reason)。"
+        : "\(name) failed to download\(reason)."
+    }
+    NotificationService.notify(
+      title: title,
+      body: body,
+      userInfo: [
+        "signalasi_notification_type": "agent_download",
+        "download_id": String(completion.id),
+        "contact_id": completion.contactId,
+        "conversation_id": completion.conversationId,
+        "turn_id": completion.turnId,
+        "succeeded": completion.succeeded
+      ]
+    )
   }
 
   private func contactId(for completion: AgentIOSDownloadCompletion) -> String? {
@@ -106,6 +150,10 @@ final class AgentIOSDownloadCompletionCoordinator {
   private func languageTag(for completion: AgentIOSDownloadCompletion) -> String {
     let recorded = completion.languageTag.trimmingCharacters(in: .whitespacesAndNewlines)
     return recorded.isEmpty ? LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage) : recorded
+  }
+
+  private func localized(_ key: String, _ fallback: String, language: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: language)
   }
 
   private func fileBlock(
