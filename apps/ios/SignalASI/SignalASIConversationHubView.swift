@@ -7,6 +7,12 @@ private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
   var id: String { rawValue }
 }
 
+private struct SignalASIConversationHubPreparedContent {
+  var conversations: SignalASIConversationHubSections
+  var archivedCount: Int
+  var contacts: [SignalASIContact]
+}
+
 struct SignalASIConversationHubView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -30,6 +36,12 @@ struct SignalASIConversationHubView: View {
   @State private var sessionEditDraft: AgentSessionEditDraft?
   @State private var contextPolicySession: AgentConversation?
   @State private var detailsSession: AgentConversation?
+  @State private var hubContentLoading = true
+  @State private var preparedHubContent = SignalASIConversationHubPreparedContent(
+    conversations: SignalASIConversationHubSections(pinned: [], recent: []),
+    archivedCount: 0,
+    contacts: []
+  )
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -244,27 +256,29 @@ struct SignalASIConversationHubView: View {
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
     }
+    .task(id: hubContentTaskID) {
+      await prepareHubContent()
+    }
   }
 
   @ViewBuilder
   private var hubContent: some View {
-    switch selectedTab {
-    case .conversations:
-      conversationContent
-    case .contacts:
-      contactsContent
-    case .groups:
-      groupsContent
+    if hubContentLoading {
+      hubLoadingContent
+    } else {
+      switch selectedTab {
+      case .conversations:
+        conversationContent
+      case .contacts:
+        contactsContent
+      case .groups:
+        groupsContent
+      }
     }
   }
 
   private var conversationContent: some View {
-    let all = store.agentSessions(includeArchived: true)
-    let visible = SignalASIConversationHubModels.conversations(
-      all,
-      query: searchText,
-      archived: showingArchived
-    )
+    let visible = preparedHubContent.conversations
 
     return VStack(alignment: .leading, spacing: 8) {
       hubActionRow(
@@ -286,13 +300,12 @@ struct SignalASIConversationHubView: View {
       }
 
       if !showingArchived {
-        let archivedCount = all.filter { $0.status == .archived }.count
         hubActionRow(
           title: t("signalasi.agent_session.archived", "Archived sessions"),
-          subtitle: String(format: t("signalasi.conversation_hub.archived_count", "%d archived"), archivedCount),
+          subtitle: String(format: t("signalasi.conversation_hub.archived_count", "%d archived"), preparedHubContent.archivedCount),
           systemImage: "archivebox",
           tint: .blue,
-          badge: archivedCount > 0 ? "\(archivedCount)" : ""
+          badge: preparedHubContent.archivedCount > 0 ? "\(preparedHubContent.archivedCount)" : ""
         ) {
           showingArchived = true
         }
@@ -356,10 +369,7 @@ struct SignalASIConversationHubView: View {
   }
 
   private var contactsContent: some View {
-    let contacts = SignalASIConversationHubModels.contacts(
-      store.contactList(matching: ""),
-      query: searchText
-    )
+    let contacts = preparedHubContent.contacts
     let sections = Dictionary(grouping: contacts) { contactSection($0.displayName) }
       .keys
       .sorted(by: contactSectionSort)
@@ -405,6 +415,55 @@ struct SignalASIConversationHubView: View {
         }
       }
     }
+  }
+
+  private var hubLoadingContent: some View {
+    HStack(spacing: 10) {
+      ProgressView()
+        .tint(.signalASIAccent)
+      Text(t("cc_loading", "Loading..."))
+        .font(.system(size: 14))
+        .foregroundColor(.signalASITextSecondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 120)
+  }
+
+  private var hubContentTaskID: String {
+    let conversationKey = store.agentConversations.map {
+      "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
+    }.joined(separator: "|")
+    let contactKey = store.contacts.map {
+      "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName)"
+    }.joined(separator: "|")
+    return [
+      selectedTab.rawValue,
+      searchText,
+      showingArchived ? "archived" : "active",
+      conversationKey,
+      contactKey
+    ].joined(separator: "\u{001F}")
+  }
+
+  private func prepareHubContent() async {
+    hubContentLoading = true
+    let sourceConversations = store.agentSessions(includeArchived: true)
+    let sourceContacts = store.contactList(matching: "")
+    let query = searchText
+    let archived = showingArchived
+    let prepared = await Task.detached(priority: .userInitiated) {
+      SignalASIConversationHubPreparedContent(
+        conversations: SignalASIConversationHubModels.conversations(
+          sourceConversations,
+          query: query,
+          archived: archived
+        ),
+        archivedCount: sourceConversations.filter { $0.status == .archived }.count,
+        contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query)
+      )
+    }.value
+    guard !Task.isCancelled else { return }
+    preparedHubContent = prepared
+    hubContentLoading = false
   }
 
   private var groupsContent: some View {
