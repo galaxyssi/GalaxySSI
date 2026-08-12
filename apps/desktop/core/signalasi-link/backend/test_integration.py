@@ -178,6 +178,19 @@ class BackendIntegrationContractTest(unittest.TestCase):
             assert pairing["desktop_device"]["kind"] == "desktop"
             assert pairing["desktop_device"]["display_name"]
             assert pairing["expires_at"] > 0
+            assert pairing["qr_payload_bytes"] < 600
+            assert pairing["qr_version"] <= 15
+            """
+        )
+
+    def test_executor_pairing_qr_stays_optically_compact(self) -> None:
+        self.run_isolated(
+            """
+            from main import signalasi_pairing_qr
+
+            pairing = signalasi_pairing_qr(grant_desktop_executor=True)
+            assert pairing["qr_payload_bytes"] < 650
+            assert pairing["qr_version"] <= 16
             """
         )
 

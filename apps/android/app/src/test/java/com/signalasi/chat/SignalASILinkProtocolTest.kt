@@ -382,6 +382,47 @@ class SignalASILinkProtocolTest {
         assertNull(SignalASILinkProtocol.pairingAccess(forgedRestricted))
     }
 
+    @Test
+    fun compactDesktopPairingQrExpandsToValidatedRestrictedPayload() {
+        val now = System.currentTimeMillis()
+        val compact = compactPairingQr(now, executor = false)
+
+        val normalized = requireNotNull(SignalASILinkProtocol.normalizePairingQr(compact))
+
+        assertTrue(SignalASILinkProtocol.validatePairingQr(normalized, now))
+        assertEquals("ThinkPad T14", normalized.getString("desktop_name"))
+        assertEquals("desktop_${"a".repeat(16)}", normalized.getString("desktop_id"))
+        assertEquals(
+            SignalASILinkProtocol.ACCESS_RESTRICTED,
+            normalized.getJSONObject("pairing_access").getString("profile")
+        )
+        assertFalse(normalized.has("desktop_control_authorization"))
+    }
+
+    @Test
+    fun compactDesktopPairingQrPreservesExecutorAuthorizationToken() {
+        val now = System.currentTimeMillis()
+        val compact = compactPairingQr(now, executor = true)
+
+        val normalized = requireNotNull(SignalASILinkProtocol.normalizePairingQr(compact))
+
+        assertTrue(SignalASILinkProtocol.validatePairingQr(normalized, now))
+        assertTrue(
+            SignalASILinkProtocol.pairingAccess(
+                normalized.getJSONObject("pairing_access")
+            )?.fullDesktopExecutor == true
+        )
+        assertEquals(
+            "authorization-token",
+            normalized.getJSONObject("desktop_control_authorization").getString("token")
+        )
+    }
+
+    @Test
+    fun unrelatedQrIsNotNormalizedAsDesktopPairing() {
+        assertNull(SignalASILinkProtocol.normalizePairingQr(JSONObject().put("t", "website")))
+    }
+
     private fun outboxMessage(id: String, topic: String): JSONObject = JSONObject()
         .put("message_id", id)
         .put("topic", topic)
@@ -392,4 +433,18 @@ class SignalASILinkProtocolTest {
         .put("version", 1)
         .put("profile", profile)
         .put("scopes", JSONArray(scopes.toList()))
+
+    private fun compactPairingQr(nowMs: Long, executor: Boolean): JSONObject = JSONObject()
+        .put("t", "sv1")
+        .put("n", "ThinkPad T14")
+        .put("k", "identity-key")
+        .put("h", "a".repeat(64))
+        .put("c", nowMs / 1000L)
+        .put("s", SignalASILinkProtocol.newRouteId())
+        .put("x", "pairing-token-${"x".repeat(24)}")
+        .put("e", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        .put("a", if (executor) 1 else 0)
+        .apply {
+            if (executor) put("o", "authorization-token")
+        }
 }
