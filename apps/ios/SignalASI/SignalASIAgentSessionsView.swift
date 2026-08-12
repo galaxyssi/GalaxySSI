@@ -11,6 +11,27 @@ struct AgentSessionMetrics: Equatable {
   var lastResponseLatencyMillis: Int64
 }
 
+private struct AgentSessionsPreparedContent: Equatable {
+  struct Row: Equatable, Identifiable {
+    var session: AgentConversation
+    var metrics: AgentSessionMetrics
+
+    var id: String { session.id }
+  }
+
+  struct Group: Equatable, Identifiable {
+    var title: String
+    var rows: [Row]
+
+    var id: String { title }
+  }
+
+  var groups: [Group] = []
+  var totalCount = 0
+  var archivedCount = 0
+  var isEmpty = true
+}
+
 struct SignalASIAgentSessionsView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -27,6 +48,9 @@ struct SignalASIAgentSessionsView: View {
   @State private var selectedSessionIDs: Set<String> = []
   @State private var bulkDeletePresented = false
   @State private var statusText = ""
+  @State private var sessionsContentLoading = true
+  @State private var navigationContentGate = SignalASINavigationContentGate()
+  @State private var preparedContent = AgentSessionsPreparedContent()
 
   private var visibleSessions: [AgentConversation] {
     let sessions = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -58,7 +82,7 @@ struct SignalASIAgentSessionsView: View {
             subtitle: t("signalasi.agent_sessions.hero_subtitle", "Switch, archive, rename, pin, and inspect Agent conversations"),
             badge: String(
               format: t("signalasi.agent_sessions.badge", "%d sessions"),
-              store.agentSessions(includeArchived: true).count
+              preparedContent.totalCount
             )
           )
 
@@ -81,63 +105,67 @@ struct SignalASIAgentSessionsView: View {
               .padding(.horizontal, 4)
           }
 
-          if multiDeleteMode {
+          if sessionsContentLoading {
+            sessionsLoadingContent
+          } else if multiDeleteMode {
             bulkDeleteToolbar
           }
 
-          AgentSessionActionRow(
-            title: t("signalasi.agent_session.new", "New session"),
-            subtitle: t("signalasi.agent_sessions.new_subtitle", "Start a fresh Agent context for the next request"),
-            systemImage: "plus.circle",
-            tint: .signalASIAccent,
-            badge: "+"
-          ) {
-            createSession()
-          }
-
-          if !showArchived {
+          if !sessionsContentLoading {
             AgentSessionActionRow(
-              title: t("signalasi.agent_session.archived", "Archived sessions"),
-              subtitle: String(
-                format: t("signalasi.agent_sessions.archived_count", "%d archived"),
-                store.agentSessions(includeArchived: true).filter { $0.status == .archived }.count
-              ),
-              systemImage: "archivebox",
-              tint: .blue,
-              badge: t("signalasi.common.view", "View")
+              title: t("signalasi.agent_session.new", "New session"),
+              subtitle: t("signalasi.agent_sessions.new_subtitle", "Start a fresh Agent context for the next request"),
+              systemImage: "plus.circle",
+              tint: .signalASIAccent,
+              badge: "+"
             ) {
-              showArchived = true
+              createSession()
+            }
+
+            if !showArchived {
+              AgentSessionActionRow(
+                title: t("signalasi.agent_session.archived", "Archived sessions"),
+                subtitle: String(
+                  format: t("signalasi.agent_sessions.archived_count", "%d archived"),
+                  preparedContent.archivedCount
+                ),
+                systemImage: "archivebox",
+                tint: .blue,
+                badge: t("signalasi.common.view", "View")
+              ) {
+                showArchived = true
+              }
             }
           }
 
-          ForEach(groupedSessions, id: \.title) { group in
+          ForEach(preparedContent.groups) { group in
             sectionTitle(group.title)
             VStack(spacing: 8) {
-              ForEach(group.sessions) { session in
+              ForEach(group.rows) { row in
                 AgentSessionRow(
-                  session: session,
-                  selected: !multiDeleteMode && session.id == store.activeAgentConversationId,
+                  session: row.session,
+                  selected: !multiDeleteMode && row.session.id == store.activeAgentConversationId,
                   selectionMode: multiDeleteMode,
-                  marked: selectedSessionIDs.contains(session.id),
-                  metrics: store.agentSessionMetrics(session.id),
-                  subtitle: sessionSubtitle(session),
-                  badge: rowBadge(session),
+                  marked: selectedSessionIDs.contains(row.session.id),
+                  metrics: row.metrics,
+                  subtitle: sessionSubtitle(row.session, metrics: row.metrics),
+                  badge: rowBadge(row.session),
                   onOpen: {
                     if multiDeleteMode {
-                      toggleSelectedSession(session.id)
+                      toggleSelectedSession(row.session.id)
                     } else {
-                      selectSession(session)
+                      selectSession(row.session)
                     }
                   },
                   actions: {
-                    sessionMenu(session)
+                    sessionMenu(row.session)
                   }
                 )
               }
             }
           }
 
-          if visibleSessions.isEmpty {
+          if !sessionsContentLoading && preparedContent.isEmpty {
             AgentSessionActionRow(
               title: t("signalasi.agent_session.no_results", "No matching sessions"),
               subtitle: showArchived
@@ -239,22 +267,122 @@ struct SignalASIAgentSessionsView: View {
     .onChange(of: showArchived) { _ in
       selectedSessionIDs.removeAll()
     }
+    .task(id: sessionsContentTaskID) {
+      await prepareSessionsContent()
+    }
+    .onDisappear {
+      navigationContentGate.invalidate()
+    }
   }
 
-  private var groupedSessions: [(title: String, sessions: [AgentConversation])] {
-    let sessions = visibleSessions
-    guard !sessions.isEmpty else { return [] }
-    if showArchived {
-      return [(t("signalasi.agent_session.archived", "Archived sessions"), sessions)]
+  private var sessionsContentTaskID: String {
+    let revision = store.agentConversations.map {
+      "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
+    }.joined(separator: "|")
+    return "\(searchText)|\(showArchived ? "archived" : "active")|\(revision)"
+  }
+
+  private var sessionsLoadingContent: some View {
+    HStack(spacing: 10) {
+      ProgressView()
+        .tint(.signalASIAccent)
+      Text(t("cc_loading", "Loading..."))
+        .font(.system(size: 14))
+        .foregroundColor(.signalASITextSecondary)
     }
-    let calendar = Calendar.current
-    let today = calendar.startOfDay(for: Date())
-    let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-    return [
-      (t("signalasi.agent_session.today", "Today"), sessions.filter { date($0.updatedAt) >= today }),
-      (t("signalasi.agent_session.yesterday", "Yesterday"), sessions.filter { date($0.updatedAt) >= yesterday && date($0.updatedAt) < today }),
-      (t("signalasi.agent_session.earlier", "Earlier"), sessions.filter { date($0.updatedAt) < yesterday })
-    ].filter { !$0.sessions.isEmpty }
+    .frame(maxWidth: .infinity, minHeight: 88)
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func prepareSessionsContent() async {
+    let generation = navigationContentGate.begin()
+    sessionsContentLoading = true
+    let sourceSessions = store.agentSessions(includeArchived: true).map { session in
+      (session: session, messages: store.agentSessionMessages(session.id))
+    }
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let archived = showArchived
+    let prepared = await Task.detached(priority: .userInitiated) {
+      let filtered = sourceSessions
+        .filter { source in
+          let session = source.session
+          guard archived ? session.status == .archived : session.status == .active else { return false }
+          guard !query.isEmpty else { return true }
+          return [
+            session.title,
+            session.summary,
+            session.selectedModelOrAgent,
+            session.contextPolicy,
+            session.id
+          ].contains {
+            $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+          }
+        }
+      let calendar = Calendar.current
+      let today = calendar.startOfDay(for: Date())
+      let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+      let groups: [(String, [(session: AgentConversation, messages: [ChatMessage])])] = archived
+        ? [("archived", filtered)]
+        : [
+          ("today", filtered.filter { Self.date($0.session.updatedAt) >= today }),
+          ("yesterday", filtered.filter { Self.date($0.session.updatedAt) >= yesterday && Self.date($0.session.updatedAt) < today }),
+          ("earlier", filtered.filter { Self.date($0.session.updatedAt) < yesterday })
+        ].filter { !$0.1.isEmpty }
+      let rows = groups.map { key, sessions in
+        AgentSessionsPreparedContent.Group(
+          title: key,
+          rows: sessions.map { session in
+            AgentSessionsPreparedContent.Row(
+              session: session.session,
+              metrics: Self.metrics(for: session.session, messages: session.messages)
+            )
+          }
+        )
+      }
+      return AgentSessionsPreparedContent(
+        groups: rows,
+        totalCount: sourceSessions.count,
+        archivedCount: sourceSessions.filter { $0.session.status == .archived }.count,
+        isEmpty: filtered.isEmpty
+      )
+    }.value
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
+    preparedContent = prepared
+    sessionsContentLoading = false
+  }
+
+  private static func date(_ millis: Int64) -> Date {
+    Date(timeIntervalSince1970: Double(max(millis, 0)) / 1_000)
+  }
+
+  private static func metrics(for session: AgentConversation, messages: [ChatMessage]) -> AgentSessionMetrics {
+    let turnIds = Set(messages.map(\.turnId).filter { !$0.isBlank })
+    let userTurns = messages.filter { $0.isMine && !$0.isSystem }.count
+    let estimatedTokens = messages.reduce(0) { partial, message in
+      partial + max(1, message.content.count / 4)
+    }
+    var lastUserAt: Date?
+    var latestLatency: Int64 = 0
+    for message in messages.sorted(by: { $0.createdAt < $1.createdAt }) {
+      if message.isMine && !message.isSystem {
+        lastUserAt = message.createdAt
+      } else if !message.isMine, !message.isSystem, let start = lastUserAt {
+        latestLatency = max(0, Int64((message.createdAt.timeIntervalSince(start) * 1_000).rounded()))
+      }
+    }
+    return AgentSessionMetrics(
+      turnCount: max(turnIds.count, userTurns),
+      messageCount: messages.count,
+      taskCount: messages.filter { message in
+        message.deliveryTrace.contains { $0.stage == "agent_started" || $0.stage == "agent_replied" }
+      }.count,
+      estimatedContextTokens: estimatedTokens,
+      inputTokens: session.inputTokens,
+      outputTokens: session.outputTokens,
+      costMicros: session.costMicros,
+      lastResponseLatencyMillis: latestLatency
+    )
   }
 
   private var deleteAlertPresented: Binding<Bool> {
@@ -563,8 +691,7 @@ struct SignalASIAgentSessionsView: View {
     deletingSession = nil
   }
 
-  private func sessionSubtitle(_ session: AgentConversation) -> String {
-    let metrics = store.agentSessionMetrics(session.id)
+  private func sessionSubtitle(_ session: AgentConversation, metrics: AgentSessionMetrics) -> String {
     return String(
       format: t("signalasi.agent_session.message_count", "%@ / %d messages / %@"),
       sessionRouteLabel(session),
@@ -609,15 +736,26 @@ struct SignalASIAgentSessionsView: View {
   }
 
   private func sectionTitle(_ title: String) -> some View {
-    Text(title)
+    Text(sectionTitleText(title))
       .font(.system(size: 13, weight: .semibold))
       .foregroundColor(.signalASITextSecondary)
       .padding(.horizontal, 4)
       .padding(.top, 2)
   }
 
-  private func date(_ millis: Int64) -> Date {
-    Date(timeIntervalSince1970: Double(max(millis, 0)) / 1_000)
+  private func sectionTitleText(_ key: String) -> String {
+    switch key {
+    case "today":
+      return t("signalasi.agent_session.today", "Today")
+    case "yesterday":
+      return t("signalasi.agent_session.yesterday", "Yesterday")
+    case "earlier":
+      return t("signalasi.agent_session.earlier", "Earlier")
+    case "archived":
+      return t("signalasi.agent_session.archived", "Archived sessions")
+    default:
+      return key
+    }
   }
 
   private func listTime(_ millis: Int64) -> String {
