@@ -159,45 +159,6 @@ button:disabled { cursor: default; opacity: 0.48; }
   scrollbar-width: thin;
 }
 
-.peer-heading { margin-top: 2px; border-top: 1px solid var(--line); }
-.peer-toggle {
-  width: 100%;
-  font: inherit;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-.peer-toggle:hover { color: #5f6871; }
-.peer-toggle em { margin-left: auto; }
-.peer-toggle-chevron {
-  width: 7px;
-  height: 7px;
-  margin: 0 3px 2px 7px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-  transition: transform 140ms ease, margin 140ms ease;
-}
-.peer-toggle[aria-expanded="false"] .peer-toggle-chevron {
-  margin-bottom: -2px;
-  transform: rotate(-45deg);
-}
-.peer-contact-list.collapsed { display: none; }
-.peer-contact-list { max-height: 190px; overflow-y: auto; margin: 0 -3px 8px; padding: 0 3px; scrollbar-width: thin; }
-.peer-contact { width: 100%; min-height: 49px; display: grid; grid-template-columns: 31px minmax(0, 1fr); align-items: center; gap: 9px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: #59636b; text-align: left; }
-.peer-contact:hover { background: #eaedef; }
-.peer-contact.active { background: var(--surface); color: #202428; box-shadow: 0 1px 2px rgba(20, 25, 30, 0.06); }
-.peer-contact-icon { width: 28px; height: 28px; position: relative; border: 1.4px solid #73808a; border-radius: 7px; }
-.peer-contact-icon::before { width: 9px; height: 9px; position: absolute; top: 4px; left: 8px; border: 1.2px solid currentColor; border-radius: 50%; content: ""; }
-.peer-contact-icon::after { width: 14px; height: 7px; position: absolute; bottom: 3px; left: 5px; border: 1.2px solid currentColor; border-radius: 9px 9px 5px 5px; content: ""; }
-.peer-contact strong,
-.peer-contact small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.peer-contact strong { font-size: 0.95rem; font-weight: 600; }
-.peer-contact small { margin-top: 3px; color: var(--soft); font-size: 0.75rem; }
-
 .history-group-label {
   padding: 12px 9px 6px;
   color: #9299a1;
@@ -220,8 +181,11 @@ button:disabled { cursor: default; opacity: 0.48; }
 
 .history-item:hover { background: #eaedef; }
 .history-item.active { background: var(--surface); color: #202428; box-shadow: 0 1px 2px rgba(20, 25, 30, 0.06); }
-.history-item strong { display: block; overflow: hidden; font-size: 1rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.history-item span { display: block; margin-top: 4px; color: var(--soft); font-size: 0.8rem; }
+.history-title-row { display: flex !important; align-items: center; min-width: 0; gap: 6px; margin: 0 !important; }
+.history-title-row strong { min-width: 0; overflow: hidden; font-size: 0.98rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.history-title-row i { flex: none; padding: 1px 4px; border: 1px solid #aab7c1; border-radius: 4px; color: #6c7882; font-size: 0.66rem; font-style: normal; font-weight: 500; }
+.history-title-row time { flex: none; margin-left: auto; color: #9ba2a9; font-size: 0.7rem; }
+.history-item .history-preview { display: block; overflow: hidden; margin-top: 4px; color: var(--soft); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
 .history-item span.running { color: var(--green); }
 .history-empty { padding: 18px 10px; color: var(--soft); font-size: 0.9rem; line-height: 1.5; }
 

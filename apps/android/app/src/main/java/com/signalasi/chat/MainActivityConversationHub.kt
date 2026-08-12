@@ -33,7 +33,9 @@ internal fun MainActivity.showConversationHub(
     var selectedTab = initialTab
     var archivedMode = showArchived
     var conversations: List<AgentConversation>? = null
+    var agentConversationItems: List<ConversationHubItem>? = null
     var contacts: List<Contact>? = null
+    var contactConversationSummaries: List<ConversationHubContactSummary>? = null
     val contentGeneration = navigationContentGate.begin()
 
     val root = LinearLayout(this).apply {
@@ -130,12 +132,20 @@ internal fun MainActivity.showConversationHub(
         body.removeAllViews()
         when (selectedTab) {
             ConversationHubTab.CONVERSATIONS -> conversations?.let { snapshot ->
+                val agentItems = agentConversationItems
+                val contactSnapshot = contactConversationSummaries
+                if (agentItems == null || contactSnapshot == null) {
+                    body.addView(conversationHubEmptyRow(getString(R.string.navigation_content_loading)))
+                    return@let
+                }
                 renderConversationHubConversations(
                     body = body,
                     query = searchInput.text?.toString().orEmpty(),
                     archived = archivedMode,
                     dialog = dialog,
                     conversations = snapshot,
+                    agentItems = agentItems,
+                    contacts = contactSnapshot,
                     onArchivedChanged = {
                         archivedMode = it
                         renderBody()
@@ -179,11 +189,42 @@ internal fun MainActivity.showConversationHub(
         val conversationSnapshot = runCatching {
             agentTranscriptStore.conversations(includeArchived = true)
         }.getOrDefault(emptyList())
+        val agentItemSnapshot = conversationSnapshot.map { conversation ->
+            val latest = runCatching {
+                agentTranscriptStore.page(conversation.id, pageSize = 1).entries.lastOrNull()
+            }.getOrNull()
+            ConversationHubItem(
+                id = conversation.id,
+                kind = ConversationHubItemKind.AGENT,
+                title = agentConversationDisplayTitle(conversation),
+                subtitle = latest?.text.orEmpty(),
+                updatedAt = maxOf(conversation.updatedAt, latest?.timestampMillis ?: 0L),
+                pinned = conversation.pinned,
+                archived = conversation.status == AgentConversationStatus.ARCHIVED,
+                searchableMetadata = conversation.selectedModelOrAgent
+            )
+        }
         val contactSnapshot = runCatching(::buildDirectoryContacts).getOrDefault(emptyList())
+        val contactsById = contactSnapshot.associateBy(Contact::id)
+        val chatSummarySnapshot = runCatching {
+            ChatHistoryStore.contactSummaries(this).mapNotNull { summary ->
+                val message = storedChatMessage(summary.contactId, summary.lastMessage) ?: return@mapNotNull null
+                val contact = contactsById[summary.contactId] ?: contactById(summary.contactId)
+                val preview = message.content.ifBlank { message.attachments.firstOrNull()?.name.orEmpty() }
+                ConversationHubContactSummary(
+                    contactId = summary.contactId,
+                    title = displayContactName(contact),
+                    lastMessage = preview,
+                    updatedAt = message.timestamp
+                )
+            }
+        }.getOrDefault(emptyList())
         handler.post {
             if (dialog.isShowing && navigationContentGate.isCurrent(contentGeneration)) {
                 conversations = conversationSnapshot
+                agentConversationItems = agentItemSnapshot
                 contacts = contactSnapshot
+                contactConversationSummaries = chatSummarySnapshot
                 renderBody()
             }
         }
@@ -217,6 +258,8 @@ private fun MainActivity.renderConversationHubConversations(
     archived: Boolean,
     dialog: Dialog,
     conversations: List<AgentConversation>,
+    agentItems: List<ConversationHubItem>,
+    contacts: List<ConversationHubContactSummary>,
     onArchivedChanged: (Boolean) -> Unit
 ) {
     val all = conversations
@@ -245,11 +288,11 @@ private fun MainActivity.renderConversationHubConversations(
         ) { onArchivedChanged(true) })
     }
 
-    val sections = ConversationHubModels.conversations(all, query, archived)
+    val sections = ConversationHubModels.unifiedConversations(agentItems, contacts, query, archived)
     if (sections.pinned.isNotEmpty()) {
         addConversationHubSection(body, getString(R.string.conversation_hub_pinned))
-        sections.pinned.forEach { conversation ->
-            body.addView(conversationHubConversationRow(conversation, dialog, pinned = true))
+        sections.pinned.forEach { item ->
+            body.addView(conversationHubConversationRow(item, dialog, pinned = true, conversations = all))
         }
     }
     addConversationHubSection(
@@ -259,21 +302,35 @@ private fun MainActivity.renderConversationHubConversations(
     if (sections.recent.isEmpty()) {
         body.addView(conversationHubEmptyRow(getString(R.string.agent_session_no_results)))
     } else {
-        sections.recent.forEach { conversation ->
-            body.addView(conversationHubConversationRow(conversation, dialog, pinned = false))
+        sections.recent.forEach { item ->
+            body.addView(conversationHubConversationRow(item, dialog, pinned = false, conversations = all))
         }
     }
 }
 
 private fun MainActivity.conversationHubConversationRow(
-    conversation: AgentConversation,
+    item: ConversationHubItem,
     dialog: Dialog,
-    pinned: Boolean
+    pinned: Boolean,
+    conversations: List<AgentConversation>
 ): View = conversationHubListRow(
-    title = agentConversationDisplayTitle(conversation),
-    iconRes = R.drawable.ic_agent_history,
+    title = item.title,
+    subtitle = item.subtitle,
+    trailing = item.updatedAt.takeIf { it > 0L }?.let(::listTime).orEmpty(),
+    iconRes = if (item.kind == ConversationHubItemKind.CONTACT) {
+        contactAvatarRes(contactById(item.id))
+    } else {
+        R.drawable.ic_agent_history
+    },
+    tintIcon = item.kind != ConversationHubItemKind.CONTACT,
     showPin = pinned,
     onClick = {
+        if (item.kind == ConversationHubItemKind.CONTACT) {
+            dialog.dismiss()
+            showChatPage(contactById(item.id))
+            return@conversationHubListRow
+        }
+        val conversation = conversations.firstOrNull { it.id == item.id } ?: return@conversationHubListRow
         val destination = agentTranscriptStore.resolveMergedConversationId(conversation.id) ?: conversation.id
         if (destination == conversation.id && conversation.status == AgentConversationStatus.ARCHIVED) {
             agentTranscriptStore.restoreConversation(conversation.id)
@@ -285,8 +342,14 @@ private fun MainActivity.conversationHubConversationRow(
         dialog.dismiss()
     },
     onLongClick = {
-        showAgentConversationActions(conversation)
-        true
+        val conversation = conversations.firstOrNull { it.id == item.id }
+        if (conversation != null) {
+            showAgentConversationActions(conversation)
+            true
+        } else {
+            confirmDeleteChat(contactById(item.id))
+            true
+        }
     }
 )
 
@@ -378,12 +441,14 @@ private fun MainActivity.conversationHubActionRow(
 
 private fun MainActivity.conversationHubListRow(
     title: String,
+    subtitle: String = "",
+    trailing: String = "",
     iconRes: Int,
     tintIcon: Boolean = true,
     showPin: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Boolean)? = null
-): View = conversationHubBaseRow(title, "", iconRes, tintIcon, "", showPin, onClick, onLongClick)
+): View = conversationHubBaseRow(title, subtitle, iconRes, tintIcon, trailing, showPin, onClick, onLongClick)
 
 private fun MainActivity.conversationHubBaseRow(
     title: String,

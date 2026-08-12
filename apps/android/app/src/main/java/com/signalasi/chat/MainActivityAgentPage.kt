@@ -281,7 +281,15 @@ internal fun MainActivity.scrollToBottom() {
 }
 
 internal fun MainActivity.showContactPage() {
-    showMainTab(PAGE_MESSAGES)
+    returnFromContactChatToConversationHub()
+}
+
+internal fun MainActivity.returnFromContactChatToConversationHub() {
+    chatPage.visibility = View.GONE
+    wakePage.visibility = View.GONE
+    mainPage.visibility = View.VISIBLE
+    showMainTab(PAGE_AGENT)
+    handler.post { showConversationHub(ConversationHubTab.CONVERSATIONS) }
 }
 
 internal fun MainActivity.configureContacts() {

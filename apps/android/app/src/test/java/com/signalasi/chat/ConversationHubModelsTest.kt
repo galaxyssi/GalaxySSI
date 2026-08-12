@@ -17,8 +17,8 @@ class ConversationHubModelsTest {
             archived = false
         )
 
-        assertEquals(listOf("pinned"), sections.pinned.map(AgentConversation::title))
-        assertEquals(listOf("recent"), sections.recent.map(AgentConversation::title))
+        assertEquals(listOf("pinned"), sections.pinned.map(ConversationHubItem::title))
+        assertEquals(listOf("recent"), sections.recent.map(ConversationHubItem::title))
     }
 
     @Test
@@ -33,7 +33,47 @@ class ConversationHubModelsTest {
         )
 
         assertTrue(sections.pinned.isEmpty())
-        assertEquals(listOf("research"), sections.recent.map(AgentConversation::title))
+        assertEquals(listOf("research"), sections.recent.map(ConversationHubItem::title))
+    }
+
+    @Test
+    fun contactChatsJoinAgentConversationsAndSortByLastActivity() {
+        val sections = ConversationHubModels.unifiedConversations(
+            agents = listOf(
+                ConversationHubItem(
+                    id = "agent-session",
+                    kind = ConversationHubItemKind.AGENT,
+                    title = "Build project",
+                    subtitle = "Project completed",
+                    updatedAt = 20L
+                )
+            ),
+            contacts = listOf(
+                ConversationHubContactSummary(
+                    contactId = "desktop-route",
+                    title = "T14 Desktop",
+                    lastMessage = "photo.jpg",
+                    updatedAt = 30L
+                )
+            ),
+            query = "",
+            archived = false
+        )
+
+        assertEquals(listOf("T14 Desktop", "Build project"), sections.recent.map(ConversationHubItem::title))
+        assertEquals(ConversationHubItemKind.CONTACT, sections.recent.first().kind)
+    }
+
+    @Test
+    fun contactChatCanBeFoundByLastMessageButIsHiddenFromArchive() {
+        val contacts = listOf(ConversationHubContactSummary("phone", "S26U", "quarterly report", 10L))
+
+        assertEquals(
+            listOf("S26U"),
+            ConversationHubModels.unifiedConversations(emptyList(), contacts, "report", false)
+                .recent.map(ConversationHubItem::title)
+        )
+        assertTrue(ConversationHubModels.unifiedConversations(emptyList(), contacts, "", true).recent.isEmpty())
     }
 
     @Test
