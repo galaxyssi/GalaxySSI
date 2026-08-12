@@ -33,7 +33,7 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
       }
       .hidden()
       NavigationLink(
-        destination: SignalASIConversationHubView(),
+        destination: SignalASIAgentSessionsView(),
         isActive: $agentSessionsShortcutActive
       ) {
         EmptyView()
