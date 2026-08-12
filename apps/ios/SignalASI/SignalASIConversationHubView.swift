@@ -33,6 +33,7 @@ struct SignalASIConversationHubView: View {
   @State private var selectedSessionIDs: Set<String> = []
   @State private var bulkDeletePresented = false
   @State private var sessionNotice = ""
+  @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var sessionEditDraft: AgentSessionEditDraft?
   @State private var contextPolicySession: AgentConversation?
   @State private var detailsSession: AgentConversation?
@@ -256,6 +257,9 @@ struct SignalASIConversationHubView: View {
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
     }
+    .onDisappear {
+      navigationContentGate.invalidate()
+    }
     .task(id: hubContentTaskID) {
       await prepareHubContent()
     }
@@ -445,6 +449,7 @@ struct SignalASIConversationHubView: View {
   }
 
   private func prepareHubContent() async {
+    let generation = navigationContentGate.begin()
     hubContentLoading = true
     let sourceConversations = store.agentSessions(includeArchived: true)
     let sourceContacts = store.contactList(matching: "")
@@ -461,7 +466,7 @@ struct SignalASIConversationHubView: View {
         contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query)
       )
     }.value
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
     preparedHubContent = prepared
     hubContentLoading = false
   }
