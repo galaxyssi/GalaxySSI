@@ -4497,6 +4497,15 @@ final class MessageCoordinator: ObservableObject {
       action: executionAction,
       screen: screen
     )
+    if action.kind == .callConnector {
+      updateAgentExecutionTarget(
+        conversationId: outgoing.conversationId,
+        connectorId: action.parameters["connector_id"] ?? "",
+        contactId: result.metadata["contact_id"] ?? "",
+        runtimeTarget: result.metadata["target"] ?? "",
+        fallbackTarget: action.target
+      )
+    }
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
     let stepReply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
