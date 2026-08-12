@@ -3474,6 +3474,7 @@
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
 "delivery_status_local_saved" = "本地保存";
+"signalasi.peer.send_pending" = "正在发送到设备……";
 "delivery_status_queued" = "已排队";
 "delivery_status_sent" = "已发送";
 "delivery_status_delivered" = "已送达";

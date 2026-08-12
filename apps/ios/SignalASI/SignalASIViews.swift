@@ -353,6 +353,10 @@ struct ConversationView: View {
     }
   }
 
+  private var peerSendPending: Bool {
+    coordinator.pendingPeerSendContactIds.contains(contact.id)
+  }
+
   private var cloudModelHeaderText: String {
     if let selected = contact.selectedCloudModel {
       return selected.displayName.ifBlank(selected.modelId)
@@ -437,6 +441,18 @@ struct ConversationView: View {
       if !isSystemNoticeContact {
         Divider()
           .background(Color.signalASISeparator)
+        if peerSendPending {
+          HStack(spacing: 8) {
+            ProgressView()
+              .controlSize(.small)
+            Text(t("signalasi.peer.send_pending", "Sending to device..."))
+              .font(.caption)
+              .foregroundColor(.signalASITextSecondary)
+            Spacer(minLength: 0)
+          }
+          .padding(.horizontal, 14)
+          .padding(.top, 8)
+        }
         SignalASIConversationComposer(
           draft: $draft,
           attachments: $attachments,
@@ -447,6 +463,7 @@ struct ConversationView: View {
           onVoiceAttachment: sendVoiceRecording,
           t: t
         )
+        .disabled(peerSendPending)
       }
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
