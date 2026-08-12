@@ -31,6 +31,7 @@ struct AgentHomeView: View {
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
+  @State var pendingScannedAgentIDs: [String] = []
   @State var agentSessionsShortcutActive = false
   @State private var agentSettingsShortcutActive = false
   @State var agentPermissionsShortcutActive = false
@@ -179,6 +180,7 @@ struct AgentHomeView: View {
         coordinator.resumePendingAgentDelivery()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
+        retryPendingScannedAgentSelection()
         coordinator.refreshAgentHomeState()
       }
       .onChange(of: agentScreenSnapshot) { snapshot in
@@ -203,6 +205,7 @@ struct AgentHomeView: View {
         NotificationCenter.default.publisher(for: .signalASIAgentRoutingDidUpdate)
       ) { _ in
         refreshAgentRouteState()
+        retryPendingScannedAgentSelection()
       }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
         let savedPath = coordinator.artifactDownloadSavedPath
