@@ -232,7 +232,7 @@ struct AddContactView: View {
       QRCodeScannerView(
         onCode: { value in
           contactScannerPresented = false
-          importScannedQR(value)
+          importScannedQR(value, autoConfirmPairing: true)
         },
         onError: { message in
           contactScannerPresented = false
@@ -262,7 +262,7 @@ struct AddContactView: View {
       .padding(.top, 2)
   }
 
-  private func importScannedQR(_ value: String) {
+  private func importScannedQR(_ value: String, autoConfirmPairing: Bool = false) {
     let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleaned.isEmpty else {
       setImportStatus(t("signalasi.pairing.invalid_qr", "Invalid QR code"), isError: true)
@@ -282,6 +282,9 @@ struct AddContactView: View {
           t("signalasi.pairing.ready_to_confirm", "Review fingerprints, then save trust."),
           isError: false
         )
+        if autoConfirmPairing, SignalASILinkProtocol.hasVerifiedDesktopIdentity(pairing) {
+          Task { await confirmDesktopPairing(pairing: pairing) }
+        }
       case .contact(let request):
         if request.type == "agent" {
           importScannedAgentContacts(cleaned, requests: [request])
@@ -434,8 +437,8 @@ struct AddContactView: View {
     return matches.isEmpty ? fallback : matches
   }
 
-  private func confirmDesktopPairing() async {
-    guard let pairing = pendingPairing else { return }
+  private func confirmDesktopPairing(pairing: PairingQRCode? = nil) async {
+    guard let pairing = pairing ?? pendingPairing else { return }
     pairingInFlight = true
     setImportStatus(
       String(format: t("signalasi.pairing.desktop_claim_sending", "Adding %@..."), pairing.desktopName),

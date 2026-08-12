@@ -74,7 +74,60 @@ enum SignalASILinkProtocol {
 
   static func decodePairingQRCode(from text: String, now: Date = Date()) throws -> PairingQRCode {
     let object = try SignalASIQRCodePayload.decodeObject(from: text, label: "Pairing QR")
-    return try validatePairingQRCode(object, now: now)
+    guard let normalized = normalizePairingQRCode(object) else {
+      throw SignalASIError.invalidPairingQRCode("Unsupported SignalASI pairing QR format.")
+    }
+    return try validatePairingQRCode(normalized, now: now)
+  }
+
+  static func normalizePairingQRCode(_ source: [String: Any]) -> [String: Any]? {
+    if source.string("type") == "signalasi_verify" {
+      return source
+    }
+    guard source.string("t") == "sv1" else { return nil }
+
+    let fingerprint = source.string("h")
+    let serverRouteId = source.string("s")
+    let desktopName = source.string("n").ifBlank("SignalASI Desktop")
+    let executor = source.int("a") == 1
+    let restrictedScopes = [scopeAgentChat, scopeExplicitAttachments, scopeTaskWorkspace]
+    let executorScopes = restrictedScopes + [
+      scopeDesktopExecutor,
+      scopeDesktopControl,
+      scopeDesktopNativeTools,
+      scopeDesktopExternalFiles
+    ]
+    var normalized: [String: Any] = [
+      "type": "signalasi_verify",
+      "version": version,
+      "device": "pc",
+      "desktop_id": "desktop_" + String(fingerprint.prefix(16)),
+      "desktop_name": desktopName,
+      "desktop_display_name": desktopName,
+      "device_id": 1,
+      "identity_key": source.string("k"),
+      "identity_key_sha256": fingerprint,
+      "created_at": source.double("c"),
+      "protocol": name,
+      "role": "server",
+      "server_route_id": serverRouteId,
+      "pairing_topic": topicRoot + "/" + serverRouteId + "/pair",
+      "pairing_token": source.string("x"),
+      "pairing_secret": source.string("e"),
+      "pairing_access": [
+        "contract_version": accessContract,
+        "version": 1,
+        "profile": executor ? accessDesktopExecutor : accessRestricted,
+        "scopes": executor ? executorScopes : restrictedScopes,
+        "desktop_executor": executor,
+        "issued_at": source.double("c") * 1_000
+      ]
+    ]
+    let authorizationToken = source.string("o")
+    if !authorizationToken.isEmpty {
+      normalized["desktop_control_authorization"] = ["token": authorizationToken]
+    }
+    return normalized
   }
 
   static func validatePairingQRCode(_ qr: [String: Any], now: Date = Date()) throws -> PairingQRCode {
@@ -137,6 +190,20 @@ enum SignalASILinkProtocol {
       controlAuthorizationToken: authorizationToken,
       raw: qr
     )
+  }
+
+  static func hasVerifiedDesktopIdentity(_ pairing: PairingQRCode) -> Bool {
+    let encodedKey = pairing.raw.string("identity_key")
+    guard let key = Data(base64URLEncoded: encodedKey) ?? Data(
+      base64Encoded: encodedKey,
+      options: [.ignoreUnknownCharacters]
+    ), !key.isEmpty else {
+      return false
+    }
+    let digest = SHA256.hash(data: key)
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return digest.caseInsensitiveCompare(pairing.desktopFingerprint) == .orderedSame
   }
 
   static func pairingAccess(from object: [String: Any]?) -> PairingAccess? {
