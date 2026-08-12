@@ -1485,7 +1485,7 @@ struct ContactsView: View {
       contact.signalASIId,
       contact.agentKind,
       contact.setupDetail,
-      summary.lastMessage?.content ?? ""
+      summary.previewText
     ], query: query)
   }
 

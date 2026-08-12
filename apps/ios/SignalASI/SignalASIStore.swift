@@ -84,6 +84,23 @@ struct ContactConversationSummary: Equatable {
   var hasUnreadMessages: Bool {
     unreadCount > 0
   }
+
+  var previewText: String {
+    guard let lastMessage else { return "" }
+    let content = lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !content.isEmpty {
+      return lastMessage.content
+    }
+    for block in AgentRichContentCodec.decode(lastMessage.richOutputJson) {
+      let attachmentName = block.title
+        .ifBlank(block.fallbackText)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !attachmentName.isEmpty {
+        return attachmentName
+      }
+    }
+    return AgentRichContentCodec.fallbackText(lastMessage.richOutputJson)
+  }
 }
 
 @MainActor

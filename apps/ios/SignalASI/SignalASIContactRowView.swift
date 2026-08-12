@@ -36,7 +36,7 @@ struct ContactRow: View {
           }
         }
         if showsSummary {
-          Text(summary.lastMessage?.content ?? t("chat_no_messages", "No messages yet"))
+          Text(summary.previewText.ifBlank(t("chat_no_messages", "No messages yet")))
             .lineLimit(1)
             .font(.system(size: 14))
             .foregroundColor(summary.hasUnreadMessages ? .signalASITextPrimary : .signalASITextSecondary)
