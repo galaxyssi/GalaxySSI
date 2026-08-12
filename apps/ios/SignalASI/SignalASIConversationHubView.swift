@@ -849,7 +849,7 @@ struct SignalASIConversationHubView: View {
         tint: contact.type == "device"
           ? .blue
           : (contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary),
-        trailing: "chevron.right",
+        trailing: "",
         leadingView: AnyView(AvatarView(contact: contact, size: 34))
       )
     }
@@ -890,7 +890,8 @@ struct SignalASIConversationHubView: View {
     tint: Color,
     trailing: String,
     updatedAt: Date? = nil,
-    leadingView: AnyView? = nil
+    leadingView: AnyView? = nil,
+    showsDisclosure: Bool = true
   ) -> some View {
     HStack(spacing: 10) {
       if let leadingView {
@@ -943,6 +944,13 @@ struct SignalASIConversationHubView: View {
         Text(trailing)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)
+      }
+      if showsDisclosure {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(width: 20, height: 36)
+          .accessibilityHidden(true)
       }
     }
     .padding(.horizontal, 10)
