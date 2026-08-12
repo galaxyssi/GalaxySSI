@@ -646,6 +646,7 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     SignalASIEncryptedStateStore.destroy(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentTeamExecutionStore.destroy(defaults: defaults, secrets: secrets)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)

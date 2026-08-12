@@ -677,6 +677,7 @@
     A10000000000000000001343 /* AgentTeamExecutionHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001343 /* AgentTeamExecutionHistoryStore.swift */; };
     A10000000000000000001344 /* SignalASIAgentTeamHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001344 /* SignalASIAgentTeamHistoryView.swift */; };
     A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000273 /* AgentTeamExecutionModels.swift */; };
+    A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */; };
     A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000275 /* AgentPolicyFirewallModels.swift */; };
     A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */; };
     A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */; };
@@ -1500,6 +1501,7 @@
     A20000000000000000001343 /* AgentTeamExecutionHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionHistoryStore.swift; sourceTree = "<group>"; };
     A20000000000000000001344 /* SignalASIAgentTeamHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentTeamHistoryView.swift; sourceTree = "<group>"; };
     A20000000000000000000273 /* AgentTeamExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000275 /* AgentPolicyFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPolicyFirewallModels.swift; sourceTree = "<group>"; };
     A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeTools.swift; sourceTree = "<group>"; };
@@ -2091,6 +2093,7 @@
         A20000000000000000001343 /* AgentTeamExecutionHistoryStore.swift */,
         A20000000000000000001344 /* SignalASIAgentTeamHistoryView.swift */,
         A20000000000000000000273 /* AgentTeamExecutionModels.swift */,
+        A20000000000000000000274 /* AgentTeamExecutionRuntime.swift */,
         A20000000000000000000275 /* AgentPolicyFirewallModels.swift */,
         A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */,
         A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */,
@@ -3033,6 +3036,7 @@
         A10000000000000000002004 /* UserDefaultsAgentObservationContextStore.swift in Sources */,
         A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
+        A10000000000000000000274 /* AgentTeamExecutionRuntime.swift in Sources */,
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
         A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */,

@@ -467,9 +467,19 @@ struct AgentTeamRun: Codable, Equatable {
 
 final class AgentTeamCoordinator {
   private let directory: AgentAdapterDirectory
+  private let executionCoordinator: AgentTeamExecutionCoordinator
 
-  init(directory: AgentAdapterDirectory) {
+  init(
+    directory: AgentAdapterDirectory,
+    executionStore: AgentTeamExecutionStore = UserDefaultsAgentTeamExecutionStore(),
+    completionSink: AgentTeamCompletionSink? = nil
+  ) {
     self.directory = directory
+    self.executionCoordinator = AgentTeamExecutionCoordinator(
+      directory: directory,
+      store: executionStore,
+      completionSink: completionSink
+    )
   }
 
   func compile(
@@ -481,6 +491,31 @@ final class AgentTeamCoordinator {
       registrations: try await directory.registrations(),
       nowMillis: nowMillis
     )
+  }
+
+  func startExecution(
+    definition: AgentTeamDefinition,
+    request: AgentRunRequest
+  ) throws -> AgentTeamExecutionHandle {
+    try executionCoordinator.start(definition: definition, request: request)
+  }
+
+  func executionSnapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
+    executionCoordinator.runtime.snapshot(supervisorRunId: supervisorRunId)
+  }
+
+  func executionSnapshots() -> [AgentTeamExecutionSnapshot] {
+    executionCoordinator.runtime.snapshots()
+  }
+
+  func recoverInterruptedExecutions(
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> [AgentTeamExecutionSnapshot] {
+    executionCoordinator.runtime.recoverInterrupted(nowMillis: nowMillis)
+  }
+
+  func closeExecutionRuntime() {
+    executionCoordinator.runtime.close()
   }
 
   func start(definition: AgentTeamDefinition, request: AgentRunRequest) async throws -> AgentTeamRun {
