@@ -50,6 +50,99 @@ class MqttDurableDeliveryTest(unittest.TestCase):
         )
         self.assertTrue(result.deferred)
 
+    def test_pairing_revocation_waits_for_broker_ack_without_durable_queue(self) -> None:
+        info = SimpleNamespace(
+            rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS,
+            is_published=lambda: True,
+        )
+        target = {
+            "client_route_id": "phone-a",
+            "signal_name": "signalasi:phone-a",
+            "topics": {"control": "phone-a/control"},
+        }
+        with (
+            patch.object(mqtt_bridge, "is_paired", return_value=True),
+            patch.object(mqtt_bridge, "_target_clients", return_value=[target]),
+            patch.object(
+                mqtt_bridge,
+                "_publish_to_registered_client",
+                return_value=info,
+            ) as publish,
+        ):
+            result = mqtt_bridge.publish_pairing_revoked(
+                DurableMqttClient(),
+                client_route_id="phone-a",
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(publish.call_args.kwargs["durable"])
+        self.assertTrue(publish.call_args.kwargs["retain"])
+
+    def test_pairing_revocation_reports_missing_broker_ack(self) -> None:
+        info = SimpleNamespace(
+            rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS,
+            is_published=lambda: False,
+        )
+        with (
+            patch.object(mqtt_bridge, "is_paired", return_value=True),
+            patch.object(
+                mqtt_bridge,
+                "_target_clients",
+                return_value=[{"client_route_id": "phone-a"}],
+            ),
+            patch.object(
+                mqtt_bridge,
+                "_publish_to_registered_client",
+                return_value=info,
+            ),
+            patch.object(mqtt_bridge, "time") as clock,
+        ):
+            clock.monotonic.side_effect = [0.0, 2.0, 2.0]
+            result = mqtt_bridge.publish_pairing_revoked(
+                DurableMqttClient(),
+                client_route_id="phone-a",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(0, result["acknowledged"])
+
+    def test_retained_wire_payload_is_published_as_single_retained_packet(self) -> None:
+        mqttc = unittest.mock.Mock()
+        info = SimpleNamespace(rc=mqtt_bridge.mqtt.MQTT_ERR_SUCCESS)
+        mqttc.publish.return_value = info
+
+        with patch.object(mqtt_bridge, "encode_wire_payload", return_value=["packet"]):
+            result = mqtt_bridge._publish_mqtt_wire_payload(
+                mqttc,
+                "phone-a/control",
+                "encrypted-revocation",
+                retain=True,
+            )
+
+        self.assertIs(info, result)
+        mqttc.publish.assert_called_once_with(
+            "phone-a/control",
+            "packet",
+            qos=mqtt_bridge.MQTT_QOS,
+            retain=True,
+        )
+
+    def test_retained_wire_payload_rejects_fragmentation(self) -> None:
+        mqttc = unittest.mock.Mock()
+
+        with (
+            patch.object(mqtt_bridge, "encode_wire_payload", return_value=["part-1", "part-2"]),
+            self.assertRaisesRegex(ValueError, "must fit in one wire packet"),
+        ):
+            mqtt_bridge._publish_mqtt_wire_payload(
+                mqttc,
+                "phone-a/control",
+                "oversized-encrypted-revocation",
+                retain=True,
+            )
+
+        mqttc.publish.assert_not_called()
+
     def test_flush_round_robins_routes_and_prefers_current_client(self) -> None:
         clients = [
             {"client_route_id": "current", "last_seen_at": 200.0},

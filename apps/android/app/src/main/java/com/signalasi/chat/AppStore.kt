@@ -432,30 +432,8 @@ object AppStore {
         if (desktopId.isBlank()) return false
         val linkExisted = SignalASILinkProtocol.serverLink(context, desktopId) != null
         SignalASIMqttClient.publishServerRevocation(context, desktopId)
-        val contacts = contacts(context)
-        var changed = false
-        for (i in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(i) ?: continue
-            val isTarget = contact.optString("desktop_id") == desktopId ||
-                contact.optString("parent_contact") == desktopId ||
-                contact.optString("id").ifBlank { signalasiIdOf(contact) }.startsWith("$desktopId:")
-            if (!isTarget) continue
-            if (contact.optString("delivery_mode") == "pc_connector") {
-                contact.put("deleted", true)
-                contact.put("trust_state", "deleted")
-                contact.put("deleted_at", System.currentTimeMillis())
-                changed = true
-            }
-        }
-        if (changed) {
-            writeArray(context, KEY_CONTACTS, contacts)
-        }
-        if (linkExisted) {
-            SignalASICrypto.clearDesktopTrust(context, desktopId)
-            SignalASILinkProtocol.removeServer(context, desktopId)
-            SignalASIMqttClient.forgetSecureChannel()
-        }
-        return changed || linkExisted
+        val removed = DesktopPairingLifecycle.remove(context, desktopId)
+        return removed.contactIds.isNotEmpty() || linkExisted
     }
 
     fun setSelectedCloudModel(context: Context, hermesId: String, modelId: String): Boolean {
@@ -492,20 +470,32 @@ object AppStore {
         return directTopic.takeIf { it.isNotBlank() }
     }
 
-    fun deleteDesktopConnector(context: Context, desktopId: String, deleteMessages: Boolean = false) {
-        if (desktopId.isBlank()) return
+    fun deleteDesktopConnector(
+        context: Context,
+        desktopId: String,
+        deleteMessages: Boolean = false
+    ): Set<String> {
+        if (desktopId.isBlank()) return emptySet()
         ensureInitialized(context)
         val contacts = contacts(context)
+        val kept = JSONArray()
+        val removedIds = linkedSetOf<String>()
         for (i in 0 until contacts.length()) {
             val contact = contacts.optJSONObject(i) ?: continue
-            if (contact.optString("desktop_id") == desktopId || contact.optString("parent_contact") == desktopId) {
-                contact.put("deleted", true)
-                contact.put("trust_state", "deleted")
-                contact.put("deleted_at", System.currentTimeMillis())
-                if (deleteMessages) removeChatHistory(context, contact.optString("id").ifBlank { signalasiIdOf(contact) })
+            val contactId = contact.optString("id").ifBlank { signalasiIdOf(contact) }
+            val belongsToDesktop = DesktopPairingLifecycle.belongsToDesktop(
+                contact,
+                desktopId
+            )
+            if (belongsToDesktop) {
+                contactId.takeIf(String::isNotBlank)?.let(removedIds::add)
+            } else {
+                kept.put(contact)
             }
         }
-        writeArray(context, KEY_CONTACTS, contacts)
+        if (removedIds.isNotEmpty()) writeArray(context, KEY_CONTACTS, kept)
+        if (deleteMessages) removedIds.forEach { removeChatHistory(context, it) }
+        return removedIds
     }
 
     fun renameContact(context: Context, contactId: String, displayName: String): Boolean =

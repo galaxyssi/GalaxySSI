@@ -166,6 +166,31 @@ object SignalASIMqttClient {
         setSecureReady(context != null && SignalASILinkProtocol.allServerLinks(context).any { it.paired })
     }
 
+    fun unsubscribeServer(context: Context, desktopId: String) {
+        val mqtt = client ?: return
+        if (!mqtt.isConnected) return
+        val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return
+        runCatching {
+            mqtt.unsubscribe(
+                arrayOf(link.routes.down, link.routes.control),
+                desktopId,
+                object : IMqttActionListener {
+                    override fun onSuccess(asyncActionToken: IMqttToken?) = Unit
+
+                    override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                        Log.w(
+                            TAG,
+                            "MQTT relationship unsubscribe failed desktop=${desktopId.takeLast(8)}",
+                            exception
+                        )
+                    }
+                }
+            )
+        }.onFailure {
+            Log.w(TAG, "MQTT relationship unsubscribe could not start desktop=${desktopId.takeLast(8)}", it)
+        }
+    }
+
     fun publishServerRevocation(context: Context, desktopId: String): Boolean {
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
         val mqtt = client ?: return false
@@ -2043,19 +2068,31 @@ object SignalASIMqttClient {
                 Log.w(TAG, "Pairing revoked by desktop connector")
                 val desktopId = json.optString("desktop_id")
                 if (desktopId.isNotBlank()) {
-                    AgentDesktopRemoteNativeTools.removeDesktop(context, desktopId)
-                    DesktopRemoteControl.clearDesktop(context, desktopId)
-                    AppStore.deleteDesktopConnector(context, desktopId, deleteMessages = false)
-                    SignalASICrypto.clearDesktopTrust(context, desktopId)
-                    SignalASILinkProtocol.removeServer(context, desktopId)
+                    clearRetainedPairingRevocation(context, desktopId)
+                    val removed = DesktopPairingLifecycle.remove(context, desktopId)
+                    json.put("revoked_contact_ids", JSONArray(removed.contactIds))
                 } else {
-                    AppStore.deleteContact(context, "hermes", deleteMessages = false)
+                    AppStore.deleteContact(context, "hermes", deleteMessages = true)
                 }
                 setSecureReady(SignalASILinkProtocol.allServerLinks(context).any { it.paired })
                 true
             }
             else -> false
         }
+    }
+
+    private fun clearRetainedPairingRevocation(context: Context, desktopId: String) {
+        val mqtt = client ?: return
+        val controlTopic = SignalASILinkProtocol.serverLink(context, desktopId)
+            ?.routes
+            ?.control
+            ?: return
+        if (!mqtt.isConnected) return
+        val clearMessage = MqttMessage(ByteArray(0)).apply {
+            qos = MQTT_QOS
+            isRetained = true
+        }
+        publishSafely(mqtt, controlTopic, clearMessage, "pairing_revocation_clear")
     }
 
     private fun requestMissingSignalSessions(context: Context) {

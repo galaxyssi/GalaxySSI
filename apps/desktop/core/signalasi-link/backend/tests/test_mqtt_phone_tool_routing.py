@@ -12,6 +12,7 @@ import link_protocol
 import mqtt_bridge
 import pairing_state
 import phone_tool_broker
+import desktop_control
 from peer_chat_store import PeerChatStore
 
 
@@ -295,6 +296,33 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.assertEqual(1, len(messages))
         self.assertEqual("Direct device message", messages[0]["content"])
         self.assertEqual("inbound", messages[0]["direction"])
+
+    def test_client_revocation_cleans_only_the_calling_phone(self):
+        with (
+            patch.object(mqtt_bridge, "forget_paired_client_transport", return_value={
+                "deleted_peer_messages": 2,
+            }) as cleanup,
+            patch.object(mqtt_bridge, "remove_peer_signal_session") as remove_session,
+            patch.object(desktop_control, "desktop_control_manager") as control_manager,
+        ):
+            self._deliver(
+                self.first,
+                {
+                    "type": "client_revoked",
+                    "reason": "forgotten_by_client",
+                    "message_id": str(uuid.uuid4()),
+                },
+            )
+
+        cleanup.assert_called_once_with(self.first["client_route_id"], self.mqtt)
+        remove_session.assert_called_once_with(self.first["signal_name"], 1)
+        control_manager.return_value.revoke_for_client.assert_called_once_with(
+            self.first["client_route_id"],
+            "pairing_revoked_by_phone",
+        )
+        self.assertIsNone(pairing_state.get_client(self.first["client_route_id"]))
+        self.assertIsNotNone(pairing_state.get_client(self.second["client_route_id"]))
+        self.assertEqual([], self.agent_starts)
 
     def test_desktop_peer_message_uses_uuid_transport_id(self):
         peer_store = PeerChatStore(Path(self.temp.name) / "peer-outbound.db")
