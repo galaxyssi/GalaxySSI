@@ -4431,8 +4431,17 @@ function bindEvents() {
     }
     const revokeButton = event.target.closest("[data-revoke-client]");
     if (!revokeButton || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;
-    await window.signalasi.clearPairing(revokeButton.dataset.revokeClient);
-    await refreshGateway();
+    const revokedRouteId = revokeButton.dataset.revokeClient;
+    state.pairing = await window.signalasi.clearPairing(revokedRouteId);
+    state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== revokedRouteId);
+    if (state.activePeerRouteId === revokedRouteId) {
+      state.activePeerRouteId = "";
+      document.querySelector("#agentApp").classList.remove("peer-mode");
+      state.renderingSignature = "";
+      renderConversation(true);
+    }
+    renderGateway();
+    renderPeerContacts();
     await refreshDesktopControl();
   });
   $("#authorizedAppList").addEventListener("click", async (event) => {

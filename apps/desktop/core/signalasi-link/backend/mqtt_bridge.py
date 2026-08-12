@@ -42,6 +42,7 @@ from link_delivery import (
     bind_ciphertext,
     claim_message,
     complete_message,
+    discard_route,
     ensure_transport_epoch,
     fail_exhausted_outbound,
     mark_outbound_published,
@@ -179,6 +180,15 @@ MQTT_RECONNECT_GUARD_TIMEOUT_SECONDS = max(
 transport_probe_stop_event = threading.Event()
 transport_probe_thread: threading.Thread | None = None
 transport_probe_thread_lock = threading.Lock()
+mqtt_subscription_lock = threading.RLock()
+mqtt_subscription_pending: dict[int, tuple[str, str]] = {}
+mqtt_subscription_active: dict[str, str] = {}
+mqtt_subscription_early_subacks: dict[int, bool] = {}
+mqtt_subscription_last_reconcile = 0.0
+MQTT_SUBSCRIPTION_RECONCILE_SECONDS = max(
+    5.0,
+    float(os.environ.get("SIGNALASI_MQTT_SUBSCRIPTION_RECONCILE_SECONDS", "15")),
+)
 transport_reconnect_in_progress = threading.Event()
 transport_reconnect_lock = threading.Lock()
 transport_reconnect_requested_at = 0.0
@@ -1373,12 +1383,64 @@ def _close_phone_tool_sessions(client_route_id: str = "", reason: str = "session
 start_phone_tool_call = request_phone_tool_call
 
 
+def _subscribe_topic(mqttc, topic: str, client_route_id: str) -> bool:
+    normalized_topic = str(topic or "").strip()
+    if not normalized_topic:
+        return False
+    try:
+        result = mqttc.subscribe(normalized_topic, qos=MQTT_QOS)
+        if result is None:
+            # Some embedded/test MQTT shims expose subscribe as a fire-and-forget
+            # operation. Real Paho clients return (result_code, message_id).
+            log.debug(
+                "MQTT subscription requested without receipt client=%s topic=%s",
+                client_route_id or "server",
+                normalized_topic,
+            )
+            return True
+        result_code, message_id = result
+    except Exception as exc:
+        log.warning(
+            "MQTT subscribe failed client=%s topic=%s: %s",
+            client_route_id or "server",
+            normalized_topic,
+            exc,
+        )
+        return False
+    if int(result_code) != mqtt.MQTT_ERR_SUCCESS:
+        log.warning(
+            "MQTT subscribe rejected client=%s topic=%s rc=%s",
+            client_route_id or "server",
+            normalized_topic,
+            result_code,
+        )
+        return False
+    with mqtt_subscription_lock:
+        mqtt_subscription_pending[int(message_id)] = (
+            normalized_topic,
+            str(client_route_id or ""),
+        )
+        early_acknowledgement = mqtt_subscription_early_subacks.pop(int(message_id), None)
+        if early_acknowledgement is not None:
+            mqtt_subscription_pending.pop(int(message_id), None)
+            if early_acknowledgement:
+                mqtt_subscription_active[normalized_topic] = str(client_route_id or "")
+    log.info(
+        "MQTT subscription requested client=%s topic=%s mid=%s",
+        client_route_id or "server",
+        normalized_topic,
+        message_id,
+    )
+    return True
+
+
 def _subscribe_client(mqttc, client: dict) -> None:
     topics = client.get("topics") or {}
+    client_route_id = str(client.get("client_route_id") or "")
     for key in ("up", "control"):
         topic = str(topics.get(key) or "")
         if topic:
-            mqttc.subscribe(topic, qos=MQTT_QOS)
+            _subscribe_topic(mqttc, topic, client_route_id)
 
 
 def _unsubscribe_client(mqttc, client: dict) -> None:
@@ -1389,18 +1451,114 @@ def _unsubscribe_client(mqttc, client: dict) -> None:
         if str(topics.get(key) or "")
     ]
     if active_topics:
-        mqttc.unsubscribe(active_topics)
+        try:
+            mqttc.unsubscribe(active_topics)
+        except Exception as exc:
+            log.warning(
+                "MQTT unsubscribe failed client=%s: %s",
+                client.get("client_route_id") or "unknown",
+                exc,
+            )
+    with mqtt_subscription_lock:
+        for topic in active_topics:
+            mqtt_subscription_active.pop(topic, None)
+        stale_pending = [
+            message_id
+            for message_id, (topic, _route_id) in mqtt_subscription_pending.items()
+            if topic in active_topics
+        ]
+        for message_id in stale_pending:
+            mqtt_subscription_pending.pop(message_id, None)
 
 
 def _transport_probe_topic() -> str:
     return f"signalasichat/v1/{server_route_id()}/health"
 
 
-def _subscribe_all_routes(mqttc) -> None:
-    mqttc.subscribe(LinkTopics(server_route_id()).pairing, qos=MQTT_QOS)
-    mqttc.subscribe(_transport_probe_topic(), qos=MQTT_QOS)
+def _subscribe_all_routes(mqttc) -> dict:
+    _reset_subscription_state()
+    result = reconcile_mqtt_subscriptions(mqttc, force=True)
+    log.info("MQTT subscription reconciliation on connect: %s", result)
+    return result
+
+
+def _reset_subscription_state() -> None:
+    global mqtt_subscription_last_reconcile
+    with mqtt_subscription_lock:
+        mqtt_subscription_pending.clear()
+        mqtt_subscription_active.clear()
+        mqtt_subscription_early_subacks.clear()
+        mqtt_subscription_last_reconcile = 0.0
+
+
+def _expected_subscriptions() -> dict[str, str]:
+    expected = {
+        LinkTopics(server_route_id()).pairing: "",
+        _transport_probe_topic(): "",
+    }
     for paired_client in list_clients():
-        _subscribe_client(mqttc, paired_client)
+        route_id = str(paired_client.get("client_route_id") or "")
+        topics = paired_client.get("topics") or {}
+        for key in ("up", "control"):
+            topic = str(topics.get(key) or "").strip()
+            if topic:
+                expected[topic] = route_id
+    return expected
+
+
+def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
+    """Idempotently repair missing or stale per-device MQTT subscriptions."""
+    global mqtt_subscription_last_reconcile
+    mqttc = mqttc or client
+    if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
+        return {"ok": False, "reason": "mqtt_not_connected", "requested": 0}
+    expected = _expected_subscriptions()
+    with mqtt_subscription_lock:
+        active_topics = set(mqtt_subscription_active)
+        pending_topics = {topic for topic, _route_id in mqtt_subscription_pending.values()}
+    stale_topics = sorted((active_topics | pending_topics) - set(expected))
+    if stale_topics:
+        try:
+            mqttc.unsubscribe(stale_topics)
+        except Exception as exc:
+            log.warning("MQTT stale subscription cleanup failed: %s", exc)
+        with mqtt_subscription_lock:
+            for topic in stale_topics:
+                mqtt_subscription_active.pop(topic, None)
+            for message_id, (topic, _route_id) in list(mqtt_subscription_pending.items()):
+                if topic in stale_topics:
+                    mqtt_subscription_pending.pop(message_id, None)
+    requested = 0
+    for topic, route_id in expected.items():
+        if force or topic not in active_topics | pending_topics:
+            requested += int(_subscribe_topic(mqttc, topic, route_id))
+    mqtt_subscription_last_reconcile = time.monotonic()
+    return {
+        "ok": True,
+        "expected": len(expected),
+        "active": len(active_topics),
+        "requested": requested,
+        "removed": len(stale_topics),
+    }
+
+
+def forget_paired_client_transport(client_route_id: str, mqttc=None) -> dict:
+    """Close and erase transport state owned by a revoked phone."""
+    route_id = str(client_route_id or "").strip()
+    paired_client = get_client(route_id, include_revoked=True)
+    mqttc = mqttc or client
+    if paired_client is not None and mqttc is not None:
+        _unsubscribe_client(mqttc, paired_client)
+    closed_sessions = _close_phone_tool_sessions(route_id, "pairing revoked")
+    delivery = discard_route(route_id)
+    from peer_chat_store import peer_chat_store
+
+    peer_messages = peer_chat_store().delete_route(route_id)
+    return {
+        "closed_phone_tool_sessions": closed_sessions,
+        "discarded_delivery": delivery,
+        "deleted_peer_messages": peer_messages,
+    }
 
 
 def _handle_transport_probe_message(msg) -> bool:
@@ -1528,6 +1686,8 @@ def _transport_probe_tick() -> None:
     except Exception as exc:
         log.warning("MQTT transport connection check failed: %s", exc)
         return
+    if now - mqtt_subscription_last_reconcile >= MQTT_SUBSCRIPTION_RECONCILE_SECONDS:
+        reconcile_mqtt_subscriptions(mqttc)
     stalled, elapsed, generation = transport_probe_state.stalled(now)
     if stalled:
         log.warning(
@@ -2246,8 +2406,37 @@ def on_disconnect(mqttc, userdata, *args):
     _record_mqtt_disconnected(f"disconnect_rc={reason_code}")
     _clear_transport_reconnect()
     transport_probe_state.disconnected()
+    _reset_subscription_state()
     _clear_mqtt_wire_transport_state()
     log.warning(f"MQTT disconnected rc={reason_code}")
+
+
+def on_subscribe(mqttc, userdata, mid, reason_codes, properties=None):
+    codes = reason_codes if isinstance(reason_codes, (list, tuple)) else [reason_codes]
+    accepted = bool(codes) and all(_reason_code_value(code) < 128 for code in codes)
+    with mqtt_subscription_lock:
+        pending = mqtt_subscription_pending.pop(int(mid), None)
+    if pending is None:
+        with mqtt_subscription_lock:
+            mqtt_subscription_early_subacks[int(mid)] = accepted
+        log.debug("MQTT SUBACK arrived before local tracking mid=%s", mid)
+        return
+    topic, client_route_id = pending
+    if not accepted:
+        log.warning(
+            "MQTT subscription rejected by broker client=%s topic=%s reasons=%s",
+            client_route_id or "server",
+            topic,
+            reason_codes,
+        )
+        return
+    with mqtt_subscription_lock:
+        mqtt_subscription_active[topic] = client_route_id
+    log.info(
+        "MQTT subscription active client=%s topic=%s",
+        client_route_id or "server",
+        topic,
+    )
 
 
 def on_publish(mqttc, userdata, mid, reason_code=None, properties=None):
@@ -7643,6 +7832,7 @@ def start():
         mqttc.on_disconnect = on_disconnect
         mqttc.on_message = on_mqtt_message
         mqttc.on_publish = on_publish
+        mqttc.on_subscribe = on_subscribe
         mqttc.max_inflight_messages_set(MQTT_MAX_INFLIGHT)
         mqttc.max_queued_messages_set(256)
         if MQTT_TLS:
