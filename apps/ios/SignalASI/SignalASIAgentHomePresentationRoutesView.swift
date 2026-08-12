@@ -38,6 +38,10 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
           onAgentAdded: { agentIDs in
             scanShortcutActive = false
             onAgentAdded(agentIDs)
+          },
+          onImportCompleted: {
+            // Return to the Agent home even when the scanned Agent needs approval.
+            scanShortcutActive = false
           }
         )
       }
