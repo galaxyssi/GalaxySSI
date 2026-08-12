@@ -178,31 +178,36 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
 
   func create(definition: AgentTeamDefinition, request: AgentRunRequest) throws {
     lock.lock()
-    defer { lock.unlock() }
     var records = loadLocked()
     if let existing = records.first(where: { $0.request.runId == request.runId }) {
       guard existing.definition.teamId == definition.teamId,
         existing.request.taskId == request.taskId else {
+        lock.unlock()
         throw AgentTeamExecutionRuntimeError.duplicateRun(request.runId)
       }
+      lock.unlock()
       return
     }
     records.append(AgentTeamExecutionRecord(definition: definition, request: request))
     saveLocked(records)
+    lock.unlock()
+    postUpdate(runId: request.runId)
   }
 
   func append(_ event: AgentSubagentEvent) async throws {
     lock.lock()
-    defer { lock.unlock() }
     var records = loadLocked()
     guard let index = records.firstIndex(where: { $0.request.runId == event.supervisorId }) else {
+      lock.unlock()
       throw AgentTeamExecutionRuntimeError.missingRun(event.supervisorId)
     }
     var record = records[index]
     if let existing = record.events.first(where: { $0.sequence == event.sequence }) {
       guard existing.kind == event.kind, existing.childId == event.childId else {
+        lock.unlock()
         throw AgentTeamExecutionRuntimeError.invalid("Conflicting event sequence for " + event.supervisorId)
       }
+      lock.unlock()
       return
     }
     record.events = Array((record.events + [event]).sorted { $0.sequence < $1.sequence }
@@ -210,6 +215,8 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
     record.updatedAtMillis = max(record.updatedAtMillis, event.timestampMillis)
     records[index] = record
     saveLocked(records)
+    lock.unlock()
+    postUpdate(runId: event.supervisorId)
   }
 
   func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
@@ -226,41 +233,66 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
 
   func markInterrupted(supervisorRunId: String, nowMillis: Int64) -> AgentTeamExecutionSnapshot? {
     lock.lock()
-    defer { lock.unlock() }
     var records = loadLocked()
     guard let index = records.firstIndex(where: { $0.request.runId == clean(supervisorRunId) }) else {
+      lock.unlock()
       return nil
     }
+    var changed = false
     if !records[index].snapshot.state.isTerminal {
       records[index].interruptedAtMillis = max(nowMillis, 0)
       records[index].updatedAtMillis = max(records[index].updatedAtMillis, nowMillis)
       saveLocked(records)
+      changed = true
     }
-    return records[index].snapshot
+    let snapshot = records[index].snapshot
+    lock.unlock()
+    if changed {
+      postUpdate(runId: supervisorRunId)
+    }
+    return snapshot
   }
 
   func markNonTerminalInterrupted(nowMillis: Int64) -> [AgentTeamExecutionSnapshot] {
     lock.lock()
-    defer { lock.unlock() }
     var records = loadLocked()
+    var changed = false
     for index in records.indices where !records[index].snapshot.state.isTerminal {
       records[index].interruptedAtMillis = max(nowMillis, 0)
       records[index].updatedAtMillis = max(records[index].updatedAtMillis, nowMillis)
+      changed = true
     }
-    saveLocked(records)
-    return records.map(\.snapshot).filter { $0.state == .interrupted }
+    if changed {
+      saveLocked(records)
+    }
+    let snapshots = records.map(\.snapshot).filter { $0.state == .interrupted }
+    lock.unlock()
+    if changed {
+      postUpdate(runId: nil)
+    }
+    return snapshots
   }
 
   func remove(supervisorRunId: String) {
     lock.lock()
-    defer { lock.unlock() }
-    saveLocked(loadLocked().filter { $0.request.runId != clean(supervisorRunId) })
+    let runId = clean(supervisorRunId)
+    let records = loadLocked()
+    let remaining = records.filter { $0.request.runId != runId }
+    let changed = remaining.count != records.count
+    if changed {
+      saveLocked(remaining)
+    }
+    lock.unlock()
+    if changed {
+      postUpdate(runId: runId)
+    }
   }
 
   func clear() {
     lock.lock()
-    defer { lock.unlock() }
     SignalASIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+    lock.unlock()
+    postUpdate(runId: nil)
   }
 
   static func destroy(
@@ -291,6 +323,13 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
       defaults: defaults,
       key: key,
       secrets: secrets
+    )
+  }
+
+  private func postUpdate(runId: String?) {
+    NotificationCenter.default.post(
+      name: .signalASIAgentTeamExecutionHistoryDidUpdate,
+      object: runId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     )
   }
 }
