@@ -4,6 +4,7 @@ import Foundation
 final class AgentControlPlaneActionExecutor: AgentActionExecutor {
   private let provider: ActionExecutorAgentProvider
   private let directory: AgentAdapterDirectory
+  private let teamDispatchCoordinator: AgentControlPlaneTeamDispatchCoordinator
 
   init(
     registrationSource: @escaping () -> [AgentRegistration],
@@ -27,6 +28,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     let directory = AgentAdapterDirectory()
     try? directory.register(provider)
     self.directory = directory
+    self.teamDispatchCoordinator = AgentControlPlaneTeamDispatchCoordinator(provider: provider, directory: directory)
   }
 
   init(provider: ActionExecutorAgentProvider) {
@@ -34,11 +36,16 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     let directory = AgentAdapterDirectory()
     try? directory.register(provider)
     self.directory = directory
+    self.teamDispatchCoordinator = AgentControlPlaneTeamDispatchCoordinator(provider: provider, directory: directory)
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     guard action.kind == .callConnector else {
       return provider.executeDelegate(action: action, screen: screen)
+    }
+    if let rawSpec = action.parameters[Self.agentTeamSpecParameter],
+      let spec = AgentTeamDispatchSpecCodec.decode(rawSpec) {
+      return executeTeamAction(spec: spec, action: action, screen: screen)
     }
     if !(action.parameters[Self.agentTeamSpecParameter] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return provider.executeDelegate(action: action, screen: screen)
@@ -133,6 +140,64 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
         ]
       )
     }
+  }
+
+  private func executeTeamAction(
+    spec: AgentTeamDispatchSpec,
+    action: AgentAction,
+    screen: AgentScreenContext
+  ) -> AgentActionResult {
+    let startedAt = AgentControlPlaneClock.nowMillis()
+    do {
+      let receipt = try Self.awaitBlocking {
+        try await self.teamDispatchCoordinator.dispatch(spec: spec, action: action, screen: screen)
+      }
+      let primaryAgentId = spec.definition.primaryAgentId
+      let teamMetadata = Self.teamMetadata(spec: spec, receipt: receipt)
+      if var result = provider.result(agentId: primaryAgentId, runId: receipt.primaryRun.runId) {
+        provider.recordDispatchOutcome(
+          agentId: primaryAgentId,
+          result: result,
+          latencyMillis: AgentControlPlaneClock.nowMillis() - startedAt
+        )
+        result.actionId = action.id
+        result.metadata.merge(teamMetadata) { _, new in new }
+        return result
+      }
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "",
+        metadata: teamMetadata
+      )
+    } catch {
+      provider.discardPrepared(agentId: spec.definition.primaryAgentId, runId: spec.supervisorRunId)
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: error.localizedDescription.ifBlank("Agent team dispatch failed"),
+        metadata: [
+          "agent_team_id": spec.definition.teamId,
+          "agent_team_run_id": spec.supervisorRunId,
+          "agent_team_primary_agent_id": spec.definition.primaryAgentId
+        ]
+      )
+    }
+  }
+
+  private static func teamMetadata(
+    spec: AgentTeamDispatchSpec,
+    receipt: AgentControlPlaneTeamDispatchReceipt
+  ) -> [String: String] {
+    [
+      "agent_team_id": spec.definition.teamId,
+      "agent_team_run_id": spec.supervisorRunId,
+      "agent_team_primary_agent_id": spec.definition.primaryAgentId,
+      "agent_team_member_count": String(receipt.memberRuns.count),
+      "agent_team_unavailable_members": receipt.unavailableMembers.keys.sorted().joined(separator: ","),
+      "control_plane_run_id": receipt.primaryRun.runId,
+      "control_plane_agent_id": receipt.primaryRun.agentId
+    ]
   }
 
   @discardableResult
