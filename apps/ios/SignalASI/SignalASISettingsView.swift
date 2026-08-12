@@ -10,6 +10,7 @@ struct SettingsView: View {
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
   var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
   var showsBackButton = true
+  var onBackToAgent: (() -> Void)? = nil
 
   var body: some View {
     NavigationView {
@@ -19,6 +20,14 @@ struct SettingsView: View {
           leading: {
             if showsBackButton {
               SignalASIBackButton()
+            } else if let onBackToAgent {
+              Button(action: onBackToAgent) {
+                Image(systemName: "chevron.left")
+                  .font(.system(size: 22, weight: .semibold))
+                  .foregroundColor(.signalASITextPrimary)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
             } else {
               Color.clear
             }
