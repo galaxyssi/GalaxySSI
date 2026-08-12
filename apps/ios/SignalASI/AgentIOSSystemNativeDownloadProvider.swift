@@ -58,6 +58,20 @@ private final class AgentIOSDownloadSessionDelegate: NSObject, URLSessionDownloa
     owner?.backgroundDownloadFinished(task: downloadTask, location: location)
   }
 
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didWriteData _: Int64,
+    totalBytesWritten: Int64,
+    totalBytesExpectedToWrite: Int64
+  ) {
+    owner?.backgroundDownloadProgress(
+      task: downloadTask,
+      bytesDownloaded: totalBytesWritten,
+      totalBytes: totalBytesExpectedToWrite
+    )
+  }
+
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     owner?.backgroundDownloadCompleted(task: task, error: error)
   }
@@ -383,6 +397,27 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       response: task.response,
       error: nil
     )
+  }
+
+  fileprivate func backgroundDownloadProgress(
+    task: URLSessionDownloadTask,
+    bytesDownloaded: Int64,
+    totalBytes: Int64
+  ) {
+    guard let id = downloadID(for: task) else { return }
+    queue.async {
+      guard var record = self.records[id],
+            record.status == Status.pending || record.status == Status.running else {
+        return
+      }
+      record.bytesDownloaded = max(0, bytesDownloaded)
+      if totalBytes >= 0 {
+        record.totalBytes = totalBytes
+      }
+      record.updatedAtEpochMillis = self.currentMillis()
+      self.records[id] = record
+      self.persistLocked()
+    }
   }
 
   fileprivate func backgroundDownloadCompleted(task: URLSessionTask, error: Error?) {
