@@ -115,6 +115,11 @@ struct SignalASIConversationHubView: View {
       // Boolean while the Hub presents the Add flow.
       AddContactView(
         autoOpenScanner: presentation == .scanner,
+        onAgentAdded: { _ in
+          _ = coordinator.requestCapabilityManifestRefresh(force: true)
+          addContactPresentation = nil
+          selectedTab = .contacts
+        },
         onImportCompleted: {
           _ = coordinator.requestCapabilityManifestRefresh(force: true)
           addContactPresentation = nil
