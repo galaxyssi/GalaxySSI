@@ -222,6 +222,7 @@
     A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */; };
     A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */; };
     A1000000000000000000F503 /* AgentConversationAttachmentContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */; };
+    A1000000000000000000F504 /* AgentPeerChatTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F504 /* AgentPeerChatTransport.swift */; };
     A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000482 /* AgentNoReplyReason.swift */; };
     A10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* AgentNoReplyReasonTests.swift */; };
     A10000000000000000000484 /* AgentResponseSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000484 /* AgentResponseSections.swift */; };
@@ -1065,6 +1066,7 @@
     A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentPublishOrder.swift; sourceTree = "<group>"; };
     A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelArtifactDownloadSources.swift; sourceTree = "<group>"; };
     A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationAttachmentContinuity.swift; sourceTree = "<group>"; };
+    A2000000000000000000F504 /* AgentPeerChatTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerChatTransport.swift; sourceTree = "<group>"; };
     A20000000000000000000482 /* AgentNoReplyReason.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReason.swift; sourceTree = "<group>"; };
     A20000000000000000000483 /* AgentNoReplyReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReasonTests.swift; sourceTree = "<group>"; };
     A20000000000000000000484 /* AgentResponseSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSections.swift; sourceTree = "<group>"; };
@@ -2141,6 +2143,7 @@
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
         A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */,
         A20000000000000000000482 /* AgentNoReplyReason.swift */,
+        A2000000000000000000F504 /* AgentPeerChatTransport.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
         A20000000000000000000010 /* SignalASILinkReliability.swift */,
         A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */,
@@ -3107,6 +3110,7 @@
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
         A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */,
         A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */,
+        A1000000000000000000F504 /* AgentPeerChatTransport.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
         A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */,
         A10000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift in Sources */,
