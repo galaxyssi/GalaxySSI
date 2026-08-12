@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SignalASIConversationComposer: View {
   @Binding var draft: String
@@ -46,7 +47,9 @@ struct SignalASIConversationComposer: View {
     .padding(.horizontal, 10)
     .padding(.vertical, 8)
     .background(Color.signalASIBarBackground)
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
+    ) { _ in
       guard inputFocused, !voiceRecorder.isPending, !voiceRecorder.isRecording else { return }
       inputFocused = false
     }
@@ -59,54 +62,76 @@ struct SignalASIConversationComposer: View {
 
   private var inputRow: some View {
     HStack(spacing: 4) {
-      textInput
-      if canSend {
-        Button {
-          inputFocused = false
-          onSend()
-        } label: {
-          Image(systemName: "arrow.up")
-            .font(.system(size: 20, weight: .bold))
-            .foregroundColor(.signalASIAccent)
-            .frame(width: 54, height: 54)
-            .background(Color(red: 0.655, green: 0.906, blue: 0.847))
-            .clipShape(Circle())
-        }
-        .accessibilityLabel(Text(t("signalasi.common.send", "Send")))
-      } else {
-        Button {
-          attachmentMenuPresented = true
-        } label: {
-          Image(systemName: "plus")
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundColor(.signalASITextPrimary)
-            .frame(width: 54, height: 54)
-        }
-        .accessibilityLabel(Text(t("agent_attachment_add_file", "Add attachment")))
-      }
+      inputShell
+      primaryActionButton
     }
     .frame(minHeight: 72)
   }
 
-  private var textInput: some View {
-    TextField(t("signalasi.message.input", "Message"), text: $draft)
-      .focused($inputFocused)
-      .submitLabel(.send)
-      .onSubmit {
-        guard canSend else { return }
-        inputFocused = false
-        onSend()
+  private var inputShell: some View {
+    ZStack(alignment: .topLeading) {
+      if draft.isEmpty {
+        Text(t("signalasi.message.input_hint", "Message or hold to talk..."))
+          .font(.system(size: 15))
+          .foregroundColor(.signalASITextSecondary)
+          .padding(.leading, 12)
+          .padding(.top, 16)
+          .allowsHitTesting(false)
       }
-      .simultaneousGesture(holdToTalkGesture)
-      .padding(.horizontal, 12)
-      .frame(height: 54)
-      .background(Color.signalASISearchBackground)
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
-      )
-      .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
+      TextEditor(text: $draft)
+        .font(.system(size: 15))
+        .foregroundColor(.signalASITextPrimary)
+        .textInputAutocapitalization(.sentences)
+        .focused($inputFocused)
+        .frame(height: 54)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.clear)
+        .onSubmit {
+          guard canSend else { return }
+          inputFocused = false
+          onSend()
+        }
+    }
+    .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+    .background(Color.signalASISurface)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .contentShape(Rectangle())
+    .simultaneousGesture(holdToTalkGesture)
+    .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
+  }
+
+  private var primaryActionButton: some View {
+    Button {
+      inputFocused = false
+      if canSend {
+        onSend()
+      } else {
+        attachmentMenuPresented = true
+      }
+    } label: {
+      Image(systemName: canSend ? "arrow.up" : "plus")
+        .font(.system(size: 21, weight: .bold))
+        .foregroundColor(canSend ? .signalASIAccent : .signalASITextPrimary)
+        .frame(width: 54, height: 54)
+        .background(
+          canSend
+            ? Color(red: 0.655, green: 0.906, blue: 0.847)
+            : Color.signalASISurface
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .frame(minWidth: 54, minHeight: 54)
+    .accessibilityLabel(Text(
+      canSend
+        ? t("signalasi.common.send", "Send")
+        : t("agent_attachment_add_file", "Add attachment")
+    ))
   }
 
   private var voiceCaptureSurface: some View {
@@ -144,8 +169,7 @@ struct SignalASIConversationComposer: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
-        guard !inputFocused else { return }
-        attachmentMenuPresented = false
+        guard !inputFocused || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
         voiceRecorder.dragChanged(
           translation: value.translation,
           messages: SignalASIChatVoiceRecorderMessages(
