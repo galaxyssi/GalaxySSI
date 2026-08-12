@@ -5166,6 +5166,7 @@ final class MessageCoordinator: ObservableObject {
       options: .regularExpression
     ) == nil ? "" : traceCandidate
     let messageTraceId = voiceTraceId.isEmpty ? UUID().uuidString : voiceTraceId
+    let transportMessageId = peerChat ? UUID().uuidString : sourceMessageId
     let publishStartedAt = Int64(Date().timeIntervalSince1970 * 1_000)
     var deliveryTrace = outgoing.deliveryTrace.map { event in
       [
@@ -5185,7 +5186,7 @@ final class MessageCoordinator: ObservableObject {
     let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
       "type": peerChat ? "peer_message" : "text",
-      "message_id": peerChat ? UUID().uuidString : sourceMessageId,
+      "message_id": transportMessageId,
       "content": text,
       "contact_id": peerChat ? link.desktopId : contact.id,
       "task_id": taskIdentity.taskId,
