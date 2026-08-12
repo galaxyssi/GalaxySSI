@@ -999,8 +999,9 @@ enum AgentDefaultCapabilityCatalog {
     skill(
       id: "signalasi.catalog.device-health",
       title: "Device Health",
-      summary: "Summarize battery, storage, power, and network health",
+      summary: "Summarize battery, memory, storage, power, and network health",
       tools: [
+        "signalasi.hardware.device.status",
         "signalasi.hardware.battery.status",
         "signalasi.hardware.memory.status",
         "signalasi.hardware.storage.status",
