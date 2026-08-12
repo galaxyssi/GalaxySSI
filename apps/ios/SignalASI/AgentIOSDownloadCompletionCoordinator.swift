@@ -45,13 +45,13 @@ final class AgentIOSDownloadCompletionCoordinator {
     let succeeded = completion.succeeded
     let content: String
     let fileName = completion.localFileURL?.lastPathComponent ?? name
-    let relativePath = "SignalASI Downloads/\(fileName)"
+    let relativePath = AgentIOSDownloadFilePolicy.relativePath(for: fileName)
     let richOutput: String
     if succeeded {
       content = String(
         format: localized(
           "signalasi.agent.download.complete",
-          "Download complete: %@\nSaved in SignalASI Downloads.",
+          "Download complete: %@\nSaved in Download/SignalASI.",
           language: language
         ),
         name
@@ -95,8 +95,8 @@ final class AgentIOSDownloadCompletionCoordinator {
     if completion.succeeded {
       title = zh ? "下载完成" : "Download complete"
       body = zh
-        ? "\(name) 已保存到 SignalASI 下载。"
-        : "\(name) was saved to SignalASI Downloads."
+        ? "\(name) 已保存到 Download/SignalASI。"
+        : "\(name) was saved to Download/SignalASI."
     } else {
       title = zh ? "下载失败" : "Download failed"
       let reason = completion.reason == 0 ? "" : " (\(completion.reason))"

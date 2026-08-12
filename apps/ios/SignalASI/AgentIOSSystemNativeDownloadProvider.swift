@@ -12,7 +12,7 @@ protocol AgentIOSDownloadManaging {
   func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
-private enum AgentIOSDownloadFilePolicy {
+enum AgentIOSDownloadFilePolicy {
   private static let extensionPattern = #"\.[A-Za-z0-9]{1,10}$"#
   private static let genericTitles = ["download", "signalasi download"]
 
@@ -49,7 +49,7 @@ private enum AgentIOSDownloadFilePolicy {
   }
 
   static func relativePath(for fileName: String) -> String {
-    "SignalASI Downloads/\(fileName)"
+    "Download/SignalASI/\(fileName)"
   }
 
   private static func fileExtension(_ value: String) -> String {
@@ -197,6 +197,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
   private let session: URLSession
   private let sessionDelegate: AgentIOSDownloadSessionDelegate?
   private let storageDirectory: URL
+  private let legacyStorageDirectory: URL
   private let stateURL: URL
   private let defaults: UserDefaults
   private let secrets: SignalASISecretStore
@@ -237,8 +238,12 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     } else {
       let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-      self.storageDirectory = base.appendingPathComponent("SignalASI Downloads", isDirectory: true)
+      self.storageDirectory = base
+        .appendingPathComponent("Download", isDirectory: true)
+        .appendingPathComponent("SignalASI", isDirectory: true)
     }
+    self.legacyStorageDirectory = self.storageDirectory.deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("SignalASI Downloads", isDirectory: true)
     let stateBase: URL
     if let storageDirectory {
       stateBase = storageDirectory
@@ -251,6 +256,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       .appendingPathComponent("downloads.json", isDirectory: false)
     queue.sync {
       restoreStateLocked()
+      migrateLegacyStorageLocked()
     }
     sessionDelegate?.owner = self
     session.getAllTasks { [weak self] tasks in
@@ -712,6 +718,31 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     if changed || !loadedEncrypted {
       persistLocked()
     }
+  }
+
+  private func migrateLegacyStorageLocked() {
+    guard legacyStorageDirectory.standardizedFileURL != storageDirectory.standardizedFileURL,
+          FileManager.default.fileExists(atPath: legacyStorageDirectory.path) else {
+      return
+    }
+    try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
+    for recordID in Array(records.keys) {
+      guard var record = records[recordID],
+            let oldURL = record.localFileURL,
+            oldURL.standardizedFileURL.path.hasPrefix(legacyStorageDirectory.standardizedFileURL.path + "/"),
+            FileManager.default.fileExists(atPath: oldURL.path) else {
+        continue
+      }
+      let destination = storageDirectory.appendingPathComponent(oldURL.lastPathComponent, isDirectory: false)
+      if !FileManager.default.fileExists(atPath: destination.path) {
+        try? FileManager.default.moveItem(at: oldURL, to: destination)
+      }
+      if FileManager.default.fileExists(atPath: destination.path) {
+        record.localFileURL = destination
+        records[recordID] = record
+      }
+    }
+    persistLocked()
   }
 
   private func persistLocked() {
