@@ -248,8 +248,22 @@ struct SignalASIControlCenterView: View {
   }
 
   private var connectionTrustSection: some View {
+    let needsAttention = systemStatusNeedsAttention
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_connection_trust", "Connection & Trust"))
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_system_status_title", "System Status"),
+        subtitle: needsAttention
+          ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+          : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+        systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
+        tint: needsAttention ? .orange : .signalASIAccent,
+        badge: needsAttention
+          ? t("cc_status_degraded", "Degraded")
+          : t("cc_status_normal", "Normal")
+      ) {
+        SignalASISystemStatusView()
+      }
       SignalASIControlCenterNavigationRow(
         title: t("cc_nodes_title", "Agents, Models & Nodes"),
         subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
@@ -404,6 +418,23 @@ struct SignalASIControlCenterView: View {
 
   private var intelligenceResourceCount: Int {
     store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
+  }
+
+  private var systemStatusAvailableResourceCount: Int {
+    store.cloudModelContacts.count +
+      store.serverLinks.filter(\.paired).count +
+      store.customDeviceConnectors.filter(\.enabled).count
+  }
+
+  private var systemStatusLinkReady: Bool {
+    store.serverLinks.contains(where: \.paired) &&
+      SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
+  }
+
+  private var systemStatusNeedsAttention: Bool {
+    store.agentSafetySettings.executionPaused ||
+      !systemStatusLinkReady ||
+      systemStatusAvailableResourceCount == 0
   }
 
   private var resourcesBadge: String {
