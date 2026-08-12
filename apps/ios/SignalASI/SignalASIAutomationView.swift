@@ -42,6 +42,12 @@ struct SignalASIAutomationView: View {
         leading: { SignalASIBackButton() },
         trailing: {
           HStack(spacing: 16) {
+            NavigationLink(destination: SignalASISkillMarketplaceView()) {
+              Image(systemName: "sparkles.rectangle.stack")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.purple)
+            }
+            .accessibilityLabel(t("signalasi.skill_marketplace.title", "Skill Marketplace"))
             NavigationLink(destination: SignalASIWorkflowsView()) {
               Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 17, weight: .semibold))
