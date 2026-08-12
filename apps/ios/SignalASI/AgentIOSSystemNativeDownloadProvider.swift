@@ -599,7 +599,6 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       id: record.id,
       succeeded: record.status == Status.successful,
       title: record.title,
-      status: record.status,
       reason: record.reason,
       bytesDownloaded: record.bytesDownloaded,
       totalBytes: record.totalBytes,
