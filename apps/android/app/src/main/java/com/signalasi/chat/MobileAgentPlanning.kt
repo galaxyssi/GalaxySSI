@@ -442,6 +442,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 AgentHardwareNativeTools.BATTERY_STATUS to JSONObject()
             lower.hasAny("power status", "battery saver status", "power saving status", "\u7535\u6e90\u72b6\u6001", "\u7701\u7535\u6a21\u5f0f\u72b6\u6001", "\u67e5\u770b\u7701\u7535\u6a21\u5f0f") ->
                 AgentHardwareNativeTools.POWER_STATUS to JSONObject()
+            lower.hasAny(
+                "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
+                "\u624b\u673a\u5185\u5b58", "\u8bbe\u5907\u5185\u5b58", "\u8fd0\u884c\u5185\u5b58", "\u53ef\u7528\u5185\u5b58", "\u5269\u4f59\u5185\u5b58",
+                "\u5185\u5b58\u5360\u7528", "\u5185\u5b58\u4f7f\u7528", "\u67e5\u5185\u5b58", "\u67e5\u770b\u5185\u5b58", "\u67e5\u8be2\u5185\u5b58"
+            ) -> AgentHardwareNativeTools.MEMORY_STATUS to JSONObject()
             lower.hasAny("storage status", "phone storage", "available storage", "free storage", "\u624b\u673a\u5b58\u50a8", "\u5b58\u50a8\u72b6\u6001", "\u5269\u4f59\u5b58\u50a8", "\u5269\u4f59\u7a7a\u95f4") ->
                 AgentHardwareNativeTools.STORAGE_STATUS to JSONObject()
             lower.hasAny("network status", "phone network", "active network", "\u624b\u673a\u7f51\u7edc\u72b6\u6001", "\u5f53\u524d\u7f51\u7edc", "\u7f51\u7edc\u8fde\u63a5\u72b6\u6001") ->

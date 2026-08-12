@@ -100,6 +100,7 @@ class AgentPhoneCapabilityCatalogTest {
             AgentPhoneCapabilityId.BLUETOOTH,
             AgentPhoneCapabilityId.NFC,
             AgentPhoneCapabilityId.BATTERY,
+            AgentPhoneCapabilityId.DEVICE_MEMORY,
             AgentPhoneCapabilityId.NETWORK,
             AgentPhoneCapabilityId.INSTALLED_APPS,
             AgentPhoneCapabilityId.MEDIA_PLAYBACK,

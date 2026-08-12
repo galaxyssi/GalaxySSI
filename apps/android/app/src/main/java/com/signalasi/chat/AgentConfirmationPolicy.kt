@@ -311,6 +311,7 @@ object AgentConfirmationPolicy {
     private val DIRECT_NATIVE_TOOL_IDS = setOf(
         AgentHardwareNativeTools.BATTERY_STATUS,
         AgentHardwareNativeTools.POWER_STATUS,
+        AgentHardwareNativeTools.MEMORY_STATUS,
         AgentHardwareNativeTools.STORAGE_STATUS,
         AgentHardwareNativeTools.NETWORK_STATUS,
         AgentHardwareNativeTools.SENSORS_LIST,
