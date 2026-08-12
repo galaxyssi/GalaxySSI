@@ -376,6 +376,10 @@ struct ConversationView: View {
   @State private var runtimeArtifactError = ""
   @State private var agentSessionsShortcutActive = false
   @State private var scanShortcutActive = false
+  @State private var visibleMessageCount = 100
+  @State private var loadingOlderMessages = false
+  @State private var initialMessageScrollCompleted = false
+  @State private var messageWindowContactId = ""
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -399,6 +403,10 @@ struct ConversationView: View {
       return all
     }
     return all.filter { $0.conversationId == active.id }
+  }
+
+  private var renderedMessages: [ChatMessage] {
+    Array(displayedMessages.suffix(min(visibleMessageCount, displayedMessages.count)))
   }
 
   private var waitingMessageIDs: Set<UUID> {
@@ -442,10 +450,10 @@ struct ConversationView: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 10) {
-            ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+            ForEach(Array(renderedMessages.enumerated()), id: \.element.id) { index, message in
               if SignalASIConversationDateDivider.shouldShow(
                 for: message.createdAt,
-                previous: index > 0 ? displayedMessages[index - 1].createdAt : nil
+                previous: index > 0 ? renderedMessages[index - 1].createdAt : nil
               ) {
                 SignalASIConversationDateDivider(
                   date: message.createdAt,
@@ -483,6 +491,13 @@ struct ConversationView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
               }
+              if message.id == renderedMessages.first?.id {
+                Color.clear
+                  .frame(height: 1)
+                  .onAppear {
+                    loadOlderMessages(anchorID: message.id, proxy: proxy)
+                  }
+              }
             }
           }
           .padding(.horizontal, 12)
@@ -490,8 +505,17 @@ struct ConversationView: View {
           .padding(.bottom, 10)
         }
         .background(Color.signalASIPageBackground)
+        .onAppear {
+          resetMessageWindowIfNeeded()
+          guard !initialMessageScrollCompleted,
+                let last = renderedMessages.last else { return }
+          DispatchQueue.main.async {
+            proxy.scrollTo(last.id, anchor: .bottom)
+            initialMessageScrollCompleted = true
+          }
+        }
         .onChange(of: displayedMessages.count) { _ in
-          if let last = displayedMessages.last {
+          if let last = renderedMessages.last {
             withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
@@ -543,7 +567,11 @@ struct ConversationView: View {
     .overlay(attachmentMenuOverlay)
     .navigationBarHidden(true)
     .onAppear {
+      resetMessageWindowIfNeeded()
       store.markContactRead(contact.id)
+    }
+    .onChange(of: contactId) { _ in
+      resetMessageWindowIfNeeded()
     }
     .alert(t("signalasi.chat.delete.title", "Delete Chat?"), isPresented: $showingDeleteChatConfirmation) {
       Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
@@ -610,6 +638,27 @@ struct ConversationView: View {
           .environmentObject(store)
       }
       .navigationViewStyle(StackNavigationViewStyle())
+    }
+  }
+
+  private func resetMessageWindowIfNeeded() {
+    guard messageWindowContactId != contact.id else { return }
+    messageWindowContactId = contact.id
+    visibleMessageCount = 100
+    loadingOlderMessages = false
+    initialMessageScrollCompleted = false
+  }
+
+  private func loadOlderMessages(anchorID: UUID, proxy: ScrollViewProxy) {
+    guard initialMessageScrollCompleted,
+          !loadingOlderMessages,
+          visibleMessageCount < displayedMessages.count else { return }
+    loadingOlderMessages = true
+    let nextCount = min(visibleMessageCount + 100, displayedMessages.count)
+    visibleMessageCount = nextCount
+    DispatchQueue.main.async {
+      proxy.scrollTo(anchorID, anchor: .top)
+      loadingOlderMessages = false
     }
   }
 
