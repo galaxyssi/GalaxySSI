@@ -90,7 +90,7 @@ enum AgentModelSelectionSettings {
   }
 }
 
-private struct SignalASIAgentModelSelectionPreparedContent {
+struct SignalASIAgentModelSelectionPreparedContent {
   var localProfiles: [LocalModelRuntimeProfile]
   var cloudContacts: [SignalASIContact]
   var callableTargets: [AgentCallableTarget]
@@ -391,6 +391,12 @@ struct SignalASIAgentModelSelectionView: View {
 
   private func prepareModelSelectionContent() async {
     let generation = navigationContentGate.begin()
+    if let cached = SignalASINavigationContentPrewarm.snapshot(for: store)?.modelSelection,
+       !Task.isCancelled {
+      preparedContent = cached
+      contentLoading = false
+      return
+    }
     contentLoading = true
     let sourceContacts = store.visibleContacts
     let sourceCloudContacts = store.cloudModelContacts

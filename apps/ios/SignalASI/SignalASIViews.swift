@@ -148,6 +148,11 @@ struct RootView: View {
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
         systemLocaleRevision &+= 1
       }
+      .task {
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard !Task.isCancelled else { return }
+        await SignalASINavigationContentPrewarm.prepare(store: store)
+      }
   }
 }
 

@@ -7,7 +7,7 @@ private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
   var id: String { rawValue }
 }
 
-private struct SignalASIConversationHubPreparedContent {
+struct SignalASIConversationHubPreparedContent {
   var conversations: SignalASIConversationHubSections
   var archivedCount: Int
   var contacts: [SignalASIContact]
@@ -450,6 +450,13 @@ struct SignalASIConversationHubView: View {
 
   private func prepareHubContent() async {
     let generation = navigationContentGate.begin()
+    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+       !showingArchived,
+       let cached = SignalASINavigationContentPrewarm.snapshot(for: store)?.hub {
+      preparedHubContent = cached
+      hubContentLoading = false
+      return
+    }
     hubContentLoading = true
     let sourceConversations = store.agentSessions(includeArchived: true)
     let sourceContacts = store.contactList(matching: "")
