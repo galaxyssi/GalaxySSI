@@ -1002,6 +1002,7 @@ enum AgentDefaultCapabilityCatalog {
       summary: "Summarize battery, storage, power, and network health",
       tools: [
         "signalasi.hardware.battery.status",
+        "signalasi.hardware.memory.status",
         "signalasi.hardware.storage.status",
         "signalasi.hardware.network.status"
       ]

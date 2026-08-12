@@ -19,6 +19,7 @@ enum AgentPhoneCapabilityId: String, Codable, CaseIterable, Identifiable {
   case bluetooth = "BLUETOOTH"
   case nfc = "NFC"
   case battery = "BATTERY"
+  case deviceMemory = "DEVICE_MEMORY"
   case network = "NETWORK"
   case installedApps = "INSTALLED_APPS"
   case intentLaunch = "INTENT_LAUNCH"
@@ -269,6 +270,7 @@ enum AgentPhoneCapabilityNativeCoverage {
     .bluetooth: [bluetoothStatus, bluetoothDiscoveryForeground, bluetoothPairingHandoff],
     .nfc: [nfcStatus],
     .battery: [batteryStatus, powerStatus],
+    .deviceMemory: [memoryStatus],
     .network: [networkStatus, wifiStatus, wifiScanResults],
     .installedApps: [installedAppsList, packageDetail],
     .mediaPlayback: [mediaPlaybackHandoff],
@@ -303,6 +305,7 @@ enum AgentPhoneCapabilityNativeCoverage {
   static let nfcStatus = "signalasi.hardware.nfc.status"
   static let batteryStatus = "signalasi.hardware.battery.status"
   static let powerStatus = "signalasi.hardware.power.status"
+  static let memoryStatus = "signalasi.hardware.memory.status"
   static let networkStatus = "signalasi.hardware.network.status"
   static let wifiStatus = "signalasi.android.wifi.status"
   static let wifiScanResults = "signalasi.android.wifi.scan_results"
@@ -499,6 +502,14 @@ enum AgentPhoneCapabilityCatalog {
       risk: .low,
       normalAppCanExecute: true,
       limitation: "Only app-visible battery and charging signals are available; health, per-app attribution, and vendor diagnostics may be absent or privileged."
+    ),
+    boundary(
+      .deviceMemory,
+      location: .appProcess,
+      availability: .ready,
+      risk: .low,
+      normalAppCanExecute: true,
+      limitation: "Reports device-wide RAM totals and an iOS app-visible estimate of available memory; process enumeration and private per-app attribution are excluded."
     ),
     boundary(
       .network,

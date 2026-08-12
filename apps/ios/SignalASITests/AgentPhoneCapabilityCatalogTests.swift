@@ -78,6 +78,7 @@ extension SignalASIStoreTests {
       .bluetooth,
       .nfc,
       .battery,
+      .deviceMemory,
       .network,
       .installedApps,
       .mediaPlayback,

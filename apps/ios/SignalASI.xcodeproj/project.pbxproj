@@ -707,6 +707,7 @@
     A10000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */; };
     A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */; };
     A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */; };
+    A10000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift */; };
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
     A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */; };
     A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */; };
@@ -1539,6 +1540,7 @@
     A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareSensorSampleProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareBluetoothDiscoveryProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareStatusProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDeviceMemoryStatusProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
     A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPhonePublicHTMLAttachment.swift; sourceTree = "<group>"; };
@@ -2133,6 +2135,7 @@
         A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */,
         A20000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift */,
         A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */,
+        A20000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift */,
         A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */,
         A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */,
         A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */,
@@ -3085,6 +3088,7 @@
         A10000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift in Sources */,
         A10000000000000000000439 /* AgentIOSHardwareBluetoothDiscoveryProvider.swift in Sources */,
         A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */,
+        A10000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,

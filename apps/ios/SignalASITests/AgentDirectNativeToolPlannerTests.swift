@@ -27,6 +27,8 @@ extension SignalASIStoreTests {
       AgentIOSHardwareNativeToolCatalog.batteryStatus
     )
     XCTAssertEqual(action("Check battery saver status")?.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.powerStatus)
+    XCTAssertEqual(action("Check available RAM on this phone")?.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.memoryStatus)
+    XCTAssertEqual(action("\u{67e5}\u{770b}\u{624b}\u{673a}\u{5185}\u{5b58}")?.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.memoryStatus)
     XCTAssertEqual(action("Check phone storage")?.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.storageStatus)
     XCTAssertEqual(action("Check phone network status")?.parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.networkStatus)
     XCTAssertEqual(action("Check Wi-Fi status")?.parameters["tool_id"], AgentIOSSystemNativeToolCatalog.wifiStatus)

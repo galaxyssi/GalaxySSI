@@ -4548,7 +4548,8 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
-    let stepReply = result.message.trimmingCharacters(in: .whitespacesAndNewlines)
+    let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let hasRemainingActions = !task.pendingActions.isEmpty
@@ -4648,6 +4649,20 @@ final class MessageCoordinator: ObservableObject {
     LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh")
       ? chinese
       : english
+  }
+
+  private func localizedNativeToolReply(_ result: AgentActionResult) -> String {
+    guard result.success,
+          result.metadata["native_tool_id"] == AgentIOSHardwareNativeToolCatalog.memoryStatus,
+          let rawOutput = result.metadata["native_tool_output"],
+          let data = rawOutput.data(using: .utf8),
+          let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return ""
+    }
+    return AgentIOSDeviceMemoryStatusPresentation.message(
+      output: output,
+      language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    )
   }
 
   private func localClarificationQuestion(_ question: AgentClarificationQuestion) -> String {

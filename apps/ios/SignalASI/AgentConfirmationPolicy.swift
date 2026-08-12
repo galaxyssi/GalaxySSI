@@ -180,6 +180,7 @@ enum AgentConfirmationPolicy {
   private static let directNativeToolIds = Set([
     "signalasi.hardware.battery.status",
     "signalasi.hardware.power.status",
+    "signalasi.hardware.memory.status",
     "signalasi.hardware.storage.status",
     "signalasi.hardware.network.status",
     "signalasi.hardware.sensors.list",

@@ -2,6 +2,24 @@ import XCTest
 @testable import SignalASI
 
 extension SignalASIStoreTests {
+  func testAgentIOSDeviceMemoryPresentationBoundsAndLocalizes() {
+    let snapshot = AgentIOSDeviceMemorySnapshot(
+      totalBytes: 10_000,
+      availableBytes: 2_000,
+      lowMemory: false,
+      lowMemoryThresholdBytes: 1_000,
+      pressure: "normal"
+    )
+    let output = AgentIOSDeviceMemoryStatusPresentation.output(snapshot: snapshot, nowMillis: 9_000)
+
+    XCTAssertEqual(output["scope"], .string("device_ram"))
+    XCTAssertEqual(output["used_bytes"], .int(8_000))
+    XCTAssertEqual(output["used_percent"], .int(80))
+    XCTAssertEqual(output["available_memory_estimated"], .bool(true))
+    XCTAssertTrue(AgentIOSDeviceMemoryStatusPresentation.message(output: output, language: "zh-Hans").contains("\u{624b}\u{673a}\u{5185}\u{5b58}"))
+    XCTAssertTrue(AgentIOSDeviceMemoryStatusPresentation.message(output: output, language: "en").contains("Phone memory"))
+  }
+
   func testAgentIOSDefaultHardwareProviderReadsBoundedBatteryState() {
     let output = AgentIOSDefaultHardwareStatusProvider().batteryStatus(nowMillis: 9_000)
     let allowedPluggedValues: Set<String> = ["none", "unknown"]
