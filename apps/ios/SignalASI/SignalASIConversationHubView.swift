@@ -530,7 +530,7 @@ struct SignalASIConversationHubView: View {
   @ViewBuilder
   private func unifiedConversationRow(_ item: SignalASIConversationHubItem) -> some View {
     if item.kind == .agent, let session = store.agentSession(id: item.id) {
-      conversationRow(session, preview: item.preview)
+      conversationRow(session, preview: item.preview, updatedAt: item.updatedAt)
     } else if let contact = store.contact(id: item.id) {
       NavigationLink(destination: ConversationView(contactId: contact.id)) {
         hubRowContent(
@@ -538,7 +538,8 @@ struct SignalASIConversationHubView: View {
           subtitle: item.preview.ifBlank(t("chat_no_messages", "No messages yet")),
           systemImage: contact.type == "device" ? "iphone" : "person.crop.circle",
           tint: contact.type == "device" ? .blue : .signalASITextSecondary,
-          trailing: ""
+          trailing: "",
+          updatedAt: item.updatedAt
         )
       }
       .buttonStyle(.plain)
@@ -552,7 +553,11 @@ struct SignalASIConversationHubView: View {
     }
   }
 
-  private func conversationRow(_ session: AgentConversation, preview: String = "") -> some View {
+  private func conversationRow(
+    _ session: AgentConversation,
+    preview: String = "",
+    updatedAt: Date
+  ) -> some View {
     Button {
       if multiDeleteMode {
         toggleSelectedSession(session.id)
@@ -571,7 +576,8 @@ struct SignalASIConversationHubView: View {
         tint: .signalASIAccent,
         trailing: multiDeleteMode
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
-          : (session.pinned ? "pin.fill" : "")
+          : (session.pinned ? "pin.fill" : ""),
+        updatedAt: updatedAt
       )
     }
     .buttonStyle(.plain)
@@ -882,7 +888,8 @@ struct SignalASIConversationHubView: View {
     subtitle: String,
     systemImage: String,
     tint: Color,
-    trailing: String
+    trailing: String,
+    updatedAt: Date? = nil
   ) -> some View {
     HStack(spacing: 10) {
       Image(systemName: systemImage)
@@ -904,6 +911,17 @@ struct SignalASIConversationHubView: View {
         }
       }
       Spacer(minLength: 4)
+      if let updatedAt, updatedAt.timeIntervalSince1970 > 0 {
+        Text(
+          SignalASIChatListTimeFormatter.string(
+            for: updatedAt,
+            language: interfaceLanguage
+          )
+        )
+        .font(.system(size: 11.5, weight: .regular))
+        .foregroundColor(.signalASITextSecondary)
+        .lineLimit(1)
+      }
       if trailing == "chevron.right" {
         Image(systemName: trailing)
           .font(.system(size: 12, weight: .semibold))
