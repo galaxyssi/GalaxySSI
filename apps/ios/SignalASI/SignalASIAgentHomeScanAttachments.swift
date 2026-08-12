@@ -61,19 +61,27 @@ extension AgentHomeView {
     let requestedDesktopID = parts.count > 1
       ? parts.dropLast().map(String.init).joined(separator: ":")
       : ""
-    return store.visibleContacts.first { contact in
-      guard contact.type == "agent" else { return false }
-      let knownIDs = [contact.id, contact.signalASIId, contact.connectorAgentId]
+    return store.contacts.first { contact in
+      guard contact.type == "agent", !contact.deleted else { return false }
+      let knownIDs = [
+        contact.id,
+        contact.signalASIId,
+        contact.agentId ?? "",
+        contact.connectorAgentId
+      ]
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
       if knownIDs.contains(normalizedID) {
         return true
       }
+      let knownAgentIDs = [contact.agentId ?? "", contact.connectorAgentId]
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
       guard !requestedDesktopID.isEmpty else {
-        return contact.connectorAgentId == requestedAgentID
+        return knownAgentIDs.contains(requestedAgentID)
       }
       return contact.desktopId == requestedDesktopID &&
-        contact.connectorAgentId == requestedAgentID
+        knownAgentIDs.contains(requestedAgentID)
     }
   }
 
