@@ -225,6 +225,18 @@ struct SignalASILocalModelLabView: View {
             tint: .orange,
             badge: t("signalasi.local_model.unsupported", "Unsupported")
           )
+          .contextMenu {
+            if profile.sourceTrust == .signedDeployment {
+              Button(role: .destructive) {
+                deleteLocalModel(profile)
+              } label: {
+                Label(
+                  t("signalasi.local_model.remove_catalog_entry", "Remove catalog entry"),
+                  systemImage: "trash"
+                )
+              }
+            }
+          }
         } else if installed {
           SignalASILocalModelLabToggleRow(
             title: profile.displayName,
@@ -648,6 +660,7 @@ struct SignalASILocalModelLabView: View {
       LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: false)
       LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
       try? localModelStorage.delete(profile)
+      LocalModelRuntimeCatalog.removeProfile(profile)
     }
     statusMessage = String(
       format: t("signalasi.local_model.delete_completed", "%@ deleted"),
@@ -706,13 +719,14 @@ struct SignalASILocalModelLabView: View {
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
-    guard profile.supportsIOSRuntime else {
+    if !profile.supportsIOSRuntime {
+      let chipset = profile.targetChipset.isEmpty ? "Android" : profile.targetChipset
       return String(
         format: t(
           "signalasi.local_model.unsupported_subtitle",
-          "%@ is an Android/Qualcomm artifact and cannot run on iOS"
+          "%@ is an Android/vendor deployment and cannot run on iOS"
         ),
-        profile.artifactFormat.rawValue
+        chipset
       )
     }
     var detail = String(
@@ -748,15 +762,12 @@ struct SignalASILocalModelLabView: View {
 
   private func issueLabel(_ issue: LocalModelRuntimeIssue) -> String {
     switch issue {
+    case .unsupportedPlatform:
+      return t("signalasi.local_model.issue_unsupported_platform", "This model format is not supported by the iOS inference runtime")
     case .modelFileMissing:
       return t("signalasi.local_model.issue_file_missing", "The selected model file is missing")
     case .modelFileInvalid:
       return t("signalasi.local_model.issue_file_invalid", "The selected model file is empty or invalid")
-    case .unsupportedPlatform:
-      return t(
-        "signalasi.local_model.issue_unsupported_platform",
-        "This model format is not supported by the iOS inference runtime"
-      )
     case .systemLowMemory:
       return t("signalasi.local_model.issue_system_low_memory", "iOS is under memory pressure; retry later")
     case .insufficientMemory:
