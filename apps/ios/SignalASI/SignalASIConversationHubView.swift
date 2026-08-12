@@ -420,6 +420,9 @@ struct SignalASIConversationHubView: View {
       if multiDeleteMode {
         toggleSelectedSession(session.id)
       } else {
+        if showingArchived && session.status == .archived {
+          _ = store.restoreAgentSession(id: session.id)
+        }
         _ = store.switchAgentSession(session.id)
         dismiss()
       }
