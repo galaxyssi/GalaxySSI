@@ -1,6 +1,11 @@
 import Foundation
 
 enum AgentPeerChatTransport {
+  struct StoredHistoryMigrationResult {
+    var messages: [String: [ChatMessage]]
+    var changed: Bool
+  }
+
   struct DeliveryTraceEntry: Equatable {
     var stage: String
     var detail: String
@@ -95,5 +100,68 @@ enum AgentPeerChatTransport {
       )
     }
     return AgentRichContentCodec.encode(blocks)
+  }
+
+  static func migrateStoredHistory(
+    _ messagesByContact: [String: [ChatMessage]]
+  ) -> StoredHistoryMigrationResult {
+    var migrated = messagesByContact
+    var changed = false
+
+    for (contactId, messages) in messagesByContact {
+      let normalized = messages.map { message -> ChatMessage in
+        let content = storedContent(message.content)
+        let richOutput = message.richOutputJson.isEmpty
+          ? storedRichOutput(message.content)
+          : message.richOutputJson
+        guard content != message.content || richOutput != message.richOutputJson else {
+          return message
+        }
+        var updated = message
+        updated.content = content
+        updated.richOutputJson = richOutput
+        changed = true
+        return updated
+      }
+      migrated[contactId] = normalized
+    }
+
+    return StoredHistoryMigrationResult(messages: migrated, changed: changed)
+  }
+
+  private static func storedContent(_ raw: String) -> String {
+    guard let envelope = storedEnvelope(raw),
+          envelope.string("type") == "peer_message" else {
+      return raw
+    }
+    return envelope.string("content")
+  }
+
+  private static func storedRichOutput(_ raw: String) -> String {
+    guard let envelope = storedEnvelope(raw),
+          envelope.string("type") == "peer_message",
+          let attachments = envelope["attachments"] as? [[String: Any]],
+          !attachments.isEmpty else {
+      return ""
+    }
+    return richOutput(
+      for: attachments,
+      context: [
+        "desktop_id": envelope.string("desktop_id").ifBlank(envelope.string("from")),
+        "client_route_id": envelope.string("client_route_id"),
+        "conversation_id": envelope.string("conversation_id"),
+        "task_id": envelope.string("task_id"),
+        "turn_id": envelope.string("turn_id").ifBlank(envelope.string("source_message_id")),
+        "contact_id": envelope.string("contact_id")
+      ]
+    )
+  }
+
+  private static func storedEnvelope(_ raw: String) -> [String: Any]? {
+    guard let data = raw.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    return object
   }
 }

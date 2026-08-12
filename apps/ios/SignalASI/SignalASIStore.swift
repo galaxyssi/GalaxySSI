@@ -318,10 +318,11 @@ final class SignalASIStore: ObservableObject {
     let shouldMigrateLegacyState = encryptedState == nil && legacyState != nil
     if let data = stateData,
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
+      let historyMigration = AgentPeerChatTransport.migrateStoredHistory(state.messagesByContact)
       profile = state.profile
       contacts = state.contacts
       friendRequests = state.friendRequests
-      messagesByContact = state.messagesByContact
+      messagesByContact = historyMigration.messages
       readAtByContact = state.readAtByContact
       serverLinks = state.serverLinks
       voiceSettings = state.voiceSettings
@@ -362,7 +363,7 @@ final class SignalASIStore: ObservableObject {
       )
       modelPlannerSettings = state.modelPlannerSettings
       globalAgentSettings = state.globalAgentSettings.normalized
-      if shouldMigrateLegacyState {
+      if shouldMigrateLegacyState || historyMigration.changed {
         save()
       }
     } else {
@@ -1161,7 +1162,9 @@ final class SignalASIStore: ObservableObject {
       friendRequests = payload.friendRequests
     }
     if includeMessages, payload.includesMessages {
-      messagesByContact = payload.messagesByContact
+      messagesByContact = AgentPeerChatTransport
+        .migrateStoredHistory(payload.messagesByContact)
+        .messages
       readAtByContact = payload.readAtByContact
     }
     if payload.includesAgentData {
