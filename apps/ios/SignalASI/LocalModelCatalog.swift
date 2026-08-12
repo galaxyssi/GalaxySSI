@@ -13,7 +13,9 @@ struct LocalModelProfileStore {
   }
 
   func upsert(_ profile: LocalModelRuntimeProfile) {
-    guard profile.sourceTrust == .hubVerified, profile.downloadable else { return }
+    guard profile.sourceTrust == .hubVerified,
+          profile.supportsIOSRuntime,
+          profile.downloadable else { return }
     let updated = (list().filter { $0.id != profile.id } + [profile])
       .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     guard let data = try? JSONEncoder().encode(updated) else { return }
@@ -94,12 +96,15 @@ enum LocalModelRuntimeCatalog {
         !artifact.repositoryId.localizedCaseInsensitiveContains("qwen3.5"),
       visionCapable: artifact.visionCapable,
       sourceTrust: .hubVerified,
-      sourceHub: artifact.source
+      sourceHub: artifact.source,
+      preferredAccelerator: .gpu,
+      artifactFormat: .gguf
     )
   }
 
   static func artifact(for profile: LocalModelRuntimeProfile) -> LocalModelHubArtifact? {
-    guard profile.downloadable,
+    guard profile.supportsIOSRuntime,
+          profile.downloadable,
           let encodedRepository = profile.repositoryId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
           let encodedFileName = profile.fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
       return nil
