@@ -41,8 +41,7 @@ struct SignalASIConversationHubView: View {
   @State private var preparedHubContent = SignalASIConversationHubPreparedContent(
     conversations: SignalASIConversationHubSections(pinned: [], recent: []),
     archivedCount: 0,
-    contacts: [],
-    contactSummaries: []
+    contacts: []
   )
 
   init(
@@ -500,8 +499,7 @@ struct SignalASIConversationHubView: View {
           archived: archived
         ),
         archivedCount: sourceConversations.filter { $0.status == .archived }.count,
-        contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query),
-        contactSummaries: contactSummaries
+        contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query)
       )
     }.value
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }

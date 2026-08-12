@@ -62,8 +62,7 @@ enum SignalASINavigationContentPrewarm {
           archived: false
         ),
         archivedCount: conversations.filter { $0.status == .archived }.count,
-        contacts: SignalASIConversationHubModels.contacts(contacts, query: ""),
-        contactSummaries: contactSummaries
+        contacts: SignalASIConversationHubModels.contacts(contacts, query: "")
       )
       let localProfiles = LocalModelRuntimeSettings.activeProfiles()
       let callableTargets = AgentCallableTargetCatalog.build(
