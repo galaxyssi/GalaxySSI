@@ -24,6 +24,7 @@ struct SignalASIAgentComposerView: View {
   var focusRequest: Int = 0
   var onRemoveAttachment: (SignalASIDraftAttachment) -> Void
   var onNewSession: () -> Void
+  var onOpenSessions: () -> Void
   var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
@@ -403,13 +404,13 @@ struct SignalASIAgentComposerView: View {
         closeTray()
         onNewSession()
       }
-      SignalASIAgentComposerTrayNavigationLink(
+      SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_sessions", "Sessions"),
         systemImage: "tray.full",
-        minimumTouchSize: minimumTouchSize,
-        destination: SignalASIAgentSessionsView()
+        minimumTouchSize: minimumTouchSize
       ) {
         closeTray()
+        onOpenSessions()
       }
       SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_scan", "Scan"),
@@ -645,34 +646,6 @@ private struct SignalASIAgentComposerTrayButton: View {
         minimumTouchSize: minimumTouchSize
       )
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(Text(title))
-  }
-}
-
-private struct SignalASIAgentComposerTrayNavigationLink<Destination: View>: View {
-  var title: String
-  var systemImage: String
-  var minimumTouchSize: CGFloat
-  var destination: Destination
-  var onNavigate: () -> Void
-
-  var body: some View {
-    NavigationLink(destination: destination) {
-      SignalASIAgentComposerTrayContent(
-        title: title,
-        systemImage: systemImage,
-        minimumTouchSize: minimumTouchSize
-      )
-    }
-    .simultaneousGesture(
-      TapGesture().onEnded { _ in
-        // Let NavigationLink activate before removing the tray that owns it.
-        DispatchQueue.main.async {
-          onNavigate()
-        }
-      }
-    )
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
   }
