@@ -3682,6 +3682,8 @@
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+        INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -3735,6 +3737,8 @@
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+        INFOPLIST_KEY_UIFileSharingEnabled = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;

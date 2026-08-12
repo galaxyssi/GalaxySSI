@@ -12,6 +12,58 @@ protocol AgentIOSDownloadManaging {
   func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
+private enum AgentIOSDownloadFilePolicy {
+  private static let extensionPattern = #"\.[A-Za-z0-9]{1,10}$"#
+  private static let genericTitles = ["download", "signalasi download"]
+
+  static func destinationFileName(url: URL, title: String, timestampMillis: Int64) -> String {
+    let sourceName = url.path.removingPercentEncoding?.split(separator: "/").last.map(String.init) ?? ""
+    let suppliedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let usableTitle = genericTitles.contains(where: {
+      $0.caseInsensitiveCompare(suppliedTitle) == .orderedSame
+    }) ? "" : suppliedTitle
+    let pathExtension = fileExtension(sourceName)
+    let titleExtension = fileExtension(usableTitle)
+    let isArticle = isArticleURL(url)
+    let resolvedExtension = titleExtension.isEmpty
+      ? (pathExtension.isEmpty ? (isArticle ? ".html" : ".bin") : pathExtension)
+      : titleExtension
+    let base: String
+    if !usableTitle.isEmpty {
+      base = titleExtension.isEmpty ? usableTitle : String(usableTitle.dropLast(titleExtension.count))
+    } else if !sourceName.isEmpty {
+      base = pathExtension.isEmpty ? sourceName : String(sourceName.dropLast(pathExtension.count))
+    } else {
+      base = isArticle ? "article" : "download"
+    }
+    let sanitized = base
+      .replacingOccurrences(of: #"[\\/:*?"<>|\p{Cntrl}]+"#, with: "-", options: .regularExpression)
+      .trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
+    let safeBase = String((sanitized.isEmpty ? (isArticle ? "article" : "download") : sanitized).prefix(96))
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+    let stamp = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1_000))
+    return "\(safeBase)-\(stamp)\(resolvedExtension)"
+  }
+
+  static func relativePath(for fileName: String) -> String {
+    "SignalASI Downloads/\(fileName)"
+  }
+
+  private static func fileExtension(_ value: String) -> String {
+    guard let range = value.range(of: extensionPattern, options: .regularExpression) else { return "" }
+    return String(value[range]).lowercased()
+  }
+
+  private static func isArticleURL(_ url: URL) -> Bool {
+    let host = url.host?.lowercased() ?? ""
+    return host == "mp.weixin.qq.com" || host.hasSuffix(".mp.weixin.qq.com") ||
+      host == "weixin.qq.com" || host.hasSuffix(".weixin.qq.com")
+  }
+}
+
 struct AgentIOSDownloadContext {
   var contactId: String
   var conversationId: String
@@ -105,7 +157,8 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     var completionDeliveredAtEpochMillis: Int64?
 
     func output(observedAtEpochMillis: Int64) -> AgentMcpJSONObject {
-      [
+      let displayName = title.ifBlank(localFileURL?.lastPathComponent ?? "Download")
+      return [
         "download_id": .int(id),
         "url": .string(url),
         "status": .int(status),
@@ -117,7 +170,9 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         "title": .string(title),
         "description": .string(description),
         "platform": .string("ios"),
-        "scope": .string("ios_app_cache_download"),
+        "scope": .string("ios_app_documents_download"),
+        "display_name": .string(displayName),
+        "relative_path": .string(AgentIOSDownloadFilePolicy.relativePath(for: displayName)),
         "created_at_epoch_ms": .int(createdAtEpochMillis),
         "updated_at_epoch_ms": .int(updatedAtEpochMillis),
         "observed_at_epoch_ms": .int(observedAtEpochMillis)
@@ -180,11 +235,20 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
     if let storageDirectory {
       self.storageDirectory = storageDirectory
     } else {
-      let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-      self.storageDirectory = base.appendingPathComponent("SignalASIDownloads", isDirectory: true)
+      self.storageDirectory = base.appendingPathComponent("SignalASI Downloads", isDirectory: true)
     }
-    self.stateURL = self.storageDirectory.appendingPathComponent("downloads.json", isDirectory: false)
+    let stateBase: URL
+    if let storageDirectory {
+      stateBase = storageDirectory
+    } else {
+      stateBase = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    }
+    self.stateURL = stateBase
+      .appendingPathComponent("SignalASIDownloads", isDirectory: true)
+      .appendingPathComponent("downloads.json", isDirectory: false)
     queue.sync {
       restoreStateLocked()
     }
@@ -233,13 +297,18 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       )
     }
 
+    let displayName = AgentIOSDownloadFilePolicy.destinationFileName(
+      url: downloadURL,
+      title: title,
+      timestampMillis: nowMillis
+    )
     let downloadId = queue.sync { () -> Int64 in
       let id = nextId
       nextId += 1
       records[id] = DownloadRecord(
         id: id,
         url: downloadURL.absoluteString,
-        title: bounded(title, 240),
+        title: displayName,
         description: bounded(description, 500),
         status: Status.pending,
         reason: 0,
@@ -297,7 +366,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       message: "Download enqueued",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_app_caches"),
+        "storage_scope": .string("ios_documents"),
         "android_status_compatible": .bool(true)
       ]
     )
@@ -321,7 +390,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       message: "Download status read",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_app_caches"),
+        "storage_scope": .string("ios_documents"),
         "android_status_compatible": .bool(true)
       ]
     )
@@ -350,13 +419,13 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         "download_id": .int(id),
         "removed": .int(removed.count),
         "platform": .string("ios"),
-        "scope": .string("ios_app_cache_download"),
+        "scope": .string("ios_app_documents_download"),
         "observed_at_epoch_ms": .int(nowMillis)
       ],
       message: "Download remove completed",
       metadata: [
         "implementation": .string("URLSession"),
-        "storage_scope": .string("ios_app_caches"),
+        "storage_scope": .string("ios_documents"),
         "file_deleted": .bool(removed.fileURL != nil)
       ]
     )
@@ -483,10 +552,9 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
           )
           let destination = self.storageDirectory.appendingPathComponent(
             self.safeFilename(
-              id: id,
               title: record.title,
-              response: response,
-              originalURL: originalURL
+              originalURL: originalURL,
+              timestampMillis: record.createdAtEpochMillis
             ),
             isDirectory: false
           )
@@ -567,47 +635,22 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
   }
 
   private func safeFilename(
-    id: Int64,
     title: String,
-    response: URLResponse?,
-    originalURL: URL
+    originalURL: URL,
+    timestampMillis: Int64
   ) -> String {
-    let suppliedTitle = bounded(title, 160)
-    let genericTitle = ["download", "signalasi download"].contains {
-      $0.caseInsensitiveCompare(suppliedTitle) == .orderedSame
-    }
-    let sourceFilename = response?.suggestedFilename ?? originalURL.lastPathComponent
-    let sourceExtension = sourceFilename.range(
-      of: #"\.[A-Za-z0-9]{1,10}$"#,
+    let candidate = bounded(title, 160)
+    if candidate.range(
+      of: #"-\d{8}-\d{6}-\d{3}(\.[A-Za-z0-9]{1,10})?$"#,
       options: .regularExpression
-    ).map { String(sourceFilename[$0]).lowercased() } ?? ""
-    let titleExtension = suppliedTitle.range(
-      of: #"\.[A-Za-z0-9]{1,10}$"#,
-      options: .regularExpression
-    ).map { String(suppliedTitle[$0]).lowercased() } ?? ""
-    let titleHasExtension = !titleExtension.isEmpty
-    let baseCandidate: String
-    if !suppliedTitle.isEmpty && !genericTitle {
-      baseCandidate = titleHasExtension
-        ? suppliedTitle.replacingOccurrences(
-          of: #"\.[A-Za-z0-9]{1,10}$"#,
-          with: "",
-          options: .regularExpression
-        )
-        : suppliedTitle
-    } else if !sourceFilename.isEmpty {
-      baseCandidate = sourceExtension.isEmpty
-        ? sourceFilename
-        : String(sourceFilename.dropLast(sourceExtension.count))
-    } else {
-      baseCandidate = "download"
+    ) != nil {
+      return candidate
     }
-    let sanitized = bounded(baseCandidate, 160)
-      .replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
-      .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-    let base = sanitized.isEmpty ? "download" : String(sanitized.prefix(120))
-    let `extension` = titleExtension.isEmpty ? sourceExtension : titleExtension
-    return "download-\(id)-\(base)\(extension)"
+    return AgentIOSDownloadFilePolicy.destinationFileName(
+      url: originalURL,
+      title: title,
+      timestampMillis: timestampMillis
+    )
   }
 
   private func fileSize(_ url: URL) -> Int64 {
