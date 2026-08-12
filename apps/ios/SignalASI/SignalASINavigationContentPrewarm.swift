@@ -20,6 +20,31 @@ enum SignalASINavigationContentPrewarm {
     let cloudContacts = store.cloudModelContacts
     let visibleContacts = store.visibleContacts
     let activeConversationID = store.activeAgentConversationId
+    let agentItems = conversations.map { conversation in
+      let latest = store.agentSessionMessages(conversation.id).last
+      let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
+      return SignalASIConversationHubItem(
+        id: conversation.id,
+        kind: .agent,
+        title: conversation.title,
+        subtitle: preview,
+        preview: preview,
+        updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+        pinned: conversation.pinned,
+        archived: conversation.status == .archived,
+        searchableMetadata: conversation.selectedModelOrAgent
+      )
+    }
+    let contactSummaries = contacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
+      let summary = store.conversationSummary(for: contact.id)
+      guard let latest = summary.lastMessage else { return nil }
+      return SignalASIConversationHubContactSummary(
+        contactId: contact.id,
+        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+        preview: summary.previewText,
+        updatedAt: latest.createdAt
+      )
+    }
     let apiKeys = cloudContacts.reduce(into: [String: String]()) { result, contact in
       for model in contact.cloudModels {
         if let key = store.apiKey(for: model), !key.isEmpty {
@@ -30,13 +55,15 @@ enum SignalASINavigationContentPrewarm {
     let settings = await SignalASISettingsSummaryCache.prepare(store: store)
     let prepared = await Task.detached(priority: .utility) {
       let hub = SignalASIConversationHubPreparedContent(
-        conversations: SignalASIConversationHubModels.conversations(
-          conversations,
+        conversations: SignalASIConversationHubModels.unifiedConversations(
+          agents: agentItems,
+          contacts: contactSummaries,
           query: "",
           archived: false
         ),
         archivedCount: conversations.filter { $0.status == .archived }.count,
-        contacts: SignalASIConversationHubModels.contacts(contacts, query: "")
+        contacts: SignalASIConversationHubModels.contacts(contacts, query: ""),
+        contactSummaries: contactSummaries
       )
       let localProfiles = LocalModelRuntimeSettings.activeProfiles()
       let callableTargets = AgentCallableTargetCatalog.build(
@@ -78,7 +105,8 @@ enum SignalASINavigationContentPrewarm {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
     let contacts = store.contacts.map {
-      "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.deleted):\($0.displayName):\($0.selectedCloudModelId)"
+      let latest = store.conversationSummary(for: $0.id).lastMessage
+      return "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.deleted):\($0.displayName):\($0.selectedCloudModelId):\(latest?.createdAt.timeIntervalSince1970 ?? 0)"
     }.joined(separator: "|")
     let localProfiles = LocalModelRuntimeSettings.activeProfiles().map { profile in
       "\(profile.id):\(LocalModelRuntimeSettings.isProfileEnabled(profile))"
