@@ -650,6 +650,7 @@ final class SignalASIStore: ObservableObject {
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
@@ -1952,6 +1953,7 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsAgentWorkflowTriggerStore.shared.clear()
     UserDefaultsAgentRemoteProactiveWebhookStore.shared.clear()
     workflowExecutionHistoryStore.clear()
+    UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
