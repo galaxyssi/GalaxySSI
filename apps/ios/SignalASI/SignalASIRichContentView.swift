@@ -596,7 +596,11 @@ private struct SignalASIRichBlockView: View {
 
   private var imageBlock: some View {
     if isDesktopArtifact {
-      desktopArtifactBlock
+      if let data = inlineImageData ?? localImageData ?? localDesktopArtifactImageData {
+        desktopArtifactImageBlock(data: data)
+      } else {
+        desktopArtifactBlock
+      }
     } else {
       let data = inlineImageData ?? localImageData
       let url = remoteURL
@@ -639,6 +643,33 @@ private struct SignalASIRichBlockView: View {
           SignalASIImageLightboxView(item: item)
         }
       }
+    }
+  }
+
+  private func desktopArtifactImageBlock(data: Data) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !block.title.isEmpty {
+        selectableText(block.title)
+          .font(.subheadline.weight(.semibold))
+      }
+
+      SignalASIAnimatedImageView(data: data)
+        .frame(width: SignalASIImageResourceDecoder.galleryThumbnailSize(from: data).width,
+               height: SignalASIImageResourceDecoder.galleryThumbnailSize(from: data).height)
+        .background(Color.signalASISearchBackground.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onTapGesture {
+          imageViewerItem = makeImageViewerItem(
+            data: data,
+            url: nil,
+            id: "\(block.id)-image",
+            title: block.title
+          )
+        }
+        .fullScreenCover(item: $imageViewerItem) { item in
+          SignalASIImageLightboxView(item: item)
+        }
     }
   }
 
@@ -1491,6 +1522,14 @@ private struct SignalASIRichBlockView: View {
 
   private var localImageData: Data? {
     guard let url = localURL else { return nil }
+    return SignalASIImageResourceDecoder.fileData(url)
+  }
+
+  private var localDesktopArtifactImageData: Data? {
+    guard isDesktopArtifact,
+          let url = coordinator.desktopArtifactStore.localFile(for: block) else {
+      return nil
+    }
     return SignalASIImageResourceDecoder.fileData(url)
   }
 
