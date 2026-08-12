@@ -222,6 +222,7 @@
     A10000000000000000000015 /* SignalASIContactExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SignalASIContactExchangeTests.swift */; };
     A10000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */; };
     A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */; };
+    A10000000000000000000483 /* SignalASIPairingLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* SignalASIPairingLifecycle.swift */; };
     A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */; };
     A1000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */; };
     A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */; };
@@ -1071,6 +1072,7 @@
     A20000000000000000000017 /* SignalASIContactExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactExchangeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkOutboxPayloadStore.swift; sourceTree = "<group>"; };
     A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOutboundAttachmentTransfer.swift; sourceTree = "<group>"; };
+    A20000000000000000000483 /* SignalASIPairingLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPairingLifecycle.swift; sourceTree = "<group>"; };
     A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentPublishOrder.swift; sourceTree = "<group>"; };
     A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPeerDeliveryPresentation.swift; sourceTree = "<group>"; };
     A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelArtifactDownloadSources.swift; sourceTree = "<group>"; };
@@ -2152,6 +2154,7 @@
         A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */,
         A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */,
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
+        A20000000000000000000483 /* SignalASIPairingLifecycle.swift */,
         A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */,
         A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */,
         A20000000000000000000482 /* AgentNoReplyReason.swift */,
@@ -3125,6 +3128,7 @@
         A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */,
         A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */,
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
+        A10000000000000000000483 /* SignalASIPairingLifecycle.swift in Sources */,
         A1000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift in Sources */,
         A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */,
         A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */,

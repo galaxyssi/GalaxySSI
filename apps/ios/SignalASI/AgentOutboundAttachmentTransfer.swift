@@ -366,6 +366,17 @@ final class AgentOutboundAttachmentTransferStore {
     _ = deliveryStore.discardBlockedByAttachmentTransfers(Array(normalized))
   }
 
+  @discardableResult
+  func discard(desktopId: String, deliveryStore: SignalASILinkDeliveryStore) -> Int {
+    let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanDesktopId.isEmpty else { return 0 }
+    let transferIds = pending()
+      .filter { $0.scope.desktopId == cleanDesktopId }
+      .map(\.transferId)
+    discard(transferIds, deliveryStore: deliveryStore)
+    return transferIds.count
+  }
+
   func acknowledgeStored(payload: [String: Any], deliveryStore: SignalASILinkDeliveryStore) -> StoredAcknowledgement? {
     let transferId = payload.string("transfer_id").lowercased()
     guard payload.string("status") == "stored",

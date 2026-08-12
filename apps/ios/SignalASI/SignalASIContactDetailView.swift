@@ -472,10 +472,11 @@ struct ContactDetailView: View {
     guard let contact else { return }
     if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
       Task { @MainActor in
-        _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
-        if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
-          dismiss()
-        }
+        _ = await coordinator.revokeDesktopPairing(
+          desktopId: desktopId,
+          deleteMessages: deleteMessagesWhenDeleting
+        )
+        dismiss()
       }
     } else if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
       dismiss()

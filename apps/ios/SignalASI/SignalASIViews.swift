@@ -1480,7 +1480,6 @@ struct ContactsView: View {
           if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
             Task { @MainActor in
               _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
-              _ = store.deleteContact(id: contact.id)
               contactPendingDeletion = nil
             }
           } else {
