@@ -11,6 +11,8 @@ struct SignalASIControlCenterView: View {
   )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
+  private let globalDeliberationStore = GlobalAgentDeliberationStore()
+  private let globalLongHorizonStore = GlobalLongHorizonGoalStore()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -106,6 +108,7 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligentCoreSection: some View {
+    let dashboard = globalAgentDashboard
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_intelligent_core", "Intelligent Core"))
       SignalASIControlCenterNavigationRow(
@@ -116,6 +119,25 @@ struct SignalASIControlCenterView: View {
         badge: agentCoreBadge
       ) {
         SignalASIAgentCoreView()
+      }
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_global_agent_title", "Global Super Agent"),
+        subtitle: String(
+          format: t(
+            "cc_global_agent_home_subtitle",
+            "%d topics - %d active goals - %d new insights"
+          ),
+          dashboard.topicCount,
+          dashboard.activeGoalCount,
+          dashboard.pendingInsightCount
+        ),
+        systemImage: "brain.head.profile",
+        tint: dashboard.settings.enabled ? .purple : .orange,
+        badge: dashboard.settings.enabled
+          ? t("cc_status_online", "Online")
+          : t("signalasi.status.paused", "Paused")
+      ) {
+        SignalASIGlobalAgentControlView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -236,8 +258,22 @@ struct SignalASIControlCenterView: View {
   }
 
   private var connectionTrustSection: some View {
+    let needsAttention = systemStatusNeedsAttention
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_connection_trust", "Connection & Trust"))
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_system_status_title", "System Status"),
+        subtitle: needsAttention
+          ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+          : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+        systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
+        tint: needsAttention ? .orange : .signalASIAccent,
+        badge: needsAttention
+          ? t("cc_status_degraded", "Degraded")
+          : t("cc_status_normal", "Normal")
+      ) {
+        SignalASISystemStatusView()
+      }
       SignalASIControlCenterNavigationRow(
         title: t("cc_nodes_title", "Agents, Models & Nodes"),
         subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
@@ -334,6 +370,25 @@ struct SignalASIControlCenterView: View {
     store.agentMemorySnapshot()
   }
 
+  private var globalAgentDashboard: SignalASIGlobalAgentDashboardSnapshot {
+    SignalASIGlobalAgentDashboardSnapshot.make(
+      settings: store.globalAgentSettings,
+      agentTasks: store.recentAgentTasks(limit: 200),
+      sessions: store.agentSessions(includeArchived: true),
+      memory: memorySnapshot,
+      knowledgeStats: store.agentKnowledgeStats,
+      knowledgeAudit: store.agentKnowledgeAccessAudit,
+      automationTasks: store.automationTasks(),
+      automationRuns: store.recentAutomationRuns(limit: 80),
+      proactiveMessages: store.globalProactiveMessages,
+      proactiveFeedback: store.globalAgentFeedback,
+      cognitionTasks: globalDeliberationStore.cognitionTasks(),
+      autonomousRuns: globalDeliberationStore.autonomousRuns(),
+      longHorizonGoals: globalLongHorizonStore.goals(),
+      researchState: SignalASIGlobalAgentRuntimeBridge.researchState()
+    )
+  }
+
   private var recentTasks: [AgentTaskRecord] {
     store.recentAgentTasks(limit: 200)
   }
@@ -377,6 +432,23 @@ struct SignalASIControlCenterView: View {
 
   private var intelligenceResourceCount: Int {
     store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
+  }
+
+  private var systemStatusAvailableResourceCount: Int {
+    store.cloudModelContacts.count +
+      store.serverLinks.filter(\.paired).count +
+      store.customDeviceConnectors.filter(\.enabled).count
+  }
+
+  private var systemStatusLinkReady: Bool {
+    store.serverLinks.contains(where: \.paired) &&
+      SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
+  }
+
+  private var systemStatusNeedsAttention: Bool {
+    store.agentSafetySettings.executionPaused ||
+      !systemStatusLinkReady ||
+      systemStatusAvailableResourceCount == 0
   }
 
   private var resourcesBadge: String {
