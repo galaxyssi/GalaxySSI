@@ -11,7 +11,9 @@ private enum SignalASICapabilityLibraryKind: String, CaseIterable, Identifiable 
 struct SignalASICapabilityLibraryView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var selectedKind: SignalASICapabilityLibraryKind = .nativeTools
+  @State private var desktopMarketplaceRevision = 0
 
   private var nativeTools: [AgentNativeToolDescriptor] {
     AgentPhoneNativeToolCatalog.descriptors(
@@ -64,6 +66,7 @@ struct SignalASICapabilityLibraryView: View {
           .accessibilityLabel(t("signalasi.capability_library.tabs", "Capability type"))
 
           selectedContent
+            .id(desktopMarketplaceRevision)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -72,6 +75,9 @@ struct SignalASICapabilityLibraryView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onReceive(NotificationCenter.default.publisher(for: .signalASIDesktopMarketplaceDidUpdate)) { _ in
+      desktopMarketplaceRevision += 1
+    }
   }
 
   @ViewBuilder
@@ -96,7 +102,7 @@ struct SignalASICapabilityLibraryView: View {
         tint: .signalASIAccent,
         badge: t("agent_marketplace_built_in", "Built in")
       )
-      ForEach(Array(nativeTools.prefix(6))) { tool in
+      ForEach(nativeTools) { tool in
         SignalASISecurityNavigationRow(
           title: tool.title,
           subtitle: tool.description,
@@ -116,6 +122,7 @@ struct SignalASICapabilityLibraryView: View {
       ) {
         SignalASINativeToolCatalogView()
       }
+      desktopMarketplaceContent(kind: .nativeTool)
     }
   }
 
@@ -138,6 +145,7 @@ struct SignalASICapabilityLibraryView: View {
       ) {
         SignalASIMcpControlCenterView()
       }
+      desktopMarketplaceContent(kind: .mcp)
     }
   }
 
@@ -160,7 +168,91 @@ struct SignalASICapabilityLibraryView: View {
       ) {
         SignalASIAutomationView()
       }
+      desktopMarketplaceContent(kind: .automation)
     }
+  }
+
+  @ViewBuilder
+  private func desktopMarketplaceContent(kind: AgentCapabilityCatalogKind) -> some View {
+    let items = coordinator.desktopMarketplaceItems(kind: kind)
+    if !items.isEmpty {
+      SignalASISecuritySectionTitle(title: t("agent_marketplace_desktop_title", "Desktop Marketplace"))
+      ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+        SignalASISecurityStatusRow(
+          title: item.name,
+          subtitle: desktopMarketplaceSummary(item),
+          systemImage: desktopMarketplaceSystemImage(item),
+          tint: desktopMarketplaceTint(item),
+          badge: desktopMarketplaceStatus(item)
+        )
+      }
+    }
+  }
+
+  private func desktopMarketplaceSummary(_ item: AgentDesktopMarketplaceItem) -> String {
+    let version = !item.installedVersion.isEmpty && item.installedVersion != item.availableVersion
+      ? "\(item.installedVersion) -> \(item.availableVersion)"
+      : item.availableVersion
+    var parts = [
+      item.desktopName,
+      String(format: t("agent_marketplace_version", "v%@"), version)
+    ]
+    if !item.capabilities.isEmpty {
+      parts.append(String(format: t("agent_marketplace_capability_count", "%d capabilities"), item.capabilities.count))
+    }
+    if !item.permissionDiff.added.isEmpty {
+      parts.append(String(format: t("agent_marketplace_new_permission_count", "%d new permissions"), item.permissionDiff.added.count))
+    } else if !item.permissions.isEmpty {
+      parts.append(String(format: t("agent_marketplace_permission_count", "%d permissions"), item.permissions.count))
+    }
+    if !item.summary.isBlank {
+      parts.append(item.summary)
+    }
+    return parts.joined(separator: " / ")
+  }
+
+  private func desktopMarketplaceStatus(_ item: AgentDesktopMarketplaceItem) -> String {
+    if item.revoked {
+      return t("agent_marketplace_access_revoked", "Access revoked")
+    }
+    if item.updateAvailable {
+      return t("agent_marketplace_update", "Update")
+    }
+    switch item.installState {
+    case .builtIn:
+      return t("agent_marketplace_built_in", "Built in")
+    case .available:
+      return t("agent_capability_install", "Install")
+    case .installed:
+      return item.enabled
+        ? t("agent_capability_added", "Added")
+        : t("agent_marketplace_disabled", "Disabled")
+    case .needsSetup:
+      return t("agent_capability_requires_setup", "Setup")
+    case .unavailable:
+      return t("badge_unavailable", "Unavailable")
+    }
+  }
+
+  private func desktopMarketplaceSystemImage(_ item: AgentDesktopMarketplaceItem) -> String {
+    switch item.kind {
+    case .nativeTool:
+      return "wrench.and.screwdriver"
+    case .mcp:
+      return "shippingbox"
+    case .automation:
+      return "arrow.triangle.2.circlepath"
+    }
+  }
+
+  private func desktopMarketplaceTint(_ item: AgentDesktopMarketplaceItem) -> Color {
+    if item.revoked || item.installState == .unavailable {
+      return .orange
+    }
+    if item.installState == .needsSetup {
+      return .yellow
+    }
+    return .blue
   }
 
   private func isAvailable(_ tool: AgentNativeToolDescriptor) -> Bool {
