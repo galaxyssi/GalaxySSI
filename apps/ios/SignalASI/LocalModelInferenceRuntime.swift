@@ -41,6 +41,7 @@ final class LocalModelInferenceRuntime {
     defer { lock.unlock() }
     let selectedProfile = LocalModelRuntimeSettings.selectedProfile()
     let backgroundReady = backend.isAvailable &&
+      LocalModelRuntimeSettings.isProfileEnabled(selectedProfile) &&
       Self.backgroundSafe(selectedProfile) &&
       storage.inspect(selectedProfile).installed &&
       canRunBackgroundLocked()
