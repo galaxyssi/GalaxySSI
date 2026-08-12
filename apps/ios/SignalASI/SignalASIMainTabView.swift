@@ -2,9 +2,16 @@ import SwiftUI
 
 struct SignalASIMainTabView: View {
   @State private var selectedTab: SignalASIMainTab = .agent
+  @State private var pendingContactId = ""
 
   var body: some View {
     selectedContent
+      .onAppear(perform: consumePendingContact)
+      .onReceive(NotificationCenter.default.publisher(for: .signalASIOpenContact)) { notification in
+        let contactId = (notification.userInfo?["contactId"] as? String)
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        routeToContact(contactId)
+      }
   }
 
   @ViewBuilder
@@ -20,7 +27,9 @@ struct SignalASIMainTabView: View {
     case .messages:
       ChatListView(
         showsBackButton: false,
-        onNavigateToMainTab: { selectedTab = $0 }
+        onNavigateToMainTab: { selectedTab = $0 },
+        initialContactId: pendingContactId,
+        onInitialContactHandled: { pendingContactId = "" }
       )
     case .contacts:
       ContactsView(showsBackButton: false)
@@ -40,6 +49,18 @@ struct SignalASIMainTabView: View {
         }
       )
     }
+  }
+
+  private func consumePendingContact() {
+    let contactId = UserDefaults.standard.string(forKey: "signalasi.pending_open_contact") ?? ""
+    routeToContact(contactId)
+  }
+
+  private func routeToContact(_ contactId: String) {
+    guard !contactId.isEmpty else { return }
+    UserDefaults.standard.removeObject(forKey: "signalasi.pending_open_contact")
+    pendingContactId = contactId
+    selectedTab = .messages
   }
 }
 

@@ -54,6 +54,7 @@
 "signalasi.capability_library.mcp_section" = "MCP 服务";
 "signalasi.capability_library.mcp_summary" = "%d 个已安装连接";
 "signalasi.capability_library.mcp_subtitle" = "连接远程服务或安装已验证的本地 MCP 包";
+"signalasi.capability_library.mcp_recommended" = "推荐 MCP";
 "signalasi.capability_library.open_mcp" = "管理 MCP";
 "signalasi.capability_library.open_mcp_subtitle" = "添加服务、安装包、测试连接并查看权限";
 "signalasi.capability_library.automation_section" = "可复用自动化";
@@ -2628,6 +2629,9 @@
 "signalasi.data_backup.import_messages_subtitle" = "%d 个会话 · %d 条消息";
 "signalasi.data_backup.import_agent_data" = "Agent 数据";
 "signalasi.data_backup.import_agent_data_subtitle" = "%d 条记忆 · %d 条知识 · %d 个任务 · %d 个会话";
+"signalasi.data_backup.import_global_agent" = "个人 ASI 状态";
+"signalasi.data_backup.global_agent_subtitle" = "%d 条运行记录 · 认知、自主、研究与记忆演化";
+"signalasi.data_backup.global_agent_not_included" = "未包含个人 ASI 运行状态";
 "signalasi.data_backup.import_language_voice" = "语言与语音";
 "signalasi.data_backup.import_language_voice_subtitle" = "%@ · 语音 %@ · %@ · ASR %@";
 "signalasi.data_backup.import_configuration" = "配置";
@@ -2910,6 +2914,7 @@
 "agent_plan_error_dependency" = "请先删除依赖此动作的后续动作";
 "cc_global_agent_title" = "全局超级智能体";
 "cc_global_agent_subtitle" = "跨所有会话与长期目标持续工作的个人智能";
+"cc_global_agent_home_subtitle" = "%d 个主题 - %d 个活跃目标 - %d 条新洞察";
 "cc_global_understanding_active" = "全局理解运行中";
 "cc_global_research_active" = "自主研究运行中";
 "cc_global_metric_topics" = "主题";
@@ -3068,6 +3073,7 @@
 "signalasi.system_status.refresh_subtitle" = "重新读取内存、传输、工具、任务与资源路由状态";
 "cc_profile_title" = "我的 SignalASI";
 "cc_profile_subtitle_ios" = "身份受 iOS 安全边界保护";
+"cc_section_my_identity" = "我的身份";
 "cc_identity_verified" = "身份已验证";
 "cc_section_identity" = "身份";
 "cc_nickname_title" = "昵称";
@@ -3089,6 +3095,7 @@
 "settings_my_signalasi" = "我的 SignalASI";
 "cc_product_subtitle" = "智能体操作系统 · 本机在线";
 "cc_core_ready" = "核心就绪";
+"cc_privacy_badge" = "隐私保护";
 "cc_metric_resources" = "智能资源";
 "cc_metric_today_tasks" = "最近任务";
 "cc_metric_security" = "安全状态";
@@ -3467,6 +3474,7 @@
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
 "delivery_status_local_saved" = "本地保存";
+"signalasi.peer.send_pending" = "正在发送到设备……";
 "delivery_status_queued" = "已排队";
 "delivery_status_sent" = "已发送";
 "delivery_status_delivered" = "已送达";

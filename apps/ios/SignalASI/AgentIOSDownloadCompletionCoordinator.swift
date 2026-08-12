@@ -29,6 +29,7 @@ final class AgentIOSDownloadCompletionCoordinator {
     defer { deliveryInFlight.remove(completion.id) }
 
     guard let contactId = contactId(for: completion) else {
+      notify(completion)
       reporter.markCompletionDelivered(id: completion.id, nowMillis: nowMillis())
       return
     }
@@ -71,7 +72,39 @@ final class AgentIOSDownloadCompletionCoordinator {
       turnId: completion.turnId,
       richOutputJson: richOutput
     )
+    notify(completion)
     reporter.markCompletionDelivered(id: completion.id, nowMillis: nowMillis())
+  }
+
+  private func notify(_ completion: AgentIOSDownloadCompletion) {
+    let zh = languageTag(for: completion).hasPrefix("zh")
+    let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
+    let title: String
+    let body: String
+    if completion.succeeded {
+      title = zh ? "下载完成" : "Download complete"
+      body = zh
+        ? "\(name) 已保存到 SignalASI 下载。"
+        : "\(name) was saved to SignalASI Downloads."
+    } else {
+      title = zh ? "下载失败" : "Download failed"
+      let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
+      body = zh
+        ? "\(name) 下载失败\(reason)。"
+        : "\(name) failed to download\(reason)."
+    }
+    NotificationService.notify(
+      title: title,
+      body: body,
+      userInfo: [
+        "signalasi_notification_type": "agent_download",
+        "download_id": String(completion.id),
+        "contact_id": completion.contactId,
+        "conversation_id": completion.conversationId,
+        "turn_id": completion.turnId,
+        "succeeded": completion.succeeded
+      ]
+    )
   }
 
   private func contactId(for completion: AgentIOSDownloadCompletion) -> String? {
