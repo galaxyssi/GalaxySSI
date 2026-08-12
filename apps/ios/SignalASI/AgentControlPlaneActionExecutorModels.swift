@@ -1,6 +1,16 @@
 import CryptoKit
 import Foundation
 
+struct AgentControlPlaneWarmupResult: Equatable {
+  var requestedAgentIds: [String]
+  var warmedAgentIds: [String]
+  var failedAgentIds: [String]
+
+  var isComplete: Bool {
+    requestedAgentIds.count == warmedAgentIds.count && failedAgentIds.isEmpty
+  }
+}
+
 final class AgentControlPlaneActionExecutor: AgentActionExecutor {
   private let provider: ActionExecutorAgentProvider
   private let directory: AgentAdapterDirectory
@@ -29,6 +39,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     try? directory.register(provider)
     self.directory = directory
     self.teamDispatchCoordinator = AgentControlPlaneTeamDispatchCoordinator(provider: provider, directory: directory)
+    scheduleAdapterPrewarm()
   }
 
   init(provider: ActionExecutorAgentProvider) {
@@ -37,6 +48,12 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     try? directory.register(provider)
     self.directory = directory
     self.teamDispatchCoordinator = AgentControlPlaneTeamDispatchCoordinator(provider: provider, directory: directory)
+    scheduleAdapterPrewarm()
+  }
+
+  @discardableResult
+  func prewarm(agentIds: [String]? = nil) async -> AgentControlPlaneWarmupResult {
+    await provider.prewarm(agentIds: agentIds)
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
@@ -214,6 +231,12 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     provider.removeConnectorResponseObserver(token, from: bus)
   }
 
+  private func scheduleAdapterPrewarm() {
+    Task { [weak self] in
+      _ = await self?.prewarm()
+    }
+  }
+
   static func stableRunId(conversationId: String, turnId: String, actionId: String, agentId: String) -> String {
     let source = [conversationId, turnId, actionId, agentId].joined(separator: "\u{001f}")
     var bytes = Array(Insecure.MD5.hash(data: Data(source.utf8)))
@@ -318,6 +341,61 @@ final class ActionExecutorAgentProvider: AgentProvider {
     AgentProtocolAgreement(version: localProtocol.preferred, features: localProtocol.features)
   }
 
+  @discardableResult
+  func prewarm(agentIds: [String]? = nil) async -> AgentControlPlaneWarmupResult {
+    let registrations = registrationSnapshot()
+    let available = registrations.filter { registration in
+      registration.status != .offline &&
+        registration.status != .unreachable &&
+        registration.status != .permissionRequired
+    }
+    let requested = (agentIds ?? available.map(\.agentId))
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .stableDistinct()
+      .filter { id in available.contains { $0.agentId == id } }
+      .sorted()
+    guard !requested.isEmpty else {
+      return AgentControlPlaneWarmupResult(
+        requestedAgentIds: [],
+        warmedAgentIds: [],
+        failedAgentIds: []
+      )
+    }
+
+    var warmed: [String] = []
+    var failed: [String] = []
+    await withTaskGroup(of: (String, Bool).self) { group in
+      for agentId in requested {
+        group.addTask { [weak self] in
+          guard let self else { return (agentId, false) }
+          do {
+            guard let adapter = try await self.adapter(agentId: agentId) else {
+              return (agentId, false)
+            }
+            _ = try await adapter.connect()
+            return (agentId, true)
+          } catch {
+            await self.invalidateAdapter(agentId: agentId)
+            return (agentId, false)
+          }
+        }
+      }
+      for await (agentId, succeeded) in group {
+        if succeeded {
+          warmed.append(agentId)
+        } else {
+          failed.append(agentId)
+        }
+      }
+    }
+    return AgentControlPlaneWarmupResult(
+      requestedAgentIds: requested,
+      warmedAgentIds: warmed.sorted(),
+      failedAgentIds: failed.sorted()
+    )
+  }
+
   func disconnect() async {
     lock.lock()
     let adapters = Array(adaptersByAgentId.values)
@@ -384,6 +462,13 @@ final class ActionExecutorAgentProvider: AgentProvider {
     adaptersByAgentId[agentId] = adapter
     lock.unlock()
     return adapter
+  }
+
+  private func invalidateAdapter(agentId: String) async {
+    lock.lock()
+    let adapter = adaptersByAgentId.removeValue(forKey: agentId)
+    lock.unlock()
+    await adapter?.disconnect()
   }
 
   func recoverRuns() async throws -> [AgentRecoverableRun] {
