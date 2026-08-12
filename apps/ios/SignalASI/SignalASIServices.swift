@@ -10,6 +10,7 @@ final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
+  @Published private(set) var pendingPeerSendContactIds: Set<String> = []
   @Published private(set) var artifactRevision = 0
   @Published private(set) var artifactDownloadCompletedRevision = 0
   @Published private(set) var artifactDownloadSavedPath = ""
@@ -1432,6 +1433,15 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    let isPeerSend = contact.isDesktopDeviceContact
+    if isPeerSend {
+      guard pendingPeerSendContactIds.insert(contact.id).inserted else { return false }
+    }
+    defer {
+      if isPeerSend {
+        pendingPeerSendContactIds.remove(contact.id)
+      }
+    }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1448,6 +1458,15 @@ final class MessageCoordinator: ObservableObject {
       turnId: voiceSessionId,
       richOutputJson: richOutputJson
     )
+    if isPeerSend {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "peer_send_started",
+        detail: "Direct device message send started.",
+        status: .queued
+      )
+    }
     if !voiceSessionId.isEmpty {
       _ = VoiceAgentRunBridgeRegistry.shared.bindTransportIdentity(
         sessionId: voiceSessionId,
