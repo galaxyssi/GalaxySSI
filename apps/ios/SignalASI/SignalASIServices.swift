@@ -4998,6 +4998,7 @@ final class MessageCoordinator: ObservableObject {
     let result = await mqttClient.publish(topic: link.routes.pairingTopic, payload: payload)
     if result.accepted {
       store.markServerPaired(desktopId: qr.desktopId, access: qr.access)
+      _ = store.updatePairedDesktopDevice(from: qr.raw, link: link)
       pairingStatus = "Pairing confirmed"
       requestCapabilityManifestRefresh(force: true)
     } else {
