@@ -294,15 +294,15 @@ struct AgentIOSSystemNativeToolExecutor {
   }
 
   private func downloadEnqueue(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
-    let url = boundedString(invocation.input["url"]?.stringValue, limit: 4_096)
-    guard isHTTPSURL(url) else {
+    let suppliedURL = boundedString(invocation.input["url"]?.stringValue, limit: 4_096)
+    guard let normalizedURL = AgentIOSPublicDownloadPolicy.normalizeHTTPSURL(suppliedURL) else {
       return AgentNativeToolExecutionResult.failure(
         code: "invalid_download_url",
-        message: "Only HTTPS downloads are allowed"
+        message: "A valid public HTTPS download URL is required"
       )
     }
     let result = downloadProvider.enqueueDownload(
-      url: url,
+      url: normalizedURL.absoluteString,
       title: boundedString(invocation.input["title"]?.stringValue, limit: 240),
       description: boundedString(invocation.input["description"]?.stringValue, limit: 500),
       context: AgentIOSDownloadContext(
@@ -567,16 +567,6 @@ struct AgentIOSSystemNativeToolExecutor {
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId)
       ]
     )
-  }
-
-  private func isHTTPSURL(_ value: String) -> Bool {
-    guard let components = URLComponents(string: value),
-          components.scheme?.lowercased() == "https",
-          let host = components.host,
-          !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return false
-    }
-    return true
   }
 
   private func boundedString(_ value: String?, limit: Int) -> String {
