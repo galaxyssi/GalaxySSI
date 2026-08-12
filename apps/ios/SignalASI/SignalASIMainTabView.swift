@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SignalASIMainTabView: View {
+  @EnvironmentObject private var store: SignalASIStore
   @State private var selectedTab: SignalASIMainTab = .agent
   @State private var pendingContactId = ""
 
@@ -11,6 +12,11 @@ struct SignalASIMainTabView: View {
         let contactId = (notification.userInfo?["contactId"] as? String)
           .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         routeToContact(contactId)
+      }
+      .task {
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
+        _ = await SignalASISettingsSummaryCache.prepare(store: store)
       }
   }
 

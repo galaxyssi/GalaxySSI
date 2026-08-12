@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-private struct SignalASISettingsSummarySnapshot {
+struct SignalASISettingsSummarySnapshot {
   var memoryCount = 0
   var memoryConflictCount = 0
   var knowledgeItemCount = 0
@@ -18,6 +18,85 @@ private struct SignalASISettingsSummarySnapshot {
   var mcpInstalled = 0
   var mcpReady = 0
   var mcpRecommended = 0
+}
+
+@MainActor
+enum SignalASISettingsSummaryCache {
+  private static var cachedKey = ""
+  private static var cachedSnapshot: SignalASISettingsSummarySnapshot?
+  private static var cachedAt = Date.distantPast
+  private static let maximumAge: TimeInterval = 30
+
+  static func key(for store: SignalASIStore) -> String {
+    let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
+    let conversationRevision = store.agentConversations.map(\.updatedAt).max() ?? 0
+    let contactRevision = store.contacts.map(\.updatedAt.timeIntervalSince1970).max() ?? 0
+    return [
+      "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
+      "\(store.agentTaskRecords.count):\(taskRevision)",
+      "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
+      "\(store.agentConversations.count):\(conversationRevision)",
+      "\(store.contacts.count):\(contactRevision)"
+    ].joined(separator: "|")
+  }
+
+  static func prepare(store: SignalASIStore) async -> SignalASISettingsSummarySnapshot {
+    let currentKey = key(for: store)
+    if currentKey == cachedKey,
+       Date().timeIntervalSince(cachedAt) < maximumAge,
+       let cachedSnapshot {
+      return cachedSnapshot
+    }
+
+    let memorySnapshot = store.agentMemorySnapshot()
+    let knowledgeStats = store.agentKnowledgeStats
+    let knowledgeHitCount = store.agentKnowledgeAccessAudit.count
+    let taskRecords = store.recentAgentTasks(limit: 200)
+    let automationTasks = store.automationTasks()
+    let conversations = store.agentSessions(includeArchived: true)
+    let prepared = await Task.detached(priority: .userInitiated) {
+      let runningPhases: Set<AgentPhase> = [
+        .observing,
+        .planning,
+        .executing,
+        .verifying,
+        .waitingConfirmation,
+        .waitingResponse,
+        .paused
+      ]
+      let tools = AgentPhoneNativeToolCatalog.descriptors()
+      let availableTools = tools.filter {
+        $0.risk != .blocked && $0.availability.status == .available
+      }.count
+      let mcpConnections = AgentMcpRegistry(
+        FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
+      ).list()
+      return SignalASISettingsSummarySnapshot(
+        memoryCount: memorySnapshot.activeCount,
+        memoryConflictCount: memorySnapshot.conflicts.count,
+        knowledgeItemCount: knowledgeStats.itemCount,
+        knowledgeSourceCount: knowledgeStats.sourceCount,
+        knowledgeHitCount: knowledgeHitCount,
+        taskCount: taskRecords.count,
+        runningTaskCount: taskRecords.filter { runningPhases.contains($0.phase) }.count,
+        automationCount: automationTasks.count,
+        enabledAutomationCount: automationTasks.filter(\.enabled).count,
+        sessionCount: conversations.count,
+        archivedSessionCount: conversations.filter { $0.status == .archived }.count,
+        nativeToolTotal: tools.count,
+        nativeToolAvailable: availableTools,
+        mcpInstalled: mcpConnections.count,
+        mcpReady: mcpConnections.filter {
+          $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+        }.count,
+        mcpRecommended: AgentDefaultCapabilityCatalog.mcpEntries.count
+      )
+    }.value
+    cachedKey = currentKey
+    cachedSnapshot = prepared
+    cachedAt = Date()
+    return prepared
+  }
 }
 
 struct SettingsView: View {
@@ -115,64 +194,12 @@ struct SettingsView: View {
   }
 
   private var settingsStatsTaskID: String {
-    let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
-    let conversationRevision = store.agentConversations.map(\.updatedAt).max() ?? 0
-    let contactRevision = store.contacts.map(\.updatedAt.timeIntervalSince1970).max() ?? 0
-    return [
-      "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
-      "\(store.agentTaskRecords.count):\(taskRevision)",
-      "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
-      "\(store.agentConversations.count):\(conversationRevision)",
-      "\(store.contacts.count):\(contactRevision)"
-    ].joined(separator: "|")
+    SignalASISettingsSummaryCache.key(for: store)
   }
 
   private func prepareSettingsStats() async {
     settingsStatsLoading = true
-    let memorySnapshot = store.agentMemorySnapshot()
-    let knowledgeStats = store.agentKnowledgeStats
-    let knowledgeHitCount = store.agentKnowledgeAccessAudit.count
-    let taskRecords = store.recentAgentTasks(limit: 200)
-    let automationTasks = store.automationTasks()
-    let conversations = store.agentSessions(includeArchived: true)
-    let prepared = await Task.detached(priority: .userInitiated) {
-      let runningPhases: Set<AgentPhase> = [
-        .observing,
-        .planning,
-        .executing,
-        .verifying,
-        .waitingConfirmation,
-        .waitingResponse,
-        .paused
-      ]
-      let tools = AgentPhoneNativeToolCatalog.descriptors()
-      let availableTools = tools.filter {
-        $0.risk != .blocked && $0.availability.status == .available
-      }.count
-      let mcpConnections = AgentMcpRegistry(
-        FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
-      ).list()
-      return SignalASISettingsSummarySnapshot(
-        memoryCount: memorySnapshot.activeCount,
-        memoryConflictCount: memorySnapshot.conflicts.count,
-        knowledgeItemCount: knowledgeStats.itemCount,
-        knowledgeSourceCount: knowledgeStats.sourceCount,
-        knowledgeHitCount: knowledgeHitCount,
-        taskCount: taskRecords.count,
-        runningTaskCount: taskRecords.filter { runningPhases.contains($0.phase) }.count,
-        automationCount: automationTasks.count,
-        enabledAutomationCount: automationTasks.filter(\.enabled).count,
-        sessionCount: conversations.count,
-        archivedSessionCount: conversations.filter { $0.status == .archived }.count,
-        nativeToolTotal: tools.count,
-        nativeToolAvailable: availableTools,
-        mcpInstalled: mcpConnections.count,
-        mcpReady: mcpConnections.filter {
-          $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
-        }.count,
-        mcpRecommended: AgentDefaultCapabilityCatalog.mcpEntries.count
-      )
-    }.value
+    let prepared = await SignalASISettingsSummaryCache.prepare(store: store)
     guard !Task.isCancelled else { return }
     settingsStats = prepared
     settingsStatsLoading = false
