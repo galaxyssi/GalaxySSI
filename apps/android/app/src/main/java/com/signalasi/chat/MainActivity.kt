@@ -1563,7 +1563,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val scanResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         if (scanResult != null) {
-            handleSecurityScan(scanResult.contents)
+            handleSecurityScan(scanResult.contents, autoConfirm = true)
             return
         }
         if (requestCode == REQUEST_IMPORT_BACKUP && resultCode == RESULT_OK) {
