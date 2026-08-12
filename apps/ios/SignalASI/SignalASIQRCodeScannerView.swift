@@ -170,12 +170,17 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
   private func configureSession() {
     guard !configured else { return }
-    guard let device = AVCaptureDevice.default(for: .video),
+    guard let device = AVCaptureDevice.default(
+      .builtInWideAngleCamera,
+      for: .video,
+      position: .back
+    ) ?? AVCaptureDevice.default(for: .video),
           let input = try? AVCaptureDeviceInput(device: device),
           session.canAddInput(input) else {
       reportScannerError(messages.cameraUnavailable)
       return
     }
+    configureCamera(device)
     session.addInput(input)
     let output = AVCaptureMetadataOutput()
     guard session.canAddOutput(output) else {
@@ -191,6 +196,17 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     view.layer.addSublayer(preview)
     configured = true
     startSession()
+  }
+
+  private func configureCamera(_ device: AVCaptureDevice) {
+    guard device.lockForConfigurationIfAvailable() else { return }
+    defer { device.unlockForConfiguration() }
+    if device.isFocusModeSupported(.continuousAutoFocus) {
+      device.focusMode = .continuousAutoFocus
+    }
+    if device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposureMode = .continuousAutoExposure
+    }
   }
 
   private func installPhotoButton() {
@@ -393,6 +409,12 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     didFinish = true
     statusLabel?.removeFromSuperview()
     onCode(value)
+  }
+}
+
+private extension AVCaptureDevice {
+  func lockForConfigurationIfAvailable() -> Bool {
+    (try? lockForConfiguration()) != nil
   }
 }
 
