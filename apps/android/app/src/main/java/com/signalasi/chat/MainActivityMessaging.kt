@@ -251,6 +251,10 @@ internal fun MainActivity.showMainTab(tab: String) {
     if (tab == PAGE_AGENT || tab == PAGE_MESSAGES || tab == PAGE_CONTACTS || tab == PAGE_DISCOVER || tab == PAGE_SETTINGS) {
         mainPage.visibility = View.VISIBLE
         mainTopBar.visibility = if (tab == PAGE_AGENT) View.GONE else View.VISIBLE
+        mainBackButton.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.INVISIBLE
+        mainBackButton.setOnClickListener {
+            if (activeMainTab == PAGE_SETTINGS) showMainTab(PAGE_AGENT)
+        }
         mainActionButton.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.INVISIBLE
         mainActionButton.text = when (tab) {
             PAGE_CONTACTS -> "+"

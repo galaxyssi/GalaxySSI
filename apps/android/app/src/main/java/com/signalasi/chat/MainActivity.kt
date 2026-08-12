@@ -327,6 +327,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var activeDesktopScreenView: DesktopRemoteScreenView? = null
     internal var activeDesktopScreenPlaceholder: TextView? = null
     internal lateinit var mainTitle: TextView
+    internal lateinit var mainBackButton: TextView
     internal lateinit var mainActionButton: TextView
     internal lateinit var chatPage: LinearLayout
     internal lateinit var chatTitle: TextView
@@ -964,6 +965,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         featureBackButton = findViewById(R.id.featureBackButton)
         controlCenterRenderer = ControlCenterRenderer(this)
         mainTitle = findViewById(R.id.mainTitle)
+        mainBackButton = findViewById(R.id.mainBackButton)
         mainActionButton = findViewById(R.id.mainActionButton)
         chatPage = findViewById(R.id.chatPage)
         statusDot = findViewById(R.id.statusDot)
