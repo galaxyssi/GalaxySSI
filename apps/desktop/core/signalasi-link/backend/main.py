@@ -690,6 +690,7 @@ def api_pairing_clear(request: Request, client_route_id: str = Query("")):
     status["revoke"] = revoke
     status["removed_sessions"] = removed_sessions
     status["transport_cleanup"] = transport_cleanup
+    status["forgotten_client_route_ids"] = [target["client_route_id"] for target in targets]
     return status
 
 class AgentSelfTestReq(BaseModel):
