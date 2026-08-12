@@ -149,6 +149,20 @@ struct SignalASIControlCenterView: View {
         SignalASIResourceRoutingView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_nodes_local_model_title", "Local Model Runtime"),
+        subtitle: t(
+          "cc_nodes_local_model_subtitle",
+          "On-device model lab, routing plans, and local inference settings"
+        ),
+        systemImage: "memorychip",
+        tint: localModelReady ? .signalASIAccent : .blue,
+        badge: localModelReady
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("status_needs_setup", "Needs Setup")
+      ) {
+        SignalASILocalModelLabView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_memory_title", "Memory & Personalization"),
         subtitle: String(
           format: t("cc_memory_subtitle", "%d long-term memories - user controlled"),
@@ -463,6 +477,10 @@ struct SignalASIControlCenterView: View {
       settings.maxActions,
       settings.maxReplans
     )
+  }
+
+  private var localModelReady: Bool {
+    LocalModelInferenceRuntime.shared.ready()
   }
 
   private var homeAssistantTint: Color {
