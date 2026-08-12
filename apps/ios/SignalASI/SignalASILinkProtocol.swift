@@ -244,7 +244,7 @@ enum SignalASILinkProtocol {
        content.data(using: .utf8)?.count ?? 0 > maxTextBytes {
       throw SignalASIError.invalidPayload("text exceeds Link limit.")
     }
-    let messageId = (payload["message_id"] as? String).ifBlank(UUID().uuidString)
+    let messageId = normalizedMessageId(payload["message_id"] as? String ?? "")
     let nowMilliseconds = Int64(now.timeIntervalSince1970 * 1000)
     let expiresAt = nowMilliseconds + Int64(defaultMessageTTLMilliseconds)
     var envelope: [String: Any] = [
@@ -264,6 +264,11 @@ enum SignalASILinkProtocol {
     }
     envelope["message_id"] = messageId
     return envelope
+  }
+
+  static func normalizedMessageId(_ value: String) -> String {
+    UUID(uuidString: value.trimmingCharacters(in: .whitespacesAndNewlines))?.uuidString
+      ?? UUID().uuidString
   }
 
   static func unwrapEnvelope(_ envelope: [String: Any], now: Date = Date()) -> [String: Any]? {
