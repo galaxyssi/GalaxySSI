@@ -129,6 +129,8 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
   private let sessionDelegate: AgentIOSDownloadSessionDelegate?
   private let storageDirectory: URL
   private let stateURL: URL
+  private let defaults: UserDefaults
+  private let secrets: SignalASISecretStore
   private var nextId: Int64 = 1
   private var records: [Int64: DownloadRecord] = [:]
   private var tasks: [Int64: URLSessionDownloadTask] = [:]
@@ -137,8 +139,12 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
 
   init(
     session: URLSession? = nil,
-    storageDirectory: URL? = nil
+    storageDirectory: URL? = nil,
+    defaults: UserDefaults = .standard,
+    secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
+    self.defaults = defaults
+    self.secrets = secrets
     if let session {
       self.session = session
       self.sessionDelegate = nil
@@ -580,8 +586,23 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
   }
 
   private func restoreStateLocked() {
-    guard let data = try? Data(contentsOf: stateURL),
-          let state = try? JSONDecoder().decode(PersistentState.self, from: data) else {
+    let encryptedData = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: Self.encryptedStateKey,
+      secrets: secrets
+    )
+    let legacyData = try? Data(contentsOf: stateURL)
+    let state: PersistentState
+    let loadedEncrypted: Bool
+    if let encryptedData,
+       let decoded = try? JSONDecoder().decode(PersistentState.self, from: encryptedData) {
+      state = decoded
+      loadedEncrypted = true
+    } else if let legacyData,
+              let decoded = try? JSONDecoder().decode(PersistentState.self, from: legacyData) {
+      state = decoded
+      loadedEncrypted = false
+    } else {
       return
     }
 
@@ -610,7 +631,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       }
       records[id] = record
     }
-    if changed {
+    if changed || !loadedEncrypted {
       persistLocked()
     }
   }
@@ -621,18 +642,18 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       records: records.values.sorted { $0.id < $1.id }
     )
     guard let data = try? JSONEncoder().encode(state) else { return }
-    do {
-      try FileManager.default.createDirectory(
-        at: storageDirectory,
-        withIntermediateDirectories: true
-      )
-      try data.write(to: stateURL, options: [.atomic])
-    } catch {
-      // Download results remain usable in memory when persistence is unavailable.
-    }
+    guard SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: defaults,
+      key: Self.encryptedStateKey,
+      secrets: secrets
+    ) else { return }
+    try? FileManager.default.removeItem(at: stateURL)
   }
 
   private func bounded(_ value: String, _ limit: Int) -> String {
     String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
   }
+
+  private static let encryptedStateKey = "signalasi-ios-downloads-v1"
 }
