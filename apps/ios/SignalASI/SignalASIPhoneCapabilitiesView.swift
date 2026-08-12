@@ -111,10 +111,10 @@ struct SignalASIPhoneCapabilitiesView: View {
       SignalASISecuritySectionTitle(title: t("cc_section_information_system", "Information System"))
       capabilityRow(
         title: t("cc_device_status_title", "Device Status"),
-        subtitle: t("cc_device_status_subtitle", "Battery, storage, sensors, and power state"),
+        subtitle: t("cc_device_status_subtitle", "Battery, memory, storage, network, and power state"),
         systemImage: "iphone",
         tint: .signalASIAccent,
-        keywords: ["battery", "storage", "sensor", "power"]
+        keywords: ["device.status", "battery", "memory", "ram", "storage", "network", "wifi", "power"]
       )
       capabilityRow(
         title: t("cc_location_title", "Location"),

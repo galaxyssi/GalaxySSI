@@ -795,7 +795,7 @@
 "cc_network_subtitle" = "Wi-Fi、蜂窝、蓝牙、NFC 与连接状态";
 "cc_section_information_system" = "信息与系统";
 "cc_device_status_title" = "设备状态";
-"cc_device_status_subtitle" = "电量、存储、温度、传感器与已安装应用";
+"cc_device_status_subtitle" = "电量、内存、存储、网络与电源状态";
 "cc_location_title" = "位置";
 "cc_location_subtitle" = "前台定位与用户授权的自动化";
 "cc_tool_catalog_title" = "完整原生工具目录";
