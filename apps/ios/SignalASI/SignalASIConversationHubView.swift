@@ -844,7 +844,7 @@ struct SignalASIConversationHubView: View {
         tint: contact.type == "device"
           ? .blue
           : (contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary),
-        trailing: "chevron.right"
+        trailing: ""
       )
     }
     .buttonStyle(.plain)
@@ -882,7 +882,8 @@ struct SignalASIConversationHubView: View {
     subtitle: String,
     systemImage: String,
     tint: Color,
-    trailing: String
+    trailing: String,
+    showsDisclosure: Bool = true
   ) -> some View {
     HStack(spacing: 10) {
       Image(systemName: systemImage)
@@ -916,6 +917,13 @@ struct SignalASIConversationHubView: View {
         Text(trailing)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)
+      }
+      if showsDisclosure {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(.signalASITextSecondary)
+          .frame(width: 20, height: 36)
+          .accessibilityHidden(true)
       }
     }
     .padding(.horizontal, 10)
