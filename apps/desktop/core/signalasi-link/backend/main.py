@@ -134,6 +134,27 @@ def signalasi_pairing_payload(
     return payload
 
 
+def compact_pairing_qr_payload(payload: dict) -> dict:
+    """Keep the optical QR small; full device metadata arrives after pairing."""
+    access = payload.get("pairing_access") or {}
+    control_offer = payload.get("desktop_control_authorization") or {}
+    compact = {
+        "t": "sv1",
+        "n": payload.get("desktop_name") or "SignalASI Desktop",
+        "k": payload["identity_key"],
+        "h": payload["identity_key_sha256"],
+        "c": payload["created_at"],
+        "s": payload["server_route_id"],
+        "x": payload["pairing_token"],
+        "e": payload["pairing_secret"],
+        "a": 1 if access.get("profile") == "desktop_executor" else 0,
+    }
+    authorization_token = str(control_offer.get("token") or "")
+    if authorization_token:
+        compact["o"] = authorization_token
+    return compact
+
+
 def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
     import base64
     import io
@@ -143,8 +164,10 @@ def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
     payload = signalasi_pairing_payload(
         grant_desktop_executor=grant_desktop_executor,
     )
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2, box_size=10)
-    qr.add_data(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    qr_payload = compact_pairing_qr_payload(payload)
+    encoded_payload = json.dumps(qr_payload, ensure_ascii=False, separators=(",", ":"))
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=4, box_size=10)
+    qr.add_data(encoded_payload)
     qr.make(fit=True)
     image = qr.make_image(fill_color="black", back_color="white")
     buffer = io.BytesIO()
@@ -158,6 +181,8 @@ def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
         "pairing_access": payload["pairing_access"],
         "desktop_device": payload.get("desktop_device") or {},
         "expires_at": int(time.time()) + 10 * 60,
+        "qr_payload_bytes": len(encoded_payload.encode("utf-8")),
+        "qr_version": qr.version,
     }
 
 @asynccontextmanager

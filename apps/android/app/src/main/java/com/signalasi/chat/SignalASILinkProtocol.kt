@@ -97,6 +97,61 @@ object SignalASILinkProtocol {
     fun needsCapabilityManifest(link: ServerLink): Boolean =
         link.capabilityManifestVersion < CAPABILITY_MANIFEST_VERSION
 
+    fun normalizePairingQr(source: JSONObject): JSONObject? {
+        if (source.optString("type") == "signalasi_verify") return source
+        if (source.optString("t") != "sv1") return null
+
+        val desktopName = source.optString("n").ifBlank { "SignalASI Desktop" }
+        val fingerprint = source.optString("h")
+        val serverRouteId = source.optString("s")
+        val executor = source.optInt("a") == 1
+        val scopes = mutableListOf(
+            SCOPE_AGENT_CHAT,
+            SCOPE_EXPLICIT_ATTACHMENTS,
+            SCOPE_TASK_WORKSPACE
+        ).apply {
+            if (executor) {
+                add(SCOPE_DESKTOP_EXECUTOR)
+                add(SCOPE_DESKTOP_CONTROL)
+                add(SCOPE_DESKTOP_NATIVE_TOOLS)
+                add(SCOPE_DESKTOP_EXTERNAL_FILES)
+            }
+        }
+        val createdAt = source.optLong("c")
+        return JSONObject()
+            .put("type", "signalasi_verify")
+            .put("version", VERSION)
+            .put("device", "pc")
+            .put("desktop_id", "desktop_${fingerprint.take(16)}")
+            .put("desktop_name", desktopName)
+            .put("desktop_display_name", desktopName)
+            .put("device_id", 1)
+            .put("identity_key", source.optString("k"))
+            .put("identity_key_sha256", fingerprint)
+            .put("created_at", createdAt)
+            .put("protocol", NAME)
+            .put("role", "server")
+            .put("server_route_id", serverRouteId)
+            .put("pairing_topic", "$TOPIC_ROOT/$serverRouteId/pair")
+            .put("pairing_token", source.optString("x"))
+            .put("pairing_secret", source.optString("e"))
+            .put(
+                "pairing_access",
+                JSONObject()
+                    .put("contract_version", ACCESS_CONTRACT)
+                    .put("version", 1)
+                    .put("profile", if (executor) ACCESS_DESKTOP_EXECUTOR else ACCESS_RESTRICTED)
+                    .put("scopes", JSONArray(scopes))
+                    .put("desktop_executor", executor)
+                    .put("issued_at", TimeUnit.SECONDS.toMillis(createdAt))
+            )
+            .apply {
+                source.optString("o").takeIf { it.isNotBlank() }?.let { token ->
+                    put("desktop_control_authorization", JSONObject().put("token", token))
+                }
+            }
+    }
+
     fun validatePairingQr(qr: JSONObject, nowMs: Long = System.currentTimeMillis()): Boolean {
         if (qr.optString("type") != "signalasi_verify") return false
         if (qr.optString("protocol") != NAME || qr.optInt("version") != VERSION) return false

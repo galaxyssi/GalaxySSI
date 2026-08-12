@@ -1054,6 +1054,9 @@ internal fun MainActivity.startSecurityScan() {
     IntentIntegrator(this).apply {
         setDesiredBarcodeFormats("QR_CODE")
         setOrientationLocked(false)
+        setCameraId(0)
+        setBeepEnabled(false)
+        setBarcodeImageEnabled(false)
         initiateScan()
     }
 }
@@ -1061,20 +1064,23 @@ internal fun MainActivity.startSecurityScan() {
 internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boolean = false) {
     if (contents.isNullOrBlank()) return
     try {
-        val json = JSONObject(contents)
-        if (json.optString("type") == "signalasi_verify") {
-            if (SignalASILinkProtocol.validatePairingQr(json) && SignalASICrypto.verifyPcIdentityFromQr(contents)) {
+        val scanned = JSONObject(contents)
+        val pairingQr = SignalASILinkProtocol.normalizePairingQr(scanned)
+        if (pairingQr != null) {
+            if (SignalASILinkProtocol.validatePairingQr(pairingQr) &&
+                SignalASICrypto.verifyPcIdentityFromQr(pairingQr.toString())
+            ) {
                 if (autoConfirm) {
-                    completeDesktopPairing(json)
+                    completeDesktopPairing(pairingQr)
                 } else {
-                    showDesktopPairingConfirmPage(json)
+                    showDesktopPairingConfirmPage(pairingQr)
                 }
             } else {
                 Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
             }
-        } else if (json.has("signalasi_id") || json.has("hermes_id")) {
+        } else if (scanned.has("signalasi_id") || scanned.has("hermes_id")) {
             AppStore.importContactQrAsRequest(this, contents)
-            Toast.makeText(this, getString(R.string.pairing_contact_request_received, json.optString("name", "")), Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.pairing_contact_request_received, scanned.optString("name", "")), Toast.LENGTH_LONG).show()
             refreshDirectoryContacts()
         } else {
             Toast.makeText(this, getString(R.string.pairing_invalid_qr), Toast.LENGTH_SHORT).show()
