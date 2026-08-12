@@ -266,6 +266,7 @@ struct SignalASIConversationHubView: View {
           showingArchived = false
         } else {
           _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
+          dismiss()
         }
       }
 
