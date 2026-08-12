@@ -467,8 +467,6 @@ internal fun MainActivity.applyDeviceProfileInputTargets() {
         agentAttachButton,
         agentSubmitButton,
         imageButton,
-        voiceButton,
-        emojiButton,
         sendButton
     ).forEach { view ->
         view.minimumWidth = targetPx
@@ -478,7 +476,6 @@ internal fun MainActivity.applyDeviceProfileInputTargets() {
         if (params.height in 1 until targetPx) params.height = targetPx
         view.layoutParams = params
     }
-    pressToTalkButton.minimumHeight = targetPx
 }
 
 internal fun MainActivity.maintainMcpCredentials() {

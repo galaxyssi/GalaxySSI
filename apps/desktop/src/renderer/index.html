@@ -28,10 +28,11 @@
       </div>
       <div id="taskHistory" class="task-history" aria-label="Task history"></div>
 
-      <div class="sidebar-task-heading peer-heading">
+      <button id="peerContactToggle" class="sidebar-task-heading peer-heading peer-toggle" type="button" aria-expanded="true" aria-controls="peerContactList">
         <span data-i18n="Contacts">Contacts</span>
         <em id="peerContactSummary" aria-live="polite">0</em>
-      </div>
+        <i class="peer-toggle-chevron" aria-hidden="true"></i>
+      </button>
       <div id="peerContactList" class="peer-contact-list" aria-label="Paired device contacts"></div>
 
       <div class="sidebar-footer">

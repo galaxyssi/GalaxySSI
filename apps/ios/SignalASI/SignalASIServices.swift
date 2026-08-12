@@ -6274,6 +6274,7 @@ final class MessageCoordinator: ObservableObject {
       ?? advertisedContactId.ifBlank(desktopId).ifBlank("hermes")
     let rawAttachments = payload["attachments"] as? [[String: Any]] ?? []
     let richOutputJson = AgentPeerChatTransport.richOutput(for: rawAttachments)
+    let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
     let content = payload.string("content")
       .ifBlank(payload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
@@ -6298,6 +6299,14 @@ final class MessageCoordinator: ObservableObject {
       turnId: turnId,
       richOutputJson: richOutputJson
     )
+    for entry in remoteDeliveryTrace where !["received", "decrypted"].contains(entry.stage) {
+      store.appendDeliveryTrace(
+        incoming.id,
+        contactId: contactId,
+        stage: entry.stage,
+        detail: entry.detail
+      )
+    }
     store.appendDeliveryTrace(
       incoming.id,
       contactId: contactId,
