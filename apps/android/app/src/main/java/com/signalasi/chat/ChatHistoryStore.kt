@@ -11,7 +11,8 @@ data class StoredIncomingMessage(
     val messageId: Long = 0L,
     val notify: Boolean = true,
     val taskId: String = "",
-    val remoteMessageId: String = ""
+    val remoteMessageId: String = "",
+    val attachments: JSONArray = JSONArray()
 )
 
 object ChatHistoryStore {
@@ -159,7 +160,7 @@ object ChatHistoryStore {
     fun inspectIncoming(context: Context, payload: String): StoredIncomingMessage? {
         val appContext = context.applicationContext
         AppStore.ensureInitialized(appContext)
-        return parseIncoming(appContext, payload).takeIf { it.content.isNotBlank() }
+        return parseIncoming(appContext, payload).takeIf { it.content.isNotBlank() || it.attachments.length() > 0 }
     }
 
     @Synchronized
@@ -167,7 +168,7 @@ object ChatHistoryStore {
         val appContext = context.applicationContext
         AppStore.ensureInitialized(appContext)
         val parsed = parseIncoming(appContext, payload)
-        if (parsed.content.isBlank()) return null
+        if (parsed.content.isBlank() && parsed.attachments.length() == 0) return null
         if (parsed.contactId == CONTACT_HERMES) AppStore.markHermesVerified(appContext)
         val incomingEnvelope = runCatching { JSONObject(payload) }.getOrNull()
         val deliveryTrace = parseDeliveryTrace(incomingEnvelope)
@@ -198,9 +199,10 @@ object ChatHistoryStore {
             .put("taskStatus", "")
             .put("taskStatusSeq", 0L)
             .put("remoteMessageId", parsed.remoteMessageId)
+            .put("attachments", parsed.attachments)
             .put("deliveryTrace", deliveryTrace)
         if (!history.upsert(message)) return null
-        if (parsed.contactId != CONTACT_SYSTEM) {
+        if (parsed.contactId != CONTACT_SYSTEM && !AppStore.isDesktopDeviceContact(appContext, parsed.contactId)) {
             GlobalConversationEventBus.publishChatMessage(
                 appContext,
                 parsed.contactId,
@@ -351,7 +353,7 @@ object ChatHistoryStore {
     private fun parseIncoming(context: Context, payload: String): StoredIncomingMessage {
         val json = runCatching { JSONObject(payload) }.getOrNull()
         return when (json?.optString("type").orEmpty()) {
-            "delivery_ack", "agent_task_event" -> StoredIncomingMessage(
+            "delivery_ack", "agent_task_event", "artifact_available", "artifact_download_failed" -> StoredIncomingMessage(
                 CONTACT_SYSTEM,
                 context.getString(R.string.system_contact_name),
                 "",
@@ -414,7 +416,8 @@ object ChatHistoryStore {
                     contactName(context, contactId),
                     content,
                     taskId = json?.optString("task_id").orEmpty(),
-                    remoteMessageId = json?.optString("message_id").orEmpty()
+                    remoteMessageId = json?.optString("message_id").orEmpty(),
+                    attachments = json?.optJSONArray("attachments") ?: JSONArray()
                 )
             }
         }

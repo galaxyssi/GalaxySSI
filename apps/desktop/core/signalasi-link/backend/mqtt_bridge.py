@@ -9,6 +9,7 @@ import os
 import queue
 import re
 import secrets
+import shutil
 import socket
 import threading
 import time
@@ -225,6 +226,7 @@ ARTIFACT_REDELIVERY_REQUEST_TYPE = "artifact_redelivery_request"
 INPUT_ATTACHMENT_MANIFEST_TYPE = "input_attachment_manifest"
 INPUT_ATTACHMENT_CHUNK_TYPE = "input_attachment_chunk"
 INPUT_ATTACHMENT_RECEIPT_TYPE = "input_attachment_receipt"
+PEER_MESSAGE_TYPE = "peer_message"
 EVOLUTION_TASK_EVENT_TYPE = "evolution_task_event"
 EVOLUTION_TASK_SNAPSHOT_TYPE = "evolution_task_snapshot"
 EVOLUTION_TASK_CREATE_TYPE = "evolution_task_create"
@@ -2317,6 +2319,9 @@ def accepted_delivery_ack_payload(payload: dict, message_id: str, trace: list[di
         "transport_message_id": message_id,
         "source_message_id": client_source_message_id,
         "client_source_message_id": client_source_message_id,
+        "contact_id": payload.get("contact_id", ""),
+        "desktop_id": desktop_id(),
+        "desktop_name": desktop_name(),
         "delivery_status": "accepted",
         "sender": "system",
         "time": time.time(),
@@ -2473,6 +2478,85 @@ def _publish_phone_payload(
         else:
             log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
         return info.rc == mqtt.MQTT_ERR_SUCCESS
+
+
+def _peer_attachment_descriptors(
+    payload: dict,
+    *,
+    client_route_id: str,
+) -> list[dict]:
+    from input_attachment_transfer import resolved_attachment_path
+    from peer_chat_store import peer_chat_store
+
+    conversation_id = str(payload.get("conversation_id") or "")
+    task_id = str(payload.get("task_id") or "")
+    turn_id = str(payload.get("turn_id") or "")
+    message_id = str(payload.get("message_id") or payload.get("source_message_id") or "")
+    result: list[dict] = []
+    for item in (payload.get("attachments") or [])[:12]:
+        if not isinstance(item, dict):
+            continue
+        source = resolved_attachment_path(
+            item,
+            client_route_id=client_route_id,
+            conversation_id=conversation_id,
+            task_id=task_id,
+            turn_id=turn_id,
+        )
+        if source is None:
+            raise ValueError("Peer attachment transfer is not verified")
+        result.append(peer_chat_store().import_attachment(
+            client_route_id=client_route_id,
+            message_id=message_id,
+            source=source,
+            name=str(item.get("name") or source.name),
+            mime_type=str(item.get("mime_type") or "application/octet-stream"),
+            sha256=str(item.get("sha256") or ""),
+        ))
+    return result
+
+
+def _route_peer_message_payload(
+    payload: dict,
+    *,
+    client_route_id: str,
+    paired_client: dict,
+) -> bool:
+    if str(payload.get("type") or "").strip().lower() != PEER_MESSAGE_TYPE:
+        return False
+    if str(payload.get("contact_id") or "") != desktop_id():
+        raise ValueError("Peer message target is not this Desktop")
+    from peer_chat_store import peer_chat_store
+
+    message_id = str(payload.get("message_id") or payload.get("source_message_id") or "")
+    attachments = _peer_attachment_descriptors(
+        payload,
+        client_route_id=client_route_id,
+    )
+    raw_time = float(payload.get("time") or time.time())
+    created_at_ms = int(raw_time if raw_time >= 100_000_000_000 else raw_time * 1000)
+    peer_chat_store().append(
+        client_route_id=client_route_id,
+        direction="inbound",
+        sender_name=str(
+            paired_client.get("profile_name")
+            or paired_client.get("display_name")
+            or paired_client.get("device_name")
+            or "SignalASI phone"
+        ),
+        content=str(payload.get("content") or ""),
+        attachments=attachments,
+        remote_message_id=message_id,
+        created_at_ms=created_at_ms,
+        delivery_status="received",
+    )
+    log.info(
+        "MQTT accepted direct peer message client=%s attachments=%s chars=%s",
+        client_route_id[-8:],
+        len(attachments),
+        len(str(payload.get("content") or "")),
+    )
+    return True
 
 
 def publish_evolution_task_event_all(event: dict) -> dict:
@@ -3338,19 +3422,34 @@ def _publish_task_artifacts(
 
 def replay_pending_task_artifacts(mqttc) -> int:
     from artifact_delivery import pending_artifacts_for_redelivery
+    from peer_chat_store import peer_chat_store
 
     replayed = 0
     for client_route_id, artifact in pending_artifacts_for_redelivery():
         if get_client(client_route_id) is None:
             continue
         task = agent_task_manager.get(artifact.task_id)
-        if task is None or task.client_route_id != client_route_id:
-            continue
-        if _publish_task_artifacts(
-            mqttc,
-            {"scheme": "signal", "_client_route_id": client_route_id},
-            [artifact],
-            common={
+        if task is None:
+            peer_message = peer_chat_store().get_message(artifact.task_id)
+            if (
+                peer_message is None
+                or peer_message.get("client_route_id") != client_route_id
+                or peer_message.get("direction") != "outbound"
+            ):
+                continue
+            common = {
+                "source_message_id": artifact.task_id,
+                "conversation_id": f"peer:{client_route_id}",
+                "turn_id": f"peer-redelivery:{artifact.task_id}",
+                "contact_id": desktop_id(),
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "peer_chat": True,
+            }
+        else:
+            if task.client_route_id != client_route_id:
+                continue
+            common = {
                 "source_message_id": task.source_message_id,
                 "conversation_id": task.client_conversation_id,
                 "turn_id": task.client_turn_id,
@@ -3358,7 +3457,12 @@ def replay_pending_task_artifacts(mqttc) -> int:
                 "agent_id": task.agent_id,
                 "desktop_id": desktop_id(),
                 "desktop_name": desktop_name(),
-            },
+            }
+        if _publish_task_artifacts(
+            mqttc,
+            {"scheme": "signal", "_client_route_id": client_route_id},
+            [artifact],
+            common=common,
         ):
             replayed += 1
     if replayed:
@@ -5888,18 +5992,39 @@ def _process_message(mqttc, userdata, msg):
                 )
                 return
             original_task = agent_task_manager.get(artifact.task_id)
-            if original_task is None or original_task.client_route_id != client_route_id:
-                log.warning(
-                    "Artifact redelivery lost task identity task_id=%s client=%s",
-                    artifact.task_id,
-                    client_route_id[-8:],
-                )
-                return
-            _publish_task_artifacts(
-                mqttc,
-                wire_payload,
-                [artifact],
-                common={
+            if original_task is None:
+                from peer_chat_store import peer_chat_store
+
+                peer_message = peer_chat_store().get_message(artifact.task_id)
+                if (
+                    peer_message is None
+                    or peer_message.get("client_route_id") != client_route_id
+                    or peer_message.get("direction") != "outbound"
+                ):
+                    log.warning(
+                        "Artifact redelivery lost task identity task_id=%s client=%s",
+                        artifact.task_id,
+                        client_route_id[-8:],
+                    )
+                    return
+                redelivery_common = {
+                    "source_message_id": artifact.task_id,
+                    "conversation_id": f"peer:{client_route_id}",
+                    "turn_id": f"peer-redelivery:{artifact.task_id}",
+                    "contact_id": desktop_id(),
+                    "desktop_id": desktop_id(),
+                    "desktop_name": desktop_name(),
+                    "peer_chat": True,
+                }
+            else:
+                if original_task.client_route_id != client_route_id:
+                    log.warning(
+                        "Artifact redelivery route mismatch task_id=%s client=%s",
+                        artifact.task_id,
+                        client_route_id[-8:],
+                    )
+                    return
+                redelivery_common = {
                     "source_message_id": original_task.source_message_id,
                     "conversation_id": original_task.client_conversation_id,
                     "turn_id": original_task.client_turn_id,
@@ -5907,7 +6032,12 @@ def _process_message(mqttc, userdata, msg):
                     "agent_id": original_task.agent_id,
                     "desktop_id": desktop_id(),
                     "desktop_name": desktop_name(),
-                },
+                }
+            _publish_task_artifacts(
+                mqttc,
+                wire_payload,
+                [artifact],
+                common=redelivery_common,
             )
             return
 
@@ -5953,6 +6083,13 @@ def _process_message(mqttc, userdata, msg):
             if receipt is not None:
                 attachment_request_broker.accept_receipt(receipt)
                 _publish_phone_payload(mqttc, wire_payload, receipt.payload())
+            return
+
+        if _route_peer_message_payload(
+            payload,
+            client_route_id=client_route_id,
+            paired_client=paired_client,
+        ):
             return
 
         if _route_desktop_control_payload(
@@ -6750,6 +6887,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
     }:
         return OUTBOUND_PRIORITY_TERMINAL
     if payload_type in {
+        PEER_MESSAGE_TYPE,
         "agent_task_approval_result",
         "desktop_tool_call_result",
         "desktop_action_receipt",
@@ -7079,6 +7217,122 @@ def publish_mobile_test_message(contact_id: str, content: str, client_route_id: 
     if results and all(info.rc == mqtt.MQTT_ERR_SUCCESS for info in results):
         return api_ok("mobile_test_published", client_count=len(results), contact_id=contact_id, params={"contact_id": contact_id, "client_count": len(results)})
     return api_error("publish_failed", "No target client or publish failed", contact_id=contact_id)
+
+
+def publish_peer_message(
+    client_route_id: str,
+    content: str = "",
+    attachment_paths: list[str] | None = None,
+) -> dict:
+    """Send a direct encrypted message to one paired phone without invoking an Agent."""
+    from artifact_delivery import prepare_artifacts, register_artifact_batch
+    from peer_chat_store import peer_chat_store
+    from task_workspace import task_workspace
+
+    route_id = str(client_route_id or "").strip()
+    paired_client = get_client(route_id)
+    if paired_client is None:
+        return api_error("client_route_unavailable", "The paired phone is unavailable")
+    if client is None or not client.is_connected():
+        return api_error("mqtt_not_connected", "SignalASI Link is offline")
+    clean_content = str(content or "")[:24_000]
+    selected_paths = [Path(value).expanduser().resolve() for value in (attachment_paths or [])[:12]]
+    if not clean_content.strip() and not selected_paths:
+        return api_error("peer_message_empty", "Enter a message or add a file")
+
+    message_id = f"peer-{uuid.uuid4()}"
+    task_id = message_id
+    conversation_id = f"peer:{route_id}"
+    turn_id = f"turn-{uuid.uuid4()}"
+    output_root = task_workspace(task_id, "peer-chat") / "outputs"
+    stored_attachments: list[dict] = []
+    output_files: list[dict] = []
+    store = peer_chat_store()
+    try:
+        for source in selected_paths:
+            if not source.is_file() or source.is_symlink():
+                raise ValueError(f"Attachment is unavailable: {source.name}")
+            imported = store.import_attachment(
+                client_route_id=route_id,
+                message_id=message_id,
+                source=source,
+                name=source.name,
+                mime_type="application/octet-stream",
+                sha256="",
+            )
+            stored_attachments.append(imported)
+            target = output_root / str(imported["name"])
+            counter = 1
+            while target.exists():
+                target = output_root / f"{Path(imported['name']).stem}-{counter}{Path(imported['name']).suffix}"
+                counter += 1
+            shutil.copy2(Path(str(imported["local_path"])), target)
+            output_files.append({
+                "name": target.name,
+                "relative_path": target.relative_to(task_workspace(task_id)).as_posix(),
+            })
+    except (OSError, ValueError) as exc:
+        return api_error("peer_attachment_unavailable", str(exc))
+
+    artifacts = prepare_artifacts(task_id, output_files)
+    if len(artifacts) != len(output_files):
+        return api_error("peer_attachment_prepare_failed", "One or more files could not be prepared")
+    register_artifact_batch(
+        artifacts,
+        client_route_id=route_id,
+        retain_on_desktop=False,
+    )
+    artifact_descriptors = [{
+        "artifact_id": item.artifact_id,
+        "artifact_uri": item.artifact_uri,
+        "name": item.name,
+        "mime_type": item.mime_type,
+        "size_bytes": item.size_bytes,
+        "sha256": item.sha256,
+    } for item in artifacts]
+    stored = store.append(
+        client_route_id=route_id,
+        direction="outbound",
+        sender_name=desktop_name(),
+        content=clean_content,
+        attachments=[
+            {**stored_item, **descriptor}
+            for stored_item, descriptor in zip(stored_attachments, artifact_descriptors)
+        ],
+        message_id=message_id,
+        delivery_status="sending",
+    )
+    wire_payload = {"scheme": "signal", "_client_route_id": route_id}
+    common = {
+        "source_message_id": message_id,
+        "conversation_id": conversation_id,
+        "turn_id": turn_id,
+        "contact_id": desktop_id(),
+        "desktop_id": desktop_id(),
+        "desktop_name": desktop_name(),
+        "peer_chat": True,
+    }
+    chunks_ok = _publish_task_artifacts(client, wire_payload, artifacts, common=common)
+    payload = {
+        "type": PEER_MESSAGE_TYPE,
+        "message_id": message_id,
+        "source_message_id": message_id,
+        "conversation_id": conversation_id,
+        "turn_id": turn_id,
+        "client_route_id": route_id,
+        "contact_id": desktop_id(),
+        "desktop_id": desktop_id(),
+        "desktop_name": desktop_name(),
+        "content": clean_content,
+        "attachments": artifact_descriptors,
+        "sender": "other",
+        "time": time.time(),
+    }
+    sent = _publish_phone_payload(client, wire_payload, payload)
+    updated = store.update_delivery_status(message_id, "sent" if sent and chunks_ok else "queued")
+    if sent:
+        return api_ok("peer_message_sent", message=updated or stored, message_id=message_id)
+    return api_error("peer_message_publish_failed", "The direct message could not be queued")
 
 
 def publish_agent_push_message(

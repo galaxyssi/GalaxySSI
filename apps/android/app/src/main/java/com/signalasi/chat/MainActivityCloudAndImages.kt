@@ -764,9 +764,95 @@ internal fun MainActivity.scheduleDebugAgentSnapshot(
 }
 
 internal fun MainActivity.sendImage(uri: Uri) {
+    val contact = selectedContact
+    if (contact != null && AppStore.isDesktopDeviceContact(this, contact.id)) {
+        sendPeerAttachments(contact, listOf(uri))
+        return
+    }
     val meta = imageMeta(uri)
     val msg = ChatMessage(newMessageId(), getString(R.string.message_image_prefix, meta.name), true, CONTACT_ME)
     addMessage(msg)
+}
+
+internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>) {
+    val attachments = uris.distinct().take(12).mapNotNull { uri ->
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { agentAttachmentMetadata(uri) }.getOrNull()
+    }
+    if (attachments.isEmpty()) return
+    val message = ChatMessage(
+        id = newMessageId(),
+        content = "",
+        isMine = true,
+        contact = CONTACT_ME,
+        deliveryStatus = getString(R.string.delivery_status_sending),
+        deliveryTrace = mutableListOf(newTraceEvent("created", "peer_file")),
+        attachments = attachments.map { attachment ->
+            PeerChatAttachment(
+                name = attachment.displayName,
+                mimeType = attachment.mimeType,
+                sizeBytes = attachment.sizeBytes,
+                uri = attachment.uri.toString()
+            )
+        }
+    )
+    addMessage(message)
+    val topic = AppStore.outgoingTopicForContact(this, contact.id)
+    if (topic == null) {
+        updateMessageStatus(message.id, contact.id, getString(R.string.delivery_status_failed))
+        return
+    }
+    outboundMessageExecutor.execute {
+        val result = SignalASIMqttClient.publishPeerMessageResult(
+            content = "",
+            contactId = contact.id,
+            topicOverride = topic,
+            clientMessageId = message.id,
+            deliveryTrace = deliveryTraceJson(message.deliveryTrace),
+            attachments = attachments
+        )
+        runOnUiThread {
+            updateMessageStatus(
+                message.id,
+                contact.id,
+                getString(when (result) {
+                    MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
+                    MqttPublishResult.QUEUED -> R.string.delivery_status_queued
+                    MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                })
+            )
+        }
+    }
+}
+
+internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
+    val source = if (attachment.artifactUri.isNotBlank()) {
+        AgentDesktopArtifactStore.resolveBlock(
+            this,
+            AgentRichBlock(
+                id = attachment.artifactUri,
+                type = if (attachment.mimeType.startsWith("image/")) AgentRichBlockType.IMAGE else AgentRichBlockType.FILE,
+                title = attachment.name,
+                uri = attachment.artifactUri,
+                mimeType = attachment.mimeType,
+                metadata = mapOf("artifact_source_uri" to attachment.artifactUri)
+            )
+        ).uri
+    } else attachment.uri
+    if (source.isBlank() || source.startsWith("signalasi-artifact://")) {
+        Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    runCatching {
+        startActivity(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(source), attachment.mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        })
+    }.onFailure {
+        Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun MainActivity.targetTopicForSelectedContact(): String? {
@@ -994,6 +1080,7 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
     val sender = json?.optString("sender", "hermes") ?: "hermes"
     val contactId = json?.optString("contact_id", CONTACT_HERMES.id)?.takeIf { it.isNotBlank() } ?: CONTACT_HERMES.id
     val contact = contactById(if (sender == "system") CONTACT_SYSTEM.id else contactId)
+    val attachments = PeerChatAttachment.decode(json?.optJSONArray("attachments"))
     return ChatMessage(
         newMessageId(),
         content,
@@ -1003,7 +1090,8 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
         taskId = json?.optString("task_id").orEmpty(),
         taskStatus = json?.optString("task_status").orEmpty(),
         taskStatusSeq = json?.optLong("status_seq", 0L) ?: 0L,
-        remoteMessageId = json?.optString("message_id").orEmpty()
+        remoteMessageId = json?.optString("message_id").orEmpty(),
+        attachments = attachments
     )
 }
 

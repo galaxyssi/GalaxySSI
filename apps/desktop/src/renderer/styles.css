@@ -159,6 +159,19 @@ button:disabled { cursor: default; opacity: 0.48; }
   scrollbar-width: thin;
 }
 
+.peer-heading { margin-top: 2px; border-top: 1px solid var(--line); }
+.peer-contact-list { max-height: 190px; overflow-y: auto; margin: 0 -3px 8px; padding: 0 3px; scrollbar-width: thin; }
+.peer-contact { width: 100%; min-height: 49px; display: grid; grid-template-columns: 31px minmax(0, 1fr); align-items: center; gap: 9px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: #59636b; text-align: left; }
+.peer-contact:hover { background: #eaedef; }
+.peer-contact.active { background: var(--surface); color: #202428; box-shadow: 0 1px 2px rgba(20, 25, 30, 0.06); }
+.peer-contact-icon { width: 28px; height: 28px; position: relative; border: 1.4px solid #73808a; border-radius: 7px; }
+.peer-contact-icon::before { width: 9px; height: 9px; position: absolute; top: 4px; left: 8px; border: 1.2px solid currentColor; border-radius: 50%; content: ""; }
+.peer-contact-icon::after { width: 14px; height: 7px; position: absolute; bottom: 3px; left: 5px; border: 1.2px solid currentColor; border-radius: 9px 9px 5px 5px; content: ""; }
+.peer-contact strong,
+.peer-contact small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-contact strong { font-size: 0.95rem; font-weight: 600; }
+.peer-contact small { margin-top: 3px; color: var(--soft); font-size: 0.75rem; }
+
 .history-group-label {
   padding: 12px 9px 6px;
   color: #9299a1;
@@ -327,6 +340,25 @@ button:disabled { cursor: default; opacity: 0.48; }
 .empty-state p { margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.55; }
 .message-list { width: min(900px, 100%); margin: 0 auto; }
 .message-list:empty { display: none; }
+.peer-message-row { display: flex; margin: 8px 0; }
+.peer-message-row.outbound { justify-content: flex-end; }
+.peer-message-row.inbound { justify-content: flex-start; }
+.peer-message-bubble { max-width: min(72%, 620px); padding: 9px 11px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: #252b30; }
+.peer-message-row.outbound .peer-message-bubble { border-color: #bee5d6; background: #def4ea; }
+.peer-message-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.55; }
+.peer-message-bubble > small { display: block; margin-top: 5px; color: var(--muted); font-size: 0.7rem; text-align: right; }
+.peer-attachment-list { display: grid; gap: 5px; margin-top: 2px; }
+.peer-message-bubble p + .peer-attachment-list { margin-top: 8px; }
+.peer-attachment { min-width: 230px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px; border: 1px solid #dce2e6; border-radius: 6px; background: rgba(255, 255, 255, 0.72); color: #30383f; text-align: left; }
+.peer-attachment > span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; background: var(--blue-soft); color: var(--blue); font-size: 0.65rem; font-weight: 750; }
+.peer-attachment b { overflow: hidden; font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.peer-attachment small { color: var(--muted); font-size: 0.7rem; }
+.peer-mode #agentPickerButton,
+.peer-mode #autoModeButton,
+.peer-mode #localModeButton,
+.peer-mode #taskBudgetProfileSelect,
+.peer-mode #executionModeButton,
+.peer-mode #voiceButton { display: none; }
 
 .task-turn { margin-bottom: 28px; }
 .user-message-row { display: flex; justify-content: flex-end; }

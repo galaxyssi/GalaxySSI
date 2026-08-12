@@ -228,21 +228,25 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     private fun showIncomingNotification(message: StoredIncomingMessage) {
+        val attachmentName = message.attachments.optJSONObject(0)?.optString("name").orEmpty()
+        val preview = message.content.ifBlank {
+            attachmentName.ifBlank { getString(R.string.rich_output_type_file) }
+        }
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("signalasi_open_agent", true)
+            putExtra("signalasi_open_contact_id", message.contactId)
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
-            1,
+            message.contactId.hashCode(),
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tab_chat_filled)
             .setContentTitle(message.contactName)
-            .setContentText(message.content.take(120))
-            .setStyle(Notification.BigTextStyle().bigText(message.content))
+            .setContentText(preview.take(120))
+            .setStyle(Notification.BigTextStyle().bigText(preview))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setShowWhen(true)

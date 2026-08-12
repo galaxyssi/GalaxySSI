@@ -238,14 +238,14 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
     list.add(stored)
     if (!stored.isSystem) {
         val summary = summaries.getOrPut(stored.contact.id) { ContactSummary() }
-        summary.lastMessage = stored.content
+        summary.lastMessage = stored.content.ifBlank { stored.attachments.firstOrNull()?.name.orEmpty() }
         summary.lastAt = stored.timestamp
         if (fromIncoming && (chatPage.visibility != View.VISIBLE || selectedContact?.id != stored.contact.id)) {
             summary.unreadCount += 1
         }
     }
     saveChatHistory(stored)
-    if (!stored.isSystem) {
+    if (!stored.isSystem && !AppStore.isDesktopDeviceContact(this, stored.contact.id)) {
         GlobalConversationEventBus.publishChatMessage(
             this,
             stored.contact.id,
@@ -532,7 +532,8 @@ internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject)
     val contact = contactById(contactId) ?: return null
     val savedId = item.optLong("id", 0L)
     val savedContent = item.optString("content")
-    if (savedId <= 0L || savedContent.isBlank()) return null
+    val attachments = PeerChatAttachment.decode(item.optJSONArray("attachments"))
+    if (savedId <= 0L || (savedContent.isBlank() && attachments.isEmpty())) return null
     val messageContact = contactById(item.optString("contactId", contactId)) ?: contact
     val deliveryTrace = parseDeliveryTrace(item.optJSONArray("deliveryTrace"))
     if (item.optBoolean("isRead") && deliveryTrace.none { it.stage == "read" }) {
@@ -556,7 +557,8 @@ internal fun MainActivity.storedChatMessage(contactId: String, item: JSONObject)
         taskStatus = item.optString("taskStatus"),
         taskStatusSeq = item.optLong("taskStatusSeq", 0L),
         remoteMessageId = item.optString("remoteMessageId"),
-        deliveryTrace = deliveryTrace
+        deliveryTrace = deliveryTrace,
+        attachments = attachments
     )
 }
 
@@ -681,6 +683,7 @@ internal fun MainActivity.chatHistoryJson(message: ChatMessage): JSONObject =
         .put("taskStatus", message.taskStatus)
         .put("taskStatusSeq", message.taskStatusSeq)
         .put("remoteMessageId", message.remoteMessageId)
+        .put("attachments", PeerChatAttachment.encode(message.attachments))
         .put("deliveryTrace", deliveryTraceJson(message.deliveryTrace))
 
 // ===== Refreshing =====

@@ -232,6 +232,8 @@ const state = {
   evolutionTasks: [],
   evolutionHealth: null,
   tasks: [],
+  peerMessages: [],
+  activePeerRouteId: "",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
@@ -255,6 +257,8 @@ const state = {
 
 const elements = {
   history: $("#taskHistory"),
+  peerContacts: $("#peerContactList"),
+  peerContactSummary: $("#peerContactSummary"),
   sidebarTaskSummary: $("#sidebarTaskSummary"),
   title: $("#conversationTitle"),
   taskState: $("#taskStateText"),
@@ -552,12 +556,102 @@ function renderHistory() {
     const running = group.tasks.some((task) => !TERMINAL_STATES.has(task.status));
     const latestLabel = running ? taskStatusLabel(group.latest) : relativeTime(group.latest.updated_at);
     html.push(`
-      <button class="history-item ${group.id === state.currentConversationId ? "active" : ""}" data-conversation-id="${escapeHtml(group.id)}">
+      <button class="history-item ${!state.activePeerRouteId && group.id === state.currentConversationId ? "active" : ""}" data-conversation-id="${escapeHtml(group.id)}">
         <strong>${escapeHtml(titleFromPrompt(group.tasks.sort((a, b) => Number(a.created_at) - Number(b.created_at))[0]?.prompt))}</strong>
         <span class="${running ? "running" : ""}">${escapeHtml(latestLabel)}</span>
       </button>`);
   }
   elements.history.innerHTML = html.join("");
+}
+
+function pairedClients() {
+  return Array.isArray(state.pairing?.clients) ? state.pairing.clients : [];
+}
+
+function peerClientName(client) {
+  return client?.display_name || client?.device_name || client?.profile_name || t("SignalASI phone");
+}
+
+function peerMessagesFor(routeId = state.activePeerRouteId) {
+  return state.peerMessages
+    .filter((message) => message.client_route_id === routeId)
+    .sort((a, b) => Number(a.created_at_ms) - Number(b.created_at_ms));
+}
+
+function renderPeerContacts() {
+  const clients = pairedClients();
+  elements.peerContactSummary.textContent = String(clients.length);
+  elements.peerContacts.innerHTML = clients.length ? clients.map((client) => {
+    const routeId = client.client_route_id || "";
+    const latest = peerMessagesFor(routeId).at(-1);
+    const preview = latest?.content || latest?.attachments?.[0]?.name || t("Paired device");
+    return `<button class="peer-contact ${routeId === state.activePeerRouteId ? "active" : ""}" data-peer-route="${escapeHtml(routeId)}">
+      <span class="peer-contact-icon" aria-hidden="true"></span>
+      <span><strong>${escapeHtml(peerClientName(client))}</strong><small>${escapeHtml(preview)}</small></span>
+    </button>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("Pair a phone to start direct messaging."))}</div>`;
+}
+
+function renderPeerAttachments(message) {
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) return "";
+  return `<div class="peer-attachment-list">${attachments.map((file, index) => {
+    const extension = String(file.name || "file").split(".").pop().slice(0, 5).toUpperCase();
+    return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
+      <span>${escapeHtml(extension)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
+    </button>`;
+  }).join("")}</div>`;
+}
+
+function renderPeerConversation(force = false) {
+  const client = pairedClients().find((item) => item.client_route_id === state.activePeerRouteId);
+  const messages = peerMessagesFor();
+  const signature = JSON.stringify(messages.map((message) => [
+    message.message_id,
+    message.delivery_status,
+    message.content,
+    (message.attachments || []).map((file) => [file.name, file.size_bytes, file.available])
+  ]));
+  if (!force && signature === state.renderingSignature) return;
+  state.renderingSignature = signature;
+  const wasNearBottom = elements.stream.scrollHeight - elements.stream.scrollTop - elements.stream.clientHeight < 140;
+  elements.empty.hidden = messages.length > 0;
+  elements.empty.querySelector("h2").textContent = t("Direct message");
+  elements.empty.querySelector("p").textContent = t("Messages and files are end-to-end encrypted between paired devices.");
+  elements.messages.innerHTML = messages.map((message) => `<article class="peer-message-row ${message.direction}">
+    <div class="peer-message-bubble">
+      ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
+      ${renderPeerAttachments(message)}
+      <small>${escapeHtml(relativeTime(message.created_at_ms))}${message.direction === "outbound" ? ` · ${escapeHtml(t(message.delivery_status === "sent" ? "Sent" : "Queued"))}` : ""}</small>
+    </div>
+  </article>`).join("");
+  elements.title.textContent = client ? peerClientName(client) : t("Device contact");
+  elements.taskState.textContent = t("Direct message");
+  elements.taskState.className = "";
+  elements.route.textContent = t("Signal encrypted");
+  if (force || wasNearBottom) requestAnimationFrame(() => { elements.stream.scrollTop = elements.stream.scrollHeight; });
+}
+
+function openPeerConversation(routeId) {
+  state.activePeerRouteId = routeId;
+  state.emptyConversationIntent = false;
+  state.renderingSignature = "";
+  document.querySelector("#agentApp").classList.add("peer-mode");
+  renderHistory();
+  renderPeerContacts();
+  renderPeerConversation(true);
+  elements.prompt.focus();
+}
+
+async function refreshPeerMessages() {
+  try {
+    const response = await window.signalasi.listPeerMessages("", 2000);
+    state.peerMessages = Array.isArray(response.messages) ? response.messages : [];
+    renderPeerContacts();
+    if (state.activePeerRouteId) renderPeerConversation();
+  } catch (error) {
+    if (!state.taskStreamConnected) console.warn("Peer message refresh failed", error);
+  }
 }
 
 function taskElapsed(task) {
@@ -766,6 +860,10 @@ function renderTurn(task) {
 }
 
 function renderConversation(force = false) {
+  if (state.activePeerRouteId) {
+    renderPeerConversation(force);
+    return;
+  }
   const tasks = conversationTasks();
   const signature = JSON.stringify(tasks.map((task) => [
     task.task_id,
@@ -798,6 +896,8 @@ function renderConversation(force = false) {
   state.renderingSignature = signature;
   const wasNearBottom = elements.stream.scrollHeight - elements.stream.scrollTop - elements.stream.clientHeight < 140;
   elements.empty.hidden = tasks.length > 0;
+  elements.empty.querySelector("h2").textContent = t("What should we work on?");
+  elements.empty.querySelector("p").textContent = t("Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.");
   elements.messages.innerHTML = tasks.map(renderTurn).join("");
   const first = tasks[0];
   elements.title.textContent = first ? titleFromPrompt(first.prompt) : t("New task");
@@ -910,11 +1010,19 @@ async function connectTaskStream() {
       }
       if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
         state.tasks = payload.tasks;
+        state.peerMessages = Array.isArray(payload.peer_messages) ? payload.peer_messages : [];
         selectActiveEvolutionTask();
         renderHistory();
+        renderPeerContacts();
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
         mergeTaskUpdate(payload.task);
+      } else if (payload.type === "desktop_peer_message" && payload.message?.message_id) {
+        const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
+        if (index >= 0) state.peerMessages[index] = { ...state.peerMessages[index], ...payload.message };
+        else state.peerMessages.push(payload.message);
+        renderPeerContacts();
+        if (payload.message.client_route_id === state.activePeerRouteId) renderPeerConversation();
       }
     });
     socket.addEventListener("close", () => {
@@ -962,6 +1070,33 @@ async function addAttachments() {
 async function sendTask() {
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
+  if (state.activePeerRouteId) {
+    const attachments = [...state.attachments];
+    elements.prompt.value = "";
+    state.attachments = [];
+    renderAttachmentTray();
+    updateSendState();
+    try {
+      const result = await window.signalasi.sendPeerMessage({
+        clientRouteId: state.activePeerRouteId,
+        content: prompt,
+        attachments
+      });
+      if (result.message) {
+        const index = state.peerMessages.findIndex((item) => item.message_id === result.message.message_id);
+        if (index >= 0) state.peerMessages[index] = result.message;
+        else state.peerMessages.push(result.message);
+      }
+      renderPeerContacts();
+      renderPeerConversation(true);
+    } catch (error) {
+      elements.prompt.value = prompt;
+      state.attachments = attachments;
+      renderAttachmentTray();
+      showToast(`${t("Could not send message")}: ${error.message || error}`);
+    }
+    return;
+  }
   state.emptyConversationIntent = false;
   const attachments = [...state.attachments];
   elements.prompt.value = "";
@@ -1013,6 +1148,8 @@ async function sendTask() {
 }
 
 function newTask(agentId = "auto", name = "Agent") {
+  state.activePeerRouteId = "";
+  document.querySelector("#agentApp").classList.remove("peer-mode");
   state.currentConversationId = crypto.randomUUID();
   state.emptyConversationIntent = true;
   state.selectedAgentId = agentId;
@@ -1701,7 +1838,7 @@ function renderGateway() {
     const fingerprint = client.identity_fingerprint_short || id.slice(0, 12) || t("Verified");
     const name = client.display_name || client.device_name || client.profile_name || t("SignalASI phone");
     const details = [client.device_model, client.platform, fingerprint, access].filter(Boolean).join(" · ");
-    return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(details)}</small></div><div class="paired-client-actions"><button data-rename-client="${escapeHtml(id)}" data-client-name="${escapeHtml(name)}">${escapeHtml(t("Rename"))}</button><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></div></article>`;
+    return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(details)}</small></div><div class="paired-client-actions"><button data-chat-client="${escapeHtml(id)}">${escapeHtml(t("Message"))}</button><button data-rename-client="${escapeHtml(id)}" data-client-name="${escapeHtml(name)}">${escapeHtml(t("Rename"))}</button><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></div></article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("Scan the QR code below to pair a phone."))}</div>`;
 }
 
@@ -1709,9 +1846,11 @@ async function refreshGateway() {
   try {
     state.pairing = await window.signalasi.getPairingStatus();
     renderGateway();
+    renderPeerContacts();
   } catch (error) {
     state.pairing = { clients: [] };
     renderGateway();
+    renderPeerContacts();
     $("#gatewaySummary p").textContent = error.message || String(error);
   }
 }
@@ -4096,11 +4235,17 @@ function bindEvents() {
   elements.history.addEventListener("click", (event) => {
     const item = event.target.closest("[data-conversation-id]");
     if (!item) return;
+    state.activePeerRouteId = "";
+    document.querySelector("#agentApp").classList.remove("peer-mode");
     state.currentConversationId = item.dataset.conversationId;
     state.emptyConversationIntent = false;
     state.renderingSignature = "";
     renderHistory();
     renderConversation(true);
+  });
+  elements.peerContacts.addEventListener("click", (event) => {
+    const contact = event.target.closest("[data-peer-route]");
+    if (contact) openPeerConversation(contact.dataset.peerRoute);
   });
   elements.messages.addEventListener("click", async (event) => {
     const pause = event.target.closest("[data-pause-task]");
@@ -4157,6 +4302,17 @@ function bindEvents() {
     if (artifact) {
       try { await window.signalasi.openTaskArtifact(artifact.dataset.taskId, artifact.dataset.openArtifact); }
       catch (error) { showToast(error.message || String(error)); }
+    }
+    const peerAttachment = event.target.closest("[data-open-peer-attachment]");
+    if (peerAttachment) {
+      try {
+        await window.signalasi.openPeerAttachment(
+          peerAttachment.dataset.peerMessageId,
+          Number(peerAttachment.dataset.openPeerAttachment)
+        );
+      } catch (error) {
+        showToast(error.message || String(error));
+      }
     }
     const link = event.target.closest("[data-external-link]");
     if (link) {
@@ -4232,6 +4388,12 @@ function bindEvents() {
     }
   });
   $("#pairedClientList").addEventListener("click", async (event) => {
+    const chatButton = event.target.closest("[data-chat-client]");
+    if (chatButton) {
+      closePanel();
+      openPeerConversation(chatButton.dataset.chatClient);
+      return;
+    }
     const renameButton = event.target.closest("[data-rename-client]");
     if (renameButton) {
       const value = window.prompt(t("Device name"), renameButton.dataset.clientName || "");
@@ -4525,11 +4687,21 @@ async function init() {
   fillTaskBudgetSettings();
   updateSendState();
   await refreshBackend();
-  await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopControl(), refreshCapabilities(), refreshTasks(true)]);
+  await Promise.all([
+    refreshAgents(),
+    refreshGateway(),
+    refreshDesktopControl(),
+    refreshCapabilities(),
+    refreshTasks(true),
+    refreshPeerMessages()
+  ]);
   connectTaskStream();
   window.setInterval(updateElapsedLabels, 1000);
   window.setInterval(() => {
-    if (!state.taskStreamConnected) refreshTasks(false);
+    if (!state.taskStreamConnected) {
+      refreshTasks(false);
+      refreshPeerMessages();
+    }
   }, 10_000);
   window.setInterval(() => { refreshBackend(); refreshGateway(); }, 30_000);
   window.setInterval(() => {
