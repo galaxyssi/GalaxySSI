@@ -662,15 +662,17 @@ def api_pairing_qr(
     )
 
 @app.post("/api/pairing/clear")
-def api_pairing_clear(client_route_id: str = Query("")):
+def api_pairing_clear(request: Request, client_route_id: str = Query("")):
+    require_desktop_api_token(request)
     from pairing_state import clear_pairing_state, get_client, list_clients, pairing_status
-    from mqtt_bridge import publish_pairing_revoked
+    from mqtt_bridge import forget_paired_client_transport, publish_pairing_revoked
     from signalasi_client import remove_peer_signal_session
     from desktop_control import desktop_control_manager
     targets = [get_client(client_route_id)] if client_route_id else list_clients()
     targets = [target for target in targets if target]
     revoke = publish_pairing_revoked(reason="forgotten_by_desktop", client_route_id=client_route_id)
     removed_sessions = []
+    transport_cleanup = {}
     for target in targets:
         desktop_control_manager().revoke_for_client(
             target["client_route_id"], "pairing_revoked"
@@ -680,10 +682,14 @@ def api_pairing_clear(client_route_id: str = Query("")):
             removed_sessions.append(target["client_route_id"])
         except Exception as exc:
             log.warning("Signal session removal failed client=%s: %s", target["client_route_id"], exc)
+        transport_cleanup[target["client_route_id"]] = forget_paired_client_transport(
+            target["client_route_id"]
+        )
     clear_pairing_state(client_route_id)
     status = pairing_status()
     status["revoke"] = revoke
     status["removed_sessions"] = removed_sessions
+    status["transport_cleanup"] = transport_cleanup
     return status
 
 class AgentSelfTestReq(BaseModel):

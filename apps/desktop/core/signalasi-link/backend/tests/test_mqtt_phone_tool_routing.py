@@ -296,6 +296,23 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.assertEqual("Direct device message", messages[0]["content"])
         self.assertEqual("inbound", messages[0]["direction"])
 
+    def test_desktop_peer_message_uses_uuid_transport_id(self):
+        peer_store = PeerChatStore(Path(self.temp.name) / "peer-outbound.db")
+        with (
+            patch.object(mqtt_bridge, "client", self.mqtt),
+            patch("peer_chat_store.peer_chat_store", return_value=peer_store),
+        ):
+            result = mqtt_bridge.publish_peer_message(
+                self.first["client_route_id"],
+                "Direct reply",
+            )
+
+        self.assertTrue(result["ok"])
+        uuid.UUID(result["message_id"])
+        outbound_payload = self.publish_phone_payload.call_args.args[2]
+        self.assertEqual(result["message_id"], outbound_payload["message_id"])
+        self.assertEqual([], self.agent_starts)
+
     def test_wrong_link_target_cannot_create_tool_session(self):
         now_ms = int(time.time() * 1000)
         payload = {
