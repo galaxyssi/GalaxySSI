@@ -78,6 +78,22 @@ enum SignalASINavigationContentPrewarm {
     let contacts = store.contacts.map {
       "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.deleted):\($0.displayName):\($0.selectedCloudModelId)"
     }.joined(separator: "|")
-    return "\(store.activeAgentConversationId)|\(conversations)|\(contacts)"
+    let localProfiles = LocalModelRuntimeSettings.activeProfiles().map { profile in
+      "\(profile.id):\(LocalModelRuntimeSettings.isProfileEnabled(profile))"
+    }.joined(separator: "|")
+    let cloudModels = store.cloudModelContacts.map { contact in
+      let models = contact.cloudModels.map { model in
+        let keyAvailable = !(store.apiKey(for: model) ?? "").isEmpty
+        return "\(model.provider):\(model.modelId):\(keyAvailable)"
+      }.joined(separator: ",")
+      return "\(contact.id):\(contact.selectedCloudModelId):\(models)"
+    }.joined(separator: "|")
+    let callableTargets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    ).map { target in
+      "\(target.id):\(target.kind.rawValue):\(target.capabilities.map(\.rawValue).sorted().joined(separator: ","))"
+    }.joined(separator: "|")
+    return "\(store.activeAgentConversationId)|\(conversations)|\(contacts)|\(localProfiles)|\(cloudModels)|\(callableTargets)"
   }
 }
