@@ -1101,7 +1101,13 @@ struct MessageBubble: View {
         HStack(spacing: 4) {
           Text(message.createdAt, style: .time)
           if message.isMine {
-            Text(SignalASIChatDeliveryStatus.title(message.deliveryStatus, language: interfaceLanguage))
+            Text(
+              SignalASIPeerDeliveryPresentation.title(
+                for: message.deliveryStatus,
+                isPeerMessage: remoteContact?.isDesktopDeviceContact == true,
+                language: interfaceLanguage
+              )
+            )
           }
         }
         .font(.caption2)

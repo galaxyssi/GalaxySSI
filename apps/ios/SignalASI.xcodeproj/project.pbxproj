@@ -221,6 +221,7 @@
     A10000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */; };
     A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */; };
     A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */; };
+    A1000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */; };
     A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */; };
     A1000000000000000000F503 /* AgentConversationAttachmentContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */; };
     A1000000000000000000F504 /* AgentPeerChatTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F504 /* AgentPeerChatTransport.swift */; };
@@ -1067,6 +1068,7 @@
     A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkOutboxPayloadStore.swift; sourceTree = "<group>"; };
     A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOutboundAttachmentTransfer.swift; sourceTree = "<group>"; };
     A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentPublishOrder.swift; sourceTree = "<group>"; };
+    A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPeerDeliveryPresentation.swift; sourceTree = "<group>"; };
     A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelArtifactDownloadSources.swift; sourceTree = "<group>"; };
     A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationAttachmentContinuity.swift; sourceTree = "<group>"; };
     A2000000000000000000F504 /* AgentPeerChatTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerChatTransport.swift; sourceTree = "<group>"; };
@@ -2146,6 +2148,7 @@
         A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */,
         A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */,
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
+        A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */,
         A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */,
         A20000000000000000000482 /* AgentNoReplyReason.swift */,
         A2000000000000000000F504 /* AgentPeerChatTransport.swift */,
@@ -2249,6 +2252,7 @@
         A20000000000000000000994 /* SignalASILanguageSettingsView.swift */,
         A20000000000000000001460 /* SignalASILanguagePolicyFormatter.swift */,
         A20000000000000000002052 /* SignalASIChatDeliveryStatus.swift */,
+        A2000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift */,
         A20000000000000000001462 /* AgentWorkflowStore.swift */,
         A20000000000000000002053 /* SignalASIRemoteTaskStatusPresentation.swift */,
         A20000000000000000002054 /* SignalASIChatListTimeFormatter.swift */,
@@ -3115,6 +3119,7 @@
         A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */,
         A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */,
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
+        A1000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift in Sources */,
         A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */,
         A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */,
         A1000000000000000000F504 /* AgentPeerChatTransport.swift in Sources */,
@@ -3216,6 +3221,7 @@
         A10000000000000000000994 /* SignalASILanguageSettingsView.swift in Sources */,
         A10000000000000000001460 /* SignalASILanguagePolicyFormatter.swift in Sources */,
         A10000000000000000002052 /* SignalASIChatDeliveryStatus.swift in Sources */,
+        A1000000000000000000F505 /* SignalASIPeerDeliveryPresentation.swift in Sources */,
         A10000000000000000001462 /* AgentWorkflowStore.swift in Sources */,
         A10000000000000000002053 /* SignalASIRemoteTaskStatusPresentation.swift in Sources */,
         A10000000000000000002054 /* SignalASIChatListTimeFormatter.swift in Sources */,
