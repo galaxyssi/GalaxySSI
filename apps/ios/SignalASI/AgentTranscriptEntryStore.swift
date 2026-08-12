@@ -53,6 +53,8 @@ struct AgentTranscriptContentPage: Codable, Equatable {
 protocol AgentTranscriptEntryStore {
   @discardableResult
   func insert(_ entry: AgentTranscriptEntry) -> Bool
+  func listAll(limit: Int) -> [AgentTranscriptEntry]
+  func replaceAll(_ entries: [AgentTranscriptEntry])
   func listConversation(_ conversationId: String) -> [AgentTranscriptEntry]
   func listConversationPage(
     conversationId: String,
@@ -148,6 +150,32 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
       document.chunks = Self.orderedChunks(document.chunks)
       persist(document)
       return true
+    }
+  }
+
+  func listAll(limit: Int = 500) -> [AgentTranscriptEntry] {
+    locked {
+      let safeLimit = min(max(0, limit), Self.maxBackupEntries)
+      guard safeLimit > 0 else { return [] }
+      let document = load()
+      return Array(Self.orderedRows(document.rows).suffix(safeLimit))
+        .map { hydrate($0.entry, chunks: document.chunks) }
+    }
+  }
+
+  func replaceAll(_ entries: [AgentTranscriptEntry]) {
+    locked {
+      var document = Document(version: 1, nextSequence: 1, rows: [], chunks: [])
+      var seenIds = Set<String>()
+      for entry in entries.suffix(Self.maxBackupEntries) {
+        let cleanId = entry.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanId.isEmpty, seenIds.insert(cleanId).inserted else { continue }
+        let prepared = preparedEntry(entry)
+        document.rows.append(StoredRow(sequence: document.nextSequence, entry: prepared.entry))
+        document.nextSequence += 1
+        document.chunks += prepared.chunks
+      }
+      persist(document)
     }
   }
 
@@ -474,4 +502,5 @@ final class UserDefaultsAgentTranscriptEntryStore: AgentTranscriptEntryStore {
 
   private static let fieldText = "text"
   private static let fieldRichOutput = "rich_output"
+  private static let maxBackupEntries = 500
 }

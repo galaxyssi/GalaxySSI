@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object SignalASIMqttClient {
     private const val TAG = "SignalASILink"
     private const val SERVER_URI = "ssl://broker.emqx.io:8883"
-    private const val MQTT_TRANSPORT_EPOCH = "v9-bounded-route-delivery"
+    private const val MQTT_TRANSPORT_EPOCH = "v10-peer-message-uuid"
     private const val MQTT_QOS = 1
     private const val MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
