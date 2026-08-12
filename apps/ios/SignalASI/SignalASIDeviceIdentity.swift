@@ -40,6 +40,20 @@ enum SignalASIDeviceIdentity {
     profileName: String,
     fingerprint: String
   ) -> String {
+    normalizedDisplayName(rawDisplayName(
+      deviceName: deviceName,
+      model: model,
+      profileName: profileName,
+      fingerprint: fingerprint
+    ))
+  }
+
+  private static func rawDisplayName(
+    deviceName: String,
+    model: String,
+    profileName: String,
+    fingerprint: String
+  ) -> String {
     let base = clean(deviceName).ifBlank(clean(model)).ifBlank("iPhone")
     let profile = clean(profileName)
     if !profile.isEmpty && profile.caseInsensitiveCompare("Me") != .orderedSame &&
@@ -48,6 +62,10 @@ enum SignalASIDeviceIdentity {
     }
     let suffix = fingerprint.filter { $0.isLetter || $0.isNumber }.prefix(4).uppercased()
     return suffix.isEmpty ? base : "\(base) · \(suffix)"
+  }
+
+  private static func normalizedDisplayName(_ value: String) -> String {
+    value.replacingOccurrences(of: "\u{8DEF}", with: "\u{00B7}")
   }
 
   private static func clean(_ value: String) -> String {
