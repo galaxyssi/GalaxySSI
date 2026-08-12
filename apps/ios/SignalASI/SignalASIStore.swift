@@ -555,6 +555,13 @@ final class SignalASIStore: ObservableObject {
           let index = contacts.firstIndex(where: { $0.id == id || $0.signalASIId == id }) else {
       return false
     }
+    if contacts[index].type == "device",
+       !contacts[index].desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      rememberDeviceDefaultDisplayName(
+        contacts[index].desktopId,
+        fallback: contacts[index].desktopName.ifBlank(contacts[index].displayName)
+      )
+    }
     contacts[index].name = cleaned
     contacts[index].displayName = cleaned
     contacts[index].updatedAt = Date()
@@ -1387,7 +1394,18 @@ final class SignalASIStore: ObservableObject {
       .ifBlank(payload.string("identity_key_sha256"))
       .ifBlank(link?.desktopFingerprint ?? "")
     let now = Date()
-    var contact = contact(id: desktopId) ?? SignalASIContact(
+    let existingContact = contact(id: desktopId)
+    let storedDefaultName = deviceDefaultDisplayName(for: desktopId)
+    let previousDefaultName = storedDefaultName
+      .ifBlank(existingContact?.desktopName ?? "")
+      .ifBlank(defaultName)
+    let existingDisplayName = existingContact?.displayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let userRenamed = existingContact?.type == "device" &&
+      !existingDisplayName.isEmpty &&
+      existingDisplayName != previousDefaultName
+    rememberDeviceDefaultDisplayName(desktopId, fallback: previousDefaultName)
+
+    var contact = existingContact ?? SignalASIContact(
       id: desktopId,
       signalASIId: desktopId,
       name: defaultName,
@@ -1408,6 +1426,10 @@ final class SignalASIStore: ObservableObject {
       createdAt: now,
       updatedAt: now
     )
+    if !userRenamed {
+      contact.name = defaultName
+      contact.displayName = defaultName
+    }
     contact.signalASIId = desktopId
     contact.type = "device"
     contact.agentKind = "device"
@@ -1450,6 +1472,25 @@ final class SignalASIStore: ObservableObject {
     upsert(contact)
     save()
     return true
+  }
+
+  private func deviceDefaultDisplayName(for desktopId: String) -> String {
+    UserDefaults.standard.string(forKey: deviceDefaultDisplayNameKey(desktopId)) ?? ""
+  }
+
+  private func rememberDeviceDefaultDisplayName(_ desktopId: String, fallback: String) {
+    let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanDesktopId.isEmpty,
+          !cleanFallback.isEmpty,
+          deviceDefaultDisplayName(for: cleanDesktopId).isEmpty else {
+      return
+    }
+    UserDefaults.standard.set(cleanFallback, forKey: deviceDefaultDisplayNameKey(cleanDesktopId))
+  }
+
+  private func deviceDefaultDisplayNameKey(_ desktopId: String) -> String {
+    "signalasi.device.default_display_name.\(desktopId)"
   }
 
   @discardableResult
