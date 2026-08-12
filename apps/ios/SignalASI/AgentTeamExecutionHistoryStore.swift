@@ -15,17 +15,23 @@ final class AgentTeamExecutionHistoryStore {
   private let defaults: UserDefaults
   private let storageKey: String
   private let secrets: SignalASISecretStore
+  private let executionStore: AgentTeamExecutionStore
   private let lock = NSRecursiveLock()
   private var snapshotsByRunId: [String: AgentTeamExecutionSnapshot]
 
   init(
     defaults: UserDefaults = .standard,
     storageKey: String = AgentTeamExecutionHistoryStore.defaultStorageKey,
-    secrets: SignalASISecretStore = KeychainSecretStore.shared
+    secrets: SignalASISecretStore = KeychainSecretStore.shared,
+    executionStore: AgentTeamExecutionStore? = nil
   ) {
     self.defaults = defaults
     self.storageKey = storageKey
     self.secrets = secrets
+    self.executionStore = executionStore ?? UserDefaultsAgentTeamExecutionStore(
+      defaults: defaults,
+      secrets: secrets
+    )
     let data = SignalASIEncryptedUserDefaultsStore.load(
       defaults: defaults,
       key: storageKey,
@@ -63,7 +69,7 @@ final class AgentTeamExecutionHistoryStore {
   func recent(_ limit: Int = AgentTeamExecutionHistoryStore.defaultRecentLimit) -> [AgentTeamExecutionSnapshot] {
     lock.lock()
     defer { lock.unlock() }
-    return orderedSnapshotsLocked().prefix(max(limit, 0)).map { $0 }
+    return orderedSnapshotsLocked(includingLiveExecutions: true).prefix(max(limit, 0)).map { $0 }
   }
 
   func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
@@ -71,19 +77,23 @@ final class AgentTeamExecutionHistoryStore {
     guard !clean.isEmpty else { return nil }
     lock.lock()
     defer { lock.unlock() }
-    return snapshotsByRunId[clean]
+    let historySnapshot = snapshotsByRunId[clean]
+    let liveSnapshot = executionStore.snapshot(supervisorRunId: clean)
+    return newerSnapshot(historySnapshot, than: liveSnapshot)
   }
 
   func remove(supervisorRunId: String) {
     let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return }
+    let hadLiveSnapshot = executionStore.snapshot(supervisorRunId: clean) != nil
+    executionStore.remove(supervisorRunId: clean)
     lock.lock()
     let removed = snapshotsByRunId.removeValue(forKey: clean) != nil
     if removed {
       persistLocked()
     }
     lock.unlock()
-    if removed {
+    if removed || hadLiveSnapshot {
       NotificationCenter.default.post(
         name: .signalASIAgentTeamExecutionHistoryDidUpdate,
         object: clean
@@ -92,6 +102,7 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func clear() {
+    executionStore.clear()
     lock.lock()
     snapshotsByRunId.removeAll()
     Self.destroyPersistentStore(defaults: defaults, storageKey: storageKey, secrets: secrets)
@@ -107,12 +118,38 @@ final class AgentTeamExecutionHistoryStore {
     persistLocked()
   }
 
-  private func orderedSnapshotsLocked() -> [AgentTeamExecutionSnapshot] {
-    snapshotsByRunId.values.sorted { left, right in
+  private func orderedSnapshotsLocked(
+    includingLiveExecutions: Bool = false
+  ) -> [AgentTeamExecutionSnapshot] {
+    var combined = snapshotsByRunId
+    if includingLiveExecutions {
+      executionStore.snapshots().forEach { snapshot in
+        let runId = snapshot.supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !runId.isEmpty else { return }
+        combined[runId] = newerSnapshot(combined[runId], than: snapshot)
+      }
+    }
+    return combined.values.sorted { left, right in
       if left.updatedAtMillis != right.updatedAtMillis {
         return left.updatedAtMillis > right.updatedAtMillis
       }
       return left.supervisorRunId > right.supervisorRunId
+    }
+  }
+
+  private func newerSnapshot(
+    _ historySnapshot: AgentTeamExecutionSnapshot?,
+    than liveSnapshot: AgentTeamExecutionSnapshot?
+  ) -> AgentTeamExecutionSnapshot? {
+    switch (historySnapshot, liveSnapshot) {
+    case (nil, let liveSnapshot):
+      return liveSnapshot
+    case (let historySnapshot, nil):
+      return historySnapshot
+    case (let historySnapshot?, let liveSnapshot?):
+      return historySnapshot.updatedAtMillis >= liveSnapshot.updatedAtMillis
+        ? historySnapshot
+        : liveSnapshot
     }
   }
 
