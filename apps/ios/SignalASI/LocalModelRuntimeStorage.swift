@@ -51,6 +51,12 @@ final class LocalModelRuntimeStorage {
       .appendingPathComponent("\(key).part", isDirectory: false)
   }
 
+  func resumeDataFileURL(for profile: LocalModelRuntimeProfile) -> URL {
+    stagingFileURL(for: profile)
+      .deletingPathExtension()
+      .appendingPathExtension("resume")
+  }
+
   func requiredDownloadBytes(for profile: LocalModelRuntimeProfile) -> Int64 {
     let partial = fileSize(stagingFileURL(for: profile))
     let remaining = max(0, profile.expectedModelFileBytes - partial)
@@ -130,6 +136,7 @@ final class LocalModelRuntimeStorage {
     try? fileManager.removeItem(at: finalFileURL(for: profile))
     try? fileManager.removeItem(at: metadataFileURL(for: profile))
     try? fileManager.removeItem(at: stagingFileURL(for: profile))
+    try? fileManager.removeItem(at: resumeDataFileURL(for: profile))
   }
 
   static func sha256(fileURL: URL) throws -> String {
