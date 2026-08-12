@@ -1943,9 +1943,11 @@ final class MessageCoordinator: ObservableObject {
             .ifBlank(agentContact.name)
             .ifBlank(agentContact.id)
         )
+        let phonePublicPageEnabled = agentContact.deliveryMode == .pcConnector
         let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
         let recentUserMessages: [String]
-        if AgentIOSPhonePublicHTMLAttachment.shouldUseConversationContext(originalRequestText) {
+        if phonePublicPageEnabled,
+           AgentIOSPhonePublicHTMLAttachment.shouldUseConversationContext(originalRequestText) {
           recentUserMessages = store.agentSessionMessages(outgoing.conversationId)
             .filter { $0.isMine && !$0.isSystem && $0.id != outgoing.id }
             .map(\.content)
@@ -1956,14 +1958,19 @@ final class MessageCoordinator: ObservableObject {
           currentRequest: originalRequestText,
           recentUserMessages: recentUserMessages
         )
-        let interfaceLanguage = store.languagePolicy.interfaceLanguage
-        let publicPage = await Task.detached(priority: .userInitiated) {
-          AgentIOSPhonePublicHTMLAttachment.prepare(
-            turnId: homeTurnId,
-            currentRequest: publicPageRequest,
-            interfaceLanguage: interfaceLanguage
-          )
-        }.value
+        let publicPage: AgentIOSPhonePublicHTMLPreparation?
+        if phonePublicPageEnabled {
+          let interfaceLanguage = store.languagePolicy.interfaceLanguage
+          publicPage = await Task.detached(priority: .userInitiated) {
+            AgentIOSPhonePublicHTMLAttachment.prepare(
+              turnId: homeTurnId,
+              currentRequest: publicPageRequest,
+              interfaceLanguage: interfaceLanguage
+            )
+          }.value
+        } else {
+          publicPage = nil
+        }
         let remoteAttachments = publicPage.map { effectiveAttachments + [$0.attachment] } ?? effectiveAttachments
         if let export = publicPage?.export {
           pendingPhonePublicPageExport = export
