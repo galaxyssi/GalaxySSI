@@ -178,6 +178,7 @@ enum AgentConfirmationPolicy {
     "signalasi.web.intelligence.watch"
   ]
   private static let directNativeToolIds = Set([
+    "signalasi.hardware.device.status",
     "signalasi.hardware.battery.status",
     "signalasi.hardware.power.status",
     "signalasi.hardware.memory.status",

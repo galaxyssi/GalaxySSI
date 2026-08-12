@@ -4653,11 +4653,21 @@ final class MessageCoordinator: ObservableObject {
 
   private func localizedNativeToolReply(_ result: AgentActionResult) -> String {
     guard result.success,
-          result.metadata["native_tool_id"] == AgentIOSHardwareNativeToolCatalog.memoryStatus,
+          let toolId = result.metadata["native_tool_id"],
+          [
+            AgentIOSHardwareNativeToolCatalog.memoryStatus,
+            AgentIOSHardwareNativeToolCatalog.deviceStatus
+          ].contains(toolId),
           let rawOutput = result.metadata["native_tool_output"],
           let data = rawOutput.data(using: .utf8),
           let output = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
       return ""
+    }
+    if toolId == AgentIOSHardwareNativeToolCatalog.deviceStatus {
+      return AgentIOSDeviceHealthStatusPresentation.message(
+        output: output,
+        language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+      )
     }
     return AgentIOSDeviceMemoryStatusPresentation.message(
       output: output,
