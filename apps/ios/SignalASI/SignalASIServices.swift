@@ -5022,19 +5022,26 @@ final class MessageCoordinator: ObservableObject {
       throw SignalASIError.notPaired
     }
     let sourceMessageId = outgoing.id.uuidString
-    let conversationId = AgentTaskIdentityPolicy.conversationId(
-      contactId: contact.id,
-      requested: outgoing.conversationId
-    )
-    let turnId = outgoing.turnId.ifBlank(sourceMessageId)
-    let taskId = AgentTaskIdentityPolicy.taskId(
-      ownerId: store.profile.signalASIId,
-      contactId: contact.id,
-      sourceMessageId: sourceMessageId,
-      conversationId: conversationId,
-      turnId: turnId,
-      requested: outgoing.id.uuidString
-    )
+    let peerChat = contact.isDesktopDeviceContact
+    let conversationId = peerChat
+      ? AgentPeerChatTransport.conversationId(for: link)
+      : AgentTaskIdentityPolicy.conversationId(
+        contactId: contact.id,
+        requested: outgoing.conversationId
+      )
+    let turnId = peerChat
+      ? AgentPeerChatTransport.turnId(for: sourceMessageId)
+      : outgoing.turnId.ifBlank(sourceMessageId)
+    let taskId = peerChat
+      ? AgentPeerChatTransport.taskId(for: sourceMessageId)
+      : AgentTaskIdentityPolicy.taskId(
+        ownerId: store.profile.signalASIId,
+        contactId: contact.id,
+        sourceMessageId: sourceMessageId,
+        conversationId: conversationId,
+        turnId: turnId,
+        requested: outgoing.id.uuidString
+      )
     let taskIdentity = AgentTaskIdentity(
       clientRouteId: link.routes.clientRouteId,
       conversationId: conversationId,
@@ -5079,10 +5086,10 @@ final class MessageCoordinator: ObservableObject {
     )
     let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
-      "type": "text",
+      "type": peerChat ? "peer_message" : "text",
       "message_id": sourceMessageId,
       "content": text,
-      "contact_id": contact.id,
+      "contact_id": peerChat ? link.desktopId : contact.id,
       "task_id": taskIdentity.taskId,
       "sender": store.profile.signalASIId,
       "conversation_id": taskIdentity.conversationId,
@@ -5100,15 +5107,21 @@ final class MessageCoordinator: ObservableObject {
       "execution_mode": executionMode.rawValue,
       "time": publishStartedAt
     ]
-    payload["_signalasi_conversation_id"] = taskIdentity.conversationId
-    payload["_signalasi_conversation_context"] = conversationContext.asTransportBlock(maximumTokens: 10_000)
-    payload["_signalasi_conversation_has_attachments"] = (!attachments.isEmpty).description
-    payload["_signalasi_turn_id"] = taskIdentity.turnId
-    payload["_signalasi_task_id"] = taskIdentity.taskId
-    payload["_signalasi_long_term_write_allowed"] = (!conversationContext.privateMode).description
-    payload["_signalasi_task_execution_mode"] = executionMode.rawValue
-    payload["original_goal"] = String(text.prefix(500))
-    if !voiceTraceId.isEmpty {
+    if peerChat {
+      payload["source_message_id"] = sourceMessageId
+      payload["client_message_id"] = sourceMessageId
+      payload["sender"] = store.profile.signalASIId
+    } else {
+      payload["_signalasi_conversation_id"] = taskIdentity.conversationId
+      payload["_signalasi_conversation_context"] = conversationContext.asTransportBlock(maximumTokens: 10_000)
+      payload["_signalasi_conversation_has_attachments"] = (!attachments.isEmpty).description
+      payload["_signalasi_turn_id"] = taskIdentity.turnId
+      payload["_signalasi_task_id"] = taskIdentity.taskId
+      payload["_signalasi_long_term_write_allowed"] = (!conversationContext.privateMode).description
+      payload["_signalasi_task_execution_mode"] = executionMode.rawValue
+      payload["original_goal"] = String(text.prefix(500))
+    }
+    if !peerChat && !voiceTraceId.isEmpty {
       payload["voice_session_id"] = voiceTraceId
       if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {
         payload["run_id"] = runId
@@ -5124,7 +5137,8 @@ final class MessageCoordinator: ObservableObject {
         once: true
       )
     }
-    if let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
+    if !peerChat,
+       let data = try? JSONEncoder().encode(store.agentTaskBudget.normalized),
        let taskBudget = try? JSONSerialization.jsonObject(with: data) {
       payload["task_budget"] = taskBudget
     }
@@ -5140,7 +5154,7 @@ final class MessageCoordinator: ObservableObject {
       outboundAttachments = []
     } else {
       let scope = try AgentAttachmentTransferScope(
-        contactId: contact.id,
+        contactId: peerChat ? link.desktopId : contact.id,
         desktopId: link.desktopId,
         clientRouteId: link.routes.clientRouteId,
         conversationId: taskIdentity.conversationId,
@@ -5198,11 +5212,13 @@ final class MessageCoordinator: ObservableObject {
         payload["task_budget_usage"] = encodedUsage
       }
     }
-    taskIdentityStore.register(
-      contactId: contact.id,
-      sourceMessageId: sourceMessageId,
-      identity: taskIdentity
-    )
+    if !peerChat {
+      taskIdentityStore.register(
+        contactId: contact.id,
+        sourceMessageId: sourceMessageId,
+        identity: taskIdentity
+      )
+    }
     let wire = try linkWirePayload(payload, link: link)
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
@@ -5582,6 +5598,10 @@ final class MessageCoordinator: ObservableObject {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
+      return
+    }
+    if appPayload.string("type") == "peer_message" {
+      handlePeerChatPayload(appPayload, link: link, messageId: messageId)
       return
     }
     if appPayload.string("type") == "artifact_chunk" ||
@@ -6235,6 +6255,60 @@ final class MessageCoordinator: ObservableObject {
       return nil
     }
     return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+  }
+
+  private func handlePeerChatPayload(
+    _ payload: [String: Any],
+    link: ServerLink?,
+    messageId: String
+  ) {
+    let desktopId = payload.string("desktop_id").ifBlank(payload.string("from"))
+    let advertisedContactId = payload.string("contact_id")
+    let contact = store.visibleContacts.first { contact in
+      contact.isDesktopDeviceContact && (
+        (!desktopId.isEmpty && contact.desktopId == desktopId) ||
+          (!advertisedContactId.isEmpty && contact.id == advertisedContactId)
+      )
+    }
+    let contactId = contact?.id
+      ?? advertisedContactId.ifBlank(desktopId).ifBlank("hermes")
+    let rawAttachments = payload["attachments"] as? [[String: Any]] ?? []
+    let richOutputJson = AgentPeerChatTransport.richOutput(for: rawAttachments)
+    let content = payload.string("content")
+      .ifBlank(payload.string("text"))
+      .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+    guard !content.isEmpty || !richOutputJson.isEmpty else {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
+    let conversationId = payload.string("conversation_id")
+      .ifBlank(link.map { AgentPeerChatTransport.conversationId(for: $0) } ?? "")
+    let turnId = payload.string("turn_id")
+      .ifBlank(payload.string("source_message_id"))
+      .ifBlank(messageId)
+    let incoming = store.appendIncoming(
+      content,
+      from: contactId,
+      remoteMessageId: messageId,
+      status: .delivered,
+      traceStage: "received",
+      conversationId: conversationId,
+      turnId: turnId,
+      richOutputJson: richOutputJson
+    )
+    store.appendDeliveryTrace(
+      incoming.id,
+      contactId: contactId,
+      stage: "decrypted",
+      detail: "SignalASI Link",
+      status: .delivered
+    )
+    onIncomingMessage?(incoming)
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
   }
 
   private func handleProfileUpdatePayload(_ payload: [String: Any], messageId: String) -> Bool {

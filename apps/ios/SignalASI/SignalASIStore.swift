@@ -1354,6 +1354,7 @@ final class SignalASIStore: ObservableObject {
     contact.signalASIId = desktopId
     contact.type = "device"
     contact.agentKind = "device"
+    contact.agentId = "desktop"
     contact.deliveryMode = .pcConnector
     contact.trustState = .verified
     contact.desktopId = desktopId

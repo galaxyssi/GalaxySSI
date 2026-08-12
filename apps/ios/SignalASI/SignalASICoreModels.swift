@@ -118,6 +118,13 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
     !deleted && trustState == .verified
   }
 
+  var isDesktopDeviceContact: Bool {
+    type.caseInsensitiveCompare("device") == .orderedSame &&
+      agentKind.caseInsensitiveCompare("device") == .orderedSame &&
+      connectorAgentId.caseInsensitiveCompare("desktop") == .orderedSame &&
+      !desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
   var connectorAgentId: String {
     let stored = (agentId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     if !stored.isEmpty {
