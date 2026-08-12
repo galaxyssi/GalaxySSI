@@ -18,23 +18,12 @@ struct SignalASIMainTabView: View {
     case .agent:
       AgentHomeView(onNavigateToMainTab: { selectedTab = $0 })
     case .messages:
-      NavigationView {
-        SignalASIConversationHubView(
-          initialTab: .conversations,
-          showsBackButton: false,
-          onBackToSettings: { selectedTab = .settings }
-        )
-      }
-      .navigationViewStyle(StackNavigationViewStyle())
+      ChatListView(
+        showsBackButton: false,
+        onNavigateToMainTab: { selectedTab = $0 }
+      )
     case .contacts:
-      NavigationView {
-        SignalASIConversationHubView(
-          initialTab: .contacts,
-          showsBackButton: false,
-          onBackToSettings: { selectedTab = .settings }
-        )
-      }
-      .navigationViewStyle(StackNavigationViewStyle())
+      ContactsView(showsBackButton: false)
     case .discover:
       DiscoverView(
         showsBackButton: false,
