@@ -229,6 +229,11 @@ if (!html.includes('id="conversationListMenuButton"') ||
     !workspaceRenderer.includes("data-delete-conversation")) {
   throw new Error("Desktop conversation history must support persistent pinning and bulk deletion");
 }
+if (!styles.includes('.sidebar-more-button::before') ||
+    !styles.includes('content: "\\2026"') ||
+    styles.includes('content: "\\2026\\2026\\2026"')) {
+  throw new Error("Desktop conversation manager must render one standard three-dot ellipsis");
+}
 if (!main.includes("width: 960") || !main.includes("height: 640")) {
   throw new Error("Desktop window must default to 960 x 640");
 }
