@@ -155,7 +155,9 @@ class DesktopTaskStreamTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(stream.accepted)
             self.assertEqual(stream.accepted_subprotocol, "signalasi-task-stream")
-            self.assertEqual(stream.messages[0], {"type": "desktop_tasks_snapshot", "tasks": []})
+            self.assertEqual("desktop_tasks_snapshot", stream.messages[0]["type"])
+            self.assertEqual([], stream.messages[0]["tasks"])
+            self.assertIsInstance(stream.messages[0].get("peer_messages"), list)
             self.assertEqual(stream.messages[1]["type"], "desktop_task_update")
             self.assertEqual(stream.messages[1]["task"]["task_id"], "desktop-live-task")
             self.assertEqual(stream.messages[1]["task"]["prompt"], "Stream this Desktop task")
@@ -197,7 +199,9 @@ class DesktopTaskStreamTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await main.desktop_task_stream(stream)
 
-            self.assertEqual(stream.messages[0], {"type": "desktop_tasks_snapshot", "tasks": []})
+            self.assertEqual("desktop_tasks_snapshot", stream.messages[0]["type"])
+            self.assertEqual([], stream.messages[0]["tasks"])
+            self.assertIsInstance(stream.messages[0].get("peer_messages"), list)
             update = stream.messages[1]
             self.assertEqual("desktop_task_update", update["type"])
             self.assertEqual("self_evolution", update["task"]["task_kind"])
