@@ -490,6 +490,8 @@ struct SignalASIRevokeDevicePairingView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var revocationInFlight = false
   var desktopId: String
 
   private var link: ServerLink? {
@@ -545,8 +547,12 @@ struct SignalASIRevokeDevicePairingView: View {
             systemImage: "trash",
             tint: .red
           ) {
-            store.removeServer(desktopId: desktopId)
-            dismiss()
+            guard !revocationInFlight else { return }
+            revocationInFlight = true
+            Task { @MainActor in
+              _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
+              dismiss()
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -567,6 +573,8 @@ struct SignalASIRevokeAllPCPairingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var revocationInFlight = false
 
   private var summaries: [SignalASIDesktopSecuritySummary] {
     let connectorContacts = store.contacts.filter { !$0.deleted && $0.deliveryMode.isSignalASILinkFamily && $0.type == "agent" }
@@ -636,9 +644,15 @@ struct SignalASIRevokeAllPCPairingsView: View {
               systemImage: "trash",
               tint: .red
             ) {
+              guard !revocationInFlight else { return }
+              revocationInFlight = true
               let ids = summaries.map(\.link.desktopId)
-              ids.forEach { store.removeServer(desktopId: $0) }
-              dismiss()
+              Task { @MainActor in
+                for id in ids {
+                  _ = await coordinator.revokeDesktopPairing(desktopId: id)
+                }
+                dismiss()
+              }
             }
           }
         }

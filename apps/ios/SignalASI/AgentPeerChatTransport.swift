@@ -1,6 +1,11 @@
 import Foundation
 
 enum AgentPeerChatTransport {
+  struct DeliveryTraceEntry: Equatable {
+    var stage: String
+    var detail: String
+  }
+
   static func conversationId(for link: ServerLink) -> String {
     "peer:\(link.routes.clientRouteId)"
   }
@@ -11,6 +16,25 @@ enum AgentPeerChatTransport {
 
   static func taskId(for sourceMessageId: String) -> String {
     "peer:\(sourceMessageId)"
+  }
+
+  static func deliveryTrace(from payload: [String: Any]) -> [DeliveryTraceEntry] {
+    let values: [[String: Any]]
+    if let entries = payload["delivery_trace"] as? [[String: Any]] {
+      values = entries
+    } else if let entries = payload["delivery_trace"] as? [Any] {
+      values = entries.compactMap { $0 as? [String: Any] }
+    } else {
+      return []
+    }
+    return values.compactMap { value in
+      let stage = String(value.string("stage").prefix(80))
+      guard !stage.isEmpty else { return nil }
+      return DeliveryTraceEntry(
+        stage: stage,
+        detail: String(value.string("detail").prefix(240))
+      )
+    }
   }
 
   static func richOutput(for rawAttachments: [[String: Any]]) -> String {
@@ -32,10 +56,15 @@ enum AgentPeerChatTransport {
       let size = raw["size_bytes"] as? NSNumber
         ?? raw["size"] as? NSNumber
       let sizeText = size.map { ByteCountFormatter.string(fromByteCount: $0.int64Value, countStyle: .file) } ?? ""
+      let uri = raw.string("uri")
+      let artifactURI = raw.string("artifact_uri")
       var metadata: [String: String] = [
         "source": "peer_message",
         "size_bytes": String(size?.int64Value ?? 0)
       ]
+      if !artifactURI.isEmpty {
+        metadata["artifact_source_uri"] = artifactURI
+      }
       if let transferId = raw["transfer_id"] as? String, !transferId.isEmpty {
         metadata["transfer_id"] = transferId
       }
@@ -47,6 +76,7 @@ enum AgentPeerChatTransport {
         type: type,
         title: name,
         text: sizeText,
+        uri: artifactURI.ifBlank(uri),
         dataB64: raw.string("data_b64"),
         mimeType: mimeType,
         fallbackText: name,

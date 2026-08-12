@@ -6,7 +6,47 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
-final class SignalASIAppDelegate: NSObject, UIApplicationDelegate {
+extension Notification.Name {
+  static let signalASIOpenContact = Notification.Name("signalasi.open_contact")
+}
+
+final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+  func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    UNUserNotificationCenter.current().delegate = self
+    return true
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound, .badge])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let contactId = (response.notification.request.content.userInfo["signalasi_open_contact_id"] as? String)
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !contactId.isEmpty {
+      UserDefaults.standard.set(contactId, forKey: "signalasi.pending_open_contact")
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(
+          name: .signalASIOpenContact,
+          object: nil,
+          userInfo: ["contactId": contactId]
+        )
+      }
+    }
+    completionHandler()
+  }
+
   func application(
     _ application: UIApplication,
     handleEventsForBackgroundURLSession identifier: String,
@@ -152,8 +192,11 @@ struct ChatListView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var searchText = ""
   @State private var contactPendingChatDeletion: SignalASIContact?
+  @State private var openedContactId = ""
   var showsBackButton = true
   var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+  var initialContactId = ""
+  var onInitialContactHandled: (() -> Void)? = nil
 
   private var filteredContacts: [SignalASIContact] {
     store.chatContacts(matching: searchText)
@@ -162,6 +205,21 @@ struct ChatListView: View {
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
+        NavigationLink(
+          destination: ConversationView(contactId: openedContactId),
+          isActive: Binding(
+            get: { !openedContactId.isEmpty },
+            set: { active in
+              if !active {
+                openedContactId = ""
+              }
+            }
+          )
+        ) {
+          EmptyView()
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
         SignalASITopBar(
           title: "SignalASI",
           onTitleTap: showsBackButton ? nil : {
@@ -244,6 +302,10 @@ struct ChatListView: View {
       .navigationBarHidden(true)
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .onAppear(perform: openInitialContactIfNeeded)
+    .onChange(of: initialContactId) { _ in
+      openInitialContactIfNeeded()
+    }
     .alert(
       t("delete_chat_title", "Delete Chat"),
       isPresented: Binding(
@@ -280,6 +342,16 @@ struct ChatListView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func openInitialContactIfNeeded() {
+    guard openedContactId.isEmpty,
+          !initialContactId.isBlank,
+          store.contact(id: initialContactId) != nil else {
+      return
+    }
+    openedContactId = initialContactId
+    onInitialContactHandled?()
   }
 }
 
@@ -351,6 +423,10 @@ struct ConversationView: View {
     case .local:
       return setupDetail.ifBlank(t("signalasi.status.local", "Local"))
     }
+  }
+
+  private var peerSendPending: Bool {
+    coordinator.pendingPeerSendContactIds.contains(contact.id)
   }
 
   private var cloudModelHeaderText: String {
@@ -437,6 +513,18 @@ struct ConversationView: View {
       if !isSystemNoticeContact {
         Divider()
           .background(Color.signalASISeparator)
+        if peerSendPending {
+          HStack(spacing: 8) {
+            ProgressView()
+              .controlSize(.small)
+            Text(t("signalasi.peer.send_pending", "Sending to device..."))
+              .font(.caption)
+              .foregroundColor(.signalASITextSecondary)
+            Spacer(minLength: 0)
+          }
+          .padding(.horizontal, 14)
+          .padding(.top, 8)
+        }
         SignalASIConversationComposer(
           draft: $draft,
           attachments: $attachments,
@@ -447,6 +535,7 @@ struct ConversationView: View {
           onVoiceAttachment: sendVoiceRecording,
           t: t
         )
+        .disabled(peerSendPending)
       }
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
@@ -1102,6 +1191,7 @@ struct SignalASIRuntimeArtifactPreviewView: View {
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var contactSearchText = ""
   @State private var contactPendingDeletion: SignalASIContact?
   var showsBackButton = true
@@ -1311,7 +1401,17 @@ struct ContactsView: View {
     ) {
       Button(role: .destructive) {
         if let contact = contactPendingDeletion {
-          _ = store.deleteContact(id: contact.id)
+          if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
+            Task { @MainActor in
+              _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
+              _ = store.deleteContact(id: contact.id)
+              contactPendingDeletion = nil
+            }
+          } else {
+            _ = store.deleteContact(id: contact.id)
+            contactPendingDeletion = nil
+          }
+          return
         }
         contactPendingDeletion = nil
       } label: {

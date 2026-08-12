@@ -649,6 +649,9 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsAgentTeamExecutionStore.destroy(defaults: defaults, secrets: secrets)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
+    destroyGlobalAgentBackupData()
+    UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentMemoryStore.clear()
     memoryDeletionIndex.clear()
@@ -1071,6 +1074,9 @@ final class SignalASIStore: ObservableObject {
 
   func exportBackupPayload(includeContacts: Bool = true, includeMessages: Bool = true) -> SignalASIBackupPayload {
     let cloudSecrets = exportCloudAPISecrets()
+    let globalAgentState = exportGlobalAgentBackupData()
+    let transcriptEntries = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
+      .listAll(limit: 500)
     let identity = secrets.string(account: identityPrivateKeyAccount).map {
       SignalASIBackupIdentity(
         identityPrivateKey: $0,
@@ -1098,6 +1104,8 @@ final class SignalASIStore: ObservableObject {
           !UserDefaultsAgentWorkflowTriggerStore.shared.list().isEmpty ||
           !workflowExecutionHistoryStore.listAll().isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
+        includesGlobalAgentState: true,
+        includesAgentTranscript: !transcriptEntries.isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
         includesModelPlannerSettings: true,
@@ -1111,12 +1119,14 @@ final class SignalASIStore: ObservableObject {
         knowledge: agentKnowledgeItems,
         knowledgeAccessAudit: agentKnowledgeAccessAudit,
         taskHistory: recentAgentTasks(limit: 200),
+        transcript: transcriptEntries,
         proactiveTasks: automationTasks(),
         proactiveRuns: Array(proactiveRuns.suffix(500)),
         workflowExecutions: workflowExecutionHistoryStore.exportRecords(),
         workflowTriggers: UserDefaultsAgentWorkflowTriggerStore.shared.list(),
         globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
         globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
+        globalAgentState: globalAgentState,
         agentConversations: agentSessions(includeArchived: true),
         activeAgentConversationId: activeAgentConversationId,
         voiceSettings: voiceSettings,
@@ -1173,6 +1183,9 @@ final class SignalASIStore: ObservableObject {
       agentKnowledgeItems = Array((payload.agentData.knowledge ?? []).suffix(500))
       agentKnowledgeAccessAudit = Array((payload.agentData.knowledgeAccessAudit ?? []).suffix(100))
       agentTaskRecords = Array((payload.agentData.taskHistory ?? []).suffix(200))
+      if let transcript = payload.agentData.transcript {
+        UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets).replaceAll(transcript)
+      }
       proactiveTasks = Array((payload.agentData.proactiveTasks ?? []).suffix(200))
       proactiveRuns = Array((payload.agentData.proactiveRuns ?? []).suffix(500))
       if let workflowExecutions = payload.agentData.workflowExecutions {
@@ -1183,6 +1196,9 @@ final class SignalASIStore: ObservableObject {
       }
       globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
       globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
+      if let globalAgentState = payload.agentData.globalAgentState {
+        restoreGlobalAgentBackupData(globalAgentState)
+      }
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
       activeAgentConversationId = payload.agentData.activeAgentConversationId
       if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {
@@ -1329,6 +1345,8 @@ final class SignalASIStore: ObservableObject {
     let fingerprint = payload.string("desktop_fingerprint")
       .ifBlank(device.string("identity_fingerprint"))
       .ifBlank(payload.string("identity_fingerprint"))
+      .ifBlank(payload.string("identity_key_sha256"))
+      .ifBlank(link?.desktopFingerprint ?? "")
     let now = Date()
     var contact = contact(id: desktopId) ?? SignalASIContact(
       id: desktopId,
@@ -1360,15 +1378,23 @@ final class SignalASIStore: ObservableObject {
     contact.desktopId = desktopId
     contact.desktopName = defaultName
     contact.identityFingerprint = fingerprint
-    contact.deviceName = device.string("device_name").ifBlank(defaultName).nonEmpty
+    contact.deviceName = device.string("device_name")
+      .ifBlank(payload.string("device_name"))
+      .ifBlank(defaultName).nonEmpty
     contact.deviceManufacturer = device.string("device_manufacturer")
-      .ifBlank(device.string("manufacturer")).nonEmpty
+      .ifBlank(device.string("manufacturer"))
+      .ifBlank(payload.string("device_manufacturer"))
+      .ifBlank(payload.string("manufacturer")).nonEmpty
     contact.deviceModel = device.string("device_model")
-      .ifBlank(device.string("model")).nonEmpty
+      .ifBlank(device.string("model"))
+      .ifBlank(payload.string("device_model"))
+      .ifBlank(payload.string("model")).nonEmpty
     contact.devicePlatform = SignalASIDesktopDeviceMetadata.from(payload: payload)?.platform.nonEmpty
-      ?? device.string("platform").nonEmpty
-    contact.devicePlatformVersion = device.string("platform_version").nonEmpty
-    contact.deviceProfileName = device.string("profile_name").nonEmpty
+      ?? device.string("platform").ifBlank(payload.string("platform")).nonEmpty
+    contact.devicePlatformVersion = device.string("platform_version")
+      .ifBlank(payload.string("platform_version")).nonEmpty
+    contact.deviceProfileName = device.string("profile_name")
+      .ifBlank(payload.string("profile_name")).nonEmpty
     contact.deviceHostName = SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName.nonEmpty
     contact.setupStatus = "ready"
     contact.setupDetail = "SignalASI Link is paired"
@@ -1944,6 +1970,7 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsAgentWorkflowTriggerStore.shared.clear()
     UserDefaultsAgentRemoteProactiveWebhookStore.shared.clear()
     workflowExecutionHistoryStore.clear()
+    UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []

@@ -116,12 +116,14 @@ struct PairingView: View {
             badge: t("common_delete", "Delete"),
             monospacedSubtitle: true
           ) {
-            store.removeServer(desktopId: link.desktopId)
-            errorText = String(
-              format: t("signalasi.pairing.desktop_removed", "%@ removed."),
-              link.desktopName.ifBlank(link.desktopId)
-            )
-            pairingNoticeIsError = false
+            Task { @MainActor in
+              _ = await coordinator.revokeDesktopPairing(desktopId: link.desktopId)
+              errorText = String(
+                format: t("signalasi.pairing.desktop_removed", "%@ removed."),
+                link.desktopName.ifBlank(link.desktopId)
+              )
+              pairingNoticeIsError = false
+            }
           }
         }
       }
