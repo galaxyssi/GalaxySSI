@@ -90,6 +90,12 @@ enum AgentModelSelectionSettings {
   }
 }
 
+private struct SignalASIAgentModelSelectionPreparedContent {
+  var localProfiles: [LocalModelRuntimeProfile]
+  var cloudContacts: [SignalASIContact]
+  var callableTargets: [AgentCallableTarget]
+}
+
 struct SignalASIAgentModelSelectionView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -97,29 +103,27 @@ struct SignalASIAgentModelSelectionView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
 
   var onSelectionChanged: (() -> Void)?
+  @State private var contentLoading = true
+  @State private var preparedContent = SignalASIAgentModelSelectionPreparedContent(
+    localProfiles: [],
+    cloudContacts: [],
+    callableTargets: []
+  )
 
   private var selection: AgentModelSelection {
     AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
   }
 
   private var localProfiles: [LocalModelRuntimeProfile] {
-    LocalModelRuntimeSettings.activeProfiles()
+    preparedContent.localProfiles
   }
 
   private var cloudContacts: [SignalASIContact] {
-    store.cloudModelContacts.filter { contact in
-      AgentConnectorAvailability.cloudModelReady(
-        contact: contact,
-        apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
-      )
-    }
+    preparedContent.cloudContacts
   }
 
   private var callableTargets: [AgentCallableTarget] {
-    AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
+    preparedContent.callableTargets
   }
 
   private var agentTargets: [AgentCallableTarget] {
@@ -155,7 +159,10 @@ struct SignalASIAgentModelSelectionView: View {
         trailing: { Color.clear }
       )
       ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
+        if contentLoading {
+          modelSelectionLoadingContent
+        } else {
+          VStack(alignment: .leading, spacing: 12) {
           SignalASISecurityHeroView(
             title: t("signalasi.agent.model_selection.hero_title", "Agent model"),
             subtitle: selectionSubtitle,
@@ -332,10 +339,10 @@ struct SignalASIAgentModelSelectionView: View {
               AddContactView(autoOpenScanner: true)
             }
           }
+          .padding(.horizontal, 12)
+          .padding(.top, 12)
+          .padding(.bottom, 18)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 18)
       }
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
@@ -343,6 +350,73 @@ struct SignalASIAgentModelSelectionView: View {
     .onAppear {
       _ = coordinator.requestCapabilityManifestRefresh()
     }
+    .task(id: modelSelectionContentTaskID) {
+      await prepareModelSelectionContent()
+    }
+  }
+
+  private var modelSelectionLoadingContent: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      SignalASISecurityHeroView(
+        title: t("signalasi.agent.model_selection.hero_title", "Agent model"),
+        subtitle: t("cc_loading", "Loading..."),
+        systemImage: "cpu.fill",
+        tint: .signalASIAccent,
+        badge: t("signalasi.agent.model_selection.badge", "Routing")
+      )
+      HStack(spacing: 10) {
+        ProgressView()
+          .tint(.signalASIAccent)
+        Text(t("cc_loading", "Loading..."))
+          .font(.system(size: 14))
+          .foregroundColor(.signalASITextSecondary)
+      }
+      .frame(maxWidth: .infinity, minHeight: 120)
+    }
+    .padding(.horizontal, 12)
+    .padding(.top, 12)
+    .padding(.bottom, 18)
+  }
+
+  private var modelSelectionContentTaskID: String {
+    let contacts = store.contacts.map {
+      "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.setupStatus):\($0.selectedCloudModelId)"
+    }.joined(separator: "|")
+    return "\(store.activeAgentConversationId)|\(contacts)"
+  }
+
+  private func prepareModelSelectionContent() async {
+    contentLoading = true
+    let sourceContacts = store.visibleContacts
+    let sourceCloudContacts = store.cloudModelContacts
+    let apiKeys = sourceCloudContacts.reduce(into: [String: String]()) { result, contact in
+      for model in contact.cloudModels {
+        if let key = store.apiKey(for: model), !key.isEmpty {
+          result[model.keychainAccount] = key
+        }
+      }
+    }
+    let prepared = await Task.detached(priority: .userInitiated) {
+      let localProfiles = LocalModelRuntimeSettings.activeProfiles()
+      let callableTargets = AgentCallableTargetCatalog.build(
+        contacts: sourceContacts,
+        apiKey: { apiKeys[$0.keychainAccount] }
+      )
+      let cloudContacts = sourceCloudContacts.filter { contact in
+        AgentConnectorAvailability.cloudModelReady(
+          contact: contact,
+          apiKey: contact.selectedCloudModel.flatMap { apiKeys[$0.keychainAccount] }
+        )
+      }
+      return SignalASIAgentModelSelectionPreparedContent(
+        localProfiles: localProfiles,
+        cloudContacts: cloudContacts,
+        callableTargets: callableTargets
+      )
+    }.value
+    guard !Task.isCancelled else { return }
+    preparedContent = prepared
+    contentLoading = false
   }
 
   private var isAutomatic: Bool {
