@@ -61,6 +61,7 @@ final class LocalModelInferenceRuntime {
     lock.unlock()
     guard backendAvailable else { return false }
     let selected = profile ?? LocalModelRuntimeSettings.selectedProfile()
+    guard selected.supportsIOSRuntime else { return false }
     return LocalModelRuntimeSettings.isProfileEnabled(selected) && storage.inspect(selected).installed
   }
 
@@ -73,6 +74,9 @@ final class LocalModelInferenceRuntime {
     thinkingMode: LocalModelThinkingMode = .automatic,
     workClass: LocalModelWorkClass = .interactive
   ) throws -> LocalModelInferenceResult {
+    guard profile.supportsIOSRuntime else {
+      throw LocalModelInferenceError.modelNotReady
+    }
     guard LocalModelRuntimeSettings.isProfileEnabled(profile) else {
       throw LocalModelInferenceError.modelDisabled
     }

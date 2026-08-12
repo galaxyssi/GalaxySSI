@@ -13,7 +13,8 @@ struct LocalModelProfileStore {
   }
 
   func upsert(_ profile: LocalModelRuntimeProfile) {
-    guard profile.sourceTrust == .hubVerified, profile.downloadable else { return }
+    guard (profile.sourceTrust == .hubVerified || profile.sourceTrust == .signedDeployment),
+          profile.catalogPersistable else { return }
     let updated = (list().filter { $0.id != profile.id } + [profile])
       .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     guard let data = try? JSONEncoder().encode(updated) else { return }
@@ -53,6 +54,14 @@ enum LocalModelRuntimeCatalog {
       LocalModelProfileStore(defaults: defaults).upsert(profile)
     }
     return profile
+  }
+
+  static func addSignedDeployment(
+    _ profile: LocalModelRuntimeProfile,
+    defaults: UserDefaults = .standard
+  ) {
+    guard profile.sourceTrust == .signedDeployment else { return }
+    LocalModelProfileStore(defaults: defaults).upsert(profile)
   }
 
   static func profile(
@@ -131,12 +140,13 @@ enum LocalModelRuntimeCatalog {
   }
 
   static func removeHubProfile(_ profile: LocalModelRuntimeProfile, defaults: UserDefaults = .standard) {
-    guard profile.sourceTrust == .hubVerified else { return }
-    let wasSelected = LocalModelRuntimeSettings.selectedProfile(defaults: defaults).id == profile.id
+    removeProfile(profile, defaults: defaults)
+  }
+
+  static func removeProfile(_ profile: LocalModelRuntimeProfile, defaults: UserDefaults = .standard) {
+    guard profile.sourceTrust == .hubVerified || profile.sourceTrust == .signedDeployment else { return }
     LocalModelProfileStore(defaults: defaults).delete(profileId: profile.id)
-    if wasSelected {
-      defaults.set(LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id, forKey: "signalasi_local_model_runtime_v1.profile")
-    }
+    LocalModelRuntimeSettings.removeProfile(profile.id, defaults: defaults)
   }
 
   private struct EstimatedShape {

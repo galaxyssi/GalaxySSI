@@ -18,6 +18,7 @@ enum LocalModelRuntimeReadiness: String, Codable, CaseIterable, Identifiable {
 }
 
 enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
+  case unsupportedPlatform = "UNSUPPORTED_PLATFORM"
   case modelFileMissing = "MODEL_FILE_MISSING"
   case modelFileInvalid = "MODEL_FILE_INVALID"
   case systemLowMemory = "SYSTEM_LOW_MEMORY"
@@ -33,7 +34,7 @@ enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
 
   var blocksLaunch: Bool {
     switch self {
-    case .modelFileMissing, .modelFileInvalid, .systemLowMemory, .insufficientMemory, .deviceTooHot:
+    case .unsupportedPlatform, .modelFileMissing, .modelFileInvalid, .systemLowMemory, .insufficientMemory, .deviceTooHot:
       return true
     case .contextReduced, .thermalPressure, .lowBattery, .criticalBattery, .powerSaveMode:
       return false
@@ -49,6 +50,12 @@ enum LocalModelRuntimeIssue: String, Codable, CaseIterable, Identifiable {
 enum LocalModelSourceTrust: String, Codable {
   case curated = "CURATED"
   case hubVerified = "HUB_VERIFIED"
+  case signedDeployment = "SIGNED_DEPLOYMENT"
+}
+
+enum LocalModelArtifactFormat: String, Codable {
+  case gguf = "GGUF"
+  case qairt = "QAIRT"
 }
 
 enum LocalModelHubSource: String, Codable {
@@ -74,6 +81,23 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
   var visionCapable: Bool
   var sourceTrust: LocalModelSourceTrust
   var sourceHub: LocalModelHubSource
+  var preferredAccelerator: LocalModelAcceleratorKind
+  var artifactFormat: LocalModelArtifactFormat
+  var targetChipset: String
+
+  var supportsIOSRuntime: Bool {
+    artifactFormat == .gguf
+  }
+
+  var catalogPersistable: Bool {
+    repositoryId.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil &&
+      expectedModelFileBytes > 0 &&
+      (artifactFormat == .qairt
+        ? targetChipset.range(of: #"^SM[0-9]{4}$"#, options: .regularExpression) != nil
+        : !fileName.isEmpty &&
+          !fileName.contains("\\") &&
+          !fileName.split(separator: "/").contains { $0.isEmpty || $0 == "." || $0 == ".." })
+  }
 
   var downloadable: Bool {
     repositoryId.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil &&
@@ -81,7 +105,8 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
       !fileName.contains("\\") &&
       !fileName.split(separator: "/").contains { $0.isEmpty || $0 == "." || $0 == ".." } &&
       expectedModelFileBytes > 0 &&
-      sha256.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil
+      sha256.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil &&
+      supportsIOSRuntime
   }
 
   init(
@@ -101,7 +126,10 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     defaultNoThink: Bool = false,
     visionCapable: Bool = false,
     sourceTrust: LocalModelSourceTrust = .curated,
-    sourceHub: LocalModelHubSource = .huggingFace
+    sourceHub: LocalModelHubSource = .huggingFace,
+    preferredAccelerator: LocalModelAcceleratorKind = .cpu,
+    artifactFormat: LocalModelArtifactFormat = .gguf,
+    targetChipset: String = ""
   ) {
     self.id = id
     self.displayName = displayName
@@ -120,6 +148,9 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     self.visionCapable = visionCapable
     self.sourceTrust = sourceTrust
     self.sourceHub = sourceHub
+    self.preferredAccelerator = preferredAccelerator
+    self.artifactFormat = artifactFormat
+    self.targetChipset = targetChipset.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -140,6 +171,9 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     case visionCapable = "vision_capable"
     case sourceTrust = "source_trust"
     case sourceHub = "source_hub"
+    case preferredAccelerator = "preferred_accelerator"
+    case artifactFormat = "artifact_format"
+    case targetChipset = "target_chipset"
   }
 
   init(from decoder: Decoder) throws {
@@ -161,6 +195,9 @@ struct LocalModelRuntimeProfile: Codable, Equatable, Identifiable {
     visionCapable = try container.decodeIfPresent(Bool.self, forKey: .visionCapable) ?? false
     sourceTrust = try container.decodeIfPresent(LocalModelSourceTrust.self, forKey: .sourceTrust) ?? .curated
     sourceHub = try container.decodeIfPresent(LocalModelHubSource.self, forKey: .sourceHub) ?? .huggingFace
+    preferredAccelerator = try container.decodeIfPresent(LocalModelAcceleratorKind.self, forKey: .preferredAccelerator) ?? .cpu
+    artifactFormat = try container.decodeIfPresent(LocalModelArtifactFormat.self, forKey: .artifactFormat) ?? .gguf
+    targetChipset = try container.decodeIfPresent(String.self, forKey: .targetChipset) ?? ""
   }
 }
 
@@ -325,6 +362,84 @@ enum LocalModelRuntimeProfiles {
     defaultNoThink: true
   )
 
+  static let LFM_2_5_2_6B_QAIRT = profile(
+    id: "lfm2-5-2-6b-qnn-w4a8-sm8850",
+    displayName: "LFM2.5 2.6B QNN (NPU)",
+    repositoryId: "LiquidAI/LFM2.5-2.6B",
+    fileName: "lfm2.5-2.6b-qnn-w4a8-sm8850.zip",
+    expectedModelFileBytes: 1_900_000_000,
+    sha256: "",
+    parameterCountBillions: 2.6,
+    layerCount: 30,
+    keyValueHeadCount: 8,
+    headDimension: 64,
+    defaultContextTokens: 2_048,
+    maximumContextTokens: 4_096,
+    quantizationLabel: "W4A8",
+    defaultNoThink: true,
+    preferredAccelerator: .vendorSDK,
+    sourceTrust: .curated,
+    artifactFormat: .qairt,
+    targetChipset: "SM8850"
+  )
+
+  static let QWEN_3_1_7B_QNN = profile(
+    id: "qwen3-1-7b-qnn",
+    displayName: "Qwen3 1.7B QNN (Hybrid)",
+    repositoryId: "unsloth/Qwen3-1.7B-GGUF",
+    fileName: "Qwen3-1.7B-Q4_0.gguf",
+    expectedModelFileBytes: 1_056_782_912,
+    sha256: "c876f159707a4e4f70e045106c69db15bfc935a4981706fd4f65c6e7ea1e81c5",
+    parameterCountBillions: 1.7,
+    layerCount: 36,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    defaultContextTokens: 2_048,
+    maximumContextTokens: 32_768,
+    quantizationLabel: "Q4_0",
+    defaultNoThink: true,
+    preferredAccelerator: .vendorSDK
+  )
+
+  static let QWEN_3_1_7B_QAIRT = profile(
+    id: "qwen3-1-7b-qairt",
+    displayName: "Qwen3 1.7B QNN (NPU)",
+    repositoryId: "qualcomm/Qwen3-1.7B",
+    fileName: "",
+    expectedModelFileBytes: 1_761_061_334,
+    sha256: "",
+    parameterCountBillions: 1.7,
+    layerCount: 36,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    defaultContextTokens: 4_096,
+    maximumContextTokens: 4_096,
+    quantizationLabel: "W4A16",
+    defaultNoThink: true,
+    preferredAccelerator: .vendorSDK,
+    sourceTrust: .curated,
+    artifactFormat: .qairt,
+    targetChipset: "SM8850"
+  )
+
+  static let GEMMA_4_E4B_QNN = profile(
+    id: "gemma-4-e4b-qnn",
+    displayName: "Gemma 4 E4B QNN (Hybrid)",
+    repositoryId: "unsloth/gemma-4-E4B-it-GGUF",
+    fileName: "gemma-4-E4B-it-Q4_0.gguf",
+    expectedModelFileBytes: 4_836_002_944,
+    sha256: "4a403d2e4d80281063e4f517b1c061ded8476b4011a4fc2ba7dbff707075547e",
+    parameterCountBillions: 4.0,
+    layerCount: 36,
+    keyValueHeadCount: 8,
+    headDimension: 128,
+    defaultContextTokens: 2_048,
+    maximumContextTokens: 128_000,
+    quantizationLabel: "Q4_0",
+    visionCapable: true,
+    preferredAccelerator: .vendorSDK
+  )
+
   static let QWEN_3_8B_Q4_K_M = profile(
     id: "qwen3-8b-q4-k-m",
     displayName: "Qwen3 8B",
@@ -420,8 +535,12 @@ enum LocalModelRuntimeProfiles {
   static let all: [LocalModelRuntimeProfile] = [
     GEMMA_3_1B_Q4,
     GEMMA_3_4B_Q4,
+    LFM_2_5_2_6B_QAIRT,
+    QWEN_3_1_7B_QNN,
+    QWEN_3_1_7B_QAIRT,
     QWEN_3_4B_Q4_K_M,
     QWEN_3_8B_Q4_K_M,
+    GEMMA_4_E4B_QNN,
     QWEN_3_5_9B_Q4_K_M,
     LFM_2_5_350M_Q8_0,
     LLAMA_3_1_8B_Q4_K_M,
@@ -458,7 +577,12 @@ enum LocalModelRuntimeProfiles {
     maximumContextTokens: Int,
     quantizationLabel: String = "Q4_K_M",
     defaultNoThink: Bool = false,
-    visionCapable: Bool = false
+    visionCapable: Bool = false,
+    preferredAccelerator: LocalModelAcceleratorKind = .cpu,
+    sourceTrust: LocalModelSourceTrust = .curated,
+    artifactFormat: LocalModelArtifactFormat = .gguf,
+    targetChipset: String = "",
+    defaultContextTokens: Int = 4_096
   ) -> LocalModelRuntimeProfile {
     LocalModelRuntimeProfile(
       id: id,
@@ -467,7 +591,7 @@ enum LocalModelRuntimeProfiles {
       layerCount: layerCount,
       keyValueHeadCount: keyValueHeadCount,
       headDimension: headDimension,
-      defaultContextTokens: 4_096,
+      defaultContextTokens: defaultContextTokens,
       maximumContextTokens: maximumContextTokens,
       quantizationLabel: quantizationLabel,
       repositoryId: repositoryId,
@@ -475,7 +599,11 @@ enum LocalModelRuntimeProfiles {
       sha256: sha256,
       parameterCountBillions: parameterCountBillions,
       defaultNoThink: defaultNoThink,
-      visionCapable: visionCapable
+      visionCapable: visionCapable,
+      preferredAccelerator: preferredAccelerator,
+      sourceTrust: sourceTrust,
+      artifactFormat: artifactFormat,
+      targetChipset: targetChipset
     )
   }
 
@@ -503,6 +631,10 @@ enum LocalModelRuntimeEstimator {
     let maximumContext = max(MIN_CONTEXT_TOKENS, profile.maximumContextTokens)
     let requestedContext = request.requestedContextTokens.clamped(to: MIN_CONTEXT_TOKENS...maximumContext)
     var issues = Set<LocalModelRuntimeIssue>()
+
+    if !profile.supportsIOSRuntime {
+      issues.insert(.unsupportedPlatform)
+    }
 
     if request.requireModelFile && !request.modelFilePresent {
       issues.insert(.modelFileMissing)
@@ -812,18 +944,25 @@ enum LocalModelRuntimePreflight {
 
 enum LocalModelRuntimeSettings {
   static func selectedProfile(defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
-    LocalModelRuntimeCatalog.find(
+    let candidate = LocalModelRuntimeCatalog.find(
       defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id,
       defaults: defaults
     )
+    return candidate.supportsIOSRuntime ? candidate : LocalModelRuntimeProfiles.GEMMA_3_4B_Q4
   }
 
   static func setSelectedProfile(_ profileId: String, defaults: UserDefaults = .standard) {
-    defaults.set(LocalModelRuntimeCatalog.find(profileId, defaults: defaults).id, forKey: keyProfile)
+    let profile = LocalModelRuntimeCatalog.find(profileId, defaults: defaults)
+    guard profile.supportsIOSRuntime else { return }
+    defaults.set(profile.id, forKey: keyProfile)
   }
 
   static func enabledProfileIds(defaults: UserDefaults = .standard) -> Set<String> {
-    let knownIds = Set(LocalModelRuntimeCatalog.profiles(defaults: defaults).map(\.id))
+    let knownIds = Set(
+      LocalModelRuntimeCatalog.profiles(defaults: defaults)
+        .filter(\.supportsIOSRuntime)
+        .map(\.id)
+    )
     if let stored = defaults.array(forKey: keyEnabledProfiles) as? [String] {
       return Set(stored).intersection(knownIds)
     }
@@ -844,7 +983,7 @@ enum LocalModelRuntimeSettings {
     defaults: UserDefaults = .standard
   ) {
     let knownIds = Set(LocalModelRuntimeCatalog.profiles(defaults: defaults).map(\.id))
-    guard knownIds.contains(profile.id) else { return }
+    guard knownIds.contains(profile.id), profile.supportsIOSRuntime else { return }
     var updated = enabledProfileIds(defaults: defaults)
     if enabled {
       updated.insert(profile.id)
@@ -859,11 +998,21 @@ enum LocalModelRuntimeSettings {
     defaults.set(Array(updated).sorted(), forKey: keyEnabledProfiles)
   }
 
+  static func removeProfile(_ profileId: String, defaults: UserDefaults = .standard) {
+    var updated = enabledProfileIds(defaults: defaults)
+    updated.remove(profileId)
+    defaults.set(Array(updated).sorted(), forKey: keyEnabledProfiles)
+    if defaults.string(forKey: keyProfile) == profileId {
+      defaults.set(LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id, forKey: keyProfile)
+    }
+  }
+
   static func activeProfiles(defaults: UserDefaults = .standard) -> [LocalModelRuntimeProfile] {
     let selectedId = selectedProfile(defaults: defaults).id
     let storage = LocalModelRuntimeStorage()
     return LocalModelRuntimeCatalog.profiles(defaults: defaults)
       .filter { enabledProfileIds(defaults: defaults).contains($0.id) }
+      .filter(\.supportsIOSRuntime)
       .filter { storage.inspect($0).installed }
       .sorted { left, right in
         if left.id == selectedId { return true }

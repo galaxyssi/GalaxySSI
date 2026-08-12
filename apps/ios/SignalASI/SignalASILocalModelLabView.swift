@@ -217,7 +217,27 @@ struct SignalASILocalModelLabView: View {
         let installed = artifact != nil
           ? downloadState == .ready
           : localModelStorage.inspect(profile).installed
-        if installed {
+        if !profile.supportsIOSRuntime {
+          SignalASILocalModelLabStatusRow(
+            title: profile.displayName,
+            subtitle: profileSubtitle(profile),
+            systemImage: "xmark.octagon",
+            tint: .orange,
+            badge: t("signalasi.local_model.unsupported", "Unsupported")
+          )
+          .contextMenu {
+            if profile.sourceTrust == .signedDeployment {
+              Button(role: .destructive) {
+                deleteLocalModel(profile)
+              } label: {
+                Label(
+                  t("signalasi.local_model.remove_catalog_entry", "Remove catalog entry"),
+                  systemImage: "trash"
+                )
+              }
+            }
+          }
+        } else if installed {
           SignalASILocalModelLabToggleRow(
             title: profile.displayName,
             subtitle: profileSubtitle(profile),
@@ -640,6 +660,7 @@ struct SignalASILocalModelLabView: View {
       LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: false)
       LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
       try? localModelStorage.delete(profile)
+      LocalModelRuntimeCatalog.removeProfile(profile)
     }
     statusMessage = String(
       format: t("signalasi.local_model.delete_completed", "%@ deleted"),
@@ -698,6 +719,16 @@ struct SignalASILocalModelLabView: View {
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
+    if !profile.supportsIOSRuntime {
+      let chipset = profile.targetChipset.isEmpty ? "Android" : profile.targetChipset
+      return String(
+        format: t(
+          "signalasi.local_model.unsupported_subtitle",
+          "%@ is an Android/vendor deployment and cannot run on iOS"
+        ),
+        chipset
+      )
+    }
     var detail = String(
       format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
@@ -731,6 +762,8 @@ struct SignalASILocalModelLabView: View {
 
   private func issueLabel(_ issue: LocalModelRuntimeIssue) -> String {
     switch issue {
+    case .unsupportedPlatform:
+      return t("signalasi.local_model.issue_unsupported_platform", "This model format is not supported by the iOS inference runtime")
     case .modelFileMissing:
       return t("signalasi.local_model.issue_file_missing", "The selected model file is missing")
     case .modelFileInvalid:
