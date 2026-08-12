@@ -90,20 +90,17 @@ final class AgentIOSDownloadCompletionCoordinator {
   private func notify(_ completion: AgentIOSDownloadCompletion) {
     let zh = languageTag(for: completion).hasPrefix("zh")
     let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
-    let title: String
-    let body: String
-    if completion.succeeded {
-      title = zh ? "下载完成" : "Download complete"
-      body = zh
-        ? "\(name) 已保存到 Download/SignalASI。"
-        : "\(name) was saved to Download/SignalASI."
-    } else {
-      title = zh ? "下载失败" : "Download failed"
-      let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
-      body = zh
-        ? "\(name) 下载失败\(reason)。"
-        : "\(name) failed to download\(reason)."
-    }
+    let title = completion.succeeded
+      ? (zh ? "\u{4E0B}\u{8F7D}\u{5B8C}\u{6210}" : "Download complete")
+      : (zh ? "\u{4E0B}\u{8F7D}\u{5931}\u{8D25}" : "Download failed")
+    let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
+    let body = completion.succeeded
+      ? (zh
+        ? "\(name) \u{5DF2}\u{4FDD}\u{5B58}\u{5230} Download/SignalASI\u{3002}"
+        : "\(name) was saved to Download/SignalASI.")
+      : (zh
+        ? "\(name) \u{4E0B}\u{8F7D}\u{5931}\u{8D25}\(reason)\u{3002}"
+        : "\(name) failed to download\(reason).")
     NotificationService.notify(
       title: title,
       body: body,
