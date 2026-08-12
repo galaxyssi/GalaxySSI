@@ -299,10 +299,13 @@ object SignalASILinkProtocol {
     fun makeEnvelope(payload: JSONObject, sourceId: String, targetId: String): JSONObject {
         require(payload.optString("content").toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) { "Text exceeds Link limit" }
         val now = System.currentTimeMillis()
+        val requestedMessageId = payload.optString("message_id")
+        val messageId = runCatching { UUID.fromString(requestedMessageId).toString() }
+            .getOrElse { UUID.randomUUID().toString() }
         val envelope = JSONObject()
             .put("protocol", NAME)
             .put("version", VERSION)
-            .put("message_id", payload.optString("message_id").ifBlank { UUID.randomUUID().toString() })
+            .put("message_id", messageId)
             .put("conversation_id", payload.optString("conversation_id"))
             .put("source_id", sourceId)
             .put("target_id", targetId)
