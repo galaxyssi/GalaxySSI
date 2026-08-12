@@ -210,6 +210,11 @@ final class MessageCoordinator: ObservableObject {
           self?.resumePendingAgentDelivery()
           self?.requestConnectorStatuses()
         }
+        NotificationCenter.default.post(
+          name: .signalASIAgentRoutingDidUpdate,
+          object: nil,
+          userInfo: ["connected": connected]
+        )
       }
     }
     self.mqttClient.onTransportRecovery = { [weak self] in
@@ -6634,6 +6639,18 @@ final class MessageCoordinator: ObservableObject {
     if hasConnectorAgents {
       _ = store.updateDesktopAgentContacts(from: payload, link: link)
     }
+
+    // Keep the Agent home route label and readiness warning current while a
+    // paired Desktop changes capabilities without leaving the page.
+    NotificationCenter.default.post(
+      name: .signalASIAgentRoutingDidUpdate,
+      object: nil,
+      userInfo: [
+        "type": type,
+        "desktop_id": deviceDesktopId,
+        "manifest_version": manifestVersion
+      ]
+    )
 
     let suppliedContent = payload.string("content").ifBlank(payload.string("text"))
     guard type != "capability_manifest" || !suppliedContent.isEmpty else {

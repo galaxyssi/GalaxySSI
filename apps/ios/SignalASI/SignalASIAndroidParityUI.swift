@@ -199,6 +199,11 @@ struct AgentHomeView: View {
         scanStatusIsError = false
         focusScannedAgents(agentIDs)
       }
+      .onReceive(
+        NotificationCenter.default.publisher(for: .signalASIAgentRoutingDidUpdate)
+      ) { _ in
+        refreshAgentRouteState()
+      }
       .onChange(of: coordinator.artifactDownloadCompletedRevision) { _ in
         let savedPath = coordinator.artifactDownloadSavedPath
         runtimeArtifactStatus = savedPath.isEmpty
