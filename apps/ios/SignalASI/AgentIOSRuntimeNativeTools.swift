@@ -296,8 +296,9 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         "timeout_ms": integerSchema(minimum: 100, maximum: maxTimeoutMillis),
         "network_enabled": boolSchema(),
         "allowed_network_domains": arraySchema(itemSchema: stringSchema(maxLength: 253), maxItems: 64),
-        "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 32)
-      ], required: ["language", "source"])
+        "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 32),
+        "phone_development_manifest": phoneDevelopmentManifestSchema()
+      ], required: ["language"])
     }
   }
 
@@ -388,6 +389,24 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     ["type": .string("boolean")]
   }
 
+  private static func phoneDevelopmentManifestSchema() -> AgentMcpJSONObject {
+    objectSchema([
+      "schema": stringSchema(enumValues: [AgentPhoneDevelopmentManifest.schema]),
+      "decision_summary": stringSchema(maxLength: 600),
+      "language": stringSchema(enumValues: [AgentRuntimeLanguage.python.rawValue]),
+      "entry_file": stringSchema(maxLength: 160),
+      "files": arraySchema(
+        itemSchema: objectSchema([
+          "path": stringSchema(maxLength: 160),
+          "content": stringSchema(maxLength: 128 * 1_024)
+        ], required: ["path", "content"]),
+        maxItems: 64
+      ),
+      "required_packs": arraySchema(itemSchema: stringSchema(maxLength: 64), maxItems: 8),
+      "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 16)
+    ], required: ["schema", "decision_summary", "language", "entry_file", "files"])
+  }
+
   private static func arraySchema(itemSchema: AgentMcpJSONObject, maxItems: Int64) -> AgentMcpJSONObject {
     [
       "type": .string("array"),
@@ -438,6 +457,15 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
       message: AgentIOSOnDeviceRuntimeNativeToolCatalog.title(operation),
       percent: 10
     )
+    let effectiveInput: AgentMcpJSONObject
+    do {
+      effectiveInput = try AgentPhoneDevelopmentManifestCodec.materializedInput(invocation.input)
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_phone_development_manifest",
+        message: error.localizedDescription
+      )
+    }
     let transaction: WorkspaceTransaction?
     do {
       transaction = try beginTransaction(operation: operation, invocation: invocation)
@@ -448,7 +476,7 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
         retryable: true
       )
     }
-    let execution = provider.invoke(operation: operation, input: invocation.input, invocation: invocation)
+    let execution = provider.invoke(operation: operation, input: effectiveInput, invocation: invocation)
     var output = execution.output
     let workspace = workspaceId(invocation.context)
     if let transaction {
