@@ -2485,6 +2485,9 @@
 "signalasi.local_model.remove_catalog_entry" = "移除目录项";
 "signalasi.local_model.issue_unsupported_platform" = "此模型格式不受 iOS 推理运行时支持";
 "signalasi.local_model.issue_file_invalid" = "所选模型文件为空或无效";
+"signalasi.local_model.unsupported" = "不支持";
+"signalasi.local_model.unsupported_subtitle" = "%@ 是 Android/高通专用模型格式，无法在 iOS 上运行";
+"signalasi.local_model.issue_unsupported_platform" = "此模型格式不受 iOS 推理运行时支持";
 "signalasi.local_model.issue_system_low_memory" = "iOS 正处于内存压力状态，请稍后再启动推理";
 "signalasi.local_model.issue_insufficient_memory" = "最小上下文也无法放入当前安全内存预算";
 "signalasi.local_model.issue_context_reduced" = "将上下文降到 %d tokens 后可符合安全内存预算";
