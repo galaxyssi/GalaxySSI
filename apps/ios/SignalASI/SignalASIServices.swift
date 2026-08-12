@@ -5902,7 +5902,8 @@ final class MessageCoordinator: ObservableObject {
     }
     NotificationService.notify(
       title: store.contact(id: displayContactId)?.displayName ?? "SignalASI",
-      body: content.ifBlank("Rich content")
+      body: notificationPreview(content: content, payload: appPayload),
+      userInfo: notificationUserInfo(for: displayContactId)
     )
   }
 
@@ -6417,9 +6418,10 @@ final class MessageCoordinator: ObservableObject {
       ]
     )
     let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
-    let content = payload.string("content")
+    let rawContent = payload.string("content")
       .ifBlank(payload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
+    let content = rawContent
     guard !content.isEmpty || !richOutputJson.isEmpty else {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
@@ -6462,14 +6464,51 @@ final class MessageCoordinator: ObservableObject {
       ) == LanguagePolicySettings.zhCN ? "附件" : "Attachment"
       NotificationService.notify(
         title: contact.displayName,
-        body: content.ifBlank(attachmentFallback),
-        userInfo: ["signalasi_open_contact_id": contact.id]
+        body: notificationPreview(
+          content: content,
+          payload: payload,
+          fallback: attachmentFallback
+        ),
+        userInfo: notificationUserInfo(for: contact.id)
       )
     }
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
+  }
+
+  private func notificationPreview(
+    content: String,
+    payload: [String: Any],
+    fallback: String = "Rich content"
+  ) -> String {
+    let rawContent = payload.string("content")
+      .ifBlank(payload.string("text"))
+    let attachmentName = (payload["attachments"] as? [[String: Any]])?
+      .first?
+      .flatMap { attachment in
+        attachment.string("name")
+          .ifBlank(attachment.string("original_name"))
+          .ifBlank("")
+      } ?? ""
+    return rawContent
+      .ifBlank(attachmentName)
+      .ifBlank(content)
+      .ifBlank(AgentRichContentCodec.fallbackText(
+        AgentRichContentCodec.normalize(
+          payload.string("rich_output").ifBlank(payload.string("rich_output_json"))
+        )
+      ))
+      .ifBlank(fallback)
+  }
+
+  private func notificationUserInfo(for contactId: String) -> [AnyHashable: Any] {
+    let cleanContactId = contactId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanContactId.isEmpty, store.contact(id: cleanContactId) != nil else {
+      return [:]
+    }
+    return ["signalasi_open_contact_id": cleanContactId]
   }
 
   private func handleProfileUpdatePayload(_ payload: [String: Any], messageId: String) -> Bool {
