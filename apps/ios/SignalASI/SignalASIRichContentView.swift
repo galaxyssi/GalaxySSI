@@ -103,6 +103,7 @@ struct SignalASIRichContentView: View {
       defaultFilename: artifactExportFilename
     ) { result in
       guard case .success = result else { return }
+      guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactExportSourceURI) else { return }
       coordinator.markDesktopArtifactSaved(
         sourceURI: artifactExportSourceURI,
         savedURI: "file-export://\(artifactExportFilename)"
@@ -157,7 +158,8 @@ struct SignalASIRichContentView: View {
   }
 
   fileprivate func exportArtifact(_ block: AgentRichBlock) {
-    guard let file = coordinator.desktopArtifactStore.localFile(for: block),
+    guard let file = coordinator.desktopArtifactStore.localFile(for: block)
+      ?? SignalASILocalFileResource.url(for: block),
       let data = try? Data(contentsOf: file) else {
       return
     }
@@ -167,6 +169,17 @@ struct SignalASIRichContentView: View {
     )
     artifactDocument = SignalASIArtifactDocument(data: data)
     artifactExportPresented = true
+  }
+}
+
+private enum SignalASILocalFileResource {
+  static func url(for block: AgentRichBlock) -> URL? {
+    guard let url = URL(string: block.uri),
+          url.isFileURL,
+          FileManager.default.fileExists(atPath: url.path) else {
+      return nil
+    }
+    return url
   }
 }
 
@@ -987,6 +1000,8 @@ private struct SignalASIRichBlockView: View {
   private var resourceBlock: some View {
     if isDesktopArtifact {
       desktopArtifactBlock
+    } else if isLocalDownload {
+      localDownloadBlock
     } else {
       let hasPriorityAction = block.actions.contains {
         ["preview_runtime_artifact", "save_runtime_artifact"].contains($0.verb)
@@ -1002,6 +1017,33 @@ private struct SignalASIRichBlockView: View {
         if !block.actions.isEmpty {
           resourceActionButtons(block.actions)
         }
+      }
+    }
+  }
+
+  private var localDownloadBlock: some View {
+    let available = SignalASILocalFileResource.url(for: block) != nil
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASIRichResourceRow(
+        icon: "arrow.down.doc",
+        title: resourceTitle,
+        subtitle: resourceSubtitle,
+        url: nil,
+        typeLabel: resourceTypeLabel
+      )
+      if available {
+        Button {
+          onArtifactSave(block)
+        } label: {
+          Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 32)
+        }
+        .buttonStyle(.borderedProminent)
+      } else {
+        Text(t("rich_output_load_failed", "File is no longer available in SignalASI."))
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
       }
     }
   }
@@ -1084,6 +1126,11 @@ private struct SignalASIRichBlockView: View {
   private var isDesktopArtifact: Bool {
     let sourceURI = block.metadata["artifact_source_uri"] ?? block.uri
     return block.isArtifactBlock && AgentDesktopArtifactStore.isSignalASIArtifactURI(sourceURI)
+  }
+
+  private var isLocalDownload: Bool {
+    block.metadata["local_download"] == "true" &&
+      block.metadata["saved_to_downloads"] == "true"
   }
 
   private func actionsBlock(title: String) -> some View {
