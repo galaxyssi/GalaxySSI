@@ -294,6 +294,18 @@ struct SignalASIDataBackupView: View {
         badge: preview.globalAgentStateBadge(localized: t)
       )
       SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_transcript", "Agent transcript"),
+        subtitle: String(
+          format: t("signalasi.data_backup.import_transcript_subtitle", "%d entries with deferred content integrity"),
+          preview.transcriptCount
+        ),
+        systemImage: "text.bubble",
+        tint: preview.transcriptCount > 0 ? .signalASIAccent : .gray,
+        badge: preview.transcriptCount > 0
+           ? t("backup_included", "Included")
+           : t("signalasi.data_backup.not_included", "Not included")
+      )
+      SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_language_voice", "Language & Voice"),
         subtitle: preview.languageVoiceSubtitle(localized: t),
         systemImage: "globe",
@@ -615,6 +627,11 @@ private struct SignalASIBackupImportPreview {
       state.research.tasks.count +
       state.memoryEvolution.records.count +
       state.memoryEvolution.inbox.candidates.count
+  }
+
+  var transcriptCount: Int {
+    guard payload.includesAgentData else { return 0 }
+    return payload.agentData.transcript?.count ?? 0
   }
 
   var customDeviceCount: Int {
