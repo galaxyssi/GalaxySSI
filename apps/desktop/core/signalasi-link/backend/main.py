@@ -665,7 +665,11 @@ def api_pairing_qr(
 def api_pairing_clear(request: Request, client_route_id: str = Query("")):
     require_desktop_api_token(request)
     from pairing_state import clear_pairing_state, get_client, list_clients, pairing_status
-    from mqtt_bridge import forget_paired_client_transport, publish_pairing_revoked
+    from mqtt_bridge import (
+        forget_paired_client_transport,
+        publish_pairing_revoked,
+        reconcile_mqtt_subscriptions,
+    )
     from signalasi_client import remove_peer_signal_session
     from desktop_control import desktop_control_manager
     targets = [get_client(client_route_id)] if client_route_id else list_clients()
@@ -686,10 +690,12 @@ def api_pairing_clear(request: Request, client_route_id: str = Query("")):
             target["client_route_id"]
         )
     clear_pairing_state(client_route_id)
+    subscription_reconciliation = reconcile_mqtt_subscriptions()
     status = pairing_status()
     status["revoke"] = revoke
     status["removed_sessions"] = removed_sessions
     status["transport_cleanup"] = transport_cleanup
+    status["subscription_reconciliation"] = subscription_reconciliation
     status["forgotten_client_route_ids"] = [target["client_route_id"] for target in targets]
     return status
 
