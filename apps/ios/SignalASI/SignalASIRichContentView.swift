@@ -5,6 +5,7 @@ import SwiftUI
 import UIKit
 import WebKit
 import UniformTypeIdentifiers
+import QuickLook
 
 struct SignalASIRichContentView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -15,6 +16,7 @@ struct SignalASIRichContentView: View {
   @State private var artifactExportPresented = false
   @State private var artifactExportSourceURI = ""
   @State private var artifactExportFilename = "SignalASI-artifact"
+  @State private var filePreview: SignalASIFilePreview?
   @State private var largeOutputExpanded = false
 
   var content: String
@@ -65,7 +67,8 @@ struct SignalASIRichContentView: View {
                   isOutgoing: isOutgoing,
                   onAction: onAction,
                   onFormSubmit: onFormSubmit,
-                  onArtifactSave: { exportArtifact($0) }
+                  onArtifactSave: { exportArtifact($0) },
+                  onArtifactPreview: { previewArtifact($0) }
                 )
                 .padding(.vertical, 4)
               } else {
@@ -75,7 +78,8 @@ struct SignalASIRichContentView: View {
                   isOutgoing: isOutgoing,
                   onAction: onAction,
                   onFormSubmit: onFormSubmit,
-                  onArtifactSave: { exportArtifact($0) }
+                  onArtifactSave: { exportArtifact($0) },
+                  onArtifactPreview: { previewArtifact($0) }
                 )
               }
             }
@@ -85,7 +89,8 @@ struct SignalASIRichContentView: View {
               isOutgoing: isOutgoing,
               onAction: onAction,
               onFormSubmit: onFormSubmit,
-              onArtifactSave: { exportArtifact($0) }
+              onArtifactSave: { exportArtifact($0) },
+              onArtifactPreview: { previewArtifact($0) }
             )
           }
           if isLargeOutput {
@@ -108,6 +113,9 @@ struct SignalASIRichContentView: View {
         sourceURI: artifactExportSourceURI,
         savedURI: "file-export://\(artifactExportFilename)"
       )
+    }
+    .sheet(item: $filePreview) { preview in
+      SignalASIFilePreviewView(preview: preview)
     }
   }
 
@@ -170,6 +178,62 @@ struct SignalASIRichContentView: View {
     artifactDocument = SignalASIArtifactDocument(data: data)
     artifactExportPresented = true
   }
+
+  fileprivate func previewArtifact(_ block: AgentRichBlock) {
+    guard let file = coordinator.desktopArtifactStore.localFile(for: block)
+      ?? SignalASILocalFileResource.url(for: block),
+      FileManager.default.fileExists(atPath: file.path) else {
+      return
+    }
+    filePreview = SignalASIFilePreview(
+      url: file,
+      title: block.title.ifBlank(file.lastPathComponent)
+    )
+  }
+}
+
+struct SignalASIFilePreview: Identifiable {
+  let id = UUID()
+  let url: URL
+  let title: String
+}
+
+private struct SignalASIFilePreviewView: UIViewControllerRepresentable {
+  let preview: SignalASIFilePreview
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(preview: preview)
+  }
+
+  func makeUIViewController(context: Context) -> UINavigationController {
+    let controller = QLPreviewController()
+    controller.dataSource = context.coordinator
+    controller.title = preview.title
+    let navigation = UINavigationController(rootViewController: controller)
+    navigation.navigationBar.prefersLargeTitles = false
+    return navigation
+  }
+
+  func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+
+  final class Coordinator: NSObject, QLPreviewControllerDataSource {
+    let preview: SignalASIFilePreview
+
+    init(preview: SignalASIFilePreview) {
+      self.preview = preview
+    }
+
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+      1
+    }
+
+    func previewController(
+      _ controller: QLPreviewController,
+      previewItemAt index: Int
+    ) -> QLPreviewItem {
+      preview.url as NSURL
+    }
+  }
 }
 
 private enum SignalASILocalFileResource {
@@ -192,6 +256,7 @@ private struct SignalASIRichSectionView: View {
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
+  var onArtifactPreview: (AgentRichBlock) -> Void
 
   @State private var expanded: Bool
 
@@ -201,7 +266,8 @@ private struct SignalASIRichSectionView: View {
     isOutgoing: Bool,
     onAction: @escaping (AgentRichAction) -> Void,
     onFormSubmit: @escaping (AgentRichBlock, [String: String]) -> Void,
-    onArtifactSave: @escaping (AgentRichBlock) -> Void
+    onArtifactSave: @escaping (AgentRichBlock) -> Void,
+    onArtifactPreview: @escaping (AgentRichBlock) -> Void
   ) {
     self.section = section
     self.expansionStorageKey = expansionStorageKey
@@ -209,6 +275,7 @@ private struct SignalASIRichSectionView: View {
     self.onAction = onAction
     self.onFormSubmit = onFormSubmit
     self.onArtifactSave = onArtifactSave
+    self.onArtifactPreview = onArtifactPreview
     let storageKey = expansionStorageKey.isEmpty
       ? ""
       : "\(expansionStorageKey):\(section.kind.rawValue)"
@@ -232,7 +299,8 @@ private struct SignalASIRichSectionView: View {
       isOutgoing: isOutgoing,
       onAction: onAction,
       onFormSubmit: onFormSubmit,
-      onArtifactSave: onArtifactSave
+      onArtifactSave: onArtifactSave,
+      onArtifactPreview: onArtifactPreview
     )
     .padding(.vertical, 4)
   }
@@ -276,7 +344,8 @@ private struct SignalASIRichSectionView: View {
           isOutgoing: isOutgoing,
           onAction: onAction,
           onFormSubmit: onFormSubmit,
-          onArtifactSave: onArtifactSave
+          onArtifactSave: onArtifactSave,
+          onArtifactPreview: onArtifactPreview
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
       }
@@ -312,6 +381,7 @@ private struct SignalASIRichBlockListView: View {
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
+  var onArtifactPreview: (AgentRichBlock) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -321,7 +391,8 @@ private struct SignalASIRichBlockListView: View {
           isOutgoing: isOutgoing,
           onAction: onAction,
           onFormSubmit: onFormSubmit,
-          onArtifactSave: onArtifactSave
+          onArtifactSave: onArtifactSave,
+          onArtifactPreview: onArtifactPreview
         )
         .padding(.top, index == 0 ? 0 : Self.blockSpacing(for: block))
       }
@@ -351,6 +422,7 @@ private struct SignalASIRichBlockView: View {
   var onAction: (AgentRichAction) -> Void
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
+  var onArtifactPreview: (AgentRichBlock) -> Void
 
   @State private var expandedCode = false
   @State private var expandedTable = false
@@ -1045,9 +1117,7 @@ private struct SignalASIRichBlockView: View {
           url: hasPriorityAction ? nil : SignalASIRichContentLink.safeURL(block.uri),
           typeLabel: resourceTypeLabel
         )
-        if !block.actions.isEmpty {
-          resourceActionButtons(block.actions)
-        }
+        resourceOpenAndActionButtons(block)
       }
     }
   }
@@ -1063,14 +1133,24 @@ private struct SignalASIRichBlockView: View {
         typeLabel: resourceTypeLabel
       )
       if available {
-        Button {
-          onArtifactSave(block)
-        } label: {
-          Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
-            .font(.caption.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 32)
+        HStack(spacing: 8) {
+          Button {
+            onArtifactPreview(block)
+          } label: {
+            Label(t("rich_output_preview", "Open"), systemImage: "doc.viewfinder")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.borderedProminent)
+          Button {
+            onArtifactSave(block)
+          } label: {
+            Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.bordered)
         }
-        .buttonStyle(.borderedProminent)
       } else {
         Text(t("rich_output_load_failed", "File is no longer available in SignalASI."))
           .font(.caption)
@@ -1105,6 +1185,26 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  private func resourceOpenAndActionButtons(_ block: AgentRichBlock) -> some View {
+    let localFileAvailable = coordinator.desktopArtifactStore.localFile(for: block) != nil
+      || SignalASILocalFileResource.url(for: block) != nil
+    return VStack(spacing: 8) {
+      if localFileAvailable {
+        Button {
+          onArtifactPreview(block)
+        } label: {
+          Label(t("rich_output_preview", "Open"), systemImage: "doc.viewfinder")
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.borderedProminent)
+      }
+      if !block.actions.isEmpty {
+        resourceActionButtons(block.actions)
+      }
+    }
+  }
+
   private func resourceActionIcon(_ action: AgentRichAction) -> String {
     switch action.verb.lowercased() {
     case "preview_runtime_artifact":
@@ -1130,13 +1230,21 @@ private struct SignalASIRichBlockView: View {
       HStack(spacing: 8) {
         if available {
           Button {
+            onArtifactPreview(block)
+          } label: {
+            Label(t("rich_output_preview", "Open"), systemImage: "doc.viewfinder")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.borderedProminent)
+          Button {
             onArtifactSave(block)
           } label: {
             Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
               .font(.caption.weight(.semibold))
               .frame(maxWidth: .infinity, minHeight: 32)
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.bordered)
         } else {
           Button {
             Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
