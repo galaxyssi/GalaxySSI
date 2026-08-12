@@ -5869,6 +5869,7 @@ final class MessageCoordinator: ObservableObject {
     )
     let incoming: ChatMessage
     let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
+    let remoteMessageId = appPayload.string("message_id")
     let liveMessageId = liveConnectorMessageIds.removeValue(forKey: streamKey)
       ?? store.messages(for: displayContactId).last(where: { $0.remoteMessageId == streamRemoteMessageId })?.id
     if let liveMessageId,
@@ -5884,12 +5885,24 @@ final class MessageCoordinator: ObservableObject {
       liveConnectorSequenceByKey.removeValue(forKey: streamKey)
       incoming = updated
     } else {
+      if store.hasIncomingDuplicate(
+        content,
+        from: displayContactId,
+        remoteMessageId: remoteMessageId,
+        turnId: responseTurnId
+      ) {
+        liveConnectorSequenceByKey.removeValue(forKey: streamKey)
+        if !messageId.isEmpty {
+          deliveryStore.completeIncoming(messageId: messageId)
+        }
+        return
+      }
       incoming = store.appendIncoming(
         content,
         from: displayContactId,
-        remoteMessageId: appPayload.string("message_id"),
+        remoteMessageId: remoteMessageId,
         conversationId: resolvedConversationId.ifBlank(responseConversationId),
-        turnId: appPayload.string("turn_id"),
+        turnId: responseTurnId,
         richOutputJson: richOutputJson
       )
     }
@@ -6431,6 +6444,17 @@ final class MessageCoordinator: ObservableObject {
     let turnId = payload.string("turn_id")
       .ifBlank(payload.string("source_message_id"))
       .ifBlank(messageId)
+    if store.hasIncomingDuplicate(
+      content,
+      from: contactId,
+      remoteMessageId: messageId,
+      turnId: turnId
+    ) {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     let incoming = store.appendIncoming(
       content,
       from: contactId,

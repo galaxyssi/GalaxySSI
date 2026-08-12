@@ -724,6 +724,25 @@ final class SignalASIStore: ObservableObject {
     return message
   }
 
+  func hasIncomingDuplicate(
+    _ content: String,
+    from contactId: String,
+    remoteMessageId: String = "",
+    turnId: String = ""
+  ) -> Bool {
+    let existing = messagesByContact[contactId] ?? []
+    let normalizedRemoteMessageId = remoteMessageId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalizedRemoteMessageId.isEmpty,
+       existing.contains(where: { !$0.isMine && $0.remoteMessageId == normalizedRemoteMessageId }) {
+      return true
+    }
+    let normalizedTurnId = turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTurnId.isEmpty else { return false }
+    return existing.contains {
+      !$0.isMine && $0.turnId == normalizedTurnId && $0.content == content
+    }
+  }
+
   @discardableResult
   func appendIncoming(
     _ content: String,
