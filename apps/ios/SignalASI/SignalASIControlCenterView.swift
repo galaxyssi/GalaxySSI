@@ -4,6 +4,7 @@ import UIKit
 struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var disclosureRecords: [AgentDataDisclosureRecord] = []
 
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
@@ -394,11 +395,17 @@ struct SignalASIControlCenterView: View {
   }
 
   private var securityBadge: String {
-    store.profile.identityFingerprint.isEmpty ? t("cc_status_degraded", "Degraded") : t("cc_status_secure", "Secure")
+    secureLinkReady ? t("cc_status_secure", "Secure") : t("cc_status_degraded", "Degraded")
   }
 
   private var securityTint: Color {
-    store.profile.identityFingerprint.isEmpty ? .orange : .signalASIAccent
+    secureLinkReady ? .signalASIAccent : .orange
+  }
+
+  private var secureLinkReady: Bool {
+    !store.profile.identityFingerprint.isEmpty &&
+      store.serverLinks.contains(where: \.paired) &&
+      coordinator.mqttClient.isConnected
   }
 
   private var agentCoreBadge: String {
