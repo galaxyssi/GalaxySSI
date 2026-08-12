@@ -3,6 +3,7 @@ package com.signalasi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 internal data class PreparedPeerChatMessage(
     val topic: String?,
@@ -25,6 +26,7 @@ internal object PeerChatTransport {
         val desktopId = AppStore.desktopIdForContact(context, contactId)
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return null
         val sourceMessageId = clientMessageId ?: System.currentTimeMillis()
+        val transportMessageId = UUID.randomUUID().toString()
         val conversationId = "peer:${link.routes.clientRouteId}"
         val turnId = "peer-turn:$sourceMessageId"
         val taskId = "peer:$sourceMessageId"
@@ -46,7 +48,7 @@ internal object PeerChatTransport {
         }.getOrNull() ?: return null
         val payload = JSONObject()
             .put("type", "peer_message")
-            .put("message_id", sourceMessageId.toString())
+            .put("message_id", transportMessageId)
             .put("source_message_id", sourceMessageId.toString())
             .put("client_message_id", sourceMessageId)
             .put("content", content.take(24_000))
