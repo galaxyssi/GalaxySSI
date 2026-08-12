@@ -6305,6 +6305,16 @@ final class MessageCoordinator: ObservableObject {
       detail: "SignalASI Link",
       status: .delivered
     )
+    if let contact, contact.isDesktopDeviceContact {
+      let attachmentFallback = LanguagePolicySettings.resolveInterface(
+        store.languagePolicy.interfaceLanguage
+      ) == LanguagePolicySettings.zhCN ? "附件" : "Attachment"
+      NotificationService.notify(
+        title: contact.displayName,
+        body: content.ifBlank(attachmentFallback),
+        userInfo: ["signalasi_open_contact_id": contact.id]
+      )
+    }
     onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
@@ -6546,7 +6556,11 @@ enum NotificationService {
     (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])) ?? false
   }
 
-  static func notify(title: String, body: String) {
+  static func notify(
+    title: String,
+    body: String,
+    userInfo: [AnyHashable: Any] = [:]
+  ) {
     let identifier = UUID().uuidString
     AgentIOSOwnedNotificationStore.shared.record(
       identifier: identifier,
@@ -6558,6 +6572,7 @@ enum NotificationService {
     content.title = title
     content.body = String(body.prefix(160))
     content.sound = .default
+    content.userInfo = userInfo
     let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
   }

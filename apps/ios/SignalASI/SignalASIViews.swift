@@ -6,7 +6,47 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
-final class SignalASIAppDelegate: NSObject, UIApplicationDelegate {
+extension Notification.Name {
+  static let signalASIOpenContact = Notification.Name("signalasi.open_contact")
+}
+
+final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+  func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    UNUserNotificationCenter.current().delegate = self
+    return true
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound, .badge])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let contactId = (response.notification.request.content.userInfo["signalasi_open_contact_id"] as? String)
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !contactId.isEmpty {
+      UserDefaults.standard.set(contactId, forKey: "signalasi.pending_open_contact")
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(
+          name: .signalASIOpenContact,
+          object: nil,
+          userInfo: ["contactId": contactId]
+        )
+      }
+    }
+    completionHandler()
+  }
+
   func application(
     _ application: UIApplication,
     handleEventsForBackgroundURLSession identifier: String,
@@ -152,8 +192,11 @@ struct ChatListView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var searchText = ""
   @State private var contactPendingChatDeletion: SignalASIContact?
+  @State private var openedContactId = ""
   var showsBackButton = true
   var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+  var initialContactId = ""
+  var onInitialContactHandled: (() -> Void)? = nil
 
   private var filteredContacts: [SignalASIContact] {
     store.chatContacts(matching: searchText)
@@ -162,6 +205,21 @@ struct ChatListView: View {
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
+        NavigationLink(
+          destination: ConversationView(contactId: openedContactId),
+          isActive: Binding(
+            get: { !openedContactId.isEmpty },
+            set: { active in
+              if !active {
+                openedContactId = ""
+              }
+            }
+          )
+        ) {
+          EmptyView()
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
         SignalASITopBar(
           title: "SignalASI",
           onTitleTap: showsBackButton ? nil : {
@@ -244,6 +302,10 @@ struct ChatListView: View {
       .navigationBarHidden(true)
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .onAppear(perform: openInitialContactIfNeeded)
+    .onChange(of: initialContactId) { _ in
+      openInitialContactIfNeeded()
+    }
     .alert(
       t("delete_chat_title", "Delete Chat"),
       isPresented: Binding(
@@ -280,6 +342,16 @@ struct ChatListView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  private func openInitialContactIfNeeded() {
+    guard openedContactId.isEmpty,
+          !initialContactId.isBlank,
+          store.contact(id: initialContactId) != nil else {
+      return
+    }
+    openedContactId = initialContactId
+    onInitialContactHandled?()
   }
 }
 
