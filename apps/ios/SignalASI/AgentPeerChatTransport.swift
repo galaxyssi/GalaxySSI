@@ -129,12 +129,31 @@ enum AgentPeerChatTransport {
     return StoredHistoryMigrationResult(messages: migrated, changed: changed)
   }
 
-  private static func storedContent(_ raw: String) -> String {
-    guard let envelope = storedEnvelope(raw),
-          envelope.string("type") == "peer_message" else {
-      return raw
+  static func incomingContent(from payload: [String: Any]) -> String {
+    let content = payload.string("content")
+      .ifBlank(payload.string("text"))
+    guard payload.string("type") == "peer_message" else {
+      return content
     }
-    return envelope.string("content")
+    return normalizedPeerContent(content)
+  }
+
+  private static func storedContent(_ raw: String) -> String {
+    normalizedPeerContent(raw)
+  }
+
+  private static func normalizedPeerContent(_ raw: String) -> String {
+    var content = raw
+    for _ in 0..<3 {
+      guard let envelope = storedEnvelope(content),
+            envelope.string("type") == "peer_message" else {
+        break
+      }
+      let nested = envelope.string("content")
+      guard !nested.isEmpty, nested != content else { break }
+      content = nested
+    }
+    return content
   }
 
   private static func storedRichOutput(_ raw: String) -> String {
