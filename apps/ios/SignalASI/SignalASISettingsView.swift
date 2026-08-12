@@ -70,6 +70,7 @@ struct SettingsView: View {
         subtitle: t("settings_control_center_subtitle", "Local Agent control center"),
         signalASIIdLabel: t("settings_signalasi_id", "SignalASI ID"),
         signalASIId: store.profile.signalASIId,
+        avatarData: store.profile.avatarData,
         primaryBadge: store.agentSafetySettings.executionPaused
           ? t("signalasi.settings.execution_paused", "Execution Paused")
           : t("settings_badge_agent_enabled", "Local Agent Enabled"),
@@ -1065,13 +1066,14 @@ private struct SettingsProfileHero: View {
   var subtitle: String
   var signalASIIdLabel: String
   var signalASIId: String
+  var avatarData: Data?
   var primaryBadge: String
   var secondaryBadge: String
   var secondaryTint: Color
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
-      SignalASILogoView(size: 52, cornerRadius: 10)
+      SignalASIProfileAvatar(data: avatarData, size: 52)
       VStack(alignment: .leading, spacing: 5) {
         Text(title)
           .font(.system(size: 22, weight: .bold))
