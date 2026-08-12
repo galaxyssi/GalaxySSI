@@ -195,6 +195,7 @@ private extension AppTextScaleMode {
 struct ChatListView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var searchText = ""
   @State private var contactPendingChatDeletion: SignalASIContact?
   @State private var openedContactId = ""
@@ -311,6 +312,9 @@ struct ChatListView: View {
     .onChange(of: initialContactId) { _ in
       openInitialContactIfNeeded()
     }
+    .onChange(of: coordinator.pairingRevocationRevision) { _ in
+      closeRevokedContactIfNeeded()
+    }
     .alert(
       t("delete_chat_title", "Delete Chat"),
       isPresented: Binding(
@@ -358,10 +362,19 @@ struct ChatListView: View {
     openedContactId = initialContactId
     onInitialContactHandled?()
   }
+
+  private func closeRevokedContactIfNeeded() {
+    guard !openedContactId.isEmpty,
+          coordinator.lastRevokedContactIds.contains(openedContactId) else {
+      return
+    }
+    openedContactId = ""
+  }
 }
 
 struct ConversationView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
@@ -586,6 +599,9 @@ struct ConversationView: View {
     .onChange(of: contactId) { _ in
       resetMessageWindowIfNeeded()
     }
+    .onChange(of: coordinator.pairingRevocationRevision) { _ in
+      dismissIfRevoked()
+    }
     .alert(t("signalasi.chat.delete.title", "Delete Chat?"), isPresented: $showingDeleteChatConfirmation) {
       Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
         store.deleteMessages(for: contact.id)
@@ -660,6 +676,11 @@ struct ConversationView: View {
     visibleMessageCount = 100
     loadingOlderMessages = false
     initialMessageScrollCompleted = false
+  }
+
+  private func dismissIfRevoked() {
+    guard coordinator.lastRevokedContactIds.contains(contactId) else { return }
+    dismiss()
   }
 
   private func loadOlderMessages(anchorID: UUID, proxy: ScrollViewProxy) {
