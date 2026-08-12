@@ -155,6 +155,7 @@
     A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */; };
     A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */; };
     A10000000000000000001890 /* SignalASIAgentHomeGestureActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001890 /* SignalASIAgentHomeGestureActions.swift */; };
+    A10000000000000000002100 /* SignalASINavigationContentGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002100 /* SignalASINavigationContentGate.swift */; };
     A10000000000000000001900 /* SignalASIAgentHomeRichActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001900 /* SignalASIAgentHomeRichActions.swift */; };
     A10000000000000000001920 /* SignalASIAgentHomeScreenContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001920 /* SignalASIAgentHomeScreenContext.swift */; };
     A10000000000000000001910 /* SignalASIAgentHomeTaskControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001910 /* SignalASIAgentHomeTaskControls.swift */; };
@@ -1000,6 +1001,7 @@
     A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeVoiceActions.swift; sourceTree = "<group>"; };
     A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeInputBridges.swift; sourceTree = "<group>"; };
     A20000000000000000001890 /* SignalASIAgentHomeGestureActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeGestureActions.swift; sourceTree = "<group>"; };
+    A20000000000000000002100 /* SignalASINavigationContentGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASINavigationContentGate.swift; sourceTree = "<group>"; };
     A20000000000000000001900 /* SignalASIAgentHomeRichActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeRichActions.swift; sourceTree = "<group>"; };
     A20000000000000000001920 /* SignalASIAgentHomeScreenContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeScreenContext.swift; sourceTree = "<group>"; };
     A20000000000000000001910 /* SignalASIAgentHomeTaskControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeTaskControls.swift; sourceTree = "<group>"; };
@@ -2185,6 +2187,7 @@
         A20000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift */,
         A20000000000000000001870 /* SignalASIAgentHomeInputBridges.swift */,
         A20000000000000000001890 /* SignalASIAgentHomeGestureActions.swift */,
+        A20000000000000000002100 /* SignalASINavigationContentGate.swift */,
         A20000000000000000001900 /* SignalASIAgentHomeRichActions.swift */,
         A20000000000000000001920 /* SignalASIAgentHomeScreenContext.swift */,
         A20000000000000000001910 /* SignalASIAgentHomeTaskControls.swift */,
@@ -3154,6 +3157,7 @@
         A10000000000000000001860 /* SignalASIAgentHomeVoiceActions.swift in Sources */,
         A10000000000000000001870 /* SignalASIAgentHomeInputBridges.swift in Sources */,
         A10000000000000000001890 /* SignalASIAgentHomeGestureActions.swift in Sources */,
+        A10000000000000000002100 /* SignalASINavigationContentGate.swift in Sources */,
         A10000000000000000001900 /* SignalASIAgentHomeRichActions.swift in Sources */,
         A10000000000000000001920 /* SignalASIAgentHomeScreenContext.swift in Sources */,
         A10000000000000000001910 /* SignalASIAgentHomeTaskControls.swift in Sources */,

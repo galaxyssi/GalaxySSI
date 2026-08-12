@@ -107,6 +107,7 @@ struct SettingsView: View {
   @State private var statusIsError = false
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
   @State private var settingsStatsLoading = true
+  @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var settingsStats = SignalASISettingsSummarySnapshot()
   var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
   var showsBackButton = true
@@ -163,6 +164,9 @@ struct SettingsView: View {
         AddCloudModelView()
       }
       .onAppear(perform: refreshLinkDiagnostics)
+      .onDisappear {
+        navigationContentGate.invalidate()
+      }
       .task(id: settingsStatsTaskID) {
         await prepareSettingsStats()
       }
@@ -198,9 +202,10 @@ struct SettingsView: View {
   }
 
   private func prepareSettingsStats() async {
+    let generation = navigationContentGate.begin()
     settingsStatsLoading = true
     let prepared = await SignalASISettingsSummaryCache.prepare(store: store)
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
     settingsStats = prepared
     settingsStatsLoading = false
   }

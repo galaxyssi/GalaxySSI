@@ -104,6 +104,7 @@ struct SignalASIAgentModelSelectionView: View {
 
   var onSelectionChanged: (() -> Void)?
   @State private var contentLoading = true
+  @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var preparedContent = SignalASIAgentModelSelectionPreparedContent(
     localProfiles: [],
     cloudContacts: [],
@@ -350,6 +351,9 @@ struct SignalASIAgentModelSelectionView: View {
     .onAppear {
       _ = coordinator.requestCapabilityManifestRefresh()
     }
+    .onDisappear {
+      navigationContentGate.invalidate()
+    }
     .task(id: modelSelectionContentTaskID) {
       await prepareModelSelectionContent()
     }
@@ -386,6 +390,7 @@ struct SignalASIAgentModelSelectionView: View {
   }
 
   private func prepareModelSelectionContent() async {
+    let generation = navigationContentGate.begin()
     contentLoading = true
     let sourceContacts = store.visibleContacts
     let sourceCloudContacts = store.cloudModelContacts
@@ -414,7 +419,7 @@ struct SignalASIAgentModelSelectionView: View {
         callableTargets: callableTargets
       )
     }.value
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
     preparedContent = prepared
     contentLoading = false
   }
