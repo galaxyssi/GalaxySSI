@@ -230,7 +230,13 @@ struct SettingsView: View {
 
   private func prepareSettingsStats() async {
     let generation = navigationContentGate.begin()
-    settingsStatsLoading = true
+    if let cached = SignalASINavigationContentPrewarm.snapshot(for: store)?.settings,
+       !Task.isCancelled {
+      settingsStats = cached
+      settingsStatsLoading = false
+    } else {
+      settingsStatsLoading = true
+    }
     let prepared = await SignalASISettingsSummaryCache.prepare(store: store)
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
     settingsStats = prepared

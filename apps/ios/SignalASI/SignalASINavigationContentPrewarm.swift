@@ -8,6 +8,7 @@ enum SignalASINavigationContentPrewarm {
     var key: String
     var hub: SignalASIConversationHubPreparedContent
     var modelSelection: SignalASIAgentModelSelectionPreparedContent
+    var settings: SignalASISettingsSummarySnapshot
   }
 
   static func prepare(store: SignalASIStore) async {
@@ -26,7 +27,7 @@ enum SignalASINavigationContentPrewarm {
         }
       }
     }
-    _ = await SignalASISettingsSummaryCache.prepare(store: store)
+    let settings = await SignalASISettingsSummaryCache.prepare(store: store)
     let prepared = await Task.detached(priority: .utility) {
       let hub = SignalASIConversationHubPreparedContent(
         conversations: SignalASIConversationHubModels.conversations(
@@ -62,7 +63,8 @@ enum SignalASINavigationContentPrewarm {
     cached = Snapshot(
       key: key,
       hub: prepared.0,
-      modelSelection: prepared.1
+      modelSelection: prepared.1,
+      settings: settings
     )
   }
 
@@ -94,6 +96,6 @@ enum SignalASINavigationContentPrewarm {
     ).map { target in
       "\(target.id):\(target.kind.rawValue):\(target.capabilities.map(\.rawValue).sorted().joined(separator: ","))"
     }.joined(separator: "|")
-    return "\(store.activeAgentConversationId)|\(conversations)|\(contacts)|\(localProfiles)|\(cloudModels)|\(callableTargets)"
+    return "\(store.activeAgentConversationId)|\(conversations)|\(contacts)|\(localProfiles)|\(cloudModels)|\(callableTargets)|\(SignalASISettingsSummaryCache.key(for: store))"
   }
 }
