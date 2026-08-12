@@ -6526,10 +6526,16 @@ final class MessageCoordinator: ObservableObject {
         store.markServerPaired(desktopId: desktopId, access: access)
         link = serverLink(for: "", payload: ["desktop_id": desktopId]) ?? link
       }
-      _ = store.updatePairedDesktopDevice(from: payload, link: link)
       pairingStatus = "Pairing confirmed"
       scheduleOutboxFlush(after: 0)
       requestCapabilityManifestRefresh(force: true)
+    }
+
+    // Android refreshes the persisted Desktop device contact from every
+    // authenticated connector status, not only the initial pairing response.
+    let shouldRefreshDeviceContact = type == "pairing_confirmed" || link?.paired == true
+    if shouldRefreshDeviceContact, !deviceDesktopId.isEmpty {
+      _ = store.updatePairedDesktopDevice(from: payload, link: link)
     }
 
     if hasManifestVersion {
