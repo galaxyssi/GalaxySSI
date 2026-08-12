@@ -1191,6 +1191,7 @@ struct SignalASIRuntimeArtifactPreviewView: View {
 struct ContactsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var contactSearchText = ""
   @State private var contactPendingDeletion: SignalASIContact?
   var showsBackButton = true
@@ -1400,7 +1401,17 @@ struct ContactsView: View {
     ) {
       Button(role: .destructive) {
         if let contact = contactPendingDeletion {
-          _ = store.deleteContact(id: contact.id)
+          if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
+            Task { @MainActor in
+              _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
+              _ = store.deleteContact(id: contact.id)
+              contactPendingDeletion = nil
+            }
+          } else {
+            _ = store.deleteContact(id: contact.id)
+            contactPendingDeletion = nil
+          }
+          return
         }
         contactPendingDeletion = nil
       } label: {
