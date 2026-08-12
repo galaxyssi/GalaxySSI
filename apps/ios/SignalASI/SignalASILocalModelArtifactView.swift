@@ -10,6 +10,7 @@ struct LocalModelHubArtifact: Identifiable, Equatable, Hashable {
   var parameterCountBillions: Double
   var downloadURL: URL
   var source: LocalModelHubSource = .huggingFace
+  var visionCapable: Bool = false
 
   var id: String { "\(source.rawValue)/\(repositoryId)/\(fileName)" }
   var displayName: String { fileName.replacingOccurrences(of: ".gguf", with: "").replacingOccurrences(of: "_", with: " ") }
@@ -479,6 +480,7 @@ enum LocalModelHubArtifactClient {
           let siblings = root["siblings"] as? [[String: Any]] else {
       return []
     }
+    let repositoryVisionCapable = model.visionCapable || containsVisionTag(root["tags"])
     return siblings.compactMap { sibling in
       guard let fileName = sibling["rfilename"] as? String,
             fileName.lowercased().hasSuffix(".gguf"),
@@ -499,7 +501,8 @@ enum LocalModelHubArtifactClient {
         quantization: quantization(fileName),
         parameterCountBillions: parameterCount("\(model.id)/\(fileName)"),
         downloadURL: fileURL,
-        source: .huggingFace
+        source: .huggingFace,
+        visionCapable: repositoryVisionCapable
       )
     }
     .filter { !$0.quantization.isEmpty }
@@ -552,7 +555,8 @@ enum LocalModelHubArtifactClient {
         quantization: quantization(fileName),
         parameterCountBillions: parameterCount("\(model.id)/\(fileName)"),
         downloadURL: downloadURL,
-        source: .modelScope
+        source: .modelScope,
+        visionCapable: model.visionCapable
       )
     }
     .sorted { $0.sizeBytes < $1.sizeBytes }
@@ -567,6 +571,23 @@ enum LocalModelHubArtifactClient {
       throw URLError(.badServerResponse)
     }
     return data
+  }
+
+  private static func containsVisionTag(_ value: Any?) -> Bool {
+    let tags: [String]
+    if let strings = value as? [String] {
+      tags = strings
+    } else if let values = value as? [Any] {
+      tags = values.compactMap { $0 as? String }
+    } else {
+      return false
+    }
+    return tags.contains { tag in
+      let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return normalized == "image-text-to-text" ||
+        normalized == "task:image-text-to-text" ||
+        normalized == "vision"
+    }
   }
 
   private static func int64(_ value: Any?) -> Int64 {
