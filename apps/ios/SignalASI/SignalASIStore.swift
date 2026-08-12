@@ -649,6 +649,7 @@ final class SignalASIStore: ObservableObject {
     UserDefaultsAgentTeamExecutionStore.destroy(defaults: defaults, secrets: secrets)
     defaults.removeObject(forKey: UserDefaultsAgentLearningProposalStore.defaultKey)
     defaults.removeObject(forKey: UserDefaultsAgentSkillStore.defaultKey)
+    destroyGlobalAgentBackupData()
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     UserDefaultsAgentSelfModelStore(defaults: defaults, secrets: secrets).clear()
     AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
@@ -1073,6 +1074,7 @@ final class SignalASIStore: ObservableObject {
 
   func exportBackupPayload(includeContacts: Bool = true, includeMessages: Bool = true) -> SignalASIBackupPayload {
     let cloudSecrets = exportCloudAPISecrets()
+    let globalAgentState = exportGlobalAgentBackupData()
     let transcriptEntries = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
       .listAll(limit: 500)
     let identity = secrets.string(account: identityPrivateKeyAccount).map {
@@ -1102,6 +1104,7 @@ final class SignalASIStore: ObservableObject {
           !UserDefaultsAgentWorkflowTriggerStore.shared.list().isEmpty ||
           !workflowExecutionHistoryStore.listAll().isEmpty || !globalProactiveMessages.isEmpty,
         includesAgentConversations: !agentSessions(includeArchived: true).isEmpty,
+        includesGlobalAgentState: true,
         includesAgentTranscript: !transcriptEntries.isEmpty,
         includesCustomDeviceConnectors: true,
         includesHomeAssistantSettings: true,
@@ -1123,6 +1126,7 @@ final class SignalASIStore: ObservableObject {
         workflowTriggers: UserDefaultsAgentWorkflowTriggerStore.shared.list(),
         globalProactiveMessages: Array(globalProactiveMessages.suffix(500)),
         globalAgentFeedback: Array(globalAgentFeedback.suffix(500)),
+        globalAgentState: globalAgentState,
         agentConversations: agentSessions(includeArchived: true),
         activeAgentConversationId: activeAgentConversationId,
         voiceSettings: voiceSettings,
@@ -1192,6 +1196,9 @@ final class SignalASIStore: ObservableObject {
       }
       globalProactiveMessages = Array((payload.agentData.globalProactiveMessages ?? []).suffix(500))
       globalAgentFeedback = Array((payload.agentData.globalAgentFeedback ?? []).suffix(500))
+      if let globalAgentState = payload.agentData.globalAgentState {
+        restoreGlobalAgentBackupData(globalAgentState)
+      }
       agentConversations = Array((payload.agentData.agentConversations ?? []).suffix(200))
       activeAgentConversationId = payload.agentData.activeAgentConversationId
       if !agentConversations.contains(where: { $0.id == activeAgentConversationId }) {

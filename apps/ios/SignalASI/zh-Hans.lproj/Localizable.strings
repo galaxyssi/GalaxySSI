@@ -2629,6 +2629,9 @@
 "signalasi.data_backup.import_messages_subtitle" = "%d 个会话 · %d 条消息";
 "signalasi.data_backup.import_agent_data" = "Agent 数据";
 "signalasi.data_backup.import_agent_data_subtitle" = "%d 条记忆 · %d 条知识 · %d 个任务 · %d 个会话";
+"signalasi.data_backup.import_global_agent" = "个人 ASI 状态";
+"signalasi.data_backup.global_agent_subtitle" = "%d 条运行记录 · 认知、自主、研究与记忆演化";
+"signalasi.data_backup.global_agent_not_included" = "未包含个人 ASI 运行状态";
 "signalasi.data_backup.import_language_voice" = "语言与语音";
 "signalasi.data_backup.import_language_voice_subtitle" = "%@ · 语音 %@ · %@ · ASR %@";
 "signalasi.data_backup.import_configuration" = "配置";
