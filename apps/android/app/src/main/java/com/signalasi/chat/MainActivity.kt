@@ -345,16 +345,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var messageInput: EditText
     internal lateinit var sendButton: ImageButton
     internal lateinit var imageButton: ImageButton
-    internal lateinit var voiceButton: ImageButton
-    internal lateinit var pressToTalkButton: TextView
-    internal lateinit var chatRecordingCenter: LinearLayout
+    internal lateinit var chatComposerRow: LinearLayout
+    internal lateinit var chatPrimaryActionSlot: FrameLayout
+    internal lateinit var chatRecordingCenter: View
+    internal lateinit var chatRecordingInstruction: TextView
     internal lateinit var chatRecordingWaveform: VoiceWaveformView
     internal lateinit var chatRecordingTranscript: TextView
     internal lateinit var chatRecordingTimer: TextView
     internal lateinit var holdToTalkController: AppleHoldToTalkController
-    internal lateinit var emojiButton: ImageButton
-    internal lateinit var emojiPanel: HorizontalScrollView
-    internal lateinit var emojiContainer: LinearLayout
     internal lateinit var chatInputBar: LinearLayout
     internal lateinit var messageList: RecyclerView
     internal lateinit var meProfileText: TextView
@@ -591,7 +589,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val voiceCoordinatorIdsByTurn = ConcurrentHashMap<String, String>()
     internal val voiceCoordinatorIdsBySourceMessage = ConcurrentHashMap<Long, String>()
     internal var player: android.media.MediaPlayer? = null
-    internal var voiceMode = false
+    internal var chatComposerTextMode = false
+    internal var chatComposerKeyboardObserved = false
+    internal var chatComposerKeyboardClosedAt = 0L
     internal var secureChannelReady = false
     internal var scanMode = "security"
     internal var latestAgentScreenContext: ScreenContext? = null
@@ -969,15 +969,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         messageInput = findViewById(R.id.messageInput)
         sendButton = findViewById(R.id.sendButton)
         imageButton = findViewById(R.id.imageButton)
-        voiceButton = findViewById(R.id.voiceButton)
-        pressToTalkButton = findViewById(R.id.pressToTalkButton)
+        chatComposerRow = findViewById(R.id.chatComposerRow)
+        chatPrimaryActionSlot = findViewById(R.id.chatPrimaryActionSlot)
         chatRecordingCenter = findViewById(R.id.chatRecordingCenter)
+        chatRecordingInstruction = findViewById(R.id.chatRecordingInstruction)
         chatRecordingWaveform = findViewById(R.id.chatRecordingWaveform)
         chatRecordingTranscript = findViewById(R.id.chatRecordingTranscript)
         chatRecordingTimer = findViewById(R.id.chatRecordingTimer)
-        emojiButton = findViewById(R.id.emojiButton)
-        emojiPanel = findViewById(R.id.emojiPanel)
-        emojiContainer = findViewById(R.id.emojiContainer)
         chatTitle = findViewById(R.id.chatTitle)
         chatModelTag = findViewById(R.id.chatModelTag)
         chatModelButton = findViewById(R.id.chatModelButton)
@@ -1269,12 +1267,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentComposerKeyboardClosedAt = 0L
             return
         }
+        if (SystemClock.elapsedRealtime() - chatComposerKeyboardClosedAt < 700L) {
+            chatComposerKeyboardClosedAt = 0L
+            return
+        }
         if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
             setAgentActionTrayExpanded(false)
             return
         }
         if (::agentGoalInput.isInitialized && agentComposerTextMode) {
             exitAgentComposerTextMode(hideKeyboard = true)
+            return
+        }
+        if (::messageInput.isInitialized && chatComposerTextMode) {
+            exitChatComposerTextMode(hideKeyboard = true)
             return
         }
         if (featurePage.visibility == View.VISIBLE) {
