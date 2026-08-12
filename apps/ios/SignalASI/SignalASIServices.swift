@@ -919,6 +919,48 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func revokeDesktopPairing(desktopId: String) async -> Bool {
+    let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanDesktopId.isEmpty else { return false }
+    guard let link = store.serverLinks.first(where: { $0.desktopId == cleanDesktopId }) else {
+      return false
+    }
+
+    let payload: [String: Any] = [
+      "type": "client_revoked",
+      "desktop_id": link.desktopId,
+      "reason": "forgotten_by_client",
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else {
+      store.removeServer(desktopId: cleanDesktopId)
+      return false
+    }
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: link.routes.controlTopic,
+      wirePayload: wire.wireText,
+      clientSourceMessageId: cleanDesktopId,
+      contactId: "hermes"
+    )
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
+    store.removeServer(desktopId: cleanDesktopId)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func publishRemoteAgentApproval(_ decision: AgentRemoteApprovalDecision) async -> Bool {
     guard !decision.taskId.isEmpty,
           !decision.clientRouteId.isEmpty,
@@ -5503,6 +5545,32 @@ final class MessageCoordinator: ObservableObject {
       appPayload = unwrapped
     } else {
       appPayload = object
+    }
+    if appPayload.string("type") == "pairing_revoked" {
+      let desktopId = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+      if !desktopId.isEmpty {
+        store.removeServer(desktopId: desktopId)
+      }
+      let content = appPayload.string("content")
+        .ifBlank("This Desktop pairing was revoked. Scan the SignalASI QR code again before communicating.")
+      let systemMessage = store.appendSystem(
+        content,
+        to: "system",
+        conversationId: appPayload.string("conversation_id")
+      )
+      onIncomingMessage?(systemMessage)
+      NotificationService.notify(
+        title: "SignalASI",
+        body: content,
+        userInfo: [
+          "signalasi_notification_type": "pairing_revoked",
+          "desktop_id": desktopId
+        ]
+      )
+      if !appPayload.string("message_id").isEmpty {
+        deliveryStore.completeIncoming(messageId: appPayload.string("message_id"))
+      }
+      return
     }
     if SignalASITransportPrivacyPolicy.isLocalOnly(appPayload) {
       handleLocalOnlyTransportPayload(
