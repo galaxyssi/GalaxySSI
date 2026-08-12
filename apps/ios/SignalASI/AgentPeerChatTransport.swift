@@ -37,7 +37,10 @@ enum AgentPeerChatTransport {
     }
   }
 
-  static func richOutput(for rawAttachments: [[String: Any]]) -> String {
+  static func richOutput(
+    for rawAttachments: [[String: Any]],
+    context: [String: String] = [:]
+  ) -> String {
     let blocks = rawAttachments.enumerated().compactMap { index, raw -> AgentRichBlock? in
       let name = raw.string("name")
         .ifBlank(raw.string("original_name"))
@@ -56,12 +59,14 @@ enum AgentPeerChatTransport {
       let size = raw["size_bytes"] as? NSNumber
         ?? raw["size"] as? NSNumber
       let sizeText = size.map { ByteCountFormatter.string(fromByteCount: $0.int64Value, countStyle: .file) } ?? ""
-      let uri = raw.string("uri")
       let artifactURI = raw.string("artifact_uri")
-      var metadata: [String: String] = [
+        .ifBlank(raw.string("artifact_source_uri"))
+      let artifactID = raw.string("artifact_id")
+      var metadata: [String: String] = context.filter { !$0.value.isEmpty }
+      metadata.merge([
         "source": "peer_message",
         "size_bytes": String(size?.int64Value ?? 0)
-      ]
+      ]) { _, new in new }
       if !artifactURI.isEmpty {
         metadata["artifact_source_uri"] = artifactURI
       }
@@ -71,12 +76,18 @@ enum AgentPeerChatTransport {
       if let sha256 = raw["sha256"] as? String, !sha256.isEmpty {
         metadata["sha256"] = sha256
       }
+      if !artifactURI.isEmpty {
+        metadata["artifact_source_uri"] = artifactURI
+      }
+      if !artifactID.isEmpty {
+        metadata["artifact_id"] = artifactID
+      }
       return AgentRichBlock(
         id: raw.string("id").ifBlank(raw.string("attachment_id")).ifBlank("peer-attachment-" + String(index)),
         type: type,
         title: name,
         text: sizeText,
-        uri: artifactURI.ifBlank(uri),
+        uri: artifactURI.ifBlank(raw.string("uri")),
         dataB64: raw.string("data_b64"),
         mimeType: mimeType,
         fallbackText: name,

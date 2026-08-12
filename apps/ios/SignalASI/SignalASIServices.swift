@@ -6398,7 +6398,17 @@ final class MessageCoordinator: ObservableObject {
     let contactId = contact?.id
       ?? advertisedContactId.ifBlank(desktopId).ifBlank("hermes")
     let rawAttachments = payload["attachments"] as? [[String: Any]] ?? []
-    let richOutputJson = AgentPeerChatTransport.richOutput(for: rawAttachments)
+    let richOutputJson = AgentPeerChatTransport.richOutput(
+      for: rawAttachments,
+      context: [
+        "desktop_id": desktopId,
+        "client_route_id": payload.string("client_route_id"),
+        "conversation_id": payload.string("conversation_id"),
+        "task_id": payload.string("task_id"),
+        "turn_id": payload.string("turn_id").ifBlank(payload.string("source_message_id")),
+        "contact_id": contactId
+      ]
+    )
     let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
     let content = payload.string("content")
       .ifBlank(payload.string("text"))
