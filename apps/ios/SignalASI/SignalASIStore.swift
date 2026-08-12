@@ -576,8 +576,12 @@ final class SignalASIStore: ObservableObject {
       (contact.id == id || contact.signalASIId == id) && contact.type == "device"
     }?.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     if let deviceDesktopId, !deviceDesktopId.isEmpty {
-      // Android treats deleting a device contact as revoking its desktop pairing.
-      removeServer(desktopId: deviceDesktopId)
+      let removedContactIds = removeDesktopPairing(
+        desktopId: deviceDesktopId,
+        deleteMessages: deleteMessages,
+        now: now
+      )
+      return !removedContactIds.isEmpty
     }
     var deletedIds = Set([id])
     var changed = false
@@ -1546,6 +1550,72 @@ final class SignalASIStore: ObservableObject {
       contacts[contactIndex].updatedAt = Date()
     }
     save()
+  }
+
+  @discardableResult
+  func removeDesktopPairing(
+    desktopId: String,
+    deleteMessages: Bool = true,
+    now: Date = Date()
+  ) -> Set<String> {
+    let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanDesktopId.isEmpty else { return [] }
+    let prefix = "\(cleanDesktopId):"
+    let matchingContacts = contacts.filter { contact in
+      contact.id != "system" && contact.id != "hermes" && (
+        contact.desktopId == cleanDesktopId ||
+        contact.id == cleanDesktopId ||
+        contact.id.hasPrefix(prefix) ||
+        contact.signalASIId == cleanDesktopId ||
+        contact.signalASIId.hasPrefix(prefix)
+      )
+    }
+    var removedIds = Set(
+      matchingContacts
+        .flatMap { [$0.id, $0.signalASIId] }
+        .filter { !$0.isEmpty }
+    )
+    messagesByContact.keys
+      .filter { $0 == cleanDesktopId || $0.hasPrefix(prefix) }
+      .forEach { removedIds.insert($0) }
+
+    matchingContacts.flatMap(\.cloudModels).forEach { secrets.delete(account: $0.keychainAccount) }
+    let matchingContactIds = Set(matchingContacts.map(\.id))
+    contacts.removeAll { matchingContactIds.contains($0.id) }
+    for index in friendRequests.indices where removedIds.contains(friendRequests[index].id) ||
+      removedIds.contains(friendRequests[index].signalASIId) {
+      friendRequests[index].status = .deleted
+      friendRequests[index].deletedAt = now
+      friendRequests[index].readdRequired = true
+    }
+    if deleteMessages {
+      removedIds.forEach {
+        messagesByContact.removeValue(forKey: $0)
+        readAtByContact.removeValue(forKey: $0)
+      }
+    }
+    serverLinks.removeAll { $0.desktopId == cleanDesktopId }
+    if var hermes = contact(id: "hermes") {
+      if let activeLink = serverLinks.first(where: \.paired) ?? serverLinks.first {
+        hermes.trustState = activeLink.paired ? .verified : .unverified
+        hermes.identityFingerprint = activeLink.desktopFingerprint
+        hermes.desktopId = activeLink.desktopId
+        hermes.desktopName = activeLink.desktopName
+        hermes.setupStatus = activeLink.paired ? "ready" : "pairing"
+        hermes.setupDetail = activeLink.paired ? "SignalASI Link is paired" : "Waiting for desktop confirmation"
+      } else {
+        hermes.trustState = .unverified
+        hermes.identityFingerprint = ""
+        hermes.desktopId = ""
+        hermes.desktopName = ""
+        hermes.setupStatus = "needs_pairing"
+        hermes.setupDetail = "Waiting for SignalASI Desktop pairing"
+      }
+      hermes.updatedAt = now
+      upsert(hermes)
+    }
+    save()
+    return removedIds
   }
 
   @discardableResult

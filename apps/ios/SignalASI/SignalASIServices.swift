@@ -927,7 +927,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func revokeDesktopPairing(desktopId: String) async -> Bool {
+  func revokeDesktopPairing(desktopId: String, deleteMessages: Bool = true) async -> Bool {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return false }
     guard let link = store.serverLinks.first(where: { $0.desktopId == cleanDesktopId }) else {
@@ -941,9 +941,16 @@ final class MessageCoordinator: ObservableObject {
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
     guard let wire = try? linkWirePayload(payload, link: link) else {
-      store.removeServer(desktopId: cleanDesktopId)
+      _ = removeDesktopPairingState(
+        desktopId: cleanDesktopId,
+        deleteMessages: deleteMessages
+      )
       return false
     }
+    _ = removeDesktopPairingState(
+      desktopId: cleanDesktopId,
+      deleteMessages: deleteMessages
+    )
     deliveryStore.enqueue(
       messageId: wire.messageId,
       topic: link.routes.controlTopic,
@@ -953,7 +960,6 @@ final class MessageCoordinator: ObservableObject {
     )
     deliveryStore.markAttempt(messageId: wire.messageId)
     let result = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)
-    store.removeServer(desktopId: cleanDesktopId)
     switch result {
     case .published:
       deliveryStore.markPublished(messageId: wire.messageId)
@@ -966,6 +972,25 @@ final class MessageCoordinator: ObservableObject {
       scheduleOutboxFlush(after: 0)
       return false
     }
+  }
+
+  @discardableResult
+  private func removeDesktopPairingState(
+    desktopId: String,
+    deleteMessages: Bool = true
+  ) -> Set<String> {
+    SignalASIPairingLifecycle.remove(
+      desktopId: desktopId,
+      deleteMessages: deleteMessages,
+      store: store,
+      mqttClient: mqttClient,
+      deliveryStore: deliveryStore,
+      attachmentTransferStore: attachmentTransferStore,
+      signalEngine: signalEngine,
+      desktopMarketplaceStore: desktopMarketplaceStore,
+      desktopControlSnapshots: &desktopControlSnapshots,
+      desktopControlPendingRequests: &desktopControlPendingRequests
+    )
   }
 
   @discardableResult
@@ -5628,7 +5653,7 @@ final class MessageCoordinator: ObservableObject {
     if appPayload.string("type") == "pairing_revoked" {
       let desktopId = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
       if !desktopId.isEmpty {
-        store.removeServer(desktopId: desktopId)
+        _ = removeDesktopPairingState(desktopId: desktopId)
       }
       let content = appPayload.string("content")
         .ifBlank("This Desktop pairing was revoked. Scan the SignalASI QR code again before communicating.")

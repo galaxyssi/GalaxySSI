@@ -69,15 +69,23 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
 
   func connect(clientId: String, serverLinks: [ServerLink]) {
     self.clientId = clientId
-    subscriptions = serverLinks.flatMap { [$0.routes.downTopic, $0.routes.controlTopic] }
+    updateSubscriptions(serverLinks: serverLinks)
     queue.async {
       if self.connection != nil {
-        self.subscribeToCurrentTopics()
         return
       }
       self.reconnectWorkItem?.cancel()
       self.reconnectWorkItem = nil
       self.start()
+    }
+  }
+
+  func updateSubscriptions(serverLinks: [ServerLink]) {
+    subscriptions = serverLinks.flatMap { [$0.routes.downTopic, $0.routes.controlTopic] }
+    queue.async {
+      if self.connection != nil {
+        self.subscribeToCurrentTopics()
+      }
     }
   }
 
@@ -91,6 +99,36 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         }
         continuation.resume(returning: self.sendWirePayload(topic: topic, payload: payload) ? .published : .failed)
       }
+    }
+  }
+
+  func unsubscribe(topics: [String]) {
+    let cleanTopics = topics
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    guard !cleanTopics.isEmpty else { return }
+    queue.async {
+      guard self.connected, self.connection != nil else { return }
+      var body = Data()
+      body.appendUInt16(self.nextPacketIdentifier())
+      cleanTopics.forEach {
+        body.appendUTF8($0)
+        body.append(0x00)
+      }
+      self.sendFrame(typeAndFlags: 0xA2, body)
+    }
+  }
+
+  func clearRetained(topic: String) {
+    let cleanTopic = topic.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTopic.isEmpty else { return }
+    queue.async {
+      guard self.connected, self.connection != nil else { return }
+      var body = Data()
+      body.appendUTF8(cleanTopic)
+      body.appendUInt16(self.nextPacketIdentifier())
+      let frame = body
+      self.sendFrame(typeAndFlags: 0x33, frame)
     }
   }
 

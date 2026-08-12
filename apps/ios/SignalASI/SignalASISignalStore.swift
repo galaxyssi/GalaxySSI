@@ -224,6 +224,18 @@ final class SignalASISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     return state.sessions["\(name)|\(deviceId)"] != nil
   }
 
+  func removeRemote(name: String) {
+    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanName.isEmpty else { return }
+    let prefix = "\(cleanName)|"
+    lock.lock()
+    state.identities.removeAll { $0.key.hasPrefix(prefix) }
+    state.sessions.removeAll { $0.key.hasPrefix(prefix) }
+    state.senderKeys.removeAll { $0.key.hasPrefix(prefix) }
+    persistLocked()
+    lock.unlock()
+  }
+
   private func ensurePreKeyMaterial() {
     lock.lock()
     let hasPreKey = state.preKeys["1"] != nil

@@ -105,6 +105,10 @@ final class SignalASISignalEngine {
     store.containsSession(name: remoteName, deviceId: deviceId)
   }
 
+  func forgetRemote(remoteName: String) {
+    store.removeRemote(name: remoteName)
+  }
+
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? {
     guard hasSession(remoteName: remoteName, deviceId: deviceId),
           let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
@@ -192,6 +196,7 @@ final class SignalASISignalEngine {
   func localBundle() -> [String: Any]? { nil }
   func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool { false }
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
+  func forgetRemote(remoteName: String) {}
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
   func decrypt(_ envelope: [String: Any]) -> [String: Any]? { nil }
 }
