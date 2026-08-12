@@ -22,6 +22,8 @@ struct SignalASILocalModelLabView: View {
   @State private var statusMessage = ""
   @State private var catalogRevision = 0
   @State private var showingModelImporter = false
+  @State private var profileToDelete: LocalModelRuntimeProfile?
+  @State private var showingDeleteConfirmation = false
   @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
 
   private let whisperModelManager = VoiceWhisperModelManager()
@@ -132,6 +134,27 @@ struct SignalASILocalModelLabView: View {
       }
       Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
     }
+    .confirmationDialog(
+      t("signalasi.local_model.delete_title", "Delete downloaded model?"),
+      isPresented: $showingDeleteConfirmation,
+      titleVisibility: .visible,
+      presenting: profileToDelete
+    ) { profile in
+      Button(t("signalasi.local_model.delete_action", "Delete"), role: .destructive) {
+        deleteLocalModel(profile)
+        profileToDelete = nil
+      }
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        profileToDelete = nil
+      }
+    } message: { profile in
+      Text(
+        String(
+          format: t("signalasi.local_model.delete_message", "Remove %@ from this iPhone?"),
+          profile.displayName
+        )
+      )
+    }
     .onAppear(perform: refreshSnapshots)
     .onChange(of: downloads.states) { _ in
       refreshSnapshots()
@@ -189,6 +212,17 @@ struct SignalASILocalModelLabView: View {
             isOn: LocalModelRuntimeSettings.isProfileEnabled(profile),
             onToggle: { setProfileEnabled(profile, enabled: $0) }
           )
+          .contextMenu {
+            Button(role: .destructive) {
+              profileToDelete = profile
+              showingDeleteConfirmation = true
+            } label: {
+              Label(
+                t("signalasi.local_model.delete_action", "Delete"),
+                systemImage: "trash"
+              )
+            }
+          }
         } else {
           SignalASILocalModelLabActionRow(
             title: profile.displayName,
@@ -563,6 +597,21 @@ struct SignalASILocalModelLabView: View {
         profile.displayName
       )
     }
+    refreshSnapshots()
+  }
+
+  private func deleteLocalModel(_ profile: LocalModelRuntimeProfile) {
+    if let artifact = LocalModelRuntimeCatalog.artifact(for: profile) {
+      downloads.delete(artifact)
+    } else {
+      LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: false)
+      LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
+      try? localModelStorage.delete(profile)
+    }
+    statusMessage = String(
+      format: t("signalasi.local_model.delete_completed", "%@ deleted"),
+      profile.displayName
+    )
     refreshSnapshots()
   }
 
