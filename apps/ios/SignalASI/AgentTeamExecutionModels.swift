@@ -171,20 +171,24 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
 
   private let responseStore: AgentConnectorResponseSink
   private let ledger: AgentTeamCompletionDeliveryLedger
+  private let historyStore: AgentTeamExecutionHistoryStore
   private let nowMillis: () -> Int64
 
   init(
     responseStore: AgentConnectorResponseSink,
     ledger: AgentTeamCompletionDeliveryLedger = AgentTeamCompletionDeliveryLedger(),
+    historyStore: AgentTeamExecutionHistoryStore = .shared,
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.responseStore = responseStore
     self.ledger = ledger
+    self.historyStore = historyStore
     self.nowMillis = nowMillis
   }
 
   @discardableResult
   func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
+    historyStore.upsert(snapshot)
     guard snapshot.state.deliverable,
       !ledger.contains(snapshot.supervisorRunId) else {
       return false
@@ -215,10 +219,12 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
 
   func remove(supervisorRunId: String) {
     ledger.remove(supervisorRunId)
+    historyStore.remove(supervisorRunId: supervisorRunId)
   }
 
   func clear() {
     ledger.clear()
+    historyStore.clear()
   }
 }
 
