@@ -5,6 +5,9 @@ extension Notification.Name {
   static let signalASIDesktopMarketplaceDidUpdate = Notification.Name(
     "signalasi.desktopMarketplaceDidUpdate"
   )
+  static let signalASIAgentRoutingDidUpdate = Notification.Name(
+    "signalasi.agentRoutingDidUpdate"
+  )
 }
 
 enum AgentMcpJSONValue: Codable, Equatable {
