@@ -29,6 +29,7 @@ struct SignalASIControlCenterView: View {
         VStack(alignment: .leading, spacing: 12) {
           hero
           metrics
+          identitySection
           intelligentCoreSection
           executionDevicesSection
           connectionTrustSection
@@ -43,6 +44,21 @@ struct SignalASIControlCenterView: View {
     .navigationBarHidden(true)
     .onAppear {
       disclosureRecords = disclosureStore.list(limit: 250)
+    }
+  }
+
+  private var identitySection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_section_my_identity", "My Identity"))
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_profile_title", "My SignalASI"),
+        subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
+        systemImage: "person.crop.circle",
+        tint: securityTint,
+        badge: securityBadge
+      ) {
+        SignalASIProfileIdentityView()
+      }
     }
   }
 
