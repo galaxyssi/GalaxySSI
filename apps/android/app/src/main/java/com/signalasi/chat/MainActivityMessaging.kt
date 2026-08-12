@@ -225,6 +225,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal fun MainActivity.showMainTab(tab: String) {
+    val navigationToken = navigationContentGate.begin()
     val previousTab = activeMainTab
     if (tab != PAGE_AGENT && isAgentActionTrayInitialized() && agentActionTrayExpanded) {
         setAgentActionTrayExpanded(false)
@@ -271,7 +272,16 @@ internal fun MainActivity.showMainTab(tab: String) {
     directoryPage.visibility = if (tab == PAGE_CONTACTS) View.VISIBLE else View.GONE
     discoverPage.visibility = if (tab == PAGE_DISCOVER) View.VISIBLE else View.GONE
     mePage.visibility = if (tab == PAGE_SETTINGS) View.VISIBLE else View.GONE
-    if (tab == PAGE_SETTINGS) refreshSettingsControlCenter()
+    if (tab == PAGE_SETTINGS) {
+        handler.postDelayed({
+            if (activeMainTab == PAGE_SETTINGS &&
+                featurePage.visibility != View.VISIBLE &&
+                navigationContentGate.isCurrent(navigationToken)
+            ) {
+                refreshSettingsControlCenterAsync(navigationToken)
+            }
+        }, FAST_NAVIGATION_CONTENT_DELAY_MILLIS)
+    }
     if (tab == PAGE_AGENT) refreshGlobalInsightIndicator()
 }
 

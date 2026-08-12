@@ -406,6 +406,19 @@ internal fun MainActivity.scheduleAgentStartupMaintenance() {
     )
 }
 
+internal fun MainActivity.scheduleNavigationContentPrewarm() {
+    handler.postDelayed({
+        navigationContentExecutor.execute {
+            val page = runCatching(::buildControlCenterHomePage).getOrNull() ?: return@execute
+            handler.post {
+                if (!isFinishing && !isDestroyed && activeMainTab != PAGE_SETTINGS) {
+                    renderControlCenterHomePage(page)
+                }
+            }
+        }
+    }, NAVIGATION_CONTENT_PREWARM_DELAY_MILLIS)
+}
+
 internal fun MainActivity.startMessageService() {
     // MainActivity is visible here, so avoid starting the foreground-service deadline
     // before the service's main-thread lifecycle callback can run.

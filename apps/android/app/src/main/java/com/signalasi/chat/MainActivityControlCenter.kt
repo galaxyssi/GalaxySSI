@@ -450,8 +450,30 @@ internal fun MainActivity.refreshSettingsControlCenter(force: Boolean = false) {
     renderControlCenterHome()
 }
 
+internal fun MainActivity.refreshSettingsControlCenterAsync(navigationToken: Long) {
+    val now = SystemClock.elapsedRealtime()
+    val visible = activeMainTab == PAGE_SETTINGS && featurePage.visibility != View.VISIBLE
+    if (!controlCenterHomeRefreshPolicy.shouldRefresh(visible, now)) return
+    navigationContentExecutor.execute {
+        val page = runCatching(::buildControlCenterHomePage).getOrNull()
+        handler.post {
+            if (page != null &&
+                activeMainTab == PAGE_SETTINGS &&
+                featurePage.visibility != View.VISIBLE &&
+                navigationContentGate.isCurrent(navigationToken)
+            ) {
+                renderControlCenterHomePage(page)
+            }
+        }
+    }
+}
+
 internal fun MainActivity.renderControlCenterHome() {
     val content = findViewById<LinearLayout>(R.id.settingsContent)
+    renderControlCenterHomePage(buildControlCenterHomePage(), content)
+}
+
+internal fun MainActivity.buildControlCenterHomePage(): ControlCenterPageSpec {
     val state = mobileNativeAgent.snapshot()
     val tools = mobileNativeAgent.nativeToolCatalog()
     val availableTools = tools.count { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }
@@ -736,7 +758,7 @@ internal fun MainActivity.renderControlCenterHome() {
         )
     )
 
-    val page = ControlCenterPageSpec(
+    return ControlCenterPageSpec(
             hero = ControlCenterHeroSpec(
                 title = getString(R.string.settings_my_signalasi),
                 subtitle = getString(R.string.cc_product_subtitle),
@@ -770,6 +792,12 @@ internal fun MainActivity.renderControlCenterHome() {
                 )
             }
     )
+}
+
+internal fun MainActivity.renderControlCenterHomePage(
+    page: ControlCenterPageSpec,
+    content: LinearLayout = findViewById(R.id.settingsContent)
+) {
     if (controlCenterHomeRenderCache.shouldRender(page, content.childCount > 0)) {
         controlCenterRenderer.render(content, page, ::handleControlCenterAction)
     }

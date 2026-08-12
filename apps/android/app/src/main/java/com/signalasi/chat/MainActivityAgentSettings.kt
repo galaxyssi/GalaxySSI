@@ -1344,6 +1344,7 @@ internal fun MainActivity.showLanguagePolicyDialog(
 }
 
 internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlId: String? = null) {
+    navigationContentGate.invalidate()
     handler.removeCallbacks(voiceHealthRefresh)
     handler.removeCallbacks(localModelDownloadRefresh)
     localModelRowBindings.clear()
