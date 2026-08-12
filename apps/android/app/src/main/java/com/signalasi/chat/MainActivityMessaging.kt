@@ -306,10 +306,14 @@ internal fun MainActivity.configureMessages() {
 }
 
 internal fun MainActivity.configureInput() {
-    sendButton.setOnClickListener { sendText() }
+    sendButton.setOnClickListener {
+        exitChatComposerTextMode(hideKeyboard = true)
+        sendText()
+    }
     sendButton.visibility = View.GONE
     messageInput.setOnEditorActionListener { _, actionId, _ ->
         if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+            exitChatComposerTextMode(hideKeyboard = true)
             sendText()
             true
         } else false
@@ -331,21 +335,11 @@ internal fun MainActivity.configureInput() {
             }
         }, REQUEST_IMAGE)
     }
-    emojiButton.setOnClickListener {
-        if (voiceMode) setVoiceMode(false)
-        emojiPanel.visibility = if (emojiPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-    }
-
-    listOf("??", "??", "??", "??", "??", "??", "??").forEach { token ->
-        addEmoji(token)
-    }
-    voiceButton.setOnClickListener {
-        setVoiceMode(!voiceMode)
-    }
     holdToTalkController = AppleHoldToTalkController(
         activity = this,
-        pressTarget = pressToTalkButton,
-        instruction = pressToTalkButton,
+        pressTarget = messageInput,
+        instruction = chatRecordingInstruction,
+        idleContent = chatComposerRow,
         recordingGroup = chatRecordingCenter,
         waveform = chatRecordingWaveform,
         transcript = chatRecordingTranscript,
@@ -358,42 +352,91 @@ internal fun MainActivity.configureInput() {
         },
         startRecording = { startRecording("chat_message") },
         currentAmplitude = { currentVoiceAmplitude() },
-        finishRecording = { send -> stopRecording(send) }
+        finishRecording = { send -> stopRecording(send) },
+        onTap = { enterChatComposerTextMode() },
+        onRecordingStarted = {
+            messageInput.clearFocus()
+            getSystemService(InputMethodManager::class.java)
+                .hideSoftInputFromWindow(messageInput.windowToken, 0)
+        },
+        stableTranscriptColor = Color.WHITE,
+        unstableTranscriptColor = Color.parseColor("#E8FFE9"),
+        idleInstructionRes = R.string.agent_voice_recording_hint,
+        recordingInstructionRes = R.string.agent_voice_recording_hint,
+        holdStartDelayMillis = 280L
     )
-    pressToTalkButton.setOnTouchListener(holdToTalkController)
-    updateInputActions()
-}
-
-internal fun MainActivity.addEmoji(token: String) {
-    val tv = TextView(this).apply {
-        text = token
-        textSize = if (token.length > 2) 15f else 24f
-        gravity = Gravity.CENTER
-        setTextColor(getColorCompat(R.color.text_primary))
-        setPadding(dp(12), 0, dp(12), 0)
-        minWidth = dp(46)
-        setOnClickListener {
-            val start = messageInput.selectionStart.coerceAtLeast(0)
-            messageInput.text?.insert(start, token)
-        }
+    chatRecordingWaveform.useDenseRecordingStyle()
+    chatRecordingWaveform.setColors(Color.WHITE, getColorCompat(R.color.apple_voice_cancel))
+    messageInput.setOnTouchListener { view, event ->
+        if (chatComposerTextMode) false else holdToTalkController.onTouch(view, event)
     }
-    emojiContainer.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
-}
-
-internal fun MainActivity.setVoiceMode(enabled: Boolean) {
-    voiceMode = enabled
-    messageInput.visibility = if (enabled) View.GONE else View.VISIBLE
-    pressToTalkButton.visibility = if (enabled) View.VISIBLE else View.GONE
-    voiceButton.setImageResource(if (enabled) R.drawable.ic_input_keyboard else R.drawable.ic_input_voice)
-    emojiPanel.visibility = View.GONE
-    if (enabled) hideKeyboard()
+    installChatComposerKeyboardObserver()
+    exitChatComposerTextMode(hideKeyboard = false)
     updateInputActions()
 }
 
 internal fun MainActivity.updateInputActions() {
-    val hasText = !voiceMode && !messageInput.text?.toString()?.trim().isNullOrEmpty()
-    sendButton.visibility = if (hasText) View.VISIBLE else View.GONE
-    imageButton.visibility = if (hasText) View.GONE else View.VISIBLE
+    val hasText = !messageInput.text?.toString()?.trim().isNullOrEmpty()
+    val composerState = AgentComposerUiPolicy.resolve(
+        hasInput = hasText,
+        hasPendingPrimaryAction = false,
+        textModeActive = chatComposerTextMode,
+        actionTrayRequested = false
+    )
+    chatPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
+    imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
+    sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
+    sendButton.setBackgroundResource(
+        if (hasText) R.drawable.agent_send_button_active_background
+        else R.drawable.agent_send_button_background
+    )
+    sendButton.imageTintList = android.content.res.ColorStateList.valueOf(
+        if (hasText) Color.parseColor("#087F69") else Color.WHITE
+    )
+}
+
+internal fun MainActivity.enterChatComposerTextMode() {
+    if (chatComposerTextMode) return
+    chatComposerTextMode = true
+    chatComposerKeyboardObserved = false
+    chatComposerRow.clearFocus()
+    messageInput.requestFocus()
+    messageInput.setSelection(messageInput.text?.length ?: 0)
+    updateInputActions()
+    messageInput.post {
+        getSystemService(InputMethodManager::class.java)
+            .showSoftInput(messageInput, InputMethodManager.SHOW_IMPLICIT)
+    }
+}
+
+internal fun MainActivity.exitChatComposerTextMode(hideKeyboard: Boolean) {
+    chatComposerTextMode = false
+    chatComposerKeyboardObserved = false
+    if (hideKeyboard) {
+        getSystemService(InputMethodManager::class.java)
+            .hideSoftInputFromWindow(messageInput.windowToken, 0)
+    }
+    messageInput.clearFocus()
+    chatComposerRow.isFocusableInTouchMode = true
+    chatComposerRow.requestFocus()
+    updateInputActions()
+}
+
+internal fun MainActivity.installChatComposerKeyboardObserver() {
+    val root = findViewById<View>(android.R.id.content)
+    root.viewTreeObserver.addOnGlobalLayoutListener {
+        if (!chatComposerTextMode) return@addOnGlobalLayoutListener
+        val visibleFrame = Rect()
+        root.getWindowVisibleDisplayFrame(visibleFrame)
+        val rootHeight = root.rootView.height.coerceAtLeast(1)
+        val keyboardVisible = rootHeight - visibleFrame.bottom > rootHeight * 0.15f
+        if (keyboardVisible) {
+            chatComposerKeyboardObserved = true
+        } else if (chatComposerKeyboardObserved) {
+            chatComposerKeyboardClosedAt = SystemClock.elapsedRealtime()
+            exitChatComposerTextMode(hideKeyboard = false)
+        }
+    }
 }
 
 internal fun MainActivity.ensureRecordPermission(): Boolean {

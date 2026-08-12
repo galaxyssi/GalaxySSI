@@ -140,7 +140,11 @@ def make_envelope(
     reply_to: str = "",
 ) -> dict[str, Any]:
     now = int(time.time() * 1000)
-    message_id = str(payload.get("message_id") or uuid.uuid4())
+    requested_message_id = str(payload.get("message_id") or "")
+    try:
+        message_id = str(uuid.UUID(requested_message_id))
+    except ValueError:
+        message_id = str(uuid.uuid4())
     envelope = {
         "protocol": PROTOCOL_NAME,
         "version": PROTOCOL_VERSION,
