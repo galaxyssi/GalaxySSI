@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld("signalasi", {
   testAgent: (agentId, prompt) => ipcRenderer.invoke("agents:test", agentId, prompt),
   sendMobileTest: (contactId, content) => ipcRenderer.invoke("mobile:test-message", contactId, content),
   syncMobileStatus: () => ipcRenderer.invoke("mobile:sync-status"),
+  listPeerMessages: (clientRouteId = "", limit = 500) =>
+    ipcRenderer.invoke("peer-messages:list", clientRouteId, limit),
+  sendPeerMessage: (payload) => ipcRenderer.invoke("peer-messages:send", payload),
+  openPeerAttachment: (messageId, attachmentIndex) =>
+    ipcRenderer.invoke("peer-attachments:open", messageId, attachmentIndex),
   listDesktopTasks: (limit) => ipcRenderer.invoke("desktop-tasks:list", limit),
   getDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:get", taskId),
   getDesktopTaskOutput: (taskId, offset = 0, limit = 2) =>

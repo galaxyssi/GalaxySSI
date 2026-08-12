@@ -12,6 +12,7 @@ import link_protocol
 import mqtt_bridge
 import pairing_state
 import phone_tool_broker
+from peer_chat_store import PeerChatStore
 
 
 class FakeInfo:
@@ -272,6 +273,28 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.assertEqual("completed", result_payload["command_status"])
         self.assertEqual("completed", result_payload["result"]["status"])
         self.assertEqual(message_id, result_payload["source_message_id"])
+
+    def test_peer_message_is_stored_without_starting_an_agent(self):
+        peer_store = PeerChatStore(Path(self.temp.name) / "peer-chat.db")
+        message_id = str(uuid.uuid4())
+        with patch("peer_chat_store.peer_chat_store", return_value=peer_store):
+            self._deliver(
+                self.first,
+                {
+                    "type": mqtt_bridge.PEER_MESSAGE_TYPE,
+                    "message_id": message_id,
+                    "source_message_id": message_id,
+                    "contact_id": self.desktop_id,
+                    "content": "Direct device message",
+                    "time": time.time(),
+                },
+            )
+
+        self.assertEqual([], self.agent_starts)
+        messages = peer_store.list_messages(self.first["client_route_id"])
+        self.assertEqual(1, len(messages))
+        self.assertEqual("Direct device message", messages[0]["content"])
+        self.assertEqual("inbound", messages[0]["direction"])
 
     def test_wrong_link_target_cannot_create_tool_session(self):
         now_ms = int(time.time() * 1000)

@@ -255,7 +255,8 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     markContactRead(contact.id)
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
-        onMessageActions = { position -> showMessageActionsPage(position) })
+        onMessageActions = { position -> showMessageActionsPage(position) },
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.adapter = messageAdapter
     val notificationsOnly = contact.id == CONTACT_SYSTEM.id
     chatInputBar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE

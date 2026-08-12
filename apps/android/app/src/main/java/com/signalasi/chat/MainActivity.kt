@@ -1020,6 +1020,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         SignalASIMqttClient.addListener(this)
         SignalASIMqttClient.connect(this)
         handler.postDelayed({
+            intent?.getStringExtra("signalasi_open_contact_id")
+                ?.takeIf(String::isNotBlank)
+                ?.let { contactId -> showChatPage(contactById(contactId)) }
+            intent?.removeExtra("signalasi_open_contact_id")
             handleDebugSendIntent(intent)
             handleDebugIncomingIntent(intent)
         }, 1200)
@@ -1046,6 +1050,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             renderAgentState(mobileNativeAgent.reloadSession())
             refreshGlobalAgentCognition()
         }
+        intent?.getStringExtra("signalasi_open_contact_id")
+            ?.takeIf(String::isNotBlank)
+            ?.let { contactId ->
+                intent.removeExtra("signalasi_open_contact_id")
+                showChatPage(contactById(contactId))
+            }
         handleDebugSendIntent(intent)
         handleDebugIncomingIntent(intent)
     }
@@ -1382,8 +1392,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 if (handleSelfEvolutionEvent(envelope)) return@runOnUiThread
                 if (handleAgentTaskEvent(envelope)) return@runOnUiThread
                 val msg = parseIncomingMessage(payload)
-                if (msg.content.isBlank()) return@runOnUiThread
+                if (msg.content.isBlank() && msg.attachments.isEmpty()) return@runOnUiThread
                 markDesktopDomainAvailable(msg.contact.id)
+                if (envelope?.optString("type") == "peer_message") {
+                    msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
+                    msg.deliveryTrace.add(newTraceEvent("decrypted", "SignalASI Link"))
+                    addMessage(msg, fromIncoming = true)
+                    return@runOnUiThread
+                }
                 if (msg.taskId.isNotBlank() && messages[msg.contact.id].orEmpty().any {
                         !it.isMine && it.taskId == msg.taskId && it.content == msg.content
                     }
@@ -1622,7 +1638,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
-        sendImage(data?.data ?: return)
+        val contact = selectedContact
+        if (contact != null && AppStore.isDesktopDeviceContact(this, contact.id)) {
+            val uris = buildList {
+                data?.clipData?.let { clips ->
+                    for (index in 0 until clips.itemCount) add(clips.getItemAt(index).uri)
+                }
+                data?.data?.let { if (it !in this) add(it) }
+            }
+            sendPeerAttachments(contact, uris)
+        } else {
+            sendImage(data?.data ?: return)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

@@ -787,6 +787,49 @@ object SignalASIMqttClient {
         }
     }
 
+    internal fun publishPeerMessageResult(
+        content: String,
+        contactId: String,
+        topicOverride: String? = null,
+        clientMessageId: Long? = null,
+        deliveryTrace: JSONArray? = null,
+        attachments: List<AgentInputAttachment> = emptyList()
+    ): MqttPublishResult {
+        val context = appContext ?: return MqttPublishResult.FAILED
+        val message = PeerChatTransport.prepare(context, content, contactId, topicOverride,
+            clientMessageId, deliveryTrace, attachments) ?: return MqttPublishResult.FAILED
+        val prepared = message.attachments
+        val payload = message.payload
+        val topic = message.topic
+        if (prepared.isEmpty()) return publishJsonResult(payload, topic, contactId)
+        val queued = synchronized(outboxDispatchLock) {
+            for (step in AgentAttachmentPublishOrder.steps(prepared)) {
+                if (!publishJsonResult(
+                        step.payload(),
+                        topic,
+                        contactId,
+                        queueOnly = true,
+                        deferQueuedDispatch = true
+                    ).accepted
+                ) return@synchronized MqttPublishResult.FAILED
+            }
+            publishJsonResult(
+                payload,
+                topic,
+                contactId,
+                queueOnly = true,
+                blockedByAttachmentTransferIds = prepared.map { it.transferId },
+                deferQueuedDispatch = true
+            )
+        }
+        if (!queued.accepted) return MqttPublishResult.FAILED.also {
+            AgentOutboundAttachmentTransferStore.discard(context, prepared.map { it.transferId })
+        }
+        if (client?.isConnected != true) connect(context)
+        scheduleOutboxRetries()
+        return queued
+    }
+
     private fun inlineTurnAttachments(
         context: Context,
         attachments: List<AgentInputAttachment>,
@@ -1128,7 +1171,10 @@ object SignalASIMqttClient {
         val targetId = if (usesPcConnectorTunnel(contactId)) {
             AppStore.desktopIdForContact(context, contactId)
         } else contactId
-        if (usesPcConnectorTunnel(contactId) && payload.optString("task_id").isNotBlank()) {
+        if (usesPcConnectorTunnel(contactId) &&
+            !AppStore.isDesktopDeviceContact(context, contactId) &&
+            payload.optString("task_id").isNotBlank()
+        ) {
             val link = SignalASILinkProtocol.serverLink(context, targetId)
                 ?: return MqttPublishResult.FAILED
             val requestedRouteId = payload.optString("client_route_id")
@@ -1710,6 +1756,7 @@ object SignalASIMqttClient {
             return
         }
         if (
+            !payload.optBoolean("peer_chat", false) &&
             payload.optString("task_id").isNotBlank() &&
             payload.optString("type") in setOf(
                 "agent_task_event",

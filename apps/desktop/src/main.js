@@ -1642,6 +1642,47 @@ async function sendMobileTestMessage(contactId, content) {
   });
 }
 
+async function listPeerMessages(clientRouteId = "", limit = 500) {
+  await startBackend();
+  return fetchJson(
+    `/api/peer/messages?client_route_id=${encodeURIComponent(clientRouteId)}&limit=${encodeURIComponent(limit)}`
+  );
+}
+
+async function sendPeerMessage(payload = {}) {
+  await startBackend();
+  const result = await fetchJson("/api/peer/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      client_route_id: String(payload.clientRouteId || ""),
+      content: String(payload.content || ""),
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : []
+    })
+  });
+  if (!result.ok) throw new Error(result.message || "Could not send message");
+  return result;
+}
+
+async function openPeerAttachment(messageId, attachmentIndex) {
+  await startBackend();
+  const endpoint = `${BACKEND_ORIGIN}/api/peer/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentIndex)}`;
+  const response = await fetch(endpoint, {
+    headers: { "X-SignalASI-Token": desktopTaskStreamToken() }
+  });
+  if (!response.ok) throw new Error(`Peer attachment not found (${response.status})`);
+  const disposition = response.headers.get("content-disposition") || "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  const name = path.basename(decodeURIComponent(encodedName || plainName || `attachment-${attachmentIndex}`));
+  const directory = path.join(app.getPath("temp"), "SignalASI", "peer-attachments");
+  fs.mkdirSync(directory, { recursive: true });
+  const target = path.join(directory, `${Date.now()}-${name}`);
+  fs.writeFileSync(target, Buffer.from(await response.arrayBuffer()));
+  const error = await shell.openPath(target);
+  if (error) throw new Error(error);
+  return { ok: true };
+}
+
 async function syncMobileStatus() {
   await startBackend();
   return fetchJson("/api/agents/sync-mobile-status", { method: "POST" });
@@ -2134,6 +2175,11 @@ ipcMain.handle("acp-runtime:restart", (_event, agentId) => restartAcpAgent(agent
 ipcMain.handle("agents:test", (_event, agentId, prompt) => testAgent(agentId, prompt));
 ipcMain.handle("mobile:test-message", (_event, contactId, content) => sendMobileTestMessage(contactId, content));
 ipcMain.handle("mobile:sync-status", syncMobileStatus);
+ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
+  listPeerMessages(clientRouteId, limit));
+ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.handle("peer-attachments:open", (_event, messageId, attachmentIndex) =>
+  openPeerAttachment(messageId, attachmentIndex));
 ipcMain.handle("desktop-tasks:list", (_event, limit) => listDesktopTasks(limit));
 ipcMain.handle("desktop-tasks:get", (_event, taskId) => getDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:output", (_event, taskId, offset, limit) =>

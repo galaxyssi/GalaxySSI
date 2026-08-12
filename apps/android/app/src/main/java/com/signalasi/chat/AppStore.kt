@@ -524,6 +524,14 @@ object AppStore {
         return contact.optString("desktop_id")
     }
 
+    fun isDesktopDeviceContact(context: Context, contactId: String): Boolean {
+        val contact = contactById(context, contactId) ?: return false
+        return contact.optString("type") == "device" &&
+            contact.optString("agent_kind") == "device" &&
+            contact.optString("agent_id") == "desktop" &&
+            contact.optString("desktop_id").isNotBlank()
+    }
+
     fun agentIdForContact(context: Context, hermesId: String): String {
         val contact = contactById(context, hermesId) ?: return hermesId
         return contact.optString("agent_id").ifBlank {

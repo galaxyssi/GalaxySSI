@@ -288,7 +288,8 @@ internal fun MainActivity.applyAgentBrandLogoTextScale() {
 internal fun MainActivity.configureMessages() {
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
-        onMessageActions = { position -> showMessageActionsPage(position) })
+        onMessageActions = { position -> showMessageActionsPage(position) },
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
         layoutManager = LinearLayoutManager(this@configureMessages).apply { stackFromEnd = true }
         adapter = messageAdapter
@@ -319,9 +320,15 @@ internal fun MainActivity.configureInput() {
         override fun afterTextChanged(s: Editable?) = Unit
     })
     imageButton.setOnClickListener {
-        startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
+        val deviceChat = selectedContact?.id?.let { AppStore.isDesktopDeviceContact(this, it) } == true
+        startActivityForResult(Intent(if (deviceChat) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
+            type = if (deviceChat) "*/*" else "image/*"
             addCategory(Intent.CATEGORY_OPENABLE)
+            if (deviceChat) {
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
         }, REQUEST_IMAGE)
     }
     emojiButton.setOnClickListener {
@@ -450,19 +457,30 @@ internal fun MainActivity.sendOutgoingText(contact: Contact, content: String, vo
     }
     val target = AppStore.outgoingTopicForContact(this, contact.id)
     if (target != null) {
-        selectVoiceCoordinatorRoute(voiceTraceId, VoiceRouteKind.REMOTE_AGENT, contact.id)
+        val peerChat = AppStore.isDesktopDeviceContact(this, contact.id)
+        if (!peerChat) selectVoiceCoordinatorRoute(voiceTraceId, VoiceRouteKind.REMOTE_AGENT, contact.id)
         appendDeliveryTrace(msg.id, contact.id, "queued", target)
         val deliveryTrace = deliveryTraceJson(msg.deliveryTrace)
         outboundMessageExecutor.execute {
             val publishResult = runCatching {
-                SignalASIMqttClient.publishUserMessageResult(
-                    content,
-                    contact.id,
-                    topicOverride = target,
-                    clientMessageId = msg.id,
-                    deliveryTrace = deliveryTrace,
-                    traceId = voiceTraceId
-                )
+                if (peerChat) {
+                    SignalASIMqttClient.publishPeerMessageResult(
+                        content = content,
+                        contactId = contact.id,
+                        topicOverride = target,
+                        clientMessageId = msg.id,
+                        deliveryTrace = deliveryTrace
+                    )
+                } else {
+                    SignalASIMqttClient.publishUserMessageResult(
+                        content,
+                        contact.id,
+                        topicOverride = target,
+                        clientMessageId = msg.id,
+                        deliveryTrace = deliveryTrace,
+                        traceId = voiceTraceId
+                    )
+                }
             }.onFailure {
                 Log.e("SignalASILink", "Message publish failed", it)
             }.getOrDefault(MqttPublishResult.FAILED)

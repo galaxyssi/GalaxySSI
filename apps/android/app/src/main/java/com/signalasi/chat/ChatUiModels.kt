@@ -245,7 +245,8 @@ data class ChatMessage(
     var taskId: String = "",
     var taskStatus: String = "",
     var taskStatusSeq: Long = 0L,
-    var remoteMessageId: String = ""
+    var remoteMessageId: String = "",
+    val attachments: List<PeerChatAttachment> = emptyList()
 )
 
 data class DeliveryTraceEvent(
@@ -407,7 +408,8 @@ internal class ContactAdapter(
 internal class MessageAdapter(
     internal val messages: List<ChatMessage>,
     internal val onPlayVoiceMessage: ((Long) -> Unit)? = null,
-    internal val onMessageActions: ((Int) -> Unit)? = null
+    internal val onMessageActions: ((Int) -> Unit)? = null,
+    internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null
 ) : RecyclerView.Adapter<MessageAdapter.VH>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -437,9 +439,35 @@ internal class MessageAdapter(
         holder.avatar.visibility = View.VISIBLE
         holder.bubble.visibility = View.VISIBLE
         holder.bubble.text = message.content
+        holder.bubble.visibility = if (message.content.isBlank()) View.GONE else View.VISIBLE
         holder.bubble.setLineSpacing(0f, 1.18f)
         holder.timeText.text = bubbleTime(message.timestamp)
         holder.statusText.visibility = View.GONE
+        holder.attachments.removeAllViews()
+        holder.attachments.visibility = if (message.attachments.isEmpty()) View.GONE else View.VISIBLE
+        message.attachments.forEach { attachment ->
+            holder.attachments.addView(TextView(holder.itemView.context).apply {
+                val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
+                text = if (size.isBlank()) attachment.name else "${attachment.name}\n$size"
+                textSize = 13f
+                maxWidth = holder.itemView.dp(252)
+                minWidth = holder.itemView.dp(190)
+                setTextColor(holder.itemView.context.getColor(R.color.text_primary))
+                setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
+                background = holder.itemView.context.getDrawable(
+                    if (message.isMine) R.drawable.bubble_self_background else R.drawable.bubble_other_background
+                )
+                setOnClickListener { onOpenAttachment?.invoke(attachment) }
+                setOnLongClickListener {
+                    onMessageActions?.invoke(position)
+                    true
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = holder.itemView.dp(4) }
+            })
+        }
 
         if (message.content.startsWith(holder.itemView.context.getString(R.string.message_voice_prefix)) || message.content.startsWith("[\u8bed\u97f3]")) {
             holder.bubble.setOnClickListener { onPlayVoiceMessage?.invoke(message.id) }
@@ -526,6 +554,7 @@ internal class MessageAdapter(
         val avatar: ImageView = view.findViewById(R.id.messageAvatar)
         val container: LinearLayout = view.findViewById(R.id.bubbleContainer)
         val bubble: TextView = view.findViewById(R.id.messageBubble)
+        val attachments: LinearLayout = view.findViewById(R.id.messageAttachments)
         val meta: LinearLayout = view.findViewById(R.id.messageMeta)
         val statusText: TextView = view.findViewById(R.id.statusText)
         val timeText: TextView = view.findViewById(R.id.timeText)

@@ -531,6 +531,12 @@ class PairingClientRenameReq(BaseModel):
     display_name: str
 
 
+class PeerMessageReq(BaseModel):
+    client_route_id: str
+    content: str = ""
+    attachments: list[str] = Field(default_factory=list)
+
+
 @app.post("/api/pairing/rename")
 def api_pairing_rename(req: PairingClientRenameReq, request: Request):
     require_loopback(request)
@@ -591,6 +597,47 @@ def require_desktop_api_token(request: Request) -> None:
             status_code=401,
             detail=api_error("desktop_api_unauthorized", "Desktop API token is invalid"),
         )
+
+
+@app.get("/api/peer/messages")
+def api_peer_messages(
+    request: Request,
+    client_route_id: str = Query(""),
+    limit: int = Query(500),
+):
+    require_desktop_api_token(request)
+    from peer_chat_store import peer_chat_store
+
+    return {
+        "messages": peer_chat_store().list_messages(client_route_id, limit),
+    }
+
+
+@app.post("/api/peer/messages")
+def api_send_peer_message(req: PeerMessageReq, request: Request):
+    require_desktop_api_token(request)
+    from mqtt_bridge import publish_peer_message
+
+    return publish_peer_message(req.client_route_id, req.content, req.attachments)
+
+
+@app.get("/api/peer/messages/{message_id}/attachments/{attachment_index}")
+def api_peer_attachment(
+    message_id: str,
+    attachment_index: int,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    from peer_chat_store import peer_chat_store
+
+    attachment = peer_chat_store().attachment_path(message_id, attachment_index)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail=api_error("peer_attachment_not_found"))
+    return FileResponse(
+        attachment,
+        filename=attachment.name,
+        media_type="application/octet-stream",
+    )
 
 
 @app.get("/api/pairing/payload")
@@ -3712,6 +3759,9 @@ async def desktop_task_stream(ws: WebSocket):
     loop = asyncio.get_running_loop()
     updates: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
     evolution_manager = _desktop_evolution_manager()
+    from peer_chat_store import peer_chat_store
+
+    peers = peer_chat_store()
 
     def offer_update(payload: dict[str, Any]) -> None:
         def offer() -> None:
@@ -3753,11 +3803,19 @@ async def desktop_task_stream(ws: WebSocket):
         if payload is not None:
             offer_update(payload)
 
+    def enqueue_peer_message(message: dict) -> None:
+        offer_update({"type": "desktop_peer_message", "message": message})
+
     task_subscription_id = agent_task_manager.subscribe(enqueue_agent_task)
     evolution_subscription_id = evolution_manager.subscribe(enqueue_evolution_task)
+    peer_subscription_id = peers.subscribe(enqueue_peer_message)
     try:
         tasks = _desktop_task_rows(500, evolution_manager)
-        await ws.send_json({"type": "desktop_tasks_snapshot", "tasks": tasks})
+        await ws.send_json({
+            "type": "desktop_tasks_snapshot",
+            "tasks": tasks,
+            "peer_messages": peers.list_messages(limit=2_000),
+        })
         while True:
             try:
                 task = await asyncio.wait_for(updates.get(), timeout=20.0)
@@ -3767,7 +3825,10 @@ async def desktop_task_stream(ws: WebSocket):
                     "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
                 })
                 continue
-            await ws.send_json({"type": "desktop_task_update", "task": task})
+            if task.get("type") == "desktop_peer_message":
+                await ws.send_json(task)
+            else:
+                await ws.send_json({"type": "desktop_task_update", "task": task})
     except WebSocketDisconnect:
         pass
     except Exception as exc:
@@ -3775,6 +3836,7 @@ async def desktop_task_stream(ws: WebSocket):
     finally:
         agent_task_manager.unsubscribe(task_subscription_id)
         evolution_manager.unsubscribe(evolution_subscription_id)
+        peers.unsubscribe(peer_subscription_id)
 
 
 @app.websocket("/ws/{contact_id}")
