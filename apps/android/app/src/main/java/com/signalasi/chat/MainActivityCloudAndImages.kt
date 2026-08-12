@@ -828,26 +828,18 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
 }
 
 internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
-    val source = if (attachment.artifactUri.isNotBlank()) {
-        AgentDesktopArtifactStore.resolveBlock(
-            this,
-            AgentRichBlock(
-                id = attachment.artifactUri,
-                type = if (attachment.mimeType.startsWith("image/")) AgentRichBlockType.IMAGE else AgentRichBlockType.FILE,
-                title = attachment.name,
-                uri = attachment.artifactUri,
-                mimeType = attachment.mimeType,
-                metadata = mapOf("artifact_source_uri" to attachment.artifactUri)
-            )
-        ).uri
-    } else attachment.uri
-    if (source.isBlank() || source.startsWith("signalasi-artifact://")) {
+    val source = attachment.resolvedUri(this)
+    if (source == null) {
         Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+        return
+    }
+    if (attachment.mimeType.startsWith("image/")) {
+        showAgentImagePreview(source, attachment.name)
         return
     }
     runCatching {
         startActivity(Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.parse(source), attachment.mimeType)
+            setDataAndType(source, attachment.mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })
     }.onFailure {
@@ -1075,8 +1067,7 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
         return ChatMessage(newMessageId(), content, false, CONTACT_SYSTEM, deliveryTrace = incomingTrace)
     }
     val content = exactConnectorContent(json)
-        ?: json?.optString("content", payload)?.takeIf { it.isNotBlank() }
-        ?: payload
+        ?: PeerChatPresentation.incomingContent(payload, json)
     val sender = json?.optString("sender", "hermes") ?: "hermes"
     val contactId = json?.optString("contact_id", CONTACT_HERMES.id)?.takeIf { it.isNotBlank() } ?: CONTACT_HERMES.id
     val contact = contactById(if (sender == "system") CONTACT_SYSTEM.id else contactId)
