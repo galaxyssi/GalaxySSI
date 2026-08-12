@@ -45,8 +45,11 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   private let fileManager = FileManager.default
   private let storage = LocalModelRuntimeStorage()
   private let chunkSize = 1_048_576
+  private let stateStorageKey = "signalasi.local_model.artifact_states"
+  private let stateStorageSecrets: SignalASISecretStore
 
-  init() {
+  init(secrets: SignalASISecretStore = KeychainSecretStore.shared) {
+    stateStorageSecrets = secrets
     loadPersistedStates()
   }
 
@@ -191,16 +194,37 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   }
 
   private func loadPersistedStates() {
-    let values = UserDefaults.standard.dictionary(forKey: "signalasi.local_model.artifact_states") as? [String: String] ?? [:]
+    let defaults = UserDefaults.standard
+    let values: [String: String]
+    if let encryptedData = SignalASIEncryptedUserDefaultsStore.load(
+      defaults: defaults,
+      key: stateStorageKey,
+      secrets: stateStorageSecrets
+    ),
+    let encryptedValues = try? JSONDecoder().decode([String: String].self, from: encryptedData) {
+      values = encryptedValues
+    } else {
+      // Migrate the pre-encryption dictionary on first launch after upgrade.
+      values = defaults.dictionary(forKey: stateStorageKey) as? [String: String] ?? [:]
+    }
     states = values.reduce(into: [:]) { result, entry in
       if let state = LocalModelArtifactInstallState(rawValue: entry.value) {
         result[entry.key] = state
       }
     }
+    if defaults.object(forKey: stateStorageKey) != nil {
+      persistStates()
+    }
   }
 
   private func persistStates() {
-    UserDefaults.standard.set(states.mapValues(\.rawValue), forKey: "signalasi.local_model.artifact_states")
+    guard let data = try? JSONEncoder().encode(states.mapValues(\.rawValue)) else { return }
+    _ = SignalASIEncryptedUserDefaultsStore.write(
+      data,
+      defaults: UserDefaults.standard,
+      key: stateStorageKey,
+      secrets: stateStorageSecrets
+    )
   }
 
   private func partialBytes(for profile: LocalModelRuntimeProfile) -> Int64 {
