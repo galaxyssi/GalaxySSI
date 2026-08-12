@@ -43,6 +43,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
   var includesAgentTaskHistory: Bool
   var includesAutomationTasks: Bool
   var includesAgentConversations: Bool
+  var includesGlobalAgentState: Bool
+  var includesAgentTranscript: Bool
   var includesCustomDeviceConnectors: Bool
   var includesHomeAssistantSettings: Bool
   var includesModelPlannerSettings: Bool
@@ -62,6 +64,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentTaskHistory: Bool = false,
     includesAutomationTasks: Bool = false,
     includesAgentConversations: Bool = false,
+    includesGlobalAgentState: Bool = false,
+    includesAgentTranscript: Bool = false,
     includesCustomDeviceConnectors: Bool = false,
     includesHomeAssistantSettings: Bool = false,
     includesModelPlannerSettings: Bool = false,
@@ -80,6 +84,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     self.includesAgentTaskHistory = includesAgentTaskHistory
     self.includesAutomationTasks = includesAutomationTasks
     self.includesAgentConversations = includesAgentConversations
+    self.includesGlobalAgentState = includesGlobalAgentState
+    self.includesAgentTranscript = includesAgentTranscript
     self.includesCustomDeviceConnectors = includesCustomDeviceConnectors
     self.includesHomeAssistantSettings = includesHomeAssistantSettings
     self.includesModelPlannerSettings = includesModelPlannerSettings
@@ -100,6 +106,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentTaskHistory: false,
     includesAutomationTasks: false,
     includesAgentConversations: false,
+    includesGlobalAgentState: false,
+    includesAgentTranscript: false,
     includesCustomDeviceConnectors: false,
     includesHomeAssistantSettings: false,
     includesModelPlannerSettings: false,
@@ -120,6 +128,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     case includesAgentTaskHistory = "includes_agent_task_history"
     case includesAutomationTasks = "includes_automation_tasks"
     case includesAgentConversations = "includes_agent_conversations"
+    case includesGlobalAgentState = "includes_global_agent_state"
+    case includesAgentTranscript = "includes_agent_transcript"
     case includesCustomDeviceConnectors = "includes_custom_device_connectors"
     case includesHomeAssistantSettings = "includes_home_assistant_settings"
     case includesModelPlannerSettings = "includes_model_planner_settings"
@@ -141,6 +151,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentTaskHistory = try container.decodeIfPresent(Bool.self, forKey: .includesAgentTaskHistory) ?? false
     includesAutomationTasks = try container.decodeIfPresent(Bool.self, forKey: .includesAutomationTasks) ?? false
     includesAgentConversations = try container.decodeIfPresent(Bool.self, forKey: .includesAgentConversations) ?? false
+    includesGlobalAgentState = try container.decodeIfPresent(Bool.self, forKey: .includesGlobalAgentState) ?? false
+    includesAgentTranscript = try container.decodeIfPresent(Bool.self, forKey: .includesAgentTranscript) ?? false
     includesCustomDeviceConnectors = try container.decodeIfPresent(Bool.self, forKey: .includesCustomDeviceConnectors) ?? false
     includesHomeAssistantSettings = try container.decodeIfPresent(Bool.self, forKey: .includesHomeAssistantSettings) ?? false
     includesModelPlannerSettings = try container.decodeIfPresent(Bool.self, forKey: .includesModelPlannerSettings) ?? false
@@ -156,12 +168,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var knowledge: [AgentKnowledgeItem]?
   var knowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]?
   var taskHistory: [AgentTaskRecord]?
+  var transcript: [AgentTranscriptEntry]?
   var proactiveTasks: [AgentProactiveTask]?
   var proactiveRuns: [AgentProactiveRun]?
   var workflowExecutions: [AgentWorkflowExecutionRecord]?
   var workflowTriggers: [AgentWorkflowTrigger]?
   var globalProactiveMessages: [GlobalProactiveMessage]?
   var globalAgentFeedback: [GlobalAgentFeedback]?
+  var globalAgentState: SignalASIGlobalAgentBackupData?
   var agentConversations: [AgentConversation]?
   var activeAgentConversationId: String
   var voiceSettings: VoiceSettings
@@ -183,12 +197,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     knowledge: nil,
     knowledgeAccessAudit: nil,
     taskHistory: nil,
+    transcript: nil,
     proactiveTasks: nil,
     proactiveRuns: nil,
     workflowExecutions: nil,
     workflowTriggers: nil,
     globalProactiveMessages: nil,
     globalAgentFeedback: nil,
+    globalAgentState: nil,
     agentConversations: nil,
     activeAgentConversationId: "",
     voiceSettings: .default,
@@ -211,12 +227,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     knowledge: [AgentKnowledgeItem]? = nil,
     knowledgeAccessAudit: [AgentKnowledgeAccessAuditEntry]? = nil,
     taskHistory: [AgentTaskRecord]? = nil,
+    transcript: [AgentTranscriptEntry]? = nil,
     proactiveTasks: [AgentProactiveTask]? = nil,
     proactiveRuns: [AgentProactiveRun]? = nil,
     workflowExecutions: [AgentWorkflowExecutionRecord]? = nil,
     workflowTriggers: [AgentWorkflowTrigger]? = nil,
     globalProactiveMessages: [GlobalProactiveMessage]? = nil,
     globalAgentFeedback: [GlobalAgentFeedback]? = nil,
+    globalAgentState: SignalASIGlobalAgentBackupData? = nil,
     agentConversations: [AgentConversation]? = nil,
     activeAgentConversationId: String = "",
     voiceSettings: VoiceSettings,
@@ -239,12 +257,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.knowledge = knowledge.map { Array($0.suffix(500)) }
     self.knowledgeAccessAudit = knowledgeAccessAudit.map { Array($0.suffix(100)) }
     self.taskHistory = taskHistory.map { Array($0.suffix(200)) }
+    self.transcript = transcript.map { Array($0.suffix(500)) }
     self.proactiveTasks = proactiveTasks.map { Array($0.suffix(200)) }
     self.proactiveRuns = proactiveRuns.map { Array($0.suffix(500)) }
     self.workflowExecutions = workflowExecutions.map { Array($0.suffix(500)) }
     self.workflowTriggers = workflowTriggers.map { Array($0.suffix(100)) }
     self.globalProactiveMessages = globalProactiveMessages.map { Array($0.suffix(500)) }
     self.globalAgentFeedback = globalAgentFeedback.map { Array($0.suffix(500)) }
+    self.globalAgentState = globalAgentState
     self.agentConversations = agentConversations.map { Array($0.suffix(200)) }
     self.activeAgentConversationId = activeAgentConversationId
     self.voiceSettings = voiceSettings
@@ -267,12 +287,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case knowledge
     case knowledgeAccessAudit = "knowledge_access_audit"
     case taskHistory = "task_history"
+    case transcript
     case proactiveTasks = "proactive_tasks"
     case proactiveRuns = "proactive_runs"
     case workflowExecutions = "workflow_executions"
     case workflowTriggers = "workflow_triggers"
     case globalProactiveMessages = "global_proactive_messages"
     case globalAgentFeedback = "global_agent_feedback"
+    case globalAgentState = "global_super_agent"
     case agentConversations = "agent_conversations"
     case activeAgentConversationId = "active_agent_conversation_id"
     case voiceSettings = "voice_settings"
@@ -312,6 +334,9 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     taskHistory = try container.decodeIfPresent([AgentTaskRecord].self, forKey: .taskHistory).map {
       Array($0.suffix(200))
     }
+    transcript = try container.decodeIfPresent([AgentTranscriptEntry].self, forKey: .transcript).map {
+      Array($0.suffix(500))
+    }
     proactiveTasks = try container.decodeIfPresent([AgentProactiveTask].self, forKey: .proactiveTasks).map {
       Array($0.suffix(200))
     }
@@ -333,6 +358,10 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     globalAgentFeedback = try container.decodeIfPresent([GlobalAgentFeedback].self, forKey: .globalAgentFeedback).map {
       Array($0.suffix(500))
     }
+    globalAgentState = try container.decodeIfPresent(
+      SignalASIGlobalAgentBackupData.self,
+      forKey: .globalAgentState
+    )
     agentConversations = try container.decodeIfPresent([AgentConversation].self, forKey: .agentConversations).map {
       Array($0.suffix(200))
     }

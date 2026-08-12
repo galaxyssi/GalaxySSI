@@ -92,6 +92,7 @@ enum LocalModelRuntimeCatalog {
       parameterCountBillions: artifact.parameterCountBillions,
       defaultNoThink: artifact.repositoryId.localizedCaseInsensitiveContains("qwen3") &&
         !artifact.repositoryId.localizedCaseInsensitiveContains("qwen3.5"),
+      visionCapable: artifact.visionCapable,
       sourceTrust: .hubVerified,
       sourceHub: artifact.source
     )
@@ -124,7 +125,8 @@ enum LocalModelRuntimeCatalog {
       quantization: profile.quantizationLabel,
       parameterCountBillions: profile.parameterCountBillions,
       downloadURL: downloadURL,
-      source: profile.sourceHub
+      source: profile.sourceHub,
+      visionCapable: profile.visionCapable
     )
   }
 

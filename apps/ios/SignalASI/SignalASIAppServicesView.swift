@@ -50,6 +50,18 @@ struct SignalASIAppServicesView: View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_core_modules", "Core Modules"))
       SignalASISecurityNavigationRow(
+        title: t("cc_conversation_hub_title", "Conversation Hub"),
+        subtitle: t(
+          "cc_conversation_hub_subtitle",
+          "Conversations, contacts, groups, QR pairing, and cloud models"
+        ),
+        systemImage: "bubble.left.and.bubble.right.fill",
+        tint: .signalASIAccent,
+        badge: t("cc_status_open", "Open")
+      ) {
+        SignalASIConversationHubView()
+      }
+      SignalASISecurityNavigationRow(
         title: t("cc_messages_title", "Messages"),
         subtitle: t("cc_messages_subtitle", "Conversations, media, delivery, and background connection"),
         systemImage: "bubble.left.and.bubble.right",

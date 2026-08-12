@@ -236,6 +236,50 @@ class LinkDeliveryTest(unittest.TestCase):
                 ):
                     self.assertNotIn(secret, persisted)
 
+    def test_discard_route_removes_only_revoked_client_delivery_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "delivery.db"
+            with patch.object(link_delivery, "DB_PATH", database):
+                for route_id in ("revoked", "active"):
+                    link_delivery.claim_message(route_id, f"inbound-{route_id}")
+                    link_delivery.bind_ciphertext(
+                        route_id,
+                        f"digest-{route_id}",
+                        f"inbound-{route_id}",
+                    )
+                    link_delivery.queue_outbound(
+                        route_id,
+                        f"outbound-{route_id}",
+                        f"topic/{route_id}",
+                        f"wire-{route_id}",
+                    )
+                    link_delivery.queue_task_result(
+                        f"task-{route_id}",
+                        route_id,
+                        {"route": route_id},
+                        {"content": route_id},
+                    )
+
+                removed = link_delivery.discard_route("revoked")
+
+                self.assertEqual(
+                    {
+                        "inbound_messages": 1,
+                        "inbound_ciphertexts": 1,
+                        "outbound_messages": 1,
+                        "task_results": 1,
+                    },
+                    removed,
+                )
+                self.assertEqual(
+                    ["outbound-active"],
+                    [item["message_id"] for item in link_delivery.pending_outbound()],
+                )
+                self.assertEqual(
+                    ["task-active"],
+                    [item["task_id"] for item in link_delivery.pending_task_results()],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
