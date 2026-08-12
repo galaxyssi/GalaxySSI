@@ -169,6 +169,15 @@ struct SignalASIControlCenterView: View {
         SignalASIPhoneCapabilitiesView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("agent_capability_library_title", "Capability Library"),
+        subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
+        systemImage: "shippingbox.and.arrow.down",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        SignalASICapabilityLibraryView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_runtime_title", "On-device Linux Runtime"),
         subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
         systemImage: "terminal",

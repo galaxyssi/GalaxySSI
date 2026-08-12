@@ -153,6 +153,15 @@ struct SettingsView: View {
         SignalASIAgentCoreView()
       }
       SettingsNavigationRow(
+        title: t("agent_capability_library_title", "Capability Library"),
+        subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
+        systemImage: "shippingbox.and.arrow.down",
+        tint: .signalASIAccent,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        SignalASICapabilityLibraryView()
+      }
+      SettingsNavigationRow(
         title: t("cc_phone_title", "Phone Capabilities"),
         subtitle: phoneCapabilitiesSummary,
         systemImage: "iphone",
