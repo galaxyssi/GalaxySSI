@@ -1062,6 +1062,7 @@ struct SettingsView: View {
 }
 
 private struct SettingsProfileHero: View {
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var title: String
   var subtitle: String
   var signalASIIdLabel: String
@@ -1073,7 +1074,17 @@ private struct SettingsProfileHero: View {
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
-      SignalASIProfileAvatar(data: avatarData, size: 52)
+      NavigationLink(destination: SignalASIProfileIdentityView()) {
+        SignalASIProfileAvatar(data: avatarData, size: 52)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(
+        SignalASILocalization.string(
+          "signalasi.profile.avatar_edit",
+          fallback: "Change profile photo",
+          language: interfaceLanguage
+        )
+      ))
       VStack(alignment: .leading, spacing: 5) {
         Text(title)
           .font(.system(size: 22, weight: .bold))
