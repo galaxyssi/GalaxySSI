@@ -120,7 +120,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .new-task-button b { font-size: 1rem; font-weight: 400; }
 .sidebar-more-button { width: 34px; height: 34px; position: relative; border: 0; border-radius: 4px; background: transparent; color: #69747d; }
 .sidebar-more-button:hover { background: #e5eef2; }
-.sidebar-more-button::before { position: absolute; inset: 0; display: grid; place-items: center; content: "\2026\2026\2026"; font-size: 15px; letter-spacing: 1px; transform: translateY(-3px); }
+.sidebar-more-button::before { position: absolute; inset: 0; display: grid; place-items: center; content: "\2026"; font-size: 22px; line-height: 1; transform: translateY(-2px); }
 .sidebar-popover { z-index: 12; width: 190px; position: absolute; top: 37px; right: 0; padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: #fff; box-shadow: 0 8px 24px rgba(26, 34, 40, 0.13); }
 .sidebar-popover button { width: 100%; min-height: 32px; padding: 6px 9px; border: 0; border-radius: 4px; background: transparent; color: #424b54; text-align: left; font: inherit; font-size: 0.84rem; }
 .sidebar-popover button:hover { background: #f1f3f5; }
