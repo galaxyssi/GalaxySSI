@@ -137,6 +137,18 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_execution_policy_title", "Execution Policy"),
+        subtitle: executionPolicySummary,
+        systemImage: "checkmark.shield",
+        tint: executionPolicyTint,
+        badge: t(
+          store.agentSafetySettings.taskExecutionMode.displayTitle,
+          store.agentSafetySettings.taskExecutionMode.displayTitle
+        )
+      ) {
+        SignalASIExecutionPolicyView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_global_agent_title", "Global Super Agent"),
         subtitle: String(
           format: t(
@@ -555,6 +567,22 @@ struct SignalASIControlCenterView: View {
 
   private var agentCoreTint: Color {
     store.agentSafetySettings.executionPaused ? .orange : .signalASIAccent
+  }
+
+  private var executionPolicySummary: String {
+    let executionMode = t(
+      store.agentSafetySettings.taskExecutionMode.displayTitle,
+      store.agentSafetySettings.taskExecutionMode.displayTitle
+    )
+    let permissionMode = t(
+      store.agentSafetySettings.permissionMode.displayTitle,
+      store.agentSafetySettings.permissionMode.displayTitle
+    )
+    return "\(t(\"cc_task_execution_mode_title\", \"Task execution\")): \(executionMode) / \(t(\"on_device_agent_permission_mode\", \"Execution Mode\")): \(permissionMode)"
+  }
+
+  private var executionPolicyTint: Color {
+    store.agentSafetySettings.highRiskGuard ? .signalASIAccent : .orange
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
