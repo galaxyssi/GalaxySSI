@@ -67,6 +67,20 @@ struct SignalASIControlCenterView: View {
           .font(.system(size: 14))
           .foregroundColor(.signalASITextSecondary)
           .fixedSize(horizontal: false, vertical: true)
+        Text(
+          String(
+            format: t("cc_trusted_devices_badge", "%d trusted devices"),
+            trustedDeviceCount
+          )
+        )
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundColor(.blue)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+          .padding(.horizontal, 7)
+          .frame(minHeight: 22)
+          .background(Color.blue.opacity(0.12))
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
       Spacer(minLength: 0)
     }
@@ -330,6 +344,10 @@ struct SignalASIControlCenterView: View {
 
   private var recentTaskCount: Int {
     recentTasks.count
+  }
+
+  private var trustedDeviceCount: Int {
+    store.serverLinks.filter(\.paired).count
   }
 
   private var runtimeReady: Bool {
