@@ -11,54 +11,77 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   var onOpenSettings: () -> Void
 
   var body: some View {
-    HStack(spacing: 8) {
-      SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
-      VStack(alignment: .center, spacing: 2) {
-        Text("SignalASI")
-          .font(.system(size: 14.5, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-        Text(brandSubtitle)
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-      }
-      Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 2) {
-        NavigationLink(destination: SignalASIAgentSessionsView()) {
-          Text(sessionTitle)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundColor(.signalASIAgentSessionTitle)
+    GeometryReader { proxy in
+      let compact = proxy.size.width < 360 || usesAccessibilityDynamicType
+      let modelColumnWidth = min(
+        128,
+        max(88, proxy.size.width * (compact ? 0.30 : 0.36))
+      )
+
+      HStack(spacing: compact ? 5 : 8) {
+        SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
+        VStack(alignment: .center, spacing: 2) {
+          Text("SignalASI")
+            .font(.system(size: compact ? 13.5 : 14.5, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+          Text(brandSubtitle)
+            .font(.system(size: compact ? 9 : 10, weight: .regular))
+            .foregroundColor(.signalASITextSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.58)
         }
-        .buttonStyle(.plain)
-        NavigationLink(destination: modelSelectionDestination) {
-          HStack(spacing: 3) {
-            Image(systemName: "chevron.down")
-              .font(.system(size: 8, weight: .bold))
-            SignalASIAgentRouteLogo(label: modelLogoLabel, size: 16)
-            Text(modelStatusLabel)
+        .frame(minWidth: 0)
+        Spacer(minLength: compact ? 3 : 8)
+        VStack(alignment: .trailing, spacing: 2) {
+          NavigationLink(destination: SignalASIAgentSessionsView()) {
+            Text(sessionTitle)
+              .font(.system(size: 14, weight: .bold))
+              .foregroundColor(.signalASIAgentSessionTitle)
               .lineLimit(1)
-              .minimumScaleFactor(0.72)
+              .truncationMode(.tail)
+              .frame(maxWidth: .infinity, alignment: .trailing)
           }
-          .font(.system(size: 10, weight: .regular))
-          .foregroundColor(.signalASITextSecondary)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+          .buttonStyle(.plain)
+          NavigationLink(destination: modelSelectionDestination) {
+            HStack(spacing: 3) {
+              Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+              SignalASIAgentRouteLogo(label: modelLogoLabel, size: 16)
+              Text(modelStatusLabel)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.72)
+            }
+            .font(.system(size: 10, weight: .regular))
+            .foregroundColor(.signalASITextSecondary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+          }
+          .buttonStyle(.plain)
+        }
+        .frame(width: modelColumnWidth, minHeight: 44, alignment: .trailing)
+        Button(action: onOpenSettings) {
+          Image(systemName: "ellipsis.horizontal")
+            .font(.system(size: 22, weight: .bold))
+            .foregroundColor(.signalASITextPrimary)
+            .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
       }
-      .frame(width: 128, minHeight: 44, alignment: .trailing)
-      Button(action: onOpenSettings) {
-        Image(systemName: "ellipsis.horizontal")
-          .font(.system(size: 22, weight: .bold))
-          .foregroundColor(.signalASITextPrimary)
-          .frame(width: 44, height: 44)
-      }
-      .buttonStyle(.plain)
+      .padding(.horizontal, compact ? 10 : 12)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .frame(height: 76)
+    .frame(height: usesAccessibilityDynamicType ? 88 : 76)
     .background(Color.signalASIPageBackground)
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    switch dynamicTypeSize {
+    case .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5:
+      return true
+    default:
+      return false
+    }
   }
 
   private var headerLogoSize: CGFloat {
