@@ -40,7 +40,7 @@ final class AgentIOSDownloadCompletionCoordinator {
       return
     }
 
-    let zh = languageTag(for: completion).hasPrefix("zh")
+    let language = languageTag(for: completion)
     let name = completion.title.ifBlank(completion.localFileURL?.lastPathComponent ?? "Download")
     let succeeded = completion.succeeded
     let content: String
@@ -48,17 +48,28 @@ final class AgentIOSDownloadCompletionCoordinator {
     let relativePath = "SignalASI Downloads/\(fileName)"
     let richOutput: String
     if succeeded {
-      content = zh
-        ? "\u{4e0b}\u{8f7d}\u{5b8c}\u{6210}\u{ff1a}\(name)\n\u{5df2}\u{4fdd}\u{5b58}\u{5230} SignalASI \u{4e0b}\u{8f7d}\u{3002}"
-        : "Download complete: \(name)\nSaved in SignalASI Downloads."
+      content = String(
+        format: localized(
+          "signalasi.agent.download.complete",
+          "Download complete: %@\nSaved in SignalASI Downloads.",
+          language: language
+        ),
+        name
+      )
       richOutput = AgentRichContentCodec.encode([
         fileBlock(for: completion, name: name, relativePath: relativePath)
       ])
     } else {
       let reason = completion.reason == 0 ? "" : " (\(completion.reason))"
-      content = zh
-        ? "\u{4e0b}\u{8f7d}\u{5931}\u{8d25}\u{ff1a}\(name)\(reason)"
-        : "Download failed: \(name)\(reason)"
+      content = String(
+        format: localized(
+          "signalasi.agent.download.failed",
+          "Download failed: %@%@",
+          language: language
+        ),
+        name,
+        reason
+      )
       richOutput = ""
     }
 
@@ -139,6 +150,10 @@ final class AgentIOSDownloadCompletionCoordinator {
   private func languageTag(for completion: AgentIOSDownloadCompletion) -> String {
     let recorded = completion.languageTag.trimmingCharacters(in: .whitespacesAndNewlines)
     return recorded.isEmpty ? LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage) : recorded
+  }
+
+  private func localized(_ key: String, _ fallback: String, language: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: language)
   }
 
   private func fileBlock(
