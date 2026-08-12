@@ -4,6 +4,7 @@ import UIKit
 struct SignalASIControlCenterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var disclosureRecords: [AgentDataDisclosureRecord] = []
 
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
@@ -362,7 +363,23 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligenceResourceCount: Int {
-    store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
+    let availableClouds = store.cloudModelContacts.filter { contact in
+      guard let model = contact.selectedCloudModel else { return false }
+      return CloudModelCredentialPolicy.isAutoRoutable(
+        model: model,
+        apiKey: store.apiKey(for: model),
+        provider: contact.cloudProvider,
+        setupStatus: contact.setupStatus
+      )
+    }.count
+    let onlineDesktops = store.serverLinks.filter { link in
+      link.paired && coordinator.mqttClient.isConnected
+    }.count
+    let configuredCustomDevices = store.customDeviceConnectors.filter {
+      $0.enabled && $0.configured
+    }.count
+    let configuredHomeAssistant = store.homeAssistantSettings.configured ? 1 : 0
+    return 1 + availableClouds + onlineDesktops + configuredCustomDevices + configuredHomeAssistant
   }
 
   private var resourcesBadge: String {
