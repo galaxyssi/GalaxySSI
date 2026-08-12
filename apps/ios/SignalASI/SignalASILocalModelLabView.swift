@@ -24,6 +24,8 @@ struct SignalASILocalModelLabView: View {
   @State private var showingModelImporter = false
   @State private var profileToDelete: LocalModelRuntimeProfile?
   @State private var showingDeleteConfirmation = false
+  @State private var artifactToStart: LocalModelHubArtifact?
+  @State private var showingMeteredDownloadConfirmation = false
   @StateObject private var downloads = LocalModelArtifactDownloadCoordinator.shared
 
   private let whisperModelManager = VoiceWhisperModelManager()
@@ -154,6 +156,24 @@ struct SignalASILocalModelLabView: View {
           profile.displayName
         )
       )
+    }
+    .alert(
+      t("signalasi.local_model.metered_download_title", "Download over cellular data?"),
+      isPresented: $showingMeteredDownloadConfirmation
+    ) {
+      Button(t("signalasi.local_model.metered_download_confirm", "Download")) {
+        guard let artifact = artifactToStart else { return }
+        startModelDownload(artifact)
+        artifactToStart = nil
+      }
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        artifactToStart = nil
+      }
+    } message: {
+      Text(String(format: t(
+        "signalasi.local_model.metered_download_message",
+        "This model is %@. Downloading it over cellular or a metered connection may use significant data."
+      ), formatBytes(artifactToStart?.sizeBytes ?? 0)))
     }
     .onAppear(perform: refreshSnapshots)
     .onChange(of: downloads.states) { _ in
@@ -562,21 +582,34 @@ struct SignalASILocalModelLabView: View {
     }
     switch state {
     case .notInstalled, .failed:
-      downloads.start(artifact)
-      statusMessage = downloads.state(for: artifact) == .failed
-        ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
-        : t("signalasi.local_model.download_started", "Download started")
+      beginModelDownload(artifact)
     case .paused:
-      downloads.start(artifact)
-      statusMessage = downloads.state(for: artifact) == .failed
-        ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
-        : t("signalasi.local_model.download_resumed", "Download resumed")
+      beginModelDownload(artifact)
     case .downloading, .verifying, .installing:
       downloads.cancel(artifact)
       statusMessage = t("signalasi.local_model.download_cancelled", "Download cancelled")
     case .ready:
       setProfileEnabled(profile, enabled: true)
     }
+  }
+
+  private func beginModelDownload(_ artifact: LocalModelHubArtifact) {
+    if downloads.requiresMeteredNetworkConfirmation() {
+      artifactToStart = artifact
+      showingMeteredDownloadConfirmation = true
+    } else {
+      startModelDownload(artifact)
+    }
+  }
+
+  private func startModelDownload(_ artifact: LocalModelHubArtifact) {
+    let previousState = downloads.state(for: artifact)
+    downloads.start(artifact)
+    statusMessage = downloads.state(for: artifact) == .failed
+      ? downloads.error(for: artifact) ?? t("signalasi.local_model.download_failed", "Download failed")
+      : previousState == .paused
+      ? t("signalasi.local_model.download_resumed", "Download resumed")
+      : t("signalasi.local_model.download_started", "Download started")
   }
 
   private func setProfileEnabled(_ profile: LocalModelRuntimeProfile, enabled: Bool) {
