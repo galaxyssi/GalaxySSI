@@ -111,6 +111,8 @@ final class VoiceWhisperModelDownloadService {
       switch managerError {
       case .bundledModelDoesNotNeedDownload:
         return "BUNDLED_MODEL"
+      case .unsupportedPlatform:
+        return "UNSUPPORTED_PLATFORM"
       case .missingDownloadURL:
         return "MISSING_DOWNLOAD_URL"
       case .meteredDownloadConfirmationRequired:

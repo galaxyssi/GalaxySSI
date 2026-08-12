@@ -56,6 +56,7 @@ struct VoiceWhisperModelDownloadRequest: Equatable {
 }
 
 enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
+  case unsupportedPlatform(modelId: String, artifactFormat: VoiceWhisperArtifactFormat)
   case bundledModelDoesNotNeedDownload(String)
   case missingDownloadURL(String)
   case meteredDownloadConfirmationRequired(modelId: String)
@@ -71,6 +72,8 @@ enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
 
   var errorDescription: String? {
     switch self {
+    case .unsupportedPlatform(let modelId, let artifactFormat):
+      return "Whisper model format is not supported on iOS: \(modelId) (\(artifactFormat.rawValue))"
     case .bundledModelDoesNotNeedDownload(let modelId):
       return "Bundled Whisper model does not need downloading: \(modelId)"
     case .missingDownloadURL(let modelId):
@@ -193,6 +196,9 @@ final class VoiceWhisperModelManager {
   }
 
   func downloadState(for model: VoiceWhisperModelProfile) -> VoiceWhisperModelDownloadState {
+    guard model.supportsIOSRuntime else {
+      return VoiceWhisperModelDownloadState(status: .notRequested)
+    }
     if model.bundled, bundledResourceExists(for: model) {
       return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
     }
@@ -205,6 +211,7 @@ final class VoiceWhisperModelManager {
   }
 
   func isAvailable(_ model: VoiceWhisperModelProfile) -> Bool {
+    guard model.supportsIOSRuntime else { return false }
     if model.bundled, bundledResourceExists(for: model) {
       return true
     }
@@ -213,6 +220,12 @@ final class VoiceWhisperModelManager {
   }
 
   func ensureVerifiedFile(for model: VoiceWhisperModelProfile) throws -> URL {
+    guard model.supportsIOSRuntime else {
+      throw VoiceWhisperModelManagerError.unsupportedPlatform(
+        modelId: model.id,
+        artifactFormat: model.artifactFormat
+      )
+    }
     if model.bundled, let bundleURL = bundledResourceURL(for: model) {
       return try ensureVerifiedBundleFile(bundleURL, for: model)
     }
@@ -265,6 +278,12 @@ final class VoiceWhisperModelManager {
     allowsCellularAccess: Bool = true,
     meteredConfirmed: Bool = false
   ) throws -> VoiceWhisperModelDownloadRequest {
+    guard model.supportsIOSRuntime else {
+      throw VoiceWhisperModelManagerError.unsupportedPlatform(
+        modelId: model.id,
+        artifactFormat: model.artifactFormat
+      )
+    }
     guard !model.bundled else {
       throw VoiceWhisperModelManagerError.bundledModelDoesNotNeedDownload(model.id)
     }

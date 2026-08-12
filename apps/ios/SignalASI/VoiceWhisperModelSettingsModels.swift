@@ -99,6 +99,15 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   }
 
   func localizedDetail(_ localized: VoiceWhisperStringLocalizer) -> String {
+    if !model.supportsIOSRuntime {
+      return String(
+        format: localized(
+          "voice_asr_model_platform_detail",
+          "%@ - Android/Qualcomm model; unavailable on iOS"
+        ),
+        "\(model.sizeLabel) · \(model.targetChipset.isEmpty ? model.artifactFormat.rawValue : model.targetChipset)"
+      )
+    }
     String(
       format: localized("voice_asr_model_profile_detail", "%@ - %@\n%@"),
       model.sizeLabel,
@@ -108,6 +117,9 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   }
 
   var action: VoiceWhisperModelRowAction {
+    if !model.supportsIOSRuntime {
+      return .unavailable
+    }
     if let benchmarkProgress {
       return .waiting(progress: benchmarkProgressPercent(benchmarkProgress))
     }

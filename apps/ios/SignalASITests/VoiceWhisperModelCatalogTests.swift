@@ -18,6 +18,10 @@ final class VoiceWhisperModelCatalogTests: XCTestCase {
         "large_v3_q5_0",
         "large_v3_turbo",
         "large_v3_turbo_q5_0",
+        "whisper-tiny-qnn-float-s26u",
+        "whisper-base-qnn-float-s26u",
+        "whisper-small-qnn-w8a16-s26u",
+        "whisper-small-qnn-float-s26u",
       ]
     )
     XCTAssertEqual(VoiceWhisperModelCatalog.model("BASE").fileName, "ggml-base.bin")
@@ -31,6 +35,22 @@ final class VoiceWhisperModelCatalogTests: XCTestCase {
     XCTAssertEqual(VoiceWhisperModelCatalog.model("base").sourceURLs.count, 2)
     XCTAssertEqual(VoiceWhisperModelCatalog.downloadURL(for: VoiceWhisperModelCatalog.model("large"))?.absoluteString,
                    "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin")
+  }
+
+  func testAndroidQnnProfilesRemainVisibleButUnavailableOnIOS() {
+    let qnn = VoiceWhisperModelCatalog.model("whisper-tiny-qnn-float-s26u")
+
+    XCTAssertEqual(qnn.artifactFormat, .qnnContextBinary)
+    XCTAssertEqual(qnn.targetChipset, "qualcomm-snapdragon-8-elite-gen5-for-galaxy")
+    XCTAssertFalse(qnn.supportsIOSRuntime)
+    XCTAssertNil(VoiceWhisperModelCatalog.downloadURL(for: qnn))
+    XCTAssertFalse(
+      VoiceWhisperModelCatalog.isAvailable(
+        qnn,
+        bundledResourceExists: true,
+        downloadedFileBytes: qnn.expectedSizeBytes
+      )
+    )
   }
 
   func testAvailabilityRequiresRealBundledResourceOrCompletedDownload() {
