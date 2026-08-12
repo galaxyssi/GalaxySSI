@@ -1,6 +1,25 @@
 import SwiftUI
 import UIKit
 
+private struct SignalASISettingsSummarySnapshot {
+  var memoryCount = 0
+  var memoryConflictCount = 0
+  var knowledgeItemCount = 0
+  var knowledgeSourceCount = 0
+  var knowledgeHitCount = 0
+  var taskCount = 0
+  var runningTaskCount = 0
+  var automationCount = 0
+  var enabledAutomationCount = 0
+  var sessionCount = 0
+  var archivedSessionCount = 0
+  var nativeToolTotal = 0
+  var nativeToolAvailable = 0
+  var mcpInstalled = 0
+  var mcpReady = 0
+  var mcpRecommended = 0
+}
+
 struct SettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
@@ -8,6 +27,8 @@ struct SettingsView: View {
   @State private var statusText = ""
   @State private var statusIsError = false
   @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
+  @State private var settingsStatsLoading = true
+  @State private var settingsStats = SignalASISettingsSummarySnapshot()
   var navigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
   var showsBackButton = true
   var onBackToAgent: (() -> Void)? = nil
@@ -35,22 +56,26 @@ struct SettingsView: View {
           trailing: { Color.clear }
         )
         ScrollView {
-          VStack(alignment: .leading, spacing: 12) {
-            profileSection
-            statusSection
-            pagesSection
-            agentSection
-            agentToolsSection
-            knowledgeExecutionSection
-            trustSection
-            dataSection
-            protocolSection
-            localIntelligenceSection
-            generalSection
+          if settingsStatsLoading {
+            settingsLoadingContent
+          } else {
+            VStack(alignment: .leading, spacing: 12) {
+              profileSection
+              statusSection
+              pagesSection
+              agentSection
+              agentToolsSection
+              knowledgeExecutionSection
+              trustSection
+              dataSection
+              protocolSection
+              localIntelligenceSection
+              generalSection
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 18)
           }
-          .padding(.horizontal, 12)
-          .padding(.top, 12)
-          .padding(.bottom, 18)
         }
       }
       .background(Color.signalASIPageBackground.ignoresSafeArea())
@@ -59,8 +84,98 @@ struct SettingsView: View {
         AddCloudModelView()
       }
       .onAppear(perform: refreshLinkDiagnostics)
+      .task(id: settingsStatsTaskID) {
+        await prepareSettingsStats()
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private var settingsLoadingContent: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      SignalASISecurityHeroView(
+        title: t("settings_my_signalasi", "My SignalASI"),
+        subtitle: t("cc_product_subtitle", "Agent operating system - This device online"),
+        systemImage: "slider.horizontal.3",
+        tint: .signalASIAccent,
+        badge: t("cc_loading", "Loading...")
+      )
+      HStack(spacing: 10) {
+        ProgressView()
+          .tint(.signalASIAccent)
+        Text(t("cc_loading", "Loading..."))
+          .font(.system(size: 14))
+          .foregroundColor(.signalASITextSecondary)
+      }
+      .frame(maxWidth: .infinity, minHeight: 120)
+    }
+    .padding(.horizontal, 12)
+    .padding(.top, 12)
+    .padding(.bottom, 18)
+  }
+
+  private var settingsStatsTaskID: String {
+    let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
+    let conversationRevision = store.agentConversations.map(\.updatedAt).max() ?? 0
+    let contactRevision = store.contacts.map(\.updatedAt.timeIntervalSince1970).max() ?? 0
+    return [
+      "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
+      "\(store.agentTaskRecords.count):\(taskRevision)",
+      "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
+      "\(store.agentConversations.count):\(conversationRevision)",
+      "\(store.contacts.count):\(contactRevision)"
+    ].joined(separator: "|")
+  }
+
+  private func prepareSettingsStats() async {
+    settingsStatsLoading = true
+    let memorySnapshot = store.agentMemorySnapshot()
+    let knowledgeStats = store.agentKnowledgeStats
+    let knowledgeHitCount = store.agentKnowledgeAccessAudit.count
+    let taskRecords = store.recentAgentTasks(limit: 200)
+    let automationTasks = store.automationTasks()
+    let conversations = store.agentSessions(includeArchived: true)
+    let prepared = await Task.detached(priority: .userInitiated) {
+      let runningPhases: Set<AgentPhase> = [
+        .observing,
+        .planning,
+        .executing,
+        .verifying,
+        .waitingConfirmation,
+        .waitingResponse,
+        .paused
+      ]
+      let tools = AgentPhoneNativeToolCatalog.descriptors()
+      let availableTools = tools.filter {
+        $0.risk != .blocked && $0.availability.status == .available
+      }.count
+      let mcpConnections = AgentMcpRegistry(
+        FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
+      ).list()
+      return SignalASISettingsSummarySnapshot(
+        memoryCount: memorySnapshot.activeCount,
+        memoryConflictCount: memorySnapshot.conflicts.count,
+        knowledgeItemCount: knowledgeStats.itemCount,
+        knowledgeSourceCount: knowledgeStats.sourceCount,
+        knowledgeHitCount: knowledgeHitCount,
+        taskCount: taskRecords.count,
+        runningTaskCount: taskRecords.filter { runningPhases.contains($0.phase) }.count,
+        automationCount: automationTasks.count,
+        enabledAutomationCount: automationTasks.filter(\.enabled).count,
+        sessionCount: conversations.count,
+        archivedSessionCount: conversations.filter { $0.status == .archived }.count,
+        nativeToolTotal: tools.count,
+        nativeToolAvailable: availableTools,
+        mcpInstalled: mcpConnections.count,
+        mcpReady: mcpConnections.filter {
+          $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+        }.count,
+        mcpRecommended: AgentDefaultCapabilityCatalog.mcpEntries.count
+      )
+    }.value
+    guard !Task.isCancelled else { return }
+    settingsStats = prepared
+    settingsStatsLoading = false
   }
 
   private var profileSection: some View {
@@ -906,101 +1021,83 @@ struct SettingsView: View {
   }
 
   private var memorySummary: String {
-    let snapshot = store.agentMemorySnapshot()
     return String(
       format: t("signalasi.agent_memory.value", "Memory: %d / conflicts: %d"),
-      snapshot.activeCount,
-      snapshot.conflicts.count
+      settingsStats.memoryCount,
+      settingsStats.memoryConflictCount
     )
   }
 
   private var memoryControlSummary: String {
-    let snapshot = store.agentMemorySnapshot()
     return String(
       format: t("cc_memory_subtitle", "%d long-term memories / user controlled"),
-      snapshot.activeCount
+      settingsStats.memoryCount
     )
   }
 
   private var knowledgeSummary: String {
-    let stats = store.agentKnowledgeStats
     return String(
       format: t("signalasi.agent_knowledge.value", "Knowledge: %d items / %d sources / %d hits"),
-      stats.itemCount,
-      stats.sourceCount,
-      store.agentKnowledgeAccessAudit.count
+      settingsStats.knowledgeItemCount,
+      settingsStats.knowledgeSourceCount,
+      settingsStats.knowledgeHitCount
     )
   }
 
   private var recentTaskSummary: String {
-    let tasks = store.recentAgentTasks(limit: 200)
-    let running = tasks.filter {
-      [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
-    }.count
     return String(
       format: t("signalasi.agent_tasks.value", "Tasks: %d / running: %d"),
-      tasks.count,
-      running
+      settingsStats.taskCount,
+      settingsStats.runningTaskCount
     )
   }
 
   private var automationSummary: String {
-    let tasks = store.automationTasks()
-    let enabled = tasks.filter(\.enabled).count
     return String(
       format: t("signalasi.automation.value", "Tasks: %d / enabled: %d"),
-      tasks.count,
-      enabled
+      settingsStats.automationCount,
+      settingsStats.enabledAutomationCount
     )
   }
 
   private var agentSessionsSummary: String {
-    let sessions = store.agentSessions(includeArchived: true)
-    let archived = sessions.filter { $0.status == .archived }.count
     return String(
       format: t("signalasi.agent_sessions.value", "Sessions: %d / archived: %d"),
-      sessions.count,
-      archived
+      settingsStats.sessionCount,
+      settingsStats.archivedSessionCount
     )
   }
 
   private var nativeToolsSummary: String {
-    let counts = nativeToolSummaryCounts
     return String(
       format: t("signalasi.native_tool_catalog.value", "Tools: %d / available: %d"),
-      counts.total,
-      counts.available
+      settingsStats.nativeToolTotal,
+      settingsStats.nativeToolAvailable
     )
   }
 
   private var phoneCapabilitiesSummary: String {
-    let counts = nativeToolSummaryCounts
     return String(
       format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
-      counts.available,
-      counts.needingAttention
+      settingsStats.nativeToolAvailable,
+      max(settingsStats.nativeToolTotal - settingsStats.nativeToolAvailable, 0)
     )
   }
 
   private var nativeToolSummaryCounts: (total: Int, available: Int, needingAttention: Int) {
-    let tools = AgentPhoneNativeToolCatalog.descriptors()
-    let available = tools.filter {
-      $0.risk != .blocked && $0.availability.status == .available
-    }.count
-    return (tools.count, available, max(tools.count - available, 0))
+    (
+      settingsStats.nativeToolTotal,
+      settingsStats.nativeToolAvailable,
+      max(settingsStats.nativeToolTotal - settingsStats.nativeToolAvailable, 0)
+    )
   }
 
   private var mcpSummary: String {
-    let connections = AgentMcpRegistry(FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())).list()
-    let ready = connections.filter {
-      $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
-    }.count
-    let recommended = AgentDefaultCapabilityCatalog.mcpEntries.count
     return String(
       format: t("signalasi.mcp.summary", "%d installed / %d ready / %d recommended"),
-      connections.count,
-      ready,
-      recommended
+      settingsStats.mcpInstalled,
+      settingsStats.mcpReady,
+      settingsStats.mcpRecommended
     )
   }
 
