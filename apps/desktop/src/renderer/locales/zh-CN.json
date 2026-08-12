@@ -1010,4 +1010,6 @@
 , "Sent": "\u5df2\u53d1\u9001"
 , "Queued": "\u7b49\u5f85\u53d1\u9001"
 , "Could not send message": "\u65e0\u6cd5\u53d1\u9001\u6d88\u606f"
+, "Chats": "\u5bf9\u8bdd"
+, "Chats will appear here after you send a task or message a paired device.": "\u53d1\u8d77\u4efb\u52a1\u6216\u5411\u5df2\u914d\u5bf9\u8bbe\u5907\u53d1\u9001\u6d88\u606f\u540e\uff0c\u5bf9\u8bdd\u4f1a\u663e\u793a\u5728\u8fd9\u91cc\u3002"
 }

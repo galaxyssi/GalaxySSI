@@ -1294,10 +1294,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         if (chatPage.visibility == View.VISIBLE) {
-            chatPage.visibility = View.GONE
-            wakePage.visibility = View.GONE
-            mainPage.visibility = View.VISIBLE
-            showMainTab(PAGE_MESSAGES)
+            returnFromContactChatToConversationHub()
             return
         }
         if (mainPage.visibility == View.VISIBLE && activeMainTab != PAGE_AGENT) {

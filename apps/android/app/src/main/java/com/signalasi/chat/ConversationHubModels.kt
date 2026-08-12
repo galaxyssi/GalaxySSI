@@ -9,8 +9,31 @@ internal enum class ConversationHubTab {
 }
 
 internal data class ConversationHubConversationSections(
-    val pinned: List<AgentConversation>,
-    val recent: List<AgentConversation>
+    val pinned: List<ConversationHubItem>,
+    val recent: List<ConversationHubItem>
+)
+
+internal enum class ConversationHubItemKind {
+    AGENT,
+    CONTACT
+}
+
+internal data class ConversationHubItem(
+    val id: String,
+    val kind: ConversationHubItemKind,
+    val title: String,
+    val subtitle: String,
+    val updatedAt: Long,
+    val pinned: Boolean = false,
+    val archived: Boolean = false,
+    val searchableMetadata: String = ""
+)
+
+internal data class ConversationHubContactSummary(
+    val contactId: String,
+    val title: String,
+    val lastMessage: String,
+    val updatedAt: Long
 )
 
 internal object ConversationHubModels {
@@ -18,24 +41,56 @@ internal object ConversationHubModels {
         source: List<AgentConversation>,
         query: String,
         archived: Boolean
+    ): ConversationHubConversationSections = unifiedConversations(
+        agents = source.map { conversation ->
+            ConversationHubItem(
+                id = conversation.id,
+                kind = ConversationHubItemKind.AGENT,
+                title = conversation.title,
+                subtitle = conversation.summary,
+                updatedAt = conversation.updatedAt,
+                pinned = conversation.pinned,
+                archived = conversation.status == AgentConversationStatus.ARCHIVED,
+                searchableMetadata = conversation.selectedModelOrAgent
+            )
+        },
+        contacts = emptyList(),
+        query = query,
+        archived = archived
+    )
+
+    fun unifiedConversations(
+        agents: List<ConversationHubItem>,
+        contacts: List<ConversationHubContactSummary>,
+        query: String,
+        archived: Boolean
     ): ConversationHubConversationSections {
         val normalizedQuery = query.trim().lowercase(Locale.ROOT)
-        val status = if (archived) AgentConversationStatus.ARCHIVED else AgentConversationStatus.ACTIVE
-        val matching = source.asSequence()
-            .filter { it.status == status }
+        val contactItems = if (archived) emptyList() else contacts.map { contact ->
+            ConversationHubItem(
+                id = contact.contactId,
+                kind = ConversationHubItemKind.CONTACT,
+                title = contact.title,
+                subtitle = contact.lastMessage,
+                updatedAt = contact.updatedAt
+            )
+        }
+        val matching = (agents.asSequence() + contactItems.asSequence())
+            .filter { it.archived == archived }
             .filter {
                 normalizedQuery.isBlank() ||
                     it.title.lowercase(Locale.ROOT).contains(normalizedQuery) ||
-                    it.selectedModelOrAgent.lowercase(Locale.ROOT).contains(normalizedQuery)
+                    it.subtitle.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+                    it.searchableMetadata.lowercase(Locale.ROOT).contains(normalizedQuery)
             }
-            .sortedByDescending(AgentConversation::updatedAt)
+            .sortedByDescending(ConversationHubItem::updatedAt)
             .toList()
         return if (archived) {
             ConversationHubConversationSections(emptyList(), matching)
         } else {
             ConversationHubConversationSections(
-                pinned = matching.filter(AgentConversation::pinned),
-                recent = matching.filterNot(AgentConversation::pinned)
+                pinned = matching.filter(ConversationHubItem::pinned),
+                recent = matching.filterNot(ConversationHubItem::pinned)
             )
         }
     }

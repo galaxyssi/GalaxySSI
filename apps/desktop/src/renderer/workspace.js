@@ -235,7 +235,6 @@ const state = {
   peerMessages: [],
   activePeerRouteId: "",
   peerSendPending: false,
-  peerContactsCollapsed: localStorage.getItem("signalasi-desktop-peer-contacts-collapsed") === "1",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
@@ -259,9 +258,6 @@ const state = {
 
 const elements = {
   history: $("#taskHistory"),
-  peerContacts: $("#peerContactList"),
-  peerContactToggle: $("#peerContactToggle"),
-  peerContactSummary: $("#peerContactSummary"),
   sidebarTaskSummary: $("#sidebarTaskSummary"),
   title: $("#conversationTitle"),
   taskState: $("#taskStateText"),
@@ -526,10 +522,50 @@ function conversationGroups() {
   return Array.from(groups.values());
 }
 
+function conversationPreview(value, fallback = "") {
+  const clean = String(value || fallback || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean.length > 62 ? `${clean.slice(0, 62)}...` : clean;
+}
+
+function unifiedConversationGroups() {
+  const taskGroups = conversationGroups().map((group) => {
+    const ordered = [...group.tasks].sort((a, b) => Number(a.created_at) - Number(b.created_at));
+    const latest = group.latest;
+    return {
+      kind: "agent",
+      id: group.id,
+      title: titleFromPrompt(ordered[0]?.prompt),
+      preview: conversationPreview(latest.result, latest.prompt || taskStatusLabel(latest)),
+      updatedAt: Number(latest.updated_at || latest.created_at || 0),
+      running: group.tasks.some((task) => !TERMINAL_STATES.has(task.status)),
+      latest,
+      tasks: group.tasks
+    };
+  });
+  const peerGroups = pairedClients().map((client) => {
+    const routeId = client.client_route_id || "";
+    const latest = peerMessagesFor(routeId).at(-1);
+    return {
+      kind: "device",
+      id: routeId,
+      title: peerClientName(client),
+      preview: conversationPreview(latest?.content, latest?.attachments?.[0]?.name || t("Paired device")),
+      updatedAt: Number(latest?.created_at_ms || client.paired_at_ms || client.updated_at_ms || 0),
+      running: false,
+      latest
+    };
+  }).filter((group) => group.id);
+  return [...taskGroups, ...peerGroups].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 function renderHistory() {
-  const groups = conversationGroups();
+  const groups = unifiedConversationGroups();
   const runningCount = groups.filter((group) =>
-    group.tasks.some((task) => !TERMINAL_STATES.has(task.status))
+    group.kind === "agent" && group.running
   ).length;
   elements.sidebarTaskSummary.textContent = runningCount > 0
     ? `${runningCount}/${groups.length}`
@@ -540,10 +576,10 @@ function renderHistory() {
     : t("Ready");
   elements.sidebarTaskSummary.setAttribute(
     "aria-label",
-    `${groups.length} ${t("Tasks")}; ${runningCount} ${t("running")}`
+    `${groups.length} ${t("Chats")}; ${runningCount} ${t("running")}`
   );
   if (!groups.length) {
-    elements.history.innerHTML = `<div class="history-empty">${escapeHtml(t("Tasks will appear here after you send the first request."))}</div>`;
+    elements.history.innerHTML = `<div class="history-empty">${escapeHtml(t("Chats will appear here after you send a task or message a paired device."))}</div>`;
     return;
   }
   const todayStart = new Date();
@@ -551,17 +587,24 @@ function renderHistory() {
   let currentSection = "";
   const html = [];
   for (const group of groups) {
-    const section = Number(group.latest.updated_at) >= todayStart.getTime() ? "Today" : "Earlier";
+    const section = group.updatedAt >= todayStart.getTime() ? "Today" : "Earlier";
     if (section !== currentSection) {
       currentSection = section;
       html.push(`<div class="history-group-label">${escapeHtml(t(section))}</div>`);
     }
-    const running = group.tasks.some((task) => !TERMINAL_STATES.has(task.status));
-    const latestLabel = running ? taskStatusLabel(group.latest) : relativeTime(group.latest.updated_at);
+    const running = group.kind === "agent" && group.running;
+    const typeLabel = group.kind === "device" ? t("Device") : t("Agent");
+    const latestLabel = running ? taskStatusLabel(group.latest) : relativeTime(group.updatedAt);
+    const targetAttribute = group.kind === "device"
+      ? `data-peer-route="${escapeHtml(group.id)}"`
+      : `data-conversation-id="${escapeHtml(group.id)}"`;
+    const active = group.kind === "device"
+      ? group.id === state.activePeerRouteId
+      : !state.activePeerRouteId && group.id === state.currentConversationId;
     html.push(`
-      <button class="history-item ${!state.activePeerRouteId && group.id === state.currentConversationId ? "active" : ""}" data-conversation-id="${escapeHtml(group.id)}">
-        <strong>${escapeHtml(titleFromPrompt(group.tasks.sort((a, b) => Number(a.created_at) - Number(b.created_at))[0]?.prompt))}</strong>
-        <span class="${running ? "running" : ""}">${escapeHtml(latestLabel)}</span>
+      <button class="history-item ${active ? "active" : ""}" ${targetAttribute}>
+        <span class="history-title-row"><strong>${escapeHtml(group.title)}</strong><i>${escapeHtml(typeLabel)}</i><time>${escapeHtml(latestLabel)}</time></span>
+        <span class="history-preview ${running ? "running" : ""}">${escapeHtml(group.preview)}</span>
       </button>`);
   }
   elements.history.innerHTML = html.join("");
@@ -579,31 +622,6 @@ function peerMessagesFor(routeId = state.activePeerRouteId) {
   return state.peerMessages
     .filter((message) => message.client_route_id === routeId)
     .sort((a, b) => Number(a.created_at_ms) - Number(b.created_at_ms));
-}
-
-function renderPeerContacts() {
-  const clients = pairedClients();
-  elements.peerContactSummary.textContent = String(clients.length);
-  elements.peerContactToggle.setAttribute("aria-expanded", String(!state.peerContactsCollapsed));
-  elements.peerContacts.classList.toggle("collapsed", state.peerContactsCollapsed);
-  elements.peerContacts.innerHTML = clients.length ? clients.map((client) => {
-    const routeId = client.client_route_id || "";
-    const latest = peerMessagesFor(routeId).at(-1);
-    const preview = latest?.content || latest?.attachments?.[0]?.name || t("Paired device");
-    return `<button class="peer-contact ${routeId === state.activePeerRouteId ? "active" : ""}" data-peer-route="${escapeHtml(routeId)}">
-      <span class="peer-contact-icon" aria-hidden="true"></span>
-      <span><strong>${escapeHtml(peerClientName(client))}</strong><small>${escapeHtml(preview)}</small></span>
-    </button>`;
-  }).join("") : `<div class="history-empty">${escapeHtml(t("Pair a phone to start direct messaging."))}</div>`;
-}
-
-function togglePeerContacts() {
-  state.peerContactsCollapsed = !state.peerContactsCollapsed;
-  localStorage.setItem(
-    "signalasi-desktop-peer-contacts-collapsed",
-    state.peerContactsCollapsed ? "1" : "0"
-  );
-  renderPeerContacts();
 }
 
 function renderPeerAttachments(message) {
@@ -659,7 +677,6 @@ function openPeerConversation(routeId) {
   state.renderingSignature = "";
   document.querySelector("#agentApp").classList.add("peer-mode");
   renderHistory();
-  renderPeerContacts();
   renderPeerConversation(true);
   elements.prompt.focus();
 }
@@ -668,7 +685,7 @@ async function refreshPeerMessages() {
   try {
     const response = await window.signalasi.listPeerMessages("", 2000);
     state.peerMessages = Array.isArray(response.messages) ? response.messages : [];
-    renderPeerContacts();
+    renderHistory();
     if (state.activePeerRouteId) renderPeerConversation();
   } catch (error) {
     if (!state.taskStreamConnected) console.warn("Peer message refresh failed", error);
@@ -1034,7 +1051,6 @@ async function connectTaskStream() {
         state.peerMessages = Array.isArray(payload.peer_messages) ? payload.peer_messages : [];
         selectActiveEvolutionTask();
         renderHistory();
-        renderPeerContacts();
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
         mergeTaskUpdate(payload.task);
@@ -1042,7 +1058,7 @@ async function connectTaskStream() {
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
         if (index >= 0) state.peerMessages[index] = { ...state.peerMessages[index], ...payload.message };
         else state.peerMessages.push(payload.message);
-        renderPeerContacts();
+        renderHistory();
         if (payload.message.client_route_id === state.activePeerRouteId) renderPeerConversation();
       }
     });
@@ -1110,7 +1126,7 @@ async function sendTask() {
         if (index >= 0) state.peerMessages[index] = result.message;
         else state.peerMessages.push(result.message);
       }
-      renderPeerContacts();
+      renderHistory();
       renderPeerConversation(true);
     } catch (error) {
       elements.prompt.value = prompt;
@@ -1872,11 +1888,11 @@ async function refreshGateway() {
   try {
     state.pairing = await window.signalasi.getPairingStatus();
     renderGateway();
-    renderPeerContacts();
+    renderHistory();
   } catch (error) {
     state.pairing = { clients: [] };
     renderGateway();
-    renderPeerContacts();
+    renderHistory();
     $("#gatewaySummary p").textContent = error.message || String(error);
   }
 }
@@ -4259,6 +4275,11 @@ function bindEvents() {
     }
   });
   elements.history.addEventListener("click", (event) => {
+    const peer = event.target.closest("[data-peer-route]");
+    if (peer) {
+      openPeerConversation(peer.dataset.peerRoute);
+      return;
+    }
     const item = event.target.closest("[data-conversation-id]");
     if (!item) return;
     state.activePeerRouteId = "";
@@ -4269,11 +4290,6 @@ function bindEvents() {
     renderHistory();
     renderConversation(true);
   });
-  elements.peerContacts.addEventListener("click", (event) => {
-    const contact = event.target.closest("[data-peer-route]");
-    if (contact) openPeerConversation(contact.dataset.peerRoute);
-  });
-  elements.peerContactToggle.addEventListener("click", togglePeerContacts);
   elements.messages.addEventListener("click", async (event) => {
     const pause = event.target.closest("[data-pause-task]");
     if (pause) {
@@ -4441,7 +4457,7 @@ function bindEvents() {
       renderConversation(true);
     }
     renderGateway();
-    renderPeerContacts();
+    renderHistory();
     await refreshDesktopControl();
   });
   $("#authorizedAppList").addEventListener("click", async (event) => {
