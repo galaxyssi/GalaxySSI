@@ -17,6 +17,19 @@ struct SignalASIContactDirectoryActionsView: View {
       }
       SignalASIDirectoryDivider()
       SignalASIDirectoryMenuLink(
+        title: t("signalasi.add_contact.cloud_title", "Add Cloud Model"),
+        subtitle: t(
+          "signalasi.add_contact.cloud_subtitle",
+          "Provider, model, and API key are configured directly on the phone."
+        ),
+        systemImage: "cloud.fill",
+        tint: .signalASIInsightText,
+        badge: t("signalasi.add_contact.title", "Add")
+      ) {
+        CloudModelProviderSelectionView()
+      }
+      SignalASIDirectoryDivider()
+      SignalASIDirectoryMenuLink(
         title: t("signalasi.discover.my_qr_title", "My QR Code"),
         subtitle: t("signalasi.discover.my_qr_subtitle", "Show this device identity"),
         systemImage: "qrcode",
