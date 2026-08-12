@@ -41,7 +41,8 @@ struct SignalASIConversationHubView: View {
   @State private var preparedHubContent = SignalASIConversationHubPreparedContent(
     conversations: SignalASIConversationHubSections(pinned: [], recent: []),
     archivedCount: 0,
-    contacts: []
+    contacts: [],
+    contactSummaries: []
   )
 
   init(
@@ -315,13 +316,16 @@ struct SignalASIConversationHubView: View {
       }
 
       if multiDeleteMode {
-        bulkDeleteToolbar(visible: visible.pinned + visible.recent)
+        bulkDeleteToolbar(
+          visible: (visible.pinned + visible.recent)
+            .compactMap { store.agentSession(id: $0.id) }
+        )
       }
 
       if !visible.pinned.isEmpty {
         hubSectionTitle(t("signalasi.conversation_hub.pinned", "Pinned"))
-        ForEach(visible.pinned) { session in
-          conversationRow(session)
+        ForEach(visible.pinned) { item in
+          unifiedConversationRow(item)
         }
       }
 
@@ -333,8 +337,8 @@ struct SignalASIConversationHubView: View {
       if visible.recent.isEmpty {
         hubEmptyRow(t("signalasi.agent_session.no_results", "No matching sessions"))
       } else {
-        ForEach(visible.recent) { session in
-          conversationRow(session)
+        ForEach(visible.recent) { item in
+          unifiedConversationRow(item)
         }
       }
     }
@@ -436,7 +440,8 @@ struct SignalASIConversationHubView: View {
       "\($0.id):\($0.updatedAt):\($0.status):\($0.pinned):\($0.mergedIntoConversationId)"
     }.joined(separator: "|")
     let contactKey = store.contacts.map {
-      "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName)"
+      let latest = store.conversationSummary(for: $0.id).lastMessage
+      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(latest?.createdAt.timeIntervalSince1970 ?? 0)"
     }.joined(separator: "|")
     return [
       selectedTab.rawValue,
@@ -461,15 +466,42 @@ struct SignalASIConversationHubView: View {
     let sourceContacts = store.contactList(matching: "")
     let query = searchText
     let archived = showingArchived
+    let agentItems = sourceConversations.map { conversation in
+      let latest = store.agentSessionMessages(conversation.id).last
+      let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
+      return SignalASIConversationHubItem(
+        id: conversation.id,
+        kind: .agent,
+        title: conversation.title,
+        subtitle: preview,
+        preview: preview,
+        updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+        pinned: conversation.pinned,
+        archived: conversation.status == .archived,
+        searchableMetadata: conversation.selectedModelOrAgent
+      )
+    }
+    let contactSummaries = sourceContacts.compactMap { contact -> SignalASIConversationHubContactSummary? in
+      let summary = store.conversationSummary(for: contact.id)
+      guard let latest = summary.lastMessage else { return nil }
+      return SignalASIConversationHubContactSummary(
+        contactId: contact.id,
+        title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+        preview: summary.previewText,
+        updatedAt: latest.createdAt
+      )
+    }
     let prepared = await Task.detached(priority: .userInitiated) {
       SignalASIConversationHubPreparedContent(
-        conversations: SignalASIConversationHubModels.conversations(
-          sourceConversations,
+        conversations: SignalASIConversationHubModels.unifiedConversations(
+          agents: agentItems,
+          contacts: contactSummaries,
           query: query,
           archived: archived
         ),
         archivedCount: sourceConversations.filter { $0.status == .archived }.count,
-        contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query)
+        contacts: SignalASIConversationHubModels.contacts(sourceContacts, query: query),
+        contactSummaries: contactSummaries
       )
     }.value
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
@@ -495,7 +527,32 @@ struct SignalASIConversationHubView: View {
     .frame(maxWidth: .infinity)
   }
 
-  private func conversationRow(_ session: AgentConversation) -> some View {
+  @ViewBuilder
+  private func unifiedConversationRow(_ item: SignalASIConversationHubItem) -> some View {
+    if item.kind == .agent, let session = store.agentSession(id: item.id) {
+      conversationRow(session, preview: item.preview)
+    } else if let contact = store.contact(id: item.id) {
+      NavigationLink(destination: ConversationView(contactId: contact.id)) {
+        hubRowContent(
+          title: item.title,
+          subtitle: item.preview.ifBlank(t("chat_no_messages", "No messages yet")),
+          systemImage: contact.type == "device" ? "iphone" : "person.crop.circle",
+          tint: contact.type == "device" ? .blue : .signalASITextSecondary,
+          trailing: ""
+        )
+      }
+      .buttonStyle(.plain)
+      .contextMenu {
+        if contact.id != "system" {
+          Button(t("signalasi.conversation_hub.delete_contact", "Delete contact"), role: .destructive) {
+            pendingContactDeletion = contact
+          }
+        }
+      }
+    }
+  }
+
+  private func conversationRow(_ session: AgentConversation, preview: String = "") -> some View {
     Button {
       if multiDeleteMode {
         toggleSelectedSession(session.id)
@@ -509,7 +566,7 @@ struct SignalASIConversationHubView: View {
     } label: {
       hubRowContent(
         title: sessionTitle(session),
-        subtitle: sessionSubtitle(session),
+        subtitle: sessionSubtitle(session, preview: preview),
         systemImage: "bubble.left.and.bubble.right.fill",
         tint: .signalASIAccent,
         trailing: multiDeleteMode
@@ -911,16 +968,17 @@ struct SignalASIConversationHubView: View {
       : title
   }
 
-  private func sessionSubtitle(_ session: AgentConversation) -> String {
+  private func sessionSubtitle(_ session: AgentConversation, preview: String = "") -> String {
     let route = session.selectedModelOrAgent.ifBlank(
       t("signalasi.agent.model_selection.automatic", "Automatic")
     )
     let count = store.agentSessionMetrics(session.id).messageCount
-    return String(
+    let metadata = String(
       format: t("signalasi.conversation_hub.session_subtitle", "%@ · %d messages"),
       route,
       count
     )
+    return preview.isEmpty ? metadata : "\(preview) · \(metadata)"
   }
 
   private func sectionsContacts(section: String) -> [SignalASIContact] {

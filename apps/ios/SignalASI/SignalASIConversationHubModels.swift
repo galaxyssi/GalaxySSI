@@ -9,8 +9,32 @@ enum SignalASIConversationHubTab: String, CaseIterable, Identifiable {
 }
 
 struct SignalASIConversationHubSections {
-  var pinned: [AgentConversation]
-  var recent: [AgentConversation]
+  var pinned: [SignalASIConversationHubItem]
+  var recent: [SignalASIConversationHubItem]
+}
+
+enum SignalASIConversationHubItemKind: String, Equatable {
+  case agent
+  case contact
+}
+
+struct SignalASIConversationHubContactSummary: Equatable {
+  var contactId: String
+  var title: String
+  var preview: String
+  var updatedAt: Date
+}
+
+struct SignalASIConversationHubItem: Identifiable, Equatable {
+  var id: String
+  var kind: SignalASIConversationHubItemKind
+  var title: String
+  var subtitle: String
+  var preview: String
+  var updatedAt: Date
+  var pinned: Bool
+  var archived: Bool
+  var searchableMetadata: String
 }
 
 enum SignalASIConversationHubModels {
@@ -19,16 +43,51 @@ enum SignalASIConversationHubModels {
     query: String,
     archived: Bool
   ) -> SignalASIConversationHubSections {
+    unifiedConversations(
+      agents: source.map { conversation in
+        SignalASIConversationHubItem(
+          id: conversation.id,
+          kind: .agent,
+          title: conversation.title,
+          subtitle: conversation.summary,
+          preview: conversation.summary,
+          updatedAt: Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+          pinned: conversation.pinned,
+          archived: conversation.status == .archived,
+          searchableMetadata: conversation.selectedModelOrAgent
+        )
+      },
+      contacts: [],
+      query: query,
+      archived: archived
+    )
+  }
+
+  static func unifiedConversations(
+    agents: [SignalASIConversationHubItem],
+    contacts: [SignalASIConversationHubContactSummary],
+    query: String,
+    archived: Bool
+  ) -> SignalASIConversationHubSections {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let matching = source
-      .filter { $0.status == (archived ? .archived : .active) }
-      .filter { conversation in
-        cleanQuery.isEmpty || [
-          conversation.title,
-          conversation.summary,
-          conversation.selectedModelOrAgent,
-          conversation.id
-        ].contains { $0.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+    let contactItems = archived ? [] : contacts.map { contact in
+      SignalASIConversationHubItem(
+        id: contact.contactId,
+        kind: .contact,
+        title: contact.title,
+        subtitle: contact.preview,
+        preview: contact.preview,
+        updatedAt: contact.updatedAt,
+        pinned: false,
+        archived: false,
+        searchableMetadata: contact.contactId
+      )
+    }
+    let matching = (agents + contactItems)
+      .filter { $0.archived == archived }
+      .filter { item in
+        cleanQuery.isEmpty || [item.title, item.subtitle, item.preview, item.searchableMetadata]
+          .contains { $0.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
       }
       .sorted { $0.updatedAt > $1.updatedAt }
     return archived
