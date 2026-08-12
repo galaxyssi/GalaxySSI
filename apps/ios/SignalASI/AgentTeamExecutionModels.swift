@@ -111,7 +111,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   var state: AgentTeamExecutionState
   var members: [AgentTeamMemberSnapshot]
   var finalOutput: String
+  var createdAtMillis: Int64
   var updatedAtMillis: Int64
+  var interruptedAtMillis: Int64
 
   init(
     supervisorRunId: String,
@@ -124,7 +126,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     state: AgentTeamExecutionState,
     members: [AgentTeamMemberSnapshot] = [],
     finalOutput: String = "",
-    updatedAtMillis: Int64 = 0
+    createdAtMillis: Int64 = 0,
+    updatedAtMillis: Int64 = 0,
+    interruptedAtMillis: Int64 = 0
   ) {
     self.supervisorRunId = supervisorRunId
     self.teamId = teamId
@@ -136,7 +140,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     self.state = state
     self.members = members
     self.finalOutput = String(finalOutput.prefix(AgentConnectorResponse.maxContentCharacters))
+    self.createdAtMillis = max(createdAtMillis, 0)
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.interruptedAtMillis = max(interruptedAtMillis, 0)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -150,7 +156,28 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     case state
     case members
     case finalOutput = "final_output"
+    case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
+    case interruptedAtMillis = "interrupted_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      supervisorRunId: try container.decodeIfPresent(String.self, forKey: .supervisorRunId) ?? "",
+      teamId: try container.decodeIfPresent(String.self, forKey: .teamId) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      primaryAgentId: try container.decodeIfPresent(String.self, forKey: .primaryAgentId) ?? "",
+      goal: try container.decodeIfPresent(String.self, forKey: .goal) ?? "",
+      visibilityMode: try container.decodeIfPresent(AgentTeamVisibilityMode.self, forKey: .visibilityMode) ?? .background,
+      state: try container.decodeIfPresent(AgentTeamExecutionState.self, forKey: .state) ?? .queued,
+      members: try container.decodeIfPresent([AgentTeamMemberSnapshot].self, forKey: .members) ?? [],
+      finalOutput: try container.decodeIfPresent(String.self, forKey: .finalOutput) ?? "",
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
+      interruptedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .interruptedAtMillis) ?? 0
+    )
   }
 }
 
