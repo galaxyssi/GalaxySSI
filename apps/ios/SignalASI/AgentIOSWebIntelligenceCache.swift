@@ -147,13 +147,19 @@ final class AgentIOSWebIntelligenceCacheStore {
     return allowStale || document.expiresAtMillis >= nowMillis() ? document : nil
   }
 
-  func search(query: String, limit: Int) -> [AgentIOSWebIntelligenceCacheDocument] {
+  func search(
+    query: String,
+    limit: Int,
+    allowStale: Bool = true
+  ) -> [AgentIOSWebIntelligenceCacheDocument] {
     let tokens = query
       .lowercased()
       .split { $0.isWhitespace || $0 == "," || $0 == "." }
       .map(String.init)
       .filter { $0.count >= 2 }
+    let now = nowMillis()
     let scored = read().documents.compactMap { document -> (AgentIOSWebIntelligenceCacheDocument, Int)? in
+      guard allowStale || document.expiresAtMillis >= now else { return nil }
       let haystack = "\(document.title) \(document.url) \(document.content)".lowercased()
       let score = tokens.reduce(0) { partial, token in
         partial + haystack.components(separatedBy: token).count - 1
