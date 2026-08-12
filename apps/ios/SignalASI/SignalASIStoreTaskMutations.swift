@@ -10,6 +10,7 @@ extension SignalASIStore {
     var items = agentTaskRecords.filter { $0.taskId != clean }
     items.append(updated)
     agentTaskRecords = Array(Self.sortedAgentTasks(items).prefix(200))
+    _ = UserDefaultsAgentSelfModelStore.shared.observe(task: updated)
     return updated
   }
 

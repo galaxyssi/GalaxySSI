@@ -61,6 +61,11 @@ class PeerChatStore:
                   ON peer_messages(client_route_id, created_at_ms, message_id);
                 """
             )
+            connection.execute(
+                """UPDATE peer_messages SET delivery_status = 'failed'
+                   WHERE delivery_status IN ('sending', 'preparing')"""
+            )
+            connection.commit()
 
     def subscribe(self, listener: Callable[[dict], None]) -> str:
         subscription_id = uuid.uuid4().hex
@@ -189,6 +194,22 @@ class PeerChatStore:
                     (bounded_limit,),
                 ).fetchall()
         return [self._public(row) for row in reversed(rows)]
+
+    def delete_route(self, client_route_id: str) -> int:
+        """Delete a revoked device conversation and its imported attachments."""
+        route_id = str(client_route_id or "").strip()
+        if not route_id:
+            return 0
+        with self._lock, closing(self._connect()) as connection:
+            cursor = connection.execute(
+                "DELETE FROM peer_messages WHERE client_route_id = ?",
+                (route_id,),
+            )
+            connection.commit()
+        route_directory = self.files_root / self._safe_component(route_id)
+        if route_directory.is_dir():
+            shutil.rmtree(route_directory, ignore_errors=True)
+        return max(0, int(cursor.rowcount or 0))
 
     def import_attachment(
         self,
