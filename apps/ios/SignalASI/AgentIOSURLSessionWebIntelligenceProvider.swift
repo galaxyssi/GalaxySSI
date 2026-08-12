@@ -259,6 +259,22 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       return failure("invalid_query", "Web intelligence search requires a non-empty query")
     }
     let limit = int(input, "limit", defaultValue: int(input, "evidence_limit", defaultValue: 5, minimum: 1, maximum: 10), minimum: 1, maximum: 10)
+    let useCache = input["use_cache"]?.boolValue ?? false
+    let cachedDocuments = useCache
+      ? cacheStore.search(query: query, limit: limit, allowStale: false)
+      : []
+    let cachedResults = cachedSearchResults(cachedDocuments, limit: limit)
+    if cachedResults.count >= limit {
+      return searchSuccess(
+        operation: operation,
+        query: query,
+        invocation: invocation,
+        results: cachedResults,
+        webResult: nil,
+        cacheHit: true,
+        networkAttempted: false
+      )
+    }
     let webResult = webMediaProvider.invoke(
       operation: .webSearch,
       input: [
@@ -268,10 +284,51 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       ],
       invocation: invocation
     )
-    guard webResult.isSuccess else { return webResult }
+    guard webResult.isSuccess else {
+      guard !cachedResults.isEmpty else { return webResult }
+      return searchSuccess(
+        operation: operation,
+        query: query,
+        invocation: invocation,
+        results: cachedResults,
+        webResult: webResult,
+        cacheHit: true,
+        networkAttempted: true
+      )
+    }
 
-    let resultObjects = searchResults(webResult.output["results"]?.arrayValue ?? [], limit: limit)
-    let receipts = resultObjects.map { sourceReceipt(forSearchResult: $0) }
+    let networkResults = searchResults(webResult.output["results"]?.arrayValue ?? [], limit: limit)
+    let resultObjects = reindexSearchResults(
+      mergeSearchResults(cachedResults, networkResults),
+      limit: limit
+    )
+    if useCache {
+      cacheSearchResults(networkResults, input: input)
+    }
+    return searchSuccess(
+      operation: operation,
+      query: query,
+      invocation: invocation,
+      results: resultObjects,
+      webResult: webResult,
+      cacheHit: !cachedResults.isEmpty,
+      networkAttempted: true
+    )
+  }
+
+  private func searchSuccess(
+    operation: AgentIOSWebIntelligenceOperation,
+    query: String,
+    invocation: AgentNativeToolInvocation,
+    results resultObjects: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
+    webResult: AgentNativeToolExecutionResult?,
+    cacheHit: Bool,
+    networkAttempted: Bool
+  ) -> AgentNativeToolExecutionResult {
+    let receipts = resultObjects.map { item in
+      item.evidence["source_receipt"]?.objectValue
+        ?? sourceReceipt(forSearchResult: item)
+    }
     var output = baseOutput(operation: operation, invocation: invocation, status: "completed")
     output["request_id"] = .string(requestId(invocation, operation: operation))
     output["query"] = .string(query)
@@ -279,12 +336,107 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["results"] = .array(resultObjects.map { .object($0.result) })
     output["evidence"] = .array(resultObjects.map { .object($0.evidence) })
     output["source_receipts"] = .array(receipts.map { .object($0) })
-    output["engine"] = webResult.metadata["provider"] ?? .string("urlsession")
+    output["cache"] = .object(cacheStore.stats().merging([
+      "hit": .bool(cacheHit),
+      "network_attempted": .bool(networkAttempted)
+    ]) { _, next in next })
+    output["engine"] = webResult?.metadata["provider"] ?? .string(
+      cacheHit && !networkAttempted ? "ios-encrypted-cache" : "urlsession"
+    )
+    var resultMetadata = metadata(operation: operation, webResult: webResult)
+    resultMetadata["cache_hit"] = .bool(cacheHit)
+    resultMetadata["network_attempted"] = .bool(networkAttempted)
+    resultMetadata["cache_fallback"] = .bool(webResult?.isSuccess == false && cacheHit)
     return AgentNativeToolExecutionResult.success(
       output: output,
       message: "Web intelligence search evidence collected",
-      metadata: metadata(operation: operation, webResult: webResult)
+      metadata: resultMetadata
     )
+  }
+
+  private func cachedSearchResults(
+    _ documents: [AgentIOSWebIntelligenceCacheDocument],
+    limit: Int
+  ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
+    documents.prefix(limit).enumerated().map { index, document in
+      let rank = index + 1
+      let receipt = cachedSourceReceipt(document, rank: rank)
+      let result: AgentMcpJSONObject = [
+        "rank": .int(Int64(rank)),
+        "title": .string(document.title),
+        "url": .string(document.url)
+      ]
+      let evidence: AgentMcpJSONObject = [
+        "id": .string(evidenceId(url: document.url, rank: rank)),
+        "rank": .int(Int64(rank)),
+        "title": .string(document.title),
+        "url": .string(document.url),
+        "snippet": .string(String(document.content.prefix(1_024))),
+        "trust": .string("untrusted_public_web"),
+        "source_receipt": .object(receipt)
+      ]
+      return (result: result, evidence: evidence)
+    }
+  }
+
+  private func mergeSearchResults(
+    _ cached: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
+    _ network: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)]
+  ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
+    var seen = Set<String>()
+    return (cached + network).filter { item in
+      let url = canonicalURL(item.result["url"]?.stringValue ?? "")
+      return !url.isEmpty && seen.insert(url).inserted
+    }
+  }
+
+  private func reindexSearchResults(
+    _ values: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
+    limit: Int
+  ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
+    values.prefix(limit).enumerated().map { index, value in
+      let rank = index + 1
+      var result = value.result
+      var evidence = value.evidence
+      result["rank"] = .int(Int64(rank))
+      evidence["rank"] = .int(Int64(rank))
+      evidence["id"] = .string(evidenceId(url: result["url"]?.stringValue ?? "", rank: rank))
+      return (result: result, evidence: evidence)
+    }
+  }
+
+  private func cacheSearchResults(
+    _ results: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
+    input: AgentMcpJSONObject
+  ) {
+    let retrievedAt = nowMillis()
+    let ttl = max(
+      60_000,
+      min(
+        input["cache_ttl_ms"]?.intValue ?? 30 * 60_000,
+        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
+      )
+    )
+    for item in results {
+      let url = item.result["url"]?.stringValue ?? ""
+      guard !url.isEmpty else { continue }
+      let title = item.result["title"]?.stringValue ?? ""
+      let snippet = item.evidence["snippet"]?.stringValue ?? ""
+      cacheStore.putDocument(
+        url: url,
+        title: title,
+        content: snippet,
+        contentType: "text/x-signalasi-search-result",
+        contentSHA256: AgentMcpJSONCodec.sha256([
+          "url": .string(url),
+          "title": .string(title),
+          "snippet": .string(snippet)
+        ]),
+        retrievedAtMillis: retrievedAt,
+        expiresAtMillis: retrievedAt + ttl,
+        metadata: ["source": "web_search"]
+      )
+    }
   }
 
   private func fetch(
@@ -681,6 +833,19 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
 
   private func sourceReceipt(forSearchResult result: (result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)) -> AgentMcpJSONObject {
     sourceReceipt(forURL: result.result["url"]?.stringValue ?? "", rank: Int(result.result["rank"]?.intValue ?? 0))
+  }
+
+  private func cachedSourceReceipt(
+    _ document: AgentIOSWebIntelligenceCacheDocument,
+    rank: Int
+  ) -> AgentMcpJSONObject {
+    [
+      "url": .string(document.url),
+      "rank": .int(Int64(max(0, rank))),
+      "retrieved_at_epoch_ms": .int(max(0, document.retrievedAtMillis)),
+      "network_policy": .string("ios_encrypted_web_cache"),
+      "trust": .string("untrusted_public_web")
+    ]
   }
 
   private func sourceReceipt(forURL url: String, rank: Int) -> AgentMcpJSONObject {

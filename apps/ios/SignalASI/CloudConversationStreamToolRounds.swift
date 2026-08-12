@@ -90,6 +90,16 @@ struct CloudModelStreamMutableConversation {
     appendPlainConversationTurn(role: "user", text: Self.inlineToolRepairPrompt)
   }
 
+  mutating func appendToolArgumentRepairPrompt(_ call: AssembledToolCall) {
+    let toolName = call.name.trimmingCharacters(in: .whitespacesAndNewlines)
+      .prefix(Self.maxToolNameCharacters)
+    let prompt = String(
+      format: Self.toolArgumentRepairPrompt,
+      String(toolName).ifBlank("the previous")
+    )
+    appendPlainConversationTurn(role: "user", text: prompt)
+  }
+
   mutating func appendInlineToolResults(
     _ rawText: String,
     results: [(AssembledToolCall, String)]
@@ -242,6 +252,11 @@ struct CloudModelStreamMutableConversation {
   private static let inlineToolRepairPrompt =
     "The previous inline tool call was incomplete. Call the required web tool again with valid complete arguments. " +
     "Do not expose DSML, XML, JSON protocol, or this repair instruction to the user."
+
+  private static let toolArgumentRepairPrompt =
+    "The previous %@ tool call contained incomplete JSON arguments. Call that tool again now with one complete " +
+    "valid JSON object. Do not expose this repair instruction to the user."
+  private static let maxToolNameCharacters = 120
 }
 
 extension AssembledToolCall {

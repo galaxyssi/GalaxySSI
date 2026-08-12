@@ -1,6 +1,11 @@
 import Foundation
 
 enum AgentPeerChatTransport {
+  struct DeliveryTraceEntry: Equatable {
+    var stage: String
+    var detail: String
+  }
+
   static func conversationId(for link: ServerLink) -> String {
     "peer:\(link.routes.clientRouteId)"
   }
@@ -11,6 +16,25 @@ enum AgentPeerChatTransport {
 
   static func taskId(for sourceMessageId: String) -> String {
     "peer:\(sourceMessageId)"
+  }
+
+  static func deliveryTrace(from payload: [String: Any]) -> [DeliveryTraceEntry] {
+    let values: [[String: Any]]
+    if let entries = payload["delivery_trace"] as? [[String: Any]] {
+      values = entries
+    } else if let entries = payload["delivery_trace"] as? [Any] {
+      values = entries.compactMap { $0 as? [String: Any] }
+    } else {
+      return []
+    }
+    return values.compactMap { value in
+      let stage = String(value.string("stage").prefix(80))
+      guard !stage.isEmpty else { return nil }
+      return DeliveryTraceEntry(
+        stage: stage,
+        detail: String(value.string("detail").prefix(240))
+      )
+    }
   }
 
   static func richOutput(
@@ -43,6 +67,9 @@ enum AgentPeerChatTransport {
         "source": "peer_message",
         "size_bytes": String(size?.int64Value ?? 0)
       ]) { _, new in new }
+      if !artifactURI.isEmpty {
+        metadata["artifact_source_uri"] = artifactURI
+      }
       if let transferId = raw["transfer_id"] as? String, !transferId.isEmpty {
         metadata["transfer_id"] = transferId
       }

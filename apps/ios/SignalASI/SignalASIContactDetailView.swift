@@ -4,6 +4,7 @@ import UIKit
 struct ContactDetailView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @Environment(\.dismiss) private var dismiss
   @State private var remarkName = ""
   @State private var remarkEditorExpanded = false
@@ -469,7 +470,14 @@ struct ContactDetailView: View {
 
   private func deleteContact() {
     guard let contact else { return }
-    if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
+    if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
+      Task { @MainActor in
+        _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
+        if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
+          dismiss()
+        }
+      }
+    } else if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
       dismiss()
     } else {
       setStatus(t("signalasi.contact_detail.delete_failed", "Unable to delete this contact."), isError: true)
