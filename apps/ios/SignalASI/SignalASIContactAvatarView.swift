@@ -31,10 +31,18 @@ struct AvatarView: View {
       contact.signalASIId,
       contact.name,
       contact.displayName,
-      contact.type
+      contact.type,
+      contact.agentKind,
+      contact.cloudProvider,
+      contact.selectedCloudModel?.provider ?? "",
+      contact.selectedCloudModel?.modelId ?? ""
     ]
 
-    if let agentAssetName = SignalASIAgentAvatarAssetCatalog.assetName(for: identityFields) {
+    if contact.deliveryMode == .cloudAPI {
+      if let providerAssetName = SignalASIAgentAvatarAssetCatalog.cloudProviderAssetName(for: identityFields) {
+        return providerAssetName
+      }
+    } else if let agentAssetName = SignalASIAgentAvatarAssetCatalog.assetName(for: identityFields) {
       return agentAssetName
     }
 
@@ -47,12 +55,26 @@ struct AvatarView: View {
 
   private var iconName: String {
     if contact.type == "device" {
+      let deviceIdentity = [
+        contact.devicePlatform ?? "",
+        contact.deviceModel ?? "",
+        contact.deviceProfileName ?? ""
+      ].joined(separator: " ").lowercased()
+      if deviceIdentity.contains("mac") || deviceIdentity.contains("desktop") || deviceIdentity.contains("windows") {
+        return "desktopcomputer"
+      }
+      if deviceIdentity.contains("ipad") || deviceIdentity.contains("tablet") {
+        return "ipad"
+      }
       return "iphone"
     }
+    if contact.agentKind == "local-model" || contact.deliveryMode == .local {
+      return "memorychip"
+    }
     switch contact.deliveryMode {
-    case .cloudAPI: return "cloud"
+    case .cloudAPI: return "cloud.fill"
     case .link, .pcConnector: return "desktopcomputer"
-    case .local: return "gearshape"
+    case .local: return "memorychip"
     }
   }
 

@@ -43,6 +43,34 @@ enum SignalASIAgentAvatarAssetCatalog {
     }
     return nil
   }
+
+  static func cloudProviderAssetName(for fields: [String]) -> String? {
+    let identity = fields
+      .joined(separator: " ")
+      .lowercased()
+
+    // Keep provider matching ahead of generic model-name matching so an
+    // OpenRouter GPT contact still uses the OpenRouter brand mark.
+    if identity.contains("openrouter") || identity.contains("open-router") {
+      return "CloudProviderOpenRouter"
+    }
+    if identity.contains("deepseek") {
+      return "CloudProviderDeepSeek"
+    }
+    if identity.contains("qwen") {
+      return "CloudProviderQwen"
+    }
+    if identity.contains("gemini") || identity.contains("google") {
+      return "CloudProviderGemini"
+    }
+    if identity.contains("anthropic") || identity.contains("claude") {
+      return "CloudProviderAnthropic"
+    }
+    if identity.contains("openai") || identity.contains("gpt") {
+      return "CloudProviderOpenAI"
+    }
+    return nil
+  }
 }
 
 struct AgentIdentityPresentation: Codable, Equatable, Identifiable {
