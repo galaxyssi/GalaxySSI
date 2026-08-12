@@ -747,14 +747,22 @@ private struct SignalASIAgentDirectorySnapshot {
   }
 
   private func assetName(for contact: SignalASIContact) -> String? {
-    SignalASIAgentAvatarAssetCatalog.assetName(for: [
+    let identityFields = [
       contact.id,
       contact.signalASIId,
       contact.name,
       contact.displayName,
       contact.type,
       contact.agentKind
-    ])
+    ] + [
+      contact.cloudProvider,
+      contact.selectedCloudModel?.provider ?? "",
+      contact.selectedCloudModel?.modelId ?? ""
+    ]
+    if contact.deliveryMode == .cloudAPI {
+      return SignalASIAgentAvatarAssetCatalog.cloudProviderAssetName(for: identityFields)
+    }
+    return SignalASIAgentAvatarAssetCatalog.assetName(for: identityFields)
   }
 
   private func tint(for contact: SignalASIContact) -> Color {
