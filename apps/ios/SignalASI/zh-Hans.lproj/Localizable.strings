@@ -2029,6 +2029,11 @@
 "agent_mcp_catalog_notion" = "搜索、读取和更新 Notion 工作区";
 "agent_mcp_catalog_home_assistant" = "控制可信的智能家居设备和自动化";
 "agent_mcp_catalog_relay" = "安装本地包，登录后控制网络继电器";
+"agent_skill_catalog_research" = "搜索、比较来源并生成带引用的研究摘要";
+"agent_skill_catalog_device_health" = "汇总电量、内存、存储、电源和网络健康状态";
+"agent_skill_catalog_github" = "通过 GitHub MCP 处理 Issue 和 Pull Request";
+"agent_skill_catalog_notion" = "将选定的 Notion 页面整理成简洁摘要";
+"agent_skill_catalog_smart_home" = "通过 Home Assistant 执行经过验证的多设备流程";
 "signalasi.mcp.connection_count" = "%d 个连接";
 "signalasi.mcp.latest_change" = "最近变更";
 "signalasi.mcp.section_overview" = "概览";

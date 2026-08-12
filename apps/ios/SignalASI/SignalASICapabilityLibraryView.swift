@@ -264,6 +264,16 @@ struct SignalASICapabilityLibraryView: View {
       return t("agent_mcp_catalog_home_assistant", fallback)
     case "signalasi.mcp.relay_controller":
       return t("agent_mcp_catalog_relay", fallback)
+    case "signalasi.catalog.deep-research":
+      return t("agent_skill_catalog_research", fallback)
+    case "signalasi.catalog.device-health":
+      return t("agent_skill_catalog_device_health", fallback)
+    case "signalasi.catalog.github-triage":
+      return t("agent_skill_catalog_github", fallback)
+    case "signalasi.catalog.notion-brief":
+      return t("agent_skill_catalog_notion", fallback)
+    case "signalasi.catalog.smart-home-routine":
+      return t("agent_skill_catalog_smart_home", fallback)
     default:
       return fallback
     }
