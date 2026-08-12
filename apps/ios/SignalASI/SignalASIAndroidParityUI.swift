@@ -517,6 +517,10 @@ struct AgentHomeView: View {
         attachments.removeAll { $0.id == attachment.id }
       },
       onNewSession: createAgentConversation,
+      onOpenSessions: {
+        actionTrayPresented = false
+        agentSessionsShortcutActive = true
+      },
       onScan: {
         scanShortcutActive = true
       },
