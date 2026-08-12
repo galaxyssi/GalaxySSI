@@ -10,6 +10,8 @@ struct SignalASIControlCenterView: View {
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  private let globalDeliberationStore = GlobalAgentDeliberationStore()
+  private let globalLongHorizonStore = GlobalLongHorizonGoalStore()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -105,6 +107,7 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligentCoreSection: some View {
+    let dashboard = globalAgentDashboard
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_intelligent_core", "Intelligent Core"))
       SignalASIControlCenterNavigationRow(
@@ -115,6 +118,25 @@ struct SignalASIControlCenterView: View {
         badge: agentCoreBadge
       ) {
         SignalASIAgentCoreView()
+      }
+      SignalASIControlCenterNavigationRow(
+        title: t("cc_global_agent_title", "Global Super Agent"),
+        subtitle: String(
+          format: t(
+            "cc_global_agent_home_subtitle",
+            "%d topics - %d active goals - %d new insights"
+          ),
+          dashboard.topicCount,
+          dashboard.activeGoalCount,
+          dashboard.pendingInsightCount
+        ),
+        systemImage: "brain.head.profile",
+        tint: dashboard.settings.enabled ? .purple : .orange,
+        badge: dashboard.settings.enabled
+          ? t("cc_status_online", "Online")
+          : t("signalasi.status.paused", "Paused")
+      ) {
+        SignalASIGlobalAgentControlView()
       }
       SignalASIControlCenterNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
@@ -322,6 +344,25 @@ struct SignalASIControlCenterView: View {
 
   private var memorySnapshot: AgentMemorySnapshot {
     store.agentMemorySnapshot()
+  }
+
+  private var globalAgentDashboard: SignalASIGlobalAgentDashboardSnapshot {
+    SignalASIGlobalAgentDashboardSnapshot.make(
+      settings: store.globalAgentSettings,
+      agentTasks: store.recentAgentTasks(limit: 200),
+      sessions: store.agentSessions(includeArchived: true),
+      memory: memorySnapshot,
+      knowledgeStats: store.agentKnowledgeStats,
+      knowledgeAudit: store.agentKnowledgeAccessAudit,
+      automationTasks: store.automationTasks(),
+      automationRuns: store.recentAutomationRuns(limit: 80),
+      proactiveMessages: store.globalProactiveMessages,
+      proactiveFeedback: store.globalAgentFeedback,
+      cognitionTasks: globalDeliberationStore.cognitionTasks(),
+      autonomousRuns: globalDeliberationStore.autonomousRuns(),
+      longHorizonGoals: globalLongHorizonStore.goals(),
+      researchState: SignalASIGlobalAgentRuntimeBridge.researchState()
+    )
   }
 
   private var recentTasks: [AgentTaskRecord] {

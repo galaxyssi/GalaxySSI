@@ -2910,6 +2910,7 @@
 "agent_plan_error_dependency" = "请先删除依赖此动作的后续动作";
 "cc_global_agent_title" = "全局超级智能体";
 "cc_global_agent_subtitle" = "跨所有会话与长期目标持续工作的个人智能";
+"cc_global_agent_home_subtitle" = "%d 个主题 - %d 个活跃目标 - %d 条新洞察";
 "cc_global_understanding_active" = "全局理解运行中";
 "cc_global_research_active" = "自主研究运行中";
 "cc_global_metric_topics" = "主题";
