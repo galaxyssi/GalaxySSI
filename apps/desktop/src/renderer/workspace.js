@@ -234,6 +234,8 @@ const state = {
   tasks: [],
   peerMessages: [],
   activePeerRouteId: "",
+  peerSendPending: false,
+  peerContactsCollapsed: localStorage.getItem("signalasi-desktop-peer-contacts-collapsed") === "1",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
@@ -258,6 +260,7 @@ const state = {
 const elements = {
   history: $("#taskHistory"),
   peerContacts: $("#peerContactList"),
+  peerContactToggle: $("#peerContactToggle"),
   peerContactSummary: $("#peerContactSummary"),
   sidebarTaskSummary: $("#sidebarTaskSummary"),
   title: $("#conversationTitle"),
@@ -581,6 +584,8 @@ function peerMessagesFor(routeId = state.activePeerRouteId) {
 function renderPeerContacts() {
   const clients = pairedClients();
   elements.peerContactSummary.textContent = String(clients.length);
+  elements.peerContactToggle.setAttribute("aria-expanded", String(!state.peerContactsCollapsed));
+  elements.peerContacts.classList.toggle("collapsed", state.peerContactsCollapsed);
   elements.peerContacts.innerHTML = clients.length ? clients.map((client) => {
     const routeId = client.client_route_id || "";
     const latest = peerMessagesFor(routeId).at(-1);
@@ -590,6 +595,15 @@ function renderPeerContacts() {
       <span><strong>${escapeHtml(peerClientName(client))}</strong><small>${escapeHtml(preview)}</small></span>
     </button>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("Pair a phone to start direct messaging."))}</div>`;
+}
+
+function togglePeerContacts() {
+  state.peerContactsCollapsed = !state.peerContactsCollapsed;
+  localStorage.setItem(
+    "signalasi-desktop-peer-contacts-collapsed",
+    state.peerContactsCollapsed ? "1" : "0"
+  );
+  renderPeerContacts();
 }
 
 function renderPeerAttachments(message) {
@@ -618,13 +632,20 @@ function renderPeerConversation(force = false) {
   elements.empty.hidden = messages.length > 0;
   elements.empty.querySelector("h2").textContent = t("Direct message");
   elements.empty.querySelector("p").textContent = t("Messages and files are end-to-end encrypted between paired devices.");
-  elements.messages.innerHTML = messages.map((message) => `<article class="peer-message-row ${message.direction}">
+  elements.messages.innerHTML = messages.map((message) => {
+    const deliveryLabel = message.delivery_status === "sent"
+      ? t("Sent")
+      : message.delivery_status === "failed"
+        ? t("Failed")
+        : t("Queued");
+    return `<article class="peer-message-row ${message.direction}">
     <div class="peer-message-bubble">
       ${message.content ? `<p>${escapeHtml(message.content)}</p>` : ""}
       ${renderPeerAttachments(message)}
-      <small>${escapeHtml(relativeTime(message.created_at_ms))}${message.direction === "outbound" ? ` · ${escapeHtml(t(message.delivery_status === "sent" ? "Sent" : "Queued"))}` : ""}</small>
+      <small>${escapeHtml(relativeTime(message.created_at_ms))}${message.direction === "outbound" ? ` · ${escapeHtml(deliveryLabel)}` : ""}</small>
     </div>
-  </article>`).join("");
+  </article>`;
+  }).join("");
   elements.title.textContent = client ? peerClientName(client) : t("Device contact");
   elements.taskState.textContent = t("Direct message");
   elements.taskState.className = "";
@@ -1042,7 +1063,7 @@ async function connectTaskStream() {
 function updateSendState() {
   const ready = Boolean(elements.prompt.value.trim() || state.attachments.length);
   elements.send.classList.toggle("ready", ready);
-  elements.send.disabled = !ready;
+  elements.send.disabled = !ready || state.peerSendPending;
   elements.prompt.style.height = "35px";
   elements.prompt.style.height = `${Math.min(104, Math.max(35, elements.prompt.scrollHeight))}px`;
 }
@@ -1071,6 +1092,8 @@ async function sendTask() {
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
   if (state.activePeerRouteId) {
+    if (state.peerSendPending) return;
+    state.peerSendPending = true;
     const attachments = [...state.attachments];
     elements.prompt.value = "";
     state.attachments = [];
@@ -1094,6 +1117,9 @@ async function sendTask() {
       state.attachments = attachments;
       renderAttachmentTray();
       showToast(`${t("Could not send message")}: ${error.message || error}`);
+    } finally {
+      state.peerSendPending = false;
+      updateSendState();
     }
     return;
   }
@@ -4247,6 +4273,7 @@ function bindEvents() {
     const contact = event.target.closest("[data-peer-route]");
     if (contact) openPeerConversation(contact.dataset.peerRoute);
   });
+  elements.peerContactToggle.addEventListener("click", togglePeerContacts);
   elements.messages.addEventListener("click", async (event) => {
     const pause = event.target.closest("[data-pause-task]");
     if (pause) {
@@ -4404,8 +4431,17 @@ function bindEvents() {
     }
     const revokeButton = event.target.closest("[data-revoke-client]");
     if (!revokeButton || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;
-    await window.signalasi.clearPairing(revokeButton.dataset.revokeClient);
-    await refreshGateway();
+    const revokedRouteId = revokeButton.dataset.revokeClient;
+    state.pairing = await window.signalasi.clearPairing(revokedRouteId);
+    state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== revokedRouteId);
+    if (state.activePeerRouteId === revokedRouteId) {
+      state.activePeerRouteId = "";
+      document.querySelector("#agentApp").classList.remove("peer-mode");
+      state.renderingSignature = "";
+      renderConversation(true);
+    }
+    renderGateway();
+    renderPeerContacts();
     await refreshDesktopControl();
   });
   $("#authorizedAppList").addEventListener("click", async (event) => {

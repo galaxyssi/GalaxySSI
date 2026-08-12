@@ -215,6 +215,12 @@ if (!styles.includes(".utility-drawer.open") ||
     !styles.includes("pointer-events: auto")) {
   throw new Error("Closed utility drawers must not cast a shadow or intercept pointer input");
 }
+if (!html.includes('id="peerContactToggle"') ||
+    !html.includes('aria-controls="peerContactList"') ||
+    !workspaceRenderer.includes("signalasi-desktop-peer-contacts-collapsed") ||
+    !styles.includes(".peer-contact-list.collapsed")) {
+  throw new Error("Desktop contact list must provide a persistent collapse control");
+}
 if (!main.includes("width: 960") || !main.includes("height: 640")) {
   throw new Error("Desktop window must default to 960 x 640");
 }

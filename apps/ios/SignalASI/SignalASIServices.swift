@@ -5123,7 +5123,7 @@ final class MessageCoordinator: ObservableObject {
     let responseLanguage = LanguagePolicySettings.resolve(responseLanguagePreference)
     var payload: [String: Any] = [
       "type": peerChat ? "peer_message" : "text",
-      "message_id": sourceMessageId,
+      "message_id": peerChat ? UUID().uuidString : sourceMessageId,
       "content": text,
       "contact_id": peerChat ? link.desktopId : contact.id,
       "task_id": taskIdentity.taskId,
@@ -5392,7 +5392,7 @@ final class MessageCoordinator: ObservableObject {
       throw SignalASIError.invalidPayload("Local-only Agent state cannot be sent over SignalASI Link.")
     }
     var appPayload = payload
-    let messageId = appPayload.string("message_id").ifBlank(UUID().uuidString)
+    let messageId = SignalASILinkProtocol.normalizedMessageId(appPayload.string("message_id"))
     appPayload["message_id"] = messageId
     let envelope = try SignalASILinkProtocol.makeEnvelope(
       payload: appPayload,
@@ -6310,6 +6310,7 @@ final class MessageCoordinator: ObservableObject {
       ?? advertisedContactId.ifBlank(desktopId).ifBlank("hermes")
     let rawAttachments = payload["attachments"] as? [[String: Any]] ?? []
     let richOutputJson = AgentPeerChatTransport.richOutput(for: rawAttachments)
+    let remoteDeliveryTrace = AgentPeerChatTransport.deliveryTrace(from: payload)
     let content = payload.string("content")
       .ifBlank(payload.string("text"))
       .ifBlank(AgentRichContentCodec.fallbackText(richOutputJson))
@@ -6334,6 +6335,14 @@ final class MessageCoordinator: ObservableObject {
       turnId: turnId,
       richOutputJson: richOutputJson
     )
+    for entry in remoteDeliveryTrace where !["received", "decrypted"].contains(entry.stage) {
+      store.appendDeliveryTrace(
+        incoming.id,
+        contactId: contactId,
+        stage: entry.stage,
+        detail: entry.detail
+      )
+    }
     store.appendDeliveryTrace(
       incoming.id,
       contactId: contactId,
