@@ -19,6 +19,7 @@ struct SignalASIConversationHubView: View {
   @State private var pendingFriendRequestsPresented = false
   @State private var cloudModelProviderPresented = false
   private let showsBackButton: Bool
+  private let onBackToSettings: (() -> Void)?
   @State private var editingSession: AgentConversation?
   @State private var deletingSession: AgentConversation?
   @State private var mergingSession: AgentConversation?
@@ -32,10 +33,12 @@ struct SignalASIConversationHubView: View {
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
-    showsBackButton: Bool = true
+    showsBackButton: Bool = true,
+    onBackToSettings: (() -> Void)? = nil
   ) {
     _selectedTab = State(initialValue: initialTab)
     self.showsBackButton = showsBackButton
+    self.onBackToSettings = onBackToSettings
   }
   @State private var pendingContactDeletion: SignalASIContact?
 
@@ -46,6 +49,14 @@ struct SignalASIConversationHubView: View {
         leading: {
           if showsBackButton {
             SignalASIBackButton()
+          } else if let onBackToSettings {
+            Button(action: onBackToSettings) {
+              Image(systemName: "chevron.left")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.signalASITextPrimary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
           } else {
             Color.clear
           }

@@ -5,6 +5,7 @@ struct DiscoverView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var myQRCodePresented = false
   var showsBackButton = true
+  var onBackToSettings: (() -> Void)? = nil
 
   var body: some View {
     NavigationView {
@@ -14,6 +15,14 @@ struct DiscoverView: View {
           leading: {
             if showsBackButton {
               SignalASIBackButton()
+            } else if let onBackToSettings {
+              Button(action: onBackToSettings) {
+                Image(systemName: "chevron.left")
+                  .font(.system(size: 22, weight: .semibold))
+                  .foregroundColor(.signalASITextPrimary)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
             } else {
               Color.clear
             }
