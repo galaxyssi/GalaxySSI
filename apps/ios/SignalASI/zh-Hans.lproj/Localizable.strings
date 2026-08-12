@@ -54,6 +54,7 @@
 "signalasi.capability_library.mcp_section" = "MCP 服务";
 "signalasi.capability_library.mcp_summary" = "%d 个已安装连接";
 "signalasi.capability_library.mcp_subtitle" = "连接远程服务或安装已验证的本地 MCP 包";
+"signalasi.capability_library.mcp_recommended" = "推荐 MCP";
 "signalasi.capability_library.open_mcp" = "管理 MCP";
 "signalasi.capability_library.open_mcp_subtitle" = "添加服务、安装包、测试连接并查看权限";
 "signalasi.capability_library.automation_section" = "可复用自动化";
