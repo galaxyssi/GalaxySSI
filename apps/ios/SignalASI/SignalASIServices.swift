@@ -5776,6 +5776,10 @@ final class MessageCoordinator: ObservableObject {
         outputTokens: response.outputTokens,
         costMicros: response.costMicros
       )
+      updateAgentExecutionTarget(
+        conversationId: conversationId,
+        contactId: response.contactId
+      )
       if connectorResponseBus.publish(response) {
         if !messageId.isEmpty {
           deliveryStore.completeIncoming(messageId: messageId)
