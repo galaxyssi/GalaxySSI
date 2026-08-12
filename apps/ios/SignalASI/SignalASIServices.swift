@@ -11,6 +11,7 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
+  @Published private(set) var transportConnected = false
   @Published private(set) var artifactRevision = 0
   @Published private(set) var artifactDownloadCompletedRevision = 0
   @Published private(set) var artifactDownloadSavedPath = ""
@@ -154,6 +155,7 @@ final class MessageCoordinator: ObservableObject {
     self.downloadCompletionCoordinator = AgentIOSDownloadCompletionCoordinator(store: store)
     self.signalEngine = SignalASISignalEngine(profileName: store.profile.signalASIId)
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
+    self.transportConnected = self.mqttClient.isConnected
     self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { [weak self] in
       Task { @MainActor in
         _ = self?.store.deliverPendingGlobalProactiveMessages()
@@ -202,10 +204,12 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     self.mqttClient.onConnectionChanged = { [weak self] connected in
-      guard connected else { return }
       Task { @MainActor in
-        self?.resumePendingAgentDelivery()
-        self?.requestConnectorStatuses()
+        self?.transportConnected = connected
+        if connected {
+          self?.resumePendingAgentDelivery()
+          self?.requestConnectorStatuses()
+        }
       }
     }
     self.mqttClient.onTransportRecovery = { [weak self] in

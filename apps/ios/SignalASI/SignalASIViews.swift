@@ -425,6 +425,9 @@ struct ConversationView: View {
     if isSystemNoticeContact {
       return t("chat_system_notice", "System Notifications")
     }
+    if contact.isDesktopDeviceContact && !coordinator.transportConnected {
+      return t("signalasi.peer.transport_offline", "SignalASI Link offline")
+    }
     let setupDetail = contact.setupDetail.trimmingCharacters(in: .whitespacesAndNewlines)
     switch contact.deliveryMode {
     case .cloudAPI:
@@ -440,6 +443,11 @@ struct ConversationView: View {
 
   private var peerSendPending: Bool {
     coordinator.pendingPeerSendContactIds.contains(contact.id)
+  }
+
+  private var contactStatusIsOnline: Bool {
+    contact.isCommunicable &&
+      (!contact.isDesktopDeviceContact || coordinator.transportConnected)
   }
 
   private var cloudModelHeaderText: String {
@@ -725,7 +733,7 @@ struct ConversationView: View {
           .lineLimit(1)
         HStack(spacing: 5) {
           Circle()
-            .fill(contact.isCommunicable ? Color.signalASIAccent : Color.signalASITextSecondary)
+            .fill(contactStatusIsOnline ? Color.signalASIAccent : Color.signalASITextSecondary)
             .frame(width: 7, height: 7)
           Text(contactStatusText)
             .font(.system(size: 11))
