@@ -3089,6 +3089,7 @@
 "settings_my_signalasi" = "我的 SignalASI";
 "cc_product_subtitle" = "智能体操作系统 · 本机在线";
 "cc_core_ready" = "核心就绪";
+"cc_privacy_badge" = "隐私保护";
 "cc_metric_resources" = "智能资源";
 "cc_metric_today_tasks" = "最近任务";
 "cc_metric_security" = "安全状态";
