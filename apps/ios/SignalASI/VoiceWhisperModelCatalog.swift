@@ -12,6 +12,7 @@ enum VoiceWhisperModelFamily: String, Codable, Equatable {
 enum VoiceWhisperQuantization: String, Codable, Equatable {
   case f16 = "F16"
   case f32 = "F32"
+  case w8a16 = "W8A16"
   case q8_0 = "Q8_0"
   case q6_k = "Q6_K"
   case q5_1 = "Q5_1"
@@ -26,6 +27,11 @@ enum VoiceWhisperExecutionMode: String, Codable, Equatable {
   case finalOnly = "FINAL_ONLY"
   case secondPass = "SECOND_PASS"
   case remoteNode = "REMOTE_NODE"
+}
+
+enum VoiceWhisperArtifactFormat: String, Codable, Equatable {
+  case gguf = "GGUF"
+  case qnnContextBinary = "QNN_CONTEXT_BINARY"
 }
 
 struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
@@ -50,6 +56,12 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
   var experimental: Bool
   var manifestVersion: Int
   var legacyIds: Set<String>
+  var artifactFormat: VoiceWhisperArtifactFormat
+  var targetChipset: String
+
+  var supportsIOSRuntime: Bool {
+    artifactFormat == .gguf
+  }
 
   init(
     id: String,
@@ -72,7 +84,9 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     enabledByDefault: Bool = false,
     experimental: Bool = false,
     manifestVersion: Int = 2,
-    legacyIds: Set<String> = []
+    legacyIds: Set<String> = [],
+    artifactFormat: VoiceWhisperArtifactFormat = .gguf,
+    targetChipset: String = ""
   ) {
     self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("tiny")
     self.family = family
@@ -81,7 +95,9 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     let normalizedSources = sourceURLs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
       $0.lowercased().hasPrefix("https://")
     }
-    self.sourceURLs = normalizedSources.isEmpty ? Self.defaultSourceURLs(fileName: self.fileName) : normalizedSources
+    self.sourceURLs = normalizedSources.isEmpty && artifactFormat == .gguf
+      ? Self.defaultSourceURLs(fileName: self.fileName)
+      : normalizedSources
     self.sizeLabel = sizeLabel.trimmingCharacters(in: .whitespacesAndNewlines)
     self.bundled = bundled
     self.expectedSizeBytes = max(0, expectedSizeBytes)
@@ -105,6 +121,8 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         .filter { !$0.isEmpty }
     )
+    self.artifactFormat = artifactFormat
+    self.targetChipset = targetChipset.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -129,6 +147,8 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     case experimental
     case manifestVersion = "manifest_version"
     case legacyIds = "legacy_ids"
+    case artifactFormat = "artifact_format"
+    case targetChipset = "target_chipset"
   }
 
   init(from decoder: Decoder) throws {
@@ -154,7 +174,9 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
       enabledByDefault: try container.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? false,
       experimental: try container.decodeIfPresent(Bool.self, forKey: .experimental) ?? false,
       manifestVersion: try container.decodeIfPresent(Int.self, forKey: .manifestVersion) ?? 2,
-      legacyIds: try container.decodeIfPresent(Set<String>.self, forKey: .legacyIds) ?? []
+      legacyIds: try container.decodeIfPresent(Set<String>.self, forKey: .legacyIds) ?? [],
+      artifactFormat: try container.decodeIfPresent(VoiceWhisperArtifactFormat.self, forKey: .artifactFormat) ?? .gguf,
+      targetChipset: try container.decodeIfPresent(String.self, forKey: .targetChipset) ?? ""
     )
   }
 
@@ -189,7 +211,7 @@ enum VoiceWhisperModelDownloadStatus: String, Codable, Equatable {
 
 enum VoiceWhisperModelCatalog {
   static let schemaVersion = 2
-  static let catalogVersion = "2026.08.01"
+  static let catalogVersion = "2026.08.13"
   static let mirrorRoot = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main"
   private static let mib: Int64 = 1_048_576
 
@@ -382,6 +404,54 @@ enum VoiceWhisperModelCatalog {
       partialMillis: 2_200,
       windowMillis: 16_000,
       experimental: true
+    ),
+    qnnProfile(
+      id: "whisper-tiny-qnn-float-s26u",
+      family: .tiny,
+      displayName: "Whisper Tiny QNN Float (Android)",
+      fileName: "whisper_tiny-qnn_context_binary-float-s26u.zip",
+      sizeLabel: "101.0 MiB",
+      size: 105_910_421,
+      quantization: .f32,
+      mode: .realtimePartial,
+      ram: 512 * mib,
+      reserve: 256 * mib
+    ),
+    qnnProfile(
+      id: "whisper-base-qnn-float-s26u",
+      family: .base,
+      displayName: "Whisper Base QNN Float (Android)",
+      fileName: "whisper_base-qnn_context_binary-float-s26u.zip",
+      sizeLabel: "172.6 MiB",
+      size: 180_939_859,
+      quantization: .f32,
+      mode: .realtimePartial,
+      ram: 768 * mib,
+      reserve: 384 * mib
+    ),
+    qnnProfile(
+      id: "whisper-small-qnn-w8a16-s26u",
+      family: .small,
+      displayName: "Whisper Small QNN W8A16 (Android)",
+      fileName: "whisper_small_quantized-qnn_context_binary-w8a16-s26u.zip",
+      sizeLabel: "280.4 MiB",
+      size: 293_970_633,
+      quantization: .w8a16,
+      mode: .finalOnly,
+      ram: 1_340 * mib,
+      reserve: 768 * mib
+    ),
+    qnnProfile(
+      id: "whisper-small-qnn-float-s26u",
+      family: .small,
+      displayName: "Whisper Small QNN Float (Android)",
+      fileName: "whisper_small-qnn_context_binary-float-s26u.zip",
+      sizeLabel: "546.8 MiB",
+      size: 573_246_593,
+      quantization: .f32,
+      mode: .finalOnly,
+      ram: 1_340 * mib,
+      reserve: 768 * mib
     )
   ]
 
@@ -425,7 +495,9 @@ enum VoiceWhisperModelCatalog {
     enabled: Bool = false,
     bundled: Bool = false,
     experimental: Bool = false,
-    legacyIds: Set<String> = []
+    legacyIds: Set<String> = [],
+    artifactFormat: VoiceWhisperArtifactFormat = .gguf,
+    targetChipset: String = ""
   ) -> VoiceWhisperModelProfile {
     VoiceWhisperModelProfile(
       id: id,
@@ -446,11 +518,45 @@ enum VoiceWhisperModelCatalog {
       enabledByDefault: enabled,
       experimental: experimental,
       manifestVersion: schemaVersion,
-      legacyIds: legacyIds
+      legacyIds: legacyIds,
+      artifactFormat: artifactFormat,
+      targetChipset: targetChipset
+    )
+  }
+
+  private static func qnnProfile(
+    id: String,
+    family: VoiceWhisperModelFamily,
+    displayName: String,
+    fileName: String,
+    sizeLabel: String,
+    size: Int64,
+    quantization: VoiceWhisperQuantization,
+    mode: VoiceWhisperExecutionMode,
+    ram: Int64,
+    reserve: Int64
+  ) -> VoiceWhisperModelProfile {
+    profile(
+      id: id,
+      family: family,
+      displayName: displayName,
+      fileName: fileName,
+      sizeLabel: sizeLabel,
+      size: size,
+      sha: "",
+      quantization: quantization,
+      mode: mode,
+      ram: ram,
+      reserve: reserve,
+      partialMillis: mode == .realtimePartial ? 1_000 : 2_200,
+      windowMillis: mode == .realtimePartial ? 10_000 : 12_000,
+      artifactFormat: .qnnContextBinary,
+      targetChipset: "qualcomm-snapdragon-8-elite-gen5-for-galaxy"
     )
   }
 
   static func downloadURL(for model: VoiceWhisperModelProfile) -> URL? {
+    guard model.supportsIOSRuntime else { return nil }
     URL(string: "\(mirrorRoot)/\(model.fileName)")
   }
 
@@ -458,6 +564,7 @@ enum VoiceWhisperModelCatalog {
     for model: VoiceWhisperModelProfile,
     locale: Locale
   ) -> URL? {
+    guard model.supportsIOSRuntime else { return nil }
     VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: locale).compactMap(URL.init(string:)).first
   }
 
@@ -482,6 +589,7 @@ enum VoiceWhisperModelCatalog {
     downloadedFileBytes: Int64?,
     downloadState: VoiceWhisperModelDownloadState = VoiceWhisperModelDownloadState(status: .successful, progress: 100)
   ) -> Bool {
+    guard model.supportsIOSRuntime else { return false }
     if model.bundled {
       return bundledResourceExists
     }
@@ -498,6 +606,7 @@ enum VoiceWhisperModelCatalog {
     fileManager: FileManager = .default,
     modelsDirectory: URL = defaultModelsDirectory()
   ) -> Bool {
+    guard model.supportsIOSRuntime else { return false }
     let bundled = bundle.url(
       forResource: model.fileName.deletingPathExtension,
       withExtension: model.fileName.nonBlankPathExtension

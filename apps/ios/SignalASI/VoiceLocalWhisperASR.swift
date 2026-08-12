@@ -73,6 +73,12 @@ final class VoiceLocalWhisperASR {
   ) async throws -> VoiceLocalWhisperTranscriptionResult {
     let startedAtNs = elapsedClock()
     let selectedModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
+    guard selectedModel.supportsIOSRuntime else {
+      throw VoiceWhisperModelManagerError.unsupportedPlatform(
+        modelId: selectedModel.id,
+        artifactFormat: selectedModel.artifactFormat
+      )
+    }
     var model = selectedModel
     let requestedLanguage = language ?? settings.preferredLocaleIdentifier
     let runtimeLanguage = VoiceWhisperLanguagePolicy.normalizedRecognitionLanguage(requestedLanguage)
@@ -102,6 +108,12 @@ final class VoiceLocalWhisperASR {
         if decision.provider == .local,
            let decidedModelId = decision.fastProfileId {
           model = VoiceWhisperModelCatalog.model(decidedModelId)
+          guard model.supportsIOSRuntime else {
+            throw VoiceWhisperModelManagerError.unsupportedPlatform(
+              modelId: model.id,
+              artifactFormat: model.artifactFormat
+            )
+          }
           threadCount = decision.threadCount ?? threadCount
           baseAttributes["model_profile_id"] = model.id
           baseAttributes["thread_count"] = String(threadCount)

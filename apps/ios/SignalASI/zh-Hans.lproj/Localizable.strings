@@ -3535,6 +3535,7 @@
 "voice_asr_model_certified_second_pass" = "后台高精度复核";
 "voice_asr_model_remote_recommended" = "建议使用远程节点";
 "voice_asr_model_unsupported" = "此设备不支持";
+"voice_asr_model_platform_detail" = "%@ - Android/Qualcomm 模型，iOS 不可用";
 "voice_asr_model_benchmark_stale" = "上次结果已失效，不能用于当前模型或运行库。";
 "voice_asr_model_benchmark_details_title" = "%@ 设备认证";
 "voice_asr_model_benchmark_recommendation" = "建议：%@";

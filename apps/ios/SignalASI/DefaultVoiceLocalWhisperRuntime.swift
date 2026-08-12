@@ -76,6 +76,12 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
     profile: VoiceWhisperModelProfile,
     options: VoiceWhisperLoadOptions
   ) async throws -> VoiceWhisperLoadedModel {
+    guard profile.supportsIOSRuntime else {
+      throw VoiceWhisperModelManagerError.unsupportedPlatform(
+        modelId: profile.id,
+        artifactFormat: profile.artifactFormat
+      )
+    }
     LocalModelWhisperResourceArbiter.shared.releaseLocalModelForWhisper()
     lifecycleLock.lock()
     defer { lifecycleLock.unlock() }
