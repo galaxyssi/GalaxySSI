@@ -12,10 +12,19 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate {
     handleEventsForBackgroundURLSession identifier: String,
     completionHandler: @escaping () -> Void
   ) {
-    AgentIOSDefaultDownloadProvider.shared.handleBackgroundEvents(
-      identifier: identifier,
-      completionHandler: completionHandler
-    )
+    if identifier == AgentIOSDefaultDownloadProvider.backgroundSessionIdentifier {
+      AgentIOSDefaultDownloadProvider.shared.handleBackgroundEvents(
+        identifier: identifier,
+        completionHandler: completionHandler
+      )
+    } else if identifier == LocalModelArtifactDownloadCoordinator.backgroundSessionIdentifier {
+      LocalModelArtifactDownloadCoordinator.handleBackgroundEvents(
+        identifier: identifier,
+        completionHandler: completionHandler
+      )
+    } else {
+      completionHandler()
+    }
   }
 }
 

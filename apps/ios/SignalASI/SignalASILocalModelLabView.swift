@@ -24,7 +24,7 @@ struct SignalASILocalModelLabView: View {
   @State private var showingModelImporter = false
   @State private var profileToDelete: LocalModelRuntimeProfile?
   @State private var showingDeleteConfirmation = false
-  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
+  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator.shared
 
   private let whisperModelManager = VoiceWhisperModelManager()
   private let localModelStorage = LocalModelRuntimeStorage()

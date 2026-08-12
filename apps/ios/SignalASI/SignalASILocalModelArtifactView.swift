@@ -35,22 +35,129 @@ struct LocalModelArtifactProgress: Equatable {
   }
 }
 
+private final class LocalModelArtifactDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+  weak var owner: LocalModelArtifactDownloadCoordinator?
+
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64,
+    totalBytesExpectedToWrite: Int64
+  ) {
+    guard let artifactID = downloadTask.taskDescription else { return }
+    Task { @MainActor [weak owner] in
+      owner?.backgroundDownloadProgress(
+        artifactID: artifactID,
+        bytesDownloaded: totalBytesWritten,
+        totalBytes: totalBytesExpectedToWrite
+      )
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {
+    guard let artifactID = downloadTask.taskDescription else { return }
+    let stagingURL: URL?
+    if let profile = LocalModelRuntimeCatalog.profiles().first(where: {
+      LocalModelRuntimeCatalog.artifact(for: $0)?.id == artifactID
+    }) {
+      let destination = LocalModelRuntimeStorage().stagingFileURL(for: profile)
+      do {
+        try FileManager.default.createDirectory(
+          at: destination.deletingLastPathComponent(),
+          withIntermediateDirectories: true
+        )
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: location, to: destination)
+        stagingURL = destination
+      } catch {
+        stagingURL = nil
+      }
+    } else {
+      stagingURL = nil
+    }
+    Task { @MainActor [weak owner] in
+      owner?.backgroundDownloadFinished(artifactID: artifactID, stagingURL: stagingURL)
+    }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    guard let artifactID = task.taskDescription, let error else { return }
+    Task { @MainActor [weak owner] in
+      owner?.backgroundDownloadFailed(artifactID: artifactID, error: error)
+    }
+  }
+
+  func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+    Task { @MainActor [weak owner] in
+      owner?.backgroundSessionDidFinishEvents()
+    }
+  }
+}
+
 @MainActor
 final class LocalModelArtifactDownloadCoordinator: ObservableObject {
+  static let shared = LocalModelArtifactDownloadCoordinator()
+  static let backgroundSessionIdentifier = "com.signalasi.chat.ios.local-models"
+
   @Published private(set) var states: [String: LocalModelArtifactInstallState] = [:]
   @Published private(set) var errors: [String: String] = [:]
   @Published private(set) var progress: [String: LocalModelArtifactProgress] = [:]
 
-  private var tasks: [String: Task<Void, Never>] = [:]
+  private var backgroundTasks: [String: URLSessionDownloadTask] = [:]
+  private var backgroundSourceIndexes: [String: Int] = [:]
+  private var backgroundCompletionHandler: (() -> Void)?
+  private let backgroundDelegate: LocalModelArtifactDownloadDelegate
+  private let backgroundSession: URLSession
   private let fileManager = FileManager.default
   private let storage = LocalModelRuntimeStorage()
-  private let chunkSize = 1_048_576
   private let stateStorageKey = "signalasi.local_model.artifact_states"
   private let stateStorageSecrets: SignalASISecretStore
 
   init(secrets: SignalASISecretStore = KeychainSecretStore.shared) {
+    let delegate = LocalModelArtifactDownloadDelegate()
+    let configuration = URLSessionConfiguration.background(
+      withIdentifier: Self.backgroundSessionIdentifier
+    )
+    configuration.sessionSendsLaunchEvents = true
+    configuration.discretionary = false
+    configuration.allowsCellularAccess = true
+    if #available(iOS 13.0, *) {
+      configuration.allowsExpensiveNetworkAccess = true
+      configuration.allowsConstrainedNetworkAccess = true
+    }
+    backgroundDelegate = delegate
+    backgroundSession = URLSession(
+      configuration: configuration,
+      delegate: delegate,
+      delegateQueue: nil
+    )
     stateStorageSecrets = secrets
+    delegate.owner = self
     loadPersistedStates()
+    backgroundSession.getAllTasks { [weak self] tasks in
+      let downloadTasks = tasks.compactMap { $0 as? URLSessionDownloadTask }
+      Task { @MainActor in
+        self?.restoreBackgroundTasks(downloadTasks)
+      }
+    }
+  }
+
+  nonisolated static func handleBackgroundEvents(
+    identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    Task { @MainActor in
+      guard identifier == Self.backgroundSessionIdentifier else {
+        completionHandler()
+        return
+      }
+      Self.shared.backgroundCompletionHandler = completionHandler
+    }
   }
 
   func state(for artifact: LocalModelHubArtifact) -> LocalModelArtifactInstallState {
@@ -59,10 +166,15 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
       return .ready
     }
     let saved = states[artifact.id] ?? .notInstalled
-    if [.downloading, .verifying, .installing].contains(saved) && tasks[artifact.id] == nil {
+    if [.downloading, .verifying, .installing].contains(saved),
+       backgroundTasks[artifact.id] == nil {
       return partialBytes(for: profile) > 0 ? .paused : .notInstalled
     }
     if saved == .notInstalled && partialBytes(for: profile) > 0 {
+      return .paused
+    }
+    if saved == .notInstalled,
+       fileManager.fileExists(atPath: storage.resumeDataFileURL(for: profile).path) {
       return .paused
     }
     return saved
@@ -87,7 +199,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   }
 
   func start(_ artifact: LocalModelHubArtifact) {
-    guard tasks[artifact.id] == nil else { return }
+    guard backgroundTasks[artifact.id] == nil else { return }
     let profile = LocalModelRuntimeCatalog.addHubArtifact(artifact)
     let required = storage.requiredDownloadBytes(for: profile)
     let available = storage.availableBytes()
@@ -107,68 +219,21 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
       totalBytes: artifact.sizeBytes
     )
     persistStates()
-    tasks[artifact.id] = Task { [weak self] in
-      do {
-        guard let self else { return }
-        let temporaryURL = try await self.downloadToStaging(artifact, profile: profile)
-        try Task.checkCancellation()
-        self.progress[artifact.id] = LocalModelArtifactProgress(
-          bytesDownloaded: artifact.sizeBytes,
-          totalBytes: artifact.sizeBytes
-        )
-        self.states[artifact.id] = .verifying
-        self.persistStates()
-        let size = try self.fileManager.attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber
-        guard size?.int64Value == artifact.sizeBytes else {
-          throw LocalModelArtifactDownloadError.sizeMismatch
-        }
-        let actualHash = try LocalModelRuntimeStorage.sha256(fileURL: temporaryURL)
-        guard actualHash == artifact.sha256.lowercased() else {
-          throw LocalModelArtifactDownloadError.sha256Mismatch
-        }
-        try Task.checkCancellation()
-        self.states[artifact.id] = .installing
-        self.persistStates()
-        _ = try self.storage.installVerifiedFile(
-          temporaryURL,
-          profile: profile,
-          downloadURL: artifact.downloadURL
-        )
-        LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: true)
-        self.progress[artifact.id] = LocalModelArtifactProgress(
-          bytesDownloaded: artifact.sizeBytes,
-          totalBytes: artifact.sizeBytes
-        )
-        self.states[artifact.id] = .ready
-        self.errors[artifact.id] = nil
-        self.persistStates()
-      } catch is CancellationError {
-        let partial = self?.partialBytes(for: profile) ?? 0
-        self?.states[artifact.id] = partial > 0 ? .paused : .notInstalled
-        self?.progress[artifact.id] = LocalModelArtifactProgress(
-          bytesDownloaded: partial,
-          totalBytes: artifact.sizeBytes
-        )
-        self?.persistStates()
-      } catch {
-        let partial = self?.partialBytes(for: profile) ?? 0
-        self?.states[artifact.id] = .failed
-        self?.progress[artifact.id] = LocalModelArtifactProgress(
-          bytesDownloaded: partial,
-          totalBytes: artifact.sizeBytes
-        )
-        self?.errors[artifact.id] = error.localizedDescription
-        self?.persistStates()
-      }
-      self?.tasks.removeValue(forKey: artifact.id)
-    }
+    enqueueBackgroundDownload(artifact, sourceIndex: 0)
   }
 
   func cancel(_ artifact: LocalModelHubArtifact) {
-    tasks[artifact.id]?.cancel()
     let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    let resumeURL = storage.resumeDataFileURL(for: profile)
+    let hadBackgroundTask = backgroundTasks[artifact.id] != nil
+    backgroundTasks[artifact.id]?.cancel { data in
+      guard let data, !data.isEmpty else { return }
+      try? data.write(to: resumeURL, options: .atomic)
+    }
+    backgroundTasks.removeValue(forKey: artifact.id)
+    backgroundSourceIndexes.removeValue(forKey: artifact.id)
     let partial = partialBytes(for: profile)
-    states[artifact.id] = partial > 0 ? .paused : .notInstalled
+    states[artifact.id] = hadBackgroundTask || partial > 0 ? .paused : .notInstalled
     progress[artifact.id] = LocalModelArtifactProgress(
       bytesDownloaded: partial,
       totalBytes: artifact.sizeBytes
@@ -177,7 +242,9 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
   }
 
   func delete(_ artifact: LocalModelHubArtifact) {
-    tasks[artifact.id]?.cancel()
+    backgroundTasks[artifact.id]?.cancel()
+    backgroundTasks.removeValue(forKey: artifact.id)
+    backgroundSourceIndexes.removeValue(forKey: artifact.id)
     let profile = LocalModelRuntimeCatalog.profile(for: artifact)
     LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: false)
     LocalModelInferenceRuntime.shared.unloadIfSelected(profileId: profile.id)
@@ -187,6 +254,146 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     errors[artifact.id] = nil
     progress[artifact.id] = LocalModelArtifactProgress(bytesDownloaded: 0, totalBytes: artifact.sizeBytes)
     persistStates()
+  }
+
+  fileprivate func backgroundDownloadProgress(
+    artifactID: String,
+    bytesDownloaded: Int64,
+    totalBytes: Int64
+  ) {
+    guard backgroundTasks[artifactID] != nil else { return }
+    progress[artifactID] = LocalModelArtifactProgress(
+      bytesDownloaded: max(0, bytesDownloaded),
+      totalBytes: max(0, totalBytes)
+    )
+  }
+
+  fileprivate func backgroundDownloadFinished(artifactID: String, stagingURL: URL?) {
+    backgroundTasks.removeValue(forKey: artifactID)
+    guard let stagingURL,
+          let artifact = artifact(for: artifactID) else {
+      finishBackgroundFailure(
+        artifactID: artifactID,
+        error: LocalModelArtifactDownloadError.httpStatus
+      )
+      return
+    }
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    do {
+      states[artifactID] = .verifying
+      persistStates()
+      let size = try fileManager.attributesOfItem(atPath: stagingURL.path)[.size] as? NSNumber
+      guard size?.int64Value == artifact.sizeBytes else {
+        throw LocalModelArtifactDownloadError.sizeMismatch
+      }
+      let actualHash = try LocalModelRuntimeStorage.sha256(fileURL: stagingURL)
+      guard actualHash == artifact.sha256.lowercased() else {
+        throw LocalModelArtifactDownloadError.sha256Mismatch
+      }
+      states[artifactID] = .installing
+      persistStates()
+      _ = try storage.installVerifiedFile(
+        stagingURL,
+        profile: profile,
+        downloadURL: artifact.downloadURL
+      )
+      try? fileManager.removeItem(at: storage.resumeDataFileURL(for: profile))
+      LocalModelRuntimeSettings.setProfileEnabled(profile, enabled: true)
+      progress[artifactID] = LocalModelArtifactProgress(
+        bytesDownloaded: artifact.sizeBytes,
+        totalBytes: artifact.sizeBytes
+      )
+      states[artifactID] = .ready
+      errors[artifactID] = nil
+      persistStates()
+    } catch {
+      finishBackgroundFailure(artifactID: artifactID, error: error)
+    }
+  }
+
+  fileprivate func backgroundDownloadFailed(artifactID: String, error: Error) {
+    guard states[artifactID] == .downloading else { return }
+    backgroundTasks.removeValue(forKey: artifactID)
+    guard let artifact = artifact(for: artifactID) else {
+      finishBackgroundFailure(artifactID: artifactID, error: error)
+      return
+    }
+    let nextIndex = (backgroundSourceIndexes[artifactID] ?? 0) + 1
+    let sources = LocalModelArtifactDownloadSources.urls(for: artifact)
+    guard nextIndex < sources.count else {
+      finishBackgroundFailure(artifactID: artifactID, error: error)
+      return
+    }
+    backgroundSourceIndexes[artifactID] = nextIndex
+    enqueueBackgroundDownload(artifact, sourceIndex: nextIndex)
+  }
+
+  fileprivate func backgroundSessionDidFinishEvents() {
+    let handler = backgroundCompletionHandler
+    backgroundCompletionHandler = nil
+    handler?()
+  }
+
+  private func enqueueBackgroundDownload(_ artifact: LocalModelHubArtifact, sourceIndex: Int) {
+    let sources = LocalModelArtifactDownloadSources.urls(for: artifact)
+    guard sourceIndex >= 0, sourceIndex < sources.count else {
+      finishBackgroundFailure(
+        artifactID: artifact.id,
+        error: LocalModelArtifactDownloadError.httpStatus
+      )
+      return
+    }
+    let sourceURL = sources[sourceIndex]
+    var request = URLRequest(url: sourceURL)
+    request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+    request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
+    let profile = LocalModelRuntimeCatalog.profile(for: artifact)
+    let task: URLSessionDownloadTask
+    if sourceIndex == 0,
+       let resumeData = try? Data(contentsOf: storage.resumeDataFileURL(for: profile)),
+       !resumeData.isEmpty {
+      task = backgroundSession.downloadTask(withResumeData: resumeData)
+    } else {
+      task = backgroundSession.downloadTask(with: request)
+    }
+    task.taskDescription = artifact.id
+    backgroundSourceIndexes[artifact.id] = sourceIndex
+    backgroundTasks[artifact.id] = task
+    states[artifact.id] = .downloading
+    persistStates()
+    task.resume()
+  }
+
+  private func restoreBackgroundTasks(_ tasks: [URLSessionDownloadTask]) {
+    for task in tasks {
+      guard let artifactID = task.taskDescription,
+            artifact(for: artifactID) != nil else {
+        task.cancel()
+        continue
+      }
+      backgroundTasks[artifactID] = task
+      states[artifactID] = .downloading
+    }
+    persistStates()
+  }
+
+  private func finishBackgroundFailure(artifactID: String, error: Error) {
+    let profile = artifact(for: artifactID).map { LocalModelRuntimeCatalog.profile(for: $0) }
+    let partial = profile.map(partialBytes(for:)) ?? 0
+    states[artifactID] = .failed
+    progress[artifactID] = LocalModelArtifactProgress(
+      bytesDownloaded: partial,
+      totalBytes: profile?.expectedModelFileBytes ?? 0
+    )
+    errors[artifactID] = error.localizedDescription
+    backgroundSourceIndexes.removeValue(forKey: artifactID)
+    persistStates()
+  }
+
+  private func artifact(for artifactID: String) -> LocalModelHubArtifact? {
+    LocalModelRuntimeCatalog.profiles()
+      .compactMap { LocalModelRuntimeCatalog.artifact(for: $0) }
+      .first { $0.id == artifactID }
   }
 
   func destinationURL(for artifact: LocalModelHubArtifact) -> URL {
@@ -233,141 +440,12 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
     return max(0, (values?[.size] as? NSNumber)?.int64Value ?? 0)
   }
 
-  private func publishProgress(
-    _ artifact: LocalModelHubArtifact,
-    bytesDownloaded: Int64
-  ) {
-    progress[artifact.id] = LocalModelArtifactProgress(
-      bytesDownloaded: bytesDownloaded,
-      totalBytes: artifact.sizeBytes
-    )
-  }
-
-  private func downloadToStaging(
-    _ artifact: LocalModelHubArtifact,
-    profile: LocalModelRuntimeProfile
-  ) async throws -> URL {
-    var lastError: Error?
-    for sourceURL in LocalModelArtifactDownloadSources.urls(for: artifact) {
-      do {
-        return try await downloadToStaging(
-          artifact,
-          profile: profile,
-          sourceURL: sourceURL
-        )
-      } catch let cancellation as CancellationError {
-        throw cancellation
-      } catch {
-        if Task.isCancelled {
-          throw CancellationError()
-        }
-        lastError = error
-      }
-    }
-    if let lastError {
-      throw lastError
-    }
-    throw LocalModelArtifactDownloadError.httpStatus
-  }
-
-  private func downloadToStaging(
-    _ artifact: LocalModelHubArtifact,
-    profile: LocalModelRuntimeProfile,
-    sourceURL: URL
-  ) async throws -> URL {
-    let staging = storage.stagingFileURL(for: profile)
-    try fileManager.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
-    var offset = partialBytes(for: profile)
-    if offset < 0 || offset > artifact.sizeBytes {
-      try? fileManager.removeItem(at: staging)
-      offset = 0
-    }
-    var restartedWithoutRange = false
-
-    while true {
-      var request = URLRequest(url: sourceURL)
-      request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-      request.setValue("SignalASI-iOS", forHTTPHeaderField: "User-Agent")
-      if offset > 0 {
-        request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
-      }
-      let (bytes, response) = try await URLSession.shared.bytes(for: request)
-      guard let http = response as? HTTPURLResponse else {
-        throw LocalModelArtifactDownloadError.httpStatus
-      }
-      if http.statusCode == 416 && offset == artifact.sizeBytes {
-        return staging
-      }
-      guard (200..<300).contains(http.statusCode) else {
-        throw LocalModelArtifactDownloadError.httpStatus
-      }
-      let append = offset > 0 && http.statusCode == 206 &&
-        contentRangeStart(http.value(forHTTPHeaderField: "Content-Range")) == offset
-      if offset > 0 && !append {
-        guard !restartedWithoutRange else {
-          throw LocalModelArtifactDownloadError.invalidContentRange
-        }
-        try? fileManager.removeItem(at: staging)
-        offset = 0
-        restartedWithoutRange = true
-        continue
-      }
-
-      let initialBytes = append ? offset : 0
-      if !fileManager.fileExists(atPath: staging.path) {
-        fileManager.createFile(atPath: staging.path, contents: nil)
-      }
-      let handle = try FileHandle(forWritingTo: staging)
-      defer { try? handle.close() }
-      if append {
-        try handle.seekToEnd()
-      } else {
-        try handle.truncate(atOffset: 0)
-      }
-      var downloaded = initialBytes
-      var buffer = Data()
-      buffer.reserveCapacity(chunkSize)
-      var lastPublishedAt = Date.distantPast
-      for try await byte in bytes {
-        try Task.checkCancellation()
-        buffer.append(byte)
-        if buffer.count >= chunkSize {
-          handle.write(buffer)
-          downloaded += Int64(buffer.count)
-          buffer.removeAll(keepingCapacity: true)
-          if Date().timeIntervalSince(lastPublishedAt) >= 0.5 {
-            publishProgress(artifact, bytesDownloaded: downloaded)
-            lastPublishedAt = Date()
-          }
-          guard downloaded <= artifact.sizeBytes else {
-            throw LocalModelArtifactDownloadError.sizeMismatch
-          }
-        }
-      }
-      if !buffer.isEmpty {
-        handle.write(buffer)
-        downloaded += Int64(buffer.count)
-      }
-      handle.synchronizeFile()
-      publishProgress(artifact, bytesDownloaded: downloaded)
-      return staging
-    }
-  }
-
-  private func contentRangeStart(_ value: String?) -> Int64? {
-    guard let value,
-          let range = value.split(separator: " ").last,
-          let start = range.split(separator: "-").first else { return nil }
-    return Int64(start)
-  }
-
 }
 
 enum LocalModelArtifactDownloadError: LocalizedError {
   case httpStatus
   case sizeMismatch
   case sha256Mismatch
-  case invalidContentRange
   case insufficientStorage(required: Int64, available: Int64)
 
   var errorDescription: String? {
@@ -375,7 +453,6 @@ enum LocalModelArtifactDownloadError: LocalizedError {
     case .httpStatus: return "Model source returned an invalid HTTP response"
     case .sizeMismatch: return "Downloaded model size does not match its pinned metadata"
     case .sha256Mismatch: return "Downloaded model failed SHA-256 verification"
-    case .invalidContentRange: return "Model source returned an invalid Content-Range"
     case .insufficientStorage(let required, let available):
       return "Local model needs \(required) bytes, but only \(available) bytes are available"
     }
@@ -514,7 +591,7 @@ enum LocalModelHubArtifactClient {
 
 struct SignalASILocalModelHubArtifactView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
-  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator()
+  @StateObject private var downloads = LocalModelArtifactDownloadCoordinator.shared
   @State private var artifacts: [LocalModelHubArtifact] = []
   @State private var loading = true
   @State private var statusMessage = ""
