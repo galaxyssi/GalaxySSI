@@ -287,6 +287,13 @@ struct SignalASIDataBackupView: View {
         badge: preview.agentDataBadge(localized: t)
       )
       SignalASISecurityStatusRow(
+        title: t("signalasi.data_backup.import_global_agent", "Personal ASI state"),
+        subtitle: preview.globalAgentStateSubtitle(localized: t),
+        systemImage: "brain.head.profile",
+        tint: preview.includesGlobalAgentState ? .purple : .gray,
+        badge: preview.globalAgentStateBadge(localized: t)
+      )
+      SignalASISecurityStatusRow(
         title: t("signalasi.data_backup.import_language_voice", "Language & Voice"),
         subtitle: preview.languageVoiceSubtitle(localized: t),
         systemImage: "globe",
@@ -594,6 +601,22 @@ private struct SignalASIBackupImportPreview {
     return payload.agentData.agentConversations?.count ?? 0
   }
 
+  var includesGlobalAgentState: Bool {
+    payload.includesAgentData &&
+      payload.privacyManifest.includesGlobalAgentState &&
+      payload.agentData.globalAgentState != nil
+  }
+
+  var globalAgentStateCount: Int {
+    guard includesGlobalAgentState, let state = payload.agentData.globalAgentState else { return 0 }
+    return state.cognitionTasks.count +
+      state.autonomousRuns.count +
+      state.longHorizonGoals.count +
+      state.research.tasks.count +
+      state.memoryEvolution.records.count +
+      state.memoryEvolution.inbox.candidates.count
+  }
+
   var customDeviceCount: Int {
     guard payload.includesAgentData else { return 0 }
     return payload.agentData.customDeviceConnectors.count
@@ -641,6 +664,25 @@ private struct SignalASIBackupImportPreview {
     payload.includesAgentData
       ? t("backup_included", "Included")
       : t("signalasi.data_backup.not_included", "Not included")
+  }
+
+  func globalAgentStateBadge(localized t: (String, String) -> String) -> String {
+    includesGlobalAgentState
+      ? t("backup_included", "Included")
+      : t("signalasi.data_backup.not_included", "Not included")
+  }
+
+  func globalAgentStateSubtitle(localized t: (String, String) -> String) -> String {
+    guard includesGlobalAgentState else {
+      return t("signalasi.data_backup.global_agent_not_included", "Personal ASI runtime state is not included")
+    }
+    return String(
+      format: t(
+        "signalasi.data_backup.global_agent_subtitle",
+        "%d runtime records / cognition, autonomy, research and memory evolution"
+      ),
+      globalAgentStateCount
+    )
   }
 
   func languageVoiceSubtitle(localized t: (String, String) -> String) -> String {
