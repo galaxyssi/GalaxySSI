@@ -358,15 +358,6 @@ struct SettingsView: View {
         SignalASILearningSkillEvolutionView()
       }
       SettingsNavigationRow(
-        title: t("signalasi.settings.task_budget", "Task Budget"),
-        subtitle: "\(t(store.agentTaskBudget.profile.displayName, store.agentTaskBudget.profile.displayName)) / \(store.agentTaskBudget.localizedCostLimitLabel(language: interfaceLanguage)) / \(t(store.agentTaskBudget.networkPolicy.displayName, store.agentTaskBudget.networkPolicy.displayName))",
-        systemImage: "speedometer",
-        tint: .signalASIInsightText,
-        badge: t("signalasi.common.manage", "Manage")
-      ) {
-        AgentTaskBudgetSettingsView()
-      }
-      SettingsNavigationRow(
         title: t("cc_resource_routing_title", "Models & Resource Routing"),
         subtitle: t("cc_resource_routing_subtitle", "Choose by quality, latency, privacy, cost, and availability"),
         systemImage: "point.3.connected.trianglepath.dotted",
