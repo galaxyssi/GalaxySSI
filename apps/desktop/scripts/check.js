@@ -221,6 +221,14 @@ if (html.includes('id="peerContactToggle"') ||
     !workspaceRenderer.includes('data-peer-route=')) {
   throw new Error("Desktop tasks and paired devices must share one conversation history");
 }
+if (!html.includes('id="conversationListMenuButton"') ||
+    !html.includes('id="conversationSelectionBar"') ||
+    !workspaceRenderer.includes("deleteConversationIds") ||
+    !workspaceRenderer.includes("signalasi-desktop-pinned-conversations") ||
+    !workspaceRenderer.includes("data-pin-conversation") ||
+    !workspaceRenderer.includes("data-delete-conversation")) {
+  throw new Error("Desktop conversation history must support persistent pinning and bulk deletion");
+}
 if (!main.includes("width: 960") || !main.includes("height: 640")) {
   throw new Error("Desktop window must default to 960 x 640");
 }

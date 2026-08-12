@@ -235,6 +235,10 @@ const state = {
   peerMessages: [],
   activePeerRouteId: "",
   peerSendPending: false,
+  pinnedConversationIds: new Set(JSON.parse(localStorage.getItem("signalasi-desktop-pinned-conversations") || "[]")),
+  conversationSelectionMode: false,
+  selectedConversationIds: new Set(),
+  openConversationMenuId: "",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
@@ -541,6 +545,7 @@ function unifiedConversationGroups() {
       title: titleFromPrompt(ordered[0]?.prompt),
       preview: conversationPreview(latest.result, latest.prompt || taskStatusLabel(latest)),
       updatedAt: Number(latest.updated_at || latest.created_at || 0),
+      pinned: state.pinnedConversationIds.has(group.id),
       running: group.tasks.some((task) => !TERMINAL_STATES.has(task.status)),
       latest,
       tasks: group.tasks
@@ -555,11 +560,26 @@ function unifiedConversationGroups() {
       title: peerClientName(client),
       preview: conversationPreview(latest?.content, latest?.attachments?.[0]?.name || t("Paired device")),
       updatedAt: Number(latest?.created_at_ms || client.paired_at_ms || client.updated_at_ms || 0),
+      pinned: false,
       running: false,
       latest
     };
   }).filter((group) => group.id);
-  return [...taskGroups, ...peerGroups].sort((a, b) => b.updatedAt - a.updatedAt);
+  return [...taskGroups, ...peerGroups].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+}
+
+function persistPinnedConversations() {
+  localStorage.setItem(
+    "signalasi-desktop-pinned-conversations",
+    JSON.stringify([...state.pinnedConversationIds])
+  );
+}
+
+function renderConversationSelectionBar() {
+  const bar = $("#conversationSelectionBar");
+  bar.hidden = !state.conversationSelectionMode;
+  $("#selectedConversationCount").textContent = String(state.selectedConversationIds.size);
+  $("#deleteSelectedConversationsButton").disabled = state.selectedConversationIds.size === 0;
 }
 
 function renderHistory() {
@@ -587,10 +607,10 @@ function renderHistory() {
   let currentSection = "";
   const html = [];
   for (const group of groups) {
-    const section = group.updatedAt >= todayStart.getTime() ? "Today" : "Earlier";
+    const section = group.pinned ? "Pinned" : (group.updatedAt >= todayStart.getTime() ? "Today" : "Earlier");
     if (section !== currentSection) {
       currentSection = section;
-      html.push(`<div class="history-group-label">${escapeHtml(t(section))}</div>`);
+      html.push(`<div class="history-group-label ${section === "Pinned" ? "pinned" : ""}">${escapeHtml(t(section))}</div>`);
     }
     const running = group.kind === "agent" && group.running;
     const typeLabel = group.kind === "device" ? t("Device") : t("Agent");
@@ -601,13 +621,24 @@ function renderHistory() {
     const active = group.kind === "device"
       ? group.id === state.activePeerRouteId
       : !state.activePeerRouteId && group.id === state.currentConversationId;
-    html.push(`
+    const selecting = state.conversationSelectionMode && group.kind === "agent";
+    const selected = state.selectedConversationIds.has(group.id);
+    const menuOpen = state.openConversationMenuId === group.id;
+    html.push(`<div class="history-item-shell ${selecting ? "selecting" : ""}">
+      ${selecting ? `<button class="history-select ${selected ? "selected" : ""}" data-select-conversation="${escapeHtml(group.id)}" aria-label="${escapeHtml(t("Select conversation"))}"></button>` : ""}
       <button class="history-item ${active ? "active" : ""}" ${targetAttribute}>
         <span class="history-title-row"><strong>${escapeHtml(group.title)}</strong><i>${escapeHtml(typeLabel)}</i><time>${escapeHtml(latestLabel)}</time></span>
         <span class="history-preview ${running ? "running" : ""}">${escapeHtml(group.preview)}</span>
-      </button>`);
+      </button>
+      ${group.kind === "agent" && !selecting ? `<button class="history-more" data-conversation-menu="${escapeHtml(group.id)}" aria-label="${escapeHtml(t("Conversation actions"))}"></button>` : ""}
+      ${menuOpen ? `<div class="history-item-menu">
+        <button data-pin-conversation="${escapeHtml(group.id)}">${escapeHtml(t(group.pinned ? "Unpin" : "Pin"))}</button>
+        <button class="danger-text" data-delete-conversation="${escapeHtml(group.id)}">${escapeHtml(t("Delete"))}</button>
+      </div>` : ""}
+    </div>`);
   }
   elements.history.innerHTML = html.join("");
+  renderConversationSelectionBar();
 }
 
 function pairedClients() {
@@ -4080,6 +4111,36 @@ async function deleteConversation() {
   $("#workspaceMenu").hidden = true;
 }
 
+function setConversationSelectionMode(enabled) {
+  state.conversationSelectionMode = Boolean(enabled);
+  state.selectedConversationIds.clear();
+  state.openConversationMenuId = "";
+  $("#conversationListMenu").hidden = true;
+  renderHistory();
+}
+
+async function deleteConversationIds(conversationIds) {
+  const ids = [...new Set(conversationIds)].filter(Boolean);
+  if (!ids.length) return;
+  const results = await Promise.allSettled(ids.map((id) => window.signalasi.deleteDesktopConversation(id)));
+  const failed = results.filter((result) => result.status === "rejected");
+  ids.forEach((id, index) => {
+    if (results[index]?.status === "fulfilled") state.pinnedConversationIds.delete(id);
+  });
+  persistPinnedConversations();
+  if (ids.includes(state.currentConversationId)) newTask();
+  setConversationSelectionMode(false);
+  await refreshTasks(true);
+  if (failed.length) showToast(t("Some conversations could not be deleted."));
+}
+
+async function deleteAllTaskConversations() {
+  const ids = conversationGroups().map((group) => group.id);
+  if (!ids.length) return showToast(t("There are no task conversations to delete."));
+  if (!window.confirm(t("Delete all task conversations? Paired device chats will remain."))) return;
+  await deleteConversationIds(ids);
+}
+
 function startVoiceInput() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
@@ -4275,6 +4336,37 @@ function bindEvents() {
     }
   });
   elements.history.addEventListener("click", (event) => {
+    const selectButton = event.target.closest("[data-select-conversation]");
+    if (selectButton) {
+      const id = selectButton.dataset.selectConversation;
+      if (state.selectedConversationIds.has(id)) state.selectedConversationIds.delete(id);
+      else state.selectedConversationIds.add(id);
+      renderHistory();
+      return;
+    }
+    const menuButton = event.target.closest("[data-conversation-menu]");
+    if (menuButton) {
+      const id = menuButton.dataset.conversationMenu;
+      state.openConversationMenuId = state.openConversationMenuId === id ? "" : id;
+      renderHistory();
+      return;
+    }
+    const pinButton = event.target.closest("[data-pin-conversation]");
+    if (pinButton) {
+      const id = pinButton.dataset.pinConversation;
+      if (state.pinnedConversationIds.has(id)) state.pinnedConversationIds.delete(id);
+      else state.pinnedConversationIds.add(id);
+      persistPinnedConversations();
+      state.openConversationMenuId = "";
+      renderHistory();
+      return;
+    }
+    const deleteButton = event.target.closest("[data-delete-conversation]");
+    if (deleteButton) {
+      const id = deleteButton.dataset.deleteConversation;
+      if (window.confirm(t("Delete this conversation and its task history?"))) deleteConversationIds([id]);
+      return;
+    }
     const peer = event.target.closest("[data-peer-route]");
     if (peer) {
       openPeerConversation(peer.dataset.peerRoute);
@@ -4717,11 +4809,36 @@ function bindEvents() {
   $("#asrLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#ttsLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#workspaceMenuButton").addEventListener("click", () => { $("#workspaceMenu").hidden = !$("#workspaceMenu").hidden; });
+  $("#conversationListMenuButton").addEventListener("click", () => {
+    $("#conversationListMenu").hidden = !$("#conversationListMenu").hidden;
+  });
+  $("#selectConversationsButton").addEventListener("click", () => setConversationSelectionMode(true));
+  $("#cancelConversationSelectionButton").addEventListener("click", () => setConversationSelectionMode(false));
+  $("#selectAllConversationsButton").addEventListener("click", () => {
+    const ids = conversationGroups().map((group) => group.id);
+    const allSelected = ids.length > 0 && ids.every((id) => state.selectedConversationIds.has(id));
+    state.selectedConversationIds = new Set(allSelected ? [] : ids);
+    renderHistory();
+  });
+  $("#deleteSelectedConversationsButton").addEventListener("click", () => {
+    if (!state.selectedConversationIds.size) return;
+    if (window.confirm(t("Delete the selected task conversations?"))) {
+      deleteConversationIds([...state.selectedConversationIds]);
+    }
+  });
+  $("#deleteAllConversationsButton").addEventListener("click", deleteAllTaskConversations);
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);
   $("#revealWorkspaceButton").addEventListener("click", revealWorkspace);
   $("#deleteConversationButton").addEventListener("click", deleteConversation);
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#workspaceMenu") && !event.target.closest("#workspaceMenuButton")) $("#workspaceMenu").hidden = true;
+    if (!event.target.closest("#conversationListMenu") && !event.target.closest("#conversationListMenuButton")) $("#conversationListMenu").hidden = true;
+    if (!event.target.closest(".history-item-menu") && !event.target.closest("[data-conversation-menu]")) {
+      if (state.openConversationMenuId) {
+        state.openConversationMenuId = "";
+        renderHistory();
+      }
+    }
   });
 }
 
