@@ -6343,6 +6343,7 @@ def _process_message(mqttc, userdata, msg):
             )
             cleanup = forget_paired_client_transport(client_route_id, mqttc)
             revoke_client(client_route_id, str(payload.get("reason") or "forgotten_by_client"))
+            reconciliation = reconcile_mqtt_subscriptions(mqttc)
             remove_peer_signal_session(
                 paired_client["signal_name"], int(paired_client.get("signal_device_id") or 1)
             )
@@ -6350,6 +6351,11 @@ def _process_message(mqttc, userdata, msg):
                 "Client relationship revoked client=%s deleted_peer_messages=%s",
                 client_route_id,
                 cleanup.get("deleted_peer_messages", 0),
+            )
+            log.info(
+                "MQTT subscriptions reconciled after client revocation client=%s result=%s",
+                client_route_id,
+                reconciliation,
             )
             return
 
@@ -6687,6 +6693,12 @@ def handle_pairing_claim(mqttc, payload: dict):
             "pairing_replaced",
         )
     _subscribe_client(mqttc, paired_client)
+    reconciliation = reconcile_mqtt_subscriptions(mqttc)
+    log.info(
+        "MQTT subscriptions reconciled after pairing client=%s result=%s",
+        client_route_id,
+        reconciliation,
+    )
     log.info(f"MQTT pairing claim accepted fingerprint={fingerprint[:16]} result={result}")
 
     from device_identity import desktop_device_profile

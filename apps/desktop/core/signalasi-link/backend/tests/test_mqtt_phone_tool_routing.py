@@ -303,6 +303,10 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
                 "deleted_peer_messages": 2,
             }) as cleanup,
             patch.object(mqtt_bridge, "remove_peer_signal_session") as remove_session,
+            patch.object(mqtt_bridge, "reconcile_mqtt_subscriptions", return_value={
+                "ok": True,
+                "expected": 4,
+            }) as reconcile,
             patch.object(desktop_control, "desktop_control_manager") as control_manager,
         ):
             self._deliver(
@@ -320,8 +324,29 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
             self.first["client_route_id"],
             "pairing_revoked_by_phone",
         )
+        reconcile.assert_called_once_with(self.mqtt)
         self.assertIsNone(pairing_state.get_client(self.first["client_route_id"]))
         self.assertIsNotNone(pairing_state.get_client(self.second["client_route_id"]))
+        self.assertEqual([], self.agent_starts)
+
+        peer_store = PeerChatStore(Path(self.temp.name) / "remaining-peer-chat.db")
+        message_id = str(uuid.uuid4())
+        with patch("peer_chat_store.peer_chat_store", return_value=peer_store):
+            self._deliver(
+                self.second,
+                {
+                    "type": mqtt_bridge.PEER_MESSAGE_TYPE,
+                    "message_id": message_id,
+                    "source_message_id": message_id,
+                    "contact_id": self.desktop_id,
+                    "content": "Remaining phone still connected",
+                    "time": time.time(),
+                },
+            )
+
+        messages = peer_store.list_messages(self.second["client_route_id"])
+        self.assertEqual(1, len(messages))
+        self.assertEqual("Remaining phone still connected", messages[0]["content"])
         self.assertEqual([], self.agent_starts)
 
     def test_desktop_peer_message_uses_uuid_transport_id(self):
