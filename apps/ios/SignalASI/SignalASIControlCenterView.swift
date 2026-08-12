@@ -81,6 +81,15 @@ struct SignalASIControlCenterView: View {
             .frame(minHeight: 22)
             .background(agentCoreTint.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          Text(privacyBadge)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(privacyTint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 7)
+            .frame(minHeight: 22)
+            .background(privacyTint.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         Text(t("cc_product_subtitle", "Agent operating system - This device online"))
           .font(.system(size: 14))
@@ -561,6 +570,21 @@ struct SignalASIControlCenterView: View {
 
   private var securityTint: Color {
     store.profile.identityFingerprint.isEmpty ? .orange : .signalASIAccent
+  }
+
+  private var privacyProtected: Bool {
+    !store.modelPlannerSettings.shareScreenText &&
+      !store.modelPlannerSettings.shareAgentOutputsWithPlanner
+  }
+
+  private var privacyBadge: String {
+    privacyProtected
+      ? t("cc_privacy_badge", "Privacy protected")
+      : t("cc_status_review", "Review")
+  }
+
+  private var privacyTint: Color {
+    privacyProtected ? .signalASIAccent : .orange
   }
 
   private var desktopControlCount: Int {
