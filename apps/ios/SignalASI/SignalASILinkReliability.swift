@@ -100,6 +100,16 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   private static let transferIdPattern = #"^[a-f0-9]{64}$"#
 }
 
+struct LinkDeliveryEnqueueRequest: Equatable {
+  var messageId: String
+  var topic: String
+  var wirePayload: String
+  var requiresValidatedNetwork: Bool
+  var blockedByAttachmentTransferIds: [String]
+  var clientSourceMessageId: String
+  var contactId: String
+}
+
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
   var id: String { messageId }
   var messageId: String
@@ -196,28 +206,60 @@ final class SignalASILinkDeliveryStore {
     contactId: String = "",
     now: Date = Date()
   ) {
-    guard !messageId.isEmpty, !topic.isEmpty, !wirePayload.isEmpty else { return }
-    guard !state.outbox.contains(where: { $0.messageId == messageId }) else { return }
-    let transferDependencies = PendingLinkMessage.normalizedTransferIds(blockedByAttachmentTransferIds)
-    let wireReference = payloadStore.reference(messageId: messageId, wirePayload: wirePayload)
-    state.outbox.append(
-      PendingLinkMessage(
-        messageId: messageId,
-        topic: topic,
-        wirePayload: wireReference.wirePayload,
-        wirePayloadFile: wireReference.wirePayloadFile,
-        status: "queued",
-        attempts: 0,
-        nextAttemptAt: now,
-        createdAt: now,
-        updatedAt: now,
-        requiresValidatedNetwork: requiresValidatedNetwork,
-        blockedByAttachmentTransferIds: transferDependencies,
-        clientSourceMessageId: clientSourceMessageId,
-        contactId: contactId
-      )
+    enqueueBatch(
+      [
+        LinkDeliveryEnqueueRequest(
+          messageId: messageId,
+          topic: topic,
+          wirePayload: wirePayload,
+          requiresValidatedNetwork: requiresValidatedNetwork,
+          blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
+          clientSourceMessageId: clientSourceMessageId,
+          contactId: contactId
+        )
+      ],
+      now: now
     )
-    save()
+  }
+
+  func enqueueBatch(_ requests: [LinkDeliveryEnqueueRequest], now: Date = Date()) {
+    guard !requests.isEmpty else { return }
+    var changed = false
+    var existingMessageIds = Set(state.outbox.map(\.messageId))
+    for request in requests {
+      guard !request.messageId.isEmpty,
+            !request.topic.isEmpty,
+            !request.wirePayload.isEmpty,
+            existingMessageIds.insert(request.messageId).inserted else {
+        continue
+      }
+      let transferDependencies = PendingLinkMessage.normalizedTransferIds(
+        request.blockedByAttachmentTransferIds
+      )
+      let wireReference = payloadStore.reference(
+        messageId: request.messageId,
+        wirePayload: request.wirePayload
+      )
+      state.outbox.append(
+        PendingLinkMessage(
+          messageId: request.messageId,
+          topic: request.topic,
+          wirePayload: wireReference.wirePayload,
+          wirePayloadFile: wireReference.wirePayloadFile,
+          status: "queued",
+          attempts: 0,
+          nextAttemptAt: now,
+          createdAt: now,
+          updatedAt: now,
+          requiresValidatedNetwork: request.requiresValidatedNetwork,
+          blockedByAttachmentTransferIds: transferDependencies,
+          clientSourceMessageId: request.clientSourceMessageId,
+          contactId: request.contactId
+        )
+      )
+      changed = true
+    }
+    if changed { save() }
   }
 
   func markAttempt(messageId: String, now: Date = Date()) {

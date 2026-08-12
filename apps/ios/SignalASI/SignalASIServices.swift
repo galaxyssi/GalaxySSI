@@ -5375,20 +5375,24 @@ final class MessageCoordinator: ObservableObject {
     )
     if !outboundAttachments.isEmpty {
       do {
-        try enqueueOutboundAttachmentTransfers(
+        let attachmentRequests = try makeOutboundAttachmentDeliveryRequests(
           outboundAttachments,
           link: link,
           sourceMessageId: sourceMessageId,
           contactId: contact.id
         )
-        deliveryStore.enqueue(
-          messageId: wire.messageId,
-          topic: link.routes.upTopic,
-          wirePayload: wire.wireText,
-          requiresValidatedNetwork: requiresValidatedNetwork,
-          blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
-          clientSourceMessageId: sourceMessageId,
-          contactId: contact.id
+        deliveryStore.enqueueBatch(
+          attachmentRequests + [
+            LinkDeliveryEnqueueRequest(
+              messageId: wire.messageId,
+              topic: link.routes.upTopic,
+              wirePayload: wire.wireText,
+              requiresValidatedNetwork: requiresValidatedNetwork,
+              blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
+              clientSourceMessageId: sourceMessageId,
+              contactId: contact.id
+            )
+          ]
         )
       } catch {
         attachmentTransferStore.discard(
@@ -5456,18 +5460,20 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func enqueueOutboundAttachmentTransfers(
+  private func makeOutboundAttachmentDeliveryRequests(
     _ attachments: [AgentPreparedOutboundAttachment],
     link: ServerLink,
     sourceMessageId: String,
     contactId: String
-  ) throws {
-    for step in AgentAttachmentPublishOrder.steps(attachments) {
-      try enqueueLinkPayload(
-        try step.payload(),
-        link: link,
+  ) throws -> [LinkDeliveryEnqueueRequest] {
+    try AgentAttachmentPublishOrder.steps(attachments).map { step in
+      let wire = try linkWirePayload(try step.payload(), link: link)
+      return LinkDeliveryEnqueueRequest(
+        messageId: wire.messageId,
         topic: link.routes.upTopic,
+        wirePayload: wire.wireText,
         requiresValidatedNetwork: step.attachment.requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: [],
         clientSourceMessageId: sourceMessageId,
         contactId: contactId
       )
