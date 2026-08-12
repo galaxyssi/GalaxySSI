@@ -856,12 +856,20 @@ struct ConversationView: View {
     let totalSeconds = max(1, Int(duration.rounded()))
     let durationLabel = String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     let title = t("signalasi.message.voice", "Voice message")
+    let retainedAttachments = attachments
+      .filter { $0.id != attachment.id }
+    let outgoingAttachments = [attachment] + retainedAttachments
+    attachments.removeAll()
+    attachmentError = ""
     Task {
-      await coordinator.send(
+      let sent = await coordinator.send(
         "\(title) \(durationLabel)",
         to: contact,
-        attachments: [attachment]
+        attachments: outgoingAttachments
       )
+      guard !sent else { return }
+      attachments = retainedAttachments
+      attachmentError = coordinator.lastError
     }
   }
 
