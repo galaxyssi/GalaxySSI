@@ -9,6 +9,7 @@ extension AgentHomeView {
     let normalizedIDs = targetIDs
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
+    pendingScannedAgentIDs = normalizedIDs
     guard !normalizedIDs.isEmpty else {
       scanStatus = t(
         "signalasi.agent.scan.no_agent",
@@ -36,6 +37,7 @@ extension AgentHomeView {
               "Agent added and selected for this session."
             )
             scanStatusIsError = false
+            pendingScannedAgentIDs = []
             return
           }
         }
@@ -47,6 +49,11 @@ extension AgentHomeView {
       )
       scanStatusIsError = true
     }
+  }
+
+  func retryPendingScannedAgentSelection() {
+    guard !pendingScannedAgentIDs.isEmpty else { return }
+    focusScannedAgents(pendingScannedAgentIDs)
   }
 
   private func scannedAgentContact(for requestedID: String) -> SignalASIContact? {
