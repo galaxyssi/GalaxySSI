@@ -11,6 +11,9 @@ struct SignalASIAgentRecentTasksView: View {
   @State private var deletingTask: AgentTaskRecord?
   @State private var statusText = ""
   @State private var initialTaskPresented = false
+  @State private var teamSnapshots: [AgentTeamExecutionSnapshot] = []
+
+  private let teamHistoryStore = AgentTeamExecutionHistoryStore.shared
 
   private var tasks: [AgentTaskRecord] {
     let clean = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,6 +30,7 @@ struct SignalASIAgentRecentTasksView: View {
         trailing: {
           Button {
             searchText = ""
+            refreshTeamSnapshots()
           } label: {
             Image(systemName: "arrow.clockwise")
               .font(.system(size: 20, weight: .semibold))
@@ -61,16 +65,8 @@ struct SignalASIAgentRecentTasksView: View {
               .padding(.horizontal, 4)
           }
 
-          sectionTitle(t("signalasi.agent_section_recent_tasks", "Recent Tasks"))
-          if tasks.isEmpty {
-            AgentTaskInfoRow(
-              title: t("signalasi.agent_recent_empty", "No recent Agent tasks yet"),
-              subtitle: t("signalasi.agent_tasks.empty_subtitle", "Tasks created by the phone Agent and paired desktop runtimes appear here."),
-              systemImage: "clock",
-              tint: .signalASIAccent,
-              badge: ""
-            )
-          } else {
+          if !tasks.isEmpty {
+            sectionTitle(t("signalasi.agent_section_recent_tasks", "Recent Tasks"))
             VStack(spacing: 8) {
               ForEach(tasks) { task in
                 AgentTaskRow(
@@ -87,6 +83,24 @@ struct SignalASIAgentRecentTasksView: View {
                 )
               }
             }
+          } else if teamSnapshots.isEmpty {
+            sectionTitle(t("signalasi.agent_section_recent_tasks", "Recent Tasks"))
+            AgentTaskInfoRow(
+              title: t("signalasi.agent_recent_empty", "No recent Agent tasks yet"),
+              subtitle: t("signalasi.agent_tasks.empty_subtitle", "Tasks created by the phone Agent and paired desktop runtimes appear here."),
+              systemImage: "clock",
+              tint: .signalASIAccent,
+              badge: ""
+            )
+          }
+
+          if !teamSnapshots.isEmpty {
+            sectionTitle(t("signalasi.agent_team.section_title", "Agent Teams"))
+            VStack(spacing: 8) {
+              ForEach(teamSnapshots, id: \.supervisorRunId) { snapshot in
+                SignalASIAgentTeamSummaryRow(snapshot: snapshot)
+              }
+            }
           }
         }
         .padding(.horizontal, 12)
@@ -97,9 +111,13 @@ struct SignalASIAgentRecentTasksView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear {
+      refreshTeamSnapshots()
       guard !initialTaskPresented, let initialTask else { return }
       initialTaskPresented = true
       selectedTask = tasks.first(where: { $0.taskId == initialTask.taskId }) ?? initialTask
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .signalASIAgentTeamExecutionHistoryDidUpdate)) { _ in
+      refreshTeamSnapshots()
     }
     .sheet(item: $selectedTask) { task in
       AgentTaskDetailSheet(
@@ -148,6 +166,10 @@ struct SignalASIAgentRecentTasksView: View {
         }
       }
     )
+  }
+
+  private func refreshTeamSnapshots() {
+    teamSnapshots = teamHistoryStore.recent(limit: 20)
   }
 
   @ViewBuilder
