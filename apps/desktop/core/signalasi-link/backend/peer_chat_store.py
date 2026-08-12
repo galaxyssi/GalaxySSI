@@ -61,6 +61,11 @@ class PeerChatStore:
                   ON peer_messages(client_route_id, created_at_ms, message_id);
                 """
             )
+            connection.execute(
+                """UPDATE peer_messages SET delivery_status = 'failed'
+                   WHERE delivery_status IN ('sending', 'preparing')"""
+            )
+            connection.commit()
 
     def subscribe(self, listener: Callable[[dict], None]) -> str:
         subscription_id = uuid.uuid4().hex

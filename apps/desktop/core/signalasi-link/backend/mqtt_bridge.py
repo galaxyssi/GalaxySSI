@@ -122,7 +122,7 @@ PORT = int(os.environ.get("SIGNALASI_MQTT_PORT", "8883"))
 MQTT_TLS = os.environ.get("SIGNALASI_MQTT_TLS", "1") != "0"
 FILES_DIR = Path.home() / "signalasi_files"
 MQTT_QOS = 1
-MQTT_TRANSPORT_EPOCH = "v9-bounded-route-delivery"
+MQTT_TRANSPORT_EPOCH = "v10-peer-message-uuid"
 MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
@@ -7240,7 +7240,9 @@ def publish_peer_message(
     if not clean_content.strip() and not selected_paths:
         return api_error("peer_message_empty", "Enter a message or add a file")
 
-    message_id = f"peer-{uuid.uuid4()}"
+    # SignalASI Link envelope IDs are RFC 4122 UUIDs. Peer history uses the
+    # same value so delivery acknowledgements remain unambiguous.
+    message_id = str(uuid.uuid4())
     task_id = message_id
     conversation_id = f"peer:{route_id}"
     turn_id = f"turn-{uuid.uuid4()}"
@@ -7328,7 +7330,21 @@ def publish_peer_message(
         "sender": "other",
         "time": time.time(),
     }
-    sent = _publish_phone_payload(client, wire_payload, payload)
+    try:
+        sent = _publish_phone_payload(client, wire_payload, payload)
+    except Exception as exc:
+        updated = store.update_delivery_status(message_id, "failed")
+        log.warning(
+            "Direct peer message publish failed client=%s message=%s error=%s",
+            route_id[-8:],
+            message_id[:12],
+            exc,
+        )
+        return api_error(
+            "peer_message_publish_failed",
+            "The direct message could not be sent",
+            peer_message=updated or stored,
+        )
     updated = store.update_delivery_status(message_id, "sent" if sent and chunks_ok else "queued")
     if sent:
         return api_ok("peer_message_sent", message=updated or stored, message_id=message_id)

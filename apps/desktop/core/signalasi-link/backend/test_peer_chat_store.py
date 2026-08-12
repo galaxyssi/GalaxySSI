@@ -68,6 +68,21 @@ class PeerChatStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.append(client_route_id="phone-a", direction="outbound")
 
+    def test_interrupted_sending_message_is_failed_on_reopen(self) -> None:
+        stored = self.store.append(
+            client_route_id="phone-a",
+            direction="outbound",
+            content="hello",
+            delivery_status="sending",
+        )
+
+        reopened = PeerChatStore(self.store.database_path)
+
+        self.assertEqual(
+            "failed",
+            reopened.get_message(stored["message_id"])["delivery_status"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
