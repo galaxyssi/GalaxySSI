@@ -249,8 +249,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         if (isCloud) showCloudModelSwitchPage(contact)
     }
     chatAvatar.setImageResource(contactAvatarRes(contact))
-    messageInput.clearFocus()
-    hideKeyboard()
+    exitChatComposerTextMode(hideKeyboard = true)
     summaries.getOrPut(contact.id) { ContactSummary() }.unreadCount = 0
     markContactRead(contact.id)
     messageAdapter = MessageAdapter(currentMessages,

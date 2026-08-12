@@ -32,10 +32,15 @@ enum AgentPeerChatTransport {
       let size = raw["size_bytes"] as? NSNumber
         ?? raw["size"] as? NSNumber
       let sizeText = size.map { ByteCountFormatter.string(fromByteCount: $0.int64Value, countStyle: .file) } ?? ""
+      let uri = raw.string("uri")
+      let artifactURI = raw.string("artifact_uri")
       var metadata: [String: String] = [
         "source": "peer_message",
         "size_bytes": String(size?.int64Value ?? 0)
       ]
+      if !artifactURI.isEmpty {
+        metadata["artifact_source_uri"] = artifactURI
+      }
       if let transferId = raw["transfer_id"] as? String, !transferId.isEmpty {
         metadata["transfer_id"] = transferId
       }
@@ -47,6 +52,7 @@ enum AgentPeerChatTransport {
         type: type,
         title: name,
         text: sizeText,
+        uri: artifactURI.ifBlank(uri),
         dataB64: raw.string("data_b64"),
         mimeType: mimeType,
         fallbackText: name,

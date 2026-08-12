@@ -14,6 +14,7 @@ struct SignalASICapabilityLibraryView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var selectedKind: SignalASICapabilityLibraryKind = .nativeTools
   @State private var desktopMarketplaceRevision = 0
+  @State private var mcpRevision = 0
 
   private var nativeTools: [AgentNativeToolDescriptor] {
     AgentPhoneNativeToolCatalog.descriptors(
@@ -66,7 +67,7 @@ struct SignalASICapabilityLibraryView: View {
           .accessibilityLabel(t("signalasi.capability_library.tabs", "Capability type"))
 
           selectedContent
-            .id(desktopMarketplaceRevision)
+            .id("\(desktopMarketplaceRevision)-\(mcpRevision)")
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -77,6 +78,9 @@ struct SignalASICapabilityLibraryView: View {
     .navigationBarHidden(true)
     .onReceive(NotificationCenter.default.publisher(for: .signalASIDesktopMarketplaceDidUpdate)) { _ in
       desktopMarketplaceRevision += 1
+    }
+    .onAppear {
+      mcpRevision += 1
     }
   }
 
@@ -145,7 +149,123 @@ struct SignalASICapabilityLibraryView: View {
       ) {
         SignalASIMcpControlCenterView()
       }
+      SignalASISecuritySectionTitle(
+        title: t("signalasi.capability_library.mcp_recommended", "Recommended MCP")
+      )
+      ForEach(mcpMarketplaceItems) { item in
+        mcpMarketplaceRow(item)
+      }
       desktopMarketplaceContent(kind: .mcp)
+    }
+  }
+
+  private var mcpMarketplaceItems: [AgentMarketplaceItem] {
+    AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: nativeTools,
+      installedMcp: mcpConnections,
+      installedAutomations: []
+    )
+    .filter { $0.kind == .mcp }
+    .sorted {
+      if $0.featured != $1.featured { return $0.featured && !$1.featured }
+      return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }
+  }
+
+  @ViewBuilder
+  private func mcpMarketplaceRow(_ item: AgentMarketplaceItem) -> some View {
+    let connection = mcpConnections.first { $0.catalogId == item.id }
+    if let connection {
+      SignalASISecurityNavigationRow(
+        title: item.name,
+        subtitle: mcpMarketplaceSummary(item),
+        systemImage: mcpMarketplaceSystemImage(item),
+        tint: item.revoked ? .orange : .blue,
+        badge: mcpMarketplaceStatus(item)
+      ) {
+        SignalASIMcpConnectionDetailView(
+          connectionId: connection.id,
+          onChanged: { mcpRevision += 1 }
+        )
+      }
+    } else if let entry = AgentDefaultCapabilityCatalog.mcp(item.id), !entry.requiresPackage {
+      SignalASISecurityNavigationRow(
+        title: item.name,
+        subtitle: mcpMarketplaceSummary(item),
+        systemImage: mcpMarketplaceSystemImage(item),
+        tint: .blue,
+        badge: mcpMarketplaceStatus(item)
+      ) {
+        SignalASIMcpRemoteSetupView(entry: entry, onSaved: { mcpRevision += 1 })
+      }
+    } else {
+      SignalASISecurityNavigationRow(
+        title: item.name,
+        subtitle: mcpMarketplaceSummary(item),
+        systemImage: mcpMarketplaceSystemImage(item),
+        tint: .orange,
+        badge: mcpMarketplaceStatus(item)
+      ) {
+        SignalASIMcpControlCenterView()
+      }
+    }
+  }
+
+  private func mcpMarketplaceSummary(_ item: AgentMarketplaceItem) -> String {
+    var parts = [String(format: t("agent_marketplace_version", "v%@"), item.availableVersion)]
+    if !item.capabilities.isEmpty {
+      parts.append(String(format: t("agent_marketplace_capability_count", "%d capabilities"), item.capabilities.count))
+    }
+    if !item.permissions.isEmpty {
+      parts.append(String(format: t("agent_marketplace_permission_count", "%d permissions"), item.permissions.count))
+    }
+    if !item.summary.isBlank {
+      parts.append(localizedMcpSummary(item.id, fallback: item.summary))
+    }
+    return parts.joined(separator: " / ")
+  }
+
+  private func mcpMarketplaceStatus(_ item: AgentMarketplaceItem) -> String {
+    if item.revoked {
+      return t("agent_marketplace_access_revoked", "Access revoked")
+    }
+    if item.updateAvailable {
+      return t("agent_marketplace_update", "Update")
+    }
+    switch item.installState {
+    case .builtIn:
+      return t("agent_marketplace_built_in", "Built in")
+    case .available:
+      return t("agent_capability_add", "Add")
+    case .installed:
+      return t("agent_capability_added", "Added")
+    case .needsSetup:
+      return t("agent_capability_requires_setup", "Setup")
+    case .unavailable:
+      return t("badge_unavailable", "Unavailable")
+    }
+  }
+
+  private func mcpMarketplaceSystemImage(_ item: AgentMarketplaceItem) -> String {
+    if item.id.contains("github") { return "chevron.left.forwardslash.chevron.right" }
+    if item.id.contains("notion") { return "doc.text" }
+    if item.id.contains("home_assistant") { return "house" }
+    if item.requiresLocalPackage { return "shippingbox" }
+    return "link"
+  }
+
+  private func localizedMcpSummary(_ id: String, fallback: String) -> String {
+    switch id {
+    case "signalasi.mcp.github":
+      return t("agent_mcp_catalog_github", fallback)
+    case "signalasi.mcp.notion":
+      return t("agent_mcp_catalog_notion", fallback)
+    case "signalasi.mcp.home_assistant":
+      return t("agent_mcp_catalog_home_assistant", fallback)
+    case "signalasi.mcp.relay_controller":
+      return t("agent_mcp_catalog_relay", fallback)
+    default:
+      return fallback
     }
   }
 
