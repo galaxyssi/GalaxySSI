@@ -433,7 +433,7 @@ struct SignalASIMcpControlCenterView: View {
   }
 }
 
-private struct SignalASIMcpRemoteSetupView: View {
+struct SignalASIMcpRemoteSetupView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var entry: AgentMcpCatalogEntry?
   var onSaved: () -> Void
@@ -634,7 +634,7 @@ private struct SignalASIMcpRemoteSetupView: View {
   }
 }
 
-private struct SignalASIMcpConnectionDetailView: View {
+struct SignalASIMcpConnectionDetailView: View {
   @Environment(\.presentationMode) private var presentationMode
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var connectionId: String
