@@ -217,7 +217,15 @@ struct SignalASILocalModelLabView: View {
         let installed = artifact != nil
           ? downloadState == .ready
           : localModelStorage.inspect(profile).installed
-        if installed {
+        if !profile.supportsIOSRuntime {
+          SignalASILocalModelLabStatusRow(
+            title: profile.displayName,
+            subtitle: profileSubtitle(profile),
+            systemImage: "xmark.octagon",
+            tint: .orange,
+            badge: t("signalasi.local_model.unsupported", "Unsupported")
+          )
+        } else if installed {
           SignalASILocalModelLabToggleRow(
             title: profile.displayName,
             subtitle: profileSubtitle(profile),
@@ -698,6 +706,15 @@ struct SignalASILocalModelLabView: View {
   }
 
   private func profileSubtitle(_ profile: LocalModelRuntimeProfile) -> String {
+    guard profile.supportsIOSRuntime else {
+      return String(
+        format: t(
+          "signalasi.local_model.unsupported_subtitle",
+          "%@ is an Android/Qualcomm artifact and cannot run on iOS"
+        ),
+        profile.artifactFormat.rawValue
+      )
+    }
     var detail = String(
       format: t("signalasi.local_model.profile_details", "%@ - %@ - %@B"),
       formatBytes(profile.expectedModelFileBytes),
@@ -735,6 +752,11 @@ struct SignalASILocalModelLabView: View {
       return t("signalasi.local_model.issue_file_missing", "The selected model file is missing")
     case .modelFileInvalid:
       return t("signalasi.local_model.issue_file_invalid", "The selected model file is empty or invalid")
+    case .unsupportedPlatform:
+      return t(
+        "signalasi.local_model.issue_unsupported_platform",
+        "This model format is not supported by the iOS inference runtime"
+      )
     case .systemLowMemory:
       return t("signalasi.local_model.issue_system_low_memory", "iOS is under memory pressure; retry later")
     case .insufficientMemory:

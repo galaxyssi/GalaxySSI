@@ -122,6 +122,9 @@ final class LocalModelRuntimeStorage {
   }
 
   func verifyForNativeLoad(_ profile: LocalModelRuntimeProfile) throws -> URL {
+    guard profile.supportsIOSRuntime else {
+      throw LocalModelRuntimeStorageError.unsupportedPlatform
+    }
     let snapshot = inspect(profile)
     guard snapshot.installed, let file = snapshot.fileURL else {
       throw LocalModelRuntimeStorageError.modelNotInstalled
@@ -189,6 +192,7 @@ final class LocalModelRuntimeStorage {
 enum LocalModelRuntimeStorageError: LocalizedError {
   case modelNotInstalled
   case sha256Mismatch
+  case unsupportedPlatform
 
   var errorDescription: String? {
     switch self {
@@ -196,6 +200,8 @@ enum LocalModelRuntimeStorageError: LocalizedError {
       return "Local model is not installed"
     case .sha256Mismatch:
       return "Installed model failed SHA-256 verification"
+    case .unsupportedPlatform:
+      return "This model artifact is not supported by the iOS runtime"
     }
   }
 }
