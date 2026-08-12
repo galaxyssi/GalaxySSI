@@ -26,6 +26,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
   private var recordingURL: URL?
   private var startedAt: Date?
   private var meterTimer: Timer?
+  private var startTask: Task<Void, Never>?
   private var touchActive = false
   private var awaitingTouchRelease = false
   private var onFinish: ((SignalASIDraftAttachment, TimeInterval) -> Void)?
@@ -48,11 +49,18 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
     self.onFinish = onFinish
     activeMessages = messages
     cancelPending = translation.height <= cancellationDistance
-    guard !isPreparing, !isRecording else { return }
-    requestPermissionAndStart()
+    guard !isPreparing, !isRecording, startTask == nil else { return }
+    startTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 280_000_000)
+      guard !Task.isCancelled, let self, self.touchActive else { return }
+      self.startTask = nil
+      self.requestPermissionAndStart()
+    }
   }
 
   func dragEnded(translation: CGSize) {
+    startTask?.cancel()
+    startTask = nil
     awaitingTouchRelease = false
     touchActive = false
     cancelPending = translation.height <= cancellationDistance
@@ -61,6 +69,8 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
   }
 
   func cancelFromView() {
+    startTask?.cancel()
+    startTask = nil
     touchActive = false
     guard isPreparing || isRecording else { return }
     cancelPending = true
