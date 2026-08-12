@@ -42,9 +42,16 @@
             android:paddingStart="16dp"
             android:paddingEnd="16dp">
 
-            <Space
+            <TextView
+                android:id="@+id/mainBackButton"
                 android:layout_width="40dp"
-                android:layout_height="1dp" />
+                android:layout_height="match_parent"
+                android:contentDescription="@string/conversation_hub_back_to_conversations"
+                android:gravity="center"
+                android:text="‹"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                android:visibility="invisible" />
 
             <TextView
                 android:id="@+id/mainTitle"
