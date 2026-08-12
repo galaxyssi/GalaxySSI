@@ -31,12 +31,39 @@ enum SignalASISettingsSummaryCache {
     let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
     let conversationRevision = store.agentConversations.map(\.updatedAt).max() ?? 0
     let contactRevision = store.contacts.map(\.updatedAt.timeIntervalSince1970).max() ?? 0
+    let safety = store.agentSafetySettings
+    let safetyKey = [
+      safety.taskExecutionMode.rawValue,
+      safety.permissionMode.rawValue,
+      String(safety.highRiskGuard),
+      String(safety.memoryCapture),
+      String(safety.screenObservationAllowed),
+      String(safety.localActionsAllowed),
+      String(safety.connectorCallsAllowed),
+      String(safety.deviceControlAllowed),
+      String(safety.executionPaused)
+    ].joined(separator: ",")
+    let localModelKey = LocalModelRuntimeSettings.activeProfiles().map { profile in
+      "\(profile.id):\(LocalModelRuntimeSettings.isProfileEnabled(profile))"
+    }.joined(separator: ",")
+    let nativeToolKey = AgentPhoneNativeToolCatalog.descriptors().map { tool in
+      "\(tool.id):\(tool.availability.status.rawValue)"
+    }.joined(separator: ",")
+    let mcpKey = AgentMcpRegistry(
+      FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
+    ).list().map { connection in
+      "\(connection.id):\(connection.state.rawValue):\(connection.enabled)"
+    }.joined(separator: ",")
     return [
       "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
       "\(store.agentTaskRecords.count):\(taskRevision)",
       "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
       "\(store.agentConversations.count):\(conversationRevision)",
-      "\(store.contacts.count):\(contactRevision)"
+      "\(store.contacts.count):\(contactRevision)",
+      safetyKey,
+      localModelKey,
+      nativeToolKey,
+      mcpKey
     ].joined(separator: "|")
   }
 
