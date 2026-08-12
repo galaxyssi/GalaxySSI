@@ -1345,6 +1345,8 @@ final class SignalASIStore: ObservableObject {
     let fingerprint = payload.string("desktop_fingerprint")
       .ifBlank(device.string("identity_fingerprint"))
       .ifBlank(payload.string("identity_fingerprint"))
+      .ifBlank(payload.string("identity_key_sha256"))
+      .ifBlank(link?.desktopFingerprint ?? "")
     let now = Date()
     var contact = contact(id: desktopId) ?? SignalASIContact(
       id: desktopId,
@@ -1376,15 +1378,23 @@ final class SignalASIStore: ObservableObject {
     contact.desktopId = desktopId
     contact.desktopName = defaultName
     contact.identityFingerprint = fingerprint
-    contact.deviceName = device.string("device_name").ifBlank(defaultName).nonEmpty
+    contact.deviceName = device.string("device_name")
+      .ifBlank(payload.string("device_name"))
+      .ifBlank(defaultName).nonEmpty
     contact.deviceManufacturer = device.string("device_manufacturer")
-      .ifBlank(device.string("manufacturer")).nonEmpty
+      .ifBlank(device.string("manufacturer"))
+      .ifBlank(payload.string("device_manufacturer"))
+      .ifBlank(payload.string("manufacturer")).nonEmpty
     contact.deviceModel = device.string("device_model")
-      .ifBlank(device.string("model")).nonEmpty
+      .ifBlank(device.string("model"))
+      .ifBlank(payload.string("device_model"))
+      .ifBlank(payload.string("model")).nonEmpty
     contact.devicePlatform = SignalASIDesktopDeviceMetadata.from(payload: payload)?.platform.nonEmpty
-      ?? device.string("platform").nonEmpty
-    contact.devicePlatformVersion = device.string("platform_version").nonEmpty
-    contact.deviceProfileName = device.string("profile_name").nonEmpty
+      ?? device.string("platform").ifBlank(payload.string("platform")).nonEmpty
+    contact.devicePlatformVersion = device.string("platform_version")
+      .ifBlank(payload.string("platform_version")).nonEmpty
+    contact.deviceProfileName = device.string("profile_name")
+      .ifBlank(payload.string("profile_name")).nonEmpty
     contact.deviceHostName = SignalASIDesktopDeviceMetadata.from(payload: payload)?.hostName.nonEmpty
     contact.setupStatus = "ready"
     contact.setupDetail = "SignalASI Link is paired"
