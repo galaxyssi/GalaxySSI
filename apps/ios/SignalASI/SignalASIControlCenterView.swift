@@ -10,6 +10,7 @@ struct SignalASIControlCenterView: View {
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -214,6 +215,15 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentRecentTasksView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_learning_title", "Learning & Skill Evolution"),
+        subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
+        systemImage: "sparkles.rectangle.stack",
+        tint: learningPendingCount > 0 ? .purple : .signalASIAccent,
+        badge: "\(learningPendingCount)"
+      ) {
+        SignalASILearningSkillEvolutionView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_evolution_title", "Self evolution"),
         subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
         systemImage: "arrow.triangle.2.circlepath",
@@ -340,6 +350,10 @@ struct SignalASIControlCenterView: View {
     recentTasks.filter {
       [.observing, .planning, .executing, .verifying, .waitingConfirmation, .waitingResponse, .paused].contains($0.phase)
     }.count
+  }
+
+  private var learningPendingCount: Int {
+    learningProposalStore.loadProposals().filter { $0.status == .pending }.count
   }
 
   private var selfEvolutionSummary: (review: Int, active: Int, attention: Int) {
