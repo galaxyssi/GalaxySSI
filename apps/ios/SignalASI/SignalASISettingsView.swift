@@ -330,6 +330,15 @@ struct SettingsView: View {
         SignalASIAutomationView()
       }
       SettingsNavigationRow(
+        title: t("signalasi.skill_marketplace.title", "Skill Marketplace"),
+        subtitle: t("signalasi.skill_marketplace.settings_subtitle", "Install, enable, and review reusable Agent Skills"),
+        systemImage: "sparkles.rectangle.stack",
+        tint: .purple,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        SignalASISkillMarketplaceView()
+      }
+      SettingsNavigationRow(
         title: t("signalasi.agent_sessions.title", "Sessions"),
         subtitle: agentSessionsSummary,
         systemImage: "bubble.left.and.bubble.right",

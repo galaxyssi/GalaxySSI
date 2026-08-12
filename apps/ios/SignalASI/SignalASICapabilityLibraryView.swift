@@ -152,6 +152,15 @@ struct SignalASICapabilityLibraryView: View {
         badge: automationTasks.filter { $0.enabled }.isEmpty ? t("common_off", "Off") : t("status_enabled", "Enabled")
       )
       SignalASISecurityNavigationRow(
+        title: t("signalasi.skill_marketplace.title", "Skill Marketplace"),
+        subtitle: t("signalasi.skill_marketplace.settings_subtitle", "Install, enable, and review reusable Agent Skills"),
+        systemImage: "sparkles.rectangle.stack",
+        tint: .purple,
+        badge: t("signalasi.common.manage", "Manage")
+      ) {
+        SignalASISkillMarketplaceView()
+      }
+      SignalASISecurityNavigationRow(
         title: t("signalasi.capability_library.open_automation", "Manage Automation"),
         subtitle: t("signalasi.capability_library.open_automation_subtitle", "Review tasks, workflows, schedules, triggers, and recent runs"),
         systemImage: "clock",
