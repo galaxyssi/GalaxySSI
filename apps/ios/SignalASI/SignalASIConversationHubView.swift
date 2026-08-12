@@ -113,7 +113,13 @@ struct SignalASIConversationHubView: View {
     .sheet(item: $addContactPresentation) { presentation in
       // Carry the route in the sheet item so SwiftUI cannot capture a stale
       // Boolean while the Hub presents the Add flow.
-      AddContactView(autoOpenScanner: presentation == .scanner)
+      AddContactView(
+        autoOpenScanner: presentation == .scanner,
+        onImportCompleted: {
+          _ = coordinator.requestCapabilityManifestRefresh(force: true)
+          addContactPresentation = nil
+        }
+      )
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       ContactsView(showsBackButton: false)
