@@ -443,13 +443,26 @@ enum AgentConnectorRouteSelector {
       .filter { eligibleById[$0.resource.targetId] != nil }
       .filter { seenTargetIds.insert($0.resource.targetId).inserted }
     let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
-    let routedTarget = routedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first
+    let calibratedCandidates = routedCandidates.sorted { lhs, rhs in
+      let leftAdjustment = AgentSelfModelReducer.calibrationAdjustment(
+        goal: "",
+        resourceId: lhs.resource.targetId,
+        requirements: decision?.requirements ?? AgentTaskRequirements()
+      )
+      let rightAdjustment = AgentSelfModelReducer.calibrationAdjustment(
+        goal: "",
+        resourceId: rhs.resource.targetId,
+        requirements: decision?.requirements ?? AgentTaskRequirements()
+      )
+      return (lhs.score + leftAdjustment) > (rhs.score + rightAdjustment)
+    }
+    let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first
     let selectedTarget = preferredTarget ?? routedTarget ?? defaultTarget(eligible)
 
     guard let decision else {
       return AgentConnectorRouteSelection(target: selectedTarget, decision: nil)
     }
-    let selectedCandidate = routedCandidates.first { $0.resource.targetId == selectedTarget.id } ??
+    let selectedCandidate = calibratedCandidates.first { $0.resource.targetId == selectedTarget.id } ??
       decision.catalog.first { $0.targetId == selectedTarget.id }.map { resource in
         AgentResourceCandidate(
           resource: resource,
@@ -465,7 +478,7 @@ enum AgentConnectorRouteSelector {
       AgentRoutingDecision(
         requirements: decision.requirements,
         primary: primary,
-        fallbacks: routedCandidates.filter { $0.resource.targetId != selectedTarget.id },
+        fallbacks: calibratedCandidates.filter { $0.resource.targetId != selectedTarget.id },
         environment: decision.environment,
         catalog: decision.catalog,
         taskBudget: decision.taskBudget
