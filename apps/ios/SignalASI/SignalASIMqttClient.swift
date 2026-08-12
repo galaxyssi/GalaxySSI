@@ -31,12 +31,20 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
 
   private static let brokerAckTimeoutSeconds: TimeInterval = 12
   private static let reconnectDelays: [TimeInterval] = [2, 5, 10, 20, 30]
+  private static let maximumMqttInflight = 12
+  private static let maximumFragmentInflight = 8
+  private static let maximumFragmentInflightPerTransfer = 4
   private let host = NWEndpoint.Host("broker.emqx.io")
   private let port = NWEndpoint.Port(rawValue: 8883)!
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: Self.brokerAckTimeoutSeconds)
+  private struct PendingPublish {
+    var topic: String
+    var payload: Data
+    var transferId: String?
+  }
   private var connection: NWConnection?
   private var brokerAckWorkItem: DispatchWorkItem?
   private var reconnectWorkItem: DispatchWorkItem?
@@ -47,6 +55,12 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private var receiveBuffer = Data()
   private var packetIdentifier: UInt16 = 1
   private var queuedPublishes: [(topic: String, payload: Data)] = []
+  private var pendingPacketPublishes: [PendingPublish] = []
+  private var inFlightPublishes: [UInt16: PendingPublish] = [:]
+  private var fragmentTransferByPacketId: [UInt16: String] = [:]
+  private var fragmentInflightByTransfer: [String: Int] = [:]
+  private var fragmentInflight = 0
+  private var mqttInflightPacketIds: Set<UInt16> = []
   private var connected = false
 
   init(diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger()) {
@@ -142,12 +156,55 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     guard let packets = try? SignalASIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
     }
-    packets.forEach { packet in
-      let packetId = sendPublish(topic: topic, payload: Data(packet.utf8))
-      brokerAckWatchdog.onPublished(packetId: packetId)
+    let transferId = packets.count > 1 ? Self.transferId(from: packets[0]) : nil
+    pendingPacketPublishes.append(contentsOf: packets.map { packet in
+      PendingPublish(
+        topic: topic,
+        payload: Data(packet.utf8),
+        transferId: transferId
+      )
+    })
+    pumpPendingPublishes()
+    if connected {
+      scheduleBrokerAckWatchdog()
     }
-    scheduleBrokerAckWatchdog()
     return true
+  }
+
+  private func pumpPendingPublishes() {
+    guard connected, connection != nil else { return }
+    while mqttInflightPacketIds.count < Self.maximumMqttInflight {
+      guard let index = pendingPacketPublishes.firstIndex(where: { canSend($0) }) else {
+        break
+      }
+      let pending = pendingPacketPublishes.remove(at: index)
+      let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
+      mqttInflightPacketIds.insert(packetId)
+      inFlightPublishes[packetId] = pending
+      brokerAckWatchdog.onPublished(packetId: packetId)
+      if let transferId = pending.transferId {
+        fragmentInflight += 1
+        fragmentInflightByTransfer[transferId, default: 0] += 1
+        fragmentTransferByPacketId[packetId] = transferId
+      }
+    }
+  }
+
+  private func canSend(_ pending: PendingPublish) -> Bool {
+    guard let transferId = pending.transferId else { return true }
+    guard fragmentInflight < Self.maximumFragmentInflight else { return false }
+    return fragmentInflightByTransfer[transferId, default: 0] < Self.maximumFragmentInflightPerTransfer
+  }
+
+  private static func transferId(from packet: String) -> String? {
+    guard let data = packet.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          SignalASIMqttWireChunking.isChunk(object),
+          let transferId = object["transfer_id"] as? String,
+          !transferId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return transferId
   }
 
   private func sendPubAck(_ packetId: UInt16) {
@@ -206,6 +263,19 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       var index = 0
       if let packetId = packet.payload.readUInt16(at: &index) {
         brokerAckWatchdog.onAcknowledged(packetId: packetId)
+        if mqttInflightPacketIds.remove(packetId) != nil {
+          inFlightPublishes.removeValue(forKey: packetId)
+          if let transferId = fragmentTransferByPacketId.removeValue(forKey: packetId) {
+            fragmentInflight = max(0, fragmentInflight - 1)
+            let remaining = max(0, fragmentInflightByTransfer[transferId, default: 0] - 1)
+            if remaining == 0 {
+              fragmentInflightByTransfer.removeValue(forKey: transferId)
+            } else {
+              fragmentInflightByTransfer[transferId] = remaining
+            }
+          }
+        }
+        pumpPendingPublishes()
         scheduleBrokerAckWatchdog()
       }
     case 9, 13:
@@ -253,6 +323,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     let pending = queuedPublishes
     queuedPublishes.removeAll()
     pending.forEach { _ = sendWirePayload(topic: $0.topic, payload: $0.payload) }
+    pumpPendingPublishes()
   }
 
   private func nextPacketIdentifier() -> UInt16 {
@@ -301,6 +372,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     brokerAckWorkItem?.cancel()
     brokerAckWorkItem = nil
     brokerAckWatchdog.clear()
+    resetOutboundInflightForReconnect()
     receiveBuffer.removeAll()
     inboundChunkAssembler.clear()
     setConnected(false)
@@ -321,8 +393,20 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     brokerAckWorkItem?.cancel()
     brokerAckWorkItem = nil
     brokerAckWatchdog.clear()
+    resetOutboundInflightForReconnect()
     setConnected(false)
     scheduleReconnect()
+  }
+
+  private func resetOutboundInflightForReconnect() {
+    if !inFlightPublishes.isEmpty {
+      pendingPacketPublishes.insert(contentsOf: inFlightPublishes.values, at: 0)
+    }
+    inFlightPublishes.removeAll()
+    fragmentTransferByPacketId.removeAll()
+    fragmentInflightByTransfer.removeAll()
+    fragmentInflight = 0
+    mqttInflightPacketIds.removeAll()
   }
 
   private func scheduleReconnect() {
