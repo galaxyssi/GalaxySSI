@@ -603,6 +603,18 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isMemoryStatusGoal(lower),
+       let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.memoryStatus, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "memory-status",
+        target: "Memory",
+        description: "Read phone memory status",
+        input: [:],
+        responseLanguage: responseLanguage
+      )
+    }
+
     if isStorageStatusGoal(lower),
        let descriptor = descriptor(AgentIOSHardwareNativeToolCatalog.storageStatus, in: request) {
       return nativeAction(
@@ -1185,6 +1197,15 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isPowerStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, ["battery saver", "low power", "power status", "\u{7701}\u{7535}\u{6a21}\u{5f0f}"])
+  }
+
+  private static func isMemoryStatusGoal(_ lower: String) -> Bool {
+    containsAny(lower, [
+      "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
+      "\u{624b}\u{673a}\u{5185}\u{5b58}", "\u{8bbe}\u{5907}\u{5185}\u{5b58}", "\u{8fd0}\u{884c}\u{5185}\u{5b58}",
+      "\u{53ef}\u{7528}\u{5185}\u{5b58}", "\u{5269}\u{4f59}\u{5185}\u{5b58}", "\u{5185}\u{5b58}\u{5360}\u{7528}",
+      "\u{5185}\u{5b58}\u{4f7f}\u{7528}", "\u{67e5}\u{5185}\u{5b58}", "\u{67e5}\u{770b}\u{5185}\u{5b58}", "\u{67e5}\u{8be2}\u{5185}\u{5b58}"
+    ])
   }
 
   private static func isStorageStatusGoal(_ lower: String) -> Bool {

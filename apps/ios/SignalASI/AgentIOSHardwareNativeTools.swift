@@ -3,6 +3,7 @@ import Foundation
 enum AgentIOSHardwareNativeToolCatalog {
   static let batteryStatus = AgentPhoneCapabilityNativeCoverage.batteryStatus
   static let powerStatus = AgentPhoneCapabilityNativeCoverage.powerStatus
+  static let memoryStatus = AgentPhoneCapabilityNativeCoverage.memoryStatus
   static let storageStatus = "signalasi.hardware.storage.status"
   static let networkStatus = AgentPhoneCapabilityNativeCoverage.networkStatus
   static let locationForegroundRead = AgentPhoneCapabilityNativeCoverage.locationForegroundRead
@@ -49,6 +50,7 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let executableToolIds: Set<String> = [
     batteryStatus,
     powerStatus,
+    memoryStatus,
     storageStatus,
     networkStatus,
     locationForegroundRead,
@@ -97,6 +99,7 @@ enum AgentIOSHardwareNativeToolCatalog {
   private static let specifications: [Specification] = [
     statusSpec(batteryStatus, "Read battery status", "Reads app-visible iOS battery status without vendor diagnostics.", ["battery.status"]),
     statusSpec(powerStatus, "Read power status", "Reads app-visible iOS power and thermal status without changing settings.", ["power.status"]),
+    memoryStatusSpec(),
     statusSpec(storageStatus, "Read storage status", "Reads bounded app-volume storage capacity signals.", ["storage.status"]),
     statusSpec(networkStatus, "Read network status", "Returns identifier-free app-visible network state from the iOS status provider.", ["network.status"]),
     foregroundLocationSpec(
@@ -203,7 +206,8 @@ enum AgentIOSHardwareNativeToolCatalog {
     _ title: String,
     _ description: String,
     _ capabilities: Set<String>,
-    inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
+    inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
+    outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
   ) -> Specification {
     Specification(
       id: id,
@@ -220,7 +224,32 @@ enum AgentIOSHardwareNativeToolCatalog {
       ],
       consents: [noExtraConsent],
       availability: .available,
-      inputSchema: inputSchema
+      inputSchema: inputSchema,
+      outputSchema: outputSchema
+    )
+  }
+
+  private static func memoryStatusSpec() -> Specification {
+    statusSpec(
+      memoryStatus,
+      "Read phone memory status",
+      "Reads bounded device RAM totals and low-memory status without enumerating processes.",
+      ["memory.device_ram.read", "memory.no_process_enumeration"],
+      outputSchema: inputSchema(
+        properties: [
+          "scope": stringSchema(enumValues: ["device_ram"]),
+          "total_bytes": integerSchema(minimum: 0),
+          "available_bytes": integerSchema(minimum: 0),
+          "used_bytes": integerSchema(minimum: 0),
+          "used_percent": integerSchema(minimum: 0, maximum: 100),
+          "low_memory": boolSchema(),
+          "low_memory_threshold_bytes": integerSchema(minimum: 0),
+          "memory_pressure": stringSchema(enumValues: ["normal", "fair", "serious", "critical", "unknown"]),
+          "available_memory_estimated": boolSchema(),
+          "observed_at_epoch_ms": integerSchema(minimum: 0)
+        ],
+        required: ["scope", "total_bytes", "available_bytes", "used_bytes", "used_percent", "low_memory", "low_memory_threshold_bytes", "memory_pressure", "available_memory_estimated", "observed_at_epoch_ms"]
+      )
     )
   }
 
@@ -646,6 +675,7 @@ enum AgentIOSHardwareNativeToolCatalog {
 
 struct AgentIOSHardwareNativeToolExecutor {
   var provider: AgentIOSHardwareStatusProviding
+  var memoryProvider: AgentIOSDeviceMemoryStatusProviding
   var locationProvider: AgentIOSForegroundLocationProviding
   var sensorSampleProvider: AgentIOSSensorSampleProviding
   var bluetoothDiscoveryProvider: AgentIOSBluetoothDiscoveryProviding
@@ -653,12 +683,14 @@ struct AgentIOSHardwareNativeToolExecutor {
 
   init(
     provider: AgentIOSHardwareStatusProviding = AgentIOSDefaultHardwareStatusProvider(),
+    memoryProvider: AgentIOSDeviceMemoryStatusProviding = AgentIOSDefaultDeviceMemoryStatusProvider(),
     locationProvider: AgentIOSForegroundLocationProviding = AgentIOSDefaultForegroundLocationProvider(),
     sensorSampleProvider: AgentIOSSensorSampleProviding = AgentIOSCoreMotionSensorSampleProvider(),
     bluetoothDiscoveryProvider: AgentIOSBluetoothDiscoveryProviding = AgentIOSCoreBluetoothDiscoveryProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.provider = provider
+    self.memoryProvider = memoryProvider
     self.locationProvider = locationProvider
     self.sensorSampleProvider = sensorSampleProvider
     self.bluetoothDiscoveryProvider = bluetoothDiscoveryProvider
@@ -684,6 +716,16 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(provider.batteryStatus(nowMillis: now), "Battery status read")
     case AgentIOSHardwareNativeToolCatalog.powerStatus:
       return status(provider.powerStatus(nowMillis: now), "Power status read")
+    case AgentIOSHardwareNativeToolCatalog.memoryStatus:
+      let output = AgentIOSDeviceMemoryStatusPresentation.output(
+        snapshot: memoryProvider.snapshot(),
+        nowMillis: now
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: AgentIOSDeviceMemoryStatusPresentation.message(output: output, language: "en"),
+        metadata: ["background_capture": .bool(false), "process_enumeration": .bool(false)]
+      )
     case AgentIOSHardwareNativeToolCatalog.storageStatus:
       return status(provider.storageStatus(nowMillis: now), "Storage status read")
     case AgentIOSHardwareNativeToolCatalog.networkStatus:
