@@ -244,6 +244,20 @@ internal object AgentOutboundAttachmentTransferStore {
     }
 
     @Synchronized
+    fun discardDesktop(context: Context, desktopId: String): Int {
+        val cleanDesktopId = desktopId.trim()
+        if (cleanDesktopId.isBlank()) return 0
+        val transferIds = root(context).listFiles()
+            .orEmpty()
+            .filter(File::isDirectory)
+            .mapNotNull(::readPrepared)
+            .filter { it.scope.desktopId == cleanDesktopId }
+            .map { it.transferId }
+        discard(context, transferIds)
+        return transferIds.size
+    }
+
+    @Synchronized
     fun acknowledgeStored(context: Context, payload: JSONObject): StoredAcknowledgement? {
         if (payload.optString("status") != "stored") return null
         val transfer = find(context, payload.optString("transfer_id").lowercase()) ?: return null

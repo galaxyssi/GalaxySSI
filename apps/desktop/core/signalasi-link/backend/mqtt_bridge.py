@@ -2263,10 +2263,20 @@ def on_connect(mqttc, userdata, flags, reason_code, properties=None):
         log.warning(f"MQTT connection failed rc={reason_code}")
 
 
-def _publish_mqtt_wire_payload(mqttc, topic: str, wire_payload: str):
+def _publish_mqtt_wire_payload(
+    mqttc,
+    topic: str,
+    wire_payload: str,
+    *,
+    retain: bool = False,
+):
     packets = encode_wire_payload(wire_payload)
     if len(packets) == 1:
+        if retain:
+            return mqttc.publish(topic, packets[0], qos=MQTT_QOS, retain=True)
         return mqttc.publish(topic, packets[0], qos=MQTT_QOS)
+    if retain:
+        raise ValueError("Retained MQTT payload must fit in one wire packet")
 
     digest = hashlib.sha256(wire_payload.encode("utf-8")).hexdigest()
     with fragment_publish_lock:
@@ -6328,15 +6338,19 @@ def _process_message(mqttc, userdata, msg):
         if msg_type == "client_revoked":
             from desktop_control import desktop_control_manager
 
-            _close_phone_tool_sessions(client_route_id, "paired phone revoked this Desktop")
             desktop_control_manager().revoke_for_client(
                 client_route_id, "pairing_revoked_by_phone"
             )
+            cleanup = forget_paired_client_transport(client_route_id, mqttc)
             revoke_client(client_route_id, str(payload.get("reason") or "forgotten_by_client"))
             remove_peer_signal_session(
                 paired_client["signal_name"], int(paired_client.get("signal_device_id") or 1)
             )
-            log.info("Client relationship revoked client=%s", client_route_id)
+            log.info(
+                "Client relationship revoked client=%s deleted_peer_messages=%s",
+                client_route_id,
+                cleanup.get("deleted_peer_messages", 0),
+            )
             return
 
         if msg_type == "connector_status_request":
@@ -7004,7 +7018,12 @@ def _schedule_requested_connector_state(
 
 
 def _publish_to_registered_client(
-    mqttc, paired_client: dict, payload: dict, channel: str = "down", durable: bool = True
+    mqttc,
+    paired_client: dict,
+    payload: dict,
+    channel: str = "down",
+    durable: bool = True,
+    retain: bool = False,
 ):
     if _local_only_transport_payload(payload):
         log.warning(
@@ -7035,7 +7054,12 @@ def _publish_to_registered_client(
         )
         wire_payload = json.dumps(encrypted, ensure_ascii=False)
         if not durable:
-            return _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
+            return _publish_mqtt_wire_payload(
+                mqttc,
+                topic,
+                wire_payload,
+                retain=retain,
+            )
         queue_outbound(
             client_route_id,
             message_id,
@@ -7364,14 +7388,57 @@ def publish_pairing_revoked(mqttc=None, reason: str = "forgotten_by_desktop", cl
     }
     try:
         targets = _target_clients(client_route_id, broadcast=not bool(client_route_id))
-        results = [_publish_to_registered_client(mqttc, target, revoke_payload, "control") for target in targets]
-        ok = all(info.rc == mqtt.MQTT_ERR_SUCCESS for info in results)
+        # Revocation is the final message allowed on this relationship. Publish it
+        # directly and wait for the broker acknowledgement before route cleanup can
+        # discard the durable outbox and cryptographic session.
+        results = [
+            _publish_to_registered_client(
+                mqttc,
+                target,
+                revoke_payload,
+                "control",
+                durable=False,
+                retain=True,
+            )
+            for target in targets
+        ]
+        acknowledged = [
+            _wait_for_broker_publish(info, timeout_seconds=2.0)
+            for info in results
+        ]
+        ok = bool(results) and all(acknowledged)
         if ok:
             return api_ok("pairing_revocation_published", reason=reason, client_count=len(results), params={"reason": reason, "client_count": len(results)})
-        return api_error("publish_failed", "One or more revocation messages failed", reason=reason)
+        return api_error(
+            "publish_failed",
+            "One or more revocation messages were not acknowledged by the broker",
+            reason=reason,
+            client_count=len(results),
+            acknowledged=sum(1 for value in acknowledged if value),
+        )
     except Exception as exc:
         log.warning(f"MQTT pairing revocation skipped: {exc}")
         return api_error("publish_failed", str(exc), reason=reason, params={"reason": reason})
+
+
+def _wait_for_broker_publish(info, timeout_seconds: float) -> bool:
+    if getattr(info, "rc", mqtt.MQTT_ERR_NO_CONN) != mqtt.MQTT_ERR_SUCCESS:
+        return False
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    wait_for_publish = getattr(info, "wait_for_publish", None)
+    if callable(wait_for_publish):
+        try:
+            wait_for_publish(timeout=max(0.0, deadline - time.monotonic()))
+        except (RuntimeError, ValueError):
+            return False
+    is_published = getattr(info, "is_published", None)
+    if not callable(is_published):
+        return True
+    while time.monotonic() < deadline:
+        if is_published():
+            return True
+        time.sleep(0.01)
+    return bool(is_published())
 
 
 def publish_mobile_test_message(contact_id: str, content: str, client_route_id: str = "", broadcast: bool = False) -> dict:

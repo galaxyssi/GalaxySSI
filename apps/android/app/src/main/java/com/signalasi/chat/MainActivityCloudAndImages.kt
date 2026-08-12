@@ -1030,12 +1030,25 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
     if (json?.optString("type") == "pairing_revoked") {
         Log.w("SignalASIDebug", "Pairing revoked control message received")
         val desktopId = json.optString("desktop_id")
-        if (desktopId.isNotBlank()) {
-            AppStore.deleteDesktopConnector(this, desktopId, deleteMessages = false)
-        } else {
-            AppStore.deleteContact(this, "hermes", deleteMessages = false)
+        val revokedContactIds = json.optJSONArray("revoked_contact_ids")
+            ?.let { array ->
+                (0 until array.length()).mapNotNull { index ->
+                    array.optString(index).takeIf(String::isNotBlank)
+                }.toSet()
+            }
+            .orEmpty()
+        revokedContactIds.forEach { contactId ->
+            val removedMessages = messages.remove(contactId).orEmpty()
+            discardPendingChatHistory(removedMessages.map(ChatMessage::id))
+            summaries.remove(contactId)
+            loadedHistoryContacts.remove(contactId)
         }
-        SignalASIMqttClient.forgetSecureChannel()
+        if (selectedContact?.id in revokedContactIds) {
+            selectedContact = null
+            chatPage.visibility = View.GONE
+            mainPage.visibility = View.VISIBLE
+            showMainTab(PAGE_MESSAGES)
+        }
         requestAgentRegistrySnapshotSync(force = true)
         refreshContactList()
         refreshDirectoryContacts()

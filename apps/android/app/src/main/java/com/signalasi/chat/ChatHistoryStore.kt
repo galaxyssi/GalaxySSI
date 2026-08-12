@@ -369,7 +369,6 @@ object ChatHistoryStore {
                 )
             }
             "pairing_revoked" -> {
-                AppStore.deleteContact(context, CONTACT_HERMES, deleteMessages = false)
                 StoredIncomingMessage(
                     CONTACT_SYSTEM,
                     context.getString(R.string.system_contact_name),
