@@ -1429,11 +1429,15 @@ private struct SignalASIRichBlockView: View {
 
   private func requestArtifactDownload() {
     let requestID = UUID()
+    let retryingTimedOutRequest = artifactDownloadTimedOut
     artifactDownloadRequestID = requestID
     artifactDownloadRequested = true
     artifactDownloadTimedOut = false
     Task { @MainActor in
-      if !await coordinator.requestDesktopArtifactDownload(block: block) {
+      if !await coordinator.requestDesktopArtifactDownload(
+        block: block,
+        forceRedelivery: retryingTimedOutRequest
+      ) {
         guard artifactDownloadRequestID == requestID else { return }
         artifactDownloadRequested = false
         artifactDownloadError = coordinator.lastError.ifBlank(
