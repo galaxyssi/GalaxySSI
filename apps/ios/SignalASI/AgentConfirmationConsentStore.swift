@@ -2,10 +2,102 @@ import Foundation
 
 protocol AgentConfirmationConsentStore {
   func isRemembered(consentKey: String) -> Bool
+  func isRemembered(consentKey: String, sessionId: String) -> Bool
   func rememberedKeys() -> Set<String>
   func remember(consentKey: String)
+  func remember(consentKey: String, sessionId: String)
   @discardableResult func forget(consentKey: String) -> Bool
   func clear()
+  func clear(sessionId: String)
+}
+
+extension AgentConfirmationConsentStore {
+  func isRemembered(consentKey: String, sessionId: String) -> Bool {
+    guard sessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return false
+    }
+    return isRemembered(consentKey: consentKey)
+  }
+
+  func remember(consentKey: String, sessionId: String) {
+    guard sessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return
+    }
+    remember(consentKey: consentKey)
+  }
+
+  func clear(sessionId: String) {}
+}
+
+final class SessionScopedAgentConfirmationConsentStore: AgentConfirmationConsentStore {
+  private let base: AgentConfirmationConsentStore
+  private let lock = NSRecursiveLock()
+  private var sessionKeys: [String: Set<String>] = [:]
+
+  init(base: AgentConfirmationConsentStore) {
+    self.base = base
+  }
+
+  func isRemembered(consentKey: String) -> Bool {
+    base.isRemembered(consentKey: consentKey)
+  }
+
+  func isRemembered(consentKey: String, sessionId: String) -> Bool {
+    guard let key = clean(consentKey), let session = clean(sessionId) else {
+      return base.isRemembered(consentKey: consentKey)
+    }
+    if base.isRemembered(consentKey: key) {
+      return true
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    return sessionKeys[session]?.contains(key) == true
+  }
+
+  func rememberedKeys() -> Set<String> {
+    base.rememberedKeys()
+  }
+
+  func remember(consentKey: String) {
+    base.remember(consentKey: consentKey)
+  }
+
+  func remember(consentKey: String, sessionId: String) {
+    guard let key = clean(consentKey), let session = clean(sessionId) else { return }
+    lock.lock()
+    sessionKeys[session, default: []].insert(key)
+    lock.unlock()
+  }
+
+  @discardableResult
+  func forget(consentKey: String) -> Bool {
+    let forgotten = base.forget(consentKey: consentKey)
+    guard let key = clean(consentKey) else { return forgotten }
+    lock.lock()
+    defer { lock.unlock() }
+    for session in sessionKeys.keys {
+      sessionKeys[session]?.remove(key)
+    }
+    return forgotten
+  }
+
+  func clear() {
+    base.clear()
+    lock.lock()
+    sessionKeys.removeAll()
+    lock.unlock()
+  }
+
+  func clear(sessionId: String) {
+    guard let session = clean(sessionId) else { return }
+    lock.lock()
+    sessionKeys.removeValue(forKey: session)
+    lock.unlock()
+  }
+
+  private func clean(_ value: String) -> String? {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+  }
 }
 
 final class AgentGrantBackedConfirmationConsentStore: AgentConfirmationConsentStore {

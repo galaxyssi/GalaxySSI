@@ -81,7 +81,11 @@ final class MessageCoordinator: ObservableObject {
   }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
-    UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
+    SessionScopedAgentConfirmationConsentStore(
+      base: UserDefaultsAgentConfirmationConsentStore(
+        storageKey: "signalasi_local_agent_confirmation_v1"
+      )
+    )
   private lazy var localRecordedRunStore = UserDefaultsAgentRecordedRunStore()
   private lazy var localSkillRuntime = AgentSkillRuntime(
     store: UserDefaultsAgentSkillStore(),
@@ -2455,6 +2459,7 @@ final class MessageCoordinator: ObservableObject {
   func approveLocalNativeAction(
     taskId: String,
     remember: Bool = false,
+    sessionScoped: Bool = false,
     highRiskConfirmed: Bool = false
   ) {
     guard var task = store.agentTask(id: taskId),
@@ -2466,10 +2471,17 @@ final class MessageCoordinator: ObservableObject {
     guard action.risk.weight < AgentRisk.high.weight || highRiskConfirmed else {
       return
     }
-    if remember && AgentConfirmationPolicy.tier(for: action) == .confirmOnce {
-      localConfirmationConsentStore.remember(
-        consentKey: AgentConfirmationPolicy.consentKey(for: action)
-      )
+    if AgentConfirmationPolicy.tier(for: action) == .confirmOnce {
+      let consentKey = AgentConfirmationPolicy.consentKey(for: action)
+      let sessionId = task.sessionId.ifBlank(store.activeAgentConversationId)
+      if sessionScoped {
+        localConfirmationConsentStore.remember(
+          consentKey: consentKey,
+          sessionId: sessionId
+        )
+      } else if remember {
+        localConfirmationConsentStore.remember(consentKey: consentKey)
+      }
     }
     if task.pendingActions.isEmpty {
       task.pendingActions = [action]
@@ -4482,7 +4494,10 @@ final class MessageCoordinator: ObservableObject {
     let decision = AgentConfirmationDecisionPolicy.decision(
       actions: [action],
       permissionMode: store.agentSafetySettings.permissionMode,
-      consentStore: localConfirmationConsentStore
+      consentStore: localConfirmationConsentStore,
+      sessionId: task.sessionId.ifBlank(outgoing.conversationId).ifBlank(
+        store.activeAgentConversationId
+      )
     )
     if decision.requiresConfirmation {
       task.phase = .waitingConfirmation

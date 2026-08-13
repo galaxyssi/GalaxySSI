@@ -33,13 +33,21 @@ extension AgentHomeView {
   }
 
   @discardableResult
-  func requestAgentTaskApproval(_ task: AgentTaskRecord, remember: Bool = false) -> Bool {
+  func requestAgentTaskApproval(
+    _ task: AgentTaskRecord,
+    remember: Bool = false,
+    sessionScoped: Bool = false
+  ) -> Bool {
     guard let action = task.pendingAction else { return false }
     if action.risk.weight >= AgentRisk.high.weight {
       pendingHighRiskApprovalTask = task
       return false
     }
-    coordinator.approveLocalNativeAction(taskId: task.taskId, remember: remember)
+    coordinator.approveLocalNativeAction(
+      taskId: task.taskId,
+      remember: remember,
+      sessionScoped: sessionScoped
+    )
     resumePendingAgentDeliveryAfterTaskAction()
     return true
   }
