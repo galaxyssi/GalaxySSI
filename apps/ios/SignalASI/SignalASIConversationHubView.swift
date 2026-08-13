@@ -276,7 +276,7 @@ struct SignalASIConversationHubView: View {
     HStack(spacing: 0) {
       conversationHubTabButton(
         .conversations,
-        title: t("signalasi.conversation_hub.tab_conversations", "Conversations")
+        title: t("signalasi.conversation_hub.tab_conversations", "Chats")
       )
       conversationHubTabButton(
         .contacts,
