@@ -312,7 +312,7 @@ enum SignalASIContactExchange {
     return String(data: data, encoding: .utf8)
   }
 
-  private static func canonicalPhoneContactCardBytes(_ card: [String: Any]) -> Data {
+  static func canonicalPhoneContactCardBytes(_ card: [String: Any]) -> Data {
     let fields = [
       "type",
       "version",
@@ -331,7 +331,7 @@ enum SignalASIContactExchange {
     return Data(payload.utf8)
   }
 
-  private static func validateSignedPhoneContactCard(_ card: [String: Any]) throws {
+  static func validateSignedPhoneContactCard(_ card: [String: Any]) throws {
     let signature = card.string("signature")
     guard !signature.isEmpty else { return }
     let signalASIId = card.string("signalasi_id")

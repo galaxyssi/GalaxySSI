@@ -219,6 +219,7 @@
     A1000000000000000000F601 /* SignalASIGlobalAgentBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F601 /* SignalASIGlobalAgentBackup.swift */; };
     A10000000000000000000013 /* SignalASIBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* SignalASIBackupTests.swift */; };
     A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* SignalASIContactExchange.swift */; };
+    A10000000000000000002080 /* SignalASIPhoneContactControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002080 /* SignalASIPhoneContactControl.swift */; };
     A10000000000000000002020 /* SignalASIDeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002020 /* SignalASIDeviceIdentity.swift */; };
     A10000000000000000000015 /* SignalASIContactExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SignalASIContactExchangeTests.swift */; };
     A10000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */; };
@@ -1073,6 +1074,7 @@
     A2000000000000000000F601 /* SignalASIGlobalAgentBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIGlobalAgentBackup.swift; sourceTree = "<group>"; };
     A20000000000000000000015 /* SignalASIBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIBackupTests.swift; sourceTree = "<group>"; };
     A20000000000000000000016 /* SignalASIContactExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactExchange.swift; sourceTree = "<group>"; };
+    A20000000000000000002080 /* SignalASIPhoneContactControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIPhoneContactControl.swift; sourceTree = "<group>"; };
     A20000000000000000002020 /* SignalASIDeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIDeviceIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000017 /* SignalASIContactExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIContactExchangeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000480 /* SignalASILinkOutboxPayloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkOutboxPayloadStore.swift; sourceTree = "<group>"; };
@@ -2159,6 +2161,7 @@
         A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */,
         A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
+        A20000000000000000002080 /* SignalASIPhoneContactControl.swift */,
         A20000000000000000002020 /* SignalASIDeviceIdentity.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000001420 /* SignalASIAttachmentInputViews.swift */,
@@ -3149,6 +3152,7 @@
         A10000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift in Sources */,
         A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
+        A10000000000000000002080 /* SignalASIPhoneContactControl.swift in Sources */,
         A10000000000000000002020 /* SignalASIDeviceIdentity.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000001420 /* SignalASIAttachmentInputViews.swift in Sources */,

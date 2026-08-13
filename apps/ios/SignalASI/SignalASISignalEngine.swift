@@ -61,6 +61,13 @@ final class SignalASISignalEngine {
     return (try? key.verifySignature(message: payload, signature: signatureData)) == true
   }
 
+  static func bundleIdentityFingerprint(_ bundle: [String: Any]) -> String? {
+    guard let identityKey = Data(base64Encoded: bundle.string("identityKey")), !identityKey.isEmpty else {
+      return nil
+    }
+    return sha256(identityKey)
+  }
+
   func localBundle() -> [String: Any]? {
     guard let preKey = try? store.loadPreKey(id: 1, context: context),
           let signedPreKey = try? store.loadSignedPreKey(id: 1, context: context),
@@ -220,6 +227,7 @@ final class SignalASISignalEngine {
   var identity: SignalASISignalIdentity { SignalASISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
   func signContactCard(_ payload: Data) -> String? { nil }
   static func verifyContactCard(publicKey: String, payload: Data, signature: String) -> Bool { false }
+  static func bundleIdentityFingerprint(_ bundle: [String: Any]) -> String? { nil }
   func localBundle() -> [String: Any]? { nil }
   func processBundle(_ json: [String: Any], remoteName: String = "") -> Bool { false }
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
