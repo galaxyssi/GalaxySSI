@@ -3508,6 +3508,10 @@
 "delivery_trace_desktop_reply_ack" = "桌面回复 Broker ACK";
 "delivery_trace_desktop_broker_ack" = "Broker 已确认";
 "delivery_trace_phone_contact_delivered" = "手机联系人已确认送达";
+"signalasi.contact_detail.secure_direct" = "安全直连";
+"signalasi.contact_detail.signal_session" = "Signal 端到端保护";
+"signalasi.contact_detail.signal_session_subtitle" = "已验证二维码身份，消息通过此联系人的专属收件箱端到端加密传输。";
+"signalasi.contact_detail.identity_verified" = "已验证";
 "delivery_trace_desktop_mobile_test_queued" = "桌面测试已入队";
 "delivery_trace_agent_push_queued" = "Agent Push 已入队";
 "delivery_trace_connector_status" = "连接器状态已同步";

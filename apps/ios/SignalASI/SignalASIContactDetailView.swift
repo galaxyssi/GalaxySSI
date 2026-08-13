@@ -40,6 +40,7 @@ struct ContactDetailView: View {
             )
             primaryChatButton(contact)
             identitySection(contact)
+            phoneContactSecuritySection(contact)
             deviceSection(contact)
             connectorSection(contact)
             routeSection(contact)
@@ -156,6 +157,24 @@ struct ContactDetailView: View {
         onCopy: setStatus
       )
       statusRowIfNeeded
+    }
+  }
+
+  @ViewBuilder
+  private func phoneContactSecuritySection(_ contact: SignalASIContact) -> some View {
+    guard isPhoneDirectContact(contact) else { return }
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("signalasi.contact_detail.secure_direct", "Secure Direct Connection"))
+      SignalASISecurityStatusRow(
+        title: t("signalasi.contact_detail.signal_session", "Signal Protected"),
+        subtitle: t(
+          "signalasi.contact_detail.signal_session_subtitle",
+          "Verified QR identity with end-to-end encrypted messages through this contact's private inbox."
+        ),
+        systemImage: "lock.shield.fill",
+        tint: .signalASIAccent,
+        badge: t("signalasi.contact_detail.identity_verified", "Verified")
+      )
     }
   }
 
@@ -453,6 +472,13 @@ struct ContactDetailView: View {
     [contact.mqttTopic, contact.mqttInboxTopic, contact.signalBundleRef].contains { value in
       !(value ?? "").isEmpty
     }
+  }
+
+  private func isPhoneDirectContact(_ contact: SignalASIContact) -> Bool {
+    contact.type.caseInsensitiveCompare("person") == .orderedSame &&
+      contact.isCommunicable &&
+      contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !(contact.mqttInboxTopic ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private func syncRemarkName() {
