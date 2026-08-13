@@ -4,6 +4,7 @@ struct SignalASIAgentsModelsNodesView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var localModelReady = false
 
   private var desktopLinks: [ServerLink] {
     store.serverLinks.sorted { lhs, rhs in
@@ -58,6 +59,9 @@ struct SignalASIAgentsModelsNodesView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      localModelReady = LocalModelInferenceRuntime.shared.ready()
+    }
   }
 
   private var desktopSection: some View {
@@ -113,8 +117,10 @@ struct SignalASIAgentsModelsNodesView: View {
           "On-device model lab, routing plans, and local inference settings"
         ),
         systemImage: "memorychip",
-        tint: .teal,
-        badge: t("cc_status_ready", "Ready")
+        tint: localModelReady ? .signalASIAccent : .blue,
+        badge: localModelReady
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("status_needs_setup", "Needs Setup")
       ) {
         SignalASILocalModelLabView()
       }
