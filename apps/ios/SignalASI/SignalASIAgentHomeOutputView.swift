@@ -112,6 +112,7 @@ extension AgentHomeView {
               permissionMode: store.agentSafetySettings.permissionMode,
               highRiskGuard: store.agentSafetySettings.highRiskGuard,
               memoryCapture: store.agentSafetySettings.memoryCapture,
+              taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
               routeTitle: headerPresentation.modelLogoLabel,
               routeSubtitle: hasManualSelection
                 ? t("signalasi.agent.route.manual", "Manual route")
@@ -140,6 +141,7 @@ extension AgentHomeView {
               onToggleMemoryCapture: {
                 store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
               },
+              onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
               onToggleExecutionPaused: {
                 store.updateAgentSafetySettings { $0.executionPaused.toggle() }
               },

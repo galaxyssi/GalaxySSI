@@ -18,9 +18,11 @@ struct SignalASIAgentHomeReadinessView: View {
   var permissionMode: AgentPermissionMode = .askBeforeAction
   var highRiskGuard: Bool = true
   var memoryCapture: Bool = true
+  var taskExecutionMode: AgentTaskExecutionMode = .autoComplete
   var onCyclePermissionMode: () -> Void = {}
   var onToggleHighRiskGuard: () -> Void = {}
   var onToggleMemoryCapture: () -> Void = {}
+  var onCycleTaskExecutionMode: () -> Void = {}
   var onToggleExecutionPaused: () -> Void = {}
   var onOpenRecentTasks: () -> Void = {}
   var onOpenRecentTask: (AgentTaskRecord) -> Void = { _ in }
@@ -142,6 +144,17 @@ struct SignalASIAgentHomeReadinessView: View {
           action: onToggleExecutionPaused
         )
       }
+      controlButton(
+        title: String(
+          format: t("agent_safety_task_execution_value", "Task execution: %@"),
+          t(taskExecutionMode.displayTitle, taskExecutionMode.displayTitle)
+        ),
+        systemImage: taskExecutionMode == .planOnly
+          ? "list.bullet.rectangle"
+          : "play.rectangle",
+        tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
+        action: onCycleTaskExecutionMode
+      )
 
       Text(t("agent_section_info", "Info"))
         .font(.system(size: 13, weight: .bold))
@@ -591,10 +604,12 @@ struct SignalASIAgentHomeSafetyStrip: View {
   var permissionMode: AgentPermissionMode
   var highRiskGuard: Bool
   var memoryCapture: Bool
+  var taskExecutionMode: AgentTaskExecutionMode
   var executionPaused: Bool
   var onCyclePermissionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
+  var onCycleTaskExecutionMode: () -> Void
   var onToggleExecutionPaused: () -> Void
   var t: (String, String) -> String
 
@@ -651,6 +666,17 @@ struct SignalASIAgentHomeSafetyStrip: View {
           action: onToggleExecutionPaused
         )
       }
+      controlButton(
+        title: String(
+          format: t("agent_safety_task_execution_value", "Task execution: %@"),
+          t(taskExecutionMode.displayTitle, taskExecutionMode.displayTitle)
+        ),
+        systemImage: taskExecutionMode == .planOnly
+          ? "list.bullet.rectangle"
+          : "play.rectangle",
+        tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
+        action: onCycleTaskExecutionMode
+      )
     }
     .padding(9)
     .background(Color.signalASIInsightBackground)

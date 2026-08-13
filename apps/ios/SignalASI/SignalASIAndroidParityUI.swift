@@ -107,6 +107,7 @@ struct AgentHomeView: View {
             permissionMode: store.agentSafetySettings.permissionMode,
             highRiskGuard: store.agentSafetySettings.highRiskGuard,
             memoryCapture: store.agentSafetySettings.memoryCapture,
+            taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
             executionPaused: store.agentSafetySettings.executionPaused,
             onCyclePermissionMode: cycleAgentPermissionMode,
             onToggleHighRiskGuard: {
@@ -115,6 +116,7 @@ struct AgentHomeView: View {
             onToggleMemoryCapture: {
               store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
             },
+            onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
             onToggleExecutionPaused: {
               store.updateAgentSafetySettings { $0.executionPaused.toggle() }
             },
