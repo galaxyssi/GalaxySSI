@@ -558,20 +558,6 @@ struct SignalASIConversationHubView: View {
         .foregroundColor(.signalASITextSecondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
-      NavigationLink(destination: SignalASICreateGroupView()) {
-        Label(
-          t("signalasi.conversation_hub.create_group", "Create Group"),
-          systemImage: "person.3.fill"
-        )
-        .font(.system(size: 15, weight: .semibold))
-        .foregroundColor(.white)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .background(Color.signalASIAccent)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-      }
-      .buttonStyle(.plain)
-      .padding(.horizontal, 24)
-      .padding(.top, 8)
     }
     .frame(maxWidth: .infinity)
   }
