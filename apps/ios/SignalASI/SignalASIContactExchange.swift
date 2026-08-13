@@ -330,6 +330,50 @@ enum SignalASIContactExchange {
     return Data(payload.utf8)
   }
 
+  private static func validateSignedPhoneContactCard(_ card: [String: Any]) throws {
+    let signature = card.string("signature")
+    guard !signature.isEmpty else { return }
+    let signalASIId = card.string("signalasi_id")
+    let fingerprint = card.string("identity_fingerprint")
+    let publicKey = card.string("identity_public_key")
+    let routeId = card.string("device_id")
+    let topic = card.string("mqtt_inbox_topic")
+    let expectedTopic = "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
+    let fingerprintMatches = fingerprint.range(
+      of: "^[a-fA-F0-9]{64}$",
+      options: .regularExpression
+    ) != nil
+    let idMatches = signalASIId.range(
+      of: "^signalasi:[a-fA-F0-9]{16}$",
+      options: .regularExpression
+    ) != nil
+    let publicKeyFingerprint = Data(base64Encoded: publicKey).map { key in
+      SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
+    } ?? ""
+    guard card.string("type") == contactType,
+          card.int("version") == version,
+          idMatches,
+          signalASIId.dropFirst("signalasi:".count).caseInsensitiveCompare(fingerprint.prefix(16)) == .orderedSame,
+          !card.string("name").isEmpty,
+          card.string("name").utf16.count <= 64,
+          publicKey.count >= 40,
+          publicKey.count <= 256,
+          fingerprintMatches,
+          publicKeyFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame,
+          SignalASILinkProtocol.validRouteId(routeId),
+          topic == expectedTopic,
+          card.int64("created_at") > 0,
+          signature.count >= 40,
+          signature.count <= 256,
+          SignalASISignalEngine.verifyContactCard(
+            publicKey: publicKey,
+            payload: canonicalPhoneContactCardBytes(card),
+            signature: signature
+          ) else {
+      throw SignalASIError.invalidPayload("Signed contact QR verification failed.")
+    }
+  }
+
   static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
     let rawObject = try decodeQRCodeObject(contents, label: "QR")
     let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject) ?? rawObject
@@ -404,6 +448,7 @@ enum SignalASIContactExchange {
     guard isContactQRCodeObject(object) else {
       throw SignalASIError.invalidPayload("Contact QR type is not supported.")
     }
+    try validateSignedPhoneContactCard(object)
     let server = desktopServerObject(from: object)
     let fingerprint = object.string("identity_fingerprint")
       .ifBlank(object.string("identity_key_sha256"))
