@@ -15,6 +15,13 @@ struct SignalASIAgentsModelsNodesView: View {
     store.cloudModelContacts
   }
 
+  private var resourceTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
   private var availableResourceCount: Int {
     let onlineDesktops = desktopLinks.filter { $0.paired && coordinator.mqttClient.isConnected }.count
     let configuredClouds = cloudContacts.filter { $0.selectedCloudModel != nil }.count
@@ -178,10 +185,18 @@ struct SignalASIAgentsModelsNodesView: View {
   }
 
   private func desktopOnline(_ link: ServerLink) -> Bool {
-    link.paired && coordinator.mqttClient.isConnected
+    guard link.paired && coordinator.mqttClient.isConnected else { return false }
+    let desktopAgentIds = Set(desktopAgentContacts(link).map(\.id))
+    return resourceTargets.contains { target in
+      desktopAgentIds.contains(target.id) && target.status == .available
+    }
   }
 
   private func desktopAgentCount(_ link: ServerLink) -> Int {
+    desktopAgentContacts(link).count
+  }
+
+  private func desktopAgentContacts(_ link: ServerLink) -> [SignalASIContact] {
     store.contacts.filter { contact in
       !contact.deleted &&
         contact.desktopId == link.desktopId &&
