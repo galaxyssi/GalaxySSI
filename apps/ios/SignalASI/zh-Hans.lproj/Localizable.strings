@@ -1496,6 +1496,7 @@
 "signalasi.message.delete" = "删除消息";
 "signalasi.message.details" = "详情";
 "signalasi.message.input" = "消息";
+"signalasi.message.input_hint" = "输入消息或按住说话...";
 "signalasi.agent.reply_waiting" = "等待回复";
 "agent_attachment_take_photo" = "拍照";
 "agent_attachment_add_photos" = "添加照片";
