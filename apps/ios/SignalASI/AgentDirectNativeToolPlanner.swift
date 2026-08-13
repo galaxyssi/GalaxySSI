@@ -862,7 +862,10 @@ enum AgentDirectNativeToolPlanner {
       "test home assistant",
       "test home assistant connection",
       "\u{68c0}\u{67e5} home assistant",
-      "home assistant \u{72b6}\u{6001}"
+      "home assistant \u{72b6}\u{6001}",
+      "\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{72b6}\u{6001}",
+      "\u{667a}\u{80fd}\u{7a7a}\u{95f4}\u{72b6}\u{6001}",
+      "\u{5bb6}\u{5c45}\u{52a9}\u{624b}\u{72b6}\u{6001}"
     ].contains(lower.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
@@ -874,7 +877,10 @@ enum AgentDirectNativeToolPlanner {
       "list smart devices",
       "show smart devices",
       "\u{5217}\u{51fa} home assistant \u{5b9e}\u{4f53}",
-      "\u{663e}\u{793a}\u{667a}\u{80fd}\u{8bbe}\u{5907}"
+      "\u{663e}\u{793a}\u{667a}\u{80fd}\u{8bbe}\u{5907}",
+      "\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{8bbe}\u{5907}",
+      "\u{5217}\u{51fa}\u{667a}\u{80fd}\u{8bbe}\u{5907}",
+      "\u{67e5}\u{770b}\u{667a}\u{80fd}\u{8bbe}\u{5907}"
     ].contains(lower.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
@@ -883,13 +889,16 @@ enum AgentDirectNativeToolPlanner {
   ) -> (label: String, domain: String)? {
     switch lower.trimmingCharacters(in: .whitespacesAndNewlines) {
     case "home assistant scenes", "list home assistant scenes", "show home assistant scenes",
-         "list scenes", "show scenes", "\u{5217}\u{51fa}\u{573a}\u{666f}":
+         "list scenes", "show scenes", "\u{5217}\u{51fa}\u{573a}\u{666f}",
+         "\u{663e}\u{793a}\u{573a}\u{666f}", "\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{573a}\u{666f}":
       return ("scenes", "scene")
     case "home assistant automations", "list home assistant automations", "show home assistant automations",
-         "list automations", "show automations", "\u{5217}\u{51fa}\u{81ea}\u{52a8}\u{5316}":
+         "list automations", "show automations", "\u{5217}\u{51fa}\u{81ea}\u{52a8}\u{5316}",
+         "\u{663e}\u{793a}\u{81ea}\u{52a8}\u{5316}", "\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{81ea}\u{52a8}\u{5316}":
       return ("automations", "automation")
     case "home assistant scripts", "list home assistant scripts", "show home assistant scripts",
-         "list scripts", "show scripts", "\u{5217}\u{51fa}\u{811a}\u{672c}":
+         "list scripts", "show scripts", "\u{5217}\u{51fa}\u{811a}\u{672c}",
+         "\u{663e}\u{793a}\u{811a}\u{672c}", "\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{811a}\u{672c}":
       return ("scripts", "script")
     default:
       return nil
@@ -906,7 +915,9 @@ enum AgentDirectNativeToolPlanner {
       "search smart devices ",
       "find smart device ",
       "\u{641c}\u{7d22} home assistant \u{5b9e}\u{4f53} ",
-      "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{8bbe}\u{5907} "
+      "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{8bbe}\u{5907} ",
+      "\u{641c}\u{7d22}\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{8bbe}\u{5907} ",
+      "\u{67e5}\u{627e}\u{667a}\u{5bb6}\u{5c45}\u{8bbe}\u{5907} "
     ]
     guard let prefix = prefixes.first(where: { lower.hasPrefix($0) }) else {
       return nil
@@ -926,7 +937,9 @@ enum AgentDirectNativeToolPlanner {
       "read sensor ",
       "get sensor ",
       "\u{8bfb}\u{53d6} home assistant \u{5b9e}\u{4f53} ",
-      "\u{8bfb}\u{53d6}\u{4f20}\u{611f}\u{5668} "
+      "\u{8bfb}\u{53d6}\u{4f20}\u{611f}\u{5668} ",
+      "\u{8bfb}\u{53d6}\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{8bbe}\u{5907} ",
+      "\u{67e5}\u{770b}\u{667a}\u{80fd}\u{5bb6}\u{5c45}\u{8bbe}\u{5907} "
     ]
     guard let prefix = prefixes.first(where: { lower.hasPrefix($0) }) else {
       return nil
