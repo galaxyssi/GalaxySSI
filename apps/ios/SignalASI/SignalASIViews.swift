@@ -393,6 +393,7 @@ struct ConversationView: View {
   @State private var photoPickerPresented = false
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
+  @State private var composerTextModeActive = false
   @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
@@ -589,6 +590,7 @@ struct ConversationView: View {
           attachments: $attachments,
           attachmentError: $attachmentError,
           attachmentMenuPresented: $attachmentMenuPresented,
+          textModeActive: $composerTextModeActive,
           deviceInputPolicy: deviceInputPolicy,
           onSend: sendCurrentMessage,
           onVoiceAttachment: sendVoiceRecording,
@@ -707,7 +709,19 @@ struct ConversationView: View {
 
   private var conversationHeader: some View {
     HStack(spacing: 8) {
-      SignalASIBackButton()
+      Button {
+        if composerTextModeActive {
+          composerTextModeActive = false
+        } else {
+          dismiss()
+        }
+      } label: {
+        Image(systemName: "chevron.left")
+          .font(.system(size: 22, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
       if isSystemNoticeContact {
         contactIdentityHeader
       } else {
