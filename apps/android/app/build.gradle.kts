@@ -79,8 +79,23 @@ val bundledWhisperVerification = tasks.register("verifyBundledWhisperModel") {
     }
 }
 
+val whisperCpuBackendIsolationVerification = tasks.register("verifyWhisperCpuBackendIsolation") {
+    val nativeEntryPoint = file("src/main/cpp/whisper_jni_v2.cpp")
+    val nativeBuild = file("src/main/cpp/CMakeLists.txt")
+    inputs.files(nativeEntryPoint, nativeBuild)
+    doLast {
+        val source = nativeEntryPoint.readText()
+        check("ggml_backend_load_all" !in source && "dladdr(" !in source) {
+            "The CPU Whisper runtime must not scan APK native libraries; device-specific backends use dedicated runtimes"
+        }
+        check(Regex("foreach\\(GGML_TARGET\\s+ggml\\s+ggml-base\\s+ggml-cpu\\)").containsMatchIn(nativeBuild.readText())) {
+            "The Android CPU Whisper tensor kernels must retain release-grade compiler optimization"
+        }
+    }
+}
+
 tasks.matching { it.name == "preBuild" }.configureEach {
-    dependsOn(bundledWhisperVerification)
+    dependsOn(bundledWhisperVerification, whisperCpuBackendIsolationVerification)
 }
 
 val stageCurrentNdkSharedRuntime = tasks.register<Copy>("stageCurrentNdkSharedRuntime") {
@@ -121,8 +136,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 448
-        versionName = "0.4.48"
+        versionCode = 449
+        versionName = "0.4.49"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
