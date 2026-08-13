@@ -43,6 +43,7 @@ extension AgentHomeView {
         }
       }
       guard scanSelectionRequestID == requestID else { return }
+      pendingScannedAgentIDs = []
       scanStatus = t(
         "signalasi.agent.scan.not_ready",
         "Agent was added, but is not ready to communicate yet. Check the Agent connection in Contacts."
