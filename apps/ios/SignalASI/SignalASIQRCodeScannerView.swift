@@ -219,6 +219,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     button.backgroundColor = UIColor.black.withAlphaComponent(0.52)
     button.layer.cornerRadius = 8
     button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+    button.accessibilityIdentifier = "ios.agent.qr-scanner.photo-library"
     button.translatesAutoresizingMaskIntoConstraints = false
     button.addTarget(self, action: #selector(openPhotoPicker), for: .touchUpInside)
     view.addSubview(button)
@@ -238,6 +239,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     button.backgroundColor = UIColor.black.withAlphaComponent(0.52)
     button.layer.cornerRadius = 8
     button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+    button.accessibilityIdentifier = "ios.agent.qr-scanner.cancel"
     button.translatesAutoresizingMaskIntoConstraints = false
     button.addTarget(self, action: #selector(cancelScanner), for: .touchUpInside)
     view.addSubview(button)
