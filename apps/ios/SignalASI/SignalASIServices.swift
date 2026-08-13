@@ -5346,15 +5346,23 @@ final class MessageCoordinator: ObservableObject {
       throw SignalASIError.transportUnavailable
     }
     let messageId = SignalASILinkProtocol.normalizedMessageId(outgoing.id.uuidString)
+    let sourceMessageId = outgoing.id.uuidString
+    let conversationId = phoneContactConversationId(
+      localSignalASIId: signalEngine.identity.name,
+      remoteSignalASIId: remoteName
+    )
     let applicationPayload: [String: Any] = [
-      "type": "text",
+      "type": "peer_message",
       "message_id": messageId,
-      "source_message_id": outgoing.id.uuidString,
-      "contact_id": remoteName,
+      "source_message_id": sourceMessageId,
+      "client_message_id": sourceMessageId,
+      "contact_id": signalEngine.identity.name,
       "sender": signalEngine.identity.name,
       "content": text,
-      "conversation_id": outgoing.conversationId,
-      "turn_id": outgoing.turnId.ifBlank(messageId),
+      "conversation_id": conversationId,
+      "task_id": "peer:\(sourceMessageId)",
+      "turn_id": "peer-turn:\(sourceMessageId)",
+      "peer_chat": true,
       "time": Int64(Date().timeIntervalSince1970 * 1_000)
     ]
     let envelope = try SignalASILinkProtocol.makeEnvelope(
@@ -5401,6 +5409,16 @@ final class MessageCoordinator: ObservableObject {
     case .failed:
       throw SignalASIError.transportUnavailable
     }
+  }
+
+  private func phoneContactConversationId(
+    localSignalASIId: String,
+    remoteSignalASIId: String
+  ) -> String {
+    "peer:" + [localSignalASIId, remoteSignalASIId]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .sorted()
+      .joined(separator: ":")
   }
 
   private func publishLinkMessage(
@@ -5889,6 +5907,7 @@ final class MessageCoordinator: ObservableObject {
       handlePhoneContactDeliveryAck(payload, contact: contact)
       return
     }
+    guard ["peer_message", "text"].contains(payload.string("type")) else { return }
     let content = payload.string("content").ifBlank(payload.string("text"))
     guard !content.isEmpty else { return }
     let turnId = payload.string("turn_id")
