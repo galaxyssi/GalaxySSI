@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("signalasi", {
   listPeerMessages: (clientRouteId = "", limit = 500) =>
     ipcRenderer.invoke("peer-messages:list", clientRouteId, limit),
   sendPeerMessage: (payload) => ipcRenderer.invoke("peer-messages:send", payload),
+  deletePeerConversation: (clientRouteId) => ipcRenderer.invoke("peer-conversations:delete", clientRouteId),
   openPeerAttachment: (messageId, attachmentIndex) =>
     ipcRenderer.invoke("peer-attachments:open", messageId, attachmentIndex),
   listDesktopTasks: (limit) => ipcRenderer.invoke("desktop-tasks:list", limit),

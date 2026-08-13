@@ -1663,6 +1663,13 @@ async function sendPeerMessage(payload = {}) {
   return result;
 }
 
+async function deletePeerConversation(clientRouteId) {
+  await startBackend();
+  return fetchJson(`/api/peer/conversations/${encodeURIComponent(clientRouteId)}`, {
+    method: "DELETE"
+  });
+}
+
 async function openPeerAttachment(messageId, attachmentIndex) {
   await startBackend();
   const endpoint = `${BACKEND_ORIGIN}/api/peer/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentIndex)}`;
@@ -2178,6 +2185,8 @@ ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.handle("peer-conversations:delete", (_event, clientRouteId) =>
+  deletePeerConversation(clientRouteId));
 ipcMain.handle("peer-attachments:open", (_event, messageId, attachmentIndex) =>
   openPeerAttachment(messageId, attachmentIndex));
 ipcMain.handle("desktop-tasks:list", (_event, limit) => listDesktopTasks(limit));

@@ -229,6 +229,15 @@ if (!html.includes('id="conversationListMenuButton"') ||
     !workspaceRenderer.includes("data-delete-conversation")) {
   throw new Error("Desktop conversation history must support persistent pinning and bulk deletion");
 }
+if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
+    !preload.includes("deletePeerConversation") ||
+    !backendMain.includes('@app.delete("/api/peer/conversations/{client_route_id}")') ||
+    !workspaceRenderer.includes('const selecting = state.conversationSelectionMode;') ||
+    !workspaceRenderer.includes('window.signalasi.deletePeerConversation(id)') ||
+    workspaceRenderer.includes('group.kind === "agent" && !selecting') ||
+    !styles.includes('grid-template-columns: 278px minmax(0, 1fr)')) {
+  throw new Error("Desktop device chats must share selection, menus, deletion, and sidebar width with task conversations");
+}
 if (!styles.includes('.sidebar-more-button::before') ||
     !styles.includes('content: "\\2026"') ||
     styles.includes('content: "\\2026\\2026\\2026"')) {
