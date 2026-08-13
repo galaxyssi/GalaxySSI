@@ -394,6 +394,7 @@ struct ConversationView: View {
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
+  @State private var retryingMessageIDs: Set<UUID> = []
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
@@ -499,7 +500,9 @@ struct ConversationView: View {
                 message: message,
                 myAvatarData: store.profile.avatarData,
                 remoteContact: contact,
-                onAction: handleRichAction
+                onAction: handleRichAction,
+                isRetrying: retryingMessageIDs.contains(message.id),
+                onRetry: { retryMessage(message) }
               )
                 .id(message.id)
                 .contextMenu {
@@ -932,6 +935,20 @@ struct ConversationView: View {
     }
   }
 
+  private func retryMessage(_ message: ChatMessage) {
+    guard message.isMine,
+          message.deliveryStatus == .failed,
+          message.richOutputJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          retryingMessageIDs.insert(message.id).inserted else {
+      return
+    }
+    Task { @MainActor in
+      _ = await coordinator.send(message.content, to: contact)
+      retryingMessageIDs.remove(message.id)
+    }
+  }
+
   private func sendVoiceRecording(_ attachment: SignalASIDraftAttachment, duration: TimeInterval) {
     let totalSeconds = max(1, Int(duration.rounded()))
     let durationLabel = String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
@@ -1146,6 +1163,8 @@ struct MessageBubble: View {
   var onAction: (AgentRichAction) -> Void = { _ in }
   var onActionWithMessage: ((ChatMessage, AgentRichAction) -> Void)?
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
+  var isRetrying = false
+  var onRetry: () -> Void = {}
 
   var body: some View {
     if message.isSystem {
@@ -1197,6 +1216,21 @@ struct MessageBubble: View {
                   language: interfaceLanguage
                 )
               )
+              if canRetryTextMessage {
+                Button(action: onRetry) {
+                  if isRetrying {
+                    ProgressView()
+                      .controlSize(.mini)
+                  } else {
+                    Image(systemName: "arrow.clockwise")
+                      .font(.caption.weight(.semibold))
+                  }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRetrying)
+                .frame(width: 28, height: 28)
+                .accessibilityLabel(Text(t("signalasi.common.retry", "Retry")))
+              }
             }
           }
           .font(.caption2)
@@ -1225,9 +1259,20 @@ struct MessageBubble: View {
     return message.isMine ? Color.signalASISentBubble : Color.signalASIIncomingBubble
   }
 
+  private var canRetryTextMessage: Bool {
+    message.isMine &&
+      message.deliveryStatus == .failed &&
+      message.richOutputJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
   private var bubbleMaxWidth: CGFloat {
     let width = messageContainerWidth > 0 ? messageContainerWidth : UIScreen.main.bounds.width
     return width * 0.75
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 }
 
