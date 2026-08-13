@@ -1016,10 +1016,11 @@ object SignalASIMqttClient {
     fun publishPairingClaim(pairingQr: JSONObject): Boolean {
         val context = appContext ?: return false
         if (!SignalASILinkProtocol.validatePairingQr(pairingQr)) return false
+        val existing = SignalASILinkProtocol.serverLink(context, pairingQr.optString("desktop_id"))
         val link = SignalASILinkProtocol.ensureServerLink(
             context,
             pairingQr,
-            rotateClientRoute = true
+            rotateClientRoute = SignalASILinkProtocol.shouldRotateClientRoute(existing, pairingQr)
         )
         subscribe()
         val profile = AppStore.profile(context)
@@ -1187,9 +1188,7 @@ object SignalASIMqttClient {
             return
         }
         retryHandler.removeCallbacks(pairingClaimRetryRunnable)
-        synchronized(pairingClaimLock) {
-            if (pendingPairingClaim == pending) pendingPairingClaim = null
-        }
+        retryHandler.postDelayed(pairingClaimRetryRunnable, 3_000L)
         Log.i(TAG, "Published pending pairing claim desktop=${pending.desktopId.takeLast(8)}")
     }
 
@@ -1823,7 +1822,9 @@ object SignalASIMqttClient {
             handlePairingConfirmation(link, wire)
             return
         }
-        if (!link.paired || wire.optString("scheme") != "signal") {
+        if (wire.optString("scheme") != "signal" ||
+            !SignalASILinkProtocol.isCryptographicallyReady(context, link)
+        ) {
             Log.w(TAG, "Rejected non-Signal traffic on paired relationship")
             return
         }
@@ -1868,6 +1869,11 @@ object SignalASIMqttClient {
         ) {
             Log.w(TAG, "Rejected application envelope with mismatched endpoint identity")
             return
+        }
+        if (!link.paired) {
+            SignalASILinkProtocol.markPaired(context, link.desktopId)
+            setSecureReady(true)
+            Log.i(TAG, "Recovered pairing state from an authenticated Signal envelope")
         }
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
         val incomingMessageId = payload.optString("message_id")
@@ -2283,6 +2289,7 @@ object SignalASIMqttClient {
                 synchronized(pairingClaimLock) {
                     if (pendingPairingClaim?.desktopId == desktopId) pendingPairingClaim = null
                 }
+                retryHandler.removeCallbacks(pairingClaimRetryRunnable)
                 SignalASILinkProtocol.markPaired(
                     context,
                     desktopId,

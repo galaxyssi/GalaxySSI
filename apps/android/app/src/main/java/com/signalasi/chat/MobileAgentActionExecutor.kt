@@ -937,7 +937,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             )
         }
         val topic = AppStore.outgoingTopicForContact(context, contactId)
-            ?: return AgentActionResult(action.id, false, "${action.target} is not verified")
+            ?: return AgentActionResult(
+                action.id,
+                false,
+                if (AppStore.canCommunicateWith(context, contactId)) {
+                    "Secure pairing with ${action.target} is still completing"
+                } else {
+                    "${action.target} is not verified"
+                }
+            )
         traceDispatchStage("route_ready")
         val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
         val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }

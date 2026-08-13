@@ -155,6 +155,24 @@ class PairingRegistryTests(unittest.TestCase):
         self.assertTrue(pairing_state.validate_pairing_token(token, consume=True))
         self.assertFalse(pairing_state.validate_pairing_token(token, consume=True))
 
+    def test_pairing_token_claim_can_replay_only_for_the_same_identity_and_route(self):
+        pairing = pairing_state.new_pairing_session()
+        token = pairing["token"]
+        route_id = link_protocol.new_route_id()
+
+        self.assertIsNotNone(pairing_state.claim_pairing_session(token, "a" * 64, route_id))
+        self.assertIsNotNone(pairing_state.claim_pairing_session(token, "a" * 64, route_id))
+        self.assertIsNone(
+            pairing_state.claim_pairing_session(token, "b" * 64, route_id)
+        )
+        self.assertIsNone(
+            pairing_state.claim_pairing_session(
+                token,
+                "a" * 64,
+                link_protocol.new_route_id(),
+            )
+        )
+
     def test_duplicate_message_is_claimed_once(self):
         route_id = link_protocol.new_route_id()
         message_id = str(uuid.uuid4())
