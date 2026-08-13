@@ -1301,8 +1301,12 @@ private struct SignalASIRichBlockView: View {
         url: nil,
         typeLabel: resourceTypeLabel
       )
-      HStack(spacing: 8) {
-        if available {
+      if available {
+        LazyVGrid(
+          columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2),
+          alignment: .leading,
+          spacing: 8
+        ) {
           Button {
             onArtifactPreview(block)
           } label: {
@@ -1337,16 +1341,16 @@ private struct SignalASIRichBlockView: View {
             }
             .buttonStyle(.bordered)
           }
-        } else {
-          Button {
-            Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
-          } label: {
-            Label(t("rich_output_download", "Download"), systemImage: "arrow.down.circle")
-              .font(.caption.weight(.semibold))
-              .frame(maxWidth: .infinity, minHeight: 32)
-          }
-          .buttonStyle(.borderedProminent)
         }
+      } else {
+        Button {
+          Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
+        } label: {
+          Label(t("rich_output_download", "Download"), systemImage: "arrow.down.circle")
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 32)
+        }
+        .buttonStyle(.borderedProminent)
       }
       if !previewActions.isEmpty {
         resourceActionButtons(previewActions)
