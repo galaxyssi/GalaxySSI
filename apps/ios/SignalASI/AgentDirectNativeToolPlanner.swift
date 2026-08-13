@@ -1864,8 +1864,8 @@ enum AgentDirectNativeToolPlanner {
 enum AgentScreenOverviewCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "screen status", "inspect screen", "screen elements", "show screen elements",
-         "screen structure", "show screen structure":
+    case "screen status", "inspect screen", "read current screen", "screen elements",
+         "show screen elements", "screen structure", "show screen structure":
       return true
     default:
       return false
