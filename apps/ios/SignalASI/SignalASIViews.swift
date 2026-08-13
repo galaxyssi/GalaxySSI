@@ -1227,7 +1227,7 @@ struct MessageBubble: View {
 
   private var bubbleMaxWidth: CGFloat {
     let width = messageContainerWidth > 0 ? messageContainerWidth : UIScreen.main.bounds.width
-    return min(width * 0.75, 520)
+    return width * 0.75
   }
 }
 
