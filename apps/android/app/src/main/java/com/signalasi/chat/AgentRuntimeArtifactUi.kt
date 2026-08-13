@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -48,21 +49,75 @@ internal object AgentRuntimeArtifactUi {
     fun richOutput(
         output: AgentNativeJsonObject,
         responseText: String,
-        preferredFileName: String,
+        preferredFileName: String = "",
         zh: Boolean
     ): String {
-        val artifact = (output["artifacts"] as? Iterable<*>)
+        val artifactOutput = artifactOutput(output, preferredFileName, zh)
+        if (artifactOutput.isBlank()) return ""
+        return AgentRichContentCodec.encode(
+            AgentRichContentCodec.fromText(responseText) + AgentRichContentCodec.decode(artifactOutput)
+        )
+    }
+
+    fun artifactOutput(
+        output: AgentNativeJsonObject,
+        preferredFileName: String = "",
+        zh: Boolean
+    ): String {
+        val artifacts = (output["artifacts"] as? Iterable<*>)
             ?.mapNotNull { it as? Map<*, *> }
-            ?.firstOrNull { item ->
-                item["relative_path"]?.toString() == preferredFileName ||
-                    item["artifact_kind"]?.toString() == "project_archive"
+            .orEmpty()
+            .distinctBy { item ->
+                item["sha256"]?.toString().orEmpty() to item["relative_path"]?.toString().orEmpty()
             }
-            ?: return ""
+            .sortedByDescending { item ->
+                preferredFileName.isNotBlank() && item["relative_path"]?.toString() == preferredFileName
+            }
+        if (artifacts.isEmpty()) return ""
+        return AgentRichContentCodec.encode(artifacts.mapNotNull { artifactBlock(it, zh) })
+    }
+
+    fun mergeArtifactOutputs(vararg values: String): String {
+        val blocks = values.asSequence()
+            .flatMap { AgentRichContentCodec.decode(it).asSequence() }
+            .filter { it.metadata["runtime_artifact"] == "true" }
+            .distinctBy { block ->
+                block.metadata["sha256"].orEmpty().ifBlank { block.id }
+            }
+            .take(MAX_PERSISTED_ARTIFACTS)
+            .toList()
+        return if (blocks.isEmpty()) "" else AgentRichContentCodec.encode(blocks)
+    }
+
+    fun mergeWithArtifactOutputs(base: String, vararg artifactOutputs: String): String {
+        val baseBlocks = AgentRichContentCodec.decode(base)
+        val existing = baseBlocks.asSequence()
+            .filter { it.metadata["runtime_artifact"] == "true" }
+            .map { it.metadata["sha256"].orEmpty().ifBlank { it.id } }
+            .toMutableSet()
+        val appended = artifactOutputs.asSequence()
+            .flatMap { AgentRichContentCodec.decode(it).asSequence() }
+            .filter { it.metadata["runtime_artifact"] == "true" }
+            .filter { block -> existing.add(block.metadata["sha256"].orEmpty().ifBlank { block.id }) }
+            .take(MAX_PERSISTED_ARTIFACTS)
+            .toList()
+        val merged = baseBlocks + appended
+        return if (merged.isEmpty()) "" else AgentRichContentCodec.encode(merged)
+    }
+
+    fun contentUri(context: Context, payload: AgentRuntimeArtifactActionPayload): Result<Uri> =
+        resolve(context, payload).map { file ->
+            FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        }
+
+    private fun artifactBlock(artifact: Map<*, *>, zh: Boolean): AgentRichBlock? {
         val hostPath = artifact["host_path"]?.toString().orEmpty()
         val relativePath = artifact["relative_path"]?.toString().orEmpty()
         val sha256 = artifact["sha256"]?.toString().orEmpty()
         val sizeBytes = (artifact["size_bytes"] as? Number)?.toLong() ?: 0L
-        if (hostPath.isBlank() || relativePath.isBlank() || sha256.isBlank() || sizeBytes < 0L) return ""
+        if (hostPath.isBlank() || relativePath.isBlank() ||
+            !sha256.matches(Regex("[a-fA-F0-9]{64}")) || sizeBytes < 0L
+        ) return null
         val kind = artifact["artifact_kind"]?.toString().orEmpty().ifBlank { "file" }
         val mimeType = mimeType(relativePath)
         val payload = AgentRuntimeArtifactActionPayload(
@@ -75,11 +130,11 @@ internal object AgentRuntimeArtifactUi {
         )
         val fileCount = (artifact["file_count"] as? Number)?.toInt() ?: 0
         val detail = when {
-            kind == "project_archive" && zh -> "${fileCount.coerceAtLeast(1)} \u4e2a\u6587\u4ef6 · ${humanSize(sizeBytes)}"
-            kind == "project_archive" -> "${fileCount.coerceAtLeast(1)} files · ${humanSize(sizeBytes)}"
-            else -> "${formatLabel(relativePath)} · ${humanSize(sizeBytes)}"
+            kind == "project_archive" && zh -> "${fileCount.coerceAtLeast(1)} \u4e2a\u6587\u4ef6 | ${humanSize(sizeBytes)}"
+            kind == "project_archive" -> "${fileCount.coerceAtLeast(1)} files | ${humanSize(sizeBytes)}"
+            else -> "${formatLabel(relativePath)} | ${humanSize(sizeBytes)}"
         }
-        val artifactBlock = AgentRichBlock(
+        return AgentRichBlock(
             id = "runtime-artifact:${sha256.take(24)}",
             type = AgentRichBlockType.FILE,
             title = payload.displayName,
@@ -90,6 +145,8 @@ internal object AgentRuntimeArtifactUi {
             actions = buildList {
                 if (isPreviewable(relativePath)) {
                     add(AgentRichAction("preview", if (zh) "\u67e5\u770b" else "View", "preview_runtime_artifact", payload.encode()))
+                } else if (isOpenable(relativePath)) {
+                    add(AgentRichAction("open", if (zh) "\u6253\u5f00" else "Open", "open_runtime_artifact", payload.encode()))
                 }
                 add(AgentRichAction("save", if (zh) "\u4fdd\u5b58" else "Save", "save_runtime_artifact", payload.encode(), "primary"))
             },
@@ -98,12 +155,10 @@ internal object AgentRuntimeArtifactUi {
                 "artifact_kind" to kind,
                 "size" to humanSize(sizeBytes),
                 "detail" to detail,
-                "file_count" to fileCount.toString()
+                "file_count" to fileCount.toString(),
+                "sha256" to sha256.lowercase(Locale.ROOT)
             )
         )
-        val blocks = AgentRichContentCodec.fromText(responseText).toMutableList()
-        blocks.add(minOf(1, blocks.size), artifactBlock)
-        return AgentRichContentCodec.encode(blocks)
     }
 
     fun resolve(context: Context, payload: AgentRuntimeArtifactActionPayload): Result<File> = runCatching {
@@ -131,7 +186,7 @@ internal object AgentRuntimeArtifactUi {
                     entries.forEach { entry ->
                         append(entry.name).append("  ").append(humanSize(entry.size.coerceAtLeast(0L))).append('\n')
                     }
-                    if (zip.size() > entries.size) append("… +").append(zip.size() - entries.size).append(" files")
+                    if (zip.size() > entries.size) append("... +").append(zip.size() - entries.size).append(" files")
                 }.trim()
             }
         } else {
@@ -145,6 +200,9 @@ internal object AgentRuntimeArtifactUi {
     private fun isPreviewable(path: String): Boolean =
         path.substringAfterLast('.', "").lowercase(Locale.ROOT) in PREVIEW_EXTENSIONS
 
+    private fun isOpenable(path: String): Boolean =
+        path.substringAfterLast('.', "").lowercase(Locale.ROOT) in OPENABLE_EXTENSIONS
+
     private fun mimeType(path: String): String = when (path.substringAfterLast('.', "").lowercase(Locale.ROOT)) {
         "py" -> "text/x-python"
         "js" -> "text/javascript"
@@ -154,6 +212,16 @@ internal object AgentRuntimeArtifactUi {
         "html", "htm" -> "text/html"
         "css" -> "text/css"
         "zip" -> "application/zip"
+        "pdf" -> "application/pdf"
+        "apk" -> "application/vnd.android.package-archive"
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "mp3" -> "audio/mpeg"
+        "wav" -> "audio/wav"
+        "m4a" -> "audio/mp4"
+        "mp4" -> "video/mp4"
         else -> "text/plain"
     }
 
@@ -189,8 +257,12 @@ internal object AgentRuntimeArtifactUi {
 
     private const val MAX_PREVIEW_BYTES = 1024 * 1024
     private const val MAX_ZIP_PREVIEW_ENTRIES = 500
+    private const val MAX_PERSISTED_ARTIFACTS = 24
     private val CODE_EXTENSIONS = setOf("py", "js", "ts", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "sh")
     private val PREVIEW_EXTENSIONS = CODE_EXTENSIONS + setOf("txt", "md", "json", "yaml", "yml", "xml", "html", "htm", "css", "toml", "ini", "zip")
+    private val OPENABLE_EXTENSIONS = setOf(
+        "pdf", "apk", "png", "jpg", "jpeg", "gif", "webp", "mp3", "wav", "m4a", "mp4"
+    )
 }
 
 internal class AgentRuntimeArtifactExporter(private val context: Context) {

@@ -360,6 +360,7 @@ class SharedPreferencesAgentSessionStore(
         .put("checkpoints", JSONArray().also { array ->
             plan.checkpoints.takeLast(MAX_SESSION_CHECKPOINTS).forEach { array.put(encodeCheckpoint(it)) }
         })
+        .put("artifact_rich_output", plan.artifactRichOutputJson)
         .put("safety_review", encodeSafetyReview(plan.safetyReview))
 
     internal fun decodePlan(json: JSONObject): AgentPlan = AgentPlan(
@@ -388,7 +389,10 @@ class SharedPreferencesAgentSessionStore(
         verificationResults = decodeVerificationResults(json.optJSONArray("verification_results")),
         safetyReview = decodeSafetyReview(json.optJSONObject("safety_review")),
         actionHistory = decodeActions(json.optJSONArray("action_history")),
-        checkpoints = decodeCheckpoints(json.optJSONArray("checkpoints"))
+        checkpoints = decodeCheckpoints(json.optJSONArray("checkpoints")),
+        artifactRichOutputJson = AgentRuntimeArtifactUi.mergeArtifactOutputs(
+            json.optString("artifact_rich_output")
+        )
     )
 
     internal fun encodeRoute(route: AgentRoute): JSONObject = JSONObject()

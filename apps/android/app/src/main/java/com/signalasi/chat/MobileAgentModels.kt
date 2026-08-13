@@ -261,7 +261,8 @@ data class AgentPlan(
     val revision: Int = 1,
     val replanCount: Int = 0,
     val actionHistory: List<AgentAction> = emptyList(),
-    val checkpoints: List<AgentExecutionCheckpoint> = emptyList()
+    val checkpoints: List<AgentExecutionCheckpoint> = emptyList(),
+    val artifactRichOutputJson: String = ""
 ) {
     fun withSafetyReview(review: AgentSafetyReview): AgentPlan {
         val reviewedActions = if (review.blocked) {
@@ -351,6 +352,13 @@ data class AgentPlan(
         verificationResults = verificationResults
             .filterNot { it.actionId == result.actionId }
             .plus(result)
+    )
+
+    fun addArtifactRichOutput(value: String): AgentPlan = copy(
+        artifactRichOutputJson = AgentRuntimeArtifactUi.mergeArtifactOutputs(
+            artifactRichOutputJson,
+            value
+        )
     )
 }
 

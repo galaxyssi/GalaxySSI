@@ -552,9 +552,44 @@ internal fun MainActivity.handleAgentRichAction(entry: AgentTranscriptEntry, act
         "decide_remote_task_permission" -> runRemoteAgentTaskDecision(entry, action)
         "recover_agent_task" -> runAgentFailureRecovery(entry, action)
         "preview_runtime_artifact" -> previewRuntimeArtifact(action.value)
+        "open_runtime_artifact" -> openRuntimeArtifact(action.value)
         "save_runtime_artifact" -> saveRuntimeArtifact(action.value)
         else -> Toast.makeText(this, action.label, Toast.LENGTH_SHORT).show()
     }
+}
+
+internal fun MainActivity.openRuntimeArtifact(rawPayload: String) {
+    val payload = AgentRuntimeArtifactActionPayload.decode(rawPayload)
+    if (payload == null) {
+        Toast.makeText(this, R.string.agent_runtime_artifact_unavailable, Toast.LENGTH_SHORT).show()
+        return
+    }
+    if (
+        payload.mimeType == "application/vnd.android.package-archive" &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !packageManager.canRequestPackageInstalls()
+    ) {
+        startActivity(Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:$packageName")
+        ))
+        return
+    }
+    AgentRuntimeArtifactUi.contentUri(this, payload).fold(
+        onSuccess = { uri ->
+            runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, payload.mimeType)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            }.onFailure {
+                Toast.makeText(this, R.string.agent_runtime_artifact_unavailable, Toast.LENGTH_LONG).show()
+            }
+        },
+        onFailure = {
+            Toast.makeText(this, R.string.agent_runtime_artifact_unavailable, Toast.LENGTH_LONG).show()
+        }
+    )
 }
 
 internal fun MainActivity.runAgentFailureRecovery(
