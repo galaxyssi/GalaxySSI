@@ -66,7 +66,7 @@ struct AgentHomeView: View {
   @State var runtimeArtifactError = ""
   @State var runtimeArtifactStatus = ""
   @State private var publicPageExportDocument: SignalASIPublicPageHTMLExportDocument?
-  @State private var publicPageExportPresented = false
+  @State var publicPageExportPresented = false
   @State private var publicPageExportFilename = ""
   @State var richActionStatus = ""
   @State var recoveringAgentTaskIDs: Set<String> = []
