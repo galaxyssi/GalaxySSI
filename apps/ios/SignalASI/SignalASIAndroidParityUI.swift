@@ -473,6 +473,11 @@ struct AgentHomeView: View {
   }
 
   func openMainTab(_ tab: SignalASIMainTab) {
+    if tab != .agent {
+      // Android dismisses transient Agent composer UI before switching pages.
+      actionTrayPresented = false
+      voiceTranscriptionPending = false
+    }
     if let onNavigateToMainTab {
       onNavigateToMainTab(tab)
       return
