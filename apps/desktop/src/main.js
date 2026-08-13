@@ -106,8 +106,13 @@ async function runUiSmoke() {
         const app = document.querySelector("#agentApp");
         const button = document.querySelector("#voiceButton");
         const prompt = document.querySelector("#promptInput");
+        const taskState = document.querySelector("#taskStateText");
+        const separator = document.querySelector(".header-separator");
+        const statusDot = document.querySelector("#routeStatusDot");
+        const route = document.querySelector("#routeText");
         const originalRecognition = window.SpeechRecognition;
         app.classList.add("peer-mode");
+        route.textContent = "SignalASI Link encrypted";
         window.SpeechRecognition = class {
           start() {
             this.onresult?.({ results: [[{ transcript: "device voice input" }]] });
@@ -121,7 +126,13 @@ async function runUiSmoke() {
         const result = {
           display: getComputedStyle(button).display,
           disabled: button.disabled,
-          transcript: prompt.value
+          transcript: prompt.value,
+          taskStateDisplay: getComputedStyle(taskState).display,
+          separatorDisplay: getComputedStyle(separator).display,
+          statusDotDisplay: getComputedStyle(statusDot).display,
+          statusDotWidth: getComputedStyle(statusDot).width,
+          statusDotColor: getComputedStyle(statusDot).backgroundColor,
+          route: route.textContent
         };
         app.classList.remove("peer-mode");
         window.SpeechRecognition = originalRecognition;
@@ -131,8 +142,14 @@ async function runUiSmoke() {
     `);
     if (peerVoiceInput.display === "none"
         || peerVoiceInput.disabled
-        || peerVoiceInput.transcript !== "device voice input") {
-      throw new Error(`Desktop device chat voice input is unavailable: ${JSON.stringify(peerVoiceInput)}`);
+        || peerVoiceInput.transcript !== "device voice input"
+        || peerVoiceInput.taskStateDisplay !== "none"
+        || peerVoiceInput.separatorDisplay !== "none"
+        || peerVoiceInput.statusDotDisplay === "none"
+        || Math.abs(Number.parseFloat(peerVoiceInput.statusDotWidth) - 7) > 0.1
+        || peerVoiceInput.statusDotColor === "rgba(0, 0, 0, 0)"
+        || peerVoiceInput.route !== "SignalASI Link encrypted") {
+      throw new Error(`Desktop device chat controls are unavailable: ${JSON.stringify(peerVoiceInput)}`);
     }
     const defaultLanguage = await mainWindow.webContents.executeJavaScript(`
       (() => ({

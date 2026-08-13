@@ -696,9 +696,9 @@ function renderPeerConversation(force = false) {
   </article>`;
   }).join("");
   elements.title.textContent = client ? peerClientName(client) : t("Device contact");
-  elements.taskState.textContent = t("Direct message");
+  elements.taskState.textContent = "";
   elements.taskState.className = "";
-  elements.route.textContent = t("Signal encrypted");
+  elements.route.textContent = t("SignalASI Link encrypted");
   if (force || wasNearBottom) requestAnimationFrame(() => { elements.stream.scrollTop = elements.stream.scrollHeight; });
 }
 

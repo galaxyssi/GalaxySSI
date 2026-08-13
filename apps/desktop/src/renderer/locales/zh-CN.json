@@ -1005,7 +1005,7 @@
 , "Direct message": "\u76f4\u63a5\u804a\u5929"
 , "Messages and files are end-to-end encrypted between paired devices.": "\u6d88\u606f\u548c\u6587\u4ef6\u4ec5\u5728\u5df2\u914d\u5bf9\u8bbe\u5907\u4e4b\u95f4\u7aef\u5230\u7aef\u52a0\u5bc6\u4f20\u8f93\u3002"
 , "Device contact": "\u8bbe\u5907\u8054\u7cfb\u4eba"
-, "Signal encrypted": "Signal \u52a0\u5bc6"
+, "SignalASI Link encrypted": "SignalASI Link \u5df2\u52a0\u5bc6"
 , "Message": "\u53d1\u6d88\u606f"
 , "Sent": "\u5df2\u53d1\u9001"
 , "Queued": "\u7b49\u5f85\u53d1\u9001"
