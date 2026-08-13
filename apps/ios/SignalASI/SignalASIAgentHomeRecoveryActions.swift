@@ -134,7 +134,8 @@ extension AgentHomeView {
     } else {
       coordinator.approveLocalNativeAction(
         taskId: task.taskId,
-        remember: choice != .allowOnce
+        remember: choice == .allowAlways,
+        sessionScoped: choice == .allowSession
       )
       richActionStatus = t("signalasi.agent.approval_status.approved", "The Agent action was approved.")
     }

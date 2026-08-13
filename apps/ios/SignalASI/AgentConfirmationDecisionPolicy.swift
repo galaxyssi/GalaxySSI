@@ -30,12 +30,13 @@ enum AgentConfirmationDecisionPolicy {
   static func decision(
     actions: [AgentAction],
     permissionMode: AgentPermissionMode,
-    consentStore: AgentConfirmationConsentStore? = nil
+    consentStore: AgentConfirmationConsentStore? = nil,
+    sessionId: String = ""
   ) -> AgentConfirmationDecision {
     let pending = actions.filter(isPending)
     let rememberedKeys = pending.compactMap { action -> String? in
       let key = AgentConfirmationPolicy.consentKey(for: action)
-      return consentStore?.isRemembered(consentKey: key) == true ? key : nil
+      return consentStore?.isRemembered(consentKey: key, sessionId: sessionId) == true ? key : nil
     }
     let alwaysConfirmIds = pending
       .filter { AgentConfirmationPolicy.tier(for: $0) == .confirmAlways }
@@ -51,7 +52,7 @@ enum AgentConfirmationDecisionPolicy {
       }
     case .autoLowRisk:
       requiresConfirmation = pending.contains {
-        actionRequiresTierConfirmation($0, consentStore: consentStore)
+        actionRequiresTierConfirmation($0, consentStore: consentStore, sessionId: sessionId)
       }
     }
     return AgentConfirmationDecision(
@@ -64,7 +65,8 @@ enum AgentConfirmationDecisionPolicy {
 
   static func actionRequiresTierConfirmation(
     _ action: AgentAction,
-    consentStore: AgentConfirmationConsentStore? = nil
+    consentStore: AgentConfirmationConsentStore? = nil,
+    sessionId: String = ""
   ) -> Bool {
     switch AgentConfirmationPolicy.tier(for: action) {
     case .direct:
@@ -73,18 +75,25 @@ enum AgentConfirmationDecisionPolicy {
       return true
     case .confirmOnce:
       let key = AgentConfirmationPolicy.consentKey(for: action)
-      return consentStore?.isRemembered(consentKey: key) != true
+      return consentStore?.isRemembered(consentKey: key, sessionId: sessionId) != true
     }
   }
 
   static func recordApproval(
     action: AgentAction,
-    consentStore: AgentConfirmationConsentStore?
+    consentStore: AgentConfirmationConsentStore?,
+    sessionId: String = "",
+    sessionScoped: Bool = false
   ) {
     guard AgentConfirmationPolicy.tier(for: action) == .confirmOnce else {
       return
     }
-    consentStore?.remember(consentKey: AgentConfirmationPolicy.consentKey(for: action))
+    let key = AgentConfirmationPolicy.consentKey(for: action)
+    if sessionScoped {
+      consentStore?.remember(consentKey: key, sessionId: sessionId)
+    } else {
+      consentStore?.remember(consentKey: key)
+    }
   }
 
   private static func isPending(_ action: AgentAction) -> Bool {

@@ -68,6 +68,9 @@ extension AgentHomeView {
             onApproveOnce: { task in
               requestAgentTaskApproval(task)
             },
+            onApproveSession: { task in
+              requestAgentTaskApproval(task, sessionScoped: true)
+            },
             onApproveAlways: { task in
               requestAgentTaskApproval(task, remember: true)
             },

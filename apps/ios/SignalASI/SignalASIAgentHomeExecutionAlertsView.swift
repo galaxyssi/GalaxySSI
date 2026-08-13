@@ -22,6 +22,7 @@ struct SignalASIAgentHomeExecutionAlertsView: View {
   let onOpenModelSelection: () -> Void
   let onLoadOlderTranscriptMessages: () -> Void
   let onApproveOnce: (AgentTaskRecord) -> Void
+  let onApproveSession: (AgentTaskRecord) -> Void
   let onApproveAlways: (AgentTaskRecord) -> Void
   let onDeny: (AgentTaskRecord) -> Void
   let onRetryBlockedTask: (AgentTaskRecord) -> Void
@@ -76,6 +77,7 @@ struct SignalASIAgentHomeExecutionAlertsView: View {
       SignalASIAgentConfirmationCard(
         task: pendingConfirmationTask,
         onApproveOnce: { onApproveOnce(pendingConfirmationTask) },
+        onApproveSession: { onApproveSession(pendingConfirmationTask) },
         onApproveAlways: { onApproveAlways(pendingConfirmationTask) },
         onDeny: { onDeny(pendingConfirmationTask) }
       )

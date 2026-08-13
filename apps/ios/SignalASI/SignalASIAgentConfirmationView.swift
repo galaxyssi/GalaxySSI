@@ -5,6 +5,7 @@ struct SignalASIAgentConfirmationCard: View {
 
   let task: AgentTaskRecord
   let onApproveOnce: () -> Void
+  let onApproveSession: () -> Void
   let onApproveAlways: () -> Void
   let onDeny: () -> Void
 
@@ -87,6 +88,17 @@ struct SignalASIAgentConfirmationCard: View {
       }
 
       if canRemember {
+        Button(action: onApproveSession) {
+          Label(
+            t("signalasi.agent.confirmation.allow_session", "Allow for this session"),
+            systemImage: "arrow.triangle.2.circlepath"
+          )
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(.signalASITextPrimary)
+          .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.plain)
+
         Button(action: onApproveAlways) {
           Label(
             t("signalasi.agent.confirmation.allow_always", "Remember this permission"),

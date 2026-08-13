@@ -970,6 +970,7 @@
 "signalasi.agent.confirmation.risk_blocked" = "已阻止";
 "signalasi.agent.confirmation.deny" = "拒绝";
 "signalasi.agent.confirmation.allow_once" = "允许一次";
+"signalasi.agent.confirmation.allow_session" = "仅限本会话";
 "signalasi.agent.confirmation.allow_always" = "记住此权限";
 "signalasi.agent.high_risk_confirmation.title" = "确认高风险操作";
 "signalasi.agent.high_risk_confirmation.execute" = "执行";
