@@ -351,6 +351,7 @@
 "signalasi.conversation_hub.tab_groups" = "群组";
 "signalasi.conversation_hub.search_contacts" = "搜索联系人";
 "signalasi.conversation_hub.search_conversations" = "搜索会话";
+"signalasi.conversation_hub.search_hint" = "搜索会话、联系人或群组";
 "signalasi.conversation_hub.new_subtitle" = "为下一次请求开启新的 Agent 上下文";
 "signalasi.conversation_hub.archived_subtitle" = "返回活跃的 Agent 会话";
 "signalasi.conversation_hub.archived_count" = "%d 个已归档";

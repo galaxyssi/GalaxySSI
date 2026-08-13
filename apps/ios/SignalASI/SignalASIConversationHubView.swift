@@ -1042,9 +1042,10 @@ struct SignalASIConversationHubView: View {
   }
 
   private var searchPlaceholder: String {
-    selectedTab == .contacts
-      ? t("signalasi.conversation_hub.search_contacts", "Search contacts")
-      : t("signalasi.conversation_hub.search_conversations", "Search conversations")
+    t(
+      "signalasi.conversation_hub.search_hint",
+      "Search chats, contacts, or groups"
+    )
   }
 
   private var hubTitle: String {
