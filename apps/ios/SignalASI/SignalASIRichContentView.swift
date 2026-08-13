@@ -224,7 +224,9 @@ struct SignalASIRichContentView: View {
       compressedArtifactDocument = SignalASIArtifactDocument(
         data: try AgentDesktopArtifactActions.compressToStoredZip(source: file)
       )
-      let sourceName = block.title.ifBlank(file.deletingPathExtension().lastPathComponent)
+      let sourceName = URL(fileURLWithPath: block.title.ifBlank(file.lastPathComponent))
+        .deletingPathExtension()
+        .lastPathComponent
       compressedArtifactExportFilename = AgentDesktopArtifactStore.safeFileName(sourceName) + ".zip"
       compressedArtifactExportPresented = true
     } catch {
