@@ -618,6 +618,7 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
     case "desktop_reply_publish_queued": return "Desktop reply queued"
     case "desktop_reply_broker_ack": return "Desktop reply Broker ACK"
     case "desktop_broker_ack": return "Broker confirmed"
+    case "phone_contact_delivered": return "Phone contact confirmed delivery"
     case "desktop_mobile_test_queued": return "Desktop test queued"
     case "desktop_agent_push_queued": return "Agent Push queued"
     case "desktop_connector_status": return "Connector status synced"

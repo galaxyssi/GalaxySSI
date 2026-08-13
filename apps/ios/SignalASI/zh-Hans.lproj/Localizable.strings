@@ -3507,6 +3507,7 @@
 "delivery_trace_desktop_reply_queued" = "桌面回复已入队";
 "delivery_trace_desktop_reply_ack" = "桌面回复 Broker ACK";
 "delivery_trace_desktop_broker_ack" = "Broker 已确认";
+"delivery_trace_phone_contact_delivered" = "手机联系人已确认送达";
 "delivery_trace_desktop_mobile_test_queued" = "桌面测试已入队";
 "delivery_trace_agent_push_queued" = "Agent Push 已入队";
 "delivery_trace_connector_status" = "连接器状态已同步";

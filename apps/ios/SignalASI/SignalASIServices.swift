@@ -5886,7 +5886,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let messageId = payload.string("message_id")
     if payload.string("type") == "delivery_ack" {
-      handleDeliveryAck(payload)
+      handlePhoneContactDeliveryAck(payload, contact: contact)
       return
     }
     let content = payload.string("content").ifBlank(payload.string("text"))
@@ -5951,6 +5951,28 @@ final class MessageCoordinator: ObservableObject {
     Task {
       _ = await mqttClient.publish(topic: topic, payload: wire)
     }
+  }
+
+  private func handlePhoneContactDeliveryAck(
+    _ payload: [String: Any],
+    contact: SignalASIContact
+  ) {
+    let messageIds = [
+      SignalASILinkDeliveryAckPolicy.transportMessageId(payload: payload),
+      SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload: payload)
+    ].filter { !$0.isEmpty }
+    for messageId in messageIds {
+      deliveryStore.acknowledge(messageId: messageId)
+      guard let uuid = UUID(uuidString: messageId) else { continue }
+      store.appendDeliveryTrace(
+        uuid,
+        contactId: contact.id,
+        stage: "phone_contact_delivered",
+        detail: contact.displayName,
+        status: .delivered
+      )
+    }
+    scheduleOutboxFlushFromStore()
   }
 
   private func handleLocalOnlyTransportPayload(

@@ -380,6 +380,7 @@ struct SignalASIMessageActionsView: View {
     case "desktop_reply_publish_queued": return t("delivery_trace_desktop_reply_queued", "Desktop reply queued")
     case "desktop_reply_broker_ack": return t("delivery_trace_desktop_reply_ack", "Desktop reply Broker ACK")
     case "desktop_broker_ack": return t("delivery_trace_desktop_broker_ack", "Broker confirmed")
+    case "phone_contact_delivered": return t("delivery_trace_phone_contact_delivered", "Phone contact confirmed delivery")
     case "desktop_mobile_test_queued": return t("delivery_trace_desktop_mobile_test_queued", "Desktop test queued")
     case "desktop_agent_push_queued": return t("delivery_trace_agent_push_queued", "Agent Push queued")
     case "desktop_connector_status": return t("delivery_trace_connector_status", "Connector status synced")
