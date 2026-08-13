@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASIAgentComposerView: View {
   @EnvironmentObject private var store: SignalASIStore
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Binding var draft: String
   @Binding var actionTrayPresented: Bool
   @Binding var voiceTranscriptionPending: Bool
@@ -387,55 +388,95 @@ struct SignalASIAgentComposerView: View {
   }
 
   private var actionTray: some View {
-    HStack(spacing: 0) {
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_new_task", "New session"),
-        systemImage: "square.and.pencil",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onNewSession()
-      }
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_sessions", "Sessions"),
-        systemImage: "bubble.left.and.bubble.right",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onOpenSessions()
-      }
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_scan", "Scan"),
-        systemImage: "qrcode.viewfinder",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onScan()
-      }
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_take_photo", "Take photo"),
-        systemImage: "camera",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onTakePhoto()
-      }
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_add_file", "Add file"),
-        systemImage: "doc.badge.plus",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onAddFile()
+    Group {
+      if usesAccessibilityDynamicType {
+        LazyVGrid(
+          columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3),
+          spacing: 0
+        ) {
+          ForEach(trayActions) { item in
+            trayButton(for: item)
+          }
+        }
+        .frame(height: 176)
+      } else {
+        HStack(spacing: 0) {
+          ForEach(trayActions) { item in
+            trayButton(for: item)
+          }
+        }
+        .frame(height: 96)
       }
     }
-    .frame(height: 96)
     .background(Color.signalASIBarBackground)
+  }
+
+  private var trayActions: [SignalASIAgentComposerTrayAction] {
+    [
+      SignalASIAgentComposerTrayAction(
+        id: "new-session",
+        title: t("agent_attachment_new_task", "New session"),
+        systemImage: "square.and.pencil",
+        perform: onNewSession
+      ),
+      SignalASIAgentComposerTrayAction(
+        id: "sessions",
+        title: t("agent_attachment_sessions", "Sessions"),
+        systemImage: "bubble.left.and.bubble.right",
+        perform: onOpenSessions
+      ),
+      SignalASIAgentComposerTrayAction(
+        id: "scan",
+        title: t("agent_attachment_scan", "Scan"),
+        systemImage: "qrcode.viewfinder",
+        perform: onScan
+      ),
+      SignalASIAgentComposerTrayAction(
+        id: "camera",
+        title: t("agent_attachment_take_photo", "Take photo"),
+        systemImage: "camera",
+        perform: onTakePhoto
+      ),
+      SignalASIAgentComposerTrayAction(
+        id: "file",
+        title: t("agent_attachment_add_file", "Add file"),
+        systemImage: "doc.badge.plus",
+        perform: onAddFile
+      )
+    ]
+  }
+
+  private func trayButton(for item: SignalASIAgentComposerTrayAction) -> some View {
+    SignalASIAgentComposerTrayButton(
+      title: item.title,
+      systemImage: item.systemImage,
+      minimumTouchSize: minimumTouchSize,
+      allowsTwoLineTitle: usesAccessibilityDynamicType
+    ) {
+      closeTray()
+      item.perform()
+    }
   }
 
   private func closeTray() {
     actionTrayPresented = false
   }
+
+  private var usesAccessibilityDynamicType: Bool {
+    switch dynamicTypeSize {
+    case .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5:
+      return true
+    default:
+      return false
+    }
+  }
+}
+
+private struct SignalASIAgentComposerTrayAction: Identifiable {
+  var id: String
+  var title: String
+  var systemImage: String
+  var perform: () -> Void
 }
 
 struct SignalASIAgentVoiceAttachmentSummaryView: View {
@@ -628,6 +669,7 @@ private struct SignalASIAgentComposerTrayButton: View {
   var title: String
   var systemImage: String
   var minimumTouchSize: CGFloat
+  var allowsTwoLineTitle: Bool
   var action: () -> Void
 
   var body: some View {
@@ -635,7 +677,8 @@ private struct SignalASIAgentComposerTrayButton: View {
       SignalASIAgentComposerTrayContent(
         title: title,
         systemImage: systemImage,
-        minimumTouchSize: minimumTouchSize
+        minimumTouchSize: minimumTouchSize,
+        allowsTwoLineTitle: allowsTwoLineTitle
       )
     }
     .buttonStyle(.plain)
@@ -647,6 +690,7 @@ private struct SignalASIAgentComposerTrayContent: View {
   var title: String
   var systemImage: String
   var minimumTouchSize: CGFloat
+  var allowsTwoLineTitle: Bool
 
   var body: some View {
     VStack(spacing: 6) {
@@ -655,10 +699,10 @@ private struct SignalASIAgentComposerTrayContent: View {
         .foregroundColor(.signalASITextPrimary)
         .frame(width: 30, height: 30)
       Text(title)
-        .font(.system(size: 12, weight: .regular))
+        .font(.system(size: allowsTwoLineTitle ? 13 : 12, weight: .regular))
         .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.72)
+        .lineLimit(allowsTwoLineTitle ? 2 : 1)
+        .minimumScaleFactor(allowsTwoLineTitle ? 0.85 : 0.72)
         .multilineTextAlignment(.center)
     }
     .frame(maxWidth: .infinity, minHeight: minimumTouchSize)
