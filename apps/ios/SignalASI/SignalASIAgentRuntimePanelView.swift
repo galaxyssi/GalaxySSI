@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 
 struct SignalASIAgentRuntimePanelView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var safetySettings: AgentSafetySettings
   var taskExecutionMode: AgentTaskExecutionMode
   var modelPlannerSettings: AgentModelPlannerSettings
@@ -238,56 +240,97 @@ struct SignalASIAgentRuntimePanelView: View {
   }
 
   private var controlStrip: some View {
+    Group {
+      if usesAccessibilityDynamicType {
+        VStack(spacing: 8) {
+          permissionModeControl
+          highRiskGuardControl
+          memoryCaptureControl
+          taskExecutionModeControl
+          executionControl
+        }
+      } else {
+        standardControlStrip
+      }
+    }
+  }
+
+  private var standardControlStrip: some View {
     VStack(spacing: 8) {
       HStack(spacing: 8) {
-        runtimeControlButton(
-          title: String(
-            format: t("agent_safety_permission_mode_value", "Mode: %@"),
-            permissionModeTitle(safetySettings.permissionMode)
-          ),
-          tint: .signalASITextPrimary,
-          action: onCyclePermissionMode
-        )
-        runtimeControlButton(
-          title: String(format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"), onOff(safetySettings.highRiskGuard)),
-          tint: safetySettings.highRiskGuard ? .signalASIAccent : .orange,
-          action: onToggleHighRiskGuard
-        )
-        runtimeControlButton(
-          title: String(format: t("agent_safety_memory_capture_value", "Memory: %@"), onOff(safetySettings.memoryCapture)),
-          tint: safetySettings.memoryCapture ? .signalASIAccent : .orange,
-          action: onToggleMemoryCapture
-        )
+        permissionModeControl
+        highRiskGuardControl
+        memoryCaptureControl
       }
-      runtimeControlButton(
-        title: String(
-          format: t("agent_safety_task_execution_value", "Task execution: %@"),
-          taskExecutionModeTitle(taskExecutionMode)
-        ),
-        tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
-        action: onCycleTaskExecutionMode
-      )
-      runtimeControlButton(
-        title: String(
-          format: t("agent_safety_execution_value", "Execution: %@"),
-          safetySettings.executionPaused
-            ? t("signalasi.status.paused", "Paused")
-            : t("common_on", "On")
-        ),
-        tint: safetySettings.executionPaused ? .orange : .signalASIAccent,
-        action: onToggleExecutionPaused
-      )
+      taskExecutionModeControl
+      executionControl
     }
+  }
+
+  private var permissionModeControl: some View {
+    runtimeControlButton(
+      title: String(
+        format: t("agent_safety_permission_mode_value", "Mode: %@"),
+        permissionModeTitle(safetySettings.permissionMode)
+      ),
+      tint: .signalASITextPrimary,
+      action: onCyclePermissionMode
+    )
+  }
+
+  private var highRiskGuardControl: some View {
+    runtimeControlButton(
+      title: String(format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"), onOff(safetySettings.highRiskGuard)),
+      tint: safetySettings.highRiskGuard ? .signalASIAccent : .orange,
+      action: onToggleHighRiskGuard
+    )
+  }
+
+  private var memoryCaptureControl: some View {
+    runtimeControlButton(
+      title: String(format: t("agent_safety_memory_capture_value", "Memory: %@"), onOff(safetySettings.memoryCapture)),
+      tint: safetySettings.memoryCapture ? .signalASIAccent : .orange,
+      action: onToggleMemoryCapture
+    )
+  }
+
+  private var taskExecutionModeControl: some View {
+    runtimeControlButton(
+      title: String(
+        format: t("agent_safety_task_execution_value", "Task execution: %@"),
+        taskExecutionModeTitle(taskExecutionMode)
+      ),
+      tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
+      action: onCycleTaskExecutionMode
+    )
+  }
+
+  private var executionControl: some View {
+    runtimeControlButton(
+      title: String(
+        format: t("agent_safety_execution_value", "Execution: %@"),
+        safetySettings.executionPaused
+          ? t("signalasi.status.paused", "Paused")
+          : t("common_on", "On")
+      ),
+      tint: safetySettings.executionPaused ? .orange : .signalASIAccent,
+      action: onToggleExecutionPaused
+    )
   }
 
   private func runtimeControlButton(title: String, tint: Color, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Text(title)
-        .font(.system(size: 12, weight: .bold))
+        .font(.system(size: usesAccessibilityDynamicType ? 13 : 12, weight: .bold))
         .foregroundColor(tint)
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-        .frame(maxWidth: .infinity, minHeight: 42)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .minimumScaleFactor(usesAccessibilityDynamicType ? 0.82 : 0.6)
+        .multilineTextAlignment(.leading)
+        .frame(
+          maxWidth: .infinity,
+          minHeight: usesAccessibilityDynamicType ? 48 : 42,
+          alignment: .leading
+        )
         .padding(.horizontal, 6)
         .background(Color.signalASISurface)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -325,11 +368,11 @@ struct SignalASIAgentRuntimePanelView: View {
               Text(title)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.signalASITextPrimary)
-                .lineLimit(1)
+                .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
               Text(subtitle)
                 .font(.system(size: 11))
                 .foregroundColor(.signalASITextSecondary)
-                .lineLimit(1)
+                .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
             }
             Spacer(minLength: 8)
             Image(systemName: expandedSectionIds.contains(id) ? "chevron.up" : "chevron.down")
@@ -436,6 +479,10 @@ struct SignalASIAgentRuntimePanelView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 
   private var toolboxRows: [SignalASIAgentRuntimeRow] {
