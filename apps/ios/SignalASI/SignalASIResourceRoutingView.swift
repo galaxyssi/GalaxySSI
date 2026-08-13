@@ -164,6 +164,7 @@ struct SignalASIResourceRoutingView: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImage: resourceAssetName(resource),
         tint: tint,
         badge: badge
       ) {
@@ -217,6 +218,26 @@ struct SignalASIResourceRoutingView: View {
       }
     }
     return nil
+  }
+
+  private func resourceAssetName(_ resource: AgentResourceDescriptor) -> String? {
+    let contact = routeContact(for: resource)
+    let identityFields = [
+      resource.targetId,
+      resource.title,
+      contact?.id ?? "",
+      contact?.signalASIId ?? "",
+      contact?.name ?? "",
+      contact?.displayName ?? "",
+      contact?.agentKind ?? "",
+      contact?.cloudProvider ?? "",
+      contact?.selectedCloudModel?.provider ?? "",
+      contact?.selectedCloudModel?.modelId ?? ""
+    ]
+    if case .cloudModel = resource.type {
+      return SignalASIAgentAvatarAssetCatalog.cloudProviderAssetName(for: identityFields)
+    }
+    return SignalASIAgentAvatarAssetCatalog.assetName(for: identityFields)
   }
 
   private func resourceSubtitle(_ resource: AgentResourceDescriptor) -> String {

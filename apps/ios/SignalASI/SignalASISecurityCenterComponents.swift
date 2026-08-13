@@ -119,6 +119,7 @@ struct SignalASISecurityNavigationRow<Destination: View>: View {
   var title: String
   var subtitle: String
   var systemImage: String
+  var assetImage: String?
   var tint: Color
   var badge: String
   var monospacedSubtitle: Bool
@@ -128,6 +129,7 @@ struct SignalASISecurityNavigationRow<Destination: View>: View {
     title: String,
     subtitle: String,
     systemImage: String,
+    assetImage: String? = nil,
     tint: Color,
     badge: String,
     monospacedSubtitle: Bool = false,
@@ -136,6 +138,7 @@ struct SignalASISecurityNavigationRow<Destination: View>: View {
     self.title = title
     self.subtitle = subtitle
     self.systemImage = systemImage
+    self.assetImage = assetImage
     self.tint = tint
     self.badge = badge
     self.monospacedSubtitle = monospacedSubtitle
@@ -148,6 +151,7 @@ struct SignalASISecurityNavigationRow<Destination: View>: View {
         title: title,
         subtitle: subtitle,
         systemImage: systemImage,
+        assetImage: assetImage,
         tint: tint,
         badge: badge,
         monospacedSubtitle: monospacedSubtitle,
