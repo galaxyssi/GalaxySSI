@@ -238,6 +238,12 @@ if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
     !styles.includes('grid-template-columns: 278px minmax(0, 1fr)')) {
   throw new Error("Desktop device chats must share selection, menus, deletion, and sidebar width with task conversations");
 }
+if (!html.includes('id="voiceButton"') ||
+    !workspaceRenderer.includes("function startVoiceInput()") ||
+    !workspaceRenderer.includes('$("#voiceButton").addEventListener("click", startVoiceInput)') ||
+    styles.includes(".peer-mode #voiceButton")) {
+  throw new Error("Desktop device chats must share the standard conversation voice input control and transcription flow");
+}
 if (!styles.includes('.sidebar-more-button::before') ||
     !styles.includes('content: "\\2026"') ||
     styles.includes('content: "\\2026\\2026\\2026"')) {

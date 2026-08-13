@@ -101,6 +101,39 @@ async function runUiSmoke() {
     if (!state?.app || !state.title.trim() || !state.composer || !state.backend.trim()) {
       throw new Error(`Desktop Agent workspace did not render: ${JSON.stringify(state)}`);
     }
+    const peerVoiceInput = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const app = document.querySelector("#agentApp");
+        const button = document.querySelector("#voiceButton");
+        const prompt = document.querySelector("#promptInput");
+        const originalRecognition = window.SpeechRecognition;
+        app.classList.add("peer-mode");
+        window.SpeechRecognition = class {
+          start() {
+            this.onresult?.({ results: [[{ transcript: "device voice input" }]] });
+            this.onend?.();
+          }
+          stop() { this.onend?.(); }
+        };
+        prompt.value = "";
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const result = {
+          display: getComputedStyle(button).display,
+          disabled: button.disabled,
+          transcript: prompt.value
+        };
+        app.classList.remove("peer-mode");
+        window.SpeechRecognition = originalRecognition;
+        prompt.value = "";
+        return result;
+      })()
+    `);
+    if (peerVoiceInput.display === "none"
+        || peerVoiceInput.disabled
+        || peerVoiceInput.transcript !== "device voice input") {
+      throw new Error(`Desktop device chat voice input is unavailable: ${JSON.stringify(peerVoiceInput)}`);
+    }
     const defaultLanguage = await mainWindow.webContents.executeJavaScript(`
       (() => ({
         lang: document.documentElement.lang,
