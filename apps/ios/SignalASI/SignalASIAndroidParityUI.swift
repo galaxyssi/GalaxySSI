@@ -28,6 +28,7 @@ struct AgentHomeView: View {
   @State var timelineActionTaskIDsInFlight: Set<String> = []
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
+  @State var photoPickerPresented = false
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -233,6 +234,7 @@ struct AgentHomeView: View {
       .signalASIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,
         fileImporterPresented: $fileImporterPresented,
+        photoPickerPresented: $photoPickerPresented,
         cameraPickerPresented: $cameraPickerPresented,
         attachmentError: $attachmentError,
         selectedMessageForDetails: $selectedMessageForDetails,
@@ -539,6 +541,9 @@ struct AgentHomeView: View {
         scanShortcutActive = true
       },
       onTakePhoto: openCameraAttachmentPicker,
+      onAddPhotos: {
+        photoPickerPresented = true
+      },
       onAddFile: {
         fileImporterPresented = true
       },
