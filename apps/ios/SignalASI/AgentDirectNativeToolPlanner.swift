@@ -1679,14 +1679,20 @@ enum AgentDirectNativeToolPlanner {
         bundleId: "com.apple.DocumentsApp"
       )
     }
-    if containsAny(lower, ["open messages", "open sms"]) {
+    if containsAny(
+      lower,
+      ["open messages", "open sms", "\u{6253}\u{5f00}\u{4fe1}\u{606f}", "\u{6253}\u{5f00}\u{77ed}\u{4fe1}"]
+    ) {
       return SystemAppHandoff(
         idPrefix: "open-messages",
         target: "Messages",
         bundleId: "com.apple.MobileSMS"
       )
     }
-    if containsAny(lower, ["open phone", "open dialer"]) {
+    if containsAny(
+      lower,
+      ["open phone", "open dialer", "\u{6253}\u{5f00}\u{7535}\u{8bdd}", "\u{6253}\u{5f00}\u{62e8}\u{53f7}\u{76d8}"]
+    ) {
       return SystemAppHandoff(
         idPrefix: "open-phone",
         target: "Phone",
