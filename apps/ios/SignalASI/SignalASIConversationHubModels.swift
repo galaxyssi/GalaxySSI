@@ -38,6 +38,41 @@ struct SignalASIConversationHubItem: Identifiable, Equatable {
 }
 
 enum SignalASIConversationHubModels {
+  static func agentDisplayTitle(_ session: AgentConversation, language: String) -> String {
+    let fallbackTitle = SignalASILocalization.string(
+      "signalasi.agent_session.new",
+      fallback: "New session",
+      language: language
+    )
+    let rawTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = rawTitle == "New session" ? fallbackTitle : rawTitle.ifBlank(session.id)
+    let sourceTitle = session.createdByAgent
+      ? String(
+        format: SignalASILocalization.string(
+          "signalasi.agent_session.created_by_agent",
+          fallback: "SignalASI · %@",
+          language: language
+        ),
+        title
+      )
+      : title
+    if !session.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return sourceTitle + " · " + SignalASILocalization.string(
+        "signalasi.agent_session.merged",
+        fallback: "Merged",
+        language: language
+      )
+    }
+    if session.trackingPaused {
+      return sourceTitle + " · " + SignalASILocalization.string(
+        "signalasi.agent_session.tracking_paused",
+        fallback: "Tracking paused",
+        language: language
+      )
+    }
+    return sourceTitle
+  }
+
   static func conversations(
     _ source: [AgentConversation],
     query: String,
@@ -48,7 +83,7 @@ enum SignalASIConversationHubModels {
         SignalASIConversationHubItem(
           id: conversation.id,
           kind: .agent,
-          title: conversation.title,
+          title: agentDisplayTitle(conversation, language: LanguagePolicySettings.auto),
           subtitle: conversation.summary,
           preview: conversation.summary,
           updatedAt: Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),

@@ -588,7 +588,10 @@ struct SignalASIConversationHubView: View {
       return SignalASIConversationHubItem(
         id: conversation.id,
         kind: .agent,
-        title: conversation.title,
+        title: SignalASIConversationHubModels.agentDisplayTitle(
+          conversation,
+          language: interfaceLanguage
+        ),
         subtitle: preview,
         preview: preview,
         updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
@@ -682,7 +685,10 @@ struct SignalASIConversationHubView: View {
       }
     } label: {
       hubRowContent(
-        title: sessionTitle(session),
+        title: SignalASIConversationHubModels.agentDisplayTitle(
+          session,
+          language: interfaceLanguage
+        ),
         subtitle: sessionSubtitle(session, preview: preview),
         systemImage: "clock.arrow.circlepath",
         tint: .signalASIAccent,
@@ -1135,13 +1141,6 @@ struct SignalASIConversationHubView: View {
       "signalasi.conversation_hub.search_hint",
       "Search chats, contacts, or groups"
     )
-  }
-
-  private func sessionTitle(_ session: AgentConversation) -> String {
-    let title = session.title.ifBlank(session.id)
-    return session.createdByAgent
-      ? String(format: t("signalasi.agent_session.created_by_agent", "SignalASI · %@"), title)
-      : title
   }
 
   private func sessionSubtitle(_ session: AgentConversation, preview: String = "") -> String {

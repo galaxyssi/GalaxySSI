@@ -26,7 +26,10 @@ enum SignalASINavigationContentPrewarm {
       return SignalASIConversationHubItem(
         id: conversation.id,
         kind: .agent,
-        title: conversation.title,
+        title: SignalASIConversationHubModels.agentDisplayTitle(
+          conversation,
+          language: store.languagePolicy.interfaceLanguage
+        ),
         subtitle: preview,
         preview: preview,
         updatedAt: latest?.createdAt ?? Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
