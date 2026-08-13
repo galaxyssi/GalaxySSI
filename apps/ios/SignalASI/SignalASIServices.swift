@@ -249,7 +249,11 @@ final class MessageCoordinator: ObservableObject {
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable()
-    mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
+    mqttClient.connect(
+      clientId: mqttClientId,
+      serverLinks: store.serverLinks,
+      phoneContactInboxTopic: currentPhoneContactInboxTopic()
+    )
     resumePendingAgentDelivery()
     startAutomationScheduler()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -5206,7 +5210,11 @@ final class MessageCoordinator: ObservableObject {
   func pair(using qrText: String) async throws {
     let qr = try SignalASILinkProtocol.decodePairingQRCode(from: qrText)
     let link = try store.addServerLink(from: qr, rotateClientRoute: true)
-    mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
+    mqttClient.connect(
+      clientId: mqttClientId,
+      serverLinks: store.serverLinks,
+      phoneContactInboxTopic: currentPhoneContactInboxTopic()
+    )
     let signalIdentity = signalEngine.identity
     let fallbackSignalName = "signalasi:\(store.profile.identityFingerprint.prefix(16))"
     let fallbackSignalBundle: [String: Any] = [
@@ -5267,6 +5275,13 @@ final class MessageCoordinator: ObservableObject {
       return signed
     }
     return try store.myContactQRText(now: now)
+  }
+
+  private func currentPhoneContactInboxTopic() -> String {
+    guard let routeId = try? store.phoneContactInboxRouteId() else {
+      return ""
+    }
+    return "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
   }
 
   private func publishLinkMessage(
@@ -5684,7 +5699,16 @@ final class MessageCoordinator: ObservableObject {
           let object = rawObject as? [String: Any] else {
       return
     }
+    guard !isPhoneContactInboxTopic(topic) else {
+      return
+    }
     dispatchIncomingWire(topic: topic, object: object, originalPayload: String(decoding: payload, as: UTF8.self), allowStage: true)
+  }
+
+  private func isPhoneContactInboxTopic(_ topic: String) -> Bool {
+    let inboxTopic = currentPhoneContactInboxTopic()
+    guard !inboxTopic.isEmpty else { return false }
+    return topic == inboxTopic || topic.hasPrefix("\(inboxTopic)/")
   }
 
   private func handleLocalOnlyTransportPayload(

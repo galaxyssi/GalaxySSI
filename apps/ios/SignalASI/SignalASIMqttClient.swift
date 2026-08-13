@@ -51,6 +51,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private var reconnectAttempt = 0
   private var transportRecoveryInProgress = false
   private var clientId = ""
+  private var phoneContactInboxTopic = ""
   private var subscriptions: [String] = []
   private var receiveBuffer = Data()
   private var packetIdentifier: UInt16 = 1
@@ -68,8 +69,23 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 
   func connect(clientId: String, serverLinks: [ServerLink]) {
+    connect(
+      clientId: clientId,
+      serverLinks: serverLinks,
+      phoneContactInboxTopic: ""
+    )
+  }
+
+  func connect(
+    clientId: String,
+    serverLinks: [ServerLink],
+    phoneContactInboxTopic: String
+  ) {
     self.clientId = clientId
-    updateSubscriptions(serverLinks: serverLinks)
+    updateSubscriptions(
+      serverLinks: serverLinks,
+      phoneContactInboxTopic: phoneContactInboxTopic
+    )
     queue.async {
       if self.connection != nil {
         return
@@ -80,8 +96,19 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     }
   }
 
-  func updateSubscriptions(serverLinks: [ServerLink]) {
-    subscriptions = serverLinks.flatMap { [$0.routes.downTopic, $0.routes.controlTopic] }
+  func updateSubscriptions(
+    serverLinks: [ServerLink],
+    phoneContactInboxTopic: String? = nil
+  ) {
+    if let phoneContactInboxTopic {
+      self.phoneContactInboxTopic = phoneContactInboxTopic
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    let linkTopics = serverLinks.flatMap { [$0.routes.downTopic, $0.routes.controlTopic] }
+    let contactTopics = self.phoneContactInboxTopic.isEmpty
+      ? []
+      : [self.phoneContactInboxTopic, "\(self.phoneContactInboxTopic)/+"]
+    subscriptions = Array(Set(linkTopics + contactTopics)).sorted()
     queue.async {
       if self.connection != nil {
         self.subscribeToCurrentTopics()
