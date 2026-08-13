@@ -528,6 +528,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.openclaw_subtitle",
         subtitleFallback: "Independent automation Agent through Desktop",
         systemImage: "bolt.horizontal",
+        customAgentAvatar: true,
         tint: .blue,
         category: .official
       ),
@@ -537,6 +538,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.local_llm_subtitle",
         subtitleFallback: "Local model inference and task planning",
         systemImage: "memorychip",
+        customAgentAvatar: true,
         tint: .teal,
         category: .local
       ),
@@ -546,6 +548,7 @@ private struct SignalASIAgentDirectorySnapshot {
         subtitleKey: "signalasi.agent.custom_subtitle",
         subtitleFallback: "Any CLI or MCP wrapper command",
         systemImage: "slider.horizontal.3",
+        customAgentAvatar: true,
         tint: .gray,
         category: .local
       )
@@ -602,6 +605,7 @@ private struct SignalASIAgentDirectorySnapshot {
     subtitleFallback: String,
     systemImage: String,
     assetName: String? = nil,
+    customAgentAvatar: Bool = false,
     tint: Color,
     category: SignalASIAgentDirectoryCategory,
     fallbackStatus: String? = nil,
@@ -621,6 +625,7 @@ private struct SignalASIAgentDirectorySnapshot {
       subtitle: contact.map { connectorDetail($0, fallback: fallbackSubtitle) } ?? fallbackSubtitle,
       systemImage: systemImage,
       assetName: assetName,
+      customAgentAvatar: customAgentAvatar,
       tint: statusTint(setupStatus: setupStatus, fallback: tint),
       badge: badge.text,
       statusKey: fallbackStatusKey ?? badge.key,
@@ -643,6 +648,7 @@ private struct SignalASIAgentDirectorySnapshot {
       subtitle: connectorDetail(contact, fallback: agentKindSubtitle(contact.agentKind)),
       systemImage: systemImage(for: contact),
       assetName: assetName(for: contact),
+      customAgentAvatar: usesGenericAgentAvatar(contact),
       tint: statusTint(setupStatus: setupStatus, fallback: tint(for: contact)),
       badge: badge.text,
       statusKey: badge.key,
@@ -656,6 +662,14 @@ private struct SignalASIAgentDirectorySnapshot {
       contact.type == "agent" ||
       contact.deliveryMode == .cloudAPI ||
       ["local-cli", "local-model", "cloud-model", "cloud-api", "custom-cli", "desktop-agent"].contains(contact.agentKind)
+  }
+
+  private func usesGenericAgentAvatar(_ contact: SignalASIContact) -> Bool {
+    let agentID = contact.id.lowercased()
+    let signalASIID = contact.signalASIId.lowercased()
+    return [agentID, signalASIID].contains(where: { id in
+      id == "openclaw" || id == "local-llm" || id == "custom-agent"
+    }) || ["local-model", "cloud-model", "custom-cli"].contains(contact.agentKind.lowercased())
   }
 
   private func connectorDetail(_ contact: SignalASIContact, fallback: String) -> String {
@@ -792,6 +806,7 @@ struct SignalASIAgentDirectoryItem: Identifiable {
   var subtitle: String
   var systemImage: String
   var assetName: String? = nil
+  var customAgentAvatar: Bool = false
   var tint: Color
   var badge: String
   var statusKey: String
@@ -834,7 +849,13 @@ private struct SignalASIAgentDirectoryRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      SignalASIDirectoryIcon(systemImage: item.systemImage, assetName: item.assetName, tint: item.tint, size: 44)
+      SignalASIDirectoryIcon(
+        systemImage: item.systemImage,
+        assetName: item.assetName,
+        customAgentAvatar: item.customAgentAvatar,
+        tint: item.tint,
+        size: 44
+      )
       VStack(alignment: .leading, spacing: 4) {
         Text(item.title)
           .font(.system(size: 16, weight: .bold))
@@ -1069,19 +1090,32 @@ private struct SignalASIDirectoryHeroCard: View {
 private struct SignalASIDirectoryIcon: View {
   var systemImage: String
   var assetName: String? = nil
+  var customAgentAvatar = false
   var tint: Color
   var size: CGFloat = 38
 
   var body: some View {
     ZStack {
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .fill(tint.opacity(0.16))
+      if customAgentAvatar && assetName == nil {
+        Circle()
+          .fill(Color(red: 0.424, green: 0.478, blue: 0.537))
+        Image(systemName: "cube.transparent")
+          .font(.system(size: size * 0.54, weight: .semibold))
+          .foregroundColor(.white)
+        Image(systemName: "person.fill")
+          .font(.system(size: size * 0.22, weight: .bold))
+          .foregroundColor(.white)
+          .offset(y: size * 0.06)
+      } else {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(tint.opacity(0.16))
+      }
       if let assetName {
         Image(assetName)
           .resizable()
           .scaledToFill()
           .accessibilityHidden(true)
-      } else {
+      } else if !customAgentAvatar {
         Image(systemName: systemImage)
           .font(.system(size: size >= 44 ? 18 : 16, weight: .semibold))
           .foregroundColor(tint)
