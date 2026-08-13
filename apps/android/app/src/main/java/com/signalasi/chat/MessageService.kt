@@ -97,14 +97,22 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     override fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) {
-        if (sourceMessageId <= 0L || contactId.isBlank()) return
-        ChatHistoryStore.markOutgoingDelivery(
+        if (sourceMessageId <= 0L) return
+        if (contactId.isNotBlank()) {
+            ChatHistoryStore.markOutgoingDelivery(
+                this,
+                contactId,
+                sourceMessageId,
+                "delivery_failed",
+                reason,
+                getString(R.string.delivery_status_failed)
+            )
+        }
+        AgentDeliveryFailureRecorder.record(
             this,
-            contactId,
             sourceMessageId,
-            "delivery_failed",
-            reason,
-            getString(R.string.delivery_status_failed)
+            contactId,
+            getString(R.string.agent_message_not_delivered)
         )
     }
 

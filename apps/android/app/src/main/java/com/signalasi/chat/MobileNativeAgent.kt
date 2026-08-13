@@ -720,6 +720,31 @@ class MobileNativeAgent(
     }
 
     @Synchronized
+    fun handleConnectorDeliveryFailure(sourceMessageId: Long, message: String): AgentUiState? {
+        if (sourceMessageId <= 0L || phase != AgentPhase.WAITING_RESPONSE) return null
+        val pending = lastActionResult ?: return null
+        if (pending.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
+        val failed = pending.copy(
+            success = false,
+            message = message,
+            metadata = pending.metadata + mapOf(
+                "awaiting_response" to "false",
+                "delivery_failed" to "true"
+            )
+        )
+        val plan = currentPlan ?: return null
+        lastActionResult = failed
+        currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
+        phase = AgentPhase.FAILED
+        recordAudit(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "connector_delivery_failed:source=$sourceMessageId"
+        )
+        saveTaskRecord(result = message)
+        return reconcileExecutionLoop(snapshot())
+    }
+
+    @Synchronized
     fun forceTaskTimeout(message: String): AgentUiState {
         if (phase in setOf(
                 AgentPhase.COMPLETED,
