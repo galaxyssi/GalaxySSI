@@ -102,24 +102,78 @@ async function runUiSmoke() {
       throw new Error(`Desktop Agent workspace did not render: ${JSON.stringify(state)}`);
     }
     const conversationDeleteMenu = await mainWindow.webContents.executeJavaScript(`
-      (() => {
+      (async () => {
         const menuButton = document.querySelector("#conversationListMenuButton");
         const menu = document.querySelector("#conversationListMenu");
+        const defaultStyle = getComputedStyle(menuButton);
+        const defaultOpacity = defaultStyle.opacity;
+        const defaultPointerEvents = defaultStyle.pointerEvents;
+        menuButton.focus();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const focusedStyle = getComputedStyle(menuButton);
+        const dotStyle = getComputedStyle(menuButton, "::before");
+        const focusedOpacity = focusedStyle.opacity;
+        const focusedPointerEvents = focusedStyle.pointerEvents;
+        const dotTop = dotStyle.top;
+        const dotHeight = dotStyle.height;
+        const buttonHeight = focusedStyle.height;
+        const historyProbe = document.createElement("div");
+        historyProbe.className = "history-item-shell";
+        historyProbe.innerHTML = '<button class="history-item">Probe</button><button class="history-more"></button>';
+        document.querySelector("#taskHistory").appendChild(historyProbe);
+        const historyButton = historyProbe.querySelector(".history-more");
+        const historyDefaultStyle = getComputedStyle(historyButton);
+        const historyDefaultOpacity = historyDefaultStyle.opacity;
+        const historyDefaultPointerEvents = historyDefaultStyle.pointerEvents;
+        historyButton.focus();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const historyFocusedStyle = getComputedStyle(historyButton);
+        const historyDotStyle = getComputedStyle(historyButton, "::before");
         menuButton.click();
         const menuItems = Array.from(menu.querySelectorAll("button"));
         const result = {
+          defaultOpacity,
+          defaultPointerEvents,
+          focusedOpacity,
+          focusedPointerEvents,
+          dotTop,
+          dotHeight,
+          buttonHeight,
+          historyDefaultOpacity,
+          historyDefaultPointerEvents,
+          historyFocusedOpacity: historyFocusedStyle.opacity,
+          historyFocusedPointerEvents: historyFocusedStyle.pointerEvents,
+          historyDotTop: historyDotStyle.top,
+          historyButtonHeight: historyFocusedStyle.height,
           menuVisible: !menu.hidden,
           menuItemCount: menuItems.length,
           menuLabel: menuItems[0]?.textContent?.trim() || "",
           legacyDeleteAllPresent: Boolean(document.querySelector("#deleteAllConversationsButton"))
         };
+        historyProbe.remove();
         menuItems[0]?.click();
         result.selectionVisible = !document.querySelector("#conversationSelectionBar").hidden;
         document.querySelector("#cancelConversationSelectionButton").click();
         return result;
       })()
     `);
-    if (!conversationDeleteMenu.menuVisible
+    if (conversationDeleteMenu.defaultOpacity !== "0"
+        || conversationDeleteMenu.defaultPointerEvents !== "none"
+        || Number.parseFloat(conversationDeleteMenu.focusedOpacity) < 0.99
+        || conversationDeleteMenu.focusedPointerEvents !== "auto"
+        || Math.abs(
+          Number.parseFloat(conversationDeleteMenu.dotTop)
+            - Number.parseFloat(conversationDeleteMenu.buttonHeight) / 2
+        ) > 0.1
+        || conversationDeleteMenu.historyDefaultOpacity !== "0"
+        || conversationDeleteMenu.historyDefaultPointerEvents !== "none"
+        || Number.parseFloat(conversationDeleteMenu.historyFocusedOpacity) < 0.99
+        || conversationDeleteMenu.historyFocusedPointerEvents !== "auto"
+        || Math.abs(
+          Number.parseFloat(conversationDeleteMenu.historyDotTop)
+            - Number.parseFloat(conversationDeleteMenu.historyButtonHeight) / 2
+        ) > 0.1
+        || !conversationDeleteMenu.menuVisible
         || conversationDeleteMenu.menuItemCount !== 1
         || !["Select conversations to delete", "\u9009\u62e9\u5220\u6389\u5bf9\u8bdd"].includes(conversationDeleteMenu.menuLabel)
         || conversationDeleteMenu.legacyDeleteAllPresent

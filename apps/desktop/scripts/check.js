@@ -260,10 +260,13 @@ if (!html.includes('id="routeStatusDot"') ||
     localeZh["SignalASI Link encrypted"] !== "SignalASI Link \u5df2\u52a0\u5bc6") {
   throw new Error("Desktop device chats must show SignalASI Link encrypted with the shared green 7px indicator");
 }
-if (!styles.includes('.sidebar-more-button::before') ||
-    !styles.includes('content: "\\2026"') ||
-    styles.includes('content: "\\2026\\2026\\2026"')) {
-  throw new Error("Desktop conversation manager must render one standard three-dot ellipsis");
+if (!styles.includes('.new-task-row:hover .sidebar-more-button') ||
+    !styles.includes('.history-item-shell:hover .history-more') ||
+    !styles.includes('.new-task-row:focus-within .sidebar-more-button') ||
+    !styles.includes('.history-item-shell:focus-within .history-more') ||
+    !styles.includes('box-shadow: -5px 0 currentColor, 5px 0 currentColor') ||
+    !styles.includes('transform: translate(-50%, -50%)')) {
+  throw new Error("Desktop conversation menus must reveal on row interaction with geometrically centered three-dot controls");
 }
 if (!main.includes("width: 864") || !main.includes("height: 576")) {
   throw new Error("Desktop window must default to 864 x 576");

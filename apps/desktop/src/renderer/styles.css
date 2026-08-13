@@ -118,9 +118,11 @@ button:disabled { cursor: default; opacity: 0.48; }
   stroke-linejoin: round;
 }
 .new-task-button b { font-size: 1rem; font-weight: 400; }
-.sidebar-more-button { width: 34px; height: 34px; position: relative; border: 0; border-radius: 4px; background: transparent; color: #69747d; }
+.sidebar-more-button { width: 34px; height: 34px; position: relative; border: 0; border-radius: 4px; background: transparent; color: #69747d; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.new-task-row:hover .sidebar-more-button,
+.new-task-row:focus-within .sidebar-more-button { opacity: 1; pointer-events: auto; }
 .sidebar-more-button:hover { background: #e5eef2; }
-.sidebar-more-button::before { position: absolute; inset: 0; display: grid; place-items: center; content: "\2026"; font-size: 22px; line-height: 1; transform: translateY(-2px); }
+.sidebar-more-button::before { position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; border-radius: 50%; background: currentColor; box-shadow: -5px 0 currentColor, 5px 0 currentColor; content: ""; transform: translate(-50%, -50%); }
 .sidebar-popover { z-index: 12; width: 190px; position: absolute; top: 37px; right: 0; padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: #fff; box-shadow: 0 8px 24px rgba(26, 34, 40, 0.13); }
 .sidebar-popover button { width: 100%; min-height: 32px; padding: 6px 9px; border: 0; border-radius: 4px; background: transparent; color: #424b54; text-align: left; font: inherit; font-size: 0.84rem; }
 .sidebar-popover button:hover { background: #f1f3f5; }
@@ -195,9 +197,11 @@ button:disabled { cursor: default; opacity: 0.48; }
 .history-item-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: stretch; }
 .history-item-shell.selecting { grid-template-columns: 28px minmax(0, 1fr); }
 .history-item-shell .history-item { min-width: 0; }
-.history-more { width: 28px; min-height: 48px; position: relative; border: 0; border-radius: 5px; background: transparent; color: #8a939b; }
+.history-more { width: 28px; min-height: 48px; position: relative; border: 0; border-radius: 5px; background: transparent; color: #8a939b; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.history-item-shell:hover .history-more,
+.history-item-shell:focus-within .history-more { opacity: 1; pointer-events: auto; }
 .history-more:hover { background: #e5e9ec; color: #59636b; }
-.history-more::before { position: absolute; inset: 0; display: grid; place-items: center; content: "\2026"; font-size: 20px; line-height: 1; }
+.history-more::before { position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; border-radius: 50%; background: currentColor; box-shadow: -5px 0 currentColor, 5px 0 currentColor; content: ""; transform: translate(-50%, -50%); }
 .history-select { width: 28px; min-height: 48px; position: relative; border: 0; background: transparent; }
 .history-select::before { width: 15px; height: 15px; position: absolute; top: 50%; left: 6px; border: 1.4px solid #9ca5ad; border-radius: 4px; content: ""; transform: translateY(-50%); }
 .history-select.selected::before { border-color: var(--green); background: var(--green); }
