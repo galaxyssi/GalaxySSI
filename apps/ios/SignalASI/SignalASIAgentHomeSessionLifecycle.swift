@@ -27,7 +27,6 @@ extension AgentHomeView {
     actionTrayPresented = false
     attachmentError = ""
     selectedMessageForDetails = nil
-    composerFocusRequest += 1
     visibleAgentMessageLimit = Self.agentTranscriptPageSize
     olderTranscriptAnchor = nil
     transcriptTopLoadTriggered = false
