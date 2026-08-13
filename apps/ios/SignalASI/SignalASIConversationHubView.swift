@@ -23,7 +23,6 @@ struct SignalASIConversationHubView: View {
   @State private var showingArchived = false
   @State private var addContactPresentation: SignalASIAddContactPresentation?
   @State private var pendingFriendRequestsPresented = false
-  @State private var cloudModelProviderPresented = false
   private let showsBackButton: Bool
   private let onBackToSettings: (() -> Void)?
   @State private var editingSession: AgentConversation?
@@ -133,13 +132,6 @@ struct SignalASIConversationHubView: View {
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       ContactsView(showsBackButton: false)
-    }
-    .sheet(isPresented: $cloudModelProviderPresented) {
-      NavigationView {
-        CloudModelProviderSelectionView()
-          .environmentObject(store)
-      }
-      .navigationViewStyle(StackNavigationViewStyle())
     }
     .sheet(item: $editingSession) { session in
       SignalASIConversationHubRenameSheet(
@@ -426,17 +418,6 @@ struct SignalASIConversationHubView: View {
         badge: store.pendingFriendRequests.isEmpty ? "" : "\(store.pendingFriendRequests.count)"
       ) {
         pendingFriendRequestsPresented = true
-      }
-      hubActionRow(
-        title: t("signalasi.conversation_hub.add_cloud_model", "Add cloud model"),
-        subtitle: t(
-          "signalasi.conversation_hub.add_cloud_model_subtitle",
-          "Provider, model, and API key can be configured directly on the phone"
-        ),
-        systemImage: "cloud.fill",
-        tint: .signalASIInsightText
-      ) {
-        cloudModelProviderPresented = true
       }
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
