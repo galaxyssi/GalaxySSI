@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SignalASIAgentHomeToolboxView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var tools: [AgentNativeToolDescriptor]
   var t: (String, String) -> String
   var onCommand: (String) -> Void = { _ in }
@@ -35,7 +37,8 @@ struct SignalASIAgentHomeToolboxView: View {
         Text(String(format: t("signalasi.agent_runtime.toolbox_summary", "%d local tools"), availableTools.count))
           .font(.system(size: 11, weight: .semibold))
           .foregroundColor(.signalASITextSecondary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .multilineTextAlignment(.trailing)
       }
 
       if availableTools.isEmpty {
@@ -71,36 +74,70 @@ struct SignalASIAgentHomeToolboxView: View {
     _ tool: AgentNativeToolDescriptor,
     example: String?
   ) -> some View {
-    HStack(spacing: 9) {
+    HStack(alignment: .top, spacing: 9) {
       Image(systemName: locationIcon(tool.location))
         .font(.system(size: 14, weight: .semibold))
         .foregroundColor(riskTint(tool.risk))
         .frame(width: 22, height: 22)
+        .padding(.top, usesAccessibilityDynamicType ? 2 : 0)
       VStack(alignment: .leading, spacing: 2) {
         Text(tool.title.ifBlank(tool.id))
           .font(.system(size: 12.5, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
         Text(example ?? String(format: t("agent_toolbox_meta", "%@ / %@ risk"), tool.id, riskText(tool.risk)))
           .font(.system(size: 10.5))
           .foregroundColor(.signalASITextSecondary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       Spacer(minLength: 6)
-      Text(t("common_on", "On"))
-        .font(.system(size: 10.5, weight: .bold))
-        .foregroundColor(.signalASIAccent)
-      if example != nil {
-        Image(systemName: "arrow.up.right")
-          .font(.system(size: 10, weight: .bold))
-          .foregroundColor(.signalASITextSecondary)
-      }
+      toolRowStatus(hasExample: example != nil)
     }
     .padding(.horizontal, 12)
-    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: usesAccessibilityDynamicType ? 64 : 44,
+      alignment: .leading
+    )
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .combine)
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
+  }
+
+  @ViewBuilder
+  private func toolRowStatus(hasExample: Bool) -> some View {
+    if usesAccessibilityDynamicType {
+      VStack(alignment: .trailing, spacing: 4) {
+        toolEnabledLabel
+        if hasExample {
+          toolRowActionIcon
+        }
+      }
+    } else {
+      HStack(spacing: 6) {
+        toolEnabledLabel
+        if hasExample {
+          toolRowActionIcon
+        }
+      }
+    }
+  }
+
+  private var toolEnabledLabel: some View {
+    Text(t("common_on", "On"))
+      .font(.system(size: 10.5, weight: .bold))
+      .foregroundColor(.signalASIAccent)
+  }
+
+  private var toolRowActionIcon: some View {
+    Image(systemName: "arrow.up.right")
+      .font(.system(size: 10, weight: .bold))
+      .foregroundColor(.signalASITextSecondary)
   }
 
   private func example(for tool: AgentNativeToolDescriptor) -> String? {
