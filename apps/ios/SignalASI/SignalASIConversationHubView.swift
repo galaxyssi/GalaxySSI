@@ -989,7 +989,7 @@ struct SignalASIConversationHubView: View {
     NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
       hubRowContent(
         title: contact.displayName,
-        subtitle: contact.id,
+        subtitle: "",
         systemImage: contact.type == "device"
           ? "iphone"
           : (contact.type == "agent" ? "cpu" : "person.fill"),
