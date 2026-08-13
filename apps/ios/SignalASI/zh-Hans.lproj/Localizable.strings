@@ -257,6 +257,15 @@
 "agent_running_tasks_targets_value" = "运行任务：%d / 目标：%d";
 "signalasi.agent.readiness.title" = "Agent 已就绪";
 "signalasi.agent.readiness.targets" = "目标";
+"signalasi.agent.readiness.phone_memory" = "手机内存";
+"signalasi.agent.readiness.phone_memory_value" = "%@ 可用 / %@";
+"signalasi.agent.readiness.phone_memory_low" = "内存不足";
+"signalasi.agent.readiness.phone_memory_normal" = "内存正常";
+"signalasi.agent.readiness.memory_pressure_normal" = "正常";
+"signalasi.agent.readiness.memory_pressure_fair" = "一般";
+"signalasi.agent.readiness.memory_pressure_serious" = "较高";
+"signalasi.agent.readiness.memory_pressure_critical" = "严重";
+"signalasi.agent.readiness.memory_pressure_unknown" = "未知";
 "signalasi.agent.recent_tasks_value" = "最近任务：%d";
 "agent_risk_low" = "低";
 "agent_risk_medium" = "中";

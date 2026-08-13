@@ -92,6 +92,8 @@ struct SignalASIAgentHomeReadinessView: View {
         onTap: onOpenRouteSelection
       )
 
+      SignalASIAgentHomePhoneStatusView(t: t)
+
       SignalASIAgentHomeToolboxView(
         tools: nativeTools,
         t: t,

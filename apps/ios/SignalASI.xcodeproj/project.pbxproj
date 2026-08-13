@@ -176,6 +176,7 @@
     A10000000000000000001620 /* SignalASIAgentExecutionFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001620 /* SignalASIAgentExecutionFooterView.swift */; };
     A10000000000000000001630 /* SignalASIAgentScanStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001630 /* SignalASIAgentScanStatusView.swift */; };
     A10000000000000000001640 /* SignalASIAgentHomeToolboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001640 /* SignalASIAgentHomeToolboxView.swift */; };
+    A10000000000000000002070 /* SignalASIAgentHomePhoneStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002070 /* SignalASIAgentHomePhoneStatusView.swift */; };
     A10000000000000000001710 /* SignalASIAgentHomeInsightViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001710 /* SignalASIAgentHomeInsightViews.swift */; };
     A10000000000000000000894 /* SignalASIDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000894 /* SignalASIDiscoverView.swift */; };
     A10000000000000000000893 /* SignalASIAndroidMenuComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000893 /* SignalASIAndroidMenuComponents.swift */; };
@@ -1027,6 +1028,7 @@
     A20000000000000000001620 /* SignalASIAgentExecutionFooterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentExecutionFooterView.swift; sourceTree = "<group>"; };
     A20000000000000000001630 /* SignalASIAgentScanStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentScanStatusView.swift; sourceTree = "<group>"; };
     A20000000000000000001640 /* SignalASIAgentHomeToolboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeToolboxView.swift; sourceTree = "<group>"; };
+    A20000000000000000002070 /* SignalASIAgentHomePhoneStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomePhoneStatusView.swift; sourceTree = "<group>"; };
     A20000000000000000001710 /* SignalASIAgentHomeInsightViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentHomeInsightViews.swift; sourceTree = "<group>"; };
     A20000000000000000000894 /* SignalASIDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIDiscoverView.swift; sourceTree = "<group>"; };
     A20000000000000000000893 /* SignalASIAndroidMenuComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAndroidMenuComponents.swift; sourceTree = "<group>"; };
@@ -2223,6 +2225,7 @@
         A20000000000000000001630 /* SignalASIAgentScanStatusView.swift */,
         A20000000000000000001640 /* SignalASIAgentHomeToolboxView.swift */,
         A20000000000000000001710 /* SignalASIAgentHomeInsightViews.swift */,
+        A20000000000000000002070 /* SignalASIAgentHomePhoneStatusView.swift */,
         A20000000000000000000894 /* SignalASIDiscoverView.swift */,
         A20000000000000000000893 /* SignalASIAndroidMenuComponents.swift */,
         A20000000000000000000899 /* SignalASIAgentHomeSupportViews.swift */,
@@ -3210,6 +3213,7 @@
         A10000000000000000001630 /* SignalASIAgentScanStatusView.swift in Sources */,
         A10000000000000000001640 /* SignalASIAgentHomeToolboxView.swift in Sources */,
         A10000000000000000001710 /* SignalASIAgentHomeInsightViews.swift in Sources */,
+        A10000000000000000002070 /* SignalASIAgentHomePhoneStatusView.swift in Sources */,
         A10000000000000000000894 /* SignalASIDiscoverView.swift in Sources */,
         A10000000000000000000893 /* SignalASIAndroidMenuComponents.swift in Sources */,
         A10000000000000000000899 /* SignalASIAgentHomeSupportViews.swift in Sources */,
