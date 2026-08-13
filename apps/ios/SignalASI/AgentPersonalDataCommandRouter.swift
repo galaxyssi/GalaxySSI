@@ -121,7 +121,7 @@ enum AgentPersonalDataCommandRouter {
       lines.append(localized(store: store, english: "No saved memories", chinese: "\u{6ca1}\u{6709}\u{5df2}\u{4fdd}\u{5b58}\u{7684}\u{8bb0}\u{5fc6}"))
     } else {
       lines.append(contentsOf: recent.map { item in
-        "\(item.kind.rawValue.lowercased()): \(compact(item.value, limit: 120))"
+        "\(memoryKindLabel(item.kind, store: store)): \(compact(item.value, limit: 120))"
       })
     }
     return Result(text: lines.joined(separator: "\n"), actionId: "memory_overview")
@@ -195,8 +195,8 @@ enum AgentPersonalDataCommandRouter {
     let lines = hits.enumerated().flatMap { index, hit in
       [
         "[\(index + 1)] \(compact(hit.item.title, limit: 100))",
-        "Source: \(sourceLabel(hit.item.source))",
-        "Excerpt: \(compact(hit.excerpt, limit: 320))"
+        "\(localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}"): \(sourceLabel(hit.item.source))",
+        "\(localized(store: store, english: "Excerpt", chinese: "\u{6458}\u{8981}"): \(compact(hit.excerpt, limit: 320))"
       ]
     }
     return Result(
@@ -246,8 +246,8 @@ enum AgentPersonalDataCommandRouter {
     let lines = rag.citations.flatMap { citation in
       [
         "[\(citation.index)] \(compact(citation.title, limit: 100))",
-        "Source: \(citation.source)",
-        "Evidence (\(citation.evidenceMode.rawValue.lowercased())): \(compact(citation.excerpt, limit: 420))"
+        "\(localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}"): \(citation.source)",
+        "\(localized(store: store, english: "Evidence", chinese: "\u{8bc1}\u{636e}") (\(evidenceModeLabel(citation.evidenceMode, store: store))): \(compact(citation.excerpt, limit: 420))"
       ]
     }
     return Result(
@@ -275,6 +275,29 @@ enum AgentPersonalDataCommandRouter {
 
   private static func compact(_ value: String, limit: Int) -> String {
     String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(limit))
+  }
+
+  private static func memoryKindLabel(_ kind: AgentMemoryKind, store: SignalASIStore) -> String {
+    let chinese: String
+    switch kind {
+    case .identity: chinese = "\u{8eab}\u{4efd}"
+    case .contact: chinese = "\u{8054}\u{7cfb}\u{4eba}"
+    case .task: chinese = "\u{4efb}\u{52a1}"
+    case .preference: chinese = "\u{504f}\u{597d}"
+    case .workflow: chinese = "\u{5de5}\u{4f5c}\u{6d41}"
+    case .safety: chinese = "\u{5b89}\u{5168}"
+    case .knowledge: chinese = "\u{77e5}\u{8bc6}"
+    }
+    return localized(store: store, english: kind.rawValue.lowercased(), chinese: chinese)
+  }
+
+  private static func evidenceModeLabel(_ mode: AgentKnowledgeEvidenceMode, store: SignalASIStore) -> String {
+    let chinese: String
+    switch mode {
+    case .full: chinese = "\u{5b8c}\u{6574}"
+    case .summary: chinese = "\u{6458}\u{8981}"
+    }
+    return localized(store: store, english: mode.rawValue.lowercased(), chinese: chinese)
   }
 
   private static func localized(store: SignalASIStore, english: String, chinese: String) -> String {
