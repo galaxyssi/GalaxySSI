@@ -426,7 +426,12 @@ struct AddContactView: View {
     let matches = store.visibleContacts
       .filter { contact in
         guard contact.type == "agent" else { return false }
-        let knownIDs = [contact.id, contact.signalASIId, contact.connectorAgentId]
+        let knownIDs = [
+          contact.id,
+          contact.signalASIId,
+          contact.agentId ?? "",
+          contact.connectorAgentId
+        ]
           .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
           .filter { !$0.isEmpty }
         if !requestedIDs.isEmpty && knownIDs.contains(where: requestedIDs.contains) {
