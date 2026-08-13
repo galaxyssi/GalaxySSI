@@ -473,31 +473,60 @@ struct SignalASIAgentModelSelectionView: View {
         }
       }
     }
+    let fastContent = Self.modelSelectionContent(
+      sourceContacts: sourceContacts,
+      sourceCloudContacts: sourceCloudContacts,
+      apiKeys: apiKeys
+    )
+    if Self.hasRenderableModelSelectionContent(fastContent) {
+      preparedContent = fastContent
+      contentLoading = false
+    }
     let prepared = await Task.detached(priority: .userInitiated) {
-      let localProfiles = LocalModelRuntimeSettings.activeProfiles()
-      let callableTargets = AgentCallableTargetCatalog.build(
-        contacts: sourceContacts,
-        apiKey: { apiKeys[$0.keychainAccount] }
-      )
-      let cloudContacts = sourceCloudContacts.filter { contact in
-        contact.cloudModels.contains { model in
-          AgentConnectorAvailability.cloudModelReady(
-            model: model,
-            apiKey: apiKeys[model.keychainAccount],
-            provider: contact.cloudProvider,
-            setupStatus: contact.setupStatus
-          )
-        }
-      }
-      return SignalASIAgentModelSelectionPreparedContent(
-        localProfiles: localProfiles,
-        cloudContacts: cloudContacts,
-        callableTargets: callableTargets
+      Self.modelSelectionContent(
+        sourceContacts: sourceContacts,
+        sourceCloudContacts: sourceCloudContacts,
+        apiKeys: apiKeys
       )
     }.value
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
     preparedContent = prepared
     contentLoading = false
+  }
+
+  private static func modelSelectionContent(
+    sourceContacts: [SignalASIContact],
+    sourceCloudContacts: [SignalASIContact],
+    apiKeys: [String: String]
+  ) -> SignalASIAgentModelSelectionPreparedContent {
+    let localProfiles = LocalModelRuntimeSettings.activeProfiles()
+    let callableTargets = AgentCallableTargetCatalog.build(
+      contacts: sourceContacts,
+      apiKey: { apiKeys[$0.keychainAccount] }
+    )
+    let cloudContacts = sourceCloudContacts.filter { contact in
+      contact.cloudModels.contains { model in
+        AgentConnectorAvailability.cloudModelReady(
+          model: model,
+          apiKey: apiKeys[model.keychainAccount],
+          provider: contact.cloudProvider,
+          setupStatus: contact.setupStatus
+        )
+      }
+    }
+    return SignalASIAgentModelSelectionPreparedContent(
+      localProfiles: localProfiles,
+      cloudContacts: cloudContacts,
+      callableTargets: callableTargets
+    )
+  }
+
+  private static func hasRenderableModelSelectionContent(
+    _ content: SignalASIAgentModelSelectionPreparedContent
+  ) -> Bool {
+    !content.localProfiles.isEmpty ||
+      !content.cloudContacts.isEmpty ||
+      !content.callableTargets.isEmpty
   }
 
   private var isAutomatic: Bool {
