@@ -1,4 +1,6 @@
 import threading
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -62,6 +64,24 @@ class SignalSidecarLifecycleTests(unittest.TestCase):
 
         terminate.assert_called_once_with(process)
         self.assertIsNone(signalasi_client._process)
+
+    def test_configured_sidecar_runtime_is_discovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / ("signalasi-link-sidecar.bat" if os.name == "nt" else "signalasi-link-sidecar")
+            script.write_text("", encoding="utf-8")
+            with patch.dict(os.environ, {"SIGNALASI_LINK_SIDECAR_SCRIPT": str(script)}):
+                self.assertEqual(script, signalasi_client.resolve_sidecar_script())
+
+    def test_missing_local_runtime_falls_back_to_trusted_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fallback = Path(directory) / "signalasi-link-sidecar.bat"
+            fallback.write_text("", encoding="utf-8")
+            with patch.object(
+                signalasi_client,
+                "sidecar_script_candidates",
+                return_value=[Path(directory) / "missing.bat", fallback],
+            ):
+                self.assertEqual(fallback, signalasi_client.resolve_sidecar_script())
 
 
 if __name__ == "__main__":
