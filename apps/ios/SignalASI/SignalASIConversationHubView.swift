@@ -257,6 +257,9 @@ struct SignalASIConversationHubView: View {
     ) { _ in
       refreshAfterAppActivation()
     }
+    .onChange(of: coordinator.pairingRevocationRevision) { _ in
+      refreshAfterRemotePairingRevocation()
+    }
     .task(id: hubContentTaskID) {
       await prepareHubContent()
     }
@@ -486,6 +489,13 @@ struct SignalASIConversationHubView: View {
 
   private func refreshAfterContactImport() {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    hubRefreshToken = UUID()
+  }
+
+  private func refreshAfterRemotePairingRevocation() {
+    _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    navigationContentGate.invalidate()
+    hubContentLoading = true
     hubRefreshToken = UUID()
   }
 
