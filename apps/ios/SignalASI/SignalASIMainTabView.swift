@@ -4,6 +4,7 @@ struct SignalASIMainTabView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var selectedTab: SignalASIMainTab = .agent
   @State private var pendingContactId = ""
+  @State private var pageReturnTarget: SignalASIMainTab?
 
   var body: some View {
     selectedContent
@@ -25,32 +26,53 @@ struct SignalASIMainTabView: View {
     switch selectedTab {
     case .voice:
       SignalASIVoiceTabView(
-        onNavigateToMainTab: { selectedTab = $0 },
-        onBackToSettings: { selectedTab = .settings }
+        onNavigateToMainTab: {
+          pageReturnTarget = nil
+          selectedTab = $0
+        },
+        onBackToSettings: {
+          pageReturnTarget = nil
+          selectedTab = .settings
+        }
       )
     case .agent:
-      AgentHomeView(onNavigateToMainTab: { selectedTab = $0 })
+      AgentHomeView(onNavigateToMainTab: {
+        pageReturnTarget = nil
+        selectedTab = $0
+      })
     case .messages:
       ChatListView(
         showsBackButton: false,
-        onNavigateToMainTab: { selectedTab = $0 },
+        onNavigateToMainTab: {
+          pageReturnTarget = nil
+          selectedTab = $0
+        },
+        onBackToMainTab: backToSettingsAction,
         initialContactId: pendingContactId,
         onInitialContactHandled: { pendingContactId = "" }
       )
     case .contacts:
-      ContactsView(showsBackButton: false)
+      ContactsView(
+        showsBackButton: false,
+        onBackToMainTab: backToSettingsAction
+      )
     case .discover:
       DiscoverView(
         showsBackButton: false,
-        onBackToSettings: { selectedTab = .settings }
+        onBackToSettings: {
+          pageReturnTarget = nil
+          selectedTab = .settings
+        }
       )
     case .settings:
       SettingsView(
         navigateToMainTab: { tab in
+          pageReturnTarget = (tab == .agent || tab == .settings) ? nil : .settings
           selectedTab = tab
         },
         showsBackButton: false,
         onBackToAgent: {
+          pageReturnTarget = nil
           selectedTab = .agent
         }
       )
@@ -62,9 +84,18 @@ struct SignalASIMainTabView: View {
     routeToContact(contactId)
   }
 
+  private var backToSettingsAction: (() -> Void)? {
+    guard pageReturnTarget == .settings else { return nil }
+    return {
+      pageReturnTarget = nil
+      selectedTab = .settings
+    }
+  }
+
   private func routeToContact(_ contactId: String) {
     guard !contactId.isEmpty else { return }
     UserDefaults.standard.removeObject(forKey: "signalasi.pending_open_contact")
+    pageReturnTarget = nil
     pendingContactId = contactId
     selectedTab = .messages
   }

@@ -201,6 +201,7 @@ struct ChatListView: View {
   @State private var openedContactId = ""
   var showsBackButton = true
   var onNavigateToMainTab: ((SignalASIMainTab) -> Void)? = nil
+  var onBackToMainTab: (() -> Void)? = nil
   var initialContactId = ""
   var onInitialContactHandled: (() -> Void)? = nil
 
@@ -234,6 +235,14 @@ struct ChatListView: View {
           leading: {
             if showsBackButton {
               SignalASIBackButton()
+            } else if let onBackToMainTab {
+              Button(action: onBackToMainTab) {
+                Image(systemName: "chevron.left")
+                  .font(.system(size: 22, weight: .semibold))
+                  .foregroundColor(.signalASITextPrimary)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
             } else {
               Color.clear
             }
@@ -1292,6 +1301,7 @@ struct ContactsView: View {
   @State private var contactSearchText = ""
   @State private var contactPendingDeletion: SignalASIContact?
   var showsBackButton = true
+  var onBackToMainTab: (() -> Void)? = nil
 
   private var filteredFriendRequests: [SignalASIFriendRequest] {
     let normalized = contactSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1352,6 +1362,14 @@ struct ContactsView: View {
           leading: {
             if showsBackButton {
               SignalASIBackButton()
+            } else if let onBackToMainTab {
+              Button(action: onBackToMainTab) {
+                Image(systemName: "chevron.left")
+                  .font(.system(size: 22, weight: .semibold))
+                  .foregroundColor(.signalASITextPrimary)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
             } else {
               Color.clear
             }
