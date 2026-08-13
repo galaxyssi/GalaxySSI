@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
   case normal
@@ -251,6 +252,11 @@ struct SignalASIConversationHubView: View {
     .onDisappear {
       navigationContentGate.invalidate()
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+    ) { _ in
+      refreshAfterAppActivation()
+    }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       refreshAfterRemotePairingRevocation()
     }
@@ -495,6 +501,13 @@ struct SignalASIConversationHubView: View {
 
   private func refreshAfterContactRemoval() {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    hubRefreshToken = UUID()
+  }
+
+  private func refreshAfterAppActivation() {
+    _ = coordinator.requestCapabilityManifestRefresh()
+    navigationContentGate.invalidate()
+    hubContentLoading = true
     hubRefreshToken = UUID()
   }
 
