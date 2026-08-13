@@ -128,30 +128,38 @@ struct AgentIOSSystemNativeToolExecutor {
       return settingsHandoff(
         invocation,
         settingsTarget: "wifi",
-        message: "Open iOS Settings so the user can review Wi-Fi connectivity."
+        english: "Open iOS Settings so the user can review Wi-Fi connectivity.",
+        chinese: "\u{8BF7}\u{6253}\u{5F00} iOS \u{8BBE}\u{7F6E}\u{4EE5}\u{67E5}\u{770B} Wi-Fi \u{8FDE}\u{63A5}\u{72B6}\u{6001}\u{3002}"
       )
     case AgentIOSSystemNativeToolCatalog.wifiHotspotPanelOpen:
       return settingsHandoff(
         invocation,
         settingsTarget: "personal_hotspot",
-        message: "Open iOS Settings so the user can review Personal Hotspot settings."
+        english: "Open iOS Settings so the user can review Personal Hotspot settings.",
+        chinese: "\u{8BF7}\u{6253}\u{5F00} iOS \u{8BBE}\u{7F6E}\u{4EE5}\u{67E5}\u{770B}\u{4E2A}\u{4EBA}\u{70ED}\u{70B9}\u{8BBE}\u{7F6E}\u{3002}"
       )
     case AgentIOSSystemNativeToolCatalog.biometricEnrollmentOpen:
       return settingsHandoff(
         invocation,
         settingsTarget: "biometric_enrollment",
-        message: "Open iOS Settings so the user can review Face ID, Touch ID, or passcode enrollment."
+        english: "Open iOS Settings so the user can review Face ID, Touch ID, or passcode enrollment.",
+        chinese: "\u{8BF7}\u{6253}\u{5F00} iOS \u{8BBE}\u{7F6E}\u{4EE5}\u{67E5}\u{770B} Face ID\u{3001}Touch ID \u{6216}\u{5BC6}\u{7801}\u{8BBE}\u{7F6E}\u{3002}"
       )
     case AgentIOSSystemNativeToolCatalog.vpnConsentOpen:
       return settingsHandoff(
         invocation,
         settingsTarget: "vpn",
-        message: "Open iOS Settings so the user can review VPN configuration."
+        english: "Open iOS Settings so the user can review VPN configuration.",
+        chinese: "\u{8BF7}\u{6253}\u{5F00} iOS \u{8BBE}\u{7F6E}\u{4EE5}\u{67E5}\u{770B} VPN \u{914D}\u{7F6E}\u{3002}"
       )
     default:
       return AgentNativeToolExecutionResult.failure(
         code: "ios_system_tool_unavailable",
-        message: "This system native tool has no iOS executor."
+        message: localizedMessage(
+          invocation,
+          english: "This system native tool has no iOS executor.",
+          chinese: "\u{8BE5}\u{7CFB}\u{7EDF}\u{539F}\u{751F}\u{5DE5}\u{5177}\u{6CA1}\u{6709}\u{53EF}\u{7528}\u{7684} iOS \u{6267}\u{884C}\u{5668}\u{3002}"
+        )
       )
     }
   }
@@ -159,7 +167,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func audioStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: audioProvider.audioStatus(nowMillis: max(0, nowMillis())),
-      message: "Audio status read",
+      message: localizedMessage(invocation, english: "Audio status read", chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{97F3}\u{9891}\u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -190,7 +198,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func telephonyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: telephonyProvider.telephonyStatus(nowMillis: max(0, nowMillis())),
-      message: "Phone service status read",
+      message: localizedMessage(invocation, english: "Phone service status read", chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{7535}\u{8BDD}\u{670D}\u{52A1}\u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -202,7 +210,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func telephonyCallState(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: telephonyProvider.callState(nowMillis: max(0, nowMillis())),
-      message: "Current call state read",
+      message: localizedMessage(invocation, english: "Current call state read", chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{5F53}\u{524D}\u{901A}\u{8BDD}\u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -358,7 +366,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func devicePolicyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: devicePolicyProvider.devicePolicyStatus(nowMillis: max(0, nowMillis())),
-      message: "Device policy status read",
+      message: localizedMessage(invocation, english: "Device policy status read", chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{8BBE}\u{5907}\u{7BA1}\u{7406}\u{7B56}\u{7565}\u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -380,7 +388,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: wifiProvider.wifiStatus(nowMillis: max(0, nowMillis())),
-      message: "Wi-Fi status read",
+      message: localizedMessage(invocation, english: "Wi-Fi status read", chinese: "\u{5DF2}\u{8BFB}\u{53D6} Wi-Fi \u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -407,7 +415,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func biometricStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: biometricProvider.biometricStatus(nowMillis: max(0, nowMillis())),
-      message: "Biometric capability read",
+      message: localizedMessage(invocation, english: "Biometric capability read", chinese: "\u{5DF2}\u{8BFB}\u{53D6}\u{751F}\u{7269}\u{8BC6}\u{522B}\u{80FD}\u{529B}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -420,7 +428,7 @@ struct AgentIOSSystemNativeToolExecutor {
   private func vpnStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: vpnProvider.vpnStatus(nowMillis: max(0, nowMillis())),
-      message: "VPN status read",
+      message: localizedMessage(invocation, english: "VPN status read", chinese: "\u{5DF2}\u{8BFB}\u{53D6} VPN \u{72B6}\u{6001}"),
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
@@ -505,7 +513,7 @@ struct AgentIOSSystemNativeToolExecutor {
     guard !body.isEmpty else {
       return AgentNativeToolExecutionResult.failure(
         code: "invalid_message",
-        message: "SMS message is empty."
+        message: localizedMessage(invocation, english: "SMS message is empty.", chinese: "\u{77ED}\u{4FE1}\u{5185}\u{5BB9}\u{4E3A}\u{7A7A}\u{3002}")
       )
     }
     return communicationHandoffProvider.smsComposeHandoff(
@@ -530,13 +538,14 @@ struct AgentIOSSystemNativeToolExecutor {
   private func settingsHandoff(
     _ invocation: AgentNativeToolInvocation,
     settingsTarget: String,
-    message: String
+    english: String,
+    chinese: String
   ) -> AgentNativeToolExecutionResult {
     handoffResult(
       invocation,
       kind: "settings",
       url: "app-settings:",
-      message: message,
+      message: localizedMessage(invocation, english: english, chinese: chinese),
       extra: ["settings_target": .string(settingsTarget)]
     )
   }
@@ -571,5 +580,15 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func boundedString(_ value: String?, limit: Int) -> String {
     String((value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+  }
+
+  private func localizedMessage(
+    _ invocation: AgentNativeToolInvocation,
+    english: String,
+    chinese: String
+  ) -> String {
+    LanguagePolicySettings.resolve(invocation.context.attributes["response_language"] ?? "").hasPrefix("zh")
+      ? chinese
+      : english
   }
 }
