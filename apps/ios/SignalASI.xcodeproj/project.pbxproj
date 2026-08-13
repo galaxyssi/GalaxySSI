@@ -3694,7 +3694,7 @@
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         CODE_SIGN_STYLE = Automatic;
-        CURRENT_PROJECT_VERSION = 429;
+        CURRENT_PROJECT_VERSION = 449;
         DEVELOPMENT_ASSET_PATHS = "";
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
@@ -3718,7 +3718,7 @@
           "$(inherited)",
           "@executable_path/Frameworks",
         );
-        MARKETING_VERSION = 0.4.29;
+        MARKETING_VERSION = 0.4.49;
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
@@ -3749,7 +3749,7 @@
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         CODE_SIGN_STYLE = Automatic;
-        CURRENT_PROJECT_VERSION = 429;
+        CURRENT_PROJECT_VERSION = 449;
         DEVELOPMENT_ASSET_PATHS = "";
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
@@ -3773,7 +3773,7 @@
           "$(inherited)",
           "@executable_path/Frameworks",
         );
-        MARKETING_VERSION = 0.4.29;
+        MARKETING_VERSION = 0.4.49;
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
