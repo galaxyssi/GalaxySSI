@@ -1976,7 +1976,10 @@ enum AgentSecurityStatusCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "security status", "permission status", "agent security status",
-         "agent permission status", "safety status", "privacy status":
+         "agent permission status", "safety status", "privacy status",
+         "\u{5b89}\u{5168}\u{72b6}\u{6001}", "\u{6743}\u{9650}\u{72b6}\u{6001}",
+         "agent \u{5b89}\u{5168}\u{72b6}\u{6001}", "agent \u{6743}\u{9650}\u{72b6}\u{6001}",
+         "\u{5b89}\u{5168}\u{8bbe}\u{7f6e}", "\u{9690}\u{79c1}\u{72b6}\u{6001}":
       return true
     default:
       return false
@@ -2089,7 +2092,10 @@ enum AgentPermissionChecklistCommand {
   static func matches(_ goal: String) -> Bool {
     switch goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "permission checklist", "show permission checklist", "check permissions",
-         "agent permissions", "show agent permissions", "missing permissions":
+         "agent permissions", "show agent permissions", "missing permissions",
+         "\u{6743}\u{9650}\u{6e05}\u{5355}", "\u{663e}\u{793a}\u{6743}\u{9650}\u{6e05}\u{5355}",
+         "\u{68c0}\u{67e5}\u{6743}\u{9650}", "agent \u{6743}\u{9650}",
+         "\u{663e}\u{793a} agent \u{6743}\u{9650}", "\u{7f3a}\u{5c11}\u{6743}\u{9650}":
       return true
     default:
       return false
