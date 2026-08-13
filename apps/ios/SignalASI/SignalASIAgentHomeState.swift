@@ -114,7 +114,7 @@ extension AgentHomeView {
   var waitingMessageIDs: Set<UUID> {
     AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
       messages: transcriptMessages,
-      pendingTurnIds: coordinator.pendingAgentReplyTurnIds,
+      pendingTurnIds: activeSessionPendingTurnIds,
       stoppedTurnIds: stoppedAgentReplyTurnIds
     )
   }
@@ -122,9 +122,29 @@ extension AgentHomeView {
   var unboundWaitingTurnIDs: [String] {
     AgentReplyWaitingIndicatorPolicy.unboundTurnIDs(
       messages: transcriptMessages,
-      pendingTurnIds: coordinator.pendingAgentReplyTurnIds,
+      pendingTurnIds: activeSessionPendingTurnIds,
       stoppedTurnIds: stoppedAgentReplyTurnIds
     )
+  }
+
+  private var activeSessionPendingTurnIds: Set<String> {
+    let pending = coordinator.pendingAgentReplyTurnIds
+    guard !pending.isEmpty else { return [] }
+    let sessionID = store.activeAgentConversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sessionID.isEmpty else { return pending }
+
+    let visibleTurnIDs = Set(
+      messages.map { AgentReplyWaitingIndicatorPolicy.turnKey(for: $0) }
+    )
+    let taskTurnIDs = Set(
+      activeAgentTasks.map {
+        $0.taskId.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      .filter { !$0.isEmpty }
+    )
+    let sessionTurnIDs = visibleTurnIDs.union(taskTurnIDs)
+    return pending.filter { sessionTurnIDs.contains($0) }
   }
 
   var stoppedAgentReplyTurnIds: Set<String> {
