@@ -64,28 +64,7 @@ struct SignalASIAgentHomeReadinessView: View {
           .lineLimit(1)
       }
 
-      HStack(spacing: 8) {
-        NavigationLink(
-          destination: SignalASIAgentModelSelectionView(
-            onSelectionChanged: onModelSelectionChanged
-          )
-        ) {
-          metric(
-            title: t("signalasi.agent.readiness.targets", "Targets"),
-            value: "\(callableTargets)",
-            systemImage: "person.2"
-          )
-        }
-        .buttonStyle(.plain)
-        NavigationLink(destination: SignalASINativeToolCatalogView()) {
-          metric(
-            title: t("cc_metric_native_tools", "Native tools"),
-            value: "\(nativeToolSummary.available)/\(nativeToolSummary.total)",
-            systemImage: "wrench.and.screwdriver"
-          )
-        }
-        .buttonStyle(.plain)
-      }
+      readinessMetrics
 
       SignalASIAgentHomeRouteSummaryView(
         title: t("signalasi.agent.route.current", "Current route"),
@@ -267,6 +246,47 @@ struct SignalASIAgentHomeReadinessView: View {
     )
   }
 
+  @ViewBuilder
+  private var readinessMetrics: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        targetMetric
+        nativeToolMetric
+      }
+    } else {
+      HStack(spacing: 8) {
+        targetMetric
+        nativeToolMetric
+      }
+    }
+  }
+
+  private var targetMetric: some View {
+    NavigationLink(
+      destination: SignalASIAgentModelSelectionView(
+        onSelectionChanged: onModelSelectionChanged
+      )
+    ) {
+      metric(
+        title: t("signalasi.agent.readiness.targets", "Targets"),
+        value: "\(callableTargets)",
+        systemImage: "person.2"
+      )
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var nativeToolMetric: some View {
+    NavigationLink(destination: SignalASINativeToolCatalogView()) {
+      metric(
+        title: t("cc_metric_native_tools", "Native tools"),
+        value: "\(nativeToolSummary.available)/\(nativeToolSummary.total)",
+        systemImage: "wrench.and.screwdriver"
+      )
+    }
+    .buttonStyle(.plain)
+  }
+
   private func metric(title: String, value: String, systemImage: String) -> some View {
     HStack(spacing: 7) {
       Image(systemName: systemImage)
@@ -276,11 +296,11 @@ struct SignalASIAgentHomeReadinessView: View {
         Text(title)
           .font(.system(size: 10))
           .foregroundColor(.signalASITextSecondary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
         Text(value)
           .font(.system(size: 13, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
       }
       Spacer(minLength: 0)
       Image(systemName: "chevron.right")
@@ -288,7 +308,11 @@ struct SignalASIAgentHomeReadinessView: View {
         .foregroundColor(.signalASITextSecondary)
     }
     .padding(.horizontal, 9)
-    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: usesAccessibilityDynamicType ? 52 : 44,
+      alignment: .leading
+    )
     .background(Color.signalASISurface)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
