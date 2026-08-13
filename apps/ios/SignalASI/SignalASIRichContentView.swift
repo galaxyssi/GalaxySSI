@@ -16,6 +16,9 @@ struct SignalASIRichContentView: View {
   @State private var artifactExportPresented = false
   @State private var artifactExportSourceURI = ""
   @State private var artifactExportFilename = "SignalASI-artifact"
+  @State private var compressedArtifactDocument: SignalASIArtifactDocument?
+  @State private var compressedArtifactExportPresented = false
+  @State private var compressedArtifactExportFilename = "SignalASI-artifact.zip"
   @State private var filePreview: SignalASIFilePreview?
   @State private var archivePreview: SignalASIRuntimeArtifactPreview?
   @State private var largeOutputExpanded = false
@@ -69,7 +72,8 @@ struct SignalASIRichContentView: View {
                   onAction: onAction,
                   onFormSubmit: onFormSubmit,
                   onArtifactSave: { exportArtifact($0) },
-                  onArtifactPreview: { previewArtifact($0) }
+                  onArtifactPreview: { previewArtifact($0) },
+                  onArtifactCompress: { compressArtifact($0) }
                 )
                 .padding(.vertical, 4)
               } else {
@@ -80,7 +84,8 @@ struct SignalASIRichContentView: View {
                   onAction: onAction,
                   onFormSubmit: onFormSubmit,
                   onArtifactSave: { exportArtifact($0) },
-                  onArtifactPreview: { previewArtifact($0) }
+                  onArtifactPreview: { previewArtifact($0) },
+                  onArtifactCompress: { compressArtifact($0) }
                 )
               }
             }
@@ -91,7 +96,8 @@ struct SignalASIRichContentView: View {
               onAction: onAction,
               onFormSubmit: onFormSubmit,
               onArtifactSave: { exportArtifact($0) },
-              onArtifactPreview: { previewArtifact($0) }
+              onArtifactPreview: { previewArtifact($0) },
+              onArtifactCompress: { compressArtifact($0) }
             )
           }
           if isLargeOutput {
@@ -121,6 +127,12 @@ struct SignalASIRichContentView: View {
     .sheet(item: $archivePreview) { preview in
       SignalASIRuntimeArtifactPreviewView(preview: preview)
     }
+    .fileExporter(
+      isPresented: $compressedArtifactExportPresented,
+      document: compressedArtifactDocument,
+      contentType: .zip,
+      defaultFilename: compressedArtifactExportFilename
+    ) { _ in }
   }
 
   private var isLargeOutput: Bool {
@@ -202,6 +214,25 @@ struct SignalASIRichContentView: View {
       title: block.title.ifBlank(file.lastPathComponent)
     )
   }
+
+  fileprivate func compressArtifact(_ block: AgentRichBlock) {
+    guard let file = coordinator.desktopArtifactStore.localFile(for: block)
+      ?? SignalASILocalFileResource.url(for: block) else {
+      return
+    }
+    do {
+      compressedArtifactDocument = SignalASIArtifactDocument(
+        data: try AgentDesktopArtifactActions.compressToStoredZip(source: file)
+      )
+      let sourceName = URL(fileURLWithPath: block.title.ifBlank(file.lastPathComponent))
+        .deletingPathExtension()
+        .lastPathComponent
+      compressedArtifactExportFilename = AgentDesktopArtifactStore.safeFileName(sourceName) + ".zip"
+      compressedArtifactExportPresented = true
+    } catch {
+      return
+    }
+  }
 }
 
 struct SignalASIFilePreview: Identifiable {
@@ -269,6 +300,7 @@ private struct SignalASIRichSectionView: View {
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
   var onArtifactPreview: (AgentRichBlock) -> Void
+  var onArtifactCompress: (AgentRichBlock) -> Void
 
   @State private var expanded: Bool
 
@@ -279,7 +311,8 @@ private struct SignalASIRichSectionView: View {
     onAction: @escaping (AgentRichAction) -> Void,
     onFormSubmit: @escaping (AgentRichBlock, [String: String]) -> Void,
     onArtifactSave: @escaping (AgentRichBlock) -> Void,
-    onArtifactPreview: @escaping (AgentRichBlock) -> Void
+    onArtifactPreview: @escaping (AgentRichBlock) -> Void,
+    onArtifactCompress: @escaping (AgentRichBlock) -> Void
   ) {
     self.section = section
     self.expansionStorageKey = expansionStorageKey
@@ -288,6 +321,7 @@ private struct SignalASIRichSectionView: View {
     self.onFormSubmit = onFormSubmit
     self.onArtifactSave = onArtifactSave
     self.onArtifactPreview = onArtifactPreview
+    self.onArtifactCompress = onArtifactCompress
     let storageKey = expansionStorageKey.isEmpty
       ? ""
       : "\(expansionStorageKey):\(section.kind.rawValue)"
@@ -312,7 +346,8 @@ private struct SignalASIRichSectionView: View {
       onAction: onAction,
       onFormSubmit: onFormSubmit,
       onArtifactSave: onArtifactSave,
-      onArtifactPreview: onArtifactPreview
+      onArtifactPreview: onArtifactPreview,
+      onArtifactCompress: onArtifactCompress
     )
     .padding(.vertical, 4)
   }
@@ -357,7 +392,8 @@ private struct SignalASIRichSectionView: View {
           onAction: onAction,
           onFormSubmit: onFormSubmit,
           onArtifactSave: onArtifactSave,
-          onArtifactPreview: onArtifactPreview
+          onArtifactPreview: onArtifactPreview,
+          onArtifactCompress: onArtifactCompress
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
       }
@@ -394,6 +430,7 @@ private struct SignalASIRichBlockListView: View {
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
   var onArtifactPreview: (AgentRichBlock) -> Void
+  var onArtifactCompress: (AgentRichBlock) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -404,7 +441,8 @@ private struct SignalASIRichBlockListView: View {
           onAction: onAction,
           onFormSubmit: onFormSubmit,
           onArtifactSave: onArtifactSave,
-          onArtifactPreview: onArtifactPreview
+          onArtifactPreview: onArtifactPreview,
+          onArtifactCompress: onArtifactCompress
         )
         .padding(.top, index == 0 ? 0 : Self.blockSpacing(for: block))
       }
@@ -435,6 +473,7 @@ private struct SignalASIRichBlockView: View {
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void
   var onArtifactSave: (AgentRichBlock) -> Void
   var onArtifactPreview: (AgentRichBlock) -> Void
+  var onArtifactCompress: (AgentRichBlock) -> Void
 
   @State private var expandedCode = false
   @State private var expandedTable = false
@@ -1158,6 +1197,14 @@ private struct SignalASIRichBlockView: View {
             onArtifactSave(block)
           } label: {
             Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.bordered)
+          Button {
+            onArtifactCompress(block)
+          } label: {
+            Label(t("rich_output_compress", "Compress"), systemImage: "archivebox")
               .font(.caption.weight(.semibold))
               .frame(maxWidth: .infinity, minHeight: 32)
           }
@@ -2490,6 +2537,7 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
 
 private struct SignalASIArtifactDocument: FileDocument {
   static var readableContentTypes: [UTType] { [.data] }
+  static var writableContentTypes: [UTType] { [.data, .zip] }
 
   var data: Data
 
