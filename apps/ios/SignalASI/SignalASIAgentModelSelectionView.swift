@@ -104,6 +104,7 @@ struct SignalASIAgentModelSelectionView: View {
 
   var onSelectionChanged: (() -> Void)?
   @State private var contentLoading = true
+  @State private var modelSelectionRefreshToken = UUID()
   @State private var navigationContentGate = SignalASINavigationContentGate()
   @State private var preparedContent = SignalASIAgentModelSelectionPreparedContent(
     localProfiles: [],
@@ -349,12 +350,14 @@ struct SignalASIAgentModelSelectionView: View {
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear {
+      contentLoading = true
+      modelSelectionRefreshToken = UUID()
       _ = coordinator.requestCapabilityManifestRefresh()
     }
     .onDisappear {
       navigationContentGate.invalidate()
     }
-    .task(id: modelSelectionContentTaskID) {
+    .task(id: "\(modelSelectionContentTaskID)|\(modelSelectionRefreshToken.uuidString)") {
       await prepareModelSelectionContent()
     }
   }
