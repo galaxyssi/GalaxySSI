@@ -3942,6 +3942,8 @@
 "rich_output_download" = "下载";
 "rich_output_download_requested" = "已请求";
 "rich_output_download_failed" = "无法请求此工件。";
+"rich_output_download_retry" = "重试";
+"rich_output_download_timeout" = "桌面端暂未响应，可以再次请求。";
 "rich_output_save" = "保存到文件";
 "rich_output_compress" = "压缩";
 "rich_output_extract" = "解压";

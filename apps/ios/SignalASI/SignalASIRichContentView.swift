@@ -496,6 +496,8 @@ private struct SignalASIRichBlockView: View {
   @State private var archiveExtractionError = ""
   @State private var artifactDownloadError = ""
   @State private var artifactDownloadRequested = false
+  @State private var artifactDownloadTimedOut = false
+  @State private var artifactDownloadRequestID = UUID()
 
   var body: some View {
     switch block.type {
@@ -582,6 +584,7 @@ private struct SignalASIRichBlockView: View {
     .onChange(of: coordinator.artifactRevision) { _ in
       if localArtifactFile != nil {
         artifactDownloadRequested = false
+        artifactDownloadTimedOut = false
       }
     }
   }
@@ -1383,14 +1386,26 @@ private struct SignalASIRichBlockView: View {
           Label(
             artifactDownloadRequested
               ? t("rich_output_download_requested", "Requested")
+              : artifactDownloadTimedOut
+                ? t("rich_output_download_retry", "Retry")
               : t("rich_output_download", "Download"),
-            systemImage: artifactDownloadRequested ? "clock" : "arrow.down.circle"
+            systemImage: artifactDownloadRequested
+              ? "clock"
+              : artifactDownloadTimedOut ? "arrow.clockwise" : "arrow.down.circle"
           )
             .font(.caption.weight(.semibold))
             .frame(maxWidth: .infinity, minHeight: 32)
         }
         .buttonStyle(.borderedProminent)
         .disabled(artifactDownloadRequested)
+        if artifactDownloadTimedOut {
+          Text(t(
+            "rich_output_download_timeout",
+            "The Desktop has not responded yet. You can request it again."
+          ))
+          .font(.caption)
+          .foregroundColor(.signalASITextSecondary)
+        }
       }
       if !previewActions.isEmpty {
         resourceActionButtons(previewActions)
@@ -1413,13 +1428,27 @@ private struct SignalASIRichBlockView: View {
   }
 
   private func requestArtifactDownload() {
+    let requestID = UUID()
+    artifactDownloadRequestID = requestID
     artifactDownloadRequested = true
+    artifactDownloadTimedOut = false
     Task { @MainActor in
-      guard !await coordinator.requestDesktopArtifactDownload(block: block) else { return }
+      if !await coordinator.requestDesktopArtifactDownload(block: block) {
+        guard artifactDownloadRequestID == requestID else { return }
+        artifactDownloadRequested = false
+        artifactDownloadError = coordinator.lastError.ifBlank(
+          t("rich_output_download_failed", "Unable to request this artifact.")
+        )
+        return
+      }
+      try? await Task.sleep(nanoseconds: 20_000_000_000)
+      guard artifactDownloadRequestID == requestID,
+            artifactDownloadRequested,
+            localArtifactFile == nil else {
+        return
+      }
       artifactDownloadRequested = false
-      artifactDownloadError = coordinator.lastError.ifBlank(
-        t("rich_output_download_failed", "Unable to request this artifact.")
-      )
+      artifactDownloadTimedOut = true
     }
   }
 
