@@ -199,12 +199,6 @@ struct SignalASIAgentComposerView: View {
         }
     }
     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
-    .background(Color.signalASISurface)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .contentShape(Rectangle())
     .simultaneousGesture(holdToTalkGesture)
     .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
@@ -382,8 +376,6 @@ struct SignalASIAgentComposerView: View {
           .foregroundColor(.signalASITextPrimary)
           .rotationEffect(.degrees(trayVisible ? 45 : 0))
           .frame(width: 54, height: 54)
-          .background(Color.signalASISurface)
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
       .buttonStyle(.plain)
       .frame(minWidth: minimumTouchSize, minHeight: minimumTouchSize)
