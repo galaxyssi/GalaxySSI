@@ -79,8 +79,9 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         Text(sessionTitle)
           .font(.system(size: 14, weight: .bold))
           .foregroundColor(.signalASIAgentSessionTitle)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
           .truncationMode(.tail)
+          .multilineTextAlignment(.trailing)
           .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .buttonStyle(.plain)
@@ -90,9 +91,10 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
             .font(.system(size: 8, weight: .bold))
           SignalASIAgentRouteLogo(label: modelLogoLabel, size: 16)
           Text(modelStatusLabel)
-            .lineLimit(1)
+            .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
             .truncationMode(.tail)
-            .minimumScaleFactor(0.72)
+            .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.72)
+            .multilineTextAlignment(.trailing)
         }
         .font(.system(size: 10, weight: .regular))
         .foregroundColor(.signalASITextSecondary)
@@ -115,7 +117,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
 
   private var headerHeight: CGFloat {
     if usesAccessibilityDynamicType {
-      return 108
+      return 124
     }
     return 76
   }
