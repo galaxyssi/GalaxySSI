@@ -451,6 +451,13 @@ struct PairingView: View {
         format: t("signalasi.pairing.desktop_added", "%@ added"),
         pairing?.desktopName ?? pendingPairing?.desktopName ?? t("signalasi.pairing.title", "Pairing")
       )
+      NotificationCenter.default.post(
+        name: .signalASIDesktopPairingDidComplete,
+        object: nil,
+        userInfo: [
+          "desktopId": pairing?.desktopId ?? pendingPairing?.desktopId ?? ""
+        ]
+      )
       pairingNoticeIsError = false
       pendingPairing = nil
     } catch {
