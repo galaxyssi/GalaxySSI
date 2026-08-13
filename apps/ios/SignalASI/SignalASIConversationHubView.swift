@@ -58,7 +58,7 @@ struct SignalASIConversationHubView: View {
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
-        title: hubTitle,
+        title: t("signalasi.agent_sessions.title", "Sessions"),
         leading: {
           if showsBackButton {
             SignalASIBackButton()
@@ -1045,17 +1045,6 @@ struct SignalASIConversationHubView: View {
     selectedTab == .contacts
       ? t("signalasi.conversation_hub.search_contacts", "Search contacts")
       : t("signalasi.conversation_hub.search_conversations", "Search conversations")
-  }
-
-  private var hubTitle: String {
-    switch selectedTab {
-    case .conversations:
-      return t("signalasi.conversation_hub.title", "Conversations")
-    case .contacts:
-      return t("signalasi.conversation_hub.tab_contacts", "Contacts")
-    case .groups:
-      return t("signalasi.conversation_hub.tab_groups", "Groups")
-    }
   }
 
   private func sessionTitle(_ session: AgentConversation) -> String {
