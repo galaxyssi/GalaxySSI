@@ -70,10 +70,14 @@ enum SignalASINavigationContentPrewarm {
         apiKey: { apiKeys[$0.keychainAccount] }
       )
       let readyCloudContacts = cloudContacts.filter { contact in
-        AgentConnectorAvailability.cloudModelReady(
-          contact: contact,
-          apiKey: contact.selectedCloudModel.flatMap { apiKeys[$0.keychainAccount] }
-        )
+        contact.cloudModels.contains { model in
+          AgentConnectorAvailability.cloudModelReady(
+            model: model,
+            apiKey: apiKeys[model.keychainAccount],
+            provider: contact.cloudProvider,
+            setupStatus: contact.setupStatus
+          )
+        }
       }
       return (
         hub,

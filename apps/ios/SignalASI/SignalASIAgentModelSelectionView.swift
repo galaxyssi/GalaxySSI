@@ -97,6 +97,13 @@ struct SignalASIAgentModelSelectionPreparedContent {
 }
 
 struct SignalASIAgentModelSelectionView: View {
+  private struct ReadyCloudModel: Identifiable {
+    var contact: SignalASIContact
+    var model: CloudModelConfig
+
+    var id: String { "\(contact.id):\(model.modelId)" }
+  }
+
   @Environment(\.dismiss) private var dismiss
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
@@ -122,6 +129,22 @@ struct SignalASIAgentModelSelectionView: View {
 
   private var cloudContacts: [SignalASIContact] {
     preparedContent.cloudContacts
+  }
+
+  private var readyCloudModels: [ReadyCloudModel] {
+    cloudContacts.flatMap { contact in
+      contact.cloudModels.compactMap { model in
+        guard AgentConnectorAvailability.cloudModelReady(
+          model: model,
+          apiKey: store.apiKey(for: model),
+          provider: contact.cloudProvider,
+          setupStatus: contact.setupStatus
+        ) else {
+          return nil
+        }
+        return ReadyCloudModel(contact: contact, model: model)
+      }
+    }
   }
 
   private var callableTargets: [AgentCallableTarget] {
@@ -150,7 +173,17 @@ struct SignalASIAgentModelSelectionView: View {
     if agentTargets.contains(where: { $0.id == targetId }) {
       return true
     }
-    return cloudContacts.contains { $0.id == targetId }
+    guard let contact = cloudContacts.first(where: { $0.id == targetId }) else {
+      return false
+    }
+    return selectedCloudModel(in: contact, modelId: selection.modelId).map { model in
+      AgentConnectorAvailability.cloudModelReady(
+        model: model,
+        apiKey: store.apiKey(for: model),
+        provider: contact.cloudProvider,
+        setupStatus: contact.setupStatus
+      )
+    } ?? false
   }
 
   var body: some View {
@@ -297,31 +330,29 @@ struct SignalASIAgentModelSelectionView: View {
             AddContactView(autoOpenScanner: true)
           }
 
-          if !cloudContacts.isEmpty {
+          if !readyCloudModels.isEmpty {
             SignalASISecuritySectionTitle(
               title: t("signalasi.agent.model_selection.cloud_section", "CLOUD MODELS")
             )
-            ForEach(cloudContacts) { contact in
-              if let model = contact.selectedCloudModel {
-                let selected = isSelectedCloud(contact)
-                SignalASISecurityActionRow(
-                  title: model.displayName.ifBlank(model.modelId),
-                  subtitle: "\(contact.displayName) - \(model.modelId)",
-                  systemImage: selected ? "checkmark.circle.fill" : "cloud.fill",
-                  assetImage: cloudLogoAssetName(for: contact.cloudProvider),
-                  tint: selected ? .signalASIAccent : cloudModelTint(contact.cloudProvider),
-                  badge: selected
-                    ? t("signalasi.agent.model_selection.current", "Current")
-                    : t("signalasi.common.select", "Select"),
-                  monospacedSubtitle: true
-                ) {
-                  selectCloud(contact, model: model)
-                }
+            ForEach(readyCloudModels) { item in
+              let selected = isSelectedCloud(item.contact, model: item.model)
+              SignalASISecurityActionRow(
+                title: item.model.displayName.ifBlank(item.model.modelId),
+                subtitle: "\(item.contact.displayName) - \(item.model.modelId)",
+                systemImage: selected ? "checkmark.circle.fill" : "cloud.fill",
+                assetImage: cloudLogoAssetName(for: item.contact.cloudProvider),
+                tint: selected ? .signalASIAccent : cloudModelTint(item.contact.cloudProvider),
+                badge: selected
+                  ? t("signalasi.agent.model_selection.current", "Current")
+                  : t("signalasi.common.select", "Select"),
+                monospacedSubtitle: true
+              ) {
+                selectCloud(item.contact, model: item.model)
               }
             }
           }
 
-          if localProfiles.isEmpty && agentTargets.isEmpty && cloudContacts.isEmpty {
+          if localProfiles.isEmpty && agentTargets.isEmpty && readyCloudModels.isEmpty {
             SignalASISecurityStatusRow(
               title: t("signalasi.agent.model_selection.no_models", "No ready models"),
               subtitle: t(
@@ -418,7 +449,8 @@ struct SignalASIAgentModelSelectionView: View {
 
   private var modelSelectionContentTaskID: String {
     let contacts = store.contacts.map {
-      "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.setupStatus):\($0.selectedCloudModelId)"
+      let models = $0.cloudModels.map { "\($0.modelId):\($0.displayName):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: ",")
+      return "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.setupStatus):\($0.selectedCloudModelId):\(models)"
     }.joined(separator: "|")
     return "\(store.activeAgentConversationId)|\(contacts)"
   }
@@ -448,10 +480,14 @@ struct SignalASIAgentModelSelectionView: View {
         apiKey: { apiKeys[$0.keychainAccount] }
       )
       let cloudContacts = sourceCloudContacts.filter { contact in
-        AgentConnectorAvailability.cloudModelReady(
-          contact: contact,
-          apiKey: contact.selectedCloudModel.flatMap { apiKeys[$0.keychainAccount] }
-        )
+        contact.cloudModels.contains { model in
+          AgentConnectorAvailability.cloudModelReady(
+            model: model,
+            apiKey: apiKeys[model.keychainAccount],
+            provider: contact.cloudProvider,
+            setupStatus: contact.setupStatus
+          )
+        }
       }
       return SignalASIAgentModelSelectionPreparedContent(
         localProfiles: localProfiles,
@@ -517,10 +553,12 @@ struct SignalASIAgentModelSelectionView: View {
         )
       }
 
-      if let model = contact.selectedCloudModel {
+      if let model = selectedCloudModel(in: contact, modelId: selection.modelId) {
         let ready = AgentConnectorAvailability.cloudModelReady(
-          contact: contact,
-          apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))
+          model: model,
+          apiKey: store.apiKey(for: model),
+          provider: contact.cloudProvider,
+          setupStatus: contact.setupStatus
         )
         return (
           model.displayName
@@ -551,8 +589,18 @@ struct SignalASIAgentModelSelectionView: View {
       selection.modelId == profile.id
   }
 
-  private func isSelectedCloud(_ contact: SignalASIContact) -> Bool {
-    selection.mode == .manual && selection.targetId == contact.id
+  private func isSelectedCloud(_ contact: SignalASIContact, model: CloudModelConfig) -> Bool {
+    selection.mode == .manual &&
+      selection.targetId == contact.id &&
+      selection.modelId == model.modelId
+  }
+
+  private func selectedCloudModel(in contact: SignalASIContact, modelId: String) -> CloudModelConfig? {
+    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if cleanModelId.isEmpty {
+      return contact.selectedCloudModel
+    }
+    return contact.cloudModels.first { $0.modelId == cleanModelId }
   }
 
   private func isSelectedAgent(_ target: AgentCallableTarget) -> Bool {
