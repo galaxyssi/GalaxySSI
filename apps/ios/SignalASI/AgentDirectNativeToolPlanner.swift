@@ -1919,7 +1919,9 @@ enum AgentTaskHistoryCommand: Equatable {
 
     switch normalized {
     case "recent tasks", "show recent tasks", "task history", "show task history",
-         "last tasks", "show last tasks":
+         "last tasks", "show last tasks",
+         "\u{6700}\u{8fd1}\u{4efb}\u{52a1}", "\u{67e5}\u{770b}\u{6700}\u{8fd1}\u{4efb}\u{52a1}",
+         "\u{4efb}\u{52a1}\u{5386}\u{53f2}", "\u{67e5}\u{770b}\u{4efb}\u{52a1}\u{5386}\u{53f2}":
       return .recent
     default:
       break
@@ -1927,7 +1929,8 @@ enum AgentTaskHistoryCommand: Equatable {
 
     let prefixes = [
       "search tasks ", "find tasks ", "search task ", "find task ",
-      "搜索任务 ", "查找任务 "
+      "搜索任务 ", "查找任务 ",
+      "搜索任务历史 ", "查找任务历史 "
     ]
     guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
       return nil
