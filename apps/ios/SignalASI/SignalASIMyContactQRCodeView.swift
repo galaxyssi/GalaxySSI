@@ -5,6 +5,7 @@ struct MyContactQRCodeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var copiedMessage = ""
   @State private var qrText = ""
 
@@ -31,7 +32,7 @@ struct MyContactQRCodeView: View {
         VStack(alignment: .leading, spacing: 12) {
           MyContactQRHeroView(
             name: store.profile.name,
-            signalASIId: store.profile.signalASIId,
+            signalASIId: contactCardValue("signalasi_id", fallback: store.profile.signalASIId),
             badge: t("signalasi.contact.my_qr_title", "My QR Code")
           )
           qrCard
@@ -86,18 +87,21 @@ struct MyContactQRCodeView: View {
       SignalASISecuritySectionTitle(title: t("signalasi.contact.section_identity", "Identity"))
       SignalASISecurityActionRow(
         title: t("settings_signalasi_id", "SignalASI ID"),
-        subtitle: store.profile.signalASIId,
+        subtitle: contactCardValue("signalasi_id", fallback: store.profile.signalASIId),
         systemImage: "link",
         tint: .blue,
         badge: t("common_copy", "Copy"),
         monospacedSubtitle: true
       ) {
-        copy(store.profile.signalASIId, message: t("signalasi.contact.my_qr_id_copied", "SignalASI ID copied"))
+        copy(
+          contactCardValue("signalasi_id", fallback: store.profile.signalASIId),
+          message: t("signalasi.contact.my_qr_id_copied", "SignalASI ID copied")
+        )
       }
       SignalASISecurityActionRow(
         title: t("contact_my_fingerprint", "My Fingerprint"),
         subtitle: SignalASISecurityFormatter.fingerprint(
-          store.profile.identityFingerprint,
+          contactCardValue("identity_fingerprint", fallback: store.profile.identityFingerprint),
           unknown: t("Unavailable", "Unavailable")
         ),
         systemImage: "checkmark.shield",
@@ -106,7 +110,7 @@ struct MyContactQRCodeView: View {
         monospacedSubtitle: true
       ) {
         copy(
-          store.profile.identityFingerprint,
+          contactCardValue("identity_fingerprint", fallback: store.profile.identityFingerprint),
           message: t("signalasi.contact.my_qr_fingerprint_copied", "Fingerprint copied")
         )
       }
@@ -145,7 +149,7 @@ struct MyContactQRCodeView: View {
 
   private func refreshQRText() {
     if qrText.isEmpty {
-      qrText = (try? store.myContactQRText()) ?? "{}"
+      qrText = (try? coordinator.myContactQRText()) ?? "{}"
     }
   }
 
@@ -153,6 +157,16 @@ struct MyContactQRCodeView: View {
     guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     UIPasteboard.general.string = value
     copiedMessage = message
+  }
+
+  private func contactCardValue(_ key: String, fallback: String) -> String {
+    guard let data = qrText.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let value = object[key] as? String,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return fallback
+    }
+    return value
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

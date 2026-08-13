@@ -277,6 +277,59 @@ enum SignalASIContactExchange {
     ]
   }
 
+  static func makeSignedPhoneContactQRText(
+    profile: SignalASIProfile,
+    signalIdentity: SignalASISignalIdentity,
+    inboxRouteId: String,
+    now: Date = Date(),
+    sign: (Data) -> String?
+  ) throws -> String? {
+    guard SignalASILinkProtocol.validRouteId(inboxRouteId),
+          signalIdentity.name.hasPrefix("signalasi:"),
+          signalIdentity.fingerprint.count == 64,
+          !signalIdentity.publicKey.isEmpty else {
+      return nil
+    }
+    let device = SignalASIDeviceIdentity.current(profile: profile)
+    let topic = "\(SignalASILinkProtocol.topicRoot)/contact/\(inboxRouteId)/inbox"
+    var card: [String: Any] = [
+      "type": contactType,
+      "version": version,
+      "signalasi_id": signalIdentity.name,
+      "name": String(device.displayName.prefix(64)),
+      "identity_public_key": signalIdentity.publicKey,
+      "identity_fingerprint": signalIdentity.fingerprint,
+      "mqtt_inbox_topic": topic,
+      "device_id": inboxRouteId,
+      "created_at": Int64(now.timeIntervalSince1970 * 1_000)
+    ]
+    guard let signature = sign(canonicalPhoneContactCardBytes(card)), !signature.isEmpty else {
+      return nil
+    }
+    card["signature"] = signature
+    let data = try SignalASILinkProtocol.jsonData(card)
+    return String(data: data, encoding: .utf8)
+  }
+
+  private static func canonicalPhoneContactCardBytes(_ card: [String: Any]) -> Data {
+    let fields = [
+      "type",
+      "version",
+      "signalasi_id",
+      "name",
+      "identity_public_key",
+      "identity_fingerprint",
+      "mqtt_inbox_topic",
+      "device_id",
+      "created_at"
+    ]
+    let payload = fields.map { key -> String in
+      let value = String(describing: card[key] ?? "")
+      return "\(key.utf16.count):\(key)\(value.utf16.count):\(value)|"
+    }.joined()
+    return Data(payload.utf8)
+  }
+
   static func classifyQRCode(_ contents: String, now: Date = Date()) throws -> SignalASIQRCodeImport {
     let rawObject = try decodeQRCodeObject(contents, label: "QR")
     let object = SignalASILinkProtocol.normalizePairingQRCode(rawObject) ?? rawObject

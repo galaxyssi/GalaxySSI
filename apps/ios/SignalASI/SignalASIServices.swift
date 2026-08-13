@@ -5255,6 +5255,20 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  func myContactQRText(now: Date = Date()) throws -> String {
+    let identity = signalEngine.identity
+    if let signed = try SignalASIContactExchange.makeSignedPhoneContactQRText(
+      profile: store.profile,
+      signalIdentity: identity,
+      inboxRouteId: store.phoneContactInboxRouteId(),
+      now: now,
+      sign: signalEngine.signContactCard
+    ) {
+      return signed
+    }
+    return try store.myContactQRText(now: now)
+  }
+
   private func publishLinkMessage(
     _ text: String,
     contact: SignalASIContact,
