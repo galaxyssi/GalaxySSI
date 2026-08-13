@@ -330,7 +330,6 @@ struct AddContactView: View {
         pendingFriendRequest = stored.first
         pendingScannedRequests = stored
         setImportStatus(requestsReceivedStatus(stored), isError: false)
-        onImportCompleted?()
         return
       }
       _ = coordinator.requestCapabilityManifestRefresh(force: true)
@@ -359,7 +358,6 @@ struct AddContactView: View {
       pendingFriendRequest = stored.first
       pendingScannedRequests = stored
       setImportStatus(requestsReceivedStatus(stored), isError: false)
-      onImportCompleted?()
     }
   }
 
