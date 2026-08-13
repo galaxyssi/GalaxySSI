@@ -258,6 +258,15 @@ struct SignalASIControlCenterView: View {
         SignalASICapabilityLibraryView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_mcp_title", "MCP"),
+        subtitle: t("cc_mcp_subtitle", "External tools, services, and device connectors"),
+        systemImage: "shippingbox",
+        tint: .blue,
+        badge: mcpRouteBadge
+      ) {
+        SignalASICapabilityLibraryView(initialKind: .mcp)
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_runtime_title", "On-device Linux Runtime"),
         subtitle: t("cc_runtime_subtitle", "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"),
         systemImage: "terminal",
@@ -312,6 +321,13 @@ struct SignalASIControlCenterView: View {
         SignalASISelfEvolutionControlView()
       }
     }
+  }
+
+  private var mcpRouteBadge: String {
+    let count = SignalASIMcpControlStores.makeRegistry().list().count
+    return count > 0
+      ? String(count)
+      : t("status_needs_setup", "Needs Setup")
   }
 
   private var connectionTrustSection: some View {
