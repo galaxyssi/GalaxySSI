@@ -45,6 +45,47 @@ def _peer_lock(remote_name: str, remote_device_id: int) -> threading.RLock:
         return _peer_locks.setdefault(key, threading.RLock())
 
 
+def sidecar_script_candidates() -> list[Path]:
+    """Return trusted sidecar runtimes in deterministic preference order."""
+    script_name = "signalasi-link-sidecar.bat" if os.name == "nt" else "signalasi-link-sidecar"
+    relative = Path("signal_sidecar") / "build" / "install" / "signalasi-link-sidecar" / "bin" / script_name
+    configured = os.environ.get("SIGNALASI_LINK_SIDECAR_SCRIPT", "").strip()
+    workspace = Path(
+        os.environ.get(
+            "SIGNALASI_WORKSPACE_ROOT",
+            str(Path.home() / "SignalASIWorkspace" / "SignalASI"),
+        )
+    ).expanduser()
+    candidates = [SIDECAR_SCRIPT]
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    candidates.extend(
+        [
+            workspace / "apps" / "desktop" / "core" / "signalasi-link" / "backend" / relative,
+            workspace / "apps" / "desktop" / "dist" / "SignalASI Desktop-win-x64" / "resources" /
+            "signalasi-link" / "backend" / relative,
+        ]
+    )
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        candidates.append(
+            Path(os.environ["LOCALAPPDATA"]) / "Programs" / "SignalASI Desktop" / "resources" /
+            "signalasi-link" / "backend" / relative
+        )
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate.resolve(strict=False)).lower() if os.name == "nt" else str(candidate.resolve(strict=False))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(candidate)
+    return unique
+
+
+def resolve_sidecar_script() -> Path | None:
+    return next((candidate for candidate in sidecar_script_candidates() if candidate.exists()), None)
+
+
 def start_signal_sidecar() -> None:
     """Start the local JVM sidecar if it is not already responding."""
     global _process, SIDECAR_PORT, SIDECAR_BASE
@@ -57,8 +98,10 @@ def start_signal_sidecar() -> None:
         if stale_process is not None and stale_process.poll() is None:
             _terminate_process(stale_process)
 
-        if not SIDECAR_SCRIPT.exists():
-            raise FileNotFoundError(f"Signal sidecar is not built: {SIDECAR_SCRIPT}")
+        sidecar_script = resolve_sidecar_script()
+        if sidecar_script is None:
+            checked = "; ".join(str(candidate) for candidate in sidecar_script_candidates())
+            raise FileNotFoundError(f"Signal sidecar runtime was not found. Checked: {checked}")
 
         if _port_is_in_use(SIDECAR_PORT):
             SIDECAR_PORT = _available_local_port()
@@ -85,7 +128,7 @@ def start_signal_sidecar() -> None:
             }
             if os.name == "nt":
                 popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            process = subprocess.Popen([str(SIDECAR_SCRIPT)], **popen_kwargs)
+            process = subprocess.Popen([str(sidecar_script)], **popen_kwargs)
             _process = process
 
         deadline = time.time() + 15

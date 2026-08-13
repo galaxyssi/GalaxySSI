@@ -29,6 +29,26 @@ let backendRestartTimer;
 let appIsQuitting = false;
 let cachedDesktopTaskStreamToken = "";
 
+function signalSidecarCandidates() {
+  const scriptName = process.platform === "win32" ? "signalasi-link-sidecar.bat" : "signalasi-link-sidecar";
+  const relative = path.join("signal_sidecar", "build", "install", "signalasi-link-sidecar", "bin", scriptName);
+  const workspace = process.env.SIGNALASI_WORKSPACE_ROOT
+    || path.join(os.homedir(), "SignalASIWorkspace", "SignalASI");
+  return [
+    path.join(BACKEND_DIR, relative),
+    process.env.SIGNALASI_LINK_SIDECAR_SCRIPT || "",
+    path.join(workspace, "apps", "desktop", "core", "signalasi-link", "backend", relative),
+    path.join(workspace, "apps", "desktop", "dist", "SignalASI Desktop-win-x64", "resources", "signalasi-link", "backend", relative),
+    process.platform === "win32"
+      ? path.join(process.env.LOCALAPPDATA || "", "Programs", "SignalASI Desktop", "resources", "signalasi-link", "backend", relative)
+      : ""
+  ].filter(Boolean);
+}
+
+function resolveSignalSidecarRuntime() {
+  return signalSidecarCandidates().find((candidate) => fs.existsSync(candidate)) || "";
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -1392,6 +1412,7 @@ async function startBackend() {
 
   const python = findPython();
   const signalasiDataDir = path.join(app.getPath("userData"), "runtime");
+  const signalSidecarRuntime = resolveSignalSidecarRuntime();
   fs.mkdirSync(signalasiDataDir, { recursive: true });
   const backendLogPath = path.join(app.getPath("userData"), "backend.log");
   const backendLog = fs.openSync(backendLogPath, "a");
@@ -1401,6 +1422,7 @@ async function startBackend() {
       env: {
         ...process.env,
         SIGNALASI_DATA_DIR: signalasiDataDir,
+        ...(signalSidecarRuntime ? { SIGNALASI_LINK_SIDECAR_SCRIPT: signalSidecarRuntime } : {}),
         SIGNALASI_DESKTOP_TASK_STREAM_TOKEN: desktopTaskStreamToken(),
         PYTHONUNBUFFERED: "1"
       },
@@ -1478,7 +1500,7 @@ async function runtimeDiagnostics(refresh = false) {
   const pythonDeps = pythonVersion.ok
     ? await runCommand(python, ["-c", "import fastapi, json5, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, yaml; print('backend deps ok')"], 8000)
     : { ok: false, code: 1, output: "Python not found" };
-  const sidecarRuntime = path.join(BACKEND_DIR, "signal_sidecar", "build", "install", "signalasi-link-sidecar", "bin", "signalasi-link-sidecar.bat");
+  const sidecarRuntime = resolveSignalSidecarRuntime();
   const packaged = Boolean(app.isPackaged);
   let managedRuntime = {
     contract_version: "signalasi.desktop-runtime/1.0",
@@ -1510,7 +1532,8 @@ async function runtimeDiagnostics(refresh = false) {
       dir: BACKEND_DIR,
       exists: fs.existsSync(path.join(BACKEND_DIR, "main.py")),
       sidecarRuntime,
-      sidecarExists: fs.existsSync(sidecarRuntime)
+      sidecarExists: Boolean(sidecarRuntime),
+      sidecarCandidates: signalSidecarCandidates()
     },
     python: {
       command: python,
