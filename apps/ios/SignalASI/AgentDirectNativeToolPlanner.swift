@@ -2105,7 +2105,8 @@ enum AgentCallableInventorySearchCommand {
       "search tools ", "find tools ", "search tool ", "find tool ",
       "search capabilities ", "find capabilities ", "search capability ", "find capability ",
       "search agents ", "find agents ", "search models ", "find models ",
-      "搜索工具 ", "查找工具 ", "搜索能力 ", "查找能力 ", "搜索 agent ", "搜索模型 "
+      "搜索工具 ", "查找工具 ", "搜索能力 ", "查找能力 ",
+      "搜索 agent ", "搜索智能体 ", "查找智能体 ", "搜索代理 ", "查找代理 ", "搜索模型 "
     ]
     guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
       return nil
@@ -2131,7 +2132,8 @@ enum AgentCallableInventoryCommand {
     case "list tools", "show tools", "available tools", "list system tools", "show system tools",
          "列出工具", "显示工具":
       return .tools
-    case "list agents", "show agents", "available agents", "列出 agent", "显示 agent":
+    case "list agents", "show agents", "available agents", "列出 agent", "显示 agent",
+         "列出智能体", "显示智能体", "列出代理", "显示代理":
       return .agents
     case "list models", "show models", "available models", "列出模型", "显示模型":
       return .models
