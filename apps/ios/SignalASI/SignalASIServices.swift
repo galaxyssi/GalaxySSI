@@ -5360,6 +5360,16 @@ final class MessageCoordinator: ObservableObject {
     return await mqttClient.publish(topic: topic, payload: data)
   }
 
+  func recoverPhoneContactSessionIfNeeded(contactId: String) async {
+    guard SignalASISignalEngine.isAvailable,
+          let contact = store.contact(id: contactId),
+          isPhoneContact(contact),
+          !signalEngine.hasSession(remoteName: contact.signalASIId) else {
+      return
+    }
+    _ = await requestPhoneContactBundle(for: contact)
+  }
+
   private func isPhoneContact(_ contact: SignalASIContact) -> Bool {
     contact.type.caseInsensitiveCompare("person") == .orderedSame &&
       contact.isCommunicable &&

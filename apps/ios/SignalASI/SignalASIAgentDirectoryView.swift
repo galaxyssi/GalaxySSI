@@ -96,6 +96,7 @@ struct SignalASIContactDirectoryActionsView: View {
 struct SignalASINewFriendsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var statusText = ""
   @State private var statusIsError = false
 
@@ -149,6 +150,7 @@ struct SignalASINewFriendsView: View {
 
   private func approve(_ request: SignalASIFriendRequest) {
     if store.approveFriendRequest(id: request.id) {
+      Task { await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId) }
       statusText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
       statusIsError = false
     } else {
