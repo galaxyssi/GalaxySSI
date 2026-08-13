@@ -55,6 +55,7 @@ struct SignalASIConversationHubView: View {
     self.onBackToSettings = onBackToSettings
   }
   @State private var pendingContactDeletion: SignalASIContact?
+  @State private var pendingChatDeletion: SignalASIContact?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -183,6 +184,26 @@ struct SignalASIConversationHubView: View {
       }
     } message: {
       Text(t("signalasi.conversation_hub.delete_contact_message", "Only this contact and its local history will be removed."))
+    }
+    .alert(
+      t("delete_chat_title", "Delete Chat"),
+      isPresented: Binding(
+        get: { pendingChatDeletion != nil },
+        set: { if !$0 { pendingChatDeletion = nil } }
+      )
+    ) {
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        pendingChatDeletion = nil
+      }
+      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
+        if let contact = pendingChatDeletion {
+          store.deleteMessages(for: contact.id)
+          refreshAfterChatRemoval()
+        }
+        pendingChatDeletion = nil
+      }
+    } message: {
+      Text(t("signalasi.chat.delete.message", "Only local chat history is deleted. Contacts are not affected."))
     }
     .alert(
       t("signalasi.agent_session.delete", "Delete session"),
@@ -509,6 +530,12 @@ struct SignalASIConversationHubView: View {
     hubRefreshToken = UUID()
   }
 
+  private func refreshAfterChatRemoval() {
+    navigationContentGate.invalidate()
+    hubContentLoading = true
+    hubRefreshToken = UUID()
+  }
+
   private func refreshAfterSessionMutation() {
     navigationContentGate.invalidate()
     hubContentLoading = true
@@ -615,8 +642,8 @@ struct SignalASIConversationHubView: View {
       .buttonStyle(.plain)
       .contextMenu {
         if contact.id != "system" {
-          Button(t("signalasi.conversation_hub.delete_contact", "Delete contact"), role: .destructive) {
-            pendingContactDeletion = contact
+          Button(t("delete_chat_title", "Delete Chat"), role: .destructive) {
+            pendingChatDeletion = contact
           }
         }
       }
