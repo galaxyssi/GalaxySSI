@@ -1082,9 +1082,34 @@ internal fun MainActivity.handleSecurityScan(contents: String?, autoConfirm: Boo
                 Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
             }
         } else if (scanned.has("signalasi_id") || scanned.has("hermes_id")) {
-            AppStore.importContactQrAsRequest(this, contents)
-            Toast.makeText(this, getString(R.string.pairing_contact_request_received, scanned.optString("name", "")), Toast.LENGTH_LONG).show()
-            refreshDirectoryContacts()
+            if (AppStore.importContactQrAsRequest(this, contents)) {
+                val contactId = scanned.optString("signalasi_id")
+                    .ifBlank { scanned.optString("hermes_id") }
+                val requestPublished = SignalASIMqttClient.publishPhoneContactRequest(scanned)
+                val locallyApproved = contactId.isNotBlank() &&
+                    AppStore.approveFriendRequestForSignalasiId(this, contactId)
+                Toast.makeText(
+                    this,
+                    getString(
+                        if (requestPublished && locallyApproved) {
+                            R.string.phone_contact_scan_added
+                        } else {
+                            R.string.phone_contact_scan_pending
+                        },
+                        scanned.optString("name", getString(R.string.fallback_contact_name))
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshContactList()
+                refreshDirectoryContacts()
+                if (locallyApproved) {
+                    showMainTab(PAGE_CONTACTS)
+                } else {
+                    showFriendRequestsDialog()
+                }
+            } else {
+                Toast.makeText(this, getString(R.string.pairing_invalid_identity_qr), Toast.LENGTH_LONG).show()
+            }
         } else {
             Toast.makeText(this, getString(R.string.pairing_invalid_qr), Toast.LENGTH_SHORT).show()
         }
@@ -1184,13 +1209,8 @@ internal fun MainActivity.copyText(value: String, toast: String) {
 }
 
 internal fun MainActivity.showMyQrPayload() {
-    val payload = JSONObject().apply {
-        put("signalasi_id", SignalASICrypto.localSignalasiId())
-        put("name", AppStore.profile(this@showMyQrPayload).optString("name"))
-        put("identity_fingerprint", SignalASICrypto.localIdentitySha256())
-        put("identity_public_key", SignalASICrypto.localIdentityPublicKey())
-    }.toString()
-    val qrCodeBitmap = qrBitmap(payload, 320)
+    val payload = AppStore.myQrPayload(this).toString()
+    val qrCodeBitmap = qrBitmap(payload, 720)
     showFeaturePage(getString(R.string.contact_my_qr_title))
     featureContent.gravity = Gravity.CENTER_HORIZONTAL
     featureContent.addView(LinearLayout(this).apply {
@@ -1217,12 +1237,23 @@ internal fun MainActivity.showMyQrPayload() {
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = 12f
         })
+        addView(TextView(this@showMyQrPayload).apply {
+            text = getString(R.string.contact_my_qr_subtitle)
+            gravity = Gravity.CENTER
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 13f
+            setPadding(dp(14), dp(14), dp(14), 0)
+        })
     }, LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
     ).apply { topMargin = dp(8) })
     addSectionTitle(getString(R.string.contact_my_fingerprint))
-    featureContent.addView(featureRow(formatFingerprint(SignalASICrypto.localIdentitySha256()), getString(R.string.contact_scan_confirm_identity), R.drawable.ic_security_shield, getString(R.string.common_copy)))
+    featureContent.addView(featureRow(formatFingerprint(SignalASICrypto.localIdentitySha256()), getString(R.string.contact_scan_confirm_identity), R.drawable.ic_security_shield, getString(R.string.common_copy)).apply {
+        setOnClickListener {
+            copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint))
+        }
+    })
     featureContent.gravity = Gravity.NO_GRAVITY
 }
 

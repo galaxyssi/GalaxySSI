@@ -134,6 +134,11 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         var handled = true
         try {
             val envelope = runCatching { JSONObject(payload) }.getOrNull()
+            if (envelope?.optString("type") == "phone_contact_request_received") {
+                showFriendRequestNotification(envelope.optString("name"))
+                return
+            }
+            if (envelope?.optString("type") == "phone_contact_session_ready") return
             if (
                 envelope?.optString("type") == "agent_task_event" &&
                 VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)
@@ -260,6 +265,30 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             .setShowWhen(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(MESSAGE_NOTIFICATION_ID, notification)
+    }
+
+    private fun showFriendRequestNotification(name: String) {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            "phone-contact-request".hashCode(),
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val displayName = name.ifBlank { getString(R.string.fallback_contact_name) }
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_tab_chat_filled)
+            .setContentTitle(getString(R.string.new_friends))
+            .setContentText(getString(R.string.phone_contact_request_received, displayName))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setShowWhen(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(
+            "phone-contact-request:$displayName".hashCode(),
+            notification
+        )
     }
 
     private fun executeScheduledWorkflow(scheduleId: String) {

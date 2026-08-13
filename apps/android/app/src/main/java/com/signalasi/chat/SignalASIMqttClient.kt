@@ -1077,6 +1077,94 @@ object SignalASIMqttClient {
         return true
     }
 
+    fun publishPhoneContactRequest(targetCard: JSONObject): Boolean {
+        val context = appContext ?: return false
+        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
+        val targetId = targetCard.optString("signalasi_id")
+        if (targetId == SignalASICrypto.localSignalasiId()) return false
+        val topic = targetCard.optString("mqtt_inbox_topic")
+        val localCard = AppStore.myQrPayload(context)
+        val bundle = SignalASICrypto.localSignalBundleJson()
+        val payload = JSONObject()
+            .put("type", PhoneContactCard.REQUEST_TYPE)
+            .put("version", PhoneContactCard.VERSION)
+            .put("control_id", UUID.randomUUID().toString())
+            .put("from", SignalASICrypto.localSignalasiId())
+            .put("to", targetId)
+            .put("reply_topic", AppStore.localInboxTopic(context))
+            .put("contact_card", localCard)
+            .put("contact_card_signature", localCard.optString("signature"))
+            .put("signal_bundle", bundle)
+            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
+            .put("time", System.currentTimeMillis())
+        payload.put(
+            "control_signature",
+            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
+        )
+        return publishPublicJsonOrConnect(context, topic, payload)
+    }
+
+    private fun publishPhoneContactBundle(targetCard: JSONObject): Boolean {
+        val context = appContext ?: return false
+        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
+        val localCard = AppStore.myQrPayload(context)
+        val bundle = SignalASICrypto.localSignalBundleJson()
+        val payload = JSONObject()
+            .put("type", PhoneContactCard.BUNDLE_RESPONSE_TYPE)
+            .put("version", PhoneContactCard.VERSION)
+            .put("control_id", UUID.randomUUID().toString())
+            .put("from", SignalASICrypto.localSignalasiId())
+            .put("to", targetCard.optString("signalasi_id"))
+            .put("reply_topic", AppStore.localInboxTopic(context))
+            .put("contact_card", localCard)
+            .put("contact_card_signature", localCard.optString("signature"))
+            .put("signal_bundle", bundle)
+            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
+            .put("time", System.currentTimeMillis())
+        payload.put(
+            "control_signature",
+            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
+        )
+        return publishPublicJsonOrConnect(
+            context,
+            targetCard.optString("mqtt_inbox_topic"),
+            payload
+        )
+    }
+
+    private fun publishPublicJsonOrConnect(
+        context: Context,
+        topic: String,
+        payload: JSONObject
+    ): Boolean {
+        val retainedTopic = "$topic/${payload.optString("control_id")}"
+        if (client?.isConnected == true && publishPublicJson(retainedTopic, payload, retained = true)) {
+            return true
+        }
+        AppStore.queuePhoneContactControl(context, retainedTopic, payload)
+        connect(context)
+        return false
+    }
+
+    private fun flushPendingPhoneContactControls(context: Context) {
+        if (client?.isConnected != true) return
+        val controls = AppStore.pendingPhoneContactControls(context)
+        val now = System.currentTimeMillis()
+        for (index in 0 until controls.length()) {
+            val queued = controls.optJSONObject(index) ?: continue
+            val controlId = queued.optString("control_id")
+            val payload = queued.optJSONObject("payload")
+            val expired = now - queued.optLong("queued_at") > PhoneContactCard.CONTROL_MAX_AGE_MILLIS
+            if (controlId.isBlank() || payload == null || expired) {
+                AppStore.removePendingPhoneContactControl(context, controlId)
+                continue
+            }
+            if (publishPublicJson(queued.optString("topic"), payload, retained = true)) {
+                AppStore.removePendingPhoneContactControl(context, controlId)
+            }
+        }
+    }
+
     private fun flushPendingPairingClaim() {
         val pending = synchronized(pairingClaimLock) { pendingPairingClaim } ?: return
         if (System.currentTimeMillis() - pending.queuedAtMillis > PAIRING_CLAIM_MAX_AGE_MILLIS) {
@@ -1633,11 +1721,16 @@ object SignalASIMqttClient {
         appContext?.let { AppStore.outgoingTopicForContact(it, contactId) }
 
     private fun incomingTopicForContact(context: Context, contactId: String): String {
+        if (AppStore.isPersonContact(context, contactId)) return AppStore.localInboxTopic(context)
         val desktopId = AppStore.desktopIdForContact(context, contactId)
         return SignalASILinkProtocol.serverLink(context, desktopId)?.routes?.down.orEmpty()
     }
 
-    private fun publishPublicJson(topic: String, payload: JSONObject): Boolean {
+    private fun publishPublicJson(
+        topic: String,
+        payload: JSONObject,
+        retained: Boolean = false
+    ): Boolean {
         val mqtt = client ?: run {
             Log.w(TAG, "Public publish rejected: MQTT client is null")
             return false
@@ -1651,12 +1744,27 @@ object SignalASIMqttClient {
             topic,
             MqttMessage(payload.toString().toByteArray(Charsets.UTF_8)).apply {
                 qos = MQTT_QOS
-                isRetained = false
+                isRetained = retained
             },
             "public_control"
         ) ?: return false
         Log.i(TAG, "Published public MQTT control type=${payload.optString("type")} topic=$topic")
         return true
+    }
+
+    private fun clearRetainedPhoneContactControl(topic: String) {
+        val mqtt = client ?: return
+        val baseTopic = appContext?.let(AppStore::localInboxTopic) ?: return
+        if (!mqtt.isConnected || !topic.startsWith("$baseTopic/")) return
+        publishSafely(
+            mqtt,
+            topic,
+            MqttMessage(ByteArray(0)).apply {
+                qos = MQTT_QOS
+                isRetained = true
+            },
+            "phone_contact_control_clear"
+        )
     }
 
     private fun usesPcConnectorTunnel(contactId: String): Boolean {
@@ -1667,6 +1775,11 @@ object SignalASIMqttClient {
 
     private fun handleIncoming(topic: String, wire: JSONObject) {
         val context = appContext ?: return
+        val phoneInbox = AppStore.localInboxTopic(context)
+        if (topic == phoneInbox || topic.startsWith("$phoneInbox/")) {
+            handlePhoneContactIncoming(context, topic, wire)
+            return
+        }
         val link = SignalASILinkProtocol.allServerLinks(context).firstOrNull {
             topic == it.routes.down || topic == it.routes.control
         } ?: run {
@@ -1866,6 +1979,128 @@ object SignalASIMqttClient {
             }
         }
         dispatchIncomingPayload(context, payload, link.desktopId)
+    }
+
+    private fun handlePhoneContactIncoming(context: Context, topic: String, wire: JSONObject) {
+        if (wire.optString("type") == "signal_bundle_request") {
+            val localId = SignalASICrypto.localSignalasiId()
+            val senderId = wire.optString("from")
+            val expectedCard = AppStore.contactCard(context, senderId) ?: return
+            if (senderId.isBlank() || wire.optString("to") != localId ||
+                wire.optString("requested_fingerprint") != SignalASICrypto.localIdentitySha256()
+            ) return
+            val bundle = wire.optJSONObject("signal_bundle") ?: return
+            if (!SignalASICrypto.signalBundleFingerprint(bundle).equals(
+                    expectedCard.optString("identity_fingerprint"),
+                    ignoreCase = true
+                )
+            ) return
+            if (!AppStore.applySignalBundleResponse(context, wire)) return
+            publishPhoneContactBundle(expectedCard)
+            return
+        }
+        if (wire.optString("type") in setOf(
+                PhoneContactCard.REQUEST_TYPE,
+                PhoneContactCard.BUNDLE_RESPONSE_TYPE
+            )
+        ) {
+            if (!PhoneContactCard.isAddressedToLocalIdentity(wire, SignalASICrypto.localSignalasiId())) return
+            val card = PhoneContactCard.cardFromControlPayload(wire) ?: return
+            if (!SignalASICrypto.verifyPublicIdentitySignature(
+                    card.optString("identity_public_key"),
+                    card.optString("identity_fingerprint"),
+                    PhoneContactCard.canonicalBytes(card),
+                    card.optString("signature")
+                )
+            ) return
+            if (!SignalASICrypto.verifyPublicIdentitySignature(
+                    card.optString("identity_public_key"),
+                    card.optString("identity_fingerprint"),
+                    PhoneContactCard.canonicalControlBytes(wire),
+                    wire.optString("control_signature")
+                )
+            ) return
+            clearRetainedPhoneContactControl(topic)
+            if (!PhoneContactCard.isFreshControlPayload(wire)) return
+            val senderId = card.optString("signalasi_id")
+            val wasKnown = AppStore.canCommunicateWith(context, senderId)
+            val wasPending = AppStore.hasPendingFriendRequest(context, senderId)
+            if (!AppStore.importPhoneContactRequest(context, wire)) return
+            if (wire.optString("type") == PhoneContactCard.REQUEST_TYPE) {
+                publishPhoneContactBundle(card)
+            }
+            val eventType = when {
+                wire.optString("type") == PhoneContactCard.BUNDLE_RESPONSE_TYPE ->
+                    "phone_contact_session_ready"
+                !wasKnown && !wasPending -> "phone_contact_request_received"
+                else -> ""
+            }
+            if (eventType.isNotBlank()) {
+                notifyMessageListeners(
+                    JSONObject()
+                        .put("type", eventType)
+                        .put("contact_id", senderId)
+                        .put("name", card.optString("name"))
+                )
+            }
+            return
+        }
+        val localId = SignalASICrypto.localSignalasiId()
+        val senderId = wire.optString("from")
+        if (wire.optString("scheme") != "signal" ||
+            senderId.isBlank() || wire.optString("to") != localId ||
+            !AppStore.canCommunicateWith(context, senderId)
+        ) return
+        val ciphertextDigest = SignalASILinkCiphertextReplayPolicy.digest(wire)
+        SignalASILinkDeliveryStore.messageForCiphertext(context, ciphertextDigest)?.let { known ->
+            if (known.receiptRequired) publishPhoneContactReceipt(context, senderId, known.messageId)
+            return
+        }
+        val decrypted = SignalASICrypto.decryptEnvelope(wire) ?: return
+        if (decrypted.optString("source_id") != senderId || decrypted.optString("target_id") != localId) return
+        val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
+        payload.put("contact_id", senderId)
+        val incomingMessageId = payload.optString("message_id")
+        SignalASILinkDeliveryStore.bindCiphertext(
+            context,
+            ciphertextDigest,
+            incomingMessageId,
+            receiptRequired = payload.optString("type") != "delivery_ack"
+        )
+        if (payload.optString("type") == "delivery_ack") {
+            SignalASILinkDeliveryAckPolicy.transportMessageId(payload)
+                .takeIf(String::isNotBlank)
+                ?.let { SignalASILinkDeliveryStore.acknowledge(context, it) }
+            return
+        }
+        when (SignalASILinkDeliveryStore.stageIncoming(context, incomingMessageId, payload.toString())) {
+            SignalASILinkDeliveryStore.IncomingStageResult.INVALID -> return
+            SignalASILinkDeliveryStore.IncomingStageResult.COMPLETED,
+            SignalASILinkDeliveryStore.IncomingStageResult.PENDING -> {
+                publishPhoneContactReceipt(context, senderId, incomingMessageId)
+                return
+            }
+            SignalASILinkDeliveryStore.IncomingStageResult.STAGED -> Unit
+        }
+        publishPhoneContactReceipt(context, senderId, incomingMessageId)
+        notifyMessageListeners(payload)
+    }
+
+    private fun publishPhoneContactReceipt(context: Context, contactId: String, messageId: String) {
+        if (messageId.isBlank()) return
+        val topic = AppStore.outgoingTopicForContact(context, contactId) ?: return
+        publishJson(
+            JSONObject()
+                .put("type", "delivery_ack")
+                .put("transport_message_id", messageId)
+                .put("source_message_id", messageId)
+                .put("delivery_status", "accepted")
+                .put("sender", "system")
+                .put("peer_chat", true)
+                .put("time", System.currentTimeMillis()),
+            topic,
+            contactId
+        )
     }
 
     private fun dispatchIncomingPayload(
@@ -2342,14 +2577,38 @@ object SignalASIMqttClient {
     private fun subscribe() {
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
-        val links = SignalASILinkProtocol.allServerLinks(appContext ?: return)
-        if (links.isEmpty()) {
-            cancelSubscriptionRetry()
-            setSecureReady(false)
-            return
-        }
-        val generation = subscriptionRecoveryState.begin(links.size)
+        val context = appContext ?: return
+        val links = SignalASILinkProtocol.allServerLinks(context)
+        val generation = subscriptionRecoveryState.begin(links.size + 1)
         links.forEach { subscribeLink(mqtt, it, generation) }
+        subscribePhoneContactInbox(mqtt, AppStore.localInboxTopic(context), generation)
+    }
+
+    private fun subscribePhoneContactInbox(
+        mqtt: MqttAsyncClient,
+        topic: String,
+        generation: Int
+    ) {
+        runCatching {
+            mqtt.subscribe(
+                arrayOf(topic, "$topic/+"),
+                intArrayOf(MQTT_QOS, MQTT_QOS),
+                "phone_contact_inbox",
+                object : IMqttActionListener {
+                    override fun onSuccess(asyncActionToken: IMqttToken?) {
+                        completeSubscriptionAttempt(generation, succeeded = true)
+                    }
+
+                    override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                        Log.w(TAG, "Phone contact inbox subscribe failed", exception)
+                        completeSubscriptionAttempt(generation, succeeded = false)
+                    }
+                }
+            )
+        }.onFailure {
+            Log.w(TAG, "Phone contact inbox subscribe could not start", it)
+            completeSubscriptionAttempt(generation, succeeded = false)
+        }
     }
 
     private fun subscribeLink(
@@ -2418,6 +2677,7 @@ object SignalASIMqttClient {
         cancelSubscriptionRetry()
         subscribe()
         flushPendingPairingClaim()
+        flushPendingPhoneContactControls(context)
         if (initialOutboxRecoveryPrepared.compareAndSet(false, true)) {
             SignalASILinkDeliveryStore.makePendingImmediatelyRetryable(context)
         }

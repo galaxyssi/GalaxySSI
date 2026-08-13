@@ -162,11 +162,30 @@ object SignalASICrypto {
         }.getOrDefault(false)
     }
 
+    fun verifyPublicIdentitySignature(
+        identityPublicKey: String,
+        expectedFingerprint: String,
+        payload: ByteArray,
+        signature: String
+    ): Boolean {
+        if (identityPublicKey.isBlank() || signature.isBlank()) return false
+        return runCatching {
+            val identityKey = IdentityKey(b64d(identityPublicKey))
+            val fingerprint = sha256Hex(identityKey.serialize())
+            fingerprint.equals(expectedFingerprint, ignoreCase = true) &&
+                identityKey.publicKey.verifySignature(payload, b64d(signature))
+        }.getOrDefault(false)
+    }
+
     fun localSignalBundleJson(): JSONObject {
         ensureInitialized()
         return store.currentBundleJson(localSignalasiId(), DEFAULT_DEVICE_ID)
             .put("identityKeySha256", localIdentitySha256())
     }
+
+    fun signalBundleFingerprint(bundleJson: JSONObject): String = runCatching {
+        sha256Hex(b64d(bundleJson.getString("identityKey")))
+    }.getOrDefault("")
 
     fun exportSignalStoreJson(context: Context): JSONObject {
         initialize(context.applicationContext)

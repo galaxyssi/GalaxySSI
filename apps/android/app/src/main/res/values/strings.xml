@@ -1317,6 +1317,10 @@
     <string name="avatar_edit_title">Edit Avatar</string>
     <string name="avatar_saved_toast">Avatar saved</string>
     <string name="contact_my_qr_title">My QR Code</string>
+    <string name="contact_my_qr_subtitle">Let another SignalASI device scan this code to add you as a contact</string>
+    <string name="phone_contact_request_received">%1$s wants to add you as a contact</string>
+    <string name="phone_contact_scan_added">%1$s was added. Waiting for them to accept your request.</string>
+    <string name="phone_contact_scan_pending">%1$s was saved. The request will be sent when SignalASI Link reconnects.</string>
     <string name="contact_my_fingerprint">My Fingerprint</string>
     <string name="contact_scan_confirm_identity">Both sides must confirm identity after scanning</string>
     <string name="contact_detail_title">Contact Profile</string>
