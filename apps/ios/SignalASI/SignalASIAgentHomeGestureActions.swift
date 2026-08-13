@@ -185,6 +185,15 @@ extension AgentHomeView {
     } else if homeActionEditorSelection != nil {
       homeActionEditorSelection = nil
       dismissedSurface = "action_editor"
+    } else if runtimeArtifactPreview != nil {
+      runtimeArtifactPreview = nil
+      dismissedSurface = "artifact_preview"
+    } else if runtimeArtifactExportPresented {
+      runtimeArtifactExportPresented = false
+      dismissedSurface = "artifact_exporter"
+    } else if publicPageExportPresented {
+      publicPageExportPresented = false
+      dismissedSurface = "public_page_exporter"
     } else if pendingHighRiskApprovalTask != nil {
       pendingHighRiskApprovalTask = nil
       dismissedSurface = "high_risk_confirmation"
