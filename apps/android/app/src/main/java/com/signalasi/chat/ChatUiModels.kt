@@ -419,6 +419,7 @@ internal class MessageAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val message = messages[position]
+        val messageMaxWidth = holder.messageMaxWidth()
         val prevMsg = if (position > 0) messages[position - 1] else null
         val timeGap = prevMsg != null && (message.timestamp - prevMsg.timestamp) >= 30 * 60 * 1000L
         val showDivider = position == 0 || timeGap || dateKey(messages[position - 1].timestamp) != dateKey(message.timestamp)
@@ -439,6 +440,7 @@ internal class MessageAdapter(
         holder.avatar.visibility = View.VISIBLE
         holder.bubble.visibility = View.VISIBLE
         holder.bubble.text = message.content
+        holder.bubble.maxWidth = messageMaxWidth
         holder.bubble.visibility = if (message.content.isBlank()) View.GONE else View.VISIBLE
         holder.bubble.setLineSpacing(0f, 1.18f)
         holder.timeText.text = bubbleTime(message.timestamp)
@@ -566,7 +568,7 @@ internal class MessageAdapter(
         val size = AgentInputAttachment.humanSize(attachment.sizeBytes)
         text = if (size.isBlank()) attachment.name else "${attachment.name}\n$size"
         textSize = 13f
-        maxWidth = holder.itemView.dp(252)
+        maxWidth = holder.messageMaxWidth()
         minWidth = holder.itemView.dp(190)
         setTextColor(holder.itemView.context.getColor(R.color.text_primary))
         setPadding(holder.itemView.dp(12), holder.itemView.dp(9), holder.itemView.dp(12), holder.itemView.dp(9))
@@ -628,6 +630,12 @@ internal class MessageAdapter(
         val statusText: TextView = view.findViewById(R.id.statusText)
         val timeText: TextView = view.findViewById(R.id.timeText)
         val systemText: TextView = view.findViewById(R.id.systemText)
+
+        fun messageMaxWidth(): Int {
+            val appWidth = itemView.rootView.width.takeIf { it > 0 }
+                ?: itemView.resources.displayMetrics.widthPixels
+            return (appWidth * 0.75f).toInt()
+        }
     }
 }
 
