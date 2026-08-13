@@ -585,7 +585,7 @@ struct SignalASIConversationHubView: View {
       hubRowContent(
         title: sessionTitle(session),
         subtitle: sessionSubtitle(session, preview: preview),
-        systemImage: "bubble.left.and.bubble.right.fill",
+        systemImage: "clock.arrow.circlepath",
         tint: .signalASIAccent,
         trailing: multiDeleteMode
           ? (selectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
