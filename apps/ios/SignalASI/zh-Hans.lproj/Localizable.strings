@@ -266,6 +266,14 @@
 "signalasi.agent.readiness.memory_pressure_serious" = "较高";
 "signalasi.agent.readiness.memory_pressure_critical" = "严重";
 "signalasi.agent.readiness.memory_pressure_unknown" = "未知";
+"signalasi.agent.readiness.phone_battery" = "电量";
+"signalasi.agent.readiness.phone_battery_value" = "%d%%";
+"signalasi.agent.readiness.phone_battery_unknown" = "未知";
+"signalasi.agent.readiness.phone_storage" = "存储";
+"signalasi.agent.readiness.phone_storage_value" = "剩余 %@";
+"signalasi.agent.readiness.phone_network" = "网络";
+"signalasi.agent.readiness.phone_network_connected" = "已连接";
+"signalasi.agent.readiness.phone_network_offline" = "离线";
 "signalasi.agent.recent_tasks_value" = "最近任务：%d";
 "agent_risk_low" = "低";
 "agent_risk_medium" = "中";
