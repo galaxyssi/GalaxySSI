@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignalASIAgentConfirmationCard: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   let task: AgentTaskRecord
   let onApproveOnce: () -> Void
@@ -65,27 +66,7 @@ struct SignalASIAgentConfirmationCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
 
-      HStack(spacing: 8) {
-        Button(action: onDeny) {
-          Text(t("signalasi.agent.confirmation.deny", "Deny"))
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, minHeight: 42)
-            .background(Color.red.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-
-        Button(action: onApproveOnce) {
-          Text(t("signalasi.agent.confirmation.allow_once", "Allow once"))
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, minHeight: 42)
-            .background(Color.signalASIAccent)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-      }
+      primaryDecisionControls
 
       if canRemember {
         Button(action: onApproveSession) {
@@ -136,5 +117,48 @@ struct SignalASIAgentConfirmationCard: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  @ViewBuilder
+  private var primaryDecisionControls: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        denyControl
+        approveOnceControl
+      }
+    } else {
+      HStack(spacing: 8) {
+        denyControl
+        approveOnceControl
+      }
+    }
+  }
+
+  private var denyControl: some View {
+    Button(action: onDeny) {
+      Text(t("signalasi.agent.confirmation.deny", "Deny"))
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundColor(.red)
+        .frame(maxWidth: .infinity, minHeight: 42)
+        .background(Color.red.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var approveOnceControl: some View {
+    Button(action: onApproveOnce) {
+      Text(t("signalasi.agent.confirmation.allow_once", "Allow once"))
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundColor(.white)
+        .frame(maxWidth: .infinity, minHeight: 42)
+        .background(Color.signalASIAccent)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
