@@ -984,7 +984,7 @@ enum AgentDefaultCapabilityCatalog {
     )
   ]
 
-  static let skillEntries: [AgentSkillCatalogEntry] = [
+  static let skillEntries: [AgentSkillCatalogEntry] = AgentIOSBuiltInSkills.statusEntries + [
     skill(
       id: "signalasi.catalog.deep-research",
       title: "Deep Research",

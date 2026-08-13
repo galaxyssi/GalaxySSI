@@ -83,7 +83,10 @@ final class MessageCoordinator: ObservableObject {
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     UserDefaultsAgentConfirmationConsentStore(storageKey: "signalasi_local_agent_confirmation_v1")
   private lazy var localRecordedRunStore = UserDefaultsAgentRecordedRunStore()
-  private lazy var localSkillRuntime = AgentSkillRuntime(store: UserDefaultsAgentSkillStore())
+  private lazy var localSkillRuntime = AgentSkillRuntime(
+    store: UserDefaultsAgentSkillStore(),
+    availableNativeToolIds: Array(AgentPhoneNativeToolCatalog.defaultToolIds)
+  )
   let mqttClient: SignalASIMqttClient
   fileprivate var outboxRetryTask: Task<Void, Never>?
   fileprivate var outboxFlushInProgress = false
@@ -238,6 +241,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
+    _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     handleInterruptedDeliveries(deliveryStore.recoverInterruptedPublishing())
     _ = deliveryStore.ensureTransportEpoch(transportEpoch)
     deliveryStore.makePendingImmediatelyRetryable()
