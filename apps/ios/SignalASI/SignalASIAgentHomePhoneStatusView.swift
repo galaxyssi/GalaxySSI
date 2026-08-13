@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 import UIKit
 
@@ -88,6 +89,12 @@ struct SignalASIAgentHomePhoneStatusView: View {
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
       refresh()
     }
+    .onReceive(
+      Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    ) { _ in
+      guard UIApplication.shared.applicationState == .active else { return }
+      refresh()
+    }
   }
 
   private var memoryValue: String {
@@ -110,12 +117,12 @@ struct SignalASIAgentHomePhoneStatusView: View {
       return t(
         "signalasi.agent.readiness.phone_memory_low",
         "Low memory"
-      ) + " · " + pressure
+      ) + " / " + pressure
     }
     return t(
       "signalasi.agent.readiness.phone_memory_normal",
       "Memory normal"
-    ) + " · " + pressure
+    ) + " / " + pressure
   }
 
   private var batteryValue: String {
