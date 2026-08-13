@@ -568,18 +568,39 @@ struct SignalASIControlCenterView: View {
     privacyProtected ? .signalASIAccent : .orange
   }
 
-  private var desktopControlCount: Int {
-    store.serverLinks.filter(\.paired).count
+  private var desktopControlLinks: [ServerLink] {
+    store.serverLinks.filter(\.paired)
+  }
+
+  private var desktopControlSnapshots: [AgentDesktopRemoteControlSnapshot] {
+    desktopControlLinks.map { coordinator.desktopControlSnapshot(for: $0) }
   }
 
   private var desktopControlBadge: String {
-    desktopControlCount > 0
-      ? String(format: t("cc_trusted_devices_badge", "%d trusted"), desktopControlCount)
-      : t("status_needs_setup", "Needs Setup")
+    guard !desktopControlLinks.isEmpty else {
+      return t("status_needs_setup", "Needs Setup")
+    }
+    if desktopControlSnapshots.contains(where: \.authorized) {
+      return t("status_enabled", "Enabled")
+    }
+    if desktopControlSnapshots.contains(where: \.pending) {
+      return t("desktop_control_pending", "Pending")
+    }
+    if desktopControlSnapshots.contains(where: { $0.enabled }) {
+      return t("desktop_control_not_authorized", "Not authorized")
+    }
+    return t("desktop_control_executor_off", "Executor off")
   }
 
   private var desktopControlTint: Color {
-    desktopControlCount > 0 ? .signalASIAccent : .orange
+    guard !desktopControlLinks.isEmpty else { return .signalASITextSecondary }
+    if desktopControlSnapshots.contains(where: \.authorized) {
+      return .signalASIAccent
+    }
+    if desktopControlSnapshots.contains(where: \.pending) {
+      return .orange
+    }
+    return .blue
   }
 
   private var agentCoreBadge: String {
