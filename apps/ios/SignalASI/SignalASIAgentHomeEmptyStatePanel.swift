@@ -20,6 +20,7 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
   var permissionMode: AgentPermissionMode
   var highRiskGuard: Bool
   var memoryCapture: Bool
+  var taskExecutionMode: AgentTaskExecutionMode
   var routeTitle: String
   var routeSubtitle: String
   var routeStatus: String
@@ -33,6 +34,7 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
   var onCyclePermissionMode: () -> Void
   var onToggleHighRiskGuard: () -> Void
   var onToggleMemoryCapture: () -> Void
+  var onCycleTaskExecutionMode: () -> Void
   var onToggleExecutionPaused: () -> Void
   var onOpenRecentTasks: () -> Void
   var onOpenRecentTask: (AgentTaskRecord) -> Void
@@ -70,9 +72,11 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
       permissionMode: permissionMode,
       highRiskGuard: highRiskGuard,
       memoryCapture: memoryCapture,
+      taskExecutionMode: taskExecutionMode,
       onCyclePermissionMode: onCyclePermissionMode,
       onToggleHighRiskGuard: onToggleHighRiskGuard,
       onToggleMemoryCapture: onToggleMemoryCapture,
+      onCycleTaskExecutionMode: onCycleTaskExecutionMode,
       onToggleExecutionPaused: onToggleExecutionPaused,
       onOpenRecentTasks: onOpenRecentTasks,
       onOpenRecentTask: onOpenRecentTask,
