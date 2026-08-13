@@ -1576,10 +1576,13 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func urlHandoff(goal: String, lower: String) -> URLHandoff? {
-    if lower.hasPrefix("open url ") || lower.hasPrefix("open website ") {
-      let raw = lower.hasPrefix("open url ")
-        ? goal.dropFirst("open url ".count)
-        : goal.dropFirst("open website ".count)
+    let openURLPrefixes = [
+      "open url ", "open website ",
+      "\u{6253}\u{5f00}\u{7f51}\u{5740} ", "\u{6253}\u{5f00}\u{7f51}\u{7ad9} ",
+      "\u{8bbf}\u{95ee}\u{7f51}\u{5740} ", "\u{8bbf}\u{95ee}\u{7f51}\u{7ad9} "
+    ]
+    if let prefix = openURLPrefixes.first(where: { lower.hasPrefix($0) }) {
+      let raw = goal.dropFirst(prefix.count)
       guard let url = normalizedHTTPURL(String(raw)) else { return nil }
       return URLHandoff(
         idPrefix: "open-url",
@@ -1588,10 +1591,12 @@ enum AgentDirectNativeToolPlanner {
         description: "Open URL"
       )
     }
-    if lower.hasPrefix("search web ") || lower.hasPrefix("google ") {
-      let raw = lower.hasPrefix("search web ")
-        ? goal.dropFirst("search web ".count)
-        : goal.dropFirst("google ".count)
+    let webSearchPrefixes = [
+      "search web ", "google ",
+      "\u{641c}\u{7d22}\u{7f51}\u{9875} ", "\u{7f51}\u{9875}\u{641c}\u{7d22} ", "\u{641c}\u{7d22}\u{4e92}\u{8054}\u{7f51} "
+    ]
+    if let prefix = webSearchPrefixes.first(where: { lower.hasPrefix($0) }) {
+      let raw = goal.dropFirst(prefix.count)
       guard let query = encodedURLQuery(String(raw)) else { return nil }
       return URLHandoff(
         idPrefix: "search-web",
@@ -1600,15 +1605,12 @@ enum AgentDirectNativeToolPlanner {
         description: "Search the web"
       )
     }
-    if lower.hasPrefix("open map ") || lower.hasPrefix("map ") || lower.hasPrefix("navigate to ") {
-      let raw: Substring
-      if lower.hasPrefix("open map ") {
-        raw = goal.dropFirst("open map ".count)
-      } else if lower.hasPrefix("map ") {
-        raw = goal.dropFirst("map ".count)
-      } else {
-        raw = goal.dropFirst("navigate to ".count)
-      }
+    let mapPrefixes = [
+      "open map ", "map ", "navigate to ",
+      "\u{6253}\u{5f00}\u{5730}\u{56fe} ", "\u{5730}\u{56fe} ", "\u{5bfc}\u{822a}\u{5230} ", "\u{524d}\u{5f80} "
+    ]
+    if let prefix = mapPrefixes.first(where: { lower.hasPrefix($0) }) {
+      let raw = goal.dropFirst(prefix.count)
       guard let query = encodedURLQuery(String(raw)) else { return nil }
       return URLHandoff(
         idPrefix: "open-map",
@@ -1665,7 +1667,10 @@ enum AgentDirectNativeToolPlanner {
         bundleId: "com.apple.mobileslideshow"
       )
     }
-    if containsAny(lower, ["open browser", "open safari", "launch safari"]) {
+    if containsAny(
+      lower,
+      ["open browser", "open safari", "launch safari", "\u{6253}\u{5f00}\u{6d4f}\u{89c8}\u{5668}", "\u{6253}\u{5f00}safari"]
+    ) {
       return SystemAppHandoff(
         idPrefix: "open-safari",
         target: "Safari",
