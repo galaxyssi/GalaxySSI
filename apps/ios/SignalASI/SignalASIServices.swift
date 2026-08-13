@@ -1242,7 +1242,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func requestDesktopArtifactDownload(block: AgentRichBlock) async -> Bool {
+  func requestDesktopArtifactDownload(
+    block: AgentRichBlock,
+    forceRedelivery: Bool = false
+  ) async -> Bool {
     let artifactURI = (block.metadata["artifact_source_uri"] ?? "").ifBlank(block.uri)
     let digest = (block.metadata["sha256"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard AgentDesktopArtifactStore.isSignalASIArtifactURI(artifactURI),
@@ -1272,9 +1275,10 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if pendingArtifactDownloads.contains(artifactURI) {
-      return true
+      guard forceRedelivery else { return true }
+    } else {
+      pendingArtifactDownloads.insert(artifactURI)
     }
-    pendingArtifactDownloads.insert(artifactURI)
     let artifactId = (block.metadata["artifact_id"] ?? "").ifBlank(
       AgentDesktopArtifactStore.stableID(uri: artifactURI, sha256: digest)
     )
