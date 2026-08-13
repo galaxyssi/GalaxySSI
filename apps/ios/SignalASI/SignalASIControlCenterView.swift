@@ -157,6 +157,20 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_global_agent_title", "Global Super Agent"),
+        subtitle: t(
+          "cc_global_agent_subtitle",
+          "Persistent personal intelligence across every conversation and long-term goal"
+        ),
+        systemImage: "brain",
+        tint: store.globalAgentSettings.enabled ? .signalASIAccent : .orange,
+        badge: store.globalAgentSettings.enabled
+          ? t("status_enabled", "Enabled")
+          : t("signalasi.status.paused", "Paused")
+      ) {
+        SignalASIGlobalAgentControlView()
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_execution_policy_title", "Execution Policy"),
         subtitle: executionPolicySummary,
         systemImage: "checkmark.shield",
@@ -239,7 +253,7 @@ struct SignalASIControlCenterView: View {
         subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
         systemImage: "shippingbox.and.arrow.down",
         tint: .signalASIAccent,
-        badge: t("signalasi.common.manage", "Manage")
+        badge: "\(capabilityLibraryInstalledCount)"
       ) {
         SignalASICapabilityLibraryView()
       }
@@ -351,7 +365,7 @@ struct SignalASIControlCenterView: View {
         title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
         subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
         systemImage: "lock.doc",
-        tint: disclosureSummary.cloud > 0 ? .orange : .signalASIAccent,
+        tint: disclosureSummary.blocked > 0 ? .orange : .blue,
         badge: String(
           format: t("cc_privacy_destination_count", "%d destinations"),
           disclosureSummary.destinations
@@ -421,6 +435,19 @@ struct SignalASIControlCenterView: View {
     return (tools.count, available, max(tools.count - available, 0))
   }
 
+  private var capabilityLibraryInstalledCount: Int {
+    let items = AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: AgentPhoneNativeToolCatalog.descriptors(
+        capabilityStatuses: AgentPhoneCapabilityCatalog.declaredStatuses()
+      ),
+      installedMcp: SignalASIMcpControlStores.makeRegistry().list(),
+      installedAutomations: UserDefaultsAgentSkillStore().list()
+    )
+    return items.filter {
+      $0.installState == .builtIn || $0.installState == .installed
+    }.count
+  }
+
   private var memorySnapshot: AgentMemorySnapshot {
     store.agentMemorySnapshot()
   }
@@ -471,40 +498,39 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligenceResourceCount: Int {
-    let availableClouds = store.cloudModelContacts.filter { contact in
-      guard let model = contact.selectedCloudModel else { return false }
-      return CloudModelCredentialPolicy.isAutoRoutable(
-        model: model,
-        apiKey: store.apiKey(for: model),
-        provider: contact.cloudProvider,
-        setupStatus: contact.setupStatus
-      )
-    }.count
-    let onlineDesktops = store.serverLinks.filter { link in
-      link.paired && coordinator.mqttClient.isConnected
-    }.count
-    let configuredCustomDevices = store.customDeviceConnectors.filter {
-      $0.enabled && $0.configured
-    }.count
-    let configuredHomeAssistant = store.homeAssistantSettings.configured ? 1 : 0
-    return 1 + availableClouds + onlineDesktops + configuredCustomDevices + configuredHomeAssistant
+    intelligenceResources.filter { $0.status == .available }.count
   }
 
-  private var systemStatusAvailableResourceCount: Int {
-    store.cloudModelContacts.count +
-      store.serverLinks.filter(\.paired).count +
-      store.customDeviceConnectors.filter(\.enabled).count
+  private var intelligenceResources: [AgentResourceDescriptor] {
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    return AgentResourceCatalog.build(targets: targets, tools: [], nativeTools: [])
+      .filter { resource in
+        resource.targetId != "phone" &&
+          resource.targetId != "local-system" &&
+          resource.targetId != "cloud-models"
+      }
+  }
+
+  private var systemStatusResourceTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
   }
 
   private var systemStatusLinkReady: Bool {
     store.serverLinks.contains(where: \.paired) &&
+      coordinator.mqttClient.isConnected &&
       SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
   }
 
   private var systemStatusNeedsAttention: Bool {
     store.agentSafetySettings.executionPaused ||
       !systemStatusLinkReady ||
-      systemStatusAvailableResourceCount == 0
+      systemStatusResourceTargets.contains { $0.status == .needsSetup }
   }
 
   private var resourcesBadge: String {
@@ -568,18 +594,39 @@ struct SignalASIControlCenterView: View {
     privacyProtected ? .signalASIAccent : .orange
   }
 
-  private var desktopControlCount: Int {
-    store.serverLinks.filter(\.paired).count
+  private var desktopControlLinks: [ServerLink] {
+    store.serverLinks.filter(\.paired)
+  }
+
+  private var desktopControlSnapshots: [AgentDesktopRemoteControlSnapshot] {
+    desktopControlLinks.map { coordinator.desktopControlSnapshot(for: $0) }
   }
 
   private var desktopControlBadge: String {
-    desktopControlCount > 0
-      ? String(format: t("cc_trusted_devices_badge", "%d trusted"), desktopControlCount)
-      : t("status_needs_setup", "Needs Setup")
+    guard !desktopControlLinks.isEmpty else {
+      return t("status_needs_setup", "Needs Setup")
+    }
+    if desktopControlSnapshots.contains(where: \.authorized) {
+      return t("status_enabled", "Enabled")
+    }
+    if desktopControlSnapshots.contains(where: \.pending) {
+      return t("desktop_control_pending", "Pending")
+    }
+    if desktopControlSnapshots.contains(where: { $0.enabled }) {
+      return t("desktop_control_not_authorized", "Not authorized")
+    }
+    return t("desktop_control_executor_off", "Executor off")
   }
 
   private var desktopControlTint: Color {
-    desktopControlCount > 0 ? .signalASIAccent : .orange
+    guard !desktopControlLinks.isEmpty else { return .signalASITextSecondary }
+    if desktopControlSnapshots.contains(where: \.authorized) {
+      return .signalASIAccent
+    }
+    if desktopControlSnapshots.contains(where: \.pending) {
+      return .orange
+    }
+    return .blue
   }
 
   private var agentCoreBadge: String {

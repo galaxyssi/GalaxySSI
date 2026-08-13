@@ -4,6 +4,7 @@ struct SignalASIAgentsModelsNodesView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
+  @State private var localModelReady = false
 
   private var desktopLinks: [ServerLink] {
     store.serverLinks.sorted { lhs, rhs in
@@ -23,9 +24,7 @@ struct SignalASIAgentsModelsNodesView: View {
   }
 
   private var availableResourceCount: Int {
-    let onlineDesktops = desktopLinks.filter { $0.paired && coordinator.mqttClient.isConnected }.count
-    let configuredClouds = cloudContacts.filter { $0.selectedCloudModel != nil }.count
-    return 2 + onlineDesktops + configuredClouds
+    resourceTargets.filter { $0.status == .available }.count
   }
 
   var body: some View {
@@ -65,6 +64,9 @@ struct SignalASIAgentsModelsNodesView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear {
+      localModelReady = LocalModelInferenceRuntime.shared.ready()
+    }
   }
 
   private var desktopSection: some View {
@@ -120,8 +122,10 @@ struct SignalASIAgentsModelsNodesView: View {
           "On-device model lab, routing plans, and local inference settings"
         ),
         systemImage: "memorychip",
-        tint: .teal,
-        badge: t("cc_status_ready", "Ready")
+        tint: localModelReady ? .signalASIAccent : .blue,
+        badge: localModelReady
+          ? t("signalasi.local_model.download_ready", "Ready")
+          : t("status_needs_setup", "Needs Setup")
       ) {
         SignalASILocalModelLabView()
       }
@@ -160,6 +164,7 @@ struct SignalASIAgentsModelsNodesView: View {
             title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
             subtitle: cloudSubtitle(contact),
             systemImage: "cloud.fill",
+            assetImage: cloudAssetName(contact),
             tint: cloudStatusTint(status),
             badge: cloudStatusLabel(status)
           ) {
@@ -184,10 +189,18 @@ struct SignalASIAgentsModelsNodesView: View {
   }
 
   private func desktopOnline(_ link: ServerLink) -> Bool {
-    link.paired && coordinator.mqttClient.isConnected
+    guard link.paired && coordinator.mqttClient.isConnected else { return false }
+    let desktopAgentIds = Set(desktopAgentContacts(link).map(\.id))
+    return resourceTargets.contains { target in
+      desktopAgentIds.contains(target.id) && target.status == .available
+    }
   }
 
   private func desktopAgentCount(_ link: ServerLink) -> Int {
+    desktopAgentContacts(link).count
+  }
+
+  private func desktopAgentContacts(_ link: ServerLink) -> [SignalASIContact] {
     store.contacts.filter { contact in
       !contact.deleted &&
         contact.desktopId == link.desktopId &&
@@ -225,6 +238,18 @@ struct SignalASIAgentsModelsNodesView: View {
     let provider = contact.cloudProvider.ifBlank(contact.signalASIId).ifBlank(contact.id)
     let model = contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model")
     return "\(provider) / \(model)"
+  }
+
+  private func cloudAssetName(_ contact: SignalASIContact) -> String? {
+    SignalASIAgentAvatarAssetCatalog.cloudProviderAssetName(for: [
+      contact.id,
+      contact.signalASIId,
+      contact.name,
+      contact.displayName,
+      contact.cloudProvider,
+      contact.selectedCloudModel?.provider ?? "",
+      contact.selectedCloudModel?.modelId ?? ""
+    ])
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

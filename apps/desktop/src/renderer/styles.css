@@ -46,7 +46,7 @@ button:disabled { cursor: default; opacity: 0.48; }
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 278px minmax(0, 1fr);
 }
 
 .task-sidebar {
@@ -1260,7 +1260,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .toast { position: fixed; z-index: 60; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(520px, 80vw); padding: 9px 12px; border-radius: 6px; background: #24292e; color: #fff; box-shadow: var(--shadow); font-size: 0.9rem; }
 
 @media (max-width: 1080px) {
-  .desktop-shell { grid-template-columns: 205px minmax(0, 1fr); }
+  .desktop-shell { grid-template-columns: 246px minmax(0, 1fr); }
   .compact-status b,
   .compact-status em { display: none; }
   .workspace-title h1 { max-width: 420px; }
