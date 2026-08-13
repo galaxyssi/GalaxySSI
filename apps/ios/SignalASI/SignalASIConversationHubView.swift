@@ -275,6 +275,11 @@ struct SignalASIConversationHubView: View {
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)
+    ) { _ in
+      refreshAfterDesktopPairing()
+    }
     .onDisappear {
       navigationContentGate.invalidate()
     }
@@ -516,6 +521,13 @@ struct SignalASIConversationHubView: View {
 
   private func refreshAfterContactImport() {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    hubRefreshToken = UUID()
+  }
+
+  private func refreshAfterDesktopPairing() {
+    _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    navigationContentGate.invalidate()
+    hubContentLoading = true
     hubRefreshToken = UUID()
   }
 
