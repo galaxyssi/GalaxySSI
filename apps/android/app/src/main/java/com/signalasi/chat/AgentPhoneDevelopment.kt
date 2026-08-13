@@ -12,6 +12,12 @@ internal const val PHONE_DEVELOPMENT_CONNECTOR_MODE = "phone_development_manifes
 internal const val PHONE_DEVELOPMENT_PLANNER_PROFILE = "phone-development-manifest-v2"
 internal const val PHONE_DEVELOPMENT_REPLAN_REASON = "phone_development_verification_failed"
 
+internal enum class AgentPhoneDevelopmentMode {
+    NONE,
+    MANIFEST,
+    SUPERVISED_PROJECT
+}
+
 internal object AgentPhoneDevelopmentPolicy {
     private val developmentTerms = listOf(
         "python", "program", "programme", "code", "script", "app", "function", "algorithm",
@@ -20,7 +26,9 @@ internal object AgentPhoneDevelopmentPolicy {
     )
     private val creationTerms = listOf(
         "write", "create", "make", "implement", "build", "generate", "fix", "debug", "run", "verify", "test",
-        "\u5199", "\u521b\u5efa", "\u751f\u6210", "\u5b9e\u73b0", "\u4fee\u590d", "\u8c03\u8bd5", "\u8fd0\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5"
+        "improve", "upgrade", "update", "refactor",
+        "\u5199", "\u521b\u5efa", "\u751f\u6210", "\u5b9e\u73b0", "\u4fee\u590d", "\u8c03\u8bd5", "\u8fd0\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5",
+        "\u6539\u8fdb", "\u5347\u7ea7", "\u66f4\u65b0", "\u91cd\u6784"
     )
     private val phoneTerms = listOf(
         "on this phone", "on the phone", "phone local", "on-device", "locally on phone",
@@ -50,16 +58,35 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u7b80\u5355", "\u5c0f\u578b", "\u5355\u6587\u4ef6", "\u72ec\u7acb", "\u4ee3\u7801\u7247\u6bb5"
     )
 
-    fun shouldUsePhoneRuntime(goal: String): Boolean {
+    fun mode(goal: String): AgentPhoneDevelopmentMode {
         val normalized = goal.trim().lowercase(Locale.US)
-        if (normalized.isBlank()) return false
-        val development = developmentTerms.any(normalized::contains) && creationTerms.any(normalized::contains)
-        if (!development) return false
-        if (phoneTerms.any(normalized::contains)) return true
-        if (desktopTerms.any(normalized::contains) || projectScopeTerms.any(normalized::contains)) return false
-        val selfContained = selfContainedTerms.any(normalized::contains)
-        val codeArtifact = implicitPhoneCodeTerms.any(normalized::contains)
-        return selfContained && codeArtifact && normalized.length <= MAX_INTERACTIVE_GOAL_CHARACTERS
+        if (normalized.isBlank()) return AgentPhoneDevelopmentMode.NONE
+        val creation = creationTerms.any { normalized.containsPolicyTerm(it) }
+        val projectScope = projectScopeTerms.any { normalized.containsPolicyTerm(it) }
+        val development = creation && (developmentTerms.any { normalized.containsPolicyTerm(it) } || projectScope)
+        if (!development) return AgentPhoneDevelopmentMode.NONE
+        if (desktopTerms.any { normalized.containsPolicyTerm(it) }) return AgentPhoneDevelopmentMode.NONE
+        if (projectScope) return AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
+        if (phoneTerms.any { normalized.containsPolicyTerm(it) }) return AgentPhoneDevelopmentMode.MANIFEST
+        val selfContained = selfContainedTerms.any { normalized.containsPolicyTerm(it) }
+        val codeArtifact = implicitPhoneCodeTerms.any { normalized.containsPolicyTerm(it) }
+        return if (selfContained && codeArtifact && normalized.length <= MAX_INTERACTIVE_GOAL_CHARACTERS) {
+            AgentPhoneDevelopmentMode.MANIFEST
+        } else {
+            AgentPhoneDevelopmentMode.NONE
+        }
+    }
+
+    fun shouldUsePhoneRuntime(goal: String): Boolean = mode(goal) != AgentPhoneDevelopmentMode.NONE
+
+    fun shouldUseManifestAuthoring(goal: String): Boolean = mode(goal) == AgentPhoneDevelopmentMode.MANIFEST
+
+    fun shouldUseSupervisedProject(goal: String): Boolean =
+        mode(goal) == AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
+
+    private fun String.containsPolicyTerm(term: String): Boolean {
+        if (term.any { it.code > 0x7f } || term.any { !it.isLetterOrDigit() }) return contains(term)
+        return Regex("(?<![a-z0-9])${Regex.escape(term)}(?![a-z0-9])").containsMatchIn(this)
     }
 
     fun isPhoneDevelopmentTool(toolId: String): Boolean =
