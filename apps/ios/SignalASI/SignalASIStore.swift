@@ -317,6 +317,7 @@ final class SignalASIStore: ObservableObject {
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let phoneContactInboxRouteKey = "signalasi.phone_contact_inbox_route"
+  private let phoneContactCardsKey = "signalasi.phone_contact_cards"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
@@ -998,6 +999,32 @@ final class SignalASIStore: ObservableObject {
     let generated = try SignalASILinkProtocol.newRouteId()
     defaults.set(generated, forKey: phoneContactInboxRouteKey)
     return generated
+  }
+
+  func rememberVerifiedPhoneContactCard(_ card: [String: Any]) {
+    let signalASIId = card.string("signalasi_id")
+    guard !signalASIId.isEmpty,
+          !card.string("signature").isEmpty,
+          (try? SignalASIContactExchange.validateSignedPhoneContactCard(card)) != nil,
+          let data = try? SignalASILinkProtocol.jsonData(card),
+          let text = String(data: data, encoding: .utf8) else {
+      return
+    }
+    var cards = defaults.dictionary(forKey: phoneContactCardsKey) as? [String: String] ?? [:]
+    cards[signalASIId] = text
+    defaults.set(cards, forKey: phoneContactCardsKey)
+  }
+
+  func verifiedPhoneContactCard(for signalASIId: String) -> [String: Any]? {
+    guard let cards = defaults.dictionary(forKey: phoneContactCardsKey) as? [String: String],
+          let text = cards[signalASIId],
+          let card = try? SignalASIQRCodePayload.decodeObject(from: text, label: "Contact QR"),
+          card.string("signalasi_id") == signalASIId,
+          !card.string("signature").isEmpty,
+          (try? SignalASIContactExchange.validateSignedPhoneContactCard(card)) != nil else {
+      return nil
+    }
+    return card
   }
 
   @discardableResult
