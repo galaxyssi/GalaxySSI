@@ -1319,6 +1319,14 @@ private struct SignalASIRichBlockView: View {
               .frame(maxWidth: .infinity, minHeight: 32)
           }
           .buttonStyle(.bordered)
+          Button {
+            onArtifactCompress(block)
+          } label: {
+            Label(t("rich_output_compress", "Compress"), systemImage: "archivebox")
+              .font(.caption.weight(.semibold))
+              .frame(maxWidth: .infinity, minHeight: 32)
+          }
+          .buttonStyle(.bordered)
           if isZipArtifact {
             Button {
               extractArtifactArchive()
