@@ -40,6 +40,7 @@
 "signalasi.skill_marketplace.missing_native" = "%d 个原生工具不可用";
 "signalasi.skill_marketplace.missing_mcp" = "%d 个 MCP 服务需要设置";
 "signalasi.common.cancel" = "取消";
+"signalasi.common.back" = "返回";
 "signalasi.common.delete" = "删除";
 "signalasi.common.none" = "无";
 "signalasi.common.export" = "导出";
@@ -3351,6 +3352,7 @@
 "signalasi.voice.reply_received" = "已收到";
 "signalasi.voice.reply_pending" = "等待中";
 "signalasi.voice.send_failed" = "语音转写发送失败";
+"signalasi.voice.recording_failed" = "录音启动失败";
 "signalasi.voice.open_messages" = "打开消息";
 "signalasi.voice.session_failed" = "无法启动语音请求";
 "signalasi.voice.no_live_transcript" = "唤醒或录音后的语音活动会显示在这里。";
