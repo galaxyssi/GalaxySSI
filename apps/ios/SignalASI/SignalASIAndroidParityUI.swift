@@ -66,7 +66,7 @@ struct AgentHomeView: View {
   @State var runtimeArtifactError = ""
   @State var runtimeArtifactStatus = ""
   @State private var publicPageExportDocument: SignalASIPublicPageHTMLExportDocument?
-  @State private var publicPageExportPresented = false
+  @State var publicPageExportPresented = false
   @State private var publicPageExportFilename = ""
   @State var richActionStatus = ""
   @State var recoveringAgentTaskIDs: Set<String> = []
@@ -585,6 +585,7 @@ struct AgentHomeView: View {
     case "show agent sessions": return "sessions"
     case "scan agent qr code": return "scan"
     case "take a photo": return "take-photo"
+    case "attach photos": return "add-photos"
     case "attach a file": return "add-file"
     case "choose agent model": return "model-selection"
     case "show native tools": return "native-tools"

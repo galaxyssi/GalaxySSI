@@ -104,6 +104,8 @@ extension AgentHomeView {
       scanShortcutActive = true
     case "take-photo":
       openCameraAttachmentPicker()
+    case "add-photos":
+      photoPickerPresented = true
     case "add-file":
       fileImporterPresented = true
     case "permissions":
@@ -176,6 +178,9 @@ extension AgentHomeView {
     } else if cameraPickerPresented {
       cameraPickerPresented = false
       dismissedSurface = "camera_sheet"
+    } else if photoPickerPresented {
+      photoPickerPresented = false
+      dismissedSurface = "photo_picker"
     } else if fileImporterPresented {
       fileImporterPresented = false
       dismissedSurface = "file_importer"
@@ -194,6 +199,15 @@ extension AgentHomeView {
     } else if !richActionStatus.isEmpty {
       richActionStatus = ""
       dismissedSurface = "action_status"
+    } else if runtimeArtifactPreview != nil {
+      runtimeArtifactPreview = nil
+      dismissedSurface = "artifact_preview"
+    } else if runtimeArtifactExportPresented {
+      runtimeArtifactExportPresented = false
+      dismissedSurface = "artifact_exporter"
+    } else if publicPageExportPresented {
+      publicPageExportPresented = false
+      dismissedSurface = "public_page_exporter"
     } else if pendingHighRiskApprovalTask != nil {
       pendingHighRiskApprovalTask = nil
       dismissedSurface = "high_risk_confirmation"
