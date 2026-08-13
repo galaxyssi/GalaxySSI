@@ -32,6 +32,19 @@ internal object AgentSupervisedProjectLoop {
         }
     }.take(MAX_PROMPT_CHARACTERS)
 
+    fun interruptedRecoveryPrompt(request: AgentRequest, interruptedAction: AgentAction): String = buildString {
+        append(buildPrompt(request, evidenceExpected = true))
+        append("\nThe Android app process ended while the last phone action was running. Its outcome is unknown and unverified. ")
+        append("Do not repeat that mutation blindly. First inspect the durable project Git status, diff, execution receipts, and artifacts, then choose the smallest safe continuation or verification step. ")
+        append("Interrupted action: ")
+        append(interruptedAction.kind.name).append(" | ")
+            .append(interruptedAction.description.replace(Regex("\\s+"), " ").take(300))
+        if (interruptedAction.result.isNotBlank()) {
+            append("\nRecovery evidence:\n")
+                .append(interruptedAction.result.take(MAX_FAILURE_EVIDENCE_CHARACTERS))
+        }
+    }.take(MAX_PROMPT_CHARACTERS)
+
     fun appendReviewer(
         plan: AgentPlan,
         connector: AgentAction,
@@ -253,13 +266,22 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val request = supervisedProjectRequest(plan, continuation = true)
     val nextIteration = connector.parameters["supervised_iteration"]
         ?.toIntOrNull()?.plus(1)?.coerceAtLeast(1) ?: (plan.replanCount + 1)
+    val interrupted = failedAction.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
     val reviewer = connector.copy(
         id = "supervise-phone-project-recovery-${plan.revision + 1}-$nextIteration",
         risk = AgentRisk.LOW,
         status = AgentActionStatus.PENDING_CONFIRMATION,
-        description = "Review failed phone project evidence and choose a different step",
+        description = if (interrupted) {
+            "Inspect the saved phone project and resume from verified evidence"
+        } else {
+            "Review failed phone project evidence and choose a different step"
+        },
         parameters = connector.parameters + mapOf(
-            "prompt" to AgentSupervisedProjectLoop.recoveryPrompt(request, failedAction, reason),
+            "prompt" to if (interrupted) {
+                AgentSupervisedProjectLoop.interruptedRecoveryPrompt(request, failedAction)
+            } else {
+                AgentSupervisedProjectLoop.recoveryPrompt(request, failedAction, reason)
+            },
             "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
             "supervised_iteration" to nextIteration.toString(),
             "supervised_parse_attempt" to "0",
@@ -281,9 +303,15 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
-        routeRationale = "The supervising model will diagnose the latest failed phone action."
+        routeRationale = if (interrupted) {
+            "The supervising model will inspect the durable phone project before continuing."
+        } else {
+            "The supervising model will diagnose the latest failed phone action."
+        }
     )
-    return reviewSupervisedProjectPlan(candidate)
+    return reviewSupervisedProjectPlan(candidate)?.let { reviewed ->
+        if (interrupted) reviewed.markInterruptedRecoveryScheduled() else reviewed
+    }
 }
 
 private fun MobileNativeAgent.supervisedFormatRepairPlan(

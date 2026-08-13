@@ -97,14 +97,24 @@ fun AgentPlan.recoverInterruptedExecution(): AgentPlan = copy(
     actions = actions.map { action ->
         if (action.status == AgentActionStatus.RUNNING) {
             action.copy(
-                status = AgentActionStatus.PENDING_CONFIRMATION,
-                result = "Execution was interrupted before verification",
-                evidence = "interrupted"
+                status = AgentActionStatus.FAILED,
+                result = "The app process ended before this action produced a verified result",
+                evidence = AGENT_INTERRUPTED_EXECUTION_EVIDENCE
             )
         } else {
             action
         }
     }
+)
+
+fun AgentPlan.hasInterruptedExecutionEvidence(): Boolean =
+    (actionHistory + actions).any { action ->
+        action.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
+    }
+
+fun AgentPlan.markInterruptedRecoveryScheduled(): AgentPlan = copy(
+    actions = actions.map(AgentAction::markInterruptedRecoveryScheduled),
+    actionHistory = actionHistory.map(AgentAction::markInterruptedRecoveryScheduled)
 )
 
 fun AgentPlan.historyForReplan(): List<AgentAction> =
@@ -116,3 +126,13 @@ fun AgentPlan.historyForReplan(): List<AgentAction> =
             AgentActionStatus.ROLLED_BACK
         )
     }).takeLast(40)
+
+private fun AgentAction.markInterruptedRecoveryScheduled(): AgentAction =
+    if (evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE) {
+        copy(evidence = AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE)
+    } else {
+        this
+    }
+
+internal const val AGENT_INTERRUPTED_EXECUTION_EVIDENCE = "interrupted_unverified"
+internal const val AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE = "interrupted_recovery_scheduled"
