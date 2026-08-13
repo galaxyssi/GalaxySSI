@@ -104,6 +104,8 @@ extension AgentHomeView {
       scanShortcutActive = true
     case "take-photo":
       openCameraAttachmentPicker()
+    case "add-photos":
+      photoPickerPresented = true
     case "add-file":
       fileImporterPresented = true
     case "permissions":
@@ -176,6 +178,9 @@ extension AgentHomeView {
     } else if cameraPickerPresented {
       cameraPickerPresented = false
       dismissedSurface = "camera_sheet"
+    } else if photoPickerPresented {
+      photoPickerPresented = false
+      dismissedSurface = "photo_picker"
     } else if fileImporterPresented {
       fileImporterPresented = false
       dismissedSurface = "file_importer"
