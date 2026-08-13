@@ -117,14 +117,24 @@ async function runUiSmoke() {
         const dotTop = dotStyle.top;
         const dotHeight = dotStyle.height;
         const buttonHeight = focusedStyle.height;
+        const newTaskRow = menuButton.closest(".new-task-row");
+        const newTaskButton = newTaskRow.querySelector(".new-task-button");
+        const newTaskRowRect = newTaskRow.getBoundingClientRect();
+        const newTaskButtonRect = newTaskButton.getBoundingClientRect();
         const historyProbe = document.createElement("div");
         historyProbe.className = "history-item-shell";
-        historyProbe.innerHTML = '<button class="history-item">Probe</button><button class="history-more"></button>';
+        historyProbe.innerHTML = '<button class="history-item"><span class="history-title-row"><strong>Probe</strong><time>Now</time></span><span class="history-preview">Preview</span></button><button class="history-more"></button>';
         document.querySelector("#taskHistory").appendChild(historyProbe);
         const historyButton = historyProbe.querySelector(".history-more");
+        const historyItem = historyProbe.querySelector(".history-item");
+        const historyTime = historyProbe.querySelector("time");
+        const historyProbeRect = historyProbe.getBoundingClientRect();
+        const historyItemRect = historyItem.getBoundingClientRect();
+        const historyTimeRect = historyTime.getBoundingClientRect();
         const historyDefaultStyle = getComputedStyle(historyButton);
         const historyDefaultOpacity = historyDefaultStyle.opacity;
         const historyDefaultPointerEvents = historyDefaultStyle.pointerEvents;
+        const historyTimeDefaultOpacity = getComputedStyle(historyTime).opacity;
         historyButton.focus();
         await new Promise((resolve) => setTimeout(resolve, 150));
         const historyFocusedStyle = getComputedStyle(historyButton);
@@ -139,8 +149,15 @@ async function runUiSmoke() {
           dotTop,
           dotHeight,
           buttonHeight,
+          newTaskMenuPosition: focusedStyle.position,
+          newTaskFullWidthGap: Math.abs(newTaskRowRect.right - newTaskButtonRect.right),
           historyDefaultOpacity,
           historyDefaultPointerEvents,
+          historyTimeDefaultOpacity,
+          historyTimeFocusedOpacity: getComputedStyle(historyTime).opacity,
+          historyMenuPosition: historyFocusedStyle.position,
+          historyFullWidthGap: Math.abs(historyProbeRect.right - historyItemRect.right),
+          historyDateTrailingGap: Math.abs(historyItemRect.right - historyTimeRect.right),
           historyFocusedOpacity: historyFocusedStyle.opacity,
           historyFocusedPointerEvents: historyFocusedStyle.pointerEvents,
           historyDotTop: historyDotStyle.top,
@@ -165,8 +182,15 @@ async function runUiSmoke() {
           Number.parseFloat(conversationDeleteMenu.dotTop)
             - Number.parseFloat(conversationDeleteMenu.buttonHeight) / 2
         ) > 0.1
+        || conversationDeleteMenu.newTaskMenuPosition !== "absolute"
+        || conversationDeleteMenu.newTaskFullWidthGap > 0.5
         || conversationDeleteMenu.historyDefaultOpacity !== "0"
         || conversationDeleteMenu.historyDefaultPointerEvents !== "none"
+        || conversationDeleteMenu.historyTimeDefaultOpacity !== "1"
+        || conversationDeleteMenu.historyTimeFocusedOpacity !== "0"
+        || conversationDeleteMenu.historyMenuPosition !== "absolute"
+        || conversationDeleteMenu.historyFullWidthGap > 0.5
+        || conversationDeleteMenu.historyDateTrailingGap > 11
         || Number.parseFloat(conversationDeleteMenu.historyFocusedOpacity) < 0.99
         || conversationDeleteMenu.historyFocusedPointerEvents !== "auto"
         || Math.abs(

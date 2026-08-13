@@ -264,9 +264,14 @@ if (!styles.includes('.new-task-row:hover .sidebar-more-button') ||
     !styles.includes('.history-item-shell:hover .history-more') ||
     !styles.includes('.new-task-row:focus-within .sidebar-more-button') ||
     !styles.includes('.history-item-shell:focus-within .history-more') ||
+    !styles.includes('.new-task-row { position: relative; display: block; }') ||
+    !styles.includes('.history-item-shell { position: relative; display: block; }') ||
+    !styles.includes('.history-item-shell:hover .history-title-row time') ||
+    !styles.includes('position: absolute; top: 50%; right: 0;') ||
+    !styles.includes('position: absolute; top: 0; right: 0; bottom: 0;') ||
     !styles.includes('box-shadow: -5px 0 currentColor, 5px 0 currentColor') ||
     !styles.includes('transform: translate(-50%, -50%)')) {
-  throw new Error("Desktop conversation menus must reveal on row interaction with geometrically centered three-dot controls");
+  throw new Error("Desktop conversation menus must overlay full-width rows and replace the trailing date on interaction");
 }
 if (!main.includes("width: 864") || !main.includes("height: 576")) {
   throw new Error("Desktop window must default to 864 x 576");
