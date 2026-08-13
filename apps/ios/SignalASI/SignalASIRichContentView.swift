@@ -17,6 +17,7 @@ struct SignalASIRichContentView: View {
   @State private var artifactExportSourceURI = ""
   @State private var artifactExportFilename = "SignalASI-artifact"
   @State private var filePreview: SignalASIFilePreview?
+  @State private var archivePreview: SignalASIRuntimeArtifactPreview?
   @State private var largeOutputExpanded = false
 
   var content: String
@@ -117,6 +118,9 @@ struct SignalASIRichContentView: View {
     .sheet(item: $filePreview) { preview in
       SignalASIFilePreviewView(preview: preview)
     }
+    .sheet(item: $archivePreview) { preview in
+      SignalASIRuntimeArtifactPreviewView(preview: preview)
+    }
   }
 
   private var isLargeOutput: Bool {
@@ -183,6 +187,14 @@ struct SignalASIRichContentView: View {
     guard let file = coordinator.desktopArtifactStore.localFile(for: block)
       ?? SignalASILocalFileResource.url(for: block),
       FileManager.default.fileExists(atPath: file.path) else {
+      return
+    }
+    if file.pathExtension.lowercased() == "zip",
+       let content = try? AgentDesktopArtifactActions.archivePreview(source: file).joined(separator: "\n") {
+      archivePreview = SignalASIRuntimeArtifactPreview(
+        title: block.title.ifBlank(file.lastPathComponent),
+        content: content
+      )
       return
     }
     filePreview = SignalASIFilePreview(
