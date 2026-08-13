@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SignalASIAgentBlockedTaskCard: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var title: String
   var goal: String
   var subtitle: String
@@ -33,27 +35,7 @@ struct SignalASIAgentBlockedTaskCard: View {
         .font(.system(size: 12))
         .foregroundColor(.signalASITextSecondary)
         .fixedSize(horizontal: false, vertical: true)
-      HStack(spacing: 8) {
-        Button(action: onRetry) {
-          Label(
-            isRetrying ? retryingTitle : retryTitle,
-            systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
-          )
-          .font(.system(size: 13, weight: .semibold))
-          .frame(maxWidth: .infinity, minHeight: 38)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(.signalASIAccent)
-        .disabled(isRetrying)
-
-        Button(action: onReplan) {
-          Label(replanTitle, systemImage: "arrow.triangle.2.circlepath")
-            .font(.system(size: 13, weight: .semibold))
-            .frame(maxWidth: .infinity, minHeight: 38)
-        }
-        .buttonStyle(.bordered)
-        .disabled(isRetrying)
-      }
+      recoveryControls
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -64,6 +46,49 @@ struct SignalASIAgentBlockedTaskCard: View {
     )
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .accessibilityElement(children: .contain)
+  }
+
+  @ViewBuilder
+  private var recoveryControls: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        retryControl
+        replanControl
+      }
+    } else {
+      HStack(spacing: 8) {
+        retryControl
+        replanControl
+      }
+    }
+  }
+
+  private var retryControl: some View {
+    Button(action: onRetry) {
+      Label(
+        isRetrying ? retryingTitle : retryTitle,
+        systemImage: isRetrying ? "hourglass" : "arrow.clockwise"
+      )
+      .font(.system(size: 13, weight: .semibold))
+      .frame(maxWidth: .infinity, minHeight: 38)
+    }
+    .buttonStyle(.borderedProminent)
+    .tint(.signalASIAccent)
+    .disabled(isRetrying)
+  }
+
+  private var replanControl: some View {
+    Button(action: onReplan) {
+      Label(replanTitle, systemImage: "arrow.triangle.2.circlepath")
+        .font(.system(size: 13, weight: .semibold))
+        .frame(maxWidth: .infinity, minHeight: 38)
+    }
+    .buttonStyle(.bordered)
+    .disabled(isRetrying)
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
 
