@@ -320,7 +320,7 @@ struct SignalASIConversationHubView: View {
         subtitle: showingArchived
           ? t("signalasi.conversation_hub.archived_subtitle", "Return to active Agent conversations")
           : t("signalasi.conversation_hub.new_subtitle", "Start a fresh Agent context for the next request"),
-        systemImage: showingArchived ? "arrow.left" : "plus.circle",
+        systemImage: showingArchived ? "clock.arrow.circlepath" : "plus.circle",
         tint: .signalASIAccent
       ) {
         if showingArchived {
