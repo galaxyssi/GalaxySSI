@@ -4,7 +4,6 @@ import UIKit
 private enum SignalASIAddContactPresentation: String, Identifiable, Equatable {
   case normal
   case scanner
-  case cloudModel
 
   var id: String { rawValue }
 }
@@ -121,26 +120,19 @@ struct SignalASIConversationHubView: View {
     .sheet(item: $addContactPresentation) { presentation in
       // Carry the route in the sheet item so SwiftUI cannot capture a stale
       // Boolean while the Hub presents the Add flow.
-      if presentation == .cloudModel {
-        NavigationView {
-          CloudModelProviderSelectionView()
+      AddContactView(
+        autoOpenScanner: presentation == .scanner,
+        onAgentAdded: { _ in
+          refreshAfterContactImport()
+          addContactPresentation = nil
+          selectedTab = .contacts
+        },
+        onImportCompleted: {
+          // Keep the Add flow visible so a scanned friend request or pairing
+          // can be reviewed and approved before the user leaves this route.
+          refreshAfterContactImport()
         }
-        .navigationViewStyle(StackNavigationViewStyle())
-      } else {
-        AddContactView(
-          autoOpenScanner: presentation == .scanner,
-          onAgentAdded: { _ in
-            refreshAfterContactImport()
-            addContactPresentation = nil
-            selectedTab = .contacts
-          },
-          onImportCompleted: {
-            // Keep the Add flow visible so a scanned friend request or pairing
-            // can be reviewed and approved before the user leaves this route.
-            refreshAfterContactImport()
-          }
-        )
-      }
+      )
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       if store.pendingFriendRequests.count == 1,
@@ -470,17 +462,6 @@ struct SignalASIConversationHubView: View {
         badge: store.pendingFriendRequests.isEmpty ? "" : "\(store.pendingFriendRequests.count)"
       ) {
         pendingFriendRequestsPresented = true
-      }
-      hubActionRow(
-        title: t("signalasi.add_contact.cloud_title", "Add Cloud Model"),
-        subtitle: t(
-          "signalasi.add_contact.cloud_subtitle",
-          "Provider, model, and API key are configured directly on the phone."
-        ),
-        systemImage: "cloud.fill",
-        tint: .signalASIInsightText
-      ) {
-        addContactPresentation = .cloudModel
       }
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
