@@ -244,6 +244,13 @@ if (!html.includes('id="voiceButton"') ||
     styles.includes(".peer-mode #voiceButton")) {
   throw new Error("Desktop device chats must share the standard conversation voice input control and transcription flow");
 }
+if (!html.includes('id="routeStatusDot"') ||
+    !workspaceRenderer.includes('elements.route.textContent = t("SignalASI Link encrypted")') ||
+    !styles.includes('.peer-mode .workspace-title p .route-status-dot') ||
+    !styles.includes('width: 7px; height: 7px;') ||
+    localeZh["SignalASI Link encrypted"] !== "SignalASI Link \u5df2\u52a0\u5bc6") {
+  throw new Error("Desktop device chats must show SignalASI Link encrypted with the shared green 7px indicator");
+}
 if (!styles.includes('.sidebar-more-button::before') ||
     !styles.includes('content: "\\2026"') ||
     styles.includes('content: "\\2026\\2026\\2026"')) {

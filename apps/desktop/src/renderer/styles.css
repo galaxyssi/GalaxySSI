@@ -289,6 +289,10 @@ button:disabled { cursor: default; opacity: 0.48; }
 .workspace-title p #taskStateText.running { color: var(--green); font-weight: 700; }
 .workspace-title p #taskStateText.failed { color: var(--red); font-weight: 700; }
 .header-separator { margin: 0 5px; color: #a3a9af; }
+.route-status-dot { display: none; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--green); }
+.peer-mode .workspace-title p #taskStateText,
+.peer-mode .workspace-title p .header-separator { display: none; }
+.peer-mode .workspace-title p .route-status-dot { display: inline-block; flex: 0 0 7px; }
 
 .workspace-status { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .compact-status {
