@@ -590,6 +590,8 @@ struct SignalASIAgentHomeReadinessView: View {
 }
 
 struct SignalASIAgentHomeRouteSummaryView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var title: String
   var route: String
   var subtitle: String
@@ -599,11 +601,12 @@ struct SignalASIAgentHomeRouteSummaryView: View {
 
   var body: some View {
     Button(action: onTap) {
-      HStack(spacing: 9) {
+      HStack(alignment: .top, spacing: 9) {
         Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
           .font(.system(size: 18, weight: .semibold))
           .foregroundColor(ready ? .signalASIAccent : .orange)
           .frame(width: 24, height: 24)
+          .padding(.top, usesAccessibilityDynamicType ? 2 : 0)
         VStack(alignment: .leading, spacing: 2) {
           Text(title)
             .font(.system(size: 11, weight: .semibold))
@@ -612,28 +615,34 @@ struct SignalASIAgentHomeRouteSummaryView: View {
           Text(route)
             .font(.system(size: 13, weight: .bold))
             .foregroundColor(.signalASITextPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.78)
+            .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+            .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.78)
           if !subtitle.isEmpty {
             Text(subtitle)
               .font(.system(size: 10.5))
               .foregroundColor(.signalASITextSecondary)
-              .lineLimit(1)
+              .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
           }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         Spacer(minLength: 6)
         VStack(alignment: .trailing, spacing: 3) {
           Text(status)
             .font(.system(size: 11, weight: .bold))
             .foregroundColor(ready ? .signalASIAccent : .orange)
-            .lineLimit(1)
+            .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+            .multilineTextAlignment(.trailing)
           Image(systemName: "chevron.right")
             .font(.system(size: 11, weight: .bold))
             .foregroundColor(.signalASITextSecondary)
         }
       }
       .padding(.horizontal, 12)
-      .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: usesAccessibilityDynamicType ? 84 : 64,
+        alignment: .leading
+      )
       .background(Color.signalASISurface)
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -644,6 +653,10 @@ struct SignalASIAgentHomeRouteSummaryView: View {
     .buttonStyle(.plain)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(Text("\(title): \(route), \(status)"))
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
 
