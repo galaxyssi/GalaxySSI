@@ -689,7 +689,7 @@ struct SignalASIConversationHubView: View {
           session,
           language: interfaceLanguage
         ),
-        subtitle: sessionSubtitle(session, preview: preview),
+        subtitle: preview,
         systemImage: "clock.arrow.circlepath",
         tint: .signalASIAccent,
         trailing: multiDeleteMode
@@ -1141,19 +1141,6 @@ struct SignalASIConversationHubView: View {
       "signalasi.conversation_hub.search_hint",
       "Search chats, contacts, or groups"
     )
-  }
-
-  private func sessionSubtitle(_ session: AgentConversation, preview: String = "") -> String {
-    let route = session.selectedModelOrAgent.ifBlank(
-      t("signalasi.agent.model_selection.automatic", "Automatic")
-    )
-    let count = store.agentSessionMetrics(session.id).messageCount
-    let metadata = String(
-      format: t("signalasi.conversation_hub.session_subtitle", "%@ · %d messages"),
-      route,
-      count
-    )
-    return preview.isEmpty ? metadata : "\(preview) · \(metadata)"
   }
 
   private func sectionsContacts(section: String) -> [SignalASIContact] {
