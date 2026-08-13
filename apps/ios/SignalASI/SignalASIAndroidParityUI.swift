@@ -566,6 +566,34 @@ struct AgentHomeView: View {
   func prefillAgentScreenCommand(_ command: String) {
     let cleanCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanCommand.isEmpty else { return }
+    switch cleanCommand.lowercased() {
+    case "type text into agent goal input":
+      actionTrayPresented = false
+      attachmentError = ""
+      composerFocusRequest += 1
+      refreshAgentScreenContext()
+      return
+    case "paste clipboard":
+      let clipboardText = UIPasteboard.general.string ?? ""
+      guard !clipboardText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        attachmentError = t("signalasi.agent.input.clipboard_empty", "Clipboard is empty.")
+        return
+      }
+      draft = clipboardText
+      actionTrayPresented = false
+      attachmentError = ""
+      composerFocusRequest += 1
+      refreshAgentScreenContext()
+      return
+    case "swipe up", "swipe down":
+      pendingAgentSwipeDirection = cleanCommand.lowercased() == "swipe up" ? "up" : "down"
+      agentSwipeRequest += 1
+      actionTrayPresented = false
+      attachmentError = ""
+      return
+    default:
+      break
+    }
     if let targetID = agentHomeControlID(for: cleanCommand),
        activateAgentHomeControl(targetID) {
       actionTrayPresented = false
