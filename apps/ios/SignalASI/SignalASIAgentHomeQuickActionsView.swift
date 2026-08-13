@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SignalASIAgentHomeQuickActionsView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var t: (String, String) -> String
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
@@ -9,35 +11,62 @@ struct SignalASIAgentHomeQuickActionsView: View {
   var onAddFile: () -> Void
 
   var body: some View {
-    HStack(spacing: 0) {
-      action(
+    Group {
+      if usesAccessibilityDynamicType {
+        LazyVGrid(
+          columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3),
+          spacing: 0
+        ) {
+          ForEach(actions) { item in
+            action(title: item.title, systemImage: item.systemImage, action: item.perform)
+          }
+        }
+        .frame(height: 176)
+      } else {
+        HStack(spacing: 0) {
+          ForEach(actions) { item in
+            action(title: item.title, systemImage: item.systemImage, action: item.perform)
+          }
+        }
+        .frame(height: 96)
+      }
+    }
+    .padding(.horizontal, 8)
+  }
+
+  private var actions: [QuickAction] {
+    [
+      QuickAction(
+        id: "new-session",
         title: t("agent_attachment_new_task", "New session"),
         systemImage: "square.and.pencil",
-        action: onNewSession
-      )
-      action(
+        perform: onNewSession
+      ),
+      QuickAction(
+        id: "sessions",
         title: t("agent_attachment_sessions", "Sessions"),
         systemImage: "tray.full",
-        action: onOpenSessions
-      )
-      action(
+        perform: onOpenSessions
+      ),
+      QuickAction(
+        id: "scan",
         title: t("agent_attachment_scan", "Scan Agent"),
         systemImage: "qrcode.viewfinder",
-        action: onScan
-      )
-      action(
+        perform: onScan
+      ),
+      QuickAction(
+        id: "camera",
         title: t("agent_attachment_take_photo", "Take photo"),
         systemImage: "camera",
-        action: onTakePhoto
-      )
-      action(
+        perform: onTakePhoto
+      ),
+      QuickAction(
+        id: "file",
         title: t("agent_attachment_add_file", "Add file"),
         systemImage: "paperclip",
-        action: onAddFile
+        perform: onAddFile
       )
-    }
-    .frame(height: 96)
-    .padding(.horizontal, 8)
+    ]
   }
 
   private func action(
@@ -51,10 +80,11 @@ struct SignalASIAgentHomeQuickActionsView: View {
           .font(.system(size: 21, weight: .semibold))
           .frame(width: 25, height: 25)
         Text(title)
-          .font(.system(size: 11.5, weight: .regular))
+          .font(.system(size: usesAccessibilityDynamicType ? 13 : 11.5, weight: .regular))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
-          .minimumScaleFactor(0.65)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .multilineTextAlignment(.center)
+          .minimumScaleFactor(usesAccessibilityDynamicType ? 0.85 : 0.65)
       }
       .foregroundColor(.signalASITextPrimary)
       .frame(maxWidth: .infinity, minHeight: 84)
@@ -63,4 +93,20 @@ struct SignalASIAgentHomeQuickActionsView: View {
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
   }
+
+  private var usesAccessibilityDynamicType: Bool {
+    switch dynamicTypeSize {
+    case .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5:
+      return true
+    default:
+      return false
+    }
+  }
+}
+
+private struct QuickAction: Identifiable {
+  var id: String
+  var title: String
+  var systemImage: String
+  var perform: () -> Void
 }
