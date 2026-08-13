@@ -15,10 +15,15 @@ struct SignalASIAgentsModelsNodesView: View {
     store.cloudModelContacts
   }
 
+  private var resourceTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+  }
+
   private var availableResourceCount: Int {
-    let onlineDesktops = desktopLinks.filter { $0.paired && coordinator.mqttClient.isConnected }.count
-    let configuredClouds = cloudContacts.filter { $0.selectedCloudModel != nil }.count
-    return 2 + onlineDesktops + configuredClouds
+    resourceTargets.filter { $0.status == .available }.count
   }
 
   var body: some View {
