@@ -6,6 +6,7 @@ struct SignalASIConversationComposer: View {
   @Binding var attachments: [SignalASIDraftAttachment]
   @Binding var attachmentError: String
   @Binding var attachmentMenuPresented: Bool
+  @Binding var textModeActive: Bool
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var onSend: () -> Void
@@ -23,7 +24,7 @@ struct SignalASIConversationComposer: View {
     SignalASIAgentComposerUiPolicy.resolve(
       hasInput: canSend,
       hasPendingPrimaryAction: false,
-      textModeActive: inputFocused,
+      textModeActive: textModeActive,
       actionTrayRequested: false
     )
   }
@@ -61,10 +62,19 @@ struct SignalASIConversationComposer: View {
     ) { _ in
       guard inputFocused, !voiceRecorder.isPending, !voiceRecorder.isRecording else { return }
       inputFocused = false
+      textModeActive = false
     }
     .onChange(of: inputFocused) { focused in
+      if textModeActive != focused {
+        textModeActive = focused
+      }
       guard focused, !voiceRecorder.isRecording else { return }
       voiceRecorder.cancelFromView()
+    }
+    .onChange(of: textModeActive) { active in
+      if inputFocused != active {
+        inputFocused = active
+      }
     }
     .onDisappear { voiceRecorder.cancelFromView() }
   }
@@ -181,7 +191,7 @@ struct SignalASIConversationComposer: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
-        guard !inputFocused || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
+        guard !textModeActive || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
         voiceRecorder.dragChanged(
           translation: value.translation,
           messages: SignalASIChatVoiceRecorderMessages(
@@ -194,7 +204,7 @@ struct SignalASIConversationComposer: View {
         )
       }
       .onEnded { value in
-        guard !inputFocused || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
+        guard !textModeActive || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
         let wasCapturingVoice = voiceRecorder.isPending || voiceRecorder.isRecording
         voiceRecorder.dragEnded(translation: value.translation)
         if !wasCapturingVoice {
