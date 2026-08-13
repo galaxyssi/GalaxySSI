@@ -1335,6 +1335,44 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         return snapshot()
     }
     val plan = currentPlan ?: return observeCurrentScreen()
+    if (plan.isSupervisedProjectPlan() && plan.hasInterruptedExecutionEvidence()) {
+        val recovered = supervisedProjectRecoveryPlan(
+            plan,
+            "The Android app process ended before the active project action was verified"
+        )
+        if (recovered == null) {
+            phase = AgentPhase.FAILED
+            lastActionResult = AgentActionResult(
+                actionId = "agent-project-resume-unavailable",
+                success = false,
+                message = "The saved project is intact, but the supervising model could not create a safe recovery step"
+            )
+            recordAudit(AgentAuditEvent.ACTION_BLOCKED, "project_resume_replan_unavailable")
+            saveTaskRecord(result = lastActionResult?.message.orEmpty())
+            return reconcileExecutionLoop(snapshot())
+        }
+        currentPlan = recovered
+        phase = AgentPhase.PLANNING
+        lastActionResult = AgentActionResult(
+            actionId = "agent-project-resuming",
+            success = true,
+            message = "Inspecting the saved project before resuming"
+        )
+        recordAudit(
+            AgentAuditEvent.TASK_RESUMED,
+            "project_resume_with_model_replan:revision=${recovered.revision}"
+        )
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.REPLAN,
+                reason = "Inspecting durable project evidence after interruption",
+                actionId = recovered.actions.firstOrNull()?.id.orEmpty()
+            )
+        ) {
+            return reconcileExecutionLoop(snapshot())
+        }
+        saveTaskRecord()
+        return reconcileExecutionLoop(executeFirstPendingAction())
+    }
     val loopResumePhase = executionLoop.snapshot
         ?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }
         ?.resumePhase
