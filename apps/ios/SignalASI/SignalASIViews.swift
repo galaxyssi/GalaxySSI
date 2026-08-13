@@ -1140,8 +1140,17 @@ struct MessageDetailView: View {
   }
 }
 
+private struct MessageBubbleContainerWidthKey: PreferenceKey {
+  static var defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
 struct MessageBubble: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @State private var messageContainerWidth: CGFloat = 0
 
   var message: ChatMessage
   var myAvatarData: Data? = nil
@@ -1160,56 +1169,66 @@ struct MessageBubble: View {
         .padding(.vertical, 4)
     } else {
       HStack(alignment: .bottom, spacing: 8) {
-      if !message.isMine, let remoteContact {
-        AvatarView(contact: remoteContact, size: 36)
-          .accessibilityHidden(true)
-      }
-      if message.isMine { Spacer(minLength: 48) }
-      VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
-        SignalASIRichContentView(
-          content: message.content,
-          richOutputJson: message.richOutputJson,
-          isOutgoing: message.isMine,
-          expansionStorageKey: "message:\(message.id.uuidString)",
-          onAction: { action in
-            if let onActionWithMessage = onActionWithMessage {
-              onActionWithMessage(message, action)
-            } else {
-              onAction(action)
-            }
-          },
-          onFormSubmit: onFormSubmit
-        )
-          .padding(.horizontal, 12)
-          .padding(.vertical, 9)
-          .foregroundColor(.signalASITextPrimary)
-          .frame(maxWidth: bubbleMaxWidth, alignment: .leading)
-          .background(messageBubbleColor)
-          .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-              .stroke(message.isMine ? Color.clear : Color.signalASISeparator, lineWidth: 0.5)
-          )
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        HStack(spacing: 4) {
-          Text(message.createdAt, style: .time)
-          if message.isMine {
-            Text(
-              SignalASIPeerDeliveryPresentation.title(
-                for: message.deliveryStatus,
-                isPeerMessage: remoteContact?.isDesktopDeviceContact == true,
-                language: interfaceLanguage
-              )
-            )
-          }
+        if !message.isMine, let remoteContact {
+          AvatarView(contact: remoteContact, size: 36)
+            .accessibilityHidden(true)
         }
-        .font(.caption2)
-        .foregroundColor(.signalASITextSecondary)
+        if message.isMine { Spacer(minLength: 48) }
+        VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
+          SignalASIRichContentView(
+            content: message.content,
+            richOutputJson: message.richOutputJson,
+            isOutgoing: message.isMine,
+            expansionStorageKey: "message:\(message.id.uuidString)",
+            onAction: { action in
+              if let onActionWithMessage = onActionWithMessage {
+                onActionWithMessage(message, action)
+              } else {
+                onAction(action)
+              }
+            },
+            onFormSubmit: onFormSubmit
+          )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .foregroundColor(.signalASITextPrimary)
+            .frame(maxWidth: bubbleMaxWidth, alignment: .leading)
+            .background(messageBubbleColor)
+            .overlay(
+              RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(message.isMine ? Color.clear : Color.signalASISeparator, lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          HStack(spacing: 4) {
+            Text(message.createdAt, style: .time)
+            if message.isMine {
+              Text(
+                SignalASIPeerDeliveryPresentation.title(
+                  for: message.deliveryStatus,
+                  isPeerMessage: remoteContact?.isDesktopDeviceContact == true,
+                  language: interfaceLanguage
+                )
+              )
+            }
+          }
+          .font(.caption2)
+          .foregroundColor(.signalASITextSecondary)
+        }
+        if message.isMine {
+          SignalASIProfileAvatar(data: myAvatarData, size: 36)
+            .accessibilityHidden(true)
+        }
+        if !message.isMine { Spacer(minLength: 48) }
       }
-      if message.isMine {
-        SignalASIProfileAvatar(data: myAvatarData, size: 36)
-          .accessibilityHidden(true)
-      }
-      if !message.isMine { Spacer(minLength: 48) }
+      .frame(maxWidth: .infinity)
+      .background(
+        GeometryReader { proxy in
+          Color.clear.preference(key: MessageBubbleContainerWidthKey.self, value: proxy.size.width)
+        }
+      )
+      .onPreferenceChange(MessageBubbleContainerWidthKey.self) { width in
+        guard width > 0 else { return }
+        messageContainerWidth = width
       }
     }
   }
@@ -1219,7 +1238,8 @@ struct MessageBubble: View {
   }
 
   private var bubbleMaxWidth: CGFloat {
-    min(UIScreen.main.bounds.width * 0.74, 520)
+    let width = messageContainerWidth > 0 ? messageContainerWidth : UIScreen.main.bounds.width
+    return min(width * 0.75, 520)
   }
 }
 
