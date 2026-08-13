@@ -188,6 +188,7 @@ struct AgentHomeView: View {
       }
       .onChange(of: store.activeAgentConversationId) { _ in
         resetAgentSessionPresentation()
+        refreshAgentRouteState()
       }
       .onReceive(
         NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)
