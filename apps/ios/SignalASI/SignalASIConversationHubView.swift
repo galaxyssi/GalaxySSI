@@ -77,30 +77,22 @@ struct SignalASIConversationHubView: View {
         trailing: { Color.clear }
       )
 
-      Picker("", selection: $selectedTab) {
-        Text(t("signalasi.conversation_hub.tab_conversations", "Chats"))
-          .tag(SignalASIConversationHubTab.conversations)
-        Text(t("signalasi.conversation_hub.tab_contacts", "Contacts"))
-          .tag(SignalASIConversationHubTab.contacts)
-        Text(t("signalasi.conversation_hub.tab_groups", "Groups"))
-          .tag(SignalASIConversationHubTab.groups)
-      }
-      .pickerStyle(.segmented)
-      .padding(.horizontal, 12)
-      .padding(.top, 2)
+      conversationHubTabStrip
 
       HStack(spacing: 8) {
         Image(systemName: "magnifyingglass")
           .foregroundColor(.signalASITextSecondary)
+          .frame(width: 20, height: 20)
         TextField(searchPlaceholder, text: $searchText)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled(true)
           .submitLabel(.search)
       }
-      .font(.system(size: 15))
-      .padding(.horizontal, 12)
-      .frame(height: 36)
-      .background(Color.signalASISearchBackground)
+      .font(.system(size: 14))
+      .padding(.leading, 12)
+      .padding(.trailing, 10)
+      .frame(height: 40)
+      .background(Color.signalASIButtonSoft)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .padding(.horizontal, 12)
       .padding(.top, 10)
@@ -278,6 +270,51 @@ struct SignalASIConversationHubView: View {
         groupsContent
       }
     }
+  }
+
+  private var conversationHubTabStrip: some View {
+    HStack(spacing: 0) {
+      conversationHubTabButton(
+        .conversations,
+        title: t("signalasi.conversation_hub.tab_conversations", "Chats")
+      )
+      conversationHubTabButton(
+        .contacts,
+        title: t("signalasi.conversation_hub.tab_contacts", "Contacts")
+      )
+      conversationHubTabButton(
+        .groups,
+        title: t("signalasi.conversation_hub.tab_groups", "Groups")
+      )
+    }
+    .padding(2)
+    .frame(height: 40)
+    .background(Color.signalASIButtonSoft)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .padding(.horizontal, 12)
+    .padding(.top, 2)
+  }
+
+  private func conversationHubTabButton(
+    _ tab: SignalASIConversationHubTab,
+    title: String
+  ) -> some View {
+    let selected = selectedTab == tab
+    return Button {
+      selectedTab = tab
+    } label: {
+      Text(title)
+        .font(.system(size: 14, weight: selected ? .bold : .regular))
+        .foregroundColor(selected ? .signalASIAccent : .signalASITextPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .background(selected ? Color.signalASISurface : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? [.isSelected] : [])
+    .accessibilityLabel(Text(title))
   }
 
   private var conversationContent: some View {
