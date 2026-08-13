@@ -42,6 +42,7 @@ struct SignalASIConversationHubView: View {
     archivedCount: 0,
     contacts: []
   )
+  @State private var hubRefreshToken = UUID()
 
   init(
     initialTab: SignalASIConversationHubTab = .conversations,
@@ -244,6 +245,9 @@ struct SignalASIConversationHubView: View {
       showingArchived = false
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)) { _ in
+      refreshAfterDesktopPairing()
     }
     .onDisappear {
       navigationContentGate.invalidate()
@@ -470,8 +474,15 @@ struct SignalASIConversationHubView: View {
       searchText,
       showingArchived ? "archived" : "active",
       conversationKey,
-      contactKey
+      contactKey,
+      hubRefreshToken.uuidString
     ].joined(separator: "\u{001F}")
+  }
+
+  private func refreshAfterDesktopPairing() {
+    navigationContentGate.invalidate()
+    hubContentLoading = true
+    hubRefreshToken = UUID()
   }
 
   private func prepareHubContent() async {
