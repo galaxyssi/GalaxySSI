@@ -10,40 +10,57 @@ struct SignalASIAgentHomePhoneStatusView: View {
   @State private var storageSnapshot: AgentMcpJSONObject = [:]
   @State private var batterySnapshot: AgentMcpJSONObject = [:]
   @State private var networkSnapshot: AgentMcpJSONObject = [:]
+  @State private var lastRefreshDate: Date?
 
   var body: some View {
-    NavigationLink(destination: SignalASISystemStatusView()) {
-      VStack(alignment: .leading, spacing: 9) {
-        HStack(spacing: 9) {
-          Image(systemName: snapshot.lowMemory ? "exclamationmark.triangle.fill" : "memorychip")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundColor(snapshot.lowMemory ? .orange : .signalASIAccent)
-            .frame(width: 24, height: 24)
+    VStack(alignment: .leading, spacing: 9) {
+      HStack(spacing: 9) {
+        NavigationLink(destination: SignalASISystemStatusView()) {
+          HStack(spacing: 9) {
+            Image(systemName: snapshot.lowMemory ? "exclamationmark.triangle.fill" : "memorychip")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(snapshot.lowMemory ? .orange : .signalASIAccent)
+              .frame(width: 24, height: 24)
 
-          VStack(alignment: .leading, spacing: 2) {
-            Text(t("signalasi.agent.readiness.phone_memory", "Phone memory"))
-              .font(.system(size: 11, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+              Text(t("signalasi.agent.readiness.phone_memory", "Phone memory"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.signalASITextSecondary)
+                .lineLimit(1)
+              Text(memoryValue)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.signalASITextPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+              Text(pressureValue)
+                .font(.system(size: 10.5))
+                .foregroundColor(snapshot.lowMemory ? .orange : .signalASITextSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: 6)
+            Image(systemName: "chevron.right")
+              .font(.system(size: 11, weight: .bold))
               .foregroundColor(.signalASITextSecondary)
-              .lineLimit(1)
-            Text(memoryValue)
-              .font(.system(size: 13, weight: .bold))
-              .foregroundColor(.signalASITextPrimary)
-              .lineLimit(1)
-              .minimumScaleFactor(0.78)
-            Text(pressureValue)
-              .font(.system(size: 10.5))
-              .foregroundColor(snapshot.lowMemory ? .orange : .signalASITextSecondary)
-              .lineLimit(1)
-              .minimumScaleFactor(0.72)
           }
-
-          Spacer(minLength: 6)
-          Image(systemName: "chevron.right")
-            .font(.system(size: 11, weight: .bold))
-            .foregroundColor(.signalASITextSecondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .buttonStyle(.plain)
 
-        HStack(spacing: 8) {
+        Button(action: refresh) {
+          Image(systemName: "arrow.clockwise")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.signalASIAccent)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(t("signalasi.agent.readiness.phone_refresh", "Refresh phone status")))
+      }
+
+      NavigationLink(destination: SignalASISystemStatusView()) {
+        HStack(spacing: 9) {
           statusMetric(
             title: t("signalasi.agent.readiness.phone_battery", "Battery"),
             value: batteryValue,
@@ -64,27 +81,32 @@ struct SignalASIAgentHomePhoneStatusView: View {
           )
         }
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-      .background(Color.signalASISurface)
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(
-            (snapshot.lowMemory ? Color.orange : Color.signalASIAccent).opacity(0.55),
-            lineWidth: 1
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(phoneStatusAccessibilityLabel))
+
+      if let lastRefreshDate = lastRefreshDate {
+        Text(
+          String(
+            format: t("signalasi.agent.readiness.phone_updated", "Updated %@"),
+            refreshTime(for: lastRefreshDate)
           )
-      )
-      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        )
+        .font(.system(size: 9.5))
+        .foregroundColor(.signalASITextSecondary)
+      }
     }
-    .buttonStyle(.plain)
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(Text(
-      "\(t("signalasi.agent.readiness.phone_memory", "Phone memory")): \(memoryValue), \(pressureValue); " +
-        "\(t("signalasi.agent.readiness.phone_battery", "Battery")): \(batteryValue); " +
-        "\(t("signalasi.agent.readiness.phone_storage", "Storage")): \(storageValue); " +
-        "\(t("signalasi.agent.readiness.phone_network", "Network")): \(networkValue)"
-    ))
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+    .background(Color.signalASISurface)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(
+          (snapshot.lowMemory ? Color.orange : Color.signalASIAccent).opacity(0.55),
+          lineWidth: 1
+        )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .onAppear(perform: refresh)
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
       refresh()
@@ -161,6 +183,13 @@ struct SignalASIAgentHomePhoneStatusView: View {
       : t("signalasi.agent.readiness.phone_network_offline", "Offline")
   }
 
+  private var phoneStatusAccessibilityLabel: String {
+    "\(t("signalasi.agent.readiness.phone_memory", "Phone memory")): \(memoryValue), \(pressureValue); " +
+      "\(t("signalasi.agent.readiness.phone_battery", "Battery")): \(batteryValue); " +
+      "\(t("signalasi.agent.readiness.phone_storage", "Storage")): \(storageValue); " +
+      "\(t("signalasi.agent.readiness.phone_network", "Network")): \(networkValue)"
+  }
+
   private func statusMetric(
     title: String,
     value: String,
@@ -193,6 +222,11 @@ struct SignalASIAgentHomePhoneStatusView: View {
     storageSnapshot = provider.storageStatus(nowMillis: nowMillis)
     batterySnapshot = provider.batteryStatus(nowMillis: nowMillis)
     networkSnapshot = provider.networkStatus(nowMillis: nowMillis)
+    lastRefreshDate = Date()
+  }
+
+  private func refreshTime(for date: Date) -> String {
+    DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short)
   }
 
   private func formatBytes(_ value: Int64) -> String {

@@ -1,4 +1,6 @@
 "signalasi.tab.agent" = "Agent";
+"signalasi.agent.readiness.phone_refresh" = "刷新手机状态";
+"signalasi.agent.readiness.phone_updated" = "更新于 %@";
 "signalasi.skill_marketplace.title" = "技能市场";
 "signalasi.skill_marketplace.subtitle" = "安装可复用的 Agent 技能，并进行本地校验和显式控制";
 "signalasi.skill_marketplace.count" = "%d 个已安装";
