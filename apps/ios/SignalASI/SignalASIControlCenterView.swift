@@ -239,7 +239,7 @@ struct SignalASIControlCenterView: View {
         subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
         systemImage: "shippingbox.and.arrow.down",
         tint: .signalASIAccent,
-        badge: t("signalasi.common.manage", "Manage")
+        badge: "\(capabilityLibraryInstalledCount)"
       ) {
         SignalASICapabilityLibraryView()
       }
@@ -419,6 +419,19 @@ struct SignalASIControlCenterView: View {
       $0.risk != .blocked && $0.availability.status == .available
     }.count
     return (tools.count, available, max(tools.count - available, 0))
+  }
+
+  private var capabilityLibraryInstalledCount: Int {
+    let items = AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: AgentPhoneNativeToolCatalog.descriptors(
+        capabilityStatuses: AgentPhoneCapabilityCatalog.declaredStatuses()
+      ),
+      installedMcp: SignalASIMcpControlStores.makeRegistry().list(),
+      installedAutomations: UserDefaultsAgentSkillStore().list()
+    )
+    return items.filter {
+      $0.installState == .builtIn || $0.installState == .installed
+    }.count
   }
 
   private var memorySnapshot: AgentMemorySnapshot {
