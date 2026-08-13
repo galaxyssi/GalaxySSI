@@ -493,6 +493,7 @@ struct AddContactView: View {
 
   private func approveFriendRequest(_ request: SignalASIFriendRequest) {
     if store.approveFriendRequest(id: request.id) {
+      Task { await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId) }
       if pendingFriendRequest?.id == request.id {
         pendingFriendRequest = pendingScannedRequests.first
       }
@@ -524,7 +525,9 @@ struct AddContactView: View {
   private func approvePendingScannedRequests() {
     let requests = pendingScannedAgentRequests
     let approvedAgentIDs = requests.compactMap { request -> String? in
-      store.approveFriendRequest(id: request.id) ? request.signalASIId : nil
+      guard store.approveFriendRequest(id: request.id) else { return nil }
+      Task { await coordinator.recoverPhoneContactSessionIfNeeded(contactId: request.signalASIId) }
+      return request.signalASIId
     }
     let approvedCount = approvedAgentIDs.count
     let approvedIDs = Set(requests.map(\.id))
