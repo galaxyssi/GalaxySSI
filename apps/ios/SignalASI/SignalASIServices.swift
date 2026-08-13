@@ -4048,8 +4048,18 @@ final class MessageCoordinator: ObservableObject {
       english: "Screen matches: \(matches.count)",
       chinese: "\u{5c4f}\u{5e55}\u{5339}\u{914d}\u{9879}\u{ff1a}\(matches.count)"
     )
-    let rows = [heading] + matches.map { "\($0.kind): \($0.value)" }
+    let rows = [heading] + matches.map { "\(agentScreenSearchKindLabel($0.kind)): \($0.value)" }
     return String(rows.joined(separator: "\n").prefix(3_000))
+  }
+
+  private func agentScreenSearchKindLabel(_ kind: String) -> String {
+    switch kind {
+    case "text": return localReply(english: "text", chinese: "\u{6587}\u{672c}")
+    case "action": return localReply(english: "action", chinese: "\u{64cd}\u{4f5c}")
+    case "field": return localReply(english: "field", chinese: "\u{8f93}\u{5165}\u{6846}")
+    case "scroll": return localReply(english: "scroll", chinese: "\u{6eda}\u{52a8}\u{533a}\u{57df}")
+    default: return kind
+    }
   }
 
   private func normalizedAgentScreenSearchText(_ value: String) -> String {
