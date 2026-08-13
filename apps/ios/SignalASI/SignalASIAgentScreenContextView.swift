@@ -421,6 +421,13 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: "take a photo"
       ),
       commandRow(
+        id: "add-photos",
+        title: t("agent_attachment_add_photos", "Add photos"),
+        detail: t("agent_screen_action_photos_detail", "attach photos from the library"),
+        systemImage: "photo.on.rectangle",
+        command: "attach photos"
+      ),
+      commandRow(
         id: "add-file",
         title: t("agent_attachment_add_file", "Add file"),
         detail: t("agent_screen_action_file_detail", "attach a file"),

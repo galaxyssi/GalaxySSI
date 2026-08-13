@@ -133,6 +133,7 @@
 "agent_screen_action_sessions_detail" = "查看 Agent 会话";
 "agent_screen_action_scan_detail" = "扫描 Agent 二维码";
 "agent_screen_action_photo_detail" = "拍照";
+"agent_screen_action_photos_detail" = "从照片库添加照片";
 "agent_screen_action_file_detail" = "添加文件";
 "agent_screen_action_permissions_detail" = "打开权限";
 "agent_screen_action_settings_detail" = "打开设置";
