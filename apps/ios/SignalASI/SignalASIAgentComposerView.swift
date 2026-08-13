@@ -198,6 +198,7 @@ struct SignalASIAgentComposerView: View {
         .onTapGesture {
           actionTrayPresented = false
         }
+        .accessibilityIdentifier("ios.agent.agent-goal-input")
     }
     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
     .contentShape(Rectangle())
@@ -363,6 +364,7 @@ struct SignalASIAgentComposerView: View {
             : pendingPrimaryActionNeedsHighRiskConfirmation
               ? t("signalasi.agent.high_risk_confirmation.execute", "Confirm high-risk action")
               : t("signalasi.agent.cancel_task", "Cancel task")))
+      .accessibilityIdentifier("ios.agent.composer-primary-action")
     } else {
       Button {
         if actionTrayPresented {
@@ -384,6 +386,7 @@ struct SignalASIAgentComposerView: View {
       .accessibilityLabel(Text(uiState.showActionTray
         ? t("agent_attachment_close_menu", "Close actions")
         : t("agent_attachment_open_menu", "More actions")))
+      .accessibilityIdentifier("ios.agent.composer-more-actions")
     }
   }
 
@@ -450,6 +453,7 @@ struct SignalASIAgentComposerView: View {
     SignalASIAgentComposerTrayButton(
       title: item.title,
       systemImage: item.systemImage,
+      accessibilityIdentifier: "ios.agent.composer.\(item.id)",
       minimumTouchSize: minimumTouchSize,
       allowsTwoLineTitle: usesAccessibilityDynamicType
     ) {
@@ -668,6 +672,7 @@ private struct SignalASIAgentRecordingWaveform: View {
 private struct SignalASIAgentComposerTrayButton: View {
   var title: String
   var systemImage: String
+  var accessibilityIdentifier: String
   var minimumTouchSize: CGFloat
   var allowsTwoLineTitle: Bool
   var action: () -> Void
@@ -683,6 +688,7 @@ private struct SignalASIAgentComposerTrayButton: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(Text(title))
+    .accessibilityIdentifier(accessibilityIdentifier)
   }
 }
 
