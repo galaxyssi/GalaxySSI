@@ -1226,17 +1226,24 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isVPNStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["vpn status", "is vpn on", "vpn connection status", "vpn状态", "vpn是否开启"])
+    containsAny(lower, [
+      "vpn status", "is vpn on", "vpn connection status", "vpn状态", "vpn是否开启",
+      "\u{865a}\u{62df}\u{4e13}\u{7528}\u{7f51}\u{7edc}\u{72b6}\u{6001}", "\u{865a}\u{62df}\u{4e13}\u{7f51}\u{72b6}\u{6001}"
+    ])
   }
 
   private static func isDevicePolicyStatusGoal(_ lower: String) -> Bool {
     containsAny(lower, [
-      "device policy status", "device owner status", "management status", "设备策略状态", "设备管理员状态"
+      "device policy status", "device owner status", "management status", "设备策略状态", "设备管理员状态",
+      "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{72b6}\u{6001}", "\u{8bbe}\u{5907}\u{7ba1}\u{7406}\u{6743}\u{9650}"
     ])
   }
 
   private static func isPowerStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["battery saver", "low power", "power status", "\u{7701}\u{7535}\u{6a21}\u{5f0f}"])
+    containsAny(lower, [
+      "battery saver", "low power", "power status", "\u{7701}\u{7535}\u{6a21}\u{5f0f}",
+      "\u{4f4e}\u{7535}\u{91cf}\u{6a21}\u{5f0f}", "\u{7535}\u{6e90}\u{72b6}\u{6001}"
+    ])
   }
 
   private static func isMemoryStatusGoal(_ lower: String) -> Bool {
@@ -1341,7 +1348,8 @@ enum AgentDirectNativeToolPlanner {
       "is nfc on",
       "check nfc",
       "nfc\u{72b6}\u{6001}",
-      "nfc\u{662f}\u{5426}\u{6253}\u{5f00}"
+      "nfc\u{662f}\u{5426}\u{6253}\u{5f00}",
+      "\u{8fd1}\u{573a}\u{901a}\u{4fe1}\u{72b6}\u{6001}", "\u{8fd1}\u{573a}\u{901a}\u{4fe1}\u{662f}\u{5426}\u{5f00}\u{542f}"
     ])
   }
 
