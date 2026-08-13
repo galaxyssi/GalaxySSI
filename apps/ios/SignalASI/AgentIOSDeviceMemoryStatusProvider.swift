@@ -1,5 +1,12 @@
 import Foundation
 
+#if os(iOS)
+// The iOS SDK exposes this symbol from <os/proc.h>, which is not imported by
+// Swift's Darwin module. Keep the declaration local to avoid a bridging header.
+@_silgen_name("os_proc_available_memory")
+private func signalASIAvailableMemoryBudget() -> UInt64
+#endif
+
 struct AgentIOSDeviceMemorySnapshot {
   var totalBytes: Int64
   var availableBytes: Int64
@@ -7,6 +14,7 @@ struct AgentIOSDeviceMemorySnapshot {
   var lowMemoryThresholdBytes: Int64
   var pressure: String
   var availableBytesEstimated: Bool
+  var appAvailableMemoryBudgetBytes: Int64?
 
   init(
     totalBytes: Int64,
@@ -14,7 +22,8 @@ struct AgentIOSDeviceMemorySnapshot {
     lowMemory: Bool,
     lowMemoryThresholdBytes: Int64,
     pressure: String,
-    availableBytesEstimated: Bool = true
+    availableBytesEstimated: Bool = true,
+    appAvailableMemoryBudgetBytes: Int64? = nil
   ) {
     self.totalBytes = max(0, totalBytes)
     self.availableBytes = min(max(0, availableBytes), self.totalBytes)
@@ -22,6 +31,7 @@ struct AgentIOSDeviceMemorySnapshot {
     self.lowMemoryThresholdBytes = min(max(0, lowMemoryThresholdBytes), self.totalBytes)
     self.pressure = pressure
     self.availableBytesEstimated = availableBytesEstimated
+    self.appAvailableMemoryBudgetBytes = appAvailableMemoryBudgetBytes.map { max(0, $0) }
   }
 }
 
@@ -53,8 +63,19 @@ struct AgentIOSDefaultDeviceMemoryStatusProvider: AgentIOSDeviceMemoryStatusProv
       availableBytes: available,
       lowMemory: available <= threshold,
       lowMemoryThresholdBytes: threshold,
-      pressure: pressure
+      pressure: pressure,
+      appAvailableMemoryBudgetBytes: appAvailableMemoryBudget()
     )
+  }
+
+  private func appAvailableMemoryBudget() -> Int64? {
+    #if os(iOS)
+    let budget = signalASIAvailableMemoryBudget()
+    guard budget > 0 else { return nil }
+    return Int64(min(budget, UInt64(Int64.max)))
+    #else
+    return nil
+    #endif
   }
 
   private func memoryPressure(_ state: ProcessInfo.ThermalState) -> String {
@@ -76,7 +97,7 @@ enum AgentIOSDeviceMemoryStatusPresentation {
     let usedPercent = total == 0
       ? 0
       : min(100, max(0, Int64((Double(used) * 100 / Double(total)).rounded(.down))))
-    return [
+    var output: AgentMcpJSONObject = [
       "scope": .string("device_ram"),
       "total_bytes": .int(total),
       "available_bytes": .int(available),
@@ -88,6 +109,10 @@ enum AgentIOSDeviceMemoryStatusPresentation {
       "available_memory_estimated": .bool(snapshot.availableBytesEstimated),
       "observed_at_epoch_ms": .int(max(0, nowMillis))
     ]
+    if let budget = snapshot.appAvailableMemoryBudgetBytes {
+      output["app_available_memory_budget_bytes"] = .int(budget)
+    }
+    return output
   }
 
   static func message(output: AgentMcpJSONObject, language: String) -> String {
@@ -96,12 +121,15 @@ enum AgentIOSDeviceMemoryStatusPresentation {
     let used = formatBytes(output["used_bytes"]?.intValue ?? 0)
     let percent = output["used_percent"]?.intValue ?? 0
     let lowMemory = output["low_memory"]?.boolValue == true
+    let appBudget = output["app_available_memory_budget_bytes"]?.intValue
     if language.lowercased().hasPrefix("zh") {
+      let budgetMessage = appBudget.map { "\u{ff1b}\u{5e94}\u{7528}\u{53ef}\u{7528}\u{5185}\u{5b58}\u{9884}\u{7b97}\u{ff1a}\(formatBytes($0))\u{3002}" } ?? ""
       return "\u{624b}\u{673a}\u{5185}\u{5b58}\u{ff1a}\u{5df2}\u{7528} \(used) / \(total)\u{ff0c}\u{53ef}\u{7528} \(available)\u{ff08}\(percent)%\u{ff09}" +
-        (lowMemory ? "\u{ff1b}\u{7cfb}\u{7edf}\u{62a5}\u{544a}\u{5185}\u{5b58}\u{4e0d}\u{8db3}\u{3002}" : "\u{ff1b}\u{5185}\u{5b58}\u{72b6}\u{6001}\u{6b63}\u{5e38}\u{3002}")
+        (lowMemory ? "\u{ff1b}\u{7cfb}\u{7edf}\u{62a5}\u{544a}\u{5185}\u{5b58}\u{4e0d}\u{8db3}\u{3002}" : "\u{ff1b}\u{5185}\u{5b58}\u{72b6}\u{6001}\u{6b63}\u{5e38}\u{3002}") + budgetMessage
     }
+    let budgetMessage = appBudget.map { " App memory budget remaining: \(formatBytes($0))." } ?? ""
     return "Phone memory: \(used) used of \(total), \(available) available (\(percent)%). " +
-      (lowMemory ? "The system reports low memory." : "Memory status is normal.")
+      (lowMemory ? "The system reports low memory." : "Memory status is normal.") + budgetMessage
   }
 
   private static func formatBytes(_ value: Int64) -> String {

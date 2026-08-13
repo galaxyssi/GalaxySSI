@@ -254,6 +254,7 @@ enum AgentIOSHardwareNativeToolCatalog {
           "low_memory_threshold_bytes": integerSchema(minimum: 0),
           "memory_pressure": stringSchema(enumValues: ["normal", "fair", "serious", "critical", "unknown"]),
           "available_memory_estimated": boolSchema(),
+          "app_available_memory_budget_bytes": integerSchema(minimum: 0),
           "observed_at_epoch_ms": integerSchema(minimum: 0)
         ],
         required: ["scope", "total_bytes", "available_bytes", "used_bytes", "used_percent", "low_memory", "low_memory_threshold_bytes", "memory_pressure", "available_memory_estimated", "observed_at_epoch_ms"]
