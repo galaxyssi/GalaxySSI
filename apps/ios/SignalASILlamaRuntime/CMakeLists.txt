@@ -26,6 +26,15 @@ endif()
 
 add_subdirectory("${LLAMA_SOURCE_DIR}" llama-build EXCLUDE_FROM_ALL)
 
+# iOS uses one statically linked llama.cpp runtime. Keep CPU kernels optimized
+# in Debug builds as well, while leaving device-specific backends out of the
+# runtime and behind the platform's supported Metal/Accelerate path.
+foreach(GGML_TARGET ggml ggml-base ggml-cpu)
+  if(TARGET ${GGML_TARGET})
+    target_compile_options(${GGML_TARGET} PRIVATE -O3)
+  endif()
+endforeach()
+
 add_library(signalasi-llama STATIC signalasi_llama.mm)
 target_include_directories(signalasi-llama PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}"
