@@ -394,7 +394,6 @@ struct ConversationView: View {
   @State private var cameraPickerPresented = false
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
-  @State private var showingDeleteChatConfirmation = false
   @State private var cloudModelSwitchPresented = false
   @State private var selectedMessageForDetails: ChatMessage?
   @State private var runtimeArtifactPreview: SignalASIRuntimeArtifactPreview?
@@ -613,14 +612,6 @@ struct ConversationView: View {
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       dismissIfRevoked()
     }
-    .alert(t("signalasi.chat.delete.title", "Delete Chat?"), isPresented: $showingDeleteChatConfirmation) {
-      Button(t("signalasi.common.delete", "Delete"), role: .destructive) {
-        store.deleteMessages(for: contact.id)
-      }
-      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
-    } message: {
-      Text(t("signalasi.chat.delete.message", "Only local chat history is deleted. Contacts are not affected."))
-    }
     .fileImporter(
       isPresented: $fileImporterPresented,
       allowedContentTypes: [.item],
@@ -722,15 +713,7 @@ struct ConversationView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel(Text(t("signalasi.common.back", "Back")))
-      if isSystemNoticeContact {
-        contactIdentityHeader
-      } else {
-        NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-          contactIdentityHeader
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(t("contact_detail_title", "Contact Profile")))
-      }
+      contactIdentityHeader
       Spacer(minLength: 8)
       if contact.deliveryMode == .cloudAPI {
         Button {
@@ -752,15 +735,6 @@ struct ConversationView: View {
         }
         .buttonStyle(.plain)
       }
-      Button(role: .destructive) {
-        showingDeleteChatConfirmation = true
-      } label: {
-        Image(systemName: "trash")
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(store.messages(for: contact.id).isEmpty ? .signalASITextSecondary : .signalASITextPrimary)
-          .frame(width: 40, height: 40)
-      }
-      .disabled(store.messages(for: contact.id).isEmpty)
     }
     .padding(.horizontal, 8)
     .frame(height: 56)
