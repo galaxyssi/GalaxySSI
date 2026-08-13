@@ -365,6 +365,15 @@ struct SignalASIControlCenterView: View {
         SignalASICapabilityLibraryView()
       }
       SignalASIControlCenterNavigationRow(
+        title: t("cc_mcp_title", "MCP"),
+        subtitle: t("cc_mcp_subtitle", "External tools, services, and device connectors"),
+        systemImage: "shippingbox",
+        tint: .blue,
+        badge: mcpRouteBadge
+      ) {
+        SignalASICapabilityLibraryView(initialKind: .mcp)
+      }
+      SignalASIControlCenterNavigationRow(
         title: t("cc_evolution_title", "Self evolution"),
         subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
         systemImage: "arrow.triangle.2.circlepath",
@@ -374,6 +383,11 @@ struct SignalASIControlCenterView: View {
         SignalASISelfEvolutionControlView()
       }
     }
+  }
+
+  private var mcpRouteBadge: String {
+    let count = SignalASIMcpControlStores.makeRegistry().list().count
+    return count > 0 ? String(count) : t("status_needs_setup", "Needs Setup")
   }
 
   private var securityDataSection: some View {

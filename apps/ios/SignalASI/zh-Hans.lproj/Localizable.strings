@@ -4135,3 +4135,5 @@
 "signalasi.agent.download.complete" = "下载完成：%@\n已保存到 Download/SignalASI。";
 "signalasi.agent.download.failed" = "下载失败：%@%@";
 "signalasi.agent.open_voice" = "打开语音";
+"cc_mcp_title" = "MCP";
+"cc_mcp_subtitle" = "外部工具、服务和设备连接器";

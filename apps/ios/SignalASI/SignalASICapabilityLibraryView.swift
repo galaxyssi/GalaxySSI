@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum SignalASICapabilityLibraryKind: String, CaseIterable, Identifiable {
+enum SignalASICapabilityLibraryKind: String, CaseIterable, Identifiable {
   case nativeTools
   case mcp
   case automation
@@ -15,6 +15,10 @@ struct SignalASICapabilityLibraryView: View {
   @State private var selectedKind: SignalASICapabilityLibraryKind = .nativeTools
   @State private var desktopMarketplaceRevision = 0
   @State private var mcpRevision = 0
+
+  init(initialKind: SignalASICapabilityLibraryKind = .nativeTools) {
+    _selectedKind = State(initialValue: initialKind)
+  }
 
   private var nativeTools: [AgentNativeToolDescriptor] {
     AgentPhoneNativeToolCatalog.descriptors(
