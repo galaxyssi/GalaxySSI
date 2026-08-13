@@ -2117,6 +2117,17 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       case .link, .pcConnector:
+        if isPhoneContact(contact) {
+          guard effectiveAttachments.isEmpty else {
+            throw SignalASIError.invalidPayload("Attachments are not yet supported in phone-to-phone messages.")
+          }
+          _ = try await publishPhoneContactMessage(
+            requestText,
+            contact: contact,
+            outgoing: outgoing
+          )
+          break
+        }
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
           store: disclosureStore,
           contactId: contact.id,
@@ -5316,6 +5327,82 @@ final class MessageCoordinator: ObservableObject {
     return "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
   }
 
+  private func isPhoneContact(_ contact: SignalASIContact) -> Bool {
+    contact.type.caseInsensitiveCompare("person") == .orderedSame &&
+      contact.isCommunicable &&
+      contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !(contact.mqttInboxTopic ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private func publishPhoneContactMessage(
+    _ text: String,
+    contact: SignalASIContact,
+    outgoing: ChatMessage
+  ) async throws -> AgentDisclosureStatus {
+    let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !remoteName.isEmpty, !topic.isEmpty, SignalASISignalEngine.isAvailable else {
+      throw SignalASIError.transportUnavailable
+    }
+    let messageId = SignalASILinkProtocol.normalizedMessageId(outgoing.id.uuidString)
+    let applicationPayload: [String: Any] = [
+      "type": "text",
+      "message_id": messageId,
+      "source_message_id": outgoing.id.uuidString,
+      "contact_id": remoteName,
+      "sender": signalEngine.identity.name,
+      "content": text,
+      "conversation_id": outgoing.conversationId,
+      "turn_id": outgoing.turnId.ifBlank(messageId),
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    let envelope = try SignalASILinkProtocol.makeEnvelope(
+      payload: applicationPayload,
+      sourceId: signalEngine.identity.name,
+      targetId: remoteName
+    )
+    guard let encrypted = signalEngine.encrypt(envelope, remoteName: remoteName) else {
+      throw SignalASIError.invalidPayload("Signal session is not ready for this contact.")
+    }
+    let wireData = try SignalASILinkProtocol.jsonData(encrypted)
+    let wireText = String(decoding: wireData, as: UTF8.self)
+    deliveryStore.enqueue(
+      messageId: messageId,
+      topic: topic,
+      wirePayload: wireText,
+      requiresValidatedNetwork: false,
+      clientSourceMessageId: outgoing.id.uuidString,
+      contactId: contact.id
+    )
+    deliveryStore.markAttempt(messageId: messageId)
+    let result = await mqttClient.publish(topic: topic, payload: wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: messageId)
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "phone_contact_published",
+        detail: topic,
+        status: .sent
+      )
+      return .sent
+    case .queued:
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "phone_contact_queued",
+        detail: "Waiting for MQTT connection.",
+        status: .queued
+      )
+      scheduleOutboxFlushFromStore()
+      return .queued
+    case .failed:
+      throw SignalASIError.transportUnavailable
+    }
+  }
+
   private func publishLinkMessage(
     _ text: String,
     contact: SignalASIContact,
@@ -5746,38 +5833,124 @@ final class MessageCoordinator: ObservableObject {
 
   private func handlePhoneContactIncoming(topic: String, object: [String: Any]) {
     let localSignalASIId = signalEngine.identity.name
-    guard let control = SignalASIPhoneContactControl.validate(
+    if let control = SignalASIPhoneContactControl.validate(
       object,
       addressedTo: localSignalASIId
-    ) else {
-      return
-    }
-    mqttClient.clearRetained(topic: topic)
-    guard let cardData = try? SignalASILinkProtocol.jsonData(control.contactCard),
-          let cardText = String(data: cardData, encoding: .utf8),
-          let request = try? store.importContactQRCodeAsFriendRequest(cardText),
-          signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
-      return
-    }
-    if control.kind == .request {
-      Task { [weak self] in
-        _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
+    ) {
+      mqttClient.clearRetained(topic: topic)
+      guard let cardData = try? SignalASILinkProtocol.jsonData(control.contactCard),
+            let cardText = String(data: cardData, encoding: .utf8),
+            let request = try? store.importContactQRCodeAsFriendRequest(cardText),
+            signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
+        return
       }
+      if control.kind == .request {
+        Task { [weak self] in
+          _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
+        }
+      }
+      let isChinese = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+        == LanguagePolicySettings.zhCN
+      let body: String
+      switch control.kind {
+      case .request:
+        body = isChinese ? "已收到 \(request.name) 的联系人请求。" : "Contact request received from \(request.name)."
+      case .bundle:
+        body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
+      }
+      NotificationService.notify(
+        title: "SignalASI",
+        body: body,
+        userInfo: ["signalasi_open_contact_id": request.signalASIId]
+      )
+      return
     }
-    let isChinese = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
-      == LanguagePolicySettings.zhCN
-    let body: String
-    switch control.kind {
-    case .request:
-      body = isChinese ? "已收到 \(request.name) 的联系人请求。" : "Contact request received from \(request.name)."
-    case .bundle:
-      body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
+    handlePhoneContactCiphertext(object, localSignalASIId: localSignalASIId)
+  }
+
+  private func handlePhoneContactCiphertext(
+    _ wire: [String: Any],
+    localSignalASIId: String
+  ) {
+    let senderId = wire.string("from")
+    guard wire.string("scheme") == "signal",
+          !senderId.isEmpty,
+          wire.string("to") == localSignalASIId,
+          let contact = store.contact(id: senderId),
+          isPhoneContact(contact),
+          let envelope = signalEngine.decrypt(wire),
+          envelope.string("source_id") == senderId,
+          envelope.string("target_id") == localSignalASIId,
+          let payload = SignalASILinkProtocol.unwrapEnvelope(envelope) else {
+      return
     }
-    NotificationService.notify(
-      title: "SignalASI",
-      body: body,
-      userInfo: ["signalasi_open_contact_id": request.signalASIId]
+    let messageId = payload.string("message_id")
+    if payload.string("type") == "delivery_ack" {
+      handleDeliveryAck(payload)
+      return
+    }
+    let content = payload.string("content").ifBlank(payload.string("text"))
+    guard !content.isEmpty else { return }
+    let turnId = payload.string("turn_id")
+      .ifBlank(payload.string("source_message_id"))
+      .ifBlank(messageId)
+    if store.hasIncomingDuplicate(
+      content,
+      from: contact.id,
+      remoteMessageId: messageId,
+      turnId: turnId
+    ) {
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      return
+    }
+    let incoming = store.appendIncoming(
+      content,
+      from: contact.id,
+      remoteMessageId: messageId,
+      status: .delivered,
+      traceStage: "phone_contact_received",
+      conversationId: payload.string("conversation_id"),
+      turnId: turnId
     )
+    store.appendDeliveryTrace(
+      incoming.id,
+      contactId: contact.id,
+      stage: "phone_contact_decrypted",
+      detail: "Signal",
+      status: .delivered
+    )
+    publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+    NotificationService.notify(
+      title: contact.displayName,
+      body: content,
+      userInfo: notificationUserInfo(for: contact.id)
+    )
+    onIncomingMessage?(incoming)
+  }
+
+  private func publishPhoneContactReceipt(contact: SignalASIContact, receivedMessageId: String) {
+    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !receivedMessageId.isEmpty, !topic.isEmpty else { return }
+    let ack: [String: Any] = [
+      "type": "delivery_ack",
+      "transport_message_id": receivedMessageId,
+      "source_message_id": receivedMessageId,
+      "delivery_status": "accepted",
+      "sender": "system",
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
+      payload: ack,
+      sourceId: signalEngine.identity.name,
+      targetId: contact.signalASIId
+    ), let encrypted = signalEngine.encrypt(envelope, remoteName: contact.signalASIId),
+      let wire = try? SignalASILinkProtocol.jsonData(encrypted) else {
+      return
+    }
+    Task {
+      _ = await mqttClient.publish(topic: topic, payload: wire)
+    }
   }
 
   private func handleLocalOnlyTransportPayload(
