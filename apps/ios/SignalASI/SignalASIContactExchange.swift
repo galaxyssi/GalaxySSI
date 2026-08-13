@@ -211,9 +211,14 @@ enum SignalASIContactExchange {
     "desktop_agents",
     "mobile_agents",
     "agent_contacts",
+    "agent_list",
+    "agent_catalog",
     "agents",
     "available_agents",
     "connected_agents",
+    "available_connectors",
+    "connector_catalog",
+    "agent_statuses",
     "agent_targets",
     "callable_targets",
     "available_targets",
@@ -674,32 +679,51 @@ enum SignalASIContactExchange {
 
   private static func connectorAgents(in object: [String: Any]) -> [[String: Any]]? {
     for key in connectorAgentListKeys {
-      if let agents = object[key] as? [[String: Any]], !agents.isEmpty {
+      guard let rawValue = object[key] else { continue }
+      let agents = connectorAgentObjects(from: rawValue)
+      if !agents.isEmpty {
         return agents
-      }
-      if let rawAgents = object[key] as? [Any] {
-        let agents = rawAgents.compactMap { $0 as? [String: Any] }
-        if !agents.isEmpty {
-          return agents
-        }
-      }
-      if let agentMap = object[key] as? [String: Any] {
-        let agents = agentMap.compactMap { id, raw -> [String: Any]? in
-          guard var agent = raw as? [String: Any] else { return nil }
-          if agent.string("id").isEmpty {
-            agent["id"] = id
-          }
-          if agent.string("agent_id").isEmpty, agent.string("mobile_contact_id").isEmpty {
-            agent["agent_id"] = id
-          }
-          return agent
-        }
-        if !agents.isEmpty {
-          return agents
-        }
       }
     }
     return nil
+  }
+
+  private static func connectorAgentObjects(from value: Any) -> [[String: Any]] {
+    if let agents = value as? [[String: Any]] {
+      return agents
+    }
+    if let values = value as? [Any] {
+      return values.flatMap { connectorAgentObjects(from: $0) }
+    }
+    if let rawJSON = value as? String,
+       let data = rawJSON.data(using: .utf8),
+       let decoded = try? JSONSerialization.jsonObject(with: data, options: []) {
+      return connectorAgentObjects(from: decoded)
+    }
+    guard let object = value as? [String: Any] else { return [] }
+    if isConnectorAgentObject(object) {
+      return [object]
+    }
+    return object.compactMap { id, raw -> [String: Any]? in
+      guard var agent = raw as? [String: Any] else { return nil }
+      if agent.string("id").isEmpty {
+        agent["id"] = id
+      }
+      if agent.string("agent_id").isEmpty, agent.string("mobile_contact_id").isEmpty {
+        agent["agent_id"] = id
+      }
+      return agent
+    }
+  }
+
+  private static func isConnectorAgentObject(_ object: [String: Any]) -> Bool {
+    !object.string("agent_id").isEmpty ||
+      !object.string("mobile_contact_id").isEmpty ||
+      !object.string("agent_kind").isEmpty ||
+      !object.string("kind").isEmpty ||
+      !object.string("display_name").isEmpty ||
+      !object.string("name").isEmpty ||
+      !object.string("status").isEmpty
   }
 
   private static func defaultAgentKind(for requestType: String, object: [String: Any]) -> String {
