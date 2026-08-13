@@ -493,6 +493,7 @@ private struct SignalASIRichBlockView: View {
   @State private var inlineImageSize: CGSize?
   @State private var extractedArchiveURLs: [URL] = []
   @State private var extractedArchivePresented = false
+  @State private var archiveExtractionError = ""
 
   var body: some View {
     switch block.type {
@@ -551,6 +552,14 @@ private struct SignalASIRichBlockView: View {
     }
     .sheet(isPresented: $extractedArchivePresented) {
       SignalASIActivitySheet(items: extractedArchiveURLs)
+    }
+    .alert(t("rich_output_extract_failed", "Unable to extract this ZIP archive."), isPresented: Binding(
+      get: { !archiveExtractionError.isEmpty },
+      set: { if !$0 { archiveExtractionError = "" } }
+    )) {
+      Button(t("common_ok", "OK"), role: .cancel) {}
+    } message: {
+      Text(archiveExtractionError)
     }
   }
 
@@ -1383,11 +1392,14 @@ private struct SignalASIRichBlockView: View {
       .appendingPathComponent(stem, isDirectory: true)
     do {
       let extracted = try AgentDesktopArtifactActions.extractZip(source: source, to: destination)
-      guard !extracted.isEmpty else { return }
+      guard !extracted.isEmpty else {
+        archiveExtractionError = t("rich_output_extract_empty", "This ZIP archive does not contain files to extract.")
+        return
+      }
       extractedArchiveURLs = extracted
       extractedArchivePresented = true
     } catch {
-      return
+      archiveExtractionError = t("rich_output_extract_failed", "Unable to extract this ZIP archive.")
     }
   }
 
