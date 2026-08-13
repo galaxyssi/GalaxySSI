@@ -128,7 +128,12 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
         AVEncoderBitRateKey: 32_000,
         AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
       ]
-      audioFile = try AVAudioFile(forWriting: url, settings: fileSettings)
+      audioFile = try AVAudioFile(
+        forWriting: url,
+        settings: fileSettings,
+        commonFormat: .pcmFormatFloat32,
+        interleaved: false
+      )
       input.removeTap(onBus: 0)
       input.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
         self?.append(buffer)
