@@ -342,10 +342,14 @@ enum VoiceProviderCapabilityDetector {
   }
 
   static func whisperRuntimeAvailable(_ runtimeLibraryNames: Set<String>) -> Bool {
+    #if SIGNALASI_NATIVE_WHISPER
+    return true
+    #else
     let normalized = runtimeLibraryNames.map { $0.lowercased() }
     return normalized.contains { name in
       whisperRuntimeSignals.contains { signal in name.contains(signal) }
     }
+    #endif
   }
 
   static func bundledRuntimeNames(

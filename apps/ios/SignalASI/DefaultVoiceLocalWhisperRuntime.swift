@@ -23,7 +23,7 @@ final class DefaultVoiceLocalWhisperRuntime: VoiceLocalWhisperRuntime, VoiceStat
 
   convenience init(
     modelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
-    native: VoiceWhisperNativeAPI = UnavailableVoiceWhisperNativeBridge()
+    native: VoiceWhisperNativeAPI = SignalASIWhisperNativeBridge()
   ) {
     self.init(
       modelResolver: { try modelManager.ensureVerifiedFile(for: $0) },
