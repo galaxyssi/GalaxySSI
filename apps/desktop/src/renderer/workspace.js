@@ -600,6 +600,7 @@ function renderHistory() {
   );
   if (!groups.length) {
     elements.history.innerHTML = `<div class="history-empty">${escapeHtml(t("Chats will appear here after you send a task or message a paired device."))}</div>`;
+    renderConversationSelectionBar();
     return;
   }
   const todayStart = new Date();
@@ -4148,13 +4149,6 @@ async function deleteConversationIds(conversationIds) {
   if (failed.length) showToast(t("Some conversations could not be deleted."));
 }
 
-async function deleteAllConversations() {
-  const ids = unifiedConversationGroups().map((group) => group.id);
-  if (!ids.length) return showToast(t("There are no conversations to delete."));
-  if (!window.confirm(t("Delete all conversations? Contacts and paired devices will remain."))) return;
-  await deleteConversationIds(ids);
-}
-
 function startVoiceInput() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
@@ -4840,7 +4834,6 @@ function bindEvents() {
       deleteConversationIds([...state.selectedConversationIds]);
     }
   });
-  $("#deleteAllConversationsButton").addEventListener("click", deleteAllConversations);
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);
   $("#revealWorkspaceButton").addEventListener("click", revealWorkspace);
   $("#deleteConversationButton").addEventListener("click", deleteConversation);

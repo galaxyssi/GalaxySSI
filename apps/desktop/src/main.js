@@ -101,6 +101,31 @@ async function runUiSmoke() {
     if (!state?.app || !state.title.trim() || !state.composer || !state.backend.trim()) {
       throw new Error(`Desktop Agent workspace did not render: ${JSON.stringify(state)}`);
     }
+    const conversationDeleteMenu = await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        const menuButton = document.querySelector("#conversationListMenuButton");
+        const menu = document.querySelector("#conversationListMenu");
+        menuButton.click();
+        const menuItems = Array.from(menu.querySelectorAll("button"));
+        const result = {
+          menuVisible: !menu.hidden,
+          menuItemCount: menuItems.length,
+          menuLabel: menuItems[0]?.textContent?.trim() || "",
+          legacyDeleteAllPresent: Boolean(document.querySelector("#deleteAllConversationsButton"))
+        };
+        menuItems[0]?.click();
+        result.selectionVisible = !document.querySelector("#conversationSelectionBar").hidden;
+        document.querySelector("#cancelConversationSelectionButton").click();
+        return result;
+      })()
+    `);
+    if (!conversationDeleteMenu.menuVisible
+        || conversationDeleteMenu.menuItemCount !== 1
+        || !["Select conversations to delete", "\u9009\u62e9\u5220\u6389\u5bf9\u8bdd"].includes(conversationDeleteMenu.menuLabel)
+        || conversationDeleteMenu.legacyDeleteAllPresent
+        || !conversationDeleteMenu.selectionVisible) {
+      throw new Error(`Desktop conversation deletion menu is invalid: ${JSON.stringify(conversationDeleteMenu)}`);
+    }
     const peerVoiceInput = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         const app = document.querySelector("#agentApp");
