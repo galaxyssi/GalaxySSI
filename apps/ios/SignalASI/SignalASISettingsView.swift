@@ -526,7 +526,7 @@ struct SettingsView: View {
         tint: .signalASIAccent,
         badge: t("signalasi.common.view", "View")
       ) {
-        SignalASIAgentSessionsView()
+        SignalASIConversationHubView()
       }
       SettingsNavigationRow(
         title: t("cc_learning_title", "Learning & Skill Evolution"),

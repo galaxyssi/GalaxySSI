@@ -110,7 +110,7 @@ struct SignalASIAppServicesView: View {
         tint: .gray,
         badge: ""
       ) {
-        SignalASIAgentSessionsView()
+        SignalASIConversationHubView()
       }
     }
   }
