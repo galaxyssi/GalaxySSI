@@ -298,6 +298,11 @@ struct AddContactView: View {
         pendingFriendRequest = stored
         pendingScannedRequests = [stored]
         setImportStatus(requestReceivedStatus(stored), isError: false)
+        if request.type == "person" {
+          Task {
+            _ = await coordinator.requestPhoneContactPairing(qrText: cleaned)
+          }
+        }
         notifyImportCompleted()
       case .contacts(let requests):
         if requests.allSatisfy({ $0.type == "agent" }) {

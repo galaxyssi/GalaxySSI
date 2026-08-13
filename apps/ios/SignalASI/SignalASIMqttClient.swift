@@ -44,6 +44,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     var topic: String
     var payload: Data
     var transferId: String?
+    var retained: Bool
   }
   private var connection: NWConnection?
   private var brokerAckWorkItem: DispatchWorkItem?
@@ -55,7 +56,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private var subscriptions: [String] = []
   private var receiveBuffer = Data()
   private var packetIdentifier: UInt16 = 1
-  private var queuedPublishes: [(topic: String, payload: Data)] = []
+  private var queuedPublishes: [PendingPublish] = []
   private var pendingPacketPublishes: [PendingPublish] = []
   private var inFlightPublishes: [UInt16: PendingPublish] = [:]
   private var fragmentTransferByPacketId: [UInt16: String] = [:]
@@ -117,14 +118,28 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 
   func publish(topic: String, payload: Data) async -> MqttPublishResult {
+    await publish(topic: topic, payload: payload, retained: false)
+  }
+
+  func publishRetained(topic: String, payload: Data) async -> MqttPublishResult {
+    await publish(topic: topic, payload: payload, retained: true)
+  }
+
+  private func publish(topic: String, payload: Data, retained: Bool) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
         guard self.connection != nil, self.connected else {
-          self.queuedPublishes.append((topic, payload))
+          self.queuedPublishes.append(
+            PendingPublish(topic: topic, payload: payload, transferId: nil, retained: retained)
+          )
           continuation.resume(returning: .queued)
           return
         }
-        continuation.resume(returning: self.sendWirePayload(topic: topic, payload: payload) ? .published : .failed)
+        continuation.resume(
+          returning: self.sendWirePayload(topic: topic, payload: payload, retained: retained)
+            ? .published
+            : .failed
+        )
       }
     }
   }
@@ -206,17 +221,17 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     sendFrame(typeAndFlags: 0x82, payload)
   }
 
-  private func sendPublish(topic: String, payload: Data) -> UInt16 {
+  private func sendPublish(topic: String, payload: Data, retained: Bool) -> UInt16 {
     let packetId = nextPacketIdentifier()
     var body = Data()
     body.appendUTF8(topic)
     body.appendUInt16(packetId)
     body.append(payload)
-    sendFrame(typeAndFlags: 0x32, body)
+    sendFrame(typeAndFlags: retained ? 0x33 : 0x32, body)
     return packetId
   }
 
-  private func sendWirePayload(topic: String, payload: Data) -> Bool {
+  private func sendWirePayload(topic: String, payload: Data, retained: Bool) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     guard let packets = try? SignalASIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
@@ -226,7 +241,8 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
       PendingPublish(
         topic: topic,
         payload: Data(packet.utf8),
-        transferId: transferId
+        transferId: transferId,
+        retained: retained
       )
     })
     pumpPendingPublishes()
@@ -243,7 +259,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         break
       }
       let pending = pendingPacketPublishes.remove(at: index)
-      let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
+      let packetId = sendPublish(topic: pending.topic, payload: pending.payload, retained: pending.retained)
       mqttInflightPacketIds.insert(packetId)
       inFlightPublishes[packetId] = pending
       brokerAckWatchdog.onPublished(packetId: packetId)
@@ -387,7 +403,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private func flushQueuedPublishes() {
     let pending = queuedPublishes
     queuedPublishes.removeAll()
-    pending.forEach { _ = sendWirePayload(topic: $0.topic, payload: $0.payload) }
+    pending.forEach { _ = sendWirePayload(topic: $0.topic, payload: $0.payload, retained: $0.retained) }
     pumpPendingPublishes()
   }
 

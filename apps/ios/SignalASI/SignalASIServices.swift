@@ -5277,6 +5277,38 @@ final class MessageCoordinator: ObservableObject {
     return try store.myContactQRText(now: now)
   }
 
+  @discardableResult
+  func requestPhoneContactPairing(qrText: String) async -> MqttPublishResult {
+    guard let card = try? SignalASIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
+      return .failed
+    }
+    return await publishPhoneContactControl(kind: .request, targetCard: card)
+  }
+
+  private func publishPhoneContactControl(
+    kind: SignalASIPhoneContactControl.Kind,
+    targetCard: [String: Any]
+  ) async -> MqttPublishResult {
+    guard let localQRText = try? myContactQRText(),
+          let localCard = try? SignalASIQRCodePayload.decodeObject(from: localQRText, label: "My contact QR"),
+          let payload = SignalASIPhoneContactControl.makePayload(
+            kind: kind,
+            targetCard: targetCard,
+            localCard: localCard,
+            localSignalIdentity: signalEngine.identity,
+            replyTopic: currentPhoneContactInboxTopic(),
+            sign: signalEngine.signContactCard
+          ),
+          let topic = SignalASIPhoneContactControl.retainedTopic(
+            inboxTopic: targetCard.string("mqtt_inbox_topic"),
+            controlId: payload.string("control_id")
+          ),
+          let data = try? SignalASILinkProtocol.jsonData(payload) else {
+      return .failed
+    }
+    return await mqttClient.publishRetained(topic: topic, payload: data)
+  }
+
   private func currentPhoneContactInboxTopic() -> String {
     guard let routeId = try? store.phoneContactInboxRouteId() else {
       return ""
@@ -5699,7 +5731,8 @@ final class MessageCoordinator: ObservableObject {
           let object = rawObject as? [String: Any] else {
       return
     }
-    guard !isPhoneContactInboxTopic(topic) else {
+    if isPhoneContactInboxTopic(topic) {
+      handlePhoneContactIncoming(topic: topic, object: object)
       return
     }
     dispatchIncomingWire(topic: topic, object: object, originalPayload: String(decoding: payload, as: UTF8.self), allowStage: true)
@@ -5709,6 +5742,42 @@ final class MessageCoordinator: ObservableObject {
     let inboxTopic = currentPhoneContactInboxTopic()
     guard !inboxTopic.isEmpty else { return false }
     return topic == inboxTopic || topic.hasPrefix("\(inboxTopic)/")
+  }
+
+  private func handlePhoneContactIncoming(topic: String, object: [String: Any]) {
+    let localSignalASIId = signalEngine.identity.name
+    guard let control = SignalASIPhoneContactControl.validate(
+      object,
+      addressedTo: localSignalASIId
+    ) else {
+      return
+    }
+    mqttClient.clearRetained(topic: topic)
+    guard let cardData = try? SignalASILinkProtocol.jsonData(control.contactCard),
+          let cardText = String(data: cardData, encoding: .utf8),
+          let request = try? store.importContactQRCodeAsFriendRequest(cardText),
+          signalEngine.processBundle(control.signalBundle, remoteName: request.signalASIId) else {
+      return
+    }
+    if control.kind == .request {
+      Task { [weak self] in
+        _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: control.contactCard)
+      }
+    }
+    let isChinese = LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+      == LanguagePolicySettings.zhCN
+    let body: String
+    switch control.kind {
+    case .request:
+      body = isChinese ? "已收到 \(request.name) 的联系人请求。" : "Contact request received from \(request.name)."
+    case .bundle:
+      body = isChinese ? "已与 \(request.name) 建立安全会话。" : "Secure session established with \(request.name)."
+    }
+    NotificationService.notify(
+      title: "SignalASI",
+      body: body,
+      userInfo: ["signalasi_open_contact_id": request.signalASIId]
+    )
   }
 
   private func handleLocalOnlyTransportPayload(
