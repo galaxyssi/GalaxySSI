@@ -2535,6 +2535,7 @@ private final class SignalASIVideoArtifactPlayer: ObservableObject {
 
 private struct SignalASIArtifactDocument: FileDocument {
   static var readableContentTypes: [UTType] { [.data] }
+  static var writableContentTypes: [UTType] { [.data, .zip] }
 
   var data: Data
 
