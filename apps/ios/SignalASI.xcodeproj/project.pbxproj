@@ -533,6 +533,7 @@
     A10000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */; };
     A10000000000000000000703 /* AgentMcpClientManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000703 /* AgentMcpClientManager.swift */; };
     A10000000000000000000115 /* AgentMcpCatalogModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000115 /* AgentMcpCatalogModels.swift */; };
+    A1000000000000000000C90 /* AgentIOSBuiltInSkills.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000C90 /* AgentIOSBuiltInSkills.swift */; };
     A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000116 /* AgentWorkspaceModels.swift */; };
     A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000673 /* AgentWorkspaceStore.swift */; };
     A10000000000000000000675 /* AgentRunRecoveryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */; };
@@ -1308,6 +1309,7 @@
     A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpAuthenticationCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000703 /* AgentMcpClientManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpClientManager.swift; sourceTree = "<group>"; };
     A20000000000000000000115 /* AgentMcpCatalogModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpCatalogModels.swift; sourceTree = "<group>"; };
+    A2000000000000000000C90 /* AgentIOSBuiltInSkills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSBuiltInSkills.swift; sourceTree = "<group>"; };
     A20000000000000000000116 /* AgentWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceModels.swift; sourceTree = "<group>"; };
     A20000000000000000000673 /* AgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStore.swift; sourceTree = "<group>"; };
     A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryCoordinator.swift; sourceTree = "<group>"; };
@@ -1838,6 +1840,7 @@
         A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */,
         A20000000000000000000703 /* AgentMcpClientManager.swift */,
         A20000000000000000000115 /* AgentMcpCatalogModels.swift */,
+        A2000000000000000000C90 /* AgentIOSBuiltInSkills.swift */,
         A20000000000000000000116 /* AgentWorkspaceModels.swift */,
         A20000000000000000000673 /* AgentWorkspaceStore.swift */,
         A20000000000000000000675 /* AgentRunRecoveryCoordinator.swift */,
@@ -2773,6 +2776,7 @@
         A10000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift in Sources */,
         A10000000000000000000703 /* AgentMcpClientManager.swift in Sources */,
         A10000000000000000000115 /* AgentMcpCatalogModels.swift in Sources */,
+        A1000000000000000000C90 /* AgentIOSBuiltInSkills.swift in Sources */,
         A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */,
         A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */,
         A10000000000000000000675 /* AgentRunRecoveryCoordinator.swift in Sources */,
