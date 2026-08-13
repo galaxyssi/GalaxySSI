@@ -10,6 +10,16 @@ struct AvatarView: View {
         Image(assetName)
           .resizable()
           .scaledToFill()
+      } else if usesGenericCloudAvatar {
+        Circle()
+          .fill(Color(red: 0.357, green: 0.424, blue: 1.0))
+        Image(systemName: "cloud.fill")
+          .foregroundColor(Color(red: 0.478, green: 0.843, blue: 1.0))
+          .font(.system(size: max(16, size * 0.54), weight: .semibold))
+        Image(systemName: "arrow.up")
+          .foregroundColor(.white)
+          .font(.system(size: max(10, size * 0.27), weight: .bold))
+          .offset(y: size * 0.08)
       } else {
         Circle()
           .fill(color)
@@ -51,6 +61,10 @@ struct AvatarView: View {
       return "SignalASILogo"
     }
     return nil
+  }
+
+  private var usesGenericCloudAvatar: Bool {
+    contact.deliveryMode == .cloudAPI && assetName == nil
   }
 
   private var iconName: String {
