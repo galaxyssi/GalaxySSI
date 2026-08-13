@@ -57,6 +57,8 @@ object AgentModelPlanParser {
         }
         if (!hasValidDraftPlanSemantics(request, actions)) return null
         val plan = AgentPlanFactory.actions(request, actions).copy(
+            plannerProfile = "model-action-plan",
+            routeRationale = json.optString("summary").trim().take(600),
             expectedResult = json.optString("expected_result").trim().take(500)
                 .ifBlank { actions.last().description },
             rollbackStrategy = json.optString("rollback_strategy").trim().take(500)

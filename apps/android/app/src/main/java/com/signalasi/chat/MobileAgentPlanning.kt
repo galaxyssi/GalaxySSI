@@ -93,6 +93,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         notificationReplyAction(request)?.let { return listOf(it) }
         genericWebResearchActions(request)?.let { return it }
         deterministicLocalAction(request)?.let { return listOf(it) }
+        supervisedProjectActions(request)?.let { return it }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
         val segments = splitGoalSegments(request.goal)
@@ -100,6 +101,55 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         return segments.mapIndexed { index, segment ->
             actionFor(request.copy(goal = segment)).copy(id = "queue-${index + 1}-${segment.stableActionId()}")
         }
+    }
+
+    internal fun supervisedProjectActions(request: AgentRequest): List<AgentAction>? {
+        if (!AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal)) return null
+        val selected = manualSelectedConnectorAction(request)
+        val target = selected?.parameters?.get("connector_id")?.let { connectorId ->
+            request.targets.firstOrNull { it.id == connectorId }
+        } ?: request.targets
+            .asSequence()
+            .filter { target ->
+                target.status == AgentConnectorStatus.AVAILABLE &&
+                    target.kind != AgentConnectorKind.DEVICE &&
+                    (AgentCapability.CODE in target.capabilities ||
+                        AgentCapability.TASK_EXECUTION in target.capabilities ||
+                        AgentCapability.REASONING in target.capabilities)
+            }
+            .minByOrNull { target ->
+                val identity = "${target.id} ${target.title}".lowercase(Locale.US)
+                when {
+                    "codex" in identity -> 0
+                    "claude" in identity -> 1
+                    "hermes" in identity -> 2
+                    target.kind == AgentConnectorKind.MODEL -> 3
+                    else -> 4
+                }
+            } ?: return null
+        val base = selected ?: connectorAction(
+            request = request,
+            connectorId = target.id,
+            description = "Plan the next phone project step"
+        )
+        return listOf(
+            base.copy(
+                id = "supervise-phone-project-${request.goal.hashCode().toUInt()}",
+                target = base.target.ifBlank { target.title },
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.PENDING_CONFIRMATION,
+                description = "Plan the next phone project step",
+                parameters = base.parameters + mapOf(
+                    "connector_id" to target.id,
+                    "prompt" to AgentSupervisedProjectLoop.planningPrompt(request),
+                    "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                    "supervised_iteration" to "0",
+                    "depends_on" to "",
+                    "use_outputs_from" to ""
+                ),
+                requiresConfirmation = false
+            )
+        )
     }
 
     internal fun phoneDevelopmentActions(request: AgentRequest): List<AgentAction>? {

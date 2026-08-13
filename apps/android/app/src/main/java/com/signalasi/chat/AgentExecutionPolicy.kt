@@ -85,10 +85,11 @@ data class AgentExecutionProfile(
 
         private val BUILD_TERMS = listOf(
             "build", "compile", "implement", "develop", "write a program", "create an app",
-            "create a game", "fix bug", "run tests",
+            "create a game", "fix bug", "run tests", "improve", "upgrade", "update", "refactor",
             "\u7f16\u8bd1", "\u6784\u5efa", "\u5f00\u53d1", "\u5b9e\u73b0",
             "\u5199\u4e00\u4e2a\u7a0b\u5e8f", "\u505a\u4e00\u4e2a\u6e38\u620f",
-            "\u751f\u6210\u7a0b\u5e8f", "\u4fee\u590d bug", "\u8fd0\u884c\u6d4b\u8bd5"
+            "\u751f\u6210\u7a0b\u5e8f", "\u4fee\u590d bug", "\u8fd0\u884c\u6d4b\u8bd5",
+            "\u6539\u8fdb", "\u5347\u7ea7", "\u66f4\u65b0", "\u91cd\u6784"
         )
         private val INSTALL_TERMS = listOf(
             "install", "install and open", "install apk", "deploy to phone", "launch the app",
