@@ -113,12 +113,6 @@ struct SignalASIConversationComposer: View {
         }
     }
     .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
-    .background(Color.signalASISurface)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.signalASIInputStroke, lineWidth: 0.5)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .contentShape(Rectangle())
     .simultaneousGesture(holdToTalkGesture)
     .accessibilityLabel(Text(t("agent_voice_button", "Hold to talk")))
@@ -144,15 +138,11 @@ struct SignalASIConversationComposer: View {
               ? Color(red: 0.655, green: 0.906, blue: 0.847)
               : Color.clear
           )
-          .clipShape(
-            RoundedRectangle(
-              cornerRadius: uiState.showSendButton ? 27 : 8,
-              style: .continuous
-            )
-          )
+          .clipShape(Circle())
       }
       .buttonStyle(.plain)
       .frame(minWidth: 54, minHeight: 54)
+      .contentShape(Rectangle())
       .accessibilityLabel(Text(
         uiState.showSendButton
           ? t("signalasi.common.send", "Send")
@@ -189,8 +179,28 @@ struct SignalASIConversationComposer: View {
     .padding(.horizontal, 24)
     .padding(.bottom, 24)
     .frame(maxWidth: .infinity, minHeight: 236, alignment: .bottom)
-    .background(Color.signalASIAgentRecordingDeep)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .background(
+      LinearGradient(
+        gradient: Gradient(stops: [
+          .init(color: .clear, location: 0),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(30.0 / 255.0),
+            location: 0.16
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingLight.opacity(132.0 / 255.0),
+            location: 0.36
+          ),
+          .init(
+            color: Color.signalASIAgentRecordingMid.opacity(224.0 / 255.0),
+            location: 0.64
+          ),
+          .init(color: Color.signalASIAgentRecordingDeep, location: 1.0),
+        ]),
+        startPoint: .top,
+        endPoint: .bottom
+      )
+    )
   }
 
   private var holdToTalkGesture: some Gesture {
