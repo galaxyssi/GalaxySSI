@@ -118,6 +118,7 @@ struct SignalASIAgentRetryCard: View {
 
 struct SignalASIAgentExecutionStatusCard: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var detailsExpanded = false
   var executor: String
   var status: String
@@ -142,17 +143,19 @@ struct SignalASIAgentExecutionStatusCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
+      HStack(alignment: .top, spacing: 8) {
         SignalASIAgentRouteLogo(label: executor, size: 20)
         Text(executor)
           .font(.system(size: 14, weight: .bold))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .frame(maxWidth: .infinity, alignment: .leading)
         Spacer(minLength: 6)
         Text(location)
           .font(.system(size: 10, weight: .semibold))
           .foregroundColor(.signalASIAccent)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .multilineTextAlignment(.trailing)
       }
       Text(status)
         .font(.system(size: 12, weight: .semibold))
@@ -209,41 +212,7 @@ struct SignalASIAgentExecutionStatusCard: View {
         }
       }
       if canResume || canCancel || !timelineActions.isEmpty {
-        HStack(spacing: 8) {
-          if canResume {
-            Button(action: onResume) {
-              Label(resumeTitle, systemImage: "play.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(.bordered)
-          }
-          if canCancel {
-            Button(role: .destructive, action: onCancel) {
-              Label(cancelTitle, systemImage: "xmark.circle")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(.bordered)
-          }
-          if !timelineActions.isEmpty {
-            Menu {
-              ForEach(timelineActions) { action in
-                Button {
-                  onTimelineAction(action)
-                } label: {
-                  Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
-                }
-              }
-            } label: {
-              Label("", systemImage: "ellipsis.circle")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 42, height: 36)
-            }
-            .menuStyle(.borderedButton)
-            .accessibilityLabel(Text(t("signalasi.agent.task_control.title", "Task controls")))
-          }
-        }
+        taskControls
       }
     }
     .padding(12)
@@ -259,6 +228,72 @@ struct SignalASIAgentExecutionStatusCard: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  @ViewBuilder
+  private var taskControls: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        resumeControl
+        cancelControl
+        timelineControl
+      }
+    } else {
+      HStack(spacing: 8) {
+        resumeControl
+        cancelControl
+        timelineControl
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var resumeControl: some View {
+    if canResume {
+      Button(action: onResume) {
+        Label(resumeTitle, systemImage: "play.fill")
+          .font(.system(size: 12, weight: .semibold))
+          .frame(maxWidth: .infinity, minHeight: 36)
+      }
+      .buttonStyle(.bordered)
+    }
+  }
+
+  @ViewBuilder
+  private var cancelControl: some View {
+    if canCancel {
+      Button(role: .destructive, action: onCancel) {
+        Label(cancelTitle, systemImage: "xmark.circle")
+          .font(.system(size: 12, weight: .semibold))
+          .frame(maxWidth: .infinity, minHeight: 36)
+      }
+      .buttonStyle(.bordered)
+    }
+  }
+
+  @ViewBuilder
+  private var timelineControl: some View {
+    if !timelineActions.isEmpty {
+      Menu {
+        ForEach(timelineActions) { action in
+          Button {
+            onTimelineAction(action)
+          } label: {
+            Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+          }
+        }
+      } label: {
+        Label("", systemImage: "ellipsis.circle")
+          .font(.system(size: 16, weight: .semibold))
+          .frame(width: 42, height: 36)
+      }
+      .menuStyle(.borderedButton)
+      .accessibilityLabel(Text(t("signalasi.agent.task_control.title", "Task controls")))
+    }
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
 
