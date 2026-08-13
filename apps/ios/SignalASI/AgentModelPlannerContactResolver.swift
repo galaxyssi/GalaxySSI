@@ -15,20 +15,22 @@ struct AgentModelPlannerContactResolver {
   }
 
   @MainActor
-  func resolve(settings: AgentModelPlannerSettings) -> AgentModelPlannerContactResolution? {
+  func resolve(settings: AgentModelPlannerSettings, modelId: String = "") -> AgentModelPlannerContactResolution? {
     Self.resolve(
       preferredContactId: settings.normalized.cloudContactId,
       contacts: store.contacts,
-      apiKey: { store.apiKey(for: $0) }
+      apiKey: { store.apiKey(for: $0) },
+      preferredModelId: modelId
     )
   }
 
   @MainActor
   func makePlanningProvider(
     settings: AgentModelPlannerSettings,
+    modelId: String = "",
     sender: CloudModelStructuredSending = CloudModelClient()
   ) -> CloudModelAgentPlanningProvider? {
-    guard let resolution = resolve(settings: settings) else {
+    guard let resolution = resolve(settings: settings, modelId: modelId) else {
       return nil
     }
     return CloudModelAgentPlanningProvider(contact: resolution.contact, store: store, sender: sender)
@@ -38,10 +40,11 @@ struct AgentModelPlannerContactResolver {
   func makeToolLoopPlanningProvider(
     settings: AgentModelPlannerSettings,
     toolRegistry: AgentNativeToolRegistry,
+    modelId: String = "",
     structuredSender: CloudModelStructuredSending = CloudModelClient(),
     nativeToolSender: CloudModelNativeToolSending = CloudModelClient()
   ) -> CloudModelToolLoopAgentPlanningProvider? {
-    guard let resolution = resolve(settings: settings) else {
+    guard let resolution = resolve(settings: settings, modelId: modelId) else {
       return nil
     }
     return CloudModelToolLoopAgentPlanningProvider(
@@ -56,6 +59,7 @@ struct AgentModelPlannerContactResolver {
   @MainActor
   func makePlanner(
     settings: AgentModelPlannerSettings,
+    modelId: String = "",
     sender: CloudModelStructuredSending = CloudModelClient()
   ) -> GuardedModelAgentPlanner? {
     if let localProfile = localProfile(for: settings) {
@@ -64,7 +68,7 @@ struct AgentModelPlannerContactResolver {
         modelProfile: localProfile.id
       )
     }
-    guard let resolution = resolve(settings: settings) else {
+    guard let resolution = resolve(settings: settings, modelId: modelId) else {
       return nil
     }
     let provider = CloudModelAgentPlanningProvider(contact: resolution.contact, store: store, sender: sender)
@@ -75,6 +79,7 @@ struct AgentModelPlannerContactResolver {
   func makeToolLoopPlanner(
     settings: AgentModelPlannerSettings,
     toolRegistry: AgentNativeToolRegistry,
+    modelId: String = "",
     structuredSender: CloudModelStructuredSending = CloudModelClient(),
     nativeToolSender: CloudModelNativeToolSending = CloudModelClient()
   ) -> GuardedModelAgentPlanner? {
@@ -84,7 +89,7 @@ struct AgentModelPlannerContactResolver {
         modelProfile: localProfile.id
       )
     }
-    guard let resolution = resolve(settings: settings) else {
+    guard let resolution = resolve(settings: settings, modelId: modelId) else {
       return nil
     }
     let provider = CloudModelToolLoopAgentPlanningProvider(
@@ -113,11 +118,12 @@ struct AgentModelPlannerContactResolver {
   static func resolve(
     preferredContactId: String = "",
     contacts: [SignalASIContact],
-    apiKey: (CloudModelConfig) -> String?
+    apiKey: (CloudModelConfig) -> String?,
+    preferredModelId: String = ""
   ) -> AgentModelPlannerContactResolution? {
     let preferred = normalizedIdentifier(preferredContactId)
     let candidates = contacts.compactMap { contact in
-      candidate(for: contact, apiKey: apiKey)
+      candidate(for: contact, apiKey: apiKey, preferredModelId: preferredModelId)
     }
 
     if !preferred.isEmpty,
@@ -129,13 +135,17 @@ struct AgentModelPlannerContactResolver {
 
   private static func candidate(
     for contact: SignalASIContact,
-    apiKey: (CloudModelConfig) -> String?
+    apiKey: (CloudModelConfig) -> String?,
+    preferredModelId: String
   ) -> Candidate? {
-    guard !contact.deleted,
-          contact.deliveryMode == .cloudAPI,
-          let selectedModel = contact.selectedCloudModel else {
+    guard !contact.deleted, contact.deliveryMode == .cloudAPI else {
       return nil
     }
+    let cleanPreferredModelId = preferredModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let selectedModel = cleanPreferredModelId.isEmpty
+      ? contact.selectedCloudModel
+      : contact.cloudModels.first { $0.modelId == cleanPreferredModelId }
+    guard let selectedModel else { return nil }
     guard AgentConnectorAvailability.cloudModelReady(
       model: selectedModel,
       apiKey: apiKey(selectedModel),

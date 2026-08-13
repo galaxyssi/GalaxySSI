@@ -2328,7 +2328,10 @@ final class MessageCoordinator: ObservableObject {
           targetId != "local-llm",
           let selected = store.contact(id: targetId),
           selected.deliveryMode == .cloudAPI,
-          let model = selected.selectedCloudModel,
+          let model = selectedCloudModel(
+            in: selected,
+            modelId: selection.mode == .manual ? selection.modelId : ""
+          ),
           AgentConnectorAvailability.cloudModelReady(
             model: model,
             apiKey: store.apiKey(for: model),
@@ -2337,7 +2340,20 @@ final class MessageCoordinator: ObservableObject {
           ) else {
       return nil
     }
-    return selected
+    var resolved = selected
+    resolved.selectedCloudModelId = model.modelId
+    return resolved
+  }
+
+  private func selectedCloudModel(
+    in contact: SignalASIContact,
+    modelId: String
+  ) -> CloudModelConfig? {
+    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if cleanModelId.isEmpty {
+      return contact.selectedCloudModel
+    }
+    return contact.cloudModels.first { $0.modelId == cleanModelId }
   }
 
   private func selectedAgentContact(
@@ -4285,8 +4301,13 @@ final class MessageCoordinator: ObservableObject {
     guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
+    let modelSelection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
+    let plannerModelId = modelSelection.mode == .manual &&
+      modelSelection.targetId == store.modelPlannerSettings.cloudContactId
+      ? modelSelection.modelId
+      : ""
     guard let planner = AgentModelPlannerContactResolver(store: store)
-      .makePlanner(settings: store.modelPlannerSettings) else {
+      .makePlanner(settings: store.modelPlannerSettings, modelId: plannerModelId) else {
       return nil
     }
     let planRequest = AgentPlanRequest(
