@@ -22,6 +22,7 @@ struct SignalASIConversationHubView: View {
   @State private var searchText = ""
   @State private var showingArchived = false
   @State private var addContactPresentation: SignalASIAddContactPresentation?
+  @State private var hubRefreshToken = UUID()
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
   private let onBackToSettings: (() -> Void)?
@@ -120,12 +121,12 @@ struct SignalASIConversationHubView: View {
       AddContactView(
         autoOpenScanner: presentation == .scanner,
         onAgentAdded: { _ in
-          _ = coordinator.requestCapabilityManifestRefresh(force: true)
+          refreshAfterContactImport()
           addContactPresentation = nil
           selectedTab = .contacts
         },
         onImportCompleted: {
-          _ = coordinator.requestCapabilityManifestRefresh(force: true)
+          refreshAfterContactImport()
           addContactPresentation = nil
         }
       )
@@ -469,9 +470,15 @@ struct SignalASIConversationHubView: View {
       selectedTab.rawValue,
       searchText,
       showingArchived ? "archived" : "active",
+      hubRefreshToken.uuidString,
       conversationKey,
       contactKey
     ].joined(separator: "\u{001F}")
+  }
+
+  private func refreshAfterContactImport() {
+    _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    hubRefreshToken = UUID()
   }
 
   private func prepareHubContent() async {
