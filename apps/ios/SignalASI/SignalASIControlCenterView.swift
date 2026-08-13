@@ -365,7 +365,7 @@ struct SignalASIControlCenterView: View {
         title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
         subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
         systemImage: "lock.doc",
-        tint: disclosureSummary.cloud > 0 ? .orange : .signalASIAccent,
+        tint: disclosureSummary.blocked > 0 ? .orange : .blue,
         badge: String(
           format: t("cc_privacy_destination_count", "%d destinations"),
           disclosureSummary.destinations
