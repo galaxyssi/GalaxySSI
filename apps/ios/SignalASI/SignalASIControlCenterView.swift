@@ -498,23 +498,20 @@ struct SignalASIControlCenterView: View {
   }
 
   private var intelligenceResourceCount: Int {
-    let availableClouds = store.cloudModelContacts.filter { contact in
-      guard let model = contact.selectedCloudModel else { return false }
-      return CloudModelCredentialPolicy.isAutoRoutable(
-        model: model,
-        apiKey: store.apiKey(for: model),
-        provider: contact.cloudProvider,
-        setupStatus: contact.setupStatus
-      )
-    }.count
-    let onlineDesktops = store.serverLinks.filter { link in
-      link.paired && coordinator.mqttClient.isConnected
-    }.count
-    let configuredCustomDevices = store.customDeviceConnectors.filter {
-      $0.enabled && $0.configured
-    }.count
-    let configuredHomeAssistant = store.homeAssistantSettings.configured ? 1 : 0
-    return 1 + availableClouds + onlineDesktops + configuredCustomDevices + configuredHomeAssistant
+    intelligenceResources.filter { $0.status == .available }.count
+  }
+
+  private var intelligenceResources: [AgentResourceDescriptor] {
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
+    return AgentResourceCatalog.build(targets: targets, tools: [], nativeTools: [])
+      .filter { resource in
+        resource.targetId != "phone" &&
+          resource.targetId != "local-system" &&
+          resource.targetId != "cloud-models"
+      }
   }
 
   private var systemStatusResourceTargets: [AgentCallableTarget] {
