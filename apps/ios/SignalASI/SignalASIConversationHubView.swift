@@ -145,7 +145,11 @@ struct SignalASIConversationHubView: View {
         title: t("signalasi.agent_session.rename", "Rename"),
         initialValue: session.title
       ) { value in
-        sessionNotice = store.renameAgentSession(id: session.id, title: value)
+        let changed = store.renameAgentSession(id: session.id, title: value)
+        if changed {
+          refreshAfterSessionMutation()
+        }
+        sessionNotice = changed
           ? t("signalasi.agent_sessions.updated", "Session updated")
           : t("signalasi.agent_sessions.update_failed", "Session was not changed")
       }
@@ -404,6 +408,7 @@ struct SignalASIConversationHubView: View {
         onSelect: { policy in
           if store.setAgentSessionContextPolicy(id: session.id, policy: policy) {
             sessionNotice = t("signalasi.agent_sessions.context_updated", "Context policy updated")
+            refreshAfterSessionMutation()
           }
           contextPolicySession = nil
         }
@@ -501,6 +506,12 @@ struct SignalASIConversationHubView: View {
 
   private func refreshAfterContactRemoval() {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    hubRefreshToken = UUID()
+  }
+
+  private func refreshAfterSessionMutation() {
+    navigationContentGate.invalidate()
+    hubContentLoading = true
     hubRefreshToken = UUID()
   }
 
@@ -646,7 +657,9 @@ struct SignalASIConversationHubView: View {
       Button(session.pinned
         ? t("signalasi.agent_session.unpin", "Unpin")
         : t("signalasi.agent_session.pin", "Pin")) {
-        _ = store.setAgentSessionPinned(id: session.id, pinned: !session.pinned)
+        if store.setAgentSessionPinned(id: session.id, pinned: !session.pinned) {
+          refreshAfterSessionMutation()
+        }
       }
       if canMerge(session) {
         Button(t("signalasi.agent_session.merge_into_original", "Merge into original session")) {
@@ -657,21 +670,29 @@ struct SignalASIConversationHubView: View {
         Button(session.privateMode
           ? t("signalasi.agent_session.standard", "Standard session")
           : t("signalasi.agent_session.private", "Private session")) {
-          _ = store.setAgentSessionPrivateMode(id: session.id, privateMode: !session.privateMode)
+          if store.setAgentSessionPrivateMode(id: session.id, privateMode: !session.privateMode) {
+            refreshAfterSessionMutation()
+          }
         }
         Button(session.trackingPaused
           ? t("signalasi.agent_session.resume_tracking", "Resume global tracking")
           : t("signalasi.agent_session.pause_tracking", "Pause global tracking")) {
-          _ = store.setAgentSessionTrackingPaused(id: session.id, paused: !session.trackingPaused)
+          if store.setAgentSessionTrackingPaused(id: session.id, paused: !session.trackingPaused) {
+            refreshAfterSessionMutation()
+          }
         }
         Button(session.status == .archived
           ? t("signalasi.agent_session.restore", "Restore session")
           : t("signalasi.agent_session.archive", "Archive")) {
           if session.status == .archived {
-            _ = store.restoreAgentSession(id: session.id)
-            showingArchived = false
+            if store.restoreAgentSession(id: session.id) {
+              showingArchived = false
+              refreshAfterSessionMutation()
+            }
           } else {
-            _ = store.archiveAgentSession(id: session.id)
+            if store.archiveAgentSession(id: session.id) {
+              refreshAfterSessionMutation()
+            }
           }
         }
       }
@@ -790,6 +811,7 @@ struct SignalASIConversationHubView: View {
       targetTitle
     )
     showingArchived = false
+    refreshAfterSessionMutation()
   }
 
   private func mergeFailureMessage(_ failure: AgentConversationMergeFailure) -> String {
@@ -819,8 +841,12 @@ struct SignalASIConversationHubView: View {
       sessionNotice = deleted
         ? t("signalasi.agent_sessions.deleted", "Session deleted")
         : t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
+      if deleted {
+        refreshAfterSessionMutation()
+      }
       return
     }
+    refreshAfterSessionMutation()
     sessionNotice = t(
       "signalasi.agent_sessions.deleted_remote_pending",
       "Session deleted; cleaning up the paired Desktop..."
@@ -859,6 +885,7 @@ struct SignalASIConversationHubView: View {
       sessionNotice = t("signalasi.agent_sessions.delete_failed", "Session was not deleted")
       return
     }
+    refreshAfterSessionMutation()
     sessionNotice = String(
       format: t(
         "signalasi.agent_sessions.deleted_selected_pending",
@@ -896,6 +923,9 @@ struct SignalASIConversationHubView: View {
       changed = store.renameAgentSession(id: draft.id, title: value)
     case .summary:
       changed = store.updateAgentSessionSummary(id: draft.id, summary: value)
+    }
+    if changed {
+      refreshAfterSessionMutation()
     }
     sessionNotice = changed
       ? t("signalasi.agent_sessions.updated", "Session updated")
