@@ -851,26 +851,6 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 8) {
       SettingsSectionTitle(title: t("settings_control_pages", "App Pages"))
       mainPageRow(
-        title: t("signalasi.tab.agent", "Agent"),
-        subtitle: t("signalasi.settings.page_agent_subtitle", "Primary Agent workspace, sessions, attachments, and action tray"),
-        systemImage: "sparkles",
-        tint: .signalASIAccent,
-        badge: t("signalasi.common.open", "Open"),
-        tab: .agent
-      ) {
-        SignalASIAgentSessionsView()
-      }
-      mainPageRow(
-        title: t("signalasi.tab.voice", "Voice"),
-        subtitle: t("signalasi.settings.page_voice_subtitle", "Wake page, hold-to-talk, ASR/TTS, and voice routing"),
-        systemImage: "mic",
-        tint: .signalASIInsightText,
-        badge: t("signalasi.common.open", "Open"),
-        tab: .voice
-      ) {
-        SignalASIVoiceControlCenterView()
-      }
-      mainPageRow(
         title: t("signalasi.tab.messages", "Messages"),
         subtitle: t("signalasi.settings.page_messages_subtitle", "Conversations with people, Agents, and devices"),
         systemImage: "bubble.left.and.bubble.right",
