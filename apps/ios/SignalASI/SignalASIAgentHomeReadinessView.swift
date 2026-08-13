@@ -454,29 +454,39 @@ struct SignalASIAgentHomeReadinessView: View {
     Text(value)
       .font(.system(size: 13))
       .foregroundColor(.signalASITextPrimary)
-      .lineLimit(1)
-      .minimumScaleFactor(0.75)
-      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+      .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+      .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.75)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: usesAccessibilityDynamicType ? 54 : 42,
+        alignment: .leading
+      )
       .padding(.horizontal, 14)
   }
 
   private func infoNavigationRow(_ value: String, systemImage: String) -> some View {
-    HStack(spacing: 10) {
+    HStack(alignment: .top, spacing: 10) {
       Image(systemName: systemImage)
         .font(.system(size: 15, weight: .semibold))
         .foregroundColor(.signalASIAccent)
         .frame(width: 18)
+        .padding(.top, usesAccessibilityDynamicType ? 2 : 0)
       Text(value)
         .font(.system(size: 13))
         .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.75)
+        .frame(maxWidth: .infinity, alignment: .leading)
       Spacer(minLength: 8)
       Image(systemName: "chevron.right")
         .font(.system(size: 11, weight: .bold))
         .foregroundColor(.signalASITextSecondary)
     }
-    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: usesAccessibilityDynamicType ? 54 : 42,
+      alignment: .leading
+    )
     .padding(.horizontal, 14)
   }
 
