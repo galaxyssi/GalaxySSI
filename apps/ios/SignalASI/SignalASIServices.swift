@@ -5293,6 +5293,7 @@ final class MessageCoordinator: ObservableObject {
     guard let card = try? SignalASIQRCodePayload.decodeObject(from: qrText, label: "Contact QR") else {
       return .failed
     }
+    store.rememberVerifiedPhoneContactCard(card)
     return await publishPhoneContactControl(kind: .request, targetCard: card)
   }
 
@@ -5325,6 +5326,38 @@ final class MessageCoordinator: ObservableObject {
       return ""
     }
     return "\(SignalASILinkProtocol.topicRoot)/contact/\(routeId)/inbox"
+  }
+
+  private func requestPhoneContactBundle(for contact: SignalASIContact) async -> MqttPublishResult {
+    let remoteName = contact.signalASIId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let topic = (contact.mqttInboxTopic ?? contact.mqttTopic ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let replyTopic = currentPhoneContactInboxTopic()
+    let localIdentity = signalEngine.identity
+    guard !remoteName.isEmpty,
+          !topic.isEmpty,
+          !replyTopic.isEmpty,
+          !contact.identityFingerprint.isEmpty,
+          let bundle = signalEngine.localBundle(),
+          SignalASISignalEngine.bundleIdentityFingerprint(bundle)?
+            .caseInsensitiveCompare(localIdentity.fingerprint) == .orderedSame else {
+      return .failed
+    }
+    let request: [String: Any] = [
+      "version": 1,
+      "type": "signal_bundle_request",
+      "from": localIdentity.name,
+      "to": remoteName,
+      "reply_topic": replyTopic,
+      "requested_fingerprint": contact.identityFingerprint,
+      "identity_fingerprint": localIdentity.fingerprint,
+      "signal_bundle": bundle,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+    guard let data = try? SignalASILinkProtocol.jsonData(request) else {
+      return .failed
+    }
+    return await mqttClient.publish(topic: topic, payload: data)
   }
 
   private func isPhoneContact(_ contact: SignalASIContact) -> Bool {
@@ -5371,6 +5404,7 @@ final class MessageCoordinator: ObservableObject {
       targetId: remoteName
     )
     guard let encrypted = signalEngine.encrypt(envelope, remoteName: remoteName) else {
+      _ = await requestPhoneContactBundle(for: contact)
       throw SignalASIError.invalidPayload("Signal session is not ready for this contact.")
     }
     let wireData = try SignalASILinkProtocol.jsonData(encrypted)
@@ -5851,11 +5885,16 @@ final class MessageCoordinator: ObservableObject {
 
   private func handlePhoneContactIncoming(topic: String, object: [String: Any]) {
     let localSignalASIId = signalEngine.identity.name
+    if object.string("type") == "signal_bundle_request" {
+      handlePhoneContactBundleRequest(object, localSignalASIId: localSignalASIId)
+      return
+    }
     if let control = SignalASIPhoneContactControl.validate(
       object,
       addressedTo: localSignalASIId
     ) {
       mqttClient.clearRetained(topic: topic)
+      store.rememberVerifiedPhoneContactCard(control.contactCard)
       guard let cardData = try? SignalASILinkProtocol.jsonData(control.contactCard),
             let cardText = String(data: cardData, encoding: .utf8),
             let request = try? store.importContactQRCodeAsFriendRequest(cardText),
@@ -5884,6 +5923,31 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     handlePhoneContactCiphertext(object, localSignalASIId: localSignalASIId)
+  }
+
+  private func handlePhoneContactBundleRequest(
+    _ request: [String: Any],
+    localSignalASIId: String
+  ) {
+    let senderId = request.string("from")
+    guard request.int("version") == 1,
+          !senderId.isEmpty,
+          request.string("to") == localSignalASIId,
+          request.string("requested_fingerprint")
+            .caseInsensitiveCompare(signalEngine.identity.fingerprint) == .orderedSame,
+          let contact = store.contact(id: senderId),
+          isPhoneContact(contact),
+          let bundle = request.dictionary("signal_bundle"),
+          bundle.string("name").ifBlank(senderId) == senderId,
+          SignalASISignalEngine.bundleIdentityFingerprint(bundle)?
+            .caseInsensitiveCompare(contact.identityFingerprint) == .orderedSame,
+          signalEngine.processBundle(bundle, remoteName: senderId),
+          let card = store.verifiedPhoneContactCard(for: senderId) else {
+      return
+    }
+    Task { [weak self] in
+      _ = await self?.publishPhoneContactControl(kind: .bundle, targetCard: card)
+    }
   }
 
   private func handlePhoneContactCiphertext(
