@@ -559,10 +559,43 @@ struct AgentHomeView: View {
   func prefillAgentScreenCommand(_ command: String) {
     let cleanCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanCommand.isEmpty else { return }
+    if let targetID = agentHomeControlID(for: cleanCommand),
+       activateAgentHomeControl(targetID) {
+      actionTrayPresented = false
+      attachmentError = ""
+      refreshAgentScreenContext()
+      return
+    }
     draft = cleanCommand
     actionTrayPresented = false
     attachmentError = ""
     composerFocusRequest += 1
+  }
+
+  private func agentHomeControlID(for command: String) -> String? {
+    switch command.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "new session": return "new-session"
+    case "show agent sessions": return "sessions"
+    case "scan agent qr code": return "scan"
+    case "take a photo": return "take-photo"
+    case "attach a file": return "add-file"
+    case "choose agent model": return "model-selection"
+    case "show native tools": return "native-tools"
+    case "open agent memory": return "memory"
+    case "open agent knowledge": return "knowledge"
+    case "show screen context": return "screen-context"
+    case "refresh screen context": return "refresh-screen-context"
+    case "show new agent insights": return "insights"
+    case "show recent agent tasks": return "recent-tasks"
+    case "cycle agent permission mode": return "permission-mode"
+    case "cycle agent task execution mode": return "task-execution-mode"
+    case "toggle agent high-risk guard": return "high-risk-guard"
+    case "toggle agent memory capture": return "memory-capture"
+    case "toggle agent execution pause": return "execution-paused"
+    case "open permissions": return "permissions"
+    case "open settings": return "settings"
+    default: return nil
+    }
   }
 
   func cycleAgentPermissionMode() {
