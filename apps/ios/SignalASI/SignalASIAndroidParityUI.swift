@@ -29,7 +29,6 @@ struct AgentHomeView: View {
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
-  @State var attachmentSourcePickerPresented = false
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -305,19 +304,6 @@ struct AgentHomeView: View {
       )
     }
     .navigationViewStyle(StackNavigationViewStyle())
-    .confirmationDialog(
-      t("agent_attachment_source_title", "Add attachment"),
-      isPresented: $attachmentSourcePickerPresented,
-      titleVisibility: .visible
-    ) {
-      Button(t("agent_attachment_add_photos", "Add photos")) {
-        photoPickerPresented = true
-      }
-      Button(t("agent_attachment_add_file", "Add file")) {
-        fileImporterPresented = true
-      }
-      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {}
-    }
     .fileExporter(
       isPresented: $publicPageExportPresented,
       document: publicPageExportDocument,
@@ -561,7 +547,7 @@ struct AgentHomeView: View {
       },
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
-        attachmentSourcePickerPresented = true
+        fileImporterPresented = true
       },
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
