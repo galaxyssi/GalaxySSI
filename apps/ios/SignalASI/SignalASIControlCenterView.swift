@@ -698,7 +698,7 @@ struct SignalASIControlCenterAppServicesView: View {
             tint: .gray,
             badge: ""
           ) {
-            SignalASIAgentSessionsView()
+            SignalASIConversationHubView()
           }
         }
         .padding(.horizontal, 12)
