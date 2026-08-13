@@ -1201,11 +1201,18 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isWifiScanResultsGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["scan wifi", "scan wi-fi", "wifi networks", "nearby wifi", "扫描wifi", "扫描 wi-fi", "附近wifi", "wifi网络"])
+    containsAny(lower, [
+      "scan wifi", "scan wi-fi", "wifi networks", "nearby wifi",
+      "扫描wifi", "扫描 wi-fi", "附近wifi", "wifi网络",
+      "扫描无线网络", "附近无线网络", "无线网络列表"
+    ])
   }
 
   private static func isWifiScanStartGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["start wifi scan", "start wi-fi scan", "begin wifi scan", "开始扫描wifi", "开始扫描 wi-fi"])
+    containsAny(lower, [
+      "start wifi scan", "start wi-fi scan", "begin wifi scan",
+      "开始扫描wifi", "开始扫描 wi-fi", "开始扫描无线网络"
+    ])
   }
 
   private static func isAudioStatusGoal(_ lower: String) -> Bool {
@@ -1383,12 +1390,15 @@ enum AgentDirectNativeToolPlanner {
   }
 
   private static func isWifiStatusGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["wifi status", "wi-fi status", "wireless status"]) ||
+    containsAny(lower, ["wifi status", "wi-fi status", "wireless status", "无线网络状态", "无线网状态"]) ||
       (containsAny(lower, ["wifi", "wi-fi"]) && lower.contains("status"))
   }
 
   private static func isWifiSettingsGoal(_ lower: String) -> Bool {
-    containsAny(lower, ["open wifi settings", "open wi-fi settings", "wifi settings", "wi-fi settings"])
+    containsAny(lower, [
+      "open wifi settings", "open wi-fi settings", "wifi settings", "wi-fi settings",
+      "打开无线网络设置", "无线网络设置"
+    ])
   }
 
   private static func isVolumeSetGoal(_ lower: String) -> Bool {
