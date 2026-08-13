@@ -279,6 +279,16 @@ private struct SignalASIFilePreviewView: UIViewControllerRepresentable {
   }
 }
 
+private struct SignalASIActivitySheet: UIViewControllerRepresentable {
+  let items: [Any]
+
+  func makeUIViewController(context: Context) -> UIActivityViewController {
+    UIActivityViewController(activityItems: items, applicationActivities: nil)
+  }
+
+  func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 private enum SignalASILocalFileResource {
   static func url(for block: AgentRichBlock) -> URL? {
     guard let url = URL(string: block.uri),
@@ -481,6 +491,8 @@ private struct SignalASIRichBlockView: View {
   @State private var formValues: [String: String] = [:]
   @State private var imageViewerItem: SignalASIImageViewerItem?
   @State private var inlineImageSize: CGSize?
+  @State private var extractedArchiveURLs: [URL] = []
+  @State private var extractedArchivePresented = false
 
   var body: some View {
     switch block.type {
@@ -536,6 +548,9 @@ private struct SignalASIRichBlockView: View {
       webpageBlock
     case .file, .link, .citation, .unknown:
       resourceBlock
+    }
+    .sheet(isPresented: $extractedArchivePresented) {
+      SignalASIActivitySheet(items: extractedArchiveURLs)
     }
   }
 
@@ -1276,7 +1291,7 @@ private struct SignalASIRichBlockView: View {
   }
 
   private var desktopArtifactBlock: some View {
-    let available = coordinator.desktopArtifactStore.localFile(for: block) != nil
+    let available = localArtifactFile != nil
     let previewActions = block.actions.filter { $0.verb == "preview_runtime_artifact" }
     return VStack(alignment: .leading, spacing: 8) {
       SignalASIRichResourceRow(
@@ -1304,6 +1319,16 @@ private struct SignalASIRichBlockView: View {
               .frame(maxWidth: .infinity, minHeight: 32)
           }
           .buttonStyle(.bordered)
+          if isZipArtifact {
+            Button {
+              extractArtifactArchive()
+            } label: {
+              Label(t("rich_output_extract", "Extract"), systemImage: "archivebox.fill")
+                .font(.caption.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 32)
+            }
+            .buttonStyle(.bordered)
+          }
         } else {
           Button {
             Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
@@ -1324,6 +1349,32 @@ private struct SignalASIRichBlockView: View {
   private var isDesktopArtifact: Bool {
     let sourceURI = block.metadata["artifact_source_uri"] ?? block.uri
     return block.isArtifactBlock && AgentDesktopArtifactStore.isSignalASIArtifactURI(sourceURI)
+  }
+
+  private var localArtifactFile: URL? {
+    coordinator.desktopArtifactStore.localFile(for: block)
+      ?? SignalASILocalFileResource.url(for: block)
+  }
+
+  private var isZipArtifact: Bool {
+    localArtifactFile?.pathExtension.caseInsensitiveCompare("zip") == .orderedSame
+  }
+
+  private func extractArtifactArchive() {
+    guard let source = localArtifactFile, isZipArtifact else { return }
+    let fileManager = FileManager.default
+    let stem = AgentDesktopArtifactStore.safeFileName(source.deletingPathExtension().lastPathComponent)
+    let destination = fileManager.temporaryDirectory
+      .appendingPathComponent("SignalASI-extract-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent(stem, isDirectory: true)
+    do {
+      let extracted = try AgentDesktopArtifactActions.extractZip(source: source, to: destination)
+      guard !extracted.isEmpty else { return }
+      extractedArchiveURLs = extracted
+      extractedArchivePresented = true
+    } catch {
+      return
+    }
   }
 
   private var isLocalDownload: Bool {

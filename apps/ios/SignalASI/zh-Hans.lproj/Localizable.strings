@@ -3942,6 +3942,7 @@
 "rich_output_download" = "下载";
 "rich_output_save" = "保存到文件";
 "rich_output_compress" = "压缩";
+"rich_output_extract" = "解压";
 "rich_output_preview" = "打开";
 "rich_output_progress" = "进度";
 "cc_runtime_import_action" = "选择文件";
