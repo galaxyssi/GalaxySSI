@@ -243,8 +243,8 @@ if (!styles.includes('.sidebar-more-button::before') ||
     styles.includes('content: "\\2026\\2026\\2026"')) {
   throw new Error("Desktop conversation manager must render one standard three-dot ellipsis");
 }
-if (!main.includes("width: 960") || !main.includes("height: 640")) {
-  throw new Error("Desktop window must default to 960 x 640");
+if (!main.includes("width: 864") || !main.includes("height: 576")) {
+  throw new Error("Desktop window must default to 864 x 576");
 }
 if (main.includes("minWidth:") || main.includes("minHeight:")) {
   throw new Error("Desktop window must not impose a minimum size");

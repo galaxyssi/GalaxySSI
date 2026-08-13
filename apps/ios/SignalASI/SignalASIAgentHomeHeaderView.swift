@@ -7,8 +7,10 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   var modelStatusLabel: String
   var modelLogoLabel: String
   var brandSubtitle: String
+  var voiceNavigationLabel: String
   var modelSelectionDestination: ModelSelectionDestination
   var onOpenSettings: () -> Void
+  var onOpenVoice: () -> Void
 
   var body: some View {
     GeometryReader { proxy in
@@ -19,19 +21,25 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
       )
 
       HStack(spacing: compact ? 5 : 8) {
-        SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
-        VStack(alignment: .center, spacing: 2) {
-          Text("SignalASI")
-            .font(.system(size: compact ? 13.5 : 14.5, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
-            .lineLimit(1)
-          Text(brandSubtitle)
-            .font(.system(size: compact ? 9 : 10, weight: .regular))
-            .foregroundColor(.signalASITextSecondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.58)
+        Button(action: onOpenVoice) {
+          HStack(spacing: compact ? 5 : 8) {
+            SignalASILogoView(size: headerLogoSize, cornerRadius: 8)
+            VStack(alignment: .center, spacing: 2) {
+              Text("SignalASI")
+                .font(.system(size: compact ? 13.5 : 14.5, weight: .bold))
+                .foregroundColor(.signalASITextPrimary)
+                .lineLimit(1)
+              Text(brandSubtitle)
+                .font(.system(size: compact ? 9 : 10, weight: .regular))
+                .foregroundColor(.signalASITextSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.58)
+            }
+            .frame(minWidth: 0)
+          }
         }
-        .frame(minWidth: 0)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(voiceNavigationLabel))
         Spacer(minLength: compact ? 3 : 8)
         VStack(alignment: .trailing, spacing: 2) {
           NavigationLink(destination: SignalASIConversationHubView()) {

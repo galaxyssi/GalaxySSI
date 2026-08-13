@@ -466,10 +466,12 @@ struct AgentHomeView: View {
       modelStatusLabel: presentation.modelStatusLabel,
       modelLogoLabel: presentation.modelLogoLabel,
       brandSubtitle: t("signalasi.agent.brand.subtitle", "Superintelligent agent"),
+      voiceNavigationLabel: t("signalasi.agent.open_voice", "Open voice"),
       modelSelectionDestination: SignalASIAgentModelSelectionView {
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       },
-      onOpenSettings: { openMainTab(.settings) }
+      onOpenSettings: { openMainTab(.settings) },
+      onOpenVoice: { openMainTab(.voice) }
     )
   }
 
