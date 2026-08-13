@@ -293,6 +293,41 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun repositoryUrlDoesNotTurnAProjectOperationIntoWebResearch() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val clone = nativeDescriptor(
+            AgentMobileProjectNativeTools.CLONE,
+            "Clone repository",
+            AgentNativeToolRisk.MEDIUM
+        )
+        val research = nativeDescriptor(
+            AgentWebIntelligenceNativeTools.RESEARCH,
+            "Research the public web",
+            AgentNativeToolRisk.LOW
+        )
+        val localModel = AgentCallableTarget(
+            id = "gemma-local",
+            title = "Gemma Local",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING, AgentCapability.TASK_EXECUTION)
+        )
+        val request = request(
+            "Clone https://github.com/signalasi/SignalASI on this phone and report the current branch",
+            screen,
+            listOf(clone, research),
+            listOf(localModel)
+        )
+
+        val plan = RuleBasedAgentPlanner().plan(request)
+
+        assertTrue(plan.isSupervisedProjectPlan())
+        assertEquals(AgentActionKind.CALL_CONNECTOR, plan.actions.single().kind)
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
+        assertEquals(null, RuleBasedAgentPlanner().genericWebResearchActions(request))
+    }
+
+    @Test
     fun supervisedProjectAppendsOneEvidenceReviewerAfterEveryToolBatch() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val clone = nativeDescriptor(
