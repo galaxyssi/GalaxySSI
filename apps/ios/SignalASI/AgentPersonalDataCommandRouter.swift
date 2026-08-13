@@ -31,13 +31,23 @@ enum AgentPersonalDataCommandRouter {
     if let value = AgentMemoryCommandParser.memoryValue(fromGoal: command) {
       return saveMemory(value, store: store)
     }
-    if let query = prefixedValue(command, prefixes: ["forget memory ", "delete memory ", "remove memory ", "forget note "]) {
+    if let query = prefixedValue(command, prefixes: [
+      "forget memory ", "delete memory ", "remove memory ", "forget note ",
+      "\u{5fd8}\u{8bb0}\u{8bb0}\u{5fc6} ", "\u{5220}\u{9664}\u{8bb0}\u{5fc6} ", "\u{5220}\u{9664}\u{7b14}\u{8bb0} "
+    ]) {
       return forgetMemory(query, store: store)
     }
-    if let query = prefixedValue(command, prefixes: ["forget knowledge ", "delete knowledge ", "remove knowledge ", "forget document ", "delete document "]) {
+    if let query = prefixedValue(command, prefixes: [
+      "forget knowledge ", "delete knowledge ", "remove knowledge ", "forget document ", "delete document ",
+      "\u{5fd8}\u{8bb0}\u{77e5}\u{8bc6} ", "\u{5220}\u{9664}\u{77e5}\u{8bc6} ", "\u{5220}\u{9664}\u{6587}\u{6863} "
+    ]) {
       return forgetKnowledge(query, store: store)
     }
-    if let query = prefixedValue(command, prefixes: ["search knowledge ", "find knowledge ", "search memory ", "find memory "]) {
+    if let query = prefixedValue(command, prefixes: [
+      "search knowledge ", "find knowledge ", "search memory ", "find memory ",
+      "\u{641c}\u{7d22}\u{77e5}\u{8bc6} ", "\u{67e5}\u{627e}\u{77e5}\u{8bc6} ",
+      "\u{641c}\u{7d22}\u{8bb0}\u{5fc6} ", "\u{67e5}\u{627e}\u{8bb0}\u{5fc6} "
+    ]) {
       return searchKnowledge(query, store: store)
     }
     if isManagementCommand(normalized) {
@@ -55,7 +65,13 @@ enum AgentPersonalDataCommandRouter {
     "list memories",
     "recent memories",
     "show recent memories",
-    "what do you remember"
+    "what do you remember",
+    "\u{8bb0}\u{5fc6}\u{72b6}\u{6001}",
+    "\u{67e5}\u{770b}\u{8bb0}\u{5fc6}",
+    "\u{663e}\u{793a}\u{8bb0}\u{5fc6}",
+    "\u{5217}\u{51fa}\u{8bb0}\u{5fc6}",
+    "\u{6700}\u{8fd1}\u{8bb0}\u{5fc6}",
+    "\u{4f60}\u{8bb0}\u{5f97}\u{4ec0}\u{4e48}"
   ]
 
   private static let knowledgeOverviewCommands: Set<String> = [
@@ -64,14 +80,23 @@ enum AgentPersonalDataCommandRouter {
     "show knowledge",
     "list knowledge",
     "recent knowledge",
-    "show recent knowledge"
+    "show recent knowledge",
+    "\u{77e5}\u{8bc6}\u{72b6}\u{6001}",
+    "\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}",
+    "\u{67e5}\u{770b}\u{77e5}\u{8bc6}",
+    "\u{663e}\u{793a}\u{77e5}\u{8bc6}",
+    "\u{5217}\u{51fa}\u{77e5}\u{8bc6}",
+    "\u{6700}\u{8fd1}\u{77e5}\u{8bc6}"
   ]
 
   private static let knowledgeAnswerPrefixes: [String] = [
     "ask knowledge ",
     "answer from knowledge ",
     "use knowledge to answer ",
-    "ask my knowledge "
+    "ask my knowledge ",
+    "\u{8be2}\u{95ee}\u{77e5}\u{8bc6} ",
+    "\u{7528}\u{77e5}\u{8bc6}\u{56de}\u{7b54} ",
+    "\u{8bf7}\u{56de}\u{7b54}\u{77e5}\u{8bc6} "
   ]
 
   private static func memoryOverview(store: SignalASIStore) -> Result {
@@ -251,7 +276,28 @@ enum AgentPersonalDataCommandRouter {
       "stop memory",
       "disable memory capture",
       "resume memory",
-      "enable memory capture"
+      "enable memory capture",
+      "\u{8bb0}\u{5fc6}",
+      "\u{4fdd}\u{5b58}\u{8bb0}\u{5fc6}",
+      "\u{4fdd}\u{5b58}\u{7b14}\u{8bb0}",
+      "\u{5fd8}\u{8bb0}\u{8bb0}\u{5fc6}",
+      "\u{5220}\u{9664}\u{8bb0}\u{5fc6}",
+      "\u{5220}\u{9664}\u{7b14}\u{8bb0}",
+      "\u{5fd8}\u{8bb0}\u{77e5}\u{8bc6}",
+      "\u{5220}\u{9664}\u{77e5}\u{8bc6}",
+      "\u{5220}\u{9664}\u{6587}\u{6863}",
+      "\u{641c}\u{7d22}\u{77e5}\u{8bc6}",
+      "\u{67e5}\u{627e}\u{77e5}\u{8bc6}",
+      "\u{641c}\u{7d22}\u{8bb0}\u{5fc6}",
+      "\u{67e5}\u{627e}\u{8bb0}\u{5fc6}",
+      "\u{8be2}\u{95ee}\u{77e5}\u{8bc6}",
+      "\u{7528}\u{77e5}\u{8bc6}\u{56de}\u{7b54}",
+      "\u{8bf7}\u{56de}\u{7b54}\u{77e5}\u{8bc6}",
+      "\u{6682}\u{505c}\u{8bb0}\u{5fc6}",
+      "\u{505c}\u{6b62}\u{8bb0}\u{5fc6}",
+      "\u{5173}\u{95ed}\u{8bb0}\u{5fc6}\u{6355}\u{83b7}",
+      "\u{6062}\u{590d}\u{8bb0}\u{5fc6}",
+      "\u{5f00}\u{542f}\u{8bb0}\u{5fc6}\u{6355}\u{83b7}"
     ].contains { normalized == $0 || normalized.hasPrefix($0 + " ") }
   }
 }
