@@ -949,9 +949,17 @@ private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
         ZStack {
           RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(tint.opacity(0.16))
-          Image(systemName: systemImage)
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundColor(tint)
+          if let assetImageName {
+            Image(assetImageName)
+              .resizable()
+              .scaledToFit()
+              .frame(width: 29, height: 29)
+              .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+          } else {
+            Image(systemName: systemImage)
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundColor(tint)
+          }
         }
         .frame(width: 42, height: 42)
         VStack(alignment: .leading, spacing: 3) {
@@ -989,5 +997,32 @@ private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(.plain)
+  }
+
+  private var assetImageName: String? {
+    switch systemImage {
+    case "person.crop.circle":
+      return "DiscoverProfile"
+    case "network", "cpu", "slider.horizontal.3":
+      return "DiscoverAiAgent"
+    case "iphone", "homekit", "desktopcomputer":
+      return "DiscoverDevice"
+    case "memorychip", "terminal":
+      return "DiscoverLab"
+    case "waveform":
+      return "DiscoverSignalASI"
+    case "square.grid.2x2", "rectangle.grid.2x2":
+      return "DiscoverGroup"
+    case "archivebox", "book.closed":
+      return "DiscoverAiAgent"
+    case "sparkles.rectangle.stack", "list.bullet.rectangle", "arrow.triangle.2.circlepath":
+      return "DiscoverAutomation"
+    case "checkmark.shield", "lock.doc", "fingerprint", "exclamationmark.triangle":
+      return "DiscoverSecurity"
+    case "externaldrive", "gearshape", "info.circle":
+      return "DiscoverSignalASI"
+    default:
+      return nil
+    }
   }
 }
