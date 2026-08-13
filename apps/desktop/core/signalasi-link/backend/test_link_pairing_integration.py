@@ -122,6 +122,34 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         self.assertIsNone(pairing_state.get_client(first_route))
         self.assertIsNotNone(pairing_state.get_client(second_route))
 
+    def test_duplicate_pairing_claim_replays_confirmation_without_replacing_the_route(self):
+        server = pairing_state.server_route_id()
+        route = link_protocol.new_route_id()
+        pairing = pairing_state.new_pairing_session()
+        claim = client_claim(pairing["token"], server, route, b"same retrying phone", "S26 Ultra")
+        wire = link_protocol.encrypt_pairing_claim(
+            claim,
+            pairing["token"],
+            pairing["secret"],
+            server,
+        )
+
+        for _ in range(2):
+            mqtt_bridge.on_message(
+                self.mqtt,
+                None,
+                FakeMessage(link_protocol.LinkTopics(server).pairing, wire),
+            )
+
+        confirmations = [
+            payload
+            for _, payload, _ in self.mqtt.publishes
+            if payload.get("type") == "pairing_confirmed"
+        ]
+        self.assertEqual(1, pairing_state.pairing_status()["client_count"])
+        self.assertEqual(2, len(confirmations))
+        self.assertEqual(route, confirmations[-1]["client_route_id"])
+
     def test_repairing_same_phone_rotates_only_its_route_and_keeps_alias(self):
         server = pairing_state.server_route_id()
         identity = b"same physical phone"

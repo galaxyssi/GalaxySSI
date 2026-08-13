@@ -527,7 +527,8 @@ object AppStore {
         if (!canCommunicateWith(context, hermesId)) return null
         val desktopId = contact.optString("desktop_id")
         if (desktopId.isNotBlank()) {
-            return SignalASILinkProtocol.serverLink(context, desktopId)?.takeIf { it.paired }?.routes?.up
+            val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return null
+            return link.takeIf { SignalASILinkProtocol.isCryptographicallyReady(context, it) }?.routes?.up
         }
         val directTopic = contact.optString("mqtt_topic").ifBlank { contact.optString("mqtt_inbox_topic") }
         return directTopic.takeIf { it.isNotBlank() }

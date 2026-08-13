@@ -72,8 +72,8 @@ from mqtt_wire_chunking import (
     is_chunk as is_mqtt_chunk,
 )
 from pairing_state import (
+    claim_pairing_session,
     clients_for_identity,
-    consume_pairing_session,
     get_client,
     is_paired,
     list_clients,
@@ -6615,14 +6615,26 @@ def handle_pairing_claim(mqttc, payload: dict):
     if signal_name != f"signalasi:{fingerprint[:16]}":
         log.warning("MQTT pairing claim rejected: Signal name does not match identity")
         return
-    if get_client(client_route_id, include_revoked=True) is not None:
+    existing_client = get_client(client_route_id, include_revoked=True)
+    if existing_client is not None and (
+        existing_client.get("revoked")
+        or not secrets.compare_digest(
+            str(existing_client.get("identity_fingerprint") or "").lower(),
+            fingerprint.lower(),
+        )
+        or str(existing_client.get("signal_name") or "") != signal_name
+    ):
         log.warning("MQTT pairing claim rejected: client route was already used")
         return
-    pairing_session = consume_pairing_session(token)
+    pairing_session = claim_pairing_session(token, fingerprint, client_route_id)
     if pairing_session is None:
-        log.warning("MQTT pairing claim rejected: invalid token")
+        log.warning("MQTT pairing claim rejected: invalid or mismatched token binding")
         return
     access_grant = client_grant({"access": pairing_session.get("access")})
+    if existing_client is not None:
+        log.info("MQTT duplicate pairing claim accepted; confirmation will be replayed")
+        _publish_pairing_confirmation(mqttc, existing_client, fingerprint)
+        return
     replaced_clients = clients_for_identity(
         fingerprint,
         signal_name,
@@ -6701,7 +6713,12 @@ def handle_pairing_claim(mqttc, payload: dict):
     )
     log.info(f"MQTT pairing claim accepted fingerprint={fingerprint[:16]} result={result}")
 
+    _publish_pairing_confirmation(mqttc, paired_client, fingerprint, control_authorization)
+
+
+def _publish_pairing_confirmation(mqttc, paired_client: dict, fingerprint: str, control_authorization=None):
     from device_identity import desktop_device_profile
+    from desktop_control import desktop_control_manager
 
     desktop_device = desktop_device_profile(
         str(get_signal_bundle().get("identityKeySha256") or "")
@@ -6718,11 +6735,11 @@ def handle_pairing_claim(mqttc, payload: dict):
         "protocol": PROTOCOL_NAME,
         "version": PROTOCOL_VERSION,
         "server_route_id": server_route_id(),
-        "client_route_id": client_route_id,
+        "client_route_id": paired_client["client_route_id"],
         "routes": paired_client["topics"],
         "signal_bundle": get_signal_bundle(),
         "sender": "system",
-        "connector_agents": mobile_connector_agents(client_route_id, detailed=False),
+        "connector_agents": mobile_connector_agents(paired_client["client_route_id"], detailed=False),
         "pairing_access": client_grant(paired_client),
         "desktop_control": {
             "enabled": bool(desktop_control_manager().settings().get("enabled")),
@@ -6733,13 +6750,13 @@ def handle_pairing_claim(mqttc, payload: dict):
     }
     info = mqttc.publish(paired_client["topics"]["down"], json.dumps(ack_payload, ensure_ascii=False), qos=MQTT_QOS)
     log.info(f"MQTT public pairing confirmation published mid={info.mid} rc={info.rc}")
-    timer = threading.Timer(1.0, publish_capability_manifest, args=(mqttc, client_route_id))
+    timer = threading.Timer(1.0, publish_capability_manifest, args=(mqttc, paired_client["client_route_id"]))
     timer.daemon = True
     timer.start()
     control_timer = threading.Timer(
         1.25,
         publish_desktop_control_status,
-        args=(mqttc, client_route_id, "pairing_completed"),
+        args=(mqttc, paired_client["client_route_id"], "pairing_completed"),
     )
     control_timer.daemon = True
     control_timer.start()

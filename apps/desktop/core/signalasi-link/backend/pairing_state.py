@@ -195,6 +195,36 @@ def pairing_session(token: str) -> dict | None:
         }
 
 
+def claim_pairing_session(token: str, fingerprint: str, client_route_id: str) -> dict | None:
+    """Bind a short-lived pairing token to one identity and route.
+
+    The binding remains available until token expiry so a lost confirmation can
+    be replayed without allowing the token to pair another identity or route.
+    """
+    with _registry_lock:
+        entry = pairing_session(token)
+        if entry is None:
+            return None
+        claimed_fingerprint = str(entry.get("claimed_fingerprint") or "")
+        claimed_route_id = str(entry.get("claimed_client_route_id") or "")
+        if claimed_fingerprint or claimed_route_id:
+            if not secrets.compare_digest(claimed_fingerprint, str(fingerprint or "")):
+                return None
+            if not secrets.compare_digest(claimed_route_id, str(client_route_id or "")):
+                return None
+            return entry
+        stored = _tokens.get(str(token or ""))
+        if stored is None:
+            return None
+        stored["claimed_fingerprint"] = str(fingerprint or "")
+        stored["claimed_client_route_id"] = str(client_route_id or "")
+        stored["claimed_at"] = time.time()
+        return {
+            **stored,
+            "access": normalize_grant(stored.get("access")),
+        }
+
+
 def consume_pairing_session(token: str) -> dict | None:
     with _registry_lock:
         entry = pairing_session(token)

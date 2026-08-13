@@ -434,6 +434,66 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun rescanningTheSameDesktopOfferKeepsTheExistingClientRoute() {
+        val now = System.currentTimeMillis()
+        val qr = requireNotNull(
+            SignalASILinkProtocol.normalizePairingQr(compactPairingQr(now, executor = true))
+        )
+        val existing = SignalASILinkProtocol.ServerLink(
+            desktopId = qr.getString("desktop_id"),
+            desktopName = qr.getString("desktop_name"),
+            desktopFingerprint = qr.getString("identity_key_sha256"),
+            signalName = qr.getString("desktop_id"),
+            routes = SignalASILinkProtocol.Routes(
+                qr.getString("server_route_id"),
+                SignalASILinkProtocol.newRouteId()
+            ),
+            paired = false,
+            accessProfile = SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR,
+            accessScopes = requireNotNull(
+                SignalASILinkProtocol.pairingAccess(qr.getJSONObject("pairing_access"))
+            ).scopes
+        )
+
+        assertFalse(SignalASILinkProtocol.shouldRotateClientRoute(existing, qr))
+        assertFalse(SignalASILinkProtocol.shouldRotateClientRoute(existing.copy(paired = true), qr))
+    }
+
+    @Test
+    fun rescanningRotatesOnlyWhenDesktopIdentityRouteOrAccessChanges() {
+        val now = System.currentTimeMillis()
+        val restrictedQr = requireNotNull(
+            SignalASILinkProtocol.normalizePairingQr(compactPairingQr(now, executor = false))
+        )
+        val existing = SignalASILinkProtocol.ServerLink(
+            desktopId = restrictedQr.getString("desktop_id"),
+            desktopName = restrictedQr.getString("desktop_name"),
+            desktopFingerprint = restrictedQr.getString("identity_key_sha256"),
+            signalName = restrictedQr.getString("desktop_id"),
+            routes = SignalASILinkProtocol.Routes(
+                restrictedQr.getString("server_route_id"),
+                SignalASILinkProtocol.newRouteId()
+            ),
+            paired = true,
+            accessProfile = SignalASILinkProtocol.ACCESS_RESTRICTED,
+            accessScopes = requireNotNull(
+                SignalASILinkProtocol.pairingAccess(restrictedQr.getJSONObject("pairing_access"))
+            ).scopes
+        )
+        val executorQr = requireNotNull(
+            SignalASILinkProtocol.normalizePairingQr(
+                compactPairingQr(now, executor = true)
+                    .put("s", restrictedQr.getString("server_route_id"))
+            )
+        )
+        val otherRouteQr = JSONObject(restrictedQr.toString())
+            .put("server_route_id", SignalASILinkProtocol.newRouteId())
+
+        assertTrue(SignalASILinkProtocol.shouldRotateClientRoute(existing, executorQr))
+        assertTrue(SignalASILinkProtocol.shouldRotateClientRoute(existing, otherRouteQr))
+    }
+
+    @Test
     fun unrelatedQrIsNotNormalizedAsDesktopPairing() {
         assertNull(SignalASILinkProtocol.normalizePairingQr(JSONObject().put("t", "website")))
     }

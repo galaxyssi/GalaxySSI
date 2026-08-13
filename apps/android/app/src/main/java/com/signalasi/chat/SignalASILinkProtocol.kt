@@ -168,6 +168,17 @@ object SignalASILinkProtocol {
         return createdAtMs > 0 && kotlin.math.abs(nowMs - createdAtMs) <= MAX_QR_AGE_MS
     }
 
+    fun shouldRotateClientRoute(existing: ServerLink?, qr: JSONObject): Boolean {
+        if (existing == null) return true
+        if (existing.desktopId != qr.optString("desktop_id") ||
+            existing.desktopFingerprint != qr.optString("identity_key_sha256") ||
+            existing.routes.serverRouteId != qr.optString("server_route_id")
+        ) return true
+        val requestedAccess = pairingAccess(qr.optJSONObject("pairing_access")) ?: return true
+        return existing.accessProfile != requestedAccess.profile ||
+            existing.accessScopes != requestedAccess.scopes
+    }
+
     @Synchronized
     fun ensureServerLink(
         context: Context,
@@ -247,6 +258,14 @@ object SignalASILinkProtocol {
 
     fun serverLink(context: Context, desktopId: String): ServerLink? =
         allServerLinks(context).firstOrNull { it.desktopId == desktopId }
+
+    fun isCryptographicallyReady(context: Context, link: ServerLink): Boolean {
+        if (link.paired) return true
+        val verifiedFingerprint = SignalASICrypto.verifiedDesktopFingerprint(link.desktopId)
+        return verifiedFingerprint.isNotBlank() &&
+            verifiedFingerprint.equals(link.desktopFingerprint, ignoreCase = true) &&
+            SignalASICrypto.hasDesktopSession(context, link.desktopId)
+    }
 
     fun serverLink(
         context: Context,
