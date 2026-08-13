@@ -78,7 +78,7 @@ struct SignalASIConversationHubView: View {
       )
 
       Picker("", selection: $selectedTab) {
-        Text(t("signalasi.conversation_hub.tab_conversations", "Conversations"))
+        Text(t("signalasi.conversation_hub.tab_conversations", "Chats"))
           .tag(SignalASIConversationHubTab.conversations)
         Text(t("signalasi.conversation_hub.tab_contacts", "Contacts"))
           .tag(SignalASIConversationHubTab.contacts)
