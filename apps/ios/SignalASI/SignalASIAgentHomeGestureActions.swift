@@ -59,6 +59,42 @@ extension AgentHomeView {
       )
     }
 
+    guard activateAgentHomeControl(targetID) else {
+      return AgentActionResult(
+        actionId: action.id,
+        success: false,
+        message: t(
+          "signalasi.agent.tap.unknown_target",
+          "This SignalASI home control is not available."
+        ),
+        metadata: [
+          "platform": "ios",
+          "surface": "signalasi_agent_home",
+          "target_id": targetID,
+          "completion_verified": "false"
+        ]
+      )
+    }
+
+    actionTrayPresented = false
+    return AgentActionResult(
+      actionId: action.id,
+      success: true,
+      message: t(
+        "signalasi.agent.tap.completed",
+        "SignalASI home control activated."
+      ),
+      metadata: [
+        "platform": "ios",
+        "surface": "signalasi_agent_home",
+        "target_id": targetID,
+        "completion_verified": "true"
+      ]
+    )
+  }
+
+  @discardableResult
+  func activateAgentHomeControl(_ targetID: String) -> Bool {
     switch targetID {
     case "new-session":
       createAgentConversation()
@@ -92,12 +128,7 @@ extension AgentHomeView {
     case "permission-mode":
       cycleAgentPermissionMode()
     case "task-execution-mode":
-      let modes = AgentTaskExecutionMode.allCases
-      if let index = modes.firstIndex(of: store.agentSafetySettings.taskExecutionMode) {
-        store.updateAgentSafetySettings { $0.taskExecutionMode = modes[(index + 1) % modes.count] }
-      } else {
-        store.updateAgentSafetySettings { $0.taskExecutionMode = .autoComplete }
-      }
+      cycleAgentTaskExecutionMode()
     case "high-risk-guard":
       store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
     case "memory-capture":
@@ -115,37 +146,9 @@ extension AgentHomeView {
     case "agent", "launch-agent":
       break
     default:
-      return AgentActionResult(
-        actionId: action.id,
-        success: false,
-        message: t(
-          "signalasi.agent.tap.unknown_target",
-          "This SignalASI home control is not available."
-        ),
-        metadata: [
-          "platform": "ios",
-          "surface": "signalasi_agent_home",
-          "target_id": targetID,
-          "completion_verified": "false"
-        ]
-      )
+      return false
     }
-
-    actionTrayPresented = false
-    return AgentActionResult(
-      actionId: action.id,
-      success: true,
-      message: t(
-        "signalasi.agent.tap.completed",
-        "SignalASI home control activated."
-      ),
-      metadata: [
-        "platform": "ios",
-        "surface": "signalasi_agent_home",
-        "target_id": targetID,
-        "completion_verified": "true"
-      ]
-    )
+    return true
   }
 
   func applyAgentHomeLongPressAction(_ action: AgentAction) -> AgentActionResult {
