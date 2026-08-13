@@ -252,6 +252,7 @@ internal fun MainActivity.renderControlCenterProfilePage() {
                     getString(R.string.cc_section_identity),
                     listOf(
                         ControlCenterRowSpec("profile.nickname", getString(R.string.cc_nickname_title), getString(R.string.cc_nickname_subtitle), R.drawable.ic_avatar_profile, nickname),
+                        ControlCenterRowSpec("profile.qr", getString(R.string.contact_my_qr_title), getString(R.string.contact_my_qr_subtitle), R.drawable.ic_avatar_scan, "", ControlCenterTone.BLUE),
                         ControlCenterRowSpec("profile.copy_id", getString(R.string.settings_signalasi_id), signalasiId, R.drawable.ic_protocol_link, getString(R.string.common_copy), ControlCenterTone.BLUE, showChevron = false),
                         ControlCenterRowSpec("profile.copy_fingerprint", getString(R.string.settings_identity_fingerprint), compactFingerprint(fingerprint), R.drawable.ic_settings_fingerprint, getString(R.string.cc_identity_verified), ControlCenterTone.GREEN, showChevron = false)
                     )

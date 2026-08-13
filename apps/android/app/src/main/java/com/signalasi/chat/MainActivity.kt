@@ -1459,6 +1459,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
+                if (envelope?.optString("type") == "phone_contact_request_received") {
+                    refreshDirectoryContacts()
+                    Toast.makeText(
+                        this,
+                        getString(
+                            R.string.phone_contact_request_received,
+                            envelope.optString("name", getString(R.string.fallback_contact_name))
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@runOnUiThread
+                }
+                if (envelope?.optString("type") == "phone_contact_session_ready") {
+                    refreshContactList()
+                    refreshDirectoryContacts()
+                    return@runOnUiThread
+                }
                 if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
                 if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
                 if (handleSelfEvolutionEvent(envelope)) return@runOnUiThread

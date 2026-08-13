@@ -983,6 +983,7 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "global.learning" -> showGlobalLearningDialog()
         "global.continuity" -> showGlobalContinuityDialog()
         "profile.nickname" -> openExistingControlCenterPage { showEditNicknameDialog() }
+        "profile.qr" -> openExistingControlCenterPage { showMyQrPayload() }
         "profile.copy_id" -> copyText(SignalASICrypto.localSignalasiId(), getString(R.string.security_copied_signalasi_id))
         "profile.copy_fingerprint" -> copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint))
         "profile.recovery" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.DATA_BACKUP))

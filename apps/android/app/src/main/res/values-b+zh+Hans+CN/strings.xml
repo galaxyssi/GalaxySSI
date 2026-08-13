@@ -679,6 +679,10 @@
     <string name="avatar_edit_title">修改头像</string>
     <string name="avatar_saved_toast">头像已保存</string>
     <string name="contact_my_qr_title">我的二维码</string>
+    <string name="contact_my_qr_subtitle">让另一台 SignalASI 设备扫描，将你添加为联系人</string>
+    <string name="phone_contact_request_received">%1$s 请求添加你为联系人</string>
+    <string name="phone_contact_scan_added">已添加 %1$s，等待对方通过请求</string>
+    <string name="phone_contact_scan_pending">已保存 %1$s，SignalASI Link 重连后将继续发送请求</string>
     <string name="contact_my_fingerprint">我的指纹</string>
     <string name="contact_scan_confirm_identity">扫描后需要双方确认身份</string>
     <string name="contact_detail_title">联系人资料</string>

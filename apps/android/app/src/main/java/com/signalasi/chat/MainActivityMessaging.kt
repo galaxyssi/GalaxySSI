@@ -514,7 +514,8 @@ internal fun MainActivity.sendOutgoingText(contact: Contact, content: String, vo
     }
     val target = AppStore.outgoingTopicForContact(this, contact.id)
     if (target != null) {
-        val peerChat = AppStore.isDesktopDeviceContact(this, contact.id)
+        val peerChat = AppStore.isDesktopDeviceContact(this, contact.id) ||
+            AppStore.isPersonContact(this, contact.id)
         if (!peerChat) selectVoiceCoordinatorRoute(voiceTraceId, VoiceRouteKind.REMOTE_AGENT, contact.id)
         appendDeliveryTrace(msg.id, contact.id, "queued", target)
         val deliveryTrace = deliveryTraceJson(msg.deliveryTrace)
