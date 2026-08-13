@@ -165,8 +165,9 @@ struct SignalASIConversationComposer: View {
         .lineLimit(1)
         .minimumScaleFactor(0.78)
       if voiceRecorder.isRecording {
-        let transcript = voiceRecorder.stableTranscript.ifBlank(voiceRecorder.unstableTranscript)
-        if transcript.isEmpty {
+        let stableTranscript = voiceRecorder.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unstableTranscript = voiceRecorder.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if stableTranscript.isEmpty && unstableTranscript.isEmpty {
           SignalASIChatVoiceWaveform(
             phase: voiceRecorder.waveformPhase,
             amplitude: voiceRecorder.waveformAmplitude,
@@ -175,13 +176,12 @@ struct SignalASIConversationComposer: View {
           )
           .frame(height: 38)
         } else {
-          Text(transcript)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(voiceRecorder.cancelPending ? .red : .white)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.8)
-            .frame(maxWidth: .infinity, minHeight: 38)
+          SignalASIChatVoiceTranscript(
+            stableText: stableTranscript,
+            unstableText: unstableTranscript,
+            cancelPending: voiceRecorder.cancelPending
+          )
+          .frame(maxWidth: .infinity, minHeight: 38)
         }
         Text(voiceRecorder.elapsedLabel)
           .font(.system(size: 12, weight: .semibold))
@@ -238,6 +238,42 @@ struct SignalASIConversationComposer: View {
           inputFocused = true
         }
       }
+  }
+}
+
+private struct SignalASIChatVoiceTranscript: View {
+  var stableText: String
+  var unstableText: String
+  var cancelPending: Bool
+
+  var body: some View {
+    let separator = Self.separator(stable: stableText, unstable: unstableText)
+    (Text(stableText).foregroundColor(cancelPending ? .red : .white) +
+      Text(separator + unstableText).foregroundColor(cancelPending ? .red : Self.unstableColor))
+      .font(.system(size: 15, weight: .medium))
+      .multilineTextAlignment(.center)
+      .lineLimit(2)
+      .minimumScaleFactor(0.8)
+  }
+
+  private static let unstableColor = Color(red: 232.0 / 255.0, green: 1, blue: 233.0 / 255.0)
+
+  private static func separator(stable: String, unstable: String) -> String {
+    guard let last = stable.last,
+          let first = unstable.first,
+          (last.isLetter || last.isNumber),
+          (first.isLetter || first.isNumber),
+          !isCJK(last),
+          !isCJK(first) else {
+      return ""
+    }
+    return " "
+  }
+
+  private static func isCJK(_ character: Character) -> Bool {
+    character.unicodeScalars.contains { scalar in
+      (0x3400...0x9FFF).contains(scalar.value)
+    }
   }
 }
 
