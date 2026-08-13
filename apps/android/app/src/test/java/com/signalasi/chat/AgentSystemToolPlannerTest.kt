@@ -240,8 +240,12 @@ class AgentSystemToolPlannerTest {
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Build the entire Android repository with Gradle"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Fix the current SignalASI Android app and submit a pull request"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone https://github.com/signalasi/SignalASI and improve the Android project"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone the SignalASI repository on this phone and report the current branch"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Inspect the current repository status and report any local changes"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Audit the SignalASI codebase without modifying files"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("\u5728\u624b\u673a\u672c\u673a\u514b\u9686 SignalASI \u4ed3\u5e93\uff0c\u4fee\u590d\u4ee3\u7801\u5e76\u63d0\u4ea4 GitHub PR"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Show the latest GitHub releases"))
+        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Explain how Git branches work"))
 
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Write a Python program on the desktop"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Comprehensively test the app and desktop, including offline recovery and UI responsiveness"))

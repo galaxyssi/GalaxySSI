@@ -33,6 +33,12 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u5199", "\u521b\u5efa", "\u751f\u6210", "\u5b9e\u73b0", "\u4fee\u590d", "\u8c03\u8bd5", "\u8fd0\u884c", "\u9a8c\u8bc1", "\u6d4b\u8bd5",
         "\u6539\u8fdb", "\u5347\u7ea7", "\u66f4\u65b0", "\u91cd\u6784"
     )
+    private val projectOperationTerms = listOf(
+        "clone", "checkout", "inspect", "audit", "review", "status", "diff", "branch", "log",
+        "pull", "fetch", "commit", "push", "publish", "submit", "open pull request", "create pull request",
+        "\u514b\u9686", "\u68c0\u67e5", "\u5ba1\u8ba1", "\u5ba1\u67e5", "\u72b6\u6001", "\u5dee\u5f02", "\u5206\u652f", "\u65e5\u5fd7",
+        "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u53d1\u5e03", "\u521b\u5efapr", "\u63d0\u4ea4pr"
+    )
     private val phoneTerms = listOf(
         "on this phone", "on the phone", "phone local", "on-device", "locally on phone",
         "\u624b\u673a\u672c\u673a", "\u5728\u624b\u673a", "\u672c\u673a\u6267\u884c", "\u672c\u5730\u6267\u884c", "\u672c\u4f53\u6267\u884c"
@@ -66,7 +72,9 @@ internal object AgentPhoneDevelopmentPolicy {
         if (normalized.isBlank()) return AgentPhoneDevelopmentMode.NONE
         val creation = creationTerms.any { normalized.containsPolicyTerm(it) }
         val projectScope = projectScopeTerms.any { normalized.containsPolicyTerm(it) }
-        val development = creation && (developmentTerms.any { normalized.containsPolicyTerm(it) } || projectScope)
+        val projectOperation = projectOperationTerms.any { normalized.containsPolicyTerm(it) }
+        val development = (creation && developmentTerms.any { normalized.containsPolicyTerm(it) }) ||
+            (projectScope && (creation || projectOperation))
         if (!development) return AgentPhoneDevelopmentMode.NONE
         if (desktopTerms.any { normalized.containsPolicyTerm(it) }) return AgentPhoneDevelopmentMode.NONE
         if (projectScope) return AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
