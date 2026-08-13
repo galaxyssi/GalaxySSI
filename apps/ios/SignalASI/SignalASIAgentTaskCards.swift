@@ -342,6 +342,8 @@ struct AgentProcessCard: View {
 }
 
 struct AgentProcessStepRow: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var number: Int
   var title: String
   var status: String
@@ -361,7 +363,7 @@ struct AgentProcessStepRow: View {
   }
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(alignment: .top, spacing: 10) {
       Circle()
         .fill(isCurrent ? Color.signalASIAccent : (isDone ? Color.signalASIAccent.opacity(0.14) : Color.signalASISurface))
         .overlay(
@@ -374,20 +376,27 @@ struct AgentProcessStepRow: View {
             .foregroundColor(isCurrent ? .white : tint)
         )
         .frame(width: 24, height: 24)
+        .padding(.top, usesAccessibilityDynamicType ? 2 : 0)
       Text(title)
         .font(.system(size: 13))
         .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
       Spacer(minLength: 8)
       Text(status)
         .font(.system(size: 11, weight: .bold))
         .foregroundColor(tint)
-        .lineLimit(1)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .multilineTextAlignment(.trailing)
     }
     .padding(.horizontal, 14)
-    .frame(minHeight: 50)
+    .frame(minHeight: usesAccessibilityDynamicType ? 64 : 50)
     .background(Color.signalASIInsightBackground)
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
 
