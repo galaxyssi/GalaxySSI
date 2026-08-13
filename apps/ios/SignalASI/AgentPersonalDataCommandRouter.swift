@@ -15,7 +15,11 @@ enum AgentPersonalDataCommandRouter {
     if let enabled = AgentMemoryCommandParser.memoryCaptureValue(fromGoal: command) {
       store.updateAgentSafetySettings { $0.memoryCapture = enabled }
       return Result(
-        text: enabled ? "Memory capture resumed" : "Memory capture paused",
+        text: localized(
+          store: store,
+          english: enabled ? "Memory capture resumed" : "Memory capture paused",
+          chinese: enabled ? "\u{8bb0}\u{5fc6}\u{6355}\u{83b7}\u{5df2}\u{6062}\u{590d}" : "\u{8bb0}\u{5fc6}\u{6355}\u{83b7}\u{5df2}\u{6682}\u{505c}"
+        ),
         actionId: "memory_capture"
       )
     }
@@ -52,7 +56,11 @@ enum AgentPersonalDataCommandRouter {
     }
     if isManagementCommand(normalized) {
       return Result(
-        text: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; ask knowledge <query>; forget knowledge <query>.",
+        text: localized(
+          store: store,
+          english: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; ask knowledge <query>; forget knowledge <query>.",
+          chinese: "\u{8bb0}\u{5fc6}\u{547d}\u{4ee4}\uff1a\u{8bb0}\u{5fc6}\u{72b6}\u{6001}\uff1b\u{8bb0}\u{4f4f} <\u{5185}\u{5bb9}>\uff1b\u{5220}\u{9664}\u{8bb0}\u{5fc6} <\u{5173}\u{952e}\u{8bcd}>\uff1b\u{6682}\u{505c}\u{8bb0}\u{5fc6}\uff1b\u{6062}\u{590d}\u{8bb0}\u{5fc6}\u{3002}\u{77e5}\u{8bc6}\u{5e93}\u{547d}\u{4ee4}\uff1a\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}\uff1b\u{641c}\u{7d22}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\uff1b\u{8be2}\u{95ee}\u{77e5}\u{8bc6} <\u{95ee}\u{9898}>\uff1b\u{5220}\u{9664}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{3002"
+        ),
         actionId: "personal_data_syntax"
       )
     }
@@ -104,11 +112,13 @@ enum AgentPersonalDataCommandRouter {
     let recent = snapshot.activeItems
       .sorted { $0.timestampMillis > $1.timestampMillis }
       .prefix(10)
-    var lines = [
-      "Personal memory: \(snapshot.activeCount); conflicts=\(snapshot.conflicts.count); capture=\(store.agentSafetySettings.memoryCapture ? "on" : "paused")"
-    ]
+    var lines = [localized(
+      store: store,
+      english: "Personal memory: \(snapshot.activeCount); conflicts=\(snapshot.conflicts.count); capture=\(store.agentSafetySettings.memoryCapture ? "on" : "paused")",
+      chinese: "\u{4e2a}\u{4eba}\u{8bb0}\u{5fc6}\uff1a\(snapshot.activeCount) \u{6761}\uff1b\u{51b2}\u{7a81}=\(snapshot.conflicts.count)\uff1b\u{6355}\u{83b7}=\(store.agentSafetySettings.memoryCapture ? "\u{5f00}\u{542f}" : "\u{6682}\u{505c}")"
+    )]
     if recent.isEmpty {
-      lines.append("No saved memories")
+      lines.append(localized(store: store, english: "No saved memories", chinese: "\u{6ca1}\u{6709}\u{5df2}\u{4fdd}\u{5b58}\u{7684}\u{8bb0}\u{5fc6}"))
     } else {
       lines.append(contentsOf: recent.map { item in
         "\(item.kind.rawValue.lowercased()): \(compact(item.value, limit: 120))"
@@ -120,9 +130,13 @@ enum AgentPersonalDataCommandRouter {
   private static func knowledgeOverview(store: SignalASIStore) -> Result {
     let stats = store.agentKnowledgeStats
     let groups = store.agentKnowledgeSourceGroups().prefix(10)
-    var lines = ["Knowledge base: \(stats.itemCount) items; sources=\(stats.sourceCount)"]
+    var lines = [localized(
+      store: store,
+      english: "Knowledge base: \(stats.itemCount) items; sources=\(stats.sourceCount)",
+      chinese: "\u{77e5}\u{8bc6}\u{5e93}\uff1a\(stats.itemCount) \u{6761}\uff1b\u{6765}\u{6e90}=\(stats.sourceCount)"
+    )]
     if groups.isEmpty {
-      lines.append("No knowledge items")
+      lines.append(localized(store: store, english: "No knowledge items", chinese: "\u{6ca1}\u{6709}\u{77e5}\u{8bc6}\u{6761}\u{76ee}"))
     } else {
       lines.append(contentsOf: groups.map { group in
         "\(group.title) [\(compact(group.source, limit: 48))]"
@@ -133,16 +147,16 @@ enum AgentPersonalDataCommandRouter {
 
   private static func saveMemory(_ value: String, store: SignalASIStore) -> Result {
     guard store.agentSafetySettings.memoryCapture else {
-      return Result(text: "Memory capture is paused", actionId: "memory_save")
+      return Result(text: localized(store: store, english: "Memory capture is paused", chinese: "\u{8bb0}\u{5fc6}\u{6355}\u{83b7}\u{5df2}\u{6682}\u{505c}"), actionId: "memory_save")
     }
     let write = store.rememberAgentMemory(AgentMemoryCommandParser.item(fromCommand: value))
     if write.conflict != nil {
-      return Result(text: "Memory conflict needs review", actionId: "memory_save")
+      return Result(text: localized(store: store, english: "Memory conflict needs review", chinese: "\u{8bb0}\u{5fc6}\u{51b2}\u{7a81}\u{9700}\u{8981}\u{5ba1}\u{67e5}"), actionId: "memory_save")
     }
     if write.duplicate {
-      return Result(text: "Memory already saved", actionId: "memory_save")
+      return Result(text: localized(store: store, english: "Memory already saved", chinese: "\u{8bb0}\u{5fc6}\u{5df2}\u{4fdd}\u{5b58}"), actionId: "memory_save")
     }
-    return Result(text: "Saved personal memory", actionId: "memory_save")
+    return Result(text: localized(store: store, english: "Saved personal memory", chinese: "\u{5df2}\u{4fdd}\u{5b58}\u{4e2a}\u{4eba}\u{8bb0}\u{5fc6}"), actionId: "memory_save")
   }
 
   private static func forgetMemory(_ query: String, store: SignalASIStore) -> Result {
@@ -150,18 +164,22 @@ enum AgentPersonalDataCommandRouter {
     let deleted = matches.reduce(0) { count, item in
       count + (store.deleteAgentMemory(id: item.id) ? 1 : 0)
     }
-    let text = deleted == 0
-      ? "No matching memory for \"\(query)\""
-      : "Deleted \(deleted) matching memory items"
+    let text = localized(
+      store: store,
+      english: deleted == 0 ? "No matching memory for \"\(query)\"" : "Deleted \(deleted) matching memory items",
+      chinese: deleted == 0 ? "\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{8bb0}\u{5fc6}" : "\u{5df2}\u{5220}\u{9664} \(deleted) \u{6761}\u{5339}\u{914d}\u{7684}\u{8bb0}\u{5fc6}"
+    )
     return Result(text: text, actionId: "memory_forget")
   }
 
   private static func forgetKnowledge(_ query: String, store: SignalASIStore) -> Result {
     let hits = store.searchAgentKnowledge(query, limit: 500)
     let deleted = store.deleteAgentKnowledgeSource(itemIds: hits.map { $0.item.id })
-    let text = deleted == 0
-      ? "No matching knowledge for \"\(query)\""
-      : "Deleted \(deleted) matching knowledge items"
+    let text = localized(
+      store: store,
+      english: deleted == 0 ? "No matching knowledge for \"\(query)\"" : "Deleted \(deleted) matching knowledge items",
+      chinese: deleted == 0 ? "\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{77e5}\u{8bc6}" : "\u{5df2}\u{5220}\u{9664} \(deleted) \u{6761}\u{5339}\u{914d}\u{7684}\u{77e5}\u{8bc6}"
+    )
     return Result(text: text, actionId: "knowledge_forget")
   }
 
@@ -169,7 +187,10 @@ enum AgentPersonalDataCommandRouter {
     let hits = store.searchAgentKnowledge(query, limit: 8)
     store.recordAgentKnowledgeSearch(query: query, hits: hits)
     guard !hits.isEmpty else {
-      return Result(text: "No knowledge hits for \"\(query)\"", actionId: "knowledge_search")
+      return Result(
+        text: localized(store: store, english: "No knowledge hits for \"\(query)\"", chinese: "\u{6ca1}\u{6709}\u{5339}\u{914d}\u{201c}\(query)\u{201d}\u{7684}\u{77e5}\u{8bc6}"),
+        actionId: "knowledge_search"
+      )
     }
     let lines = hits.enumerated().flatMap { index, hit in
       [
@@ -179,7 +200,11 @@ enum AgentPersonalDataCommandRouter {
       ]
     }
     return Result(
-      text: "Knowledge hits: \(hits.count)\n\(lines.joined(separator: "\n"))",
+      text: localized(
+        store: store,
+        english: "Knowledge hits: \(hits.count)\n\(lines.joined(separator: "\n"))",
+        chinese: "\u{77e5}\u{8bc6}\u{5339}\u{914d}\uff1a\(hits.count)\n\(lines.joined(separator: "\n"))"
+      ),
       actionId: "knowledge_search"
     )
   }
@@ -204,9 +229,15 @@ enum AgentPersonalDataCommandRouter {
       blockedMatchCount: rag.blockedMatchCount
     )
     guard !rag.citations.isEmpty else {
-      let text = rag.blockedMatchCount > 0
-        ? "Matching knowledge exists, but its access policy does not allow this local answer."
-        : "No knowledge evidence for \"\(query)\""
+      let text = localized(
+        store: store,
+        english: rag.blockedMatchCount > 0
+          ? "Matching knowledge exists, but its access policy does not allow this local answer."
+          : "No knowledge evidence for \"\(query)\"",
+        chinese: rag.blockedMatchCount > 0
+          ? "\u{5b58}\u{5728}\u{5339}\u{914d}\u{7684}\u{77e5}\u{8bc6}\uff0c\u{4f46}\u{5176}\u{8bbf}\u{95ee}\u{7b56}\u{7565}\u{4e0d}\u{5141}\u{8bb8}\u{672c}\u{5730}\u{56de}\u{7b54}\u{3002}"
+          : "\u{6ca1}\u{6709}\u{5173}\u{4e8e}\u{201c}\(query)\u{201d}\u{7684}\u{77e5}\u{8bc6}\u{8bc1}\u{636e}"
+      )
       return Result(
         text: text,
         actionId: "knowledge_answer"
@@ -220,7 +251,11 @@ enum AgentPersonalDataCommandRouter {
       ]
     }
     return Result(
-      text: "Knowledge answer from local evidence for \"\(compact(query, limit: 160))\":\n\(lines.joined(separator: "\n"))",
+      text: localized(
+        store: store,
+        english: "Knowledge answer from local evidence for \"\(compact(query, limit: 160))\":\n\(lines.joined(separator: "\n"))",
+        chinese: "\u{57fa}\u{4e8e}\u{672c}\u{5730}\u{77e5}\u{8bc6}\u{5bf9}\u{201c}\(compact(query, limit: 160))\u{201d}\u{7684}\u{56de}\u{7b54}\uff1a\n\(lines.joined(separator: "\n"))"
+      ),
       actionId: "knowledge_answer"
     )
   }
@@ -240,6 +275,10 @@ enum AgentPersonalDataCommandRouter {
 
   private static func compact(_ value: String, limit: Int) -> String {
     String(value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(limit))
+  }
+
+  private static func localized(store: SignalASIStore, english: String, chinese: String) -> String {
+    LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage).hasPrefix("zh") ? chinese : english
   }
 
   private static func prefixedValue(_ value: String, prefixes: [String]) -> String? {
