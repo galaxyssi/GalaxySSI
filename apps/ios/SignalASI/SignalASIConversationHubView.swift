@@ -164,10 +164,12 @@ struct SignalASIConversationHubView: View {
           if contact.type == "device", let desktopId = contact.desktopId.nonEmpty {
             Task { @MainActor in
               _ = await coordinator.revokeDesktopPairing(desktopId: desktopId)
+              refreshAfterContactRemoval()
               pendingContactDeletion = nil
             }
           } else {
             _ = store.deleteContact(id: contact.id)
+            refreshAfterContactRemoval()
             pendingContactDeletion = nil
           }
           return
@@ -488,6 +490,11 @@ struct SignalASIConversationHubView: View {
     _ = coordinator.requestCapabilityManifestRefresh(force: true)
     navigationContentGate.invalidate()
     hubContentLoading = true
+    hubRefreshToken = UUID()
+  }
+
+  private func refreshAfterContactRemoval() {
+    _ = coordinator.requestCapabilityManifestRefresh(force: true)
     hubRefreshToken = UUID()
   }
 
