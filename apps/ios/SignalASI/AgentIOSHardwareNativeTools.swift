@@ -784,9 +784,12 @@ struct AgentIOSHardwareNativeToolExecutor {
       )
     case AgentIOSHardwareNativeToolCatalog.locationForegroundRead:
       let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis
-      return locationProvider.foregroundLocation(
-        timeoutMillis: max(1_000, min(AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis, timeout)),
-        nowMillis: now
+      return localizedLocationResult(
+        locationProvider.foregroundLocation(
+          timeoutMillis: max(1_000, min(AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis, timeout)),
+          nowMillis: now
+        ),
+        invocation: invocation
       )
     case AgentIOSHardwareNativeToolCatalog.sensorsList:
       let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxSensorResults))
@@ -884,6 +887,50 @@ struct AgentIOSHardwareNativeToolExecutor {
 
   private func isChinese(_ invocation: AgentNativeToolInvocation) -> Bool {
     responseLanguage(invocation).lowercased().hasPrefix("zh")
+  }
+
+  private func localizedLocationResult(
+    _ result: AgentNativeToolExecutionResult,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    guard isChinese(invocation) else { return result }
+    let message: String?
+    if result.isSuccess {
+      message = "\u{5DF2}\u{8BFB}\u{53D6}\u{5355}\u{6B21}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
+    } else {
+      switch result.error?.code {
+      case "location_services_disabled":
+        message = "iOS \u{5B9A}\u{4F4D}\u{670D}\u{52A1}\u{5DF2}\u{5173}\u{95ED}\u{3002}"
+      case "location_background_executor_required":
+        message = "\u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{9700}\u{8981}\u{5728}\u{4E0D}\u{963B}\u{585E}\u{4E3B}\u{8FD0}\u{884C}\u{5FAA}\u{73AF}\u{7684}\u{539F}\u{751F}\u{6267}\u{884C}\u{7EBF}\u{7A0B}\u{4E0A}\u{8FD0}\u{884C}\u{3002}"
+      case "location_timeout":
+        message = "\u{7B49}\u{5F85}\u{5355}\u{6B21} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{8D85}\u{65F6}\u{3002}"
+      case "location_unavailable":
+        message = "iOS \u{672A}\u{8FD4}\u{56DE}\u{53EF}\u{7528}\u{7684}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
+      case "location_framework_unavailable":
+        message = "\u{5F53}\u{524D}\u{5E73}\u{53F0}\u{4E0D}\u{652F}\u{6301} CoreLocation\u{3002}"
+      case "location_permission_required":
+        message = "\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}"
+      case "location_permission_not_determined":
+        message = "\u{5C1A}\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}"
+      case "location_authorization_unknown":
+        message = "iOS \u{8FD4}\u{56DE}\u{4E86}\u{672A}\u{77E5}\u{7684}\u{5B9A}\u{4F4D}\u{6388}\u{6743}\u{72B6}\u{6001}\u{3002}"
+      case "location_empty_result":
+        message = "CoreLocation \u{672A}\u{8FD4}\u{56DE}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
+      case "location_fix_failed":
+        message = "CoreLocation \u{65E0}\u{6CD5}\u{83B7}\u{53D6}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{3002}"
+      default:
+        message = nil
+      }
+    }
+    guard let message else { return result }
+    var localized = result
+    localized.message = message
+    if var error = localized.error {
+      error.message = message
+      localized.error = error
+    }
+    return localized
   }
 
   private func installedAppsBoundary(
