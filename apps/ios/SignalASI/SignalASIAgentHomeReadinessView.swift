@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SignalASIAgentHomeReadinessView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var runningTasks: Int
   var callableTargets: Int
   var nativeToolSummary: (total: Int, available: Int)
@@ -102,59 +104,7 @@ struct SignalASIAgentHomeReadinessView: View {
         onCommand: onScreenCommand
       )
 
-      HStack(spacing: 8) {
-        controlButton(
-          title: String(
-            format: t("agent_safety_permission_mode_value", "Mode: %@"),
-            t(permissionMode.displayTitle, permissionMode.displayTitle)
-          ),
-          systemImage: "checklist",
-          tint: .signalASITextPrimary,
-          action: onCyclePermissionMode
-        )
-        controlButton(
-          title: String(
-            format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"),
-            onOff(highRiskGuard)
-          ),
-          systemImage: "shield.lefthalf.filled",
-          tint: highRiskGuard ? .signalASIAccent : .orange,
-          action: onToggleHighRiskGuard
-        )
-      }
-      HStack(spacing: 8) {
-        controlButton(
-          title: String(
-            format: t("agent_safety_memory_capture_value", "Memory: %@"),
-            onOff(memoryCapture)
-          ),
-          systemImage: "brain",
-          tint: memoryCapture ? .signalASIAccent : .orange,
-          action: onToggleMemoryCapture
-        )
-        controlButton(
-          title: String(
-            format: t("agent_safety_execution_value", "Execution: %@"),
-            executionPaused
-              ? t("signalasi.status.paused", "Paused")
-              : t("common_on", "On")
-          ),
-          systemImage: executionPaused ? "pause.circle" : "play.circle",
-          tint: executionPaused ? .orange : .signalASIAccent,
-          action: onToggleExecutionPaused
-        )
-      }
-      controlButton(
-        title: String(
-          format: t("agent_safety_task_execution_value", "Task execution: %@"),
-          t(taskExecutionMode.displayTitle, taskExecutionMode.displayTitle)
-        ),
-        systemImage: taskExecutionMode == .planOnly
-          ? "list.bullet.rectangle"
-          : "play.rectangle",
-        tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
-        action: onCycleTaskExecutionMode
-      )
+      safetyControls
 
       Text(t("agent_section_info", "Info"))
         .font(.system(size: 13, weight: .bold))
@@ -343,6 +293,93 @@ struct SignalASIAgentHomeReadinessView: View {
     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
+  @ViewBuilder
+  private var safetyControls: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        permissionModeControl
+        highRiskGuardControl
+        memoryCaptureControl
+        executionControl
+        taskExecutionModeControl
+      }
+    } else {
+      HStack(spacing: 8) {
+        permissionModeControl
+        highRiskGuardControl
+      }
+      HStack(spacing: 8) {
+        memoryCaptureControl
+        executionControl
+      }
+      taskExecutionModeControl
+    }
+  }
+
+  private var permissionModeControl: some View {
+    controlButton(
+      title: String(
+        format: t("agent_safety_permission_mode_value", "Mode: %@"),
+        t(permissionMode.displayTitle, permissionMode.displayTitle)
+      ),
+      systemImage: "checklist",
+      tint: .signalASITextPrimary,
+      action: onCyclePermissionMode
+    )
+  }
+
+  private var highRiskGuardControl: some View {
+    controlButton(
+      title: String(
+        format: t("agent_safety_high_risk_guard_value", "High-risk Guard: %@"),
+        onOff(highRiskGuard)
+      ),
+      systemImage: "shield.lefthalf.filled",
+      tint: highRiskGuard ? .signalASIAccent : .orange,
+      action: onToggleHighRiskGuard
+    )
+  }
+
+  private var memoryCaptureControl: some View {
+    controlButton(
+      title: String(
+        format: t("agent_safety_memory_capture_value", "Memory: %@"),
+        onOff(memoryCapture)
+      ),
+      systemImage: "brain",
+      tint: memoryCapture ? .signalASIAccent : .orange,
+      action: onToggleMemoryCapture
+    )
+  }
+
+  private var executionControl: some View {
+    controlButton(
+      title: String(
+        format: t("agent_safety_execution_value", "Execution: %@"),
+        executionPaused
+          ? t("signalasi.status.paused", "Paused")
+          : t("common_on", "On")
+      ),
+      systemImage: executionPaused ? "pause.circle" : "play.circle",
+      tint: executionPaused ? .orange : .signalASIAccent,
+      action: onToggleExecutionPaused
+    )
+  }
+
+  private var taskExecutionModeControl: some View {
+    controlButton(
+      title: String(
+        format: t("agent_safety_task_execution_value", "Task execution: %@"),
+        t(taskExecutionMode.displayTitle, taskExecutionMode.displayTitle)
+      ),
+      systemImage: taskExecutionMode == .planOnly
+        ? "list.bullet.rectangle"
+        : "play.rectangle",
+      tint: taskExecutionMode == .planOnly ? .orange : .signalASIAccent,
+      action: onCycleTaskExecutionMode
+    )
+  }
+
   private func controlButton(
     title: String,
     systemImage: String,
@@ -354,12 +391,13 @@ struct SignalASIAgentHomeReadinessView: View {
         Image(systemName: systemImage)
           .font(.system(size: 12, weight: .semibold))
         Text(title)
-          .font(.system(size: 11, weight: .bold))
-          .lineLimit(1)
-          .minimumScaleFactor(0.58)
+          .font(.system(size: usesAccessibilityDynamicType ? 13 : 11, weight: .bold))
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .minimumScaleFactor(usesAccessibilityDynamicType ? 0.82 : 0.58)
+          .multilineTextAlignment(.leading)
       }
       .foregroundColor(tint)
-      .frame(maxWidth: .infinity, minHeight: 40)
+      .frame(maxWidth: .infinity, minHeight: usesAccessibilityDynamicType ? 48 : 40, alignment: .leading)
       .padding(.horizontal, 6)
       .background(Color.signalASISurface)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -370,6 +408,15 @@ struct SignalASIAgentHomeReadinessView: View {
 
   private func onOff(_ value: Bool) -> String {
     value ? t("common_on", "On") : t("common_off", "Off")
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    switch dynamicTypeSize {
+    case .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5:
+      return true
+    default:
+      return false
+    }
   }
 
   private var separator: some View {
