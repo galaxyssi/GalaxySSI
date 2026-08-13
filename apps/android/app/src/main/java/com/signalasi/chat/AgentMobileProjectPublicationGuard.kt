@@ -1,0 +1,230 @@
+package com.signalasi.chat
+
+import android.content.Context
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.security.MessageDigest
+import java.util.Locale
+import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.json.JSONObject
+
+internal data class AgentProjectVerificationTicket(
+    val workspaceId: String,
+    val verificationKind: AgentRuntimeVerificationKind,
+    val requestId: String,
+    val projectDigest: String,
+    val stdoutSha256: String,
+    val completedAtMillis: Long,
+    val commit: String = "",
+    val branch: String = "",
+    val pushedCommit: String = "",
+    val pushedBranch: String = ""
+)
+
+internal interface AgentProjectPublicationGuard {
+    fun invalidate(workspaceId: String)
+    fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
+    fun requireVerified(workspaceId: String)
+    fun recordCommit(workspaceId: String, commit: String, branch: String)
+    fun requirePushable(workspaceId: String, branch: String)
+    fun recordPush(workspaceId: String, commit: String, branch: String)
+    fun requirePullRequestReady(workspaceId: String, head: String)
+
+    companion object {
+        val ALLOW_ALL = object : AgentProjectPublicationGuard {
+            override fun invalidate(workspaceId: String) = Unit
+            override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) = Unit
+            override fun requireVerified(workspaceId: String) = Unit
+            override fun recordCommit(workspaceId: String, commit: String, branch: String) = Unit
+            override fun requirePushable(workspaceId: String, branch: String) = Unit
+            override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
+            override fun requirePullRequestReady(workspaceId: String, head: String) = Unit
+        }
+    }
+}
+
+internal interface AgentProjectVerificationTicketStore {
+    fun read(workspaceId: String): AgentProjectVerificationTicket?
+    fun write(ticket: AgentProjectVerificationTicket)
+    fun remove(workspaceId: String)
+}
+
+internal class AgentProjectPublicationPolicy(
+    private val projectRoot: File,
+    private val ticketStore: AgentProjectVerificationTicketStore
+) : AgentProjectPublicationGuard {
+
+    override fun invalidate(workspaceId: String) {
+        ticketStore.remove(workspaceId)
+    }
+
+    override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) {
+        require(receipt.status == AgentRuntimeReceiptStatus.COMPLETED && receipt.exitCode == 0) {
+            "Only a successful runtime receipt can verify a project"
+        }
+        require(receipt.verificationKind != AgentRuntimeVerificationKind.NONE) {
+            "Runtime verification kind is required"
+        }
+        val ticket = AgentProjectVerificationTicket(
+            workspaceId = receipt.workspaceId,
+            verificationKind = receipt.verificationKind,
+            requestId = receipt.requestId,
+            projectDigest = AgentProjectStateDigester.digest(projectRoot, receipt.workspaceId),
+            stdoutSha256 = receipt.stdoutSha256,
+            completedAtMillis = receipt.completedAtMillis
+        )
+        ticketStore.write(ticket)
+    }
+
+    override fun requireVerified(workspaceId: String) {
+        val ticket = ticketStore.read(workspaceId)
+            ?: error("Run a successful project test, build, lint, or package verification before committing")
+        check(ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId)) {
+            "The phone project changed after verification; run verification again before committing"
+        }
+    }
+
+    override fun recordCommit(workspaceId: String, commit: String, branch: String) {
+        val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
+        ticketStore.write(ticket.copy(commit = commit, branch = branch, pushedCommit = "", pushedBranch = ""))
+    }
+
+    override fun requirePushable(workspaceId: String, branch: String) {
+        val ticket = ticketStore.read(workspaceId) ?: error("Commit verified project changes before publishing")
+        val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
+        check(state.clean) { "The phone project changed after commit; verify and commit it before publishing" }
+        check(ticket.commit.isNotBlank() && ticket.commit == state.headCommit && ticket.branch == branch) {
+            "The current phone project commit is not covered by the verification ticket"
+        }
+    }
+
+    override fun recordPush(workspaceId: String, commit: String, branch: String) {
+        val ticket = ticketStore.read(workspaceId) ?: error("Project verification ticket is unavailable")
+        ticketStore.write(ticket.copy(pushedCommit = commit, pushedBranch = branch))
+    }
+
+    override fun requirePullRequestReady(workspaceId: String, head: String) {
+        val ticket = ticketStore.read(workspaceId)
+            ?: error("Push a verified phone project branch before creating a pull request")
+        val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
+        check(state.clean && ticket.pushedCommit == state.headCommit && ticket.pushedBranch == head) {
+            "The pull request branch is not the latest verified and pushed phone project commit"
+        }
+    }
+}
+
+internal class AgentEncryptedProjectPublicationGuard(
+    context: Context,
+    projectRoot: File = File(context.applicationContext.filesDir, "agent-native-workspaces")
+) : AgentProjectPublicationGuard by AgentProjectPublicationPolicy(
+    projectRoot = projectRoot,
+    ticketStore = AgentEncryptedProjectVerificationTicketStore(context.applicationContext)
+)
+
+private class AgentEncryptedProjectVerificationTicketStore(
+    context: Context
+) : AgentProjectVerificationTicketStore {
+    private val database = AgentEncryptedDatabase(context, DATABASE)
+
+    override fun read(workspaceId: String): AgentProjectVerificationTicket? {
+        val raw = database.readString(key(workspaceId), "")
+        if (raw.isBlank()) return null
+        return runCatching {
+            val json = JSONObject(raw)
+            AgentProjectVerificationTicket(
+                workspaceId = json.getString("workspace_id"),
+                verificationKind = AgentRuntimeVerificationKind.fromWireValue(json.getString("verification_kind")),
+                requestId = json.getString("request_id"),
+                projectDigest = json.getString("project_digest"),
+                stdoutSha256 = json.optString("stdout_sha256"),
+                completedAtMillis = json.getLong("completed_at_millis"),
+                commit = json.optString("commit"),
+                branch = json.optString("branch"),
+                pushedCommit = json.optString("pushed_commit"),
+                pushedBranch = json.optString("pushed_branch")
+            )
+        }.getOrNull()?.takeIf { it.workspaceId == workspaceId }
+    }
+
+    override fun write(ticket: AgentProjectVerificationTicket) {
+        database.writeString(key(ticket.workspaceId), JSONObject()
+            .put("workspace_id", ticket.workspaceId)
+            .put("verification_kind", ticket.verificationKind.wireValue)
+            .put("request_id", ticket.requestId)
+            .put("project_digest", ticket.projectDigest)
+            .put("stdout_sha256", ticket.stdoutSha256)
+            .put("completed_at_millis", ticket.completedAtMillis)
+            .put("commit", ticket.commit)
+            .put("branch", ticket.branch)
+            .put("pushed_commit", ticket.pushedCommit)
+            .put("pushed_branch", ticket.pushedBranch)
+            .toString())
+    }
+
+    override fun remove(workspaceId: String) {
+        database.remove(key(workspaceId))
+    }
+
+    private fun key(workspaceId: String): String = "workspace:${workspaceId.lowercase(Locale.ROOT)}"
+
+    private companion object {
+        const val DATABASE = "agent_project_publication_guard_v1.db"
+    }
+}
+
+internal object AgentProjectStateDigester {
+    data class RepositoryState(val headCommit: String, val branch: String, val clean: Boolean)
+
+    fun repositoryState(projectRoot: File, workspaceId: String): RepositoryState = open(projectRoot, workspaceId).use { repository ->
+        Git(repository).use { git ->
+            RepositoryState(
+                headCommit = repository.resolve("HEAD")?.name.orEmpty(),
+                branch = repository.branch.orEmpty(),
+                clean = git.status().call().isClean
+            )
+        }
+    }
+
+    fun digest(projectRoot: File, workspaceId: String): String = open(projectRoot, workspaceId).use { repository ->
+        Git(repository).use { git ->
+            val status = git.status().call()
+            check(status.conflicting.isEmpty()) { "Resolve Git conflicts before verifying the phone project" }
+            val workspace = repository.workTree.canonicalFile
+            val paths = (
+                status.added + status.changed + status.removed + status.modified + status.missing + status.untracked
+                ).distinct().sorted()
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update(repository.resolve("HEAD")?.name.orEmpty().toByteArray(Charsets.UTF_8))
+            paths.forEach { path ->
+                val candidate = File(workspace, path).canonicalFile
+                check(candidate.path.startsWith(workspace.path + File.separator)) { "Git path escapes the phone project" }
+                digest.update(path.toByteArray(Charsets.UTF_8))
+                when {
+                    !candidate.exists() -> digest.update("deleted".toByteArray(Charsets.UTF_8))
+                    Files.isSymbolicLink(candidate.toPath()) -> error("Symbolic links are not allowed in phone projects")
+                    Files.isRegularFile(candidate.toPath(), LinkOption.NOFOLLOW_LINKS) -> candidate.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            digest.update(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+    }
+
+    private fun open(projectRoot: File, workspaceId: String) = run {
+        require(workspaceId.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))) { "Phone project workspace id is invalid" }
+        val root = projectRoot.canonicalFile
+        val workspace = File(root, workspaceId).canonicalFile
+        require(workspace.path.startsWith(root.path + File.separator)) { "Phone project path escapes app storage" }
+        val gitDirectory = File(workspace, ".git")
+        require(gitDirectory.isDirectory) { "The phone workspace does not contain a Git repository" }
+        FileRepositoryBuilder().setGitDir(gitDirectory).setWorkTree(workspace).build()
+    }
+}

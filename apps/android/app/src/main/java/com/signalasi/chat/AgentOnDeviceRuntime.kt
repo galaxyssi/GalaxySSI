@@ -234,6 +234,7 @@ data class AgentRuntimeExecutionRequest(
     val networkEnabled: Boolean,
     val artifactPaths: List<String>,
     val workspaceId: String,
+    val verificationKind: AgentRuntimeVerificationKind = AgentRuntimeVerificationKind.NONE,
     val requestId: String = UUID.randomUUID().toString(),
     val allowedNetworkDomains: List<String> = emptyList(),
     val resourceLimits: AgentRuntimeResourceLimits = AgentRuntimeResourceLimits(
@@ -292,6 +293,7 @@ class AgentOnDeviceRuntimeManager(
     private val integrityCache = appContext.getSharedPreferences(INTEGRITY_CACHE, Context.MODE_PRIVATE)
     private val workspaceManager = AgentRuntimeWorkspaceManager(appContext)
     private val receiptStore = AgentRuntimeExecutionReceiptStore(appContext)
+    private val publicationGuard = AgentEncryptedProjectPublicationGuard(appContext)
 
     fun packStatuses(): List<AgentRuntimePackStatus> = REQUIRED_PACKS.map(::packStatus)
 
@@ -441,6 +443,9 @@ class AgentOnDeviceRuntimeManager(
                 workspaceDisposition = disposition
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
+            if (receipt != null && receipt.verificationKind != AgentRuntimeVerificationKind.NONE && response.exitCode == 0) {
+                publicationGuard.recordVerification(receipt)
+            }
             runCatching {
                 workspaceManager.markFinished(
                     prepared,
@@ -916,6 +921,9 @@ object AgentOnDeviceRuntimeTools {
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
                         artifactPaths = invocation.input.stringList("artifact_paths"),
+                        verificationKind = AgentRuntimeVerificationKind.fromWireValue(
+                            invocation.input["verification_kind"]?.toString().orEmpty()
+                        ),
                         workspaceId = invocationWorkspaceId(invocation),
                         requestId = invocation.context.invocationId,
                         cancellationToken = invocation.cancellationToken,
@@ -1116,7 +1124,13 @@ object AgentOnDeviceRuntimeTools {
                 AgentNativeJsonSchema.string(maxLength = 253),
                 maxItems = 64
             ),
-            "artifact_paths" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.string(maxLength = 1_024), maxItems = 32)
+            "artifact_paths" to AgentNativeJsonSchema.array(
+                AgentNativeJsonSchema.string(maxLength = 1_024),
+                maxItems = 32
+            ),
+            "verification_kind" to AgentNativeJsonSchema.string(
+                enumValues = AgentRuntimeVerificationKind.entries.map { it.wireValue }
+            )
         ),
         required = setOf("language", "source"),
         additionalProperties = false

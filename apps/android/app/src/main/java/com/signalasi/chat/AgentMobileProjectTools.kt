@@ -74,7 +74,8 @@ internal class AgentMobileProjectRepository(
     projectRoot: File,
     private val credentialProvider: AgentProjectCredentialProvider,
     private val httpClient: OkHttpClient = OkHttpClient(),
-    private val repositoryPolicy: (String) -> Boolean = ::isTrustedRepositoryUrl
+    private val repositoryPolicy: (String) -> Boolean = ::isTrustedRepositoryUrl,
+    private val publicationGuard: AgentProjectPublicationGuard = AgentProjectPublicationGuard.ALLOW_ALL
 ) {
     private val root = projectRoot.canonicalFile.apply {
         check(mkdirs() || isDirectory) { "Agent project storage is unavailable" }
@@ -125,6 +126,7 @@ internal class AgentMobileProjectRepository(
                 error("Cloned repository could not be committed to the phone workspace")
             }
             backup.deleteRecursively()
+            publicationGuard.invalidate(workspaceId)
             progress("clone", "Repository clone completed", 100)
             open(workspaceId).use { snapshot(workspaceId, it) }
         } catch (error: Throwable) {
@@ -154,6 +156,7 @@ internal class AgentMobileProjectRepository(
             val cleanBranch = branch.trim().also(::validateRefName)
             openGit(workspaceId).use { git ->
                 git.checkout().setName(cleanBranch).setCreateBranch(create).call()
+                publicationGuard.invalidate(workspaceId)
                 snapshot(workspaceId, git.repository)
             }
         }
@@ -169,6 +172,7 @@ internal class AgentMobileProjectRepository(
         val name = authorName.trim().ifBlank { DEFAULT_AUTHOR_NAME }.take(120)
         val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
         require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
+        publicationGuard.requireVerified(workspaceId)
         openGit(workspaceId).use { git ->
             val before = git.status().call()
             require(!before.isClean) { "The phone project has no changes to commit" }
@@ -180,7 +184,9 @@ internal class AgentMobileProjectRepository(
                 .setAuthor(name, email)
                 .setCommitter(name, email)
                 .call()
-            AgentProjectCommitResult(commit.name, git.repository.branch.orEmpty(), changed)
+            AgentProjectCommitResult(commit.name, git.repository.branch.orEmpty(), changed).also { result ->
+                publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
+            }
         }
     }
 
@@ -200,6 +206,7 @@ internal class AgentMobileProjectRepository(
                 .setProgressMonitor(CancellableProgressMonitor(cancellationToken) { _, _, _ -> })
             credentials()?.let(command::setCredentialsProvider)
             val result = command.call()
+            publicationGuard.invalidate(workspaceId)
             AgentProjectPullResult(
                 successful = result.isSuccessful,
                 mergeStatus = result.mergeResult?.mergeStatus?.toString()
@@ -219,6 +226,7 @@ internal class AgentMobileProjectRepository(
         val credentials = credentials() ?: error("Configure a GitHub token before publishing a phone project")
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
+        publicationGuard.requirePushable(workspaceId, cleanBranch)
         openGit(workspaceId).use { git ->
             requireAllowedRemote(git.repository, cleanRemote)
             val updates = git.push()
@@ -232,7 +240,13 @@ internal class AgentMobileProjectRepository(
             require(updates.none { it.contains("REJECTED", ignoreCase = true) }) {
                 "Remote rejected the phone project update: ${updates.joinToString()}"
             }
-            AgentProjectPushResult(cleanBranch, updates)
+            AgentProjectPushResult(cleanBranch, updates).also {
+                publicationGuard.recordPush(
+                    workspaceId,
+                    git.repository.resolve("HEAD")?.name.orEmpty(),
+                    cleanBranch
+                )
+            }
         }
     }
 
@@ -249,6 +263,7 @@ internal class AgentMobileProjectRepository(
         require(cleanTitle.isNotBlank()) { "Pull request title is required" }
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
         val cleanHead = head.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
+        publicationGuard.requirePullRequestReady(workspaceId, cleanHead)
         val repository = open(workspaceId).use(::githubCoordinates)
         val payload = JSONObject()
             .put("title", cleanTitle)
@@ -467,7 +482,8 @@ object AgentMobileProjectNativeTools {
             credentialProvider = AgentProjectCredentialProvider {
                 AgentEncryptedWebIntelligenceCredentials(appContext)
                     .credential(AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN)
-            }
+            },
+            publicationGuard = AgentEncryptedProjectPublicationGuard(appContext)
         )
         return definitions(repository)
     }

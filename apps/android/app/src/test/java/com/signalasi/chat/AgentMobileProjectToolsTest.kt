@@ -120,6 +120,75 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun verifiedProjectMustRemainUnchangedThroughCommitPushAndPullRequest() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        val guardedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard
+        )
+        guardedRepository.clone(
+            workspaceId = "verified-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        guardedRepository.checkoutBranch("verified-project", "feature/verified", create = true)
+        val candidate = File(projects, "verified-project/src/result.kt").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeText("fun result() = 1\n")
+        }
+
+        assertTrue(runCatching {
+            guardedRepository.commit("verified-project", "Unverified", "SignalASI", "signalasi@hotmail.com")
+        }.isFailure)
+
+        guard.recordVerification(successfulVerificationReceipt("verified-project", "verification-1"))
+        candidate.writeText("fun result() = 2\n")
+        assertTrue(runCatching {
+            guardedRepository.commit("verified-project", "Stale verification", "SignalASI", "signalasi@hotmail.com")
+        }.isFailure)
+
+        guard.recordVerification(successfulVerificationReceipt("verified-project", "verification-2"))
+        val commit = guardedRepository.commit(
+            "verified-project",
+            "Add verified result",
+            "SignalASI",
+            "signalasi@hotmail.com"
+        )
+        val push = guardedRepository.push(
+            workspaceId = "verified-project",
+            remote = "origin",
+            branch = commit.branch,
+            force = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+        assertEquals(commit.branch, push.branch)
+        assertTrue(runCatching { guard.requirePullRequestReady("verified-project", commit.branch) }.isSuccess)
+
+        candidate.writeText("fun result() = 3\n")
+        assertTrue(runCatching { guard.requirePullRequestReady("verified-project", commit.branch) }.isFailure)
+    }
+
+    @Test
     fun validatesPublicRepositoryAndRefBoundaries() {
         assertTrue(AgentMobileProjectRepository.isTrustedRepositoryUrl("https://github.com/signalasi/SignalASI.git"))
         assertFalse(AgentMobileProjectRepository.isTrustedRepositoryUrl("http://github.com/signalasi/SignalASI.git"))
@@ -145,4 +214,26 @@ class AgentMobileProjectToolsTest {
             })
         }
     }
+
+    private fun successfulVerificationReceipt(
+        workspaceId: String,
+        requestId: String
+    ) = AgentRuntimeExecutionReceipt(
+        requestId = requestId,
+        workspaceId = workspaceId,
+        language = AgentRuntimeLanguage.SHELL,
+        sourceSha256 = "a".repeat(64),
+        verificationKind = AgentRuntimeVerificationKind.TEST,
+        packVersions = mapOf("linux-base" to "1.0.0"),
+        networkEnabled = false,
+        allowedNetworkDomains = emptyList(),
+        limits = AgentRuntimeResourceLimits(),
+        status = AgentRuntimeReceiptStatus.COMPLETED,
+        exitCode = 0,
+        stdoutSha256 = "b".repeat(64),
+        stderrSha256 = "c".repeat(64),
+        workspaceDisposition = AgentRuntimeWorkspaceDisposition.COMMITTED,
+        createdAtMillis = 1_000L,
+        completedAtMillis = 1_100L
+    )
 }

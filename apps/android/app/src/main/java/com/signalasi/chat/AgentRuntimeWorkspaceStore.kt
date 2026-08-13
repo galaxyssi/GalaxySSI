@@ -14,6 +14,19 @@ import java.util.zip.ZipOutputStream
 
 enum class AgentRuntimeReceiptStatus { RUNNING, COMPLETED, FAILED, CANCELLED, TIMED_OUT }
 
+enum class AgentRuntimeVerificationKind(val wireValue: String) {
+    NONE("none"),
+    TEST("test"),
+    BUILD("build"),
+    LINT("lint"),
+    PACKAGE("package");
+
+    companion object {
+        fun fromWireValue(value: String): AgentRuntimeVerificationKind =
+            entries.firstOrNull { it.wireValue == value.trim().lowercase(Locale.ROOT) } ?: NONE
+    }
+}
+
 enum class AgentRuntimeWorkspaceDisposition(val wireValue: String) {
     UNCHANGED("unchanged"),
     COMMITTED("committed"),
@@ -27,6 +40,7 @@ data class AgentRuntimeExecutionReceipt(
     val workspaceId: String,
     val language: AgentRuntimeLanguage,
     val sourceSha256: String,
+    val verificationKind: AgentRuntimeVerificationKind = AgentRuntimeVerificationKind.NONE,
     val packVersions: Map<String, String>,
     val networkEnabled: Boolean,
     val allowedNetworkDomains: List<String>,
@@ -48,6 +62,7 @@ fun AgentRuntimeExecutionReceipt.toEvidenceMap(): AgentNativeJsonObject = linked
     "workspace_id" to workspaceId,
     "language" to language.wireValue,
     "source_sha256" to sourceSha256,
+    "verification_kind" to verificationKind.wireValue,
     "pack_versions" to packVersions.toSortedMap(),
     "network_enabled" to networkEnabled,
     "allowed_network_domains" to allowedNetworkDomains.sorted(),
@@ -89,6 +104,7 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             workspaceId = request.workspaceId,
             language = request.language,
             sourceSha256 = sha256(request.source.toByteArray(Charsets.UTF_8)),
+            verificationKind = request.verificationKind,
             packVersions = packVersions.toSortedMap(),
             networkEnabled = request.networkEnabled,
             allowedNetworkDomains = request.allowedNetworkDomains.sorted(),
@@ -179,6 +195,7 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
         .put("workspace_id", workspaceId)
         .put("language", language.wireValue)
         .put("source_sha256", sourceSha256)
+        .put("verification_kind", verificationKind.wireValue)
         .put("pack_versions", JSONObject(packVersions))
         .put("network_enabled", networkEnabled)
         .put("allowed_network_domains", JSONArray(allowedNetworkDomains))
@@ -205,6 +222,7 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             workspaceId = optString("workspace_id"),
             language = language,
             sourceSha256 = optString("source_sha256"),
+            verificationKind = AgentRuntimeVerificationKind.fromWireValue(optString("verification_kind")),
             packVersions = buildMap {
                 packJson.keys().asSequence().forEach { key -> put(key, packJson.optString(key)) }
             },
