@@ -614,9 +614,11 @@ enum AgentMemoryCommandParser {
 
   static func memoryCaptureValue(fromGoal goal: String) -> Bool? {
     switch goal.agentMemoryTrimmed.lowercased() {
-    case "pause memory", "stop memory", "disable memory capture":
+    case "pause memory", "stop memory", "disable memory capture",
+         "\u{6682}\u{505c}\u{8bb0}\u{5fc6}", "\u{505c}\u{6b62}\u{8bb0}\u{5fc6}", "\u{5173}\u{95ed}\u{8bb0}\u{5fc6}\u{6355}\u{83b7}":
       return false
-    case "resume memory", "enable memory capture":
+    case "resume memory", "enable memory capture",
+         "\u{6062}\u{590d}\u{8bb0}\u{5fc6}", "\u{5f00}\u{542f}\u{8bb0}\u{5fc6}\u{6355}\u{83b7}":
       return true
     default:
       return nil
