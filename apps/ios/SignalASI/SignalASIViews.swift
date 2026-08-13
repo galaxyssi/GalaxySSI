@@ -855,7 +855,7 @@ struct ConversationView: View {
   @ViewBuilder
   private var navigationShortcuts: some View {
     NavigationLink(
-      destination: SignalASIAgentSessionsView(),
+      destination: SignalASIConversationHubView(),
       isActive: $agentSessionsShortcutActive
     ) {
       EmptyView()

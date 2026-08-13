@@ -428,7 +428,7 @@ struct SignalASIGlobalAgentControlView: View {
         tint: .blue,
         badge: "\(store.agentSessions(includeArchived: true).count)"
       ) {
-        SignalASIAgentSessionsView()
+        SignalASIConversationHubView()
       }
     }
   }
