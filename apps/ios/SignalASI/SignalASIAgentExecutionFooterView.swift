@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignalASIAgentExecutionFooterView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var detailsExpanded = false
 
   var executor: String
@@ -23,17 +24,19 @@ struct SignalASIAgentExecutionFooterView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      HStack(spacing: 7) {
+      HStack(alignment: .top, spacing: 7) {
         SignalASIAgentRouteLogo(label: executor, size: 16)
         Text(executor)
           .font(.system(size: 11, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .frame(maxWidth: .infinity, alignment: .leading)
         Spacer(minLength: 4)
         Text(status)
           .font(.system(size: 10, weight: .semibold))
           .foregroundColor(statusTint)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+          .multilineTextAlignment(.trailing)
       }
 
       Text(metadataLine)
@@ -69,34 +72,7 @@ struct SignalASIAgentExecutionFooterView: View {
         }
       }
       if canCancel || !timelineActions.isEmpty {
-        HStack(spacing: 8) {
-          if canCancel {
-            Button(role: .destructive, action: onCancel) {
-              Label(resolvedCancelTitle, systemImage: "xmark.circle")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(minHeight: 30)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(Text(resolvedCancelTitle))
-          }
-          if !timelineActions.isEmpty {
-            Menu {
-              ForEach(timelineActions) { action in
-                Button {
-                  onTimelineAction(action)
-                } label: {
-                  Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
-                }
-              }
-            } label: {
-              Label("", systemImage: "ellipsis.circle")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 42, height: 30)
-            }
-            .menuStyle(.borderedButton)
-            .accessibilityLabel(Text(resolvedTimelineActionMenuTitle))
-          }
-        }
+        executionControls
       }
     }
     .padding(.horizontal, 9)
@@ -124,5 +100,58 @@ struct SignalASIAgentExecutionFooterView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+
+  @ViewBuilder
+  private var executionControls: some View {
+    if usesAccessibilityDynamicType {
+      VStack(spacing: 8) {
+        cancelControl
+        timelineControl
+      }
+    } else {
+      HStack(spacing: 8) {
+        cancelControl
+        timelineControl
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var cancelControl: some View {
+    if canCancel {
+      Button(role: .destructive, action: onCancel) {
+        Label(resolvedCancelTitle, systemImage: "xmark.circle")
+          .font(.system(size: 10, weight: .semibold))
+          .frame(maxWidth: usesAccessibilityDynamicType ? .infinity : nil, minHeight: 30)
+      }
+      .buttonStyle(.bordered)
+      .accessibilityLabel(Text(resolvedCancelTitle))
+    }
+  }
+
+  @ViewBuilder
+  private var timelineControl: some View {
+    if !timelineActions.isEmpty {
+      Menu {
+        ForEach(timelineActions) { action in
+          Button {
+            onTimelineAction(action)
+          } label: {
+            Label(timelineActionTitle(action), systemImage: timelineActionIcon(action))
+          }
+        }
+      } label: {
+        Label("", systemImage: "ellipsis.circle")
+          .font(.system(size: 10, weight: .semibold))
+          .frame(width: 42, height: 30)
+      }
+      .menuStyle(.borderedButton)
+      .accessibilityLabel(Text(resolvedTimelineActionMenuTitle))
+    }
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 }
