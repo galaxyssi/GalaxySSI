@@ -904,7 +904,9 @@ struct AgentIOSHardwareNativeToolExecutor {
         "declared_scheme_probe_required": .bool(true),
         "observed_at_epoch_ms": .int(nowMillis)
       ],
-      message: "iOS app visibility boundary returned no full installed-app inventory.",
+      message: isChinese(invocation)
+        ? "iOS \u{5e94}\u{7528}\u{53ef}\u{89c1}\u{6027}\u{8fb9}\u{754c}\u{65e0}\u{6cd5}\u{8fd4}\u{56de}\u{5b8c}\u{6574}\u{7684}\u{5df2}\u{5b89}\u{88c5}\u{5e94}\u{7528}\u{5217}\u{8868}\u{3002}"
+        : "iOS app visibility boundary returned no full installed-app inventory.",
       metadata: appVisibilityMetadata(invocation)
     )
   }
@@ -917,7 +919,9 @@ struct AgentIOSHardwareNativeToolExecutor {
     guard !packageName.isEmpty else {
       return AgentNativeToolExecutionResult.failure(
         code: "invalid_package_name",
-        message: "Package name is required for iOS app visibility boundary lookup."
+        message: isChinese(invocation)
+          ? "iOS \u{5e94}\u{7528}\u{53ef}\u{89c1}\u{6027}\u{8fb9}\u{754c}\u{67e5}\u{8be2}\u{9700}\u{8981}\u{5e94}\u{7528}\u{5305}\u{540d}\u{3002}"
+          : "Package name is required for iOS app visibility boundary lookup."
       )
     }
     return AgentNativeToolExecutionResult.success(
@@ -936,7 +940,9 @@ struct AgentIOSHardwareNativeToolExecutor {
         "full_package_metadata_available": .bool(false),
         "observed_at_epoch_ms": .int(nowMillis)
       ],
-      message: "iOS app visibility boundary cannot inspect arbitrary package metadata.",
+      message: isChinese(invocation)
+        ? "iOS \u{5e94}\u{7528}\u{53ef}\u{89c1}\u{6027}\u{8fb9}\u{754c}\u{4e0d}\u{80fd}\u{68c0}\u{67e5}\u{4efb}\u{610f}\u{5e94}\u{7528}\u{5305}\u{7684}\u{5143}\u{6570}\u{636e}\u{3002}"
+        : "iOS app visibility boundary cannot inspect arbitrary package metadata.",
       metadata: appVisibilityMetadata(invocation)
     )
   }
