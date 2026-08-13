@@ -26,7 +26,10 @@ set(GGML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(${WHISPER_ROOT}/ggml ${CMAKE_CURRENT_BINARY_DIR}/ggml)
 add_subdirectory(asr)
 
-foreach(GGML_TARGET ggml ggml-base)
+# Android debug APKs still need release-grade inference kernels. The wrapper
+# targets were optimized already, but the actual CPU tensor implementation was
+# previously left at the debug toolchain default.
+foreach(GGML_TARGET ggml ggml-base ggml-cpu)
     if(TARGET ${GGML_TARGET})
         target_compile_options(${GGML_TARGET} PRIVATE -O3)
     endif()
