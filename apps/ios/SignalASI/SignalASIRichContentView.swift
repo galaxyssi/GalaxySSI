@@ -494,6 +494,8 @@ private struct SignalASIRichBlockView: View {
   @State private var extractedArchiveURLs: [URL] = []
   @State private var extractedArchivePresented = false
   @State private var archiveExtractionError = ""
+  @State private var artifactDownloadError = ""
+  @State private var artifactDownloadRequested = false
 
   var body: some View {
     switch block.type {
@@ -560,6 +562,27 @@ private struct SignalASIRichBlockView: View {
       Button(t("common_ok", "OK"), role: .cancel) {}
     } message: {
       Text(archiveExtractionError)
+    }
+    .alert(t("rich_output_download_failed", "Unable to request this artifact."), isPresented: Binding(
+      get: { !artifactDownloadError.isEmpty },
+      set: { if !$0 { artifactDownloadError = "" } }
+    )) {
+      Button(t("common_ok", "OK"), role: .cancel) {}
+    } message: {
+      Text(artifactDownloadError)
+    }
+    .onChange(of: coordinator.artifactDownloadFailure) { failure in
+      guard artifactDownloadRequested,
+            !failure.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return
+      }
+      artifactDownloadRequested = false
+      artifactDownloadError = failure
+    }
+    .onChange(of: coordinator.artifactRevision) { _ in
+      if localArtifactFile != nil {
+        artifactDownloadRequested = false
+      }
     }
   }
 
@@ -1355,13 +1378,19 @@ private struct SignalASIRichBlockView: View {
         }
       } else {
         Button {
-          Task { _ = await coordinator.requestDesktopArtifactDownload(block: block) }
+          requestArtifactDownload()
         } label: {
-          Label(t("rich_output_download", "Download"), systemImage: "arrow.down.circle")
+          Label(
+            artifactDownloadRequested
+              ? t("rich_output_download_requested", "Requested")
+              : t("rich_output_download", "Download"),
+            systemImage: artifactDownloadRequested ? "clock" : "arrow.down.circle"
+          )
             .font(.caption.weight(.semibold))
             .frame(maxWidth: .infinity, minHeight: 32)
         }
         .buttonStyle(.borderedProminent)
+        .disabled(artifactDownloadRequested)
       }
       if !previewActions.isEmpty {
         resourceActionButtons(previewActions)
@@ -1381,6 +1410,17 @@ private struct SignalASIRichBlockView: View {
 
   private var isZipArtifact: Bool {
     localArtifactFile?.pathExtension.caseInsensitiveCompare("zip") == .orderedSame
+  }
+
+  private func requestArtifactDownload() {
+    artifactDownloadRequested = true
+    Task { @MainActor in
+      guard !await coordinator.requestDesktopArtifactDownload(block: block) else { return }
+      artifactDownloadRequested = false
+      artifactDownloadError = coordinator.lastError.ifBlank(
+        t("rich_output_download_failed", "Unable to request this artifact.")
+      )
+    }
   }
 
   private func extractArtifactArchive() {
