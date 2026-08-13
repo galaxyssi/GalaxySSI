@@ -601,6 +601,10 @@ struct AgentHomeView: View {
     case "toggle agent memory capture": return "memory-capture"
     case "toggle agent execution pause": return "execution-paused"
     case "open permissions": return "permissions"
+    case "open agent": return "agent"
+    case "open messages": return "messages"
+    case "open contacts": return "contacts"
+    case "open discover": return "discover"
     case "open settings": return "settings"
     default: return nil
     }
