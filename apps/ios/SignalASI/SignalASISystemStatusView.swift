@@ -3,6 +3,7 @@ import SwiftUI
 struct SignalASISystemStatusView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var memorySnapshot = AgentMemoryPssSnapshot()
   @State private var linkSnapshot = SignalASILinkTransportDiagnostics.snapshot()
 
@@ -207,21 +208,30 @@ struct SignalASISystemStatusView: View {
   }
 
   private var availableResourceCount: Int {
-    store.cloudModelContacts.count + store.serverLinks.filter(\.paired).count + store.customDeviceConnectors.filter(\.enabled).count
+    resourceTargets.filter { $0.status == .available }.count
   }
 
   private var resourceTargetCount: Int {
-    store.cloudModelContacts.count + store.serverLinks.count + store.customDeviceConnectors.count
+    resourceTargets.count
+  }
+
+  private var resourceTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
   }
 
   private var linkReady: Bool {
-    store.serverLinks.contains(where: \.paired) && linkSnapshot.failureCount == 0
+    store.serverLinks.contains(where: \.paired) &&
+      coordinator.mqttClient.isConnected &&
+      linkSnapshot.failureCount == 0
   }
 
   private var needsAttention: Bool {
     store.agentSafetySettings.executionPaused ||
       !linkReady ||
-      availableResourceCount == 0
+      resourceTargets.contains { $0.status == .needsSetup }
   }
 
   private var statusSubtitle: String {
