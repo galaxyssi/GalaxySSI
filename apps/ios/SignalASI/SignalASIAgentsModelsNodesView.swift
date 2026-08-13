@@ -190,10 +190,18 @@ struct SignalASIAgentsModelsNodesView: View {
   }
 
   private func desktopOnline(_ link: ServerLink) -> Bool {
-    link.paired && coordinator.mqttClient.isConnected
+    guard link.paired && coordinator.mqttClient.isConnected else { return false }
+    let desktopAgentIds = Set(desktopAgentContacts(link).map(\.id))
+    return resourceTargets.contains { target in
+      desktopAgentIds.contains(target.id) && target.status == .available
+    }
   }
 
   private func desktopAgentCount(_ link: ServerLink) -> Int {
+    desktopAgentContacts(link).count
+  }
+
+  private func desktopAgentContacts(_ link: ServerLink) -> [SignalASIContact] {
     store.contacts.filter { contact in
       !contact.deleted &&
         contact.desktopId == link.desktopId &&
