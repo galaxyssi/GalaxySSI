@@ -167,6 +167,7 @@ struct SignalASIConversationComposer: View {
       if voiceRecorder.isRecording {
         SignalASIChatVoiceWaveform(
           phase: voiceRecorder.waveformPhase,
+          amplitude: voiceRecorder.waveformAmplitude,
           cancelPending: voiceRecorder.cancelPending,
           color: .white
         )
@@ -231,6 +232,7 @@ struct SignalASIConversationComposer: View {
 
 private struct SignalASIChatVoiceWaveform: View {
   var phase: Double
+  var amplitude: Double
   var cancelPending: Bool
   var color: Color = .signalASIAccent
 
@@ -239,7 +241,10 @@ private struct SignalASIChatVoiceWaveform: View {
       ForEach(0..<18, id: \.self) { index in
         Capsule()
           .fill(cancelPending ? Color.red : color)
-          .frame(width: 3, height: 8 + abs(sin(phase + Double(index) * 0.58)) * 16)
+          .frame(
+            width: 3,
+            height: 8 + abs(sin(phase + Double(index) * 0.58)) * (8 + amplitude * 18)
+          )
       }
     }
     .accessibilityHidden(true)

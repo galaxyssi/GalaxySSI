@@ -16,6 +16,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
   @Published private(set) var cancelPending = false
   @Published private(set) var elapsedSeconds: TimeInterval = 0
   @Published private(set) var waveformPhase: Double = 0
+  @Published private(set) var waveformAmplitude: Double = 0
   @Published private(set) var statusMessage = ""
 
   private let minimumDuration: TimeInterval = 0.8
@@ -128,6 +129,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
       startedAt = Date()
       elapsedSeconds = 0
       waveformPhase = 0
+      waveformAmplitude = 0
       statusMessage = ""
       isPreparing = false
       isRecording = true
@@ -193,8 +195,9 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
         guard let self, let startedAt = self.startedAt else { return }
         self.recorder?.updateMeters()
         let power = self.recorder?.averagePower(forChannel: 0) ?? -60
-        let amplitude = max(0, min(1, (power + 60) / 60))
+        let amplitude = Double(max(0, min(1, (power + 60) / 60)))
         self.waveformPhase += 0.35 + Double(amplitude) * 0.6
+        self.waveformAmplitude += (amplitude - self.waveformAmplitude) * 0.35
         self.elapsedSeconds = Date().timeIntervalSince(startedAt)
         if self.elapsedSeconds >= self.maximumDuration {
           self.finishRecording(send: true)
@@ -219,6 +222,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
     startedAt = nil
     isRecording = false
     isPreparing = false
+    waveformAmplitude = 0
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
   }
 }
