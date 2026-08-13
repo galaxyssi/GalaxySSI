@@ -159,15 +159,14 @@ struct SignalASIAgentsModelsNodesView: View {
         }
       } else {
         ForEach(cloudContacts) { contact in
+          let status = cloudConnectorStatus(contact)
           SignalASISecurityNavigationRow(
             title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
             subtitle: cloudSubtitle(contact),
             systemImage: "cloud.fill",
             assetImage: cloudAssetName(contact),
-            tint: contact.selectedCloudModel == nil ? .orange : .signalASIInsightText,
-            badge: contact.selectedCloudModel == nil
-              ? t("cc_status_not_configured", "Not configured")
-              : t("cc_status_ready", "Ready")
+            tint: cloudStatusTint(status),
+            badge: cloudStatusLabel(status)
           ) {
             CloudModelProviderDetailView(contactId: contact.id)
           }
@@ -207,6 +206,32 @@ struct SignalASIAgentsModelsNodesView: View {
         contact.desktopId == link.desktopId &&
         (contact.type == "agent" || contact.id == "hermes" || contact.deliveryMode.isSignalASILinkFamily)
     }.count
+  }
+
+  private func cloudConnectorStatus(_ contact: SignalASIContact) -> AgentConnectorStatus {
+    resourceTargets.first { $0.id == contact.id }?.status ?? .needsSetup
+  }
+
+  private func cloudStatusLabel(_ status: AgentConnectorStatus) -> String {
+    switch status {
+    case .available:
+      return t("cc_status_ready", "Ready")
+    case .needsSetup:
+      return t("status_needs_setup", "Needs Setup")
+    case .disconnected:
+      return t("status_disconnected", "Disconnected")
+    }
+  }
+
+  private func cloudStatusTint(_ status: AgentConnectorStatus) -> Color {
+    switch status {
+    case .available:
+      return .signalASIInsightText
+    case .needsSetup:
+      return .orange
+    case .disconnected:
+      return .signalASITextSecondary
+    }
   }
 
   private func cloudSubtitle(_ contact: SignalASIContact) -> String {
