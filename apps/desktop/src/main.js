@@ -224,6 +224,63 @@ async function runUiSmoke() {
         || !conversationDeleteMenu.selectionVisible) {
       throw new Error(`Desktop conversation deletion menu is invalid: ${JSON.stringify(conversationDeleteMenu)}`);
     }
+    const bulkConversationDelete = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const originalTasks = state.tasks;
+        const originalConversationId = state.currentConversationId;
+        const originalEmptyIntent = state.emptyConversationIntent;
+        const originalHiddenIds = new Set(state.hiddenEvolutionConversationIds);
+        const originalConfirm = window.confirm;
+        const now = Date.now();
+        state.tasks = ["one", "two"].map((suffix, index) => ({
+          task_id: "smoke-delete-" + suffix,
+          conversation_id: "evolution:smoke-delete-" + suffix,
+          task_kind: "self_evolution",
+          prompt: "Smoke conversation " + suffix,
+          result: "Completed",
+          status: "completed",
+          created_at: now + index,
+          updated_at: now + index
+        }));
+        state.hiddenEvolutionConversationIds.clear();
+        state.currentConversationId = "evolution:smoke-delete-one";
+        state.emptyConversationIntent = false;
+        window.confirm = () => true;
+        renderHistory();
+        setConversationSelectionMode(true);
+        document.querySelector("#selectAllConversationsButton").click();
+        const selectedBeforeDelete = state.selectedConversationIds.size;
+        document.querySelector("#deleteSelectedConversationsButton").click();
+        if (state.conversationDeletionPromise) await state.conversationDeletionPromise;
+        const result = {
+          selectedBeforeDelete,
+          deletingCount: state.deletingConversationIds.size,
+          selectionMode: state.conversationSelectionMode,
+          hiddenCount: ["one", "two"].filter((suffix) =>
+            state.hiddenEvolutionConversationIds.has("evolution:smoke-delete-" + suffix)
+          ).length,
+          visibleConversationCount: unifiedConversationGroups().filter((group) =>
+            group.id.startsWith("evolution:smoke-delete-")
+          ).length
+        };
+        window.confirm = originalConfirm;
+        state.tasks = originalTasks;
+        state.currentConversationId = originalConversationId;
+        state.emptyConversationIntent = originalEmptyIntent;
+        state.hiddenEvolutionConversationIds = originalHiddenIds;
+        persistHiddenEvolutionConversations();
+        setConversationSelectionMode(false);
+        renderConversation(true);
+        return result;
+      })()
+    `);
+    if (bulkConversationDelete.selectedBeforeDelete !== 2
+        || bulkConversationDelete.deletingCount !== 0
+        || bulkConversationDelete.selectionMode
+        || bulkConversationDelete.hiddenCount !== 2
+        || bulkConversationDelete.visibleConversationCount !== 0) {
+      throw new Error(`Desktop bulk conversation deletion failed: ${JSON.stringify(bulkConversationDelete)}`);
+    }
     const peerVoiceInput = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         const app = document.querySelector("#agentApp");

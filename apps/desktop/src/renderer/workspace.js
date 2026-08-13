@@ -238,6 +238,11 @@ const state = {
   pinnedConversationIds: new Set(JSON.parse(localStorage.getItem("signalasi-desktop-pinned-conversations") || "[]")),
   conversationSelectionMode: false,
   selectedConversationIds: new Set(),
+  deletingConversationIds: new Set(),
+  conversationDeletionPromise: null,
+  hiddenEvolutionConversationIds: new Set(
+    JSON.parse(localStorage.getItem("signalasi-desktop-hidden-evolution-conversations") || "[]")
+  ),
   openConversationMenuId: "",
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
@@ -539,8 +544,9 @@ function unifiedConversationGroups() {
   const taskGroups = conversationGroups().map((group) => {
     const ordered = [...group.tasks].sort((a, b) => Number(a.created_at) - Number(b.created_at));
     const latest = group.latest;
+    const evolution = group.tasks.every((task) => task.task_kind === "self_evolution");
     return {
-      kind: "agent",
+      kind: evolution ? "evolution" : "agent",
       id: group.id,
       title: titleFromPrompt(ordered[0]?.prompt),
       preview: conversationPreview(latest.result, latest.prompt || taskStatusLabel(latest)),
@@ -550,7 +556,9 @@ function unifiedConversationGroups() {
       latest,
       tasks: group.tasks
     };
-  });
+  }).filter((group) => (
+    group.kind !== "evolution" || !state.hiddenEvolutionConversationIds.has(group.id)
+  ));
   const peerGroups = pairedClients().map((client) => {
     const routeId = client.client_route_id || "";
     const latest = peerMessagesFor(routeId).at(-1);
@@ -575,17 +583,28 @@ function persistPinnedConversations() {
   );
 }
 
+function persistHiddenEvolutionConversations() {
+  localStorage.setItem(
+    "signalasi-desktop-hidden-evolution-conversations",
+    JSON.stringify([...state.hiddenEvolutionConversationIds])
+  );
+}
+
 function renderConversationSelectionBar() {
   const bar = $("#conversationSelectionBar");
   bar.hidden = !state.conversationSelectionMode;
   $("#selectedConversationCount").textContent = String(state.selectedConversationIds.size);
-  $("#deleteSelectedConversationsButton").disabled = state.selectedConversationIds.size === 0;
+  $("#selectAllConversationsButton").disabled = state.deletingConversationIds.size > 0;
+  $("#deleteSelectedConversationsButton").disabled = (
+    state.selectedConversationIds.size === 0 || state.deletingConversationIds.size > 0
+  );
+  $("#cancelConversationSelectionButton").disabled = state.deletingConversationIds.size > 0;
 }
 
 function renderHistory() {
   const groups = unifiedConversationGroups();
   const runningCount = groups.filter((group) =>
-    group.kind === "agent" && group.running
+    group.kind !== "device" && group.running
   ).length;
   elements.sidebarTaskSummary.textContent = runningCount > 0
     ? `${runningCount}/${groups.length}`
@@ -613,7 +632,7 @@ function renderHistory() {
       currentSection = section;
       html.push(`<div class="history-group-label ${section === "Pinned" ? "pinned" : ""}">${escapeHtml(t(section))}</div>`);
     }
-    const running = group.kind === "agent" && group.running;
+    const running = group.kind !== "device" && group.running;
     const typeLabel = group.kind === "device" ? t("Device") : "";
     const latestLabel = running ? taskStatusLabel(group.latest) : relativeTime(group.updatedAt);
     const targetAttribute = group.kind === "device"
@@ -4124,14 +4143,30 @@ async function deleteConversationIds(conversationIds) {
   const ids = [...new Set(conversationIds)].filter(Boolean);
   if (!ids.length) return;
   const groupsById = new Map(unifiedConversationGroups().map((group) => [group.id, group]));
-  const results = await Promise.allSettled(ids.map((id) =>
-    groupsById.get(id)?.kind === "device"
-      ? window.signalasi.deletePeerConversation(id)
-      : window.signalasi.deleteDesktopConversation(id)
-  ));
-  const failed = results.filter((result) => result.status === "rejected");
+  state.deletingConversationIds = new Set(ids);
+  renderConversationSelectionBar();
+  const results = await Promise.allSettled(ids.map(async (id) => {
+    const group = groupsById.get(id);
+    if (!group) throw new Error(`Conversation is no longer available: ${id}`);
+    if (group.kind === "evolution") {
+      state.hiddenEvolutionConversationIds.add(id);
+      return { kind: group.kind, hidden: true };
+    }
+    const response = group.kind === "device"
+      ? await window.signalasi.deletePeerConversation(id)
+      : await window.signalasi.deleteDesktopConversation(id);
+    const deletedCount = group.kind === "device"
+      ? Number(response?.deleted_messages || 0)
+      : Array.isArray(response?.deleted_task_ids) ? response.deleted_task_ids.length : 0;
+    if (deletedCount <= 0) throw new Error(`Conversation was not deleted: ${id}`);
+    return { kind: group.kind, deletedCount };
+  }));
+  const failedIds = [];
   ids.forEach((id, index) => {
-    if (results[index]?.status !== "fulfilled") return;
+    if (results[index]?.status !== "fulfilled") {
+      failedIds.push(id);
+      return;
+    }
     state.pinnedConversationIds.delete(id);
     if (groupsById.get(id)?.kind === "device") {
       state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== id);
@@ -4143,10 +4178,18 @@ async function deleteConversationIds(conversationIds) {
     }
   });
   persistPinnedConversations();
+  persistHiddenEvolutionConversations();
   if (ids.includes(state.currentConversationId)) newTask();
-  setConversationSelectionMode(false);
+  state.selectedConversationIds = new Set(failedIds);
+  state.deletingConversationIds.clear();
+  if (failedIds.length) {
+    state.conversationSelectionMode = true;
+    renderHistory();
+    showToast(t("Some conversations could not be deleted."));
+  } else {
+    setConversationSelectionMode(false);
+  }
   await Promise.all([refreshTasks(true), refreshPeerMessages()]);
-  if (failed.length) showToast(t("Some conversations could not be deleted."));
 }
 
 function startVoiceInput() {
@@ -4828,10 +4871,16 @@ function bindEvents() {
     state.selectedConversationIds = new Set(allSelected ? [] : ids);
     renderHistory();
   });
-  $("#deleteSelectedConversationsButton").addEventListener("click", () => {
-    if (!state.selectedConversationIds.size) return;
+  $("#deleteSelectedConversationsButton").addEventListener("click", async () => {
+    if (!state.selectedConversationIds.size || state.conversationDeletionPromise) return;
     if (window.confirm(t("Delete the selected conversations? Contacts and paired devices will remain."))) {
-      deleteConversationIds([...state.selectedConversationIds]);
+      const operation = deleteConversationIds([...state.selectedConversationIds]);
+      state.conversationDeletionPromise = operation;
+      try {
+        await operation;
+      } finally {
+        if (state.conversationDeletionPromise === operation) state.conversationDeletionPromise = null;
+      }
     }
   });
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);

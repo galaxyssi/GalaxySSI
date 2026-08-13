@@ -225,6 +225,8 @@ if (!html.includes('id="conversationListMenuButton"') ||
     !html.includes('id="conversationSelectionBar"') ||
     !html.includes('data-i18n="Select conversations to delete"') ||
     !workspaceRenderer.includes("deleteConversationIds") ||
+    !workspaceRenderer.includes("hiddenEvolutionConversationIds") ||
+    !main.includes("Desktop bulk conversation deletion failed") ||
     !workspaceRenderer.includes("signalasi-desktop-pinned-conversations") ||
     !workspaceRenderer.includes("data-pin-conversation") ||
     !workspaceRenderer.includes("data-delete-conversation")) {
