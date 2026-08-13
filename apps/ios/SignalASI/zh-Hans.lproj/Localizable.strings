@@ -272,6 +272,8 @@
 "signalasi.agent.readiness.phone_storage" = "存储";
 "signalasi.agent.readiness.phone_storage_value" = "剩余 %@";
 "signalasi.agent.readiness.phone_network" = "网络";
+"signalasi.agent.readiness.phone_refresh" = "刷新手机状态";
+"signalasi.agent.readiness.phone_updated" = "更新于 %@";
 "signalasi.agent.readiness.phone_network_connected" = "已连接";
 "signalasi.agent.readiness.phone_network_offline" = "离线";
 "signalasi.agent.recent_tasks_value" = "最近任务：%d";
