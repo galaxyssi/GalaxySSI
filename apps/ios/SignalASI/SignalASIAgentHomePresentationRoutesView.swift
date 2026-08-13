@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SignalASIAgentHomePresentationRoutes: ViewModifier {
   @Binding var scanShortcutActive: Bool
   @Binding var fileImporterPresented: Bool
+  @Binding var photoPickerPresented: Bool
   @Binding var cameraPickerPresented: Bool
   @Binding var attachmentError: String
   @Binding var selectedMessageForDetails: ChatMessage?
@@ -55,6 +56,11 @@ struct SignalASIAgentHomePresentationRoutes: ViewModifier {
           urls.forEach(onAddAttachment)
         case .failure(let error):
           attachmentError = error.localizedDescription
+        }
+      }
+      .sheet(isPresented: $photoPickerPresented) {
+        PhotoLibraryPickerView { attachment in
+          onAppendAttachment(attachment)
         }
       }
       .fullScreenCover(isPresented: $cameraPickerPresented) {
@@ -168,6 +174,7 @@ extension View {
   func signalASIAgentHomePresentationRoutes(
     scanShortcutActive: Binding<Bool>,
     fileImporterPresented: Binding<Bool>,
+    photoPickerPresented: Binding<Bool>,
     cameraPickerPresented: Binding<Bool>,
     attachmentError: Binding<String>,
     selectedMessageForDetails: Binding<ChatMessage?>,
@@ -197,6 +204,7 @@ extension View {
       SignalASIAgentHomePresentationRoutes(
         scanShortcutActive: scanShortcutActive,
         fileImporterPresented: fileImporterPresented,
+        photoPickerPresented: photoPickerPresented,
         cameraPickerPresented: cameraPickerPresented,
         attachmentError: attachmentError,
         selectedMessageForDetails: selectedMessageForDetails,
