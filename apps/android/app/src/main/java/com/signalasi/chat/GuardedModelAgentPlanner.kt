@@ -25,6 +25,12 @@ class GuardedModelAgentPlanner(
                 routeRationale = "A reasoning resource authors code while the phone Linux runtime owns file creation, execution, verification, and artifacts."
             )
         }
+        if (fallbackPlan.actions.any(AgentAction::isSupervisedProjectConnector)) {
+            return fallbackPlan.copy(
+                plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+                routeRationale = "The selected reasoning resource supervises an isolated phone project while Android validates and executes each tool call."
+            )
+        }
         val deterministicLocalAction = RuleBasedAgentPlanner(appContext).deterministicLocalAction(request)
         if (deterministicLocalAction != null && fallbackPlan.actions.any {
                 it.id == deterministicLocalAction.id && it.kind == deterministicLocalAction.kind

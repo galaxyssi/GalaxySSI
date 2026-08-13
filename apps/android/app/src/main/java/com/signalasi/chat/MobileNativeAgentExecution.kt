@@ -642,7 +642,8 @@ internal fun MobileNativeAgent.executePlannedAction(
     )
     val materializedAction = currentPlan?.materializeToolInput(
         action = hardenedAction,
-        allowOutputHandoff = AgentModelPlannerSettingsStore(appContext).load().multiAgentCoordination
+        allowOutputHandoff = AgentModelPlannerSettingsStore(appContext).load().multiAgentCoordination ||
+            hardenedAction.isSupervisedProjectConnector()
     ) ?: hardenedAction
     val executionAction = materializedAction.copy(
         parameters = materializedAction.parameters + mapOf(
@@ -710,6 +711,8 @@ internal fun MobileNativeAgent.executePlannedAction(
     val specializedContinuation = updatedPlan?.plannerProfile?.startsWith("specialized-adapter:") == true &&
         hardenedAction.requiresSpecializedContinuation()
     val replanReason = when {
+        lastActionResult?.success != true && updatedPlan?.isSupervisedProjectPlan() == true ->
+            PHONE_SUPERVISED_PROJECT_REPLAN_REASON
         lastActionResult?.success != true &&
             lastActionResult?.metadata?.get("non_retriable") == "true" -> ""
         lastActionResult?.success != true && hardenedAction.isPhoneDevelopmentRuntimeHandoff() ->
@@ -808,6 +811,8 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     }
     val plan = currentPlan ?: return null
     val actionId = pendingResult.actionId
+    val completedAction = plan.actions.firstOrNull { it.id == actionId }
+    val supervisedProjectResponse = completedAction?.isSupervisedProjectConnector() == true
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.OBSERVE,
             reason = "Remote response received",
@@ -818,7 +823,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     }
     val rawResponse = content.trim().take(MAX_CONNECTOR_RESPONSE_CHARACTERS)
     val normalizedRichOutput = AgentRichContentCodec.normalize(richOutputJson)
-    val responseSelfCheck = if (success) {
+    val responseSelfCheck = if (success && !supervisedProjectResponse) {
         AgentResponseSelfCheck.evaluate(
             latestRequest = currentGoal,
             response = rawResponse,
@@ -904,7 +909,54 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     )
     val responseStatus = if (effectiveSuccess) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED
     var responsePlan = plan.markAction(actionId, responseStatus, completedResult)
-    val completedAction = plan.actions.firstOrNull { it.id == actionId }
+    if (effectiveSuccess && supervisedProjectResponse) {
+        val supervisor = requireNotNull(completedAction)
+        val supervisedPlan = acceptSupervisedProjectPlan(responsePlan, supervisor, response)
+        if (supervisedPlan == null) {
+            val failure = completedResult.copy(
+                success = false,
+                message = "The supervising model did not return a valid executable project plan."
+            )
+            currentPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
+            lastActionResult = failure
+            phase = AgentPhase.FAILED
+            recordAudit(
+                AgentAuditEvent.ACTION_BLOCKED,
+                "supervised_project_plan_invalid; action=$actionId"
+            )
+            saveTaskRecord(result = failure.message)
+            return snapshot()
+        }
+        currentPlan = supervisedPlan
+        lastActionResult = completedResult.copy(
+            message = supervisedPlan.routeRationale.ifBlank { "The next verified project step is ready." }
+        )
+        supervisedPlan.routeRationale.takeIf(String::isNotBlank)?.let { summary ->
+            recordAudit(
+                AgentAuditEvent.REASONING_SUMMARY,
+                "summary=${summary.replace(';', ',').take(600)}"
+            )
+        }
+        recordAudit(
+            AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
+            "source_message_id=$sourceMessageId; contact=$contactId; success=true; structured_project_plan=true"
+        )
+        phase = when {
+            safetySettingsStore.load().executionPaused -> AgentPhase.PAUSED
+            supervisedPlan.safetyReview.blocked -> AgentPhase.BLOCKED
+            supervisedPlan.safetyReview.requiresConfirmation -> AgentPhase.WAITING_CONFIRMATION
+            else -> AgentPhase.PLANNING
+        }
+        saveTaskRecord()
+        return if (
+            !supervisedPlan.safetyReview.blocked &&
+            !supervisedPlan.safetyReview.requiresConfirmation
+        ) {
+            executeFirstPendingAction()
+        } else {
+            snapshot()
+        }
+    }
     if (effectiveSuccess && completedAction?.parameters?.get("connector_task_mode") == PHONE_DEVELOPMENT_CONNECTOR_MODE) {
         AgentPhoneDevelopmentManifestCodec.parse(response).getOrNull()?.decisionSummary
             ?.takeIf(String::isNotBlank)

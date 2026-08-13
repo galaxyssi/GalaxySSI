@@ -121,6 +121,17 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     val settings = AgentModelPlannerSettingsStore(appContext).load()
     val specializedAdapter = plan.plannerProfile.startsWith("specialized-adapter:")
     val phoneDevelopmentRepair = plan.isPhoneDevelopmentRepairRequest(reason)
+    val supervisedProject = plan.isSupervisedProjectPlan()
+    if (supervisedProject) {
+        val recovered = supervisedProjectRecoveryPlan(plan, reason)
+        recovered?.let {
+            recordAudit(
+                AgentAuditEvent.PLAN_REPLANNED,
+                "revision=${it.revision}; reason=${reason.take(120)}; supervised_project=true"
+            )
+        }
+        return recovered
+    }
     if (!specializedAdapter && !phoneDevelopmentRepair &&
         (!settings.enabled || (!settings.dynamicReplanning && !force))) return null
     val maxReplans = when {

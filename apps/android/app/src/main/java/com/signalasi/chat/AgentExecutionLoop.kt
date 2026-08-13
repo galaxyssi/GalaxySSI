@@ -647,12 +647,16 @@ object AgentExecutionLoopJsonCodec {
 
 internal fun AgentModelPlannerSettings.executionLoopBudget(
     profile: AgentExecutionProfile = AgentExecutionProfile.forGoal("")
-): AgentExecutionLoopBudget =
-    AgentExecutionLoopBudget(
-        maxIterations = maxLoopIterations,
-        maxActions = maxActions.coerceAtLeast(1),
-        maxReplans = maxReplans.coerceAtLeast(0),
-        maxToolCalls = maxToolCalls.coerceAtLeast(1),
+): AgentExecutionLoopBudget {
+    val projectTask = profile.taskKind in setOf(
+        AgentExecutionTaskKind.BUILD,
+        AgentExecutionTaskKind.INSTALL
+    )
+    return AgentExecutionLoopBudget(
+        maxIterations = if (projectTask) maxLoopIterations.coerceAtLeast(16) else maxLoopIterations,
+        maxActions = if (projectTask) maxActions.coerceAtLeast(24) else maxActions.coerceAtLeast(1),
+        maxReplans = if (projectTask) maxReplans.coerceAtLeast(MAX_SUPERVISED_REPLANS) else maxReplans.coerceAtLeast(0),
+        maxToolCalls = if (projectTask) maxToolCalls.coerceAtLeast(24) else maxToolCalls.coerceAtLeast(1),
         maxRetries = maxPhaseRetries,
         maxSameFailureAttempts = profile.maxSameFailureAttempts,
         noProgressTimeoutMillis = maxOf(
@@ -660,6 +664,7 @@ internal fun AgentModelPlannerSettings.executionLoopBudget(
             profile.noProgressTimeoutMillis
         )
     )
+}
 
 internal fun AgentTaskContext.persistExecutionLoop(event: AgentExecutionLoopEvent) {
     if (event.phase != AgentExecutionLoopPhase.CANCELLED) {

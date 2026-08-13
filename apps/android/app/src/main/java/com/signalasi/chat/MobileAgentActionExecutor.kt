@@ -536,7 +536,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 ?: return AgentActionResult(action.id, false, "Agent team plan is invalid")
             return dispatchAgentTeam(action, spec)
         }
-        val prompt = if (action.parameters["connector_task_mode"] == PHONE_DEVELOPMENT_CONNECTOR_MODE) {
+        val prompt = if (action.parameters["connector_task_mode"] in setOf(
+                PHONE_DEVELOPMENT_CONNECTOR_MODE,
+                PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+            )
+        ) {
             action.parameters["prompt"].orEmpty()
         } else if (action.id == "knowledge-answer") {
             buildKnowledgeAnswerPrompt(action)

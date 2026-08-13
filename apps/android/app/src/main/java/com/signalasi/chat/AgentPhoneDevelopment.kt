@@ -11,6 +11,9 @@ internal const val PHONE_DEVELOPMENT_ERROR_PARAMETER = "_signalasi_phone_develop
 internal const val PHONE_DEVELOPMENT_CONNECTOR_MODE = "phone_development_manifest_v1"
 internal const val PHONE_DEVELOPMENT_PLANNER_PROFILE = "phone-development-manifest-v2"
 internal const val PHONE_DEVELOPMENT_REPLAN_REASON = "phone_development_verification_failed"
+internal const val PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE = "phone_supervised_project_plan_v1"
+internal const val PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE = "phone-supervised-project-v1"
+internal const val PHONE_SUPERVISED_PROJECT_REPLAN_REASON = "phone_supervised_project_observe"
 
 internal enum class AgentPhoneDevelopmentMode {
     NONE,
@@ -163,6 +166,8 @@ internal object AgentPhoneDevelopmentPolicy {
     private const val PHONE_PROJECT_TOOL_PREFIX = "signalasi.project."
     private val PHONE_RUNTIME_TOOL_IDS = setOf(
         AgentOnDeviceRuntimeTools.STATUS,
+        AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,
+        AgentOnDeviceRuntimeTools.WORKSPACE_ROLLBACK,
         AgentOnDeviceRuntimeTools.LIST_PACKS,
         AgentOnDeviceRuntimeTools.INSTALL_PACK,
         AgentOnDeviceRuntimeTools.EXECUTE

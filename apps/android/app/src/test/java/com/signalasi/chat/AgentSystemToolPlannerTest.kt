@@ -254,6 +254,104 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun supervisedProjectStartsWithASelectedCapableAgentAndPhoneToolInventory() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val clone = nativeDescriptor(
+            AgentMobileProjectNativeTools.CLONE,
+            "Clone repository",
+            AgentNativeToolRisk.MEDIUM
+        )
+        val codex = AgentCallableTarget(
+            id = "codex-laptop",
+            title = "Codex - Laptop",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING, AgentCapability.TASK_EXECUTION)
+        )
+
+        val plan = RuleBasedAgentPlanner().plan(
+            request(
+                "Clone https://github.com/signalasi/SignalASI and improve the Android project",
+                screen,
+                listOf(clone),
+                listOf(codex)
+            )
+        )
+
+        val action = plan.actions.single()
+        assertEquals(AgentActionKind.CALL_CONNECTOR, action.kind)
+        assertEquals("codex-laptop", action.parameters["connector_id"])
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, action.parameters["connector_task_mode"])
+        assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
+        assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
+    }
+
+    @Test
+    fun supervisedProjectAppendsOneEvidenceReviewerAfterEveryToolBatch() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val clone = nativeDescriptor(
+            AgentMobileProjectNativeTools.CLONE,
+            "Clone repository",
+            AgentNativeToolRisk.MEDIUM
+        )
+        val target = AgentCallableTarget(
+            id = "qwen-local",
+            title = "Qwen Local",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING)
+        )
+        val request = request(
+            "Clone https://github.com/signalasi/SignalASI and improve the Android project",
+            screen,
+            listOf(clone),
+            listOf(target)
+        )
+        val connector = RuleBasedAgentPlanner().supervisedProjectActions(request)!!.single()
+        val tool = AgentAction(
+            id = "clone-project",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = clone.title,
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Clone the repository",
+            parameters = mapOf(
+                "tool_id" to clone.id,
+                "input_json" to "{\"workspace_id\":\"current\",\"repository_url\":\"https://github.com/signalasi/SignalASI\"}"
+            ),
+            requiresConfirmation = true
+        )
+        val batch = AgentPlanFactory.singleAction(request, tool).copy(
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+        )
+
+        val reviewed = AgentSupervisedProjectLoop.appendReviewer(batch, connector, request, "test")
+
+        assertEquals(2, reviewed.actions.size)
+        val reviewer = reviewed.actions.last()
+        assertTrue(reviewer.isSupervisedProjectConnector())
+        assertEquals(listOf(tool.id), reviewer.dependencyIds())
+        assertEquals(listOf(tool.id), reviewer.outputSourceIds())
+    }
+
+    @Test
+    fun supervisedProjectUsesAProjectSizedButBoundedExecutionBudget() {
+        val budget = AgentModelPlannerSettings(
+            maxActions = 4,
+            maxReplans = 2,
+            maxToolCalls = 8,
+            maxLoopIterations = 5
+        ).executionLoopBudget(
+            AgentExecutionProfile.forGoal("Improve the Android project and run tests")
+        )
+
+        assertEquals(16, budget.maxIterations)
+        assertEquals(24, budget.maxActions)
+        assertEquals(MAX_SUPERVISED_REPLANS, budget.maxReplans)
+        assertEquals(24, budget.maxToolCalls)
+    }
+
+    @Test
     fun modelPlannerCannotReintroducePhoneRuntimeForCrossProductWork() {
         val runtimeAction = AgentAction(
             id = "runtime",
