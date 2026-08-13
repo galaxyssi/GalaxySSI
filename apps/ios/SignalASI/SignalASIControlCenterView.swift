@@ -490,21 +490,23 @@ struct SignalASIControlCenterView: View {
     return 1 + availableClouds + onlineDesktops + configuredCustomDevices + configuredHomeAssistant
   }
 
-  private var systemStatusAvailableResourceCount: Int {
-    store.cloudModelContacts.count +
-      store.serverLinks.filter(\.paired).count +
-      store.customDeviceConnectors.filter(\.enabled).count
+  private var systemStatusResourceTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) }
+    )
   }
 
   private var systemStatusLinkReady: Bool {
     store.serverLinks.contains(where: \.paired) &&
+      coordinator.mqttClient.isConnected &&
       SignalASILinkTransportDiagnostics.snapshot().failureCount == 0
   }
 
   private var systemStatusNeedsAttention: Bool {
     store.agentSafetySettings.executionPaused ||
       !systemStatusLinkReady ||
-      systemStatusAvailableResourceCount == 0
+      systemStatusResourceTargets.contains { $0.status == .needsSetup }
   }
 
   private var resourcesBadge: String {
