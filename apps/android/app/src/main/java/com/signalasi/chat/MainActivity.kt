@@ -1326,30 +1326,93 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 getString(R.string.delivery_status_failed)
             )
         }
+        val directBinding = pendingDirectConnectorRuns.remove(sourceMessageId)
+        if (directBinding != null) {
+            cancelConnectorTimeouts(sourceMessageId)
+            pendingDirectConnectorActions.remove(directBinding.turnId)?.let { action ->
+                recordDirectAgentRun(
+                    turnId = directBinding.turnId,
+                    action = action,
+                    result = AgentActionResult(
+                        actionId = action.id,
+                        success = false,
+                        message = getString(R.string.agent_message_not_delivered),
+                        metadata = mapOf(
+                            "source_message_id" to sourceMessageId.toString(),
+                            "contact_id" to directBinding.contactId,
+                            "conversation_id" to directBinding.conversationId,
+                            "turn_id" to directBinding.turnId,
+                            "task_id" to directBinding.taskId
+                        )
+                    )
+                )
+            }
+            finishAgentDeliveryFailure(sourceMessageId, contactId, directBinding)
+            logDeliveryFailure(sourceMessageId, contactId, reason)
+            return
+        }
         val runtime = runtimeForConnectorResponse(
             sourceMessageId,
             contactId,
             allowTransportOnly = true
-        ) ?: return
+        )
+        if (runtime == null) {
+            val delivery = AgentDeliveryFailureRecorder.record(
+                this,
+                sourceMessageId,
+                contactId,
+                getString(R.string.agent_message_not_delivered)
+            )
+            if (delivery != null) {
+                runOnUiThread { finishAgentDeliveryFailureUi(delivery) }
+            }
+            logDeliveryFailure(sourceMessageId, contactId, reason)
+            return
+        }
         cancelConnectorTimeouts(sourceMessageId)
         val conversationId = agentRuntimeConversationIds[runtime].orEmpty()
         val turnId = agentRuntimeTurnIds[runtime].orEmpty()
         thread(name = "signalasi-delivery-failed-$sourceMessageId") {
             bindAgentExecutionLoop(runtime, turnId)
-            var state = runtime.handleConnectorTimeout(
+            var state = runtime.handleConnectorDeliveryFailure(
                 sourceMessageId,
-                AgentConnectorTimeoutStage.NOT_ACCEPTED
+                getString(R.string.agent_message_not_delivered)
             ) ?: return@thread
             if (turnId.isNotBlank()) {
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)
                 persistAgentWorkspaceSnapshot(turnId, state, runtime)
             }
-            runOnUiThread { renderAgentState(state, conversationId, turnId) }
+            if (state.phase.isTerminalAgentPhase()) {
+                val delivery = AgentDeliveryFailureRecorder.record(
+                    this,
+                    sourceMessageId,
+                    contactId,
+                    getString(R.string.agent_message_not_delivered)
+                ) ?: AgentPendingDelivery(
+                    sourceMessageId = sourceMessageId,
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    taskId = state.sessionId.ifBlank { turnId },
+                    contactId = contactId
+                ).also { fallback ->
+                    agentTranscriptStore.upsert(
+                        role = AgentTranscriptRole.ASSISTANT,
+                        text = getString(R.string.agent_message_not_delivered),
+                        dedupeKey = AgentDeliveryFailureRecorder.dedupeKey(sourceMessageId),
+                        conversationId = fallback.conversationId,
+                        turnId = fallback.turnId,
+                        taskId = fallback.taskId
+                    )
+                }
+                runOnUiThread {
+                    renderAgentState(state, conversationId, turnId, syncTranscript = false)
+                    finishAgentDeliveryFailureUi(delivery)
+                }
+            } else {
+                runOnUiThread { renderAgentState(state, conversationId, turnId) }
+            }
         }
-        Log.e(
-            "SignalASILink",
-            "Delivery failed source=$sourceMessageId contact=$contactId reason=$reason"
-        )
+        logDeliveryFailure(sourceMessageId, contactId, reason)
     }
 
     override fun onMessage(payload: String) {

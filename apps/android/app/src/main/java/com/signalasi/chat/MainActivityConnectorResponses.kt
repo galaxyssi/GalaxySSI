@@ -288,6 +288,11 @@ internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentCon
     if (!pendingDirectConnectorRuns.remove(response.sourceMessageId, binding)) return false
 
     directControlPlaneExecutor.consumeConnectorResponse(response)
+    AgentPendingDeliveryStore.remove(this, response.sourceMessageId)
+    deleteAgentTranscriptByDedupeKey(
+        binding.conversationId,
+        AgentDeliveryFailureRecorder.dedupeKey(response.sourceMessageId)
+    )
     liveAgentConnectorStreams.remove(response.sourceMessageId)
     val taskId = response.taskId.ifBlank { binding.taskId.ifBlank { binding.turnId } }
     val stored = agentTranscriptStore.upsert(
@@ -599,6 +604,11 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
     turnId: String,
     responseKey: String
 ) {
+    AgentPendingDeliveryStore.remove(this, response.sourceMessageId)
+    deleteAgentTranscriptByDedupeKey(
+        conversationId,
+        AgentDeliveryFailureRecorder.dedupeKey(response.sourceMessageId)
+    )
     liveAgentConnectorStreams.remove(response.sourceMessageId)
     agentConnectorResponsesInFlight.remove(responseKey)
     cancelConnectorTimeouts(response.sourceMessageId)
@@ -796,6 +806,11 @@ internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentC
     }
     deleteAgentTranscriptByDedupeKey(conversationId, "connector-task:$taskId")
     AgentConnectorResponseStore.remove(this, response)
+    AgentPendingDeliveryStore.remove(this, response.sourceMessageId)
+    deleteAgentTranscriptByDedupeKey(
+        conversationId,
+        AgentDeliveryFailureRecorder.dedupeKey(response.sourceMessageId)
+    )
     pendingDirectConnectorRuns.remove(response.sourceMessageId)
     completedConnectorTaskIds.add(taskId)
     agentTranscriptStore.recordUsage(

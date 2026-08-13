@@ -56,6 +56,32 @@ class AgentReplyWaitingIndicatorPolicyTest {
     }
 
     @Test
+    fun deliveryFailureReplyResolvesIndicator() {
+        val entries = listOf(
+            entry("user", AgentTranscriptRole.USER, "turn-1", 100L),
+            AgentTranscriptEntry(
+                id = "delivery-failure",
+                role = AgentTranscriptRole.ASSISTANT,
+                text = "Message not delivered. Check the connection, then retry.",
+                timestampMillis = 120L,
+                dedupeKey = AgentDeliveryFailureRecorder.dedupeKey(42L),
+                conversationId = "conversation",
+                turnId = "turn-1",
+                taskId = "turn-1"
+            )
+        )
+
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = entries,
+            pending = listOf(PendingAgentReplyIndicator("conversation", "turn-1", 101L)),
+            conversationId = "conversation"
+        )
+
+        assertEquals(setOf("turn-1"), result.resolvedTurnIds)
+        assertFalse(result.entries.any(AgentReplyWaitingIndicatorPolicy::isIndicator))
+    }
+
+    @Test
     fun pendingIndicatorsStayInsideTheirConversationAndTurn() {
         val result = AgentReplyWaitingIndicatorPolicy.apply(
             entries = listOf(entry("user", AgentTranscriptRole.USER, "turn-1", 100L)),

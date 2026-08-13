@@ -599,6 +599,17 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             state.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()?.let { sourceId ->
                 activeAgentTasks[sourceId] = runtime
                 provisionalAgentTasks.remove(runtime)
+                AgentPendingDeliveryStore.put(
+                    this@executeConcurrentAgentGoal,
+                    AgentPendingDelivery(
+                        sourceMessageId = sourceId,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        taskId = state.lastActionResult?.metadata?.get("remote_task_id").orEmpty()
+                            .ifBlank { turnId },
+                        contactId = state.lastActionResult?.metadata?.get("contact_id").orEmpty()
+                    )
+                )
                 scheduleConnectorTimeouts(runtime, sourceId, conversationId, turnId)
             }
             renderAgentState(state, conversationId, turnId)
@@ -1440,7 +1451,7 @@ internal fun MainActivity.appendDirectSystemResult(
             ?.toLongOrNull()
             ?.takeIf { it > 0L }
             ?.let { sourceMessageId ->
-                pendingDirectConnectorRuns[sourceMessageId] = PendingDirectConnectorRun(
+                val binding = PendingDirectConnectorRun(
                     action = action,
                     conversationId = conversationId,
                     turnId = turnId,
@@ -1448,6 +1459,17 @@ internal fun MainActivity.appendDirectSystemResult(
                         .ifBlank { result.metadata["task_id"].orEmpty() }
                         .ifBlank { turnId },
                     contactId = result.metadata["contact_id"].orEmpty()
+                )
+                pendingDirectConnectorRuns[sourceMessageId] = binding
+                AgentPendingDeliveryStore.put(
+                    this,
+                    AgentPendingDelivery(
+                        sourceMessageId = sourceMessageId,
+                        conversationId = binding.conversationId,
+                        turnId = binding.turnId,
+                        taskId = binding.taskId,
+                        contactId = binding.contactId
+                    )
                 )
             }
         Log.i(
