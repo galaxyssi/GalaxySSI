@@ -2616,6 +2616,7 @@
       buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "SignalASI" */;
       buildPhases = (
         A60000000000000000000003 /* Build iOS native llama runtime */,
+        A60000000000000000000004 /* Build iOS native Whisper runtime */,
         A60000000000000000000001 /* Sources */,
         A30000000000000000000001 /* Frameworks */,
         A70000000000000000000001 /* Resources */,
@@ -2699,6 +2700,17 @@
       runOnlyForDeploymentPostprocessing = 0;
       shellPath = /bin/bash;
       shellScript = "bash \"${SRCROOT}/apps/ios/build-signalasi-llama.sh\"\n";
+    };
+    A60000000000000000000004 /* Build iOS native Whisper runtime */ = {
+      isa = PBXShellScriptBuildPhase;
+      buildActionMask = 2147483647;
+      files = ();
+      inputPaths = ();
+      name = "Build iOS native Whisper runtime";
+      outputPaths = ("$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",);
+      runOnlyForDeploymentPostprocessing = 0;
+      shellPath = /bin/bash;
+      shellScript = "bash \"${SRCROOT}/apps/ios/build-signalasi-whisper.sh\"\n";
     };
 /* End PBXShellScriptBuildPhase section */
 
@@ -3722,16 +3734,20 @@
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
+        SIGNALASI_NATIVE_WHISPER = 1;
         SWIFT_EMIT_LOC_STRINGS = YES;
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SIGNALASI_NATIVE_LLAMA";
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime",
+          "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime",
         );
         OTHER_LDFLAGS = (
           "$(inherited)",
           "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
+          "-force_load",
+          "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",
           "-framework",
           Accelerate,
           "-framework",
@@ -3777,16 +3793,20 @@
         PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios;
         PRODUCT_NAME = "$(TARGET_NAME)";
         SIGNALASI_NATIVE_LLAMA = 1;
+        SIGNALASI_NATIVE_WHISPER = 1;
         SWIFT_EMIT_LOC_STRINGS = YES;
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS = SIGNALASI_NATIVE_LLAMA;
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime",
+          "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime",
         );
         OTHER_LDFLAGS = (
           "$(inherited)",
           "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
+          "-force_load",
+          "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",
           "-framework",
           Accelerate,
           "-framework",

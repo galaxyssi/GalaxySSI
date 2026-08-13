@@ -27,7 +27,7 @@ enum VoiceWhisperBenchmarkDefaultFactory {
     modelsDirectory: URL = VoiceWhisperModelCatalog.defaultModelsDirectory(),
     modelManager: VoiceWhisperModelManager? = nil,
     benchmarkManager: VoiceWhisperBenchmarkManager? = nil,
-    native: VoiceWhisperNativeAPI = UnavailableVoiceWhisperNativeBridge(),
+    native: VoiceWhisperNativeAPI = SignalASIWhisperNativeBridge(),
     bundle: Bundle = .main,
     plan: VoiceWhisperBenchmarkPlan = VoiceWhisperBenchmarkPlan(),
     audioLoader: (() throws -> VoiceWhisperBenchmarkAudio)? = nil,
