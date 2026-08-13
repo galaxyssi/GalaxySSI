@@ -585,6 +585,7 @@ struct AgentHomeView: View {
     case "show agent sessions": return "sessions"
     case "scan agent qr code": return "scan"
     case "take a photo": return "take-photo"
+    case "attach photos": return "add-photos"
     case "attach a file": return "add-file"
     case "choose agent model": return "model-selection"
     case "show native tools": return "native-tools"
