@@ -316,6 +316,7 @@ final class SignalASIStore: ObservableObject {
   private let agentPreferenceModeStore: AgentPreferenceModeStore
   let workflowExecutionHistoryStore: AgentWorkflowExecutionHistoryStore
   private let identityPrivateKeyAccount = "identity.p256.private"
+  private let phoneContactInboxRouteKey = "signalasi.phone_contact_inbox_route"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
@@ -987,6 +988,16 @@ final class SignalASIStore: ObservableObject {
 
   func myContactQRText(now: Date = Date()) throws -> String {
     try SignalASIContactExchange.makeContactQRText(profile: profile, serverLinks: serverLinks, now: now)
+  }
+
+  func phoneContactInboxRouteId() throws -> String {
+    let existing = defaults.string(forKey: phoneContactInboxRouteKey) ?? ""
+    if SignalASILinkProtocol.validRouteId(existing) {
+      return existing
+    }
+    let generated = try SignalASILinkProtocol.newRouteId()
+    defaults.set(generated, forKey: phoneContactInboxRouteKey)
+    return generated
   }
 
   @discardableResult
