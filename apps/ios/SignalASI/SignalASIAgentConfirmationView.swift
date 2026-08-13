@@ -79,6 +79,7 @@ struct SignalASIAgentConfirmationCard: View {
           .frame(maxWidth: .infinity, minHeight: 38)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("ios.agent.confirmation.allow-session")
 
         Button(action: onApproveAlways) {
           Label(
@@ -90,6 +91,7 @@ struct SignalASIAgentConfirmationCard: View {
           .frame(maxWidth: .infinity, minHeight: 38)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("ios.agent.confirmation.allow-always")
       }
     }
     .padding(12)
@@ -144,6 +146,7 @@ struct SignalASIAgentConfirmationCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(.plain)
+    .accessibilityIdentifier("ios.agent.confirmation.deny")
   }
 
   private var approveOnceControl: some View {
@@ -156,6 +159,7 @@ struct SignalASIAgentConfirmationCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(.plain)
+    .accessibilityIdentifier("ios.agent.confirmation.allow-once")
   }
 
   private var usesAccessibilityDynamicType: Bool {
