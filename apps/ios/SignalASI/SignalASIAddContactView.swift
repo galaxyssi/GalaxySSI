@@ -5,6 +5,9 @@ extension Notification.Name {
   static let signalASIDesktopPairingDidComplete = Notification.Name(
     "signalasi.desktopPairingDidComplete"
   )
+  static let signalASIContactImportDidComplete = Notification.Name(
+    "signalasi.contactImportDidComplete"
+  )
 }
 
 struct AddContactView: View {
@@ -295,7 +298,7 @@ struct AddContactView: View {
         pendingFriendRequest = stored
         pendingScannedRequests = [stored]
         setImportStatus(requestReceivedStatus(stored), isError: false)
-        onImportCompleted?()
+        notifyImportCompleted()
       case .contacts(let requests):
         if requests.allSatisfy({ $0.type == "agent" }) {
           importScannedAgentContacts(cleaned, requests: requests)
@@ -306,7 +309,7 @@ struct AddContactView: View {
         pendingFriendRequest = stored.first
         pendingScannedRequests = stored
         setImportStatus(requestsReceivedStatus(stored), isError: false)
-        onImportCompleted?()
+        notifyImportCompleted()
       }
     } catch {
       importDesktopAgentQRCodeFallback(cleaned, fallbackError: error)
@@ -351,7 +354,7 @@ struct AddContactView: View {
           )
       setImportStatus(message, isError: false)
       onAgentAdded?(importedAgentIDs)
-      onImportCompleted?()
+      notifyImportCompleted()
     } catch {
       let stored = requests.map { store.addFriendRequest($0) }
       pendingPairing = nil
@@ -385,7 +388,7 @@ struct AddContactView: View {
           )
       setImportStatus(message, isError: false)
       onAgentAdded?(importedAgentIDs)
-      onImportCompleted?()
+      notifyImportCompleted()
     } catch {
       clearPendingScanResult()
       setImportStatus(
@@ -471,7 +474,7 @@ struct AddContactView: View {
           userInfo: ["agentIDs": agentIDs]
         )
       }
-      onImportCompleted?()
+      notifyImportCompleted()
     } catch {
       setImportStatus(error.localizedDescription, isError: true)
     }
@@ -486,7 +489,7 @@ struct AddContactView: View {
       pendingScannedRequests.removeAll { $0.id == request.id }
       pendingFriendRequest = pendingScannedRequests.first
       setImportStatus(t("signalasi.friend_request.added_to_contacts", "Added to Contacts"), isError: false)
-      onImportCompleted?()
+      notifyImportCompleted()
       if request.type == "agent" {
         onAgentAdded?([request.signalASIId])
       }
@@ -527,7 +530,7 @@ struct AddContactView: View {
           )
       setImportStatus(message, isError: false)
       onAgentAdded?(approvedAgentIDs)
-      onImportCompleted?()
+      notifyImportCompleted()
     } else {
       setImportStatus(t("signalasi.friend_request.not_found", "Friend request not found."), isError: true)
     }
@@ -544,6 +547,14 @@ struct AddContactView: View {
   private func setImportStatus(_ message: String, isError: Bool) {
     contactImportStatus = message
     contactImportIsError = isError
+  }
+
+  private func notifyImportCompleted() {
+    onImportCompleted?()
+    NotificationCenter.default.post(
+      name: .signalASIContactImportDidComplete,
+      object: nil
+    )
   }
 
   private func requestReceivedStatus(_ request: SignalASIFriendRequest) -> String {

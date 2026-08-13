@@ -370,6 +370,11 @@ struct SignalASIAgentModelSelectionView: View {
       modelSelectionRefreshToken = UUID()
       _ = coordinator.requestCapabilityManifestRefresh()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .signalASIContactImportDidComplete)) { _ in
+      contentLoading = true
+      modelSelectionRefreshToken = UUID()
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
+    }
     .onReceive(NotificationCenter.default.publisher(for: .signalASIDesktopPairingDidComplete)) { _ in
       contentLoading = true
       modelSelectionRefreshToken = UUID()
