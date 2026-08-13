@@ -825,13 +825,16 @@ struct AgentIOSHardwareNativeToolExecutor {
     case AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground:
       let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults))
       let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis
-      return bluetoothDiscoveryProvider.discoverBluetooth(
-        timeoutMillis: max(
-          AgentIOSHardwareNativeToolCatalog.minBluetoothDiscoveryMillis,
-          min(AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis, timeout)
+      return localizedBluetoothDiscoveryResult(
+        bluetoothDiscoveryProvider.discoverBluetooth(
+          timeoutMillis: max(
+            AgentIOSHardwareNativeToolCatalog.minBluetoothDiscoveryMillis,
+            min(AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis, timeout)
+          ),
+          limit: max(1, min(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults, limit)),
+          nowMillis: now
         ),
-        limit: max(1, min(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults, limit)),
-        nowMillis: now
+        invocation: invocation
       )
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
       return status(
@@ -893,36 +896,56 @@ struct AgentIOSHardwareNativeToolExecutor {
     _ result: AgentNativeToolExecutionResult,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
+    localizedNativeResult(
+      result,
+      invocation: invocation,
+      success: "\u{5DF2}\u{8BFB}\u{53D6}\u{5355}\u{6B21}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}",
+      failures: [
+        "location_services_disabled": "iOS \u{5B9A}\u{4F4D}\u{670D}\u{52A1}\u{5DF2}\u{5173}\u{95ED}\u{3002}",
+        "location_background_executor_required": "\u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{9700}\u{8981}\u{5728}\u{4E0D}\u{963B}\u{585E}\u{4E3B}\u{8FD0}\u{884C}\u{5FAA}\u{73AF}\u{7684}\u{539F}\u{751F}\u{6267}\u{884C}\u{7EBF}\u{7A0B}\u{4E0A}\u{8FD0}\u{884C}\u{3002}",
+        "location_timeout": "\u{7B49}\u{5F85}\u{5355}\u{6B21} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{8D85}\u{65F6}\u{3002}",
+        "location_unavailable": "iOS \u{672A}\u{8FD4}\u{56DE}\u{53EF}\u{7528}\u{7684}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}",
+        "location_framework_unavailable": "\u{5F53}\u{524D}\u{5E73}\u{53F0}\u{4E0D}\u{652F}\u{6301} CoreLocation\u{3002}",
+        "location_permission_required": "\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}",
+        "location_permission_not_determined": "\u{5C1A}\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}",
+        "location_authorization_unknown": "iOS \u{8FD4}\u{56DE}\u{4E86}\u{672A}\u{77E5}\u{7684}\u{5B9A}\u{4F4D}\u{6388}\u{6743}\u{72B6}\u{6001}\u{3002}",
+        "location_empty_result": "CoreLocation \u{672A}\u{8FD4}\u{56DE}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}",
+        "location_fix_failed": "CoreLocation \u{65E0}\u{6CD5}\u{83B7}\u{53D6}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{3002}"
+      ]
+    )
+  }
+
+  private func localizedBluetoothDiscoveryResult(
+    _ result: AgentNativeToolExecutionResult,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    localizedNativeResult(
+      result,
+      invocation: invocation,
+      success: "\u{524D}\u{53F0}\u{84DD}\u{7259}\u{8BBE}\u{5907}\u{626B}\u{63CF}\u{5DF2}\u{7ED3}\u{675F}\u{3002}",
+      failures: [
+        "bluetooth_background_executor_required": "\u{524D}\u{53F0} CoreBluetooth \u{626B}\u{63CF}\u{9700}\u{8981}\u{5728}\u{4E0D}\u{963B}\u{585E}\u{4E3B}\u{8FD0}\u{884C}\u{5FAA}\u{73AF}\u{7684}\u{539F}\u{751F}\u{6267}\u{884C}\u{7EBF}\u{7A0B}\u{4E0A}\u{8FD0}\u{884C}\u{3002}",
+        "bluetooth_permission_denied": "\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{84DD}\u{7259}\u{626B}\u{63CF}\u{6743}\u{9650}\u{3002}",
+        "bluetooth_authorization_unknown": "iOS \u{8FD4}\u{56DE}\u{4E86}\u{672A}\u{77E5}\u{7684}\u{84DD}\u{7259}\u{6388}\u{6743}\u{72B6}\u{6001}\u{3002}",
+        "bluetooth_discovery_timeout": "\u{7B49}\u{5F85} iOS CoreBluetooth \u{626B}\u{63CF}\u{5B8C}\u{6210}\u{8D85}\u{65F6}\u{3002}",
+        "bluetooth_discovery_unavailable": "iOS CoreBluetooth \u{626B}\u{63CF}\u{672A}\u{8FD4}\u{56DE}\u{53D7}\u{9650}\u{7684}\u{7ED3}\u{679C}\u{3002}",
+        "bluetooth_framework_unavailable": "\u{5F53}\u{524D}\u{5E73}\u{53F0}\u{4E0D}\u{652F}\u{6301} CoreBluetooth\u{3002}",
+        "bluetooth_disabled": "\u{84DD}\u{7259}\u{5DF2}\u{5173}\u{95ED}\u{FF1B}SignalASI \u{4E0D}\u{4F1A}\u{66F4}\u{6539}\u{8BE5}\u{8BBE}\u{7F6E}\u{3002}",
+        "bluetooth_unavailable": "\u{6B64} iOS \u{8BBE}\u{5907}\u{4E0D}\u{63D0}\u{4F9B} CoreBluetooth \u{626B}\u{63CF}\u{80FD}\u{529B}\u{3002}",
+        "bluetooth_state_unknown": "iOS \u{8FD4}\u{56DE}\u{4E86}\u{672A}\u{77E5}\u{7684}\u{84DD}\u{7259}\u{7BA1}\u{7406}\u{5668}\u{72B6}\u{6001}\u{3002}",
+        "bluetooth_discovery_not_ready": "\u{53D7}\u{9650}\u{7684}\u{626B}\u{63CF}\u{65F6}\u{95F4}\u{7A97}\u{7ED3}\u{675F}\u{524D}\u{FF0C}CoreBluetooth \u{5C1A}\u{672A}\u{5C31}\u{7EEA}\u{3002}"
+      ]
+    )
+  }
+
+  private func localizedNativeResult(
+    _ result: AgentNativeToolExecutionResult,
+    invocation: AgentNativeToolInvocation,
+    success: String,
+    failures: [String: String]
+  ) -> AgentNativeToolExecutionResult {
     guard isChinese(invocation) else { return result }
-    let message: String?
-    if result.isSuccess {
-      message = "\u{5DF2}\u{8BFB}\u{53D6}\u{5355}\u{6B21}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
-    } else {
-      switch result.error?.code {
-      case "location_services_disabled":
-        message = "iOS \u{5B9A}\u{4F4D}\u{670D}\u{52A1}\u{5DF2}\u{5173}\u{95ED}\u{3002}"
-      case "location_background_executor_required":
-        message = "\u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{9700}\u{8981}\u{5728}\u{4E0D}\u{963B}\u{585E}\u{4E3B}\u{8FD0}\u{884C}\u{5FAA}\u{73AF}\u{7684}\u{539F}\u{751F}\u{6267}\u{884C}\u{7EBF}\u{7A0B}\u{4E0A}\u{8FD0}\u{884C}\u{3002}"
-      case "location_timeout":
-        message = "\u{7B49}\u{5F85}\u{5355}\u{6B21} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{8D85}\u{65F6}\u{3002}"
-      case "location_unavailable":
-        message = "iOS \u{672A}\u{8FD4}\u{56DE}\u{53EF}\u{7528}\u{7684}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
-      case "location_framework_unavailable":
-        message = "\u{5F53}\u{524D}\u{5E73}\u{53F0}\u{4E0D}\u{652F}\u{6301} CoreLocation\u{3002}"
-      case "location_permission_required":
-        message = "\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}"
-      case "location_permission_not_determined":
-        message = "\u{5C1A}\u{672A}\u{6388}\u{4E88} iOS \u{524D}\u{53F0}\u{5B9A}\u{4F4D}\u{6743}\u{9650}\u{3002}"
-      case "location_authorization_unknown":
-        message = "iOS \u{8FD4}\u{56DE}\u{4E86}\u{672A}\u{77E5}\u{7684}\u{5B9A}\u{4F4D}\u{6388}\u{6743}\u{72B6}\u{6001}\u{3002}"
-      case "location_empty_result":
-        message = "CoreLocation \u{672A}\u{8FD4}\u{56DE}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{7ED3}\u{679C}\u{3002}"
-      case "location_fix_failed":
-        message = "CoreLocation \u{65E0}\u{6CD5}\u{83B7}\u{53D6}\u{524D}\u{53F0}\u{4F4D}\u{7F6E}\u{5B9A}\u{4F4D}\u{3002}"
-      default:
-        message = nil
-      }
-    }
+    let message = result.isSuccess ? success : failures[result.error?.code ?? ""]
     guard let message else { return result }
     var localized = result
     localized.message = message
