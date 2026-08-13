@@ -281,6 +281,22 @@ struct SignalASIAgentModelSelectionView: View {
             }
           }
 
+          SignalASISecuritySectionTitle(
+            title: t("signalasi.agent.model_selection.connect_section", "CONNECT AN AGENT")
+          )
+          SignalASISecurityNavigationRow(
+            title: t("signalasi.agent.model_selection.scan_agent", "Scan or paste Agent QR"),
+            subtitle: t(
+              "signalasi.agent.model_selection.scan_agent_subtitle",
+              "Pair a trusted Desktop Agent or local model through the Android-compatible QR flow"
+            ),
+            systemImage: "qrcode.viewfinder",
+            tint: .orange,
+            badge: t("security_scan", "Scan")
+          ) {
+            AddContactView(autoOpenScanner: true)
+          }
+
           if !cloudContacts.isEmpty {
             SignalASISecuritySectionTitle(
               title: t("signalasi.agent.model_selection.cloud_section", "CLOUD MODELS")
