@@ -131,7 +131,12 @@ struct SignalASIConversationHubView: View {
       )
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
-      ContactsView(showsBackButton: false)
+      if store.pendingFriendRequests.count == 1,
+         let request = store.pendingFriendRequests.first {
+        FriendRequestDetailView(requestId: request.id)
+      } else {
+        SignalASINewFriendsView()
+      }
     }
     .sheet(item: $editingSession) { session in
       SignalASIConversationHubRenameSheet(
