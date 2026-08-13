@@ -185,9 +185,21 @@ extension AgentHomeView {
     } else if homeActionEditorSelection != nil {
       homeActionEditorSelection = nil
       dismissedSurface = "action_editor"
+    } else if !runtimeArtifactError.isEmpty {
+      runtimeArtifactError = ""
+      dismissedSurface = "artifact_error"
+    } else if !runtimeArtifactStatus.isEmpty {
+      runtimeArtifactStatus = ""
+      dismissedSurface = "artifact_status"
+    } else if !richActionStatus.isEmpty {
+      richActionStatus = ""
+      dismissedSurface = "action_status"
     } else if pendingHighRiskApprovalTask != nil {
       pendingHighRiskApprovalTask = nil
       dismissedSurface = "high_risk_confirmation"
+    } else if homeTaskPendingDeletion != nil {
+      homeTaskPendingDeletion = nil
+      dismissedSurface = "task_deletion_confirmation"
     } else {
       dismissedSurface = nil
     }
