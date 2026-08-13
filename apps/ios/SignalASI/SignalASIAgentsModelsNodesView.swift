@@ -152,6 +152,7 @@ struct SignalASIAgentsModelsNodesView: View {
             title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
             subtitle: cloudSubtitle(contact),
             systemImage: "cloud.fill",
+            assetImage: cloudAssetName(contact),
             tint: contact.selectedCloudModel == nil ? .orange : .signalASIInsightText,
             badge: contact.selectedCloudModel == nil
               ? t("cc_status_not_configured", "Not configured")
@@ -193,6 +194,18 @@ struct SignalASIAgentsModelsNodesView: View {
     let provider = contact.cloudProvider.ifBlank(contact.signalASIId).ifBlank(contact.id)
     let model = contact.selectedCloudModel?.modelId ?? t("signalasi.settings.no_model", "No model")
     return "\(provider) / \(model)"
+  }
+
+  private func cloudAssetName(_ contact: SignalASIContact) -> String? {
+    SignalASIAgentAvatarAssetCatalog.cloudProviderAssetName(for: [
+      contact.id,
+      contact.signalASIId,
+      contact.name,
+      contact.displayName,
+      contact.cloudProvider,
+      contact.selectedCloudModel?.provider ?? "",
+      contact.selectedCloudModel?.modelId ?? ""
+    ])
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
