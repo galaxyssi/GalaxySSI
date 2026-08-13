@@ -127,6 +127,7 @@ struct SignalASIAgentExecutionFooterView: View {
       }
       .buttonStyle(.bordered)
       .accessibilityLabel(Text(resolvedCancelTitle))
+      .accessibilityIdentifier("ios.agent.execution-footer.cancel")
     }
   }
 
@@ -148,6 +149,7 @@ struct SignalASIAgentExecutionFooterView: View {
       }
       .menuStyle(.borderedButton)
       .accessibilityLabel(Text(resolvedTimelineActionMenuTitle))
+      .accessibilityIdentifier("ios.agent.execution-footer.controls")
     }
   }
 
