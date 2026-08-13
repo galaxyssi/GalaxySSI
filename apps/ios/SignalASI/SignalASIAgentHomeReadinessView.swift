@@ -491,29 +491,32 @@ struct SignalASIAgentHomeReadinessView: View {
   }
 
   private func recentTaskRow(_ task: AgentTaskRecord, index: Int) -> some View {
-    HStack(spacing: 10) {
+    HStack(alignment: .top, spacing: 10) {
       Text("\(index + 1)")
         .font(.system(size: 12, weight: .bold))
         .foregroundColor(.white)
         .frame(width: 28, height: 28)
         .background(recentTaskTint(task.phase))
         .clipShape(Circle())
+        .padding(.top, usesAccessibilityDynamicType ? 2 : 0)
       VStack(alignment: .leading, spacing: 2) {
         Text(task.goal.ifBlank(t("signalasi.agent_tasks.title", "Agent task")))
           .font(.system(size: 13, weight: .semibold))
           .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
         Text(recentTaskSubtitle(task))
           .font(.system(size: 10.5))
           .foregroundColor(.signalASITextSecondary)
-          .lineLimit(1)
+          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
           .truncationMode(.middle)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       Spacer(minLength: 6)
       Text(recentTaskStatus(task.phase))
         .font(.system(size: 10.5, weight: .bold))
         .foregroundColor(recentTaskTint(task.phase))
-        .lineLimit(1)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .multilineTextAlignment(.trailing)
     }
     .padding(.horizontal, 14)
   }
