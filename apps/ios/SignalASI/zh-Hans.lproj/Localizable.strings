@@ -3105,7 +3105,8 @@
 "cc_agent_memory_pss_badge" = "PSS";
 "cc_status_online" = "在线";
 "signalasi.system_status.refresh" = "刷新状态";
-"signalasi.system_status.refresh_subtitle" = "重新读取内存、传输、工具、任务与资源路由状态";
+"signalasi.system_status.refresh_subtitle" = "重新读取内存、传输、工具、任务、资源路由与手机状态";
+"signalasi.system_status.phone_title" = "手机状态";
 "cc_profile_title" = "我的 SignalASI";
 "cc_profile_subtitle_ios" = "身份受 iOS 安全边界保护";
 "cc_section_my_identity" = "我的身份";

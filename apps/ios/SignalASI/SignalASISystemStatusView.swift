@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct SignalASISystemStatusView: View {
@@ -6,6 +7,10 @@ struct SignalASISystemStatusView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var memorySnapshot = AgentMemoryPssSnapshot()
   @State private var linkSnapshot = SignalASILinkTransportDiagnostics.snapshot()
+  @State private var phoneMemorySnapshot = AgentIOSDefaultDeviceMemoryStatusProvider().snapshot()
+  @State private var phoneStorageSnapshot: AgentMcpJSONObject = [:]
+  @State private var phoneBatterySnapshot: AgentMcpJSONObject = [:]
+  @State private var phoneNetworkSnapshot: AgentMcpJSONObject = [:]
 
   var body: some View {
     VStack(spacing: 0) {
@@ -37,6 +42,7 @@ struct SignalASISystemStatusView: View {
             badge: needsAttention ? t("cc_status_degraded", "Degraded") : t("cc_status_normal", "Normal")
           )
           metrics
+          phoneStatusSection
           coreServicesSection
           diagnosticsSection
         }
@@ -108,6 +114,49 @@ struct SignalASISystemStatusView: View {
         systemImage: "memorychip",
         tint: .purple
       )
+    }
+  }
+
+  private var phoneStatusSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(
+        title: t("signalasi.system_status.phone_title", "Phone status")
+      )
+      LazyVGrid(
+        columns: [
+          GridItem(.flexible(), spacing: 8),
+          GridItem(.flexible(), spacing: 8),
+          GridItem(.flexible(), spacing: 8)
+        ],
+        spacing: 8
+      ) {
+        SignalASISystemStatusMetricCard(
+          title: t("signalasi.agent.readiness.phone_battery", "Battery"),
+          value: phoneBatteryValue,
+          systemImage: "battery.75",
+          tint: phoneBatteryTint
+        )
+        SignalASISystemStatusMetricCard(
+          title: t("signalasi.agent.readiness.phone_storage", "Storage"),
+          value: phoneStorageValue,
+          systemImage: "internaldrive",
+          tint: phoneStorageTint
+        )
+        SignalASISystemStatusMetricCard(
+          title: t("signalasi.agent.readiness.phone_network", "Network"),
+          value: phoneNetworkValue,
+          systemImage: "antenna.radiowaves.left.and.right",
+          tint: phoneNetworkConnected ? .signalASIAccent : .orange
+        )
+        SignalASISystemStatusMetricCard(
+          title: t("signalasi.agent.readiness.phone_memory", "Phone memory"),
+          value: phoneMemoryValue,
+          systemImage: phoneMemorySnapshot.lowMemory
+            ? "exclamationmark.triangle.fill"
+            : "memorychip",
+          tint: phoneMemorySnapshot.lowMemory ? .orange : .signalASIAccent
+        )
+      }
     }
   }
 
@@ -189,7 +238,10 @@ struct SignalASISystemStatusView: View {
       }
       SignalASISecurityActionRow(
         title: t("signalasi.system_status.refresh", "Refresh status"),
-        subtitle: t("signalasi.system_status.refresh_subtitle", "Re-read memory, transport, tools, tasks, and resource routing"),
+        subtitle: t(
+          "signalasi.system_status.refresh_subtitle",
+          "Re-read memory, transport, tools, tasks, resource routing, and phone status"
+        ),
         systemImage: "arrow.clockwise",
         tint: .blue,
         badge: t("cc_status_ready", "Ready")
@@ -197,6 +249,57 @@ struct SignalASISystemStatusView: View {
         refresh()
       }
     }
+  }
+
+  private var phoneMemoryValue: String {
+    String(
+      format: t(
+        "signalasi.agent.readiness.phone_memory_value",
+        "%@ free / %@"
+      ),
+      formattedBytes(phoneMemorySnapshot.availableBytes),
+      formattedBytes(phoneMemorySnapshot.totalBytes)
+    )
+  }
+
+  private var phoneBatteryValue: String {
+    guard let percent = phoneBatterySnapshot["percent"]?.intValue else {
+      return t("signalasi.agent.readiness.phone_battery_unknown", "Unknown")
+    }
+    return String(
+      format: t("signalasi.agent.readiness.phone_battery_value", "%d%%"),
+      Int(percent)
+    )
+  }
+
+  private var phoneBatteryTint: Color {
+    guard let percent = phoneBatterySnapshot["percent"]?.intValue else {
+      return .signalASITextSecondary
+    }
+    return percent <= 20 ? .orange : .signalASIAccent
+  }
+
+  private var phoneStorageValue: String {
+    String(
+      format: t("signalasi.agent.readiness.phone_storage_value", "%@ free"),
+      formattedBytes(phoneStorageSnapshot["available_bytes"]?.intValue ?? 0)
+    )
+  }
+
+  private var phoneStorageTint: Color {
+    phoneStorageSnapshot["low_storage"]?.boolValue == true
+      ? .orange
+      : .signalASIAccent
+  }
+
+  private var phoneNetworkConnected: Bool {
+    phoneNetworkSnapshot["connected"]?.boolValue == true
+  }
+
+  private var phoneNetworkValue: String {
+    phoneNetworkConnected
+      ? t("signalasi.agent.readiness.phone_network_connected", "Connected")
+      : t("signalasi.agent.readiness.phone_network_offline", "Offline")
   }
 
   private var nativeToolSummary: (total: Int, available: Int, needingAttention: Int) {
@@ -255,6 +358,12 @@ struct SignalASISystemStatusView: View {
   private func refresh() {
     memorySnapshot = AgentMemoryPssRuntime.snapshot()
     linkSnapshot = SignalASILinkTransportDiagnostics.snapshot()
+    phoneMemorySnapshot = AgentIOSDefaultDeviceMemoryStatusProvider().snapshot()
+    let nowMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    let provider = AgentIOSDefaultHardwareStatusProvider()
+    phoneStorageSnapshot = provider.storageStatus(nowMillis: nowMillis)
+    phoneBatterySnapshot = provider.batteryStatus(nowMillis: nowMillis)
+    phoneNetworkSnapshot = provider.networkStatus(nowMillis: nowMillis)
   }
 
   private func formattedBytes(_ bytes: Int64) -> String {
