@@ -343,7 +343,7 @@ struct SignalASIConversationHubView: View {
         hubActionRow(
           title: t("signalasi.agent_session.archived", "Archived sessions"),
           subtitle: String(format: t("signalasi.conversation_hub.archived_count", "%d archived"), preparedHubContent.archivedCount),
-          systemImage: "archivebox",
+          systemImage: "clock.arrow.circlepath",
           tint: .blue,
           badge: preparedHubContent.archivedCount > 0 ? "\(preparedHubContent.archivedCount)" : ""
         ) {
