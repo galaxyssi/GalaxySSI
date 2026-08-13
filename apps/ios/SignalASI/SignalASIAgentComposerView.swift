@@ -406,7 +406,7 @@ struct SignalASIAgentComposerView: View {
       }
       SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_sessions", "Sessions"),
-        systemImage: "tray.full",
+        systemImage: "bubble.left.and.bubble.right",
         minimumTouchSize: minimumTouchSize
       ) {
         closeTray()
@@ -430,7 +430,7 @@ struct SignalASIAgentComposerView: View {
       }
       SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_add_file", "Add file"),
-        systemImage: "doc",
+        systemImage: "doc.badge.plus",
         minimumTouchSize: minimumTouchSize
       ) {
         closeTray()
