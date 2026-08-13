@@ -91,9 +91,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun actionsFor(request: AgentRequest): List<AgentAction> {
         notificationReplyAction(request)?.let { return listOf(it) }
+        supervisedProjectActions(request)?.let { return it }
         genericWebResearchActions(request)?.let { return it }
         deterministicLocalAction(request)?.let { return listOf(it) }
-        supervisedProjectActions(request)?.let { return it }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
         val segments = splitGoalSegments(request.goal)
@@ -249,6 +249,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun genericWebResearchActions(request: AgentRequest): List<AgentAction>? {
+        if (AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal)) return null
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
         val explicitSearch = phoneWebSearchQuery(request.goal, request.goal.lowercase(Locale.US)) != null
         if (!requirements.liveDataRequired && !explicitSearch) return null
