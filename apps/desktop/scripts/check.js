@@ -223,11 +223,20 @@ if (html.includes('id="peerContactToggle"') ||
 }
 if (!html.includes('id="conversationListMenuButton"') ||
     !html.includes('id="conversationSelectionBar"') ||
+    !html.includes('data-i18n="Select conversations to delete"') ||
     !workspaceRenderer.includes("deleteConversationIds") ||
     !workspaceRenderer.includes("signalasi-desktop-pinned-conversations") ||
     !workspaceRenderer.includes("data-pin-conversation") ||
     !workspaceRenderer.includes("data-delete-conversation")) {
   throw new Error("Desktop conversation history must support persistent pinning and bulk deletion");
+}
+if (html.includes('id="deleteAllConversationsButton"') ||
+    workspaceRenderer.includes("function deleteAllConversations") ||
+    workspaceRenderer.includes('$("#deleteAllConversationsButton")') ||
+    localeZh["Delete all conversations"] ||
+    localeZh["Delete all conversations? Contacts and paired devices will remain."] ||
+    localeZh["Select conversations to delete"] !== "\u9009\u62e9\u5220\u6389\u5bf9\u8bdd") {
+  throw new Error("Desktop conversation menu must only open explicit conversation deletion selection");
 }
 if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
     !preload.includes("deletePeerConversation") ||
