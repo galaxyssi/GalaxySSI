@@ -1502,6 +1502,7 @@
 "agent_attachment_new_task" = "新建会话";
 "agent_attachment_sessions" = "会话列表";
 "agent_attachment_scan" = "扫一扫";
+"agent_attachment_source_title" = "添加附件";
 "agent_attachment_open_menu" = "更多功能";
 "agent_attachment_close_menu" = "收起功能";
 "agent_attachment_add_file" = "添加文件";

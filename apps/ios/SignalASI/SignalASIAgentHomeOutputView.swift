@@ -131,7 +131,7 @@ extension AgentHomeView {
               },
               onTakePhoto: openCameraAttachmentPicker,
               onAddFile: {
-                fileImporterPresented = true
+                attachmentSourcePickerPresented = true
               },
               onCyclePermissionMode: cycleAgentPermissionMode,
               onToggleHighRiskGuard: {
