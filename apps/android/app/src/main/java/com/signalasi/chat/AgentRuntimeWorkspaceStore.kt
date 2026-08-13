@@ -760,15 +760,6 @@ class AgentRuntimeWorkspaceManager private constructor(
                 if (workspace.listFiles().isNullOrEmpty()) workspace.delete()
             }
         }
-        if (checkpointRoot.isDirectory) {
-            checkpointRoot.listFiles().orEmpty().filter(File::isDirectory).forEach { workspace ->
-                workspace.listFiles().orEmpty().filter(File::isDirectory).forEach { checkpoint ->
-                    val age = nowMillis - checkpoint.lastModified().coerceAtLeast(0L)
-                    if (age > CHECKPOINT_TTL_MILLIS) checkpoint.deleteRecursively()
-                }
-                if (workspace.listFiles().isNullOrEmpty()) workspace.delete()
-            }
-        }
     }
 
     private fun projectDirectory(workspaceId: String): File {
@@ -975,7 +966,6 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".signalasi-tools/bin"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
-        private const val CHECKPOINT_TTL_MILLIS = 30L * 24L * 60L * 60L * 1_000L
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val DOMAIN_PATTERN = Regex("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")

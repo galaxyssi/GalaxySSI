@@ -17,13 +17,13 @@ object AgentWorkspaceScope {
         input: AgentNativeJsonObject,
         workspaceId: String
     ): AgentNativeJsonObject {
-        if (!toolId.startsWith(WORKSPACE_TOOL_PREFIX)) return input
+        if (WORKSPACE_TOOL_PREFIXES.none(toolId::startsWith)) return input
         return LinkedHashMap(input).apply { put("workspace_id", workspaceId) }
     }
 
     fun <T> withLock(workspaceId: String, block: () -> T): T =
         locks.computeIfAbsent(workspaceId) { ReentrantLock() }.withLock(block)
 
-    private const val WORKSPACE_TOOL_PREFIX = "signalasi.workspace."
+    private val WORKSPACE_TOOL_PREFIXES = listOf("signalasi.workspace.", "signalasi.project.")
     private val locks = ConcurrentHashMap<String, ReentrantLock>()
 }

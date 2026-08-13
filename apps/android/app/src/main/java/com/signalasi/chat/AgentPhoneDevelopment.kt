@@ -90,7 +90,9 @@ internal object AgentPhoneDevelopmentPolicy {
     }
 
     fun isPhoneDevelopmentTool(toolId: String): Boolean =
-        toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) || toolId in PHONE_RUNTIME_TOOL_IDS
+        toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
+            toolId.startsWith(PHONE_PROJECT_TOOL_PREFIX) ||
+            toolId in PHONE_RUNTIME_TOOL_IDS
 
     fun acceptsModelPlan(goal: String, actions: List<AgentAction>): Boolean =
         shouldUsePhoneRuntime(goal) || actions.none { action ->
@@ -158,6 +160,7 @@ internal object AgentPhoneDevelopmentPolicy {
     private const val MAX_REPAIR_EVIDENCE_CHARACTERS = 12_000
     private const val MAX_RUNTIME_SUMMARY_CHARACTERS = 8_000
     private const val PHONE_WORKSPACE_TOOL_PREFIX = "signalasi.workspace."
+    private const val PHONE_PROJECT_TOOL_PREFIX = "signalasi.project."
     private val PHONE_RUNTIME_TOOL_IDS = setOf(
         AgentOnDeviceRuntimeTools.STATUS,
         AgentOnDeviceRuntimeTools.LIST_PACKS,
