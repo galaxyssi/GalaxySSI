@@ -4276,9 +4276,18 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func inventoryHeading(_ title: String, count: Int) -> String {
+    let chineseTitle: String
+    switch title {
+    case "Tools": chineseTitle = "\u{5de5}\u{5177}"
+    case "Agents": chineseTitle = "\u{667a}\u{80fd}\u{4f53}"
+    case "Models": chineseTitle = "\u{6a21}\u{578b}"
+    case "Devices": chineseTitle = "\u{8bbe}\u{5907}"
+    case "Capabilities": chineseTitle = "\u{80fd}\u{529b}"
+    default: chineseTitle = title
+    }
     localReply(
       english: "\(title) (\(count)):",
-      chinese: "\(title)（\(count)）："
+      chinese: "\(chineseTitle)\uff08\(count)\uff09\uff1a"
     )
   }
 
