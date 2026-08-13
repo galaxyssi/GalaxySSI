@@ -853,6 +853,7 @@ struct SignalASIConversationHubView: View {
   }
 
   private func contactRow(_ contact: SignalASIContact) -> some View {
+    let kindPresentation = SignalASIContactKindPresentation.forContact(contact, t: t)
     NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
       hubRowContent(
         title: contact.displayName,
@@ -864,7 +865,10 @@ struct SignalASIConversationHubView: View {
           ? .blue
           : (contact.type == "agent" ? .signalASIAccent : .signalASITextSecondary),
         trailing: "",
-        leadingView: AnyView(AvatarView(contact: contact, size: 34))
+        leadingView: AnyView(AvatarView(contact: contact, size: 34)),
+        titleAccessory: kindPresentation.map {
+          AnyView(SignalASIContactKindBadge(presentation: $0))
+        }
       )
     }
     .buttonStyle(.plain)
@@ -905,6 +909,7 @@ struct SignalASIConversationHubView: View {
     trailing: String,
     updatedAt: Date? = nil,
     leadingView: AnyView? = nil,
+    titleAccessory: AnyView? = nil,
     showsDisclosure: Bool = true
   ) -> some View {
     HStack(spacing: 10) {
@@ -923,10 +928,16 @@ struct SignalASIConversationHubView: View {
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
       VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(.signalASITextPrimary)
-          .lineLimit(1)
+        HStack(spacing: 6) {
+          Text(title)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(.signalASITextPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+          if let titleAccessory {
+            titleAccessory
+          }
+        }
         if !subtitle.isEmpty {
           Text(subtitle)
             .font(.system(size: 12))
