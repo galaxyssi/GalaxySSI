@@ -142,9 +142,14 @@ struct SignalASIConversationComposer: View {
           .background(
             uiState.showSendButton
               ? Color(red: 0.655, green: 0.906, blue: 0.847)
-              : Color.signalASISurface
+              : Color.clear
           )
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .clipShape(
+            RoundedRectangle(
+              cornerRadius: uiState.showSendButton ? 27 : 8,
+              style: .continuous
+            )
+          )
       }
       .buttonStyle(.plain)
       .frame(minWidth: 54, minHeight: 54)
