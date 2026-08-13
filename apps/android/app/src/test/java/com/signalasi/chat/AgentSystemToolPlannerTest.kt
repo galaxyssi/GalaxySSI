@@ -235,14 +235,20 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun keepsLargeOrExplicitDesktopDevelopmentTasksOnDesktop() {
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Build the entire Android repository with Gradle"))
+    fun routesRepositoryDevelopmentToTheSupervisedPhoneProjectMode() {
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Build the entire Android repository with Gradle"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Build the entire Android repository with Gradle"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Fix the current SignalASI Android app and submit a pull request"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone https://github.com/signalasi/SignalASI and improve the Android project"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("\u5728\u624b\u673a\u672c\u673a\u514b\u9686 SignalASI \u4ed3\u5e93\uff0c\u4fee\u590d\u4ee3\u7801\u5e76\u63d0\u4ea4 GitHub PR"))
+        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Show the latest GitHub releases"))
+
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Write a Python program on the desktop"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Comprehensively test the app and desktop, including offline recovery and UI responsiveness"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Analyze this app screenshot and fix the issue"))
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Fix the current SignalASI Android app and submit a pull request"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5168\u9762\u6d4b\u8bd5 App \u548c Desktop \u7684\u6240\u6709\u529f\u80fd\uff0c\u5305\u62ec\u79bb\u7ebf\u6062\u590d\u548c\u9875\u9762\u6d41\u7545\u5ea6"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Write a simple Python program and verify it"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseManifestAuthoring("Write a simple Python program and verify it"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5728\u624b\u673a\u672c\u673a\u5199\u4e00\u4e2a Python \u811a\u672c\u5e76\u6d4b\u8bd5"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Run this Python script locally on the phone and verify it"))
     }

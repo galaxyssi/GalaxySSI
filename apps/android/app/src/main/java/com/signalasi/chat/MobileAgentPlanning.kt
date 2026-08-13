@@ -103,7 +103,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun phoneDevelopmentActions(request: AgentRequest): List<AgentAction>? {
-        if (!AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal)) return null
+        if (!AgentPhoneDevelopmentPolicy.shouldUseManifestAuthoring(request.goal)) return null
         val runtime = request.runtimeContext.nativeTools.firstOrNull { descriptor ->
             descriptor.id == AgentOnDeviceRuntimeTools.EXECUTE &&
                 (descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE ||
