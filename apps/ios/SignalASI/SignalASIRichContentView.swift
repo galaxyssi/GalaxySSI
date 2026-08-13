@@ -1292,7 +1292,9 @@ private struct SignalASIRichBlockView: View {
 
   private var desktopArtifactBlock: some View {
     let available = localArtifactFile != nil
-    let previewActions = block.actions.filter { $0.verb == "preview_runtime_artifact" }
+    let previewActions = available
+      ? []
+      : block.actions.filter { $0.verb == "preview_runtime_artifact" }
     return VStack(alignment: .leading, spacing: 8) {
       SignalASIRichResourceRow(
         icon: "doc.richtext",
