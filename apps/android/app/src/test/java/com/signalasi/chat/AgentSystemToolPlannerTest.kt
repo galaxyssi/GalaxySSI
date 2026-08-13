@@ -284,6 +284,8 @@ class AgentSystemToolPlannerTest {
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, action.parameters["connector_task_mode"])
         assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
         assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
+        assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
+        assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))
     }
 
     @Test

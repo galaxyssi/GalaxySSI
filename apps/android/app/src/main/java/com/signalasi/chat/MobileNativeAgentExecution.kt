@@ -702,7 +702,9 @@ internal fun MobileNativeAgent.executePlannedAction(
         awaitingResponse -> AgentActionStatus.WAITING_RESPONSE
         else -> AgentActionStatus.COMPLETED
     }
-    val updatedPlan = currentPlan?.markAction(hardenedAction.id, finalStatus, lastActionResult)
+    val updatedPlan = currentPlan
+        ?.addArtifactRichOutput(lastActionResult?.metadata?.get("rich_output").orEmpty())
+        ?.markAction(hardenedAction.id, finalStatus, lastActionResult)
         ?.addVerification(AgentVerificationResult.from(hardenedAction.id, lastActionResult, recovery))
     val hasPendingBeforeReplan = updatedPlan?.actions?.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED

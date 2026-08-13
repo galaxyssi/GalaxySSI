@@ -539,8 +539,8 @@ internal fun MobileNativeAgent.executeAction(
             .ifBlank { renderedOutput }
     }
     val richOutput = when {
-        toolId == AgentOnDeviceRuntimeTools.EXECUTE && developmentFile.isNotBlank() ->
-            AgentRuntimeArtifactUi.richOutput(result.output, userMessage, developmentFile, zh)
+        toolId == AgentOnDeviceRuntimeTools.EXECUTE ->
+            AgentRuntimeArtifactUi.artifactOutput(result.output, developmentFile, zh)
         toolId in AgentVisibleCaptureNativeTools.toolIds && result.isSuccess ->
             captureArtifactRichOutput(toolId, result.output, zh)
         else -> ""

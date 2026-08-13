@@ -601,7 +601,10 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
             turnId = transcriptTurnId,
             taskId = state.sessionId,
             richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
-                state.lastActionResult?.metadata?.get("rich_output").orEmpty()
+                AgentRuntimeArtifactUi.mergeWithArtifactOutputs(
+                    state.lastActionResult?.metadata?.get("rich_output").orEmpty(),
+                    state.plan?.artifactRichOutputJson.orEmpty()
+                )
             )
         )
     }

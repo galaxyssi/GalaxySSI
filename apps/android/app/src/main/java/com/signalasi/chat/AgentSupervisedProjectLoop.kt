@@ -103,6 +103,7 @@ internal object AgentSupervisedProjectLoop {
         append("Use signalasi.workspace.* for bounded file inspection and edits, and signalasi.runtime.* for runtime status, signed pack installation, build, test, and artifact execution. ")
         append("Do not assume a toolchain exists. Inspect first; after a concrete missing-command or build error, install only the smallest trusted signed pack that resolves that evidence. ")
         append("Observe stdout, stderr, diffs, repository state, test output, and artifacts. Change approach after a repeated failure. ")
+        append("For the final successful build or export, pass every user-facing file or directory in artifact_paths; SignalASI packages directories and multiple paths as one verified ZIP. ")
         append("Do not commit or publish until relevant tests pass. Push and pull-request actions remain owner-approved high-risk operations. ")
         append("When the requested work is fully implemented and verified, return exactly one DRAFT_PLAN action with target task-complete and put the final verified summary in description. ")
         append("Never claim completion from an unverified command or from your own prior statement. ")
@@ -211,7 +212,8 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         replanCount = plan.replanCount + if (iteration > 0) 1 else 0,
         actionHistory = history,
         checkpoints = plan.checkpoints,
-        verificationResults = plan.verificationResults
+        verificationResults = plan.verificationResults,
+        artifactRichOutputJson = plan.artifactRichOutputJson
     )
     revised = AgentSupervisedProjectLoop.appendReviewer(
         plan = revised,
@@ -226,6 +228,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         actionHistory = history,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
+        artifactRichOutputJson = plan.artifactRichOutputJson,
         plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
         routeRationale = parsed.routeRationale,
         expectedResult = parsed.expectedResult,
@@ -276,6 +279,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         actionHistory = history,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
+        artifactRichOutputJson = plan.artifactRichOutputJson,
         routeRationale = "The supervising model will diagnose the latest failed phone action."
     )
     return reviewSupervisedProjectPlan(candidate)
@@ -314,6 +318,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         actionHistory = history,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
+        artifactRichOutputJson = plan.artifactRichOutputJson,
         routeRationale = "The model response was not executable, so SignalASI requested a corrected ActionPlan."
     )
     return reviewSupervisedProjectPlan(candidate)

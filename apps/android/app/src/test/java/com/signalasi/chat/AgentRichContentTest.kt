@@ -236,6 +236,58 @@ class AgentRichContentTest {
     }
 
     @Test
+    fun phoneRuntimeResultIncludesEveryVerifiedArtifact() {
+        val rich = AgentRuntimeArtifactUi.artifactOutput(
+            output = mapOf(
+                "artifacts" to listOf(
+                    runtimeArtifact("app-debug.apk", "a", 128L, "file"),
+                    runtimeArtifact("project.zip", "b", 256L, "project_archive", 4)
+                )
+            ),
+            zh = false
+        )
+
+        val files = AgentRichContentCodec.decode(rich).filter { it.type == AgentRichBlockType.FILE }
+        assertEquals(listOf("app-debug.apk", "project.zip"), files.map { it.title })
+        assertEquals(listOf("open_runtime_artifact", "save_runtime_artifact"), files.first().actions.map { it.verb })
+        assertEquals(listOf("preview_runtime_artifact", "save_runtime_artifact"), files.last().actions.map { it.verb })
+    }
+
+    @Test
+    fun mergingArtifactsPreservesModelRichContentAndDeduplicatesArtifacts() {
+        val base = AgentRichContentCodec.encode(listOf(
+            AgentRichBlock("summary", AgentRichBlockType.TEXT, text = "Build passed."),
+            AgentRichBlock("image", AgentRichBlockType.IMAGE, title = "preview.png", dataB64 = "aW1hZ2U=")
+        ))
+        val artifact = AgentRuntimeArtifactUi.artifactOutput(
+            output = mapOf("artifacts" to listOf(runtimeArtifact("project.zip", "c", 512L, "project_archive", 3))),
+            zh = false
+        )
+
+        val merged = AgentRuntimeArtifactUi.mergeWithArtifactOutputs(base, artifact, artifact)
+        val blocks = AgentRichContentCodec.decode(merged)
+
+        assertTrue(blocks.any { it.type == AgentRichBlockType.TEXT && it.text == "Build passed." })
+        assertTrue(blocks.any { it.type == AgentRichBlockType.IMAGE && it.title == "preview.png" })
+        assertEquals(1, blocks.count { it.metadata["runtime_artifact"] == "true" })
+    }
+
+    private fun runtimeArtifact(
+        relativePath: String,
+        digestCharacter: String,
+        sizeBytes: Long,
+        kind: String,
+        fileCount: Int = 1
+    ): Map<String, Any> = mapOf(
+        "relative_path" to relativePath,
+        "host_path" to "C:/private/agent-native-workspaces/session/$relativePath",
+        "size_bytes" to sizeBytes,
+        "sha256" to digestCharacter.repeat(64),
+        "artifact_kind" to kind,
+        "file_count" to fileCount
+    )
+
+    @Test
     fun malformedOrFutureDocumentsFailClosed() {
         assertTrue(AgentRichContentCodec.decode("not-json").isEmpty())
         assertTrue(AgentRichContentCodec.decode("{\"version\":99,\"blocks\":[]}").isEmpty())

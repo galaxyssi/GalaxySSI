@@ -6,4 +6,10 @@
     <files-path
         name="desktop_artifacts"
         path="desktop-artifacts/" />
+    <files-path
+        name="agent_native_workspaces"
+        path="agent-native-workspaces/" />
+    <files-path
+        name="agent_runtime_exports"
+        path="agent-runtime/exports/" />
 </paths>
