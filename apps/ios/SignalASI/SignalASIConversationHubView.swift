@@ -579,11 +579,7 @@ struct SignalASIConversationHubView: View {
       if multiDeleteMode {
         toggleSelectedSession(session.id)
       } else {
-        if showingArchived && session.status == .archived {
-          _ = store.restoreAgentSession(id: session.id)
-        }
-        _ = store.switchAgentSession(session.id)
-        dismiss()
+        openConversation(session)
       }
     } label: {
       hubRowContent(
@@ -600,8 +596,7 @@ struct SignalASIConversationHubView: View {
     .buttonStyle(.plain)
     .contextMenu {
       Button(t("signalasi.agent_sessions.select", "Select session")) {
-        _ = store.switchAgentSession(session.id)
-        dismiss()
+        openConversation(session)
       }
       Button(t("signalasi.agent_session.rename", "Rename")) {
         editingSession = session
@@ -707,6 +702,15 @@ struct SignalASIConversationHubView: View {
       .accessibilityLabel(Text(t("signalasi.common.cancel", "Cancel")))
     }
     .padding(.horizontal, 4)
+  }
+
+  private func openConversation(_ session: AgentConversation) {
+    let destination = store.agentSessionDestination(id: session.id) ?? session.id
+    if destination == session.id && session.status == .archived {
+      _ = store.restoreAgentSession(id: session.id)
+    }
+    _ = store.switchAgentSession(destination)
+    dismiss()
   }
 
   private func toggleSelectedSession(_ sessionId: String) {
