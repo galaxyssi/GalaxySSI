@@ -27,7 +27,6 @@ struct SignalASIAgentComposerView: View {
   var onOpenSessions: () -> Void
   var onScan: () -> Void
   var onTakePhoto: () -> Void
-  var onAddPhotos: () -> Void
   var onAddFile: () -> Void
   var onSend: () -> Void
   var onPendingPrimaryAction: () -> Void
@@ -428,14 +427,6 @@ struct SignalASIAgentComposerView: View {
       ) {
         closeTray()
         onTakePhoto()
-      }
-      SignalASIAgentComposerTrayButton(
-        title: t("agent_attachment_add_photos", "Add photos"),
-        systemImage: "photo.on.rectangle",
-        minimumTouchSize: minimumTouchSize
-      ) {
-        closeTray()
-        onAddPhotos()
       }
       SignalASIAgentComposerTrayButton(
         title: t("agent_attachment_add_file", "Add file"),

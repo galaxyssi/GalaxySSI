@@ -6,9 +6,7 @@ struct SignalASIAgentHomeQuickActionsView: View {
   var onOpenSessions: () -> Void
   var onScan: () -> Void
   var onTakePhoto: () -> Void
-  var onAddPhotos: () -> Void
   var onAddFile: () -> Void
-  var onRefreshScreenContext: () -> Void
 
   var body: some View {
     HStack(spacing: 0) {
@@ -33,19 +31,9 @@ struct SignalASIAgentHomeQuickActionsView: View {
         action: onTakePhoto
       )
       action(
-        title: t("agent_attachment_add_photos", "Add photos"),
-        systemImage: "photo.on.rectangle",
-        action: onAddPhotos
-      )
-      action(
         title: t("agent_attachment_add_file", "Add file"),
         systemImage: "paperclip",
         action: onAddFile
-      )
-      action(
-        title: t("agent_screen_refresh", "Refresh context"),
-        systemImage: "arrow.clockwise",
-        action: onRefreshScreenContext
       )
     }
     .frame(height: 96)
