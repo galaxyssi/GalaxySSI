@@ -321,20 +321,6 @@ struct SignalASIControlCenterView: View {
         SignalASIAgentCoreView()
       }
       SignalASIControlCenterNavigationRow(
-        title: t("cc_global_agent_title", "Global Super Agent"),
-        subtitle: t(
-          "cc_global_agent_subtitle",
-          "Persistent personal intelligence across every conversation and long-term goal"
-        ),
-        systemImage: "brain",
-        tint: store.globalAgentSettings.enabled ? .signalASIAccent : .orange,
-        badge: store.globalAgentSettings.enabled
-          ? t("status_enabled", "Enabled")
-          : t("signalasi.status.paused", "Paused")
-      ) {
-        SignalASIGlobalAgentControlView()
-      }
-      SignalASIControlCenterNavigationRow(
         title: t("cc_execution_policy_title", "Execution Policy"),
         subtitle: executionPolicySummary,
         systemImage: "checkmark.shield",
