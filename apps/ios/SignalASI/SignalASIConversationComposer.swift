@@ -165,13 +165,24 @@ struct SignalASIConversationComposer: View {
         .lineLimit(1)
         .minimumScaleFactor(0.78)
       if voiceRecorder.isRecording {
-        SignalASIChatVoiceWaveform(
-          phase: voiceRecorder.waveformPhase,
-          amplitude: voiceRecorder.waveformAmplitude,
-          cancelPending: voiceRecorder.cancelPending,
-          color: .white
-        )
-        .frame(height: 38)
+        let transcript = voiceRecorder.stableTranscript.ifBlank(voiceRecorder.unstableTranscript)
+        if transcript.isEmpty {
+          SignalASIChatVoiceWaveform(
+            phase: voiceRecorder.waveformPhase,
+            amplitude: voiceRecorder.waveformAmplitude,
+            cancelPending: voiceRecorder.cancelPending,
+            color: .white
+          )
+          .frame(height: 38)
+        } else {
+          Text(transcript)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(voiceRecorder.cancelPending ? .red : .white)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
         Text(voiceRecorder.elapsedLabel)
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(voiceRecorder.cancelPending ? .red : .white)

@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import Speech
 
 struct SignalASIChatVoiceRecorderMessages {
   var permissionDenied: String
@@ -17,13 +18,19 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
   @Published private(set) var elapsedSeconds: TimeInterval = 0
   @Published private(set) var waveformPhase: Double = 0
   @Published private(set) var waveformAmplitude: Double = 0
+  @Published private(set) var stableTranscript = ""
+  @Published private(set) var unstableTranscript = ""
   @Published private(set) var statusMessage = ""
 
   private let minimumDuration: TimeInterval = 0.8
   private let maximumDuration: TimeInterval = 120
   private let cancellationDistance: CGFloat = -64
 
-  private var recorder: AVAudioRecorder?
+  private let audioEngine = AVAudioEngine()
+  private var audioFile: AVAudioFile?
+  private var speechRecognizer: SFSpeechRecognizer?
+  private var speechRequest: SFSpeechAudioBufferRecognitionRequest?
+  private var speechTask: SFSpeechRecognitionTask?
   private var recordingURL: URL?
   private var startedAt: Date?
   private var meterTimer: Timer?
@@ -110,29 +117,40 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
     do {
       let url = try makeRecordingURL()
       let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+      try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
       try session.setActive(true)
-      let settings: [String: Any] = [
+      let input = audioEngine.inputNode
+      let format = input.outputFormat(forBus: 0)
+      let fileSettings: [String: Any] = [
         AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: 24_000,
+        AVSampleRateKey: max(16_000, format.sampleRate),
         AVNumberOfChannelsKey: 1,
         AVEncoderBitRateKey: 32_000,
         AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
       ]
-      let recorder = try AVAudioRecorder(url: url, settings: settings)
-      recorder.isMeteringEnabled = true
-      guard recorder.record() else {
-        throw SignalASIChatVoiceRecorderError.couldNotStart
+      audioFile = try AVAudioFile(
+        forWriting: url,
+        settings: fileSettings,
+        commonFormat: .pcmFormatFloat32,
+        interleaved: false
+      )
+      input.removeTap(onBus: 0)
+      input.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+        self?.append(buffer)
       }
+      audioEngine.prepare()
+      try audioEngine.start()
       recordingURL = url
-      self.recorder = recorder
       startedAt = Date()
       elapsedSeconds = 0
       waveformPhase = 0
       waveformAmplitude = 0
+      stableTranscript = ""
+      unstableTranscript = ""
       statusMessage = ""
       isPreparing = false
       isRecording = true
+      startSpeechRecognition()
       startMetering()
     } catch {
       isPreparing = false
@@ -144,8 +162,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
   private func finishRecording(send: Bool) {
     let duration = max(0, Date().timeIntervalSince(startedAt ?? Date()))
     let url = recordingURL
-    recorder?.stop()
-    recorder = nil
+    stopAudioCapture()
     isPreparing = false
     isRecording = false
     stopMetering()
@@ -188,16 +205,88 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
     return directory.appendingPathComponent("\(UUID().uuidString).m4a", isDirectory: false)
   }
 
+  private func append(_ buffer: AVAudioPCMBuffer) {
+    guard isRecording else { return }
+    try? audioFile?.write(from: buffer)
+    speechRequest?.append(buffer)
+    let channel = buffer.floatChannelData?.pointee
+    let frameCount = Int(buffer.frameLength)
+    guard let channel, frameCount > 0 else { return }
+    var sum: Float = 0
+    for index in 0..<frameCount {
+      let value = channel[index]
+      sum += value * value
+    }
+    let rms = sqrt(sum / Float(frameCount))
+    let amplitude = Double(min(1, max(0, rms * 8)))
+    Task { @MainActor [weak self] in
+      guard let self, self.isRecording else { return }
+      self.waveformAmplitude += (amplitude - self.waveformAmplitude) * 0.35
+    }
+  }
+
+  private func startSpeechRecognition() {
+    guard #available(iOS 15.0, *) else { return }
+    switch SFSpeechRecognizer.authorizationStatus() {
+    case .notDetermined:
+      SFSpeechRecognizer.requestAuthorization { [weak self] status in
+        guard status == .authorized else { return }
+        DispatchQueue.main.async {
+          guard let self, self.isRecording else { return }
+          self.startSpeechRecognition()
+        }
+      }
+      return
+    case .denied, .restricted:
+      return
+    case .authorized:
+      break
+    @unknown default:
+      return
+    }
+    let locale = Locale.current
+    guard let recognizer = SFSpeechRecognizer(locale: locale),
+          recognizer.isAvailable else {
+      return
+    }
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    if recognizer.supportsOnDeviceRecognition {
+      request.requiresOnDeviceRecognition = true
+    }
+    speechRecognizer = recognizer
+    speechRequest = request
+    speechTask = recognizer.recognitionTask(with: request) { [weak self] result, _ in
+      guard let text = result?.bestTranscription.formattedString else { return }
+      Task { @MainActor [weak self] in
+        guard let self, self.isRecording else { return }
+        if result?.isFinal == true {
+          self.stableTranscript = text
+          self.unstableTranscript = ""
+        } else {
+          self.unstableTranscript = text
+        }
+      }
+    }
+  }
+
+  private func stopAudioCapture() {
+    audioEngine.stop()
+    audioEngine.inputNode.removeTap(onBus: 0)
+    audioFile = nil
+    speechRequest?.endAudio()
+    speechTask?.cancel()
+    speechTask = nil
+    speechRequest = nil
+    speechRecognizer = nil
+  }
+
   private func startMetering() {
     meterTimer?.invalidate()
     meterTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, let startedAt = self.startedAt else { return }
-        self.recorder?.updateMeters()
-        let power = self.recorder?.averagePower(forChannel: 0) ?? -60
-        let amplitude = Double(max(0, min(1, (power + 60) / 60)))
-        self.waveformPhase += 0.35 + Double(amplitude) * 0.6
-        self.waveformAmplitude += (amplitude - self.waveformAmplitude) * 0.35
+        self.waveformPhase += 0.35 + self.waveformAmplitude * 0.6
         self.elapsedSeconds = Date().timeIntervalSince(startedAt)
         if self.elapsedSeconds >= self.maximumDuration {
           self.finishRecording(send: true)
@@ -213,8 +302,7 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
 
   private func cleanup(deleteRecording: Bool) {
     stopMetering()
-    recorder?.stop()
-    recorder = nil
+    stopAudioCapture()
     if deleteRecording, let recordingURL {
       try? FileManager.default.removeItem(at: recordingURL)
     }
@@ -223,6 +311,8 @@ final class SignalASIChatVoiceRecorder: ObservableObject {
     isRecording = false
     isPreparing = false
     waveformAmplitude = 0
+    stableTranscript = ""
+    unstableTranscript = ""
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
   }
 }
