@@ -75,6 +75,7 @@ struct SignalASIAgentBlockedTaskCard: View {
     .buttonStyle(.borderedProminent)
     .tint(.signalASIAccent)
     .disabled(isRetrying)
+    .accessibilityIdentifier("ios.agent.task.retry")
   }
 
   private var replanControl: some View {
@@ -85,6 +86,7 @@ struct SignalASIAgentBlockedTaskCard: View {
     }
     .buttonStyle(.bordered)
     .disabled(isRetrying)
+    .accessibilityIdentifier("ios.agent.task.replan")
   }
 
   private var usesAccessibilityDynamicType: Bool {
@@ -128,6 +130,7 @@ struct SignalASIAgentRetryCard: View {
       .buttonStyle(.borderedProminent)
       .tint(.signalASIAccent)
       .disabled(isRetrying)
+      .accessibilityIdentifier("ios.agent.task.retry")
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,6 +284,7 @@ struct SignalASIAgentExecutionStatusCard: View {
           .frame(maxWidth: .infinity, minHeight: 36)
       }
       .buttonStyle(.bordered)
+      .accessibilityIdentifier("ios.agent.task.resume")
     }
   }
 
@@ -293,6 +297,7 @@ struct SignalASIAgentExecutionStatusCard: View {
           .frame(maxWidth: .infinity, minHeight: 36)
       }
       .buttonStyle(.bordered)
+      .accessibilityIdentifier("ios.agent.task.cancel")
     }
   }
 
@@ -314,6 +319,7 @@ struct SignalASIAgentExecutionStatusCard: View {
       }
       .menuStyle(.borderedButton)
       .accessibilityLabel(Text(t("signalasi.agent.task_control.title", "Task controls")))
+      .accessibilityIdentifier("ios.agent.task.controls")
     }
   }
 
