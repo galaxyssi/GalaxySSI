@@ -4,6 +4,8 @@ import SwiftUI
 import UIKit
 
 struct SignalASIAgentHomePhoneStatusView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   var t: (String, String) -> String
 
   @State private var snapshot = AgentIOSDefaultDeviceMemoryStatusProvider().snapshot()
@@ -60,26 +62,7 @@ struct SignalASIAgentHomePhoneStatusView: View {
       }
 
       NavigationLink(destination: SignalASISystemStatusView()) {
-        HStack(spacing: 9) {
-          statusMetric(
-            title: t("signalasi.agent.readiness.phone_battery", "Battery"),
-            value: batteryValue,
-            systemImage: "battery.75",
-            tint: batteryTint
-          )
-          statusMetric(
-            title: t("signalasi.agent.readiness.phone_storage", "Storage"),
-            value: storageValue,
-            systemImage: "internaldrive",
-            tint: storageTint
-          )
-          statusMetric(
-            title: t("signalasi.agent.readiness.phone_network", "Network"),
-            value: networkValue,
-            systemImage: "antenna.radiowaves.left.and.right",
-            tint: networkConnected ? .signalASIAccent : .orange
-          )
-        }
+        statusMetrics
       }
       .buttonStyle(.plain)
       .accessibilityLabel(Text(phoneStatusAccessibilityLabel))
@@ -190,6 +173,50 @@ struct SignalASIAgentHomePhoneStatusView: View {
       "\(t("signalasi.agent.readiness.phone_network", "Network")): \(networkValue)"
   }
 
+  @ViewBuilder
+  private var statusMetrics: some View {
+    if usesAccessibilityDynamicType {
+      VStack(alignment: .leading, spacing: 7) {
+        batteryMetric
+        storageMetric
+        networkMetric
+      }
+    } else {
+      HStack(spacing: 9) {
+        batteryMetric
+        storageMetric
+        networkMetric
+      }
+    }
+  }
+
+  private var batteryMetric: some View {
+    statusMetric(
+      title: t("signalasi.agent.readiness.phone_battery", "Battery"),
+      value: batteryValue,
+      systemImage: "battery.75",
+      tint: batteryTint
+    )
+  }
+
+  private var storageMetric: some View {
+    statusMetric(
+      title: t("signalasi.agent.readiness.phone_storage", "Storage"),
+      value: storageValue,
+      systemImage: "internaldrive",
+      tint: storageTint
+    )
+  }
+
+  private var networkMetric: some View {
+    statusMetric(
+      title: t("signalasi.agent.readiness.phone_network", "Network"),
+      value: networkValue,
+      systemImage: "antenna.radiowaves.left.and.right",
+      tint: networkConnected ? .signalASIAccent : .orange
+    )
+  }
+
   private func statusMetric(
     title: String,
     value: String,
@@ -209,10 +236,18 @@ struct SignalASIAgentHomePhoneStatusView: View {
       Text(value)
         .font(.system(size: 10.5, weight: .bold))
         .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.65)
+        .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+        .minimumScaleFactor(usesAccessibilityDynamicType ? 1 : 0.65)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: usesAccessibilityDynamicType ? 34 : nil,
+      alignment: .leading
+    )
+  }
+
+  private var usesAccessibilityDynamicType: Bool {
+    dynamicTypeSize.isAccessibilitySize
   }
 
   private func refresh() {
