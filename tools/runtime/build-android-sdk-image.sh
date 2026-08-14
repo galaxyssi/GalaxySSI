@@ -83,7 +83,7 @@ docker run --rm --platform linux/arm64 \
     apt-get update
     apt-get install --yes --no-install-recommends \
       bison build-essential ca-certificates cmake flex git libexpat1-dev libfmt-dev \
-      libgtest-dev libpng-dev libprotobuf-dev ninja-build protobuf-compiler zlib1g-dev
+      libgtest-dev libpng-dev libprotobuf-dev ninja-build pkg-config protobuf-compiler zlib1g-dev
     git clone --filter=blob:none https://github.com/termux/android-build-tools.git /tmp/android-build-tools
     cd /tmp/android-build-tools
     git checkout --detach "$SOURCE_COMMIT"
