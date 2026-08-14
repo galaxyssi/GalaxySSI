@@ -22,10 +22,11 @@ Required entrypoints are:
 | `rust` | `bin/rustc` |
 | `cpp` | `bin/cc`, `bin/c++` |
 | `java` | `bin/java`, `bin/javac` |
+| `gradle` | `bin/gradle` |
 | `browser-automation` | `bin/signalasi-browser`, `bin/playwright` |
 | `ffmpeg` | `bin/ffmpeg`, `bin/ffprobe` |
 
-Pinned builders cover `python-uv`, `node-js`, `go`, `rust`, `cpp`, `java`, browser automation, and
+Pinned builders cover `python-uv`, `node-js`, `go`, `rust`, `cpp`, `java`, `gradle`, browser automation, and
 `ffmpeg`; run the
 matching `npm run runtime:build-*` command on Linux to produce an unsigned image and signing
 config. These source recipes do not mean the binary packs have been published or installed.

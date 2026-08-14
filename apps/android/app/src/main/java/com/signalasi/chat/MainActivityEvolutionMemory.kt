@@ -1277,6 +1277,7 @@ internal fun MainActivity.runtimePackTitle(id: String): String = when (id) {
     "rust" -> "Rust"
     "cpp" -> "C / C++"
     "java" -> "Java"
+    "gradle" -> "Gradle"
     "browser-automation" -> getString(R.string.cc_runtime_pack_browser)
     "ffmpeg" -> "FFmpeg"
     else -> id

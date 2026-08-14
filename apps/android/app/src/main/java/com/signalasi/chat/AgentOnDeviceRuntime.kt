@@ -739,6 +739,7 @@ class AgentOnDeviceRuntimeManager(
             "rust",
             "cpp",
             "java",
+            "gradle",
             "browser-automation",
             "ffmpeg"
         )
@@ -746,7 +747,7 @@ class AgentOnDeviceRuntimeManager(
             .groupBy(AgentRuntimeLanguage::requiredPack)
             .mapValues { (_, languages) ->
                 languages.mapTo(linkedSetOf(), AgentRuntimeLanguage::requiredCapability)
-            }
+            } + mapOf("gradle" to setOf("gradle.execute"))
         private const val RUNTIME_DIRECTORY = "agent-runtime"
         private const val PACKS_DIRECTORY = "packs"
         private const val MANIFEST_FILE = "manifest.json"

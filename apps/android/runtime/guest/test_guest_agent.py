@@ -153,6 +153,8 @@ class GuestProtocolTest(unittest.TestCase):
             environment["ZIG_GLOBAL_CACHE_DIR"],
         )
         self.assertEqual(str(guest.PACK_ROOT / "java"), environment["JAVA_HOME"])
+        self.assertEqual(str(guest.PACK_ROOT / "gradle"), environment["GRADLE_HOME"])
+        self.assertEqual(str(task_temp / "gradle"), environment["GRADLE_USER_HOME"])
 
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}
