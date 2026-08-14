@@ -215,18 +215,20 @@ jobs:
           path: |
             build/runtime/android-jni-libs
             build/runtime/android-assets/runtime/qemu
-          key: android-qemu-v2-${{ runner.os }}-${{ hashFiles('tools/runtime/build-android-qemu.sh', 'tools/runtime/android-elf-*.mjs', 'tools/runtime/collect-android-elf-bundle.mjs', 'tools/runtime/normalize-android-elf-bundle.mjs', 'apps/android/runtime/qemu/**') }}
-          restore-keys: |
-            android-qemu-v2-${{ runner.os }}-
+          key: android-qemu-v3-${{ runner.os }}-${{ hashFiles('tools/runtime/build-android-qemu.sh', 'tools/runtime/android-elf-*.mjs', 'tools/runtime/collect-android-elf-bundle.mjs', 'tools/runtime/normalize-android-elf-bundle.mjs', 'tools/runtime/verify-android-qemu-elf.mjs', 'apps/android/runtime/qemu/**') }}
 
       - name: Inspect restored Android QEMU engine
         id: qemu-state
         run: |
           if [[ -f build/runtime/android-jni-libs/signalasi-qemu-bundle.json && \
                 -f build/runtime/android-jni-libs/arm64-v8a/libsignalasi_qemu.so && \
-                -f build/runtime/android-assets/runtime/qemu/bundle.json ]]; then
+                -f build/runtime/android-assets/runtime/qemu/bundle.json ]] && \
+              npm run runtime:verify-android-qemu-elf -- \
+                --jni-root build/runtime/android-jni-libs \
+                --readelf llvm-readelf; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
+            rm -rf build/runtime/android-jni-libs build/runtime/android-assets/runtime/qemu
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
