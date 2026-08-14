@@ -7,6 +7,7 @@ import {
   parseDynamicSection,
   validateAarch64ElfHeader,
   validateAndroidProgramHeaders,
+  validateSignalAsiQemuFeatures,
 } from './android-elf-bundle.mjs';
 
 const { values } = parseArgs({
@@ -28,6 +29,7 @@ if (manifest.format_version !== 1 || manifest.architecture !== 'arm64-v8a' ||
     !Array.isArray(manifest.files) || manifest.files.length === 0) {
   throw new Error('SignalASI QEMU bundle metadata is invalid');
 }
+validateSignalAsiQemuFeatures(manifest);
 
 for (const file of manifest.files) {
   const path = join(jniRoot, 'arm64-v8a', file.name);

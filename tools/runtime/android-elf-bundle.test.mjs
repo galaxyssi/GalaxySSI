@@ -8,6 +8,7 @@ import {
   parseDynamicSection,
   validateAarch64ElfHeader,
   validateAndroidProgramHeaders,
+  validateSignalAsiQemuFeatures,
 } from './android-elf-bundle.mjs';
 
 const HEADER = `
@@ -74,6 +75,40 @@ test('bundle collector follows non-system dependencies exactly once', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('QEMU feature validation requires the bundled user networking backend', () => {
+  const validManifest = {
+    entry_file: 'libsignalasi_qemu.so',
+    files: [
+      {
+        name: 'libsignalasi_qemu.so',
+        dependencies: ['libc.so', 'libslirp.so'],
+      },
+      {
+        name: 'libslirp.so',
+        dependencies: ['libc.so'],
+      },
+    ],
+  };
+
+  assert.doesNotThrow(() => validateSignalAsiQemuFeatures(validManifest));
+  assert.throws(
+    () => validateSignalAsiQemuFeatures({
+      ...validManifest,
+      files: validManifest.files.filter((file) => file.name !== 'libslirp.so'),
+    }),
+    /user networking backend/,
+  );
+  assert.throws(
+    () => validateSignalAsiQemuFeatures({
+      ...validManifest,
+      files: validManifest.files.map((file) => file.name === 'libsignalasi_qemu.so'
+        ? { ...file, dependencies: ['libc.so'] }
+        : file),
+    }),
+    /user networking backend/,
+  );
 });
 
 test('bundle collector rejects a dependency symlink that escapes its root', (context) => {

@@ -64,6 +64,18 @@ export function validateAndroidProgramHeaders(value) {
   }
 }
 
+export function validateSignalAsiQemuFeatures(manifest) {
+  const files = Array.isArray(manifest?.files) ? manifest.files : [];
+  const entry = files.find((file) => file?.name === manifest?.entry_file);
+  if (!entry) throw new Error('SignalASI QEMU entry metadata is missing');
+  const bundledNames = new Set(files.map((file) => String(file?.name || '')));
+  const entryDependencies = new Set(entry.dependencies || []);
+  const slirpLibrary = [...bundledNames].find((name) => /^libslirp(?:[_+.-].*)?\.so$/i.test(name));
+  if (!slirpLibrary || !entryDependencies.has(slirpLibrary)) {
+    throw new Error('SignalASI QEMU bundle does not provide the required user networking backend');
+  }
+}
+
 export function collectAndroidElfBundle({
   entryFile,
   outputDirectory,
