@@ -22,6 +22,13 @@ internal object AgentSupervisedProjectLoop {
         append(previousResponse.trim().take(MAX_INVALID_RESPONSE_CHARACTERS))
     }.take(MAX_PROMPT_CHARACTERS)
 
+    fun incompleteCompletionPrompt(request: AgentRequest, missingEvidence: List<String>): String = buildString {
+        append(buildPrompt(request, evidenceExpected = true))
+        append("\nSignalASI rejected the completion marker because the user's requested publication outcome is not yet proven. ")
+        append("Continue from the verified project state and perform the next necessary action. Do not return task-complete yet. ")
+        append("Missing evidence: ").append(missingEvidence.joinToString("; ")).append('.')
+    }.take(MAX_PROMPT_CHARACTERS)
+
     fun recoveryPrompt(request: AgentRequest, failedAction: AgentAction, reason: String): String = buildString {
         append(buildPrompt(request, evidenceExpected = true))
         append("\nThe last phone action failed. Diagnose the observed evidence before choosing a different next step. ")
@@ -310,6 +317,16 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         ?.takeIf { candidate -> AgentPhoneDevelopmentPolicy.acceptsModelPlan(currentGoal, candidate.actions) }
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
 
+    if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
+        val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            currentGoal,
+            plan.historyForReplan()
+        )
+        if (missingEvidence.isNotEmpty()) {
+            return supervisedIncompleteCompletionPlan(plan, connector, request, missingEvidence)
+        }
+    }
+
     val revision = plan.revision + 1
     val history = plan.historyForReplan().map { action ->
         if (action.id == connector.id) {
@@ -470,6 +487,45 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
     return reviewSupervisedProjectPlan(candidate)
 }
 
+private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
+    plan: AgentPlan,
+    connector: AgentAction,
+    request: AgentRequest,
+    missingEvidence: List<String>
+): AgentPlan? {
+    val attempt = connector.parameters["supervised_completion_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    if (attempt >= MAX_SUPERVISED_COMPLETION_REPAIRS) return null
+    val history = plan.historyForReplan()
+    val retry = connector.copy(
+        id = "supervise-phone-project-completion-${plan.revision + 1}-${attempt + 1}",
+        status = AgentActionStatus.PENDING_CONFIRMATION,
+        description = "Continue until the requested publication result is verified",
+        parameters = connector.parameters + mapOf(
+            "prompt" to AgentSupervisedProjectLoop.incompleteCompletionPrompt(request, missingEvidence),
+            "supervised_completion_attempt" to (attempt + 1).toString(),
+            "depends_on" to "",
+            "use_outputs_from" to ""
+        ),
+        requiresConfirmation = false,
+        result = "",
+        evidence = ""
+    )
+    val candidate = AgentPlanFactory.singleAction(request, retry).copy(
+        planId = plan.planId,
+        executionMode = plan.executionMode,
+        selectedAgentOrModel = retry.target,
+        plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+        revision = plan.revision + 1,
+        replanCount = plan.replanCount + 1,
+        actionHistory = history,
+        checkpoints = plan.checkpoints,
+        verificationResults = plan.verificationResults,
+        artifactRichOutputJson = plan.artifactRichOutputJson,
+        routeRationale = "SignalASI kept the project active because its requested publication result was not yet verified."
+    )
+    return reviewSupervisedProjectPlan(candidate)
+}
+
 private fun MobileNativeAgent.supervisedProjectRequest(
     plan: AgentPlan,
     continuation: Boolean
@@ -507,5 +563,6 @@ private fun MobileNativeAgent.reviewSupervisedProjectPlan(plan: AgentPlan): Agen
 private const val MAX_SUPERVISED_BATCH_ACTIONS = 11
 private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
 private const val MAX_SUPERVISED_FORMAT_REPAIRS = 2
+private const val MAX_SUPERVISED_COMPLETION_REPAIRS = 3
 internal const val MAX_SUPERVISED_REPLANS = 12
 internal const val MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE = "model-directed-desktop-execution-v1"
