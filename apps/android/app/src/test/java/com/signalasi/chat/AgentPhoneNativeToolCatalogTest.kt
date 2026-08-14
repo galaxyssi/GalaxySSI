@@ -41,6 +41,7 @@ class AgentPhoneNativeToolCatalogTest {
             "signalasi.workspace.file.read.text",
             "signalasi.workspace.file.read.bytes",
             "signalasi.workspace.file.write.text",
+            "signalasi.workspace.files.write.text.batch",
             "signalasi.workspace.file.create.text",
             "signalasi.workspace.file.append.text",
             "signalasi.workspace.file.write.bytes",
@@ -222,6 +223,31 @@ class AgentPhoneNativeToolCatalogTest {
             workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_READ_CONSENT)
         )
         assertEquals("hello phone registry", restored.output["text"])
+    }
+
+    @Test
+    fun writesACompleteTextProjectInOneBoundedToolCall() {
+        val registry = registry()
+        val result = registry.invoke(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT_BATCH,
+            mapOf(
+                "workspace_id" to "android-project",
+                "files" to listOf(
+                    mapOf("path" to "settings.gradle.kts", "text" to "rootProject.name = \"PhoneApp\""),
+                    mapOf("path" to "app/build.gradle.kts", "text" to "plugins { id(\"com.android.application\") }")
+                ),
+                "overwrite" to true
+            ),
+            workspaceContext(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_CONSENT)
+        )
+
+        assertTrue(result.toJson(), result.isSuccess)
+        assertEquals(2, result.output["affected_entries"])
+        assertEquals(
+            "rootProject.name = \"PhoneApp\"",
+            String(Files.readAllBytes(storageRoot.resolve("android-project/settings.gradle.kts")), Charsets.UTF_8)
+        )
+        assertTrue(Files.exists(storageRoot.resolve("android-project/app/build.gradle.kts")))
     }
 
     @Test
