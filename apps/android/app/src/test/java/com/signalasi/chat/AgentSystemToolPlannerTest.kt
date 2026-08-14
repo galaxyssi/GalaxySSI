@@ -26,6 +26,50 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun completedPriorBatchReferencesAreRemovedFromTheCurrentExecutionGraph() {
+        val completed = AgentAction(
+            id = "sp2-2-write_python_source",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.COMPLETED,
+            description = "Write Python source",
+            parameters = mapOf("node_ref" to "write_python_source"),
+            requiresConfirmation = false
+        )
+        val raw = """{"execution_location":"phone","actions":[{"ref":"verify_python_source","kind":"CALL_NATIVE_TOOL","target":"signalasi.workspace.file.read.text","depends_on":["write_python_source"],"use_outputs_from":["write_python_source"],"parameters":{"tool_id":"signalasi.workspace.file.read.text","arguments":{"workspace_id":"current","path":"sum.py"}}}]}"""
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw, listOf(completed)))
+            .getJSONArray("actions")
+            .getJSONObject(0)
+
+        assertEquals(0, normalized.getJSONArray("depends_on").length())
+        assertEquals(0, normalized.getJSONArray("use_outputs_from").length())
+    }
+
+    @Test
+    fun currentBatchAndUnknownDependenciesRemainStrictlyValidated() {
+        val completed = AgentAction(
+            id = "sp1-1-old_step",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "tool",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.COMPLETED,
+            description = "Old step",
+            parameters = mapOf("node_ref" to "old_step"),
+            requiresConfirmation = false
+        )
+        val raw = """{"execution_location":"phone","actions":[{"ref":"write","kind":"CALL_NATIVE_TOOL","depends_on":[],"parameters":{}},{"ref":"verify","kind":"CALL_NATIVE_TOOL","depends_on":["write","unknown_step"],"parameters":{}}]}"""
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw, listOf(completed)))
+            .getJSONArray("actions")
+            .getJSONObject(1)
+            .getJSONArray("depends_on")
+
+        assertEquals(listOf("write", "unknown_step"), (0 until normalized.length()).map(normalized::getString))
+    }
+
+    @Test
     fun supervisedProjectActionsKeepTheirBoundConversationAndTurn() {
         val modelAction = AgentAction(
             id = "write",
