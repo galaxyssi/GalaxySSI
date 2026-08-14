@@ -168,6 +168,9 @@ class GuestProtocolTest(unittest.TestCase):
         self.assertEqual(str(guest.PACK_ROOT / "java"), environment["JAVA_HOME"])
         self.assertEqual(str(guest.PACK_ROOT / "gradle"), environment["GRADLE_HOME"])
         self.assertEqual(str(task_temp / "gradle"), environment["GRADLE_USER_HOME"])
+        self.assertEqual(str(guest.PACK_ROOT / "android-sdk" / "sdk"), environment["ANDROID_HOME"])
+        self.assertEqual(environment["ANDROID_HOME"], environment["ANDROID_SDK_ROOT"])
+        self.assertIn("org.gradle.project.android.aapt2FromMavenOverride", environment["GRADLE_OPTS"])
 
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}

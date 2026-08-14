@@ -13,4 +13,13 @@ class AgentRuntimePackContractTest {
             AgentOnDeviceRuntimeManager.REQUIRED_PACK_CAPABILITIES.getValue("gradle")
         )
     }
+
+    @Test
+    fun `Android SDK is a trusted optional runtime pack with build capabilities`() {
+        assertTrue("android-sdk" in AgentOnDeviceRuntimeManager.REQUIRED_PACKS)
+        assertEquals(
+            setOf("android.build", "android.package", "android.sign"),
+            AgentOnDeviceRuntimeManager.REQUIRED_PACK_CAPABILITIES.getValue("android-sdk")
+        )
+    }
 }

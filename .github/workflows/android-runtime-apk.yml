@@ -115,11 +115,13 @@ jobs:
             build/runtime/release/java-*.img.config.json
             build/runtime/release/gradle-*.img
             build/runtime/release/gradle-*.img.config.json
+            build/runtime/release/android-sdk-*.img
+            build/runtime/release/android-sdk-*.img.config.json
             build/runtime/release/browser-automation-*.img
             build/runtime/release/browser-automation-*.img.config.json
             build/runtime/release/ffmpeg-*.img
             build/runtime/release/ffmpeg-*.img.config.json
-          key: android-runtime-software-images-v3-${{ runner.os }}-${{ hashFiles('tools/runtime/build-node-js-image.sh', 'tools/runtime/build-go-image.sh', 'tools/runtime/build-cpp-image.sh', 'tools/runtime/build-rust-image.sh', 'tools/runtime/build-java-image.sh', 'tools/runtime/build-gradle-image.sh', 'tools/runtime/build-browser-automation-image.sh', 'tools/runtime/build-ffmpeg-image.sh', 'tools/runtime/runtime-download.sh', 'tools/runtime/runtime-image.mjs', 'tools/runtime/build-runtime-image.mjs') }}
+          key: android-runtime-software-images-v4-${{ runner.os }}-${{ hashFiles('tools/runtime/build-node-js-image.sh', 'tools/runtime/build-go-image.sh', 'tools/runtime/build-cpp-image.sh', 'tools/runtime/build-rust-image.sh', 'tools/runtime/build-java-image.sh', 'tools/runtime/build-gradle-image.sh', 'tools/runtime/build-android-sdk-image.sh', 'tools/runtime/build-browser-automation-image.sh', 'tools/runtime/build-ffmpeg-image.sh', 'tools/runtime/runtime-download.sh', 'tools/runtime/runtime-image.mjs', 'tools/runtime/build-runtime-image.mjs') }}
 
       - name: Inspect restored optional software images
         id: optional-images-state
@@ -137,6 +139,8 @@ jobs:
             build/runtime/release/java-25.0.3_9-arm64-v8a.img.config.json
             build/runtime/release/gradle-8.14.5-arm64-v8a.img
             build/runtime/release/gradle-8.14.5-arm64-v8a.img.config.json
+            build/runtime/release/android-sdk-36.0.0-arm64-v8a.img
+            build/runtime/release/android-sdk-36.0.0-arm64-v8a.img.config.json
             build/runtime/release/browser-automation-playwright-1.61.0-arm64-v8a.img
             build/runtime/release/browser-automation-playwright-1.61.0-arm64-v8a.img.config.json
             build/runtime/release/ffmpeg-8.1.2-arm64-v8a.img
@@ -175,6 +179,7 @@ jobs:
           run_pack "Rust" npm run runtime:build-rust
           run_pack "Java" npm run runtime:build-java
           run_pack "Gradle" npm run runtime:build-gradle
+          run_pack "Android SDK" npm run runtime:build-android-sdk
           run_pack "Browser automation" npm run runtime:build-browser-automation
           run_pack "FFmpeg" npm run runtime:build-ffmpeg
 
@@ -195,6 +200,8 @@ jobs:
             build/runtime/release/java-*.img.config.json
             build/runtime/release/gradle-*.img
             build/runtime/release/gradle-*.img.config.json
+            build/runtime/release/android-sdk-*.img
+            build/runtime/release/android-sdk-*.img.config.json
             build/runtime/release/browser-automation-*.img
             build/runtime/release/browser-automation-*.img.config.json
             build/runtime/release/ffmpeg-*.img
@@ -314,8 +321,8 @@ jobs:
         run: |
           shopt -s nullglob
           configs=(build/runtime/release/*.img.config.json)
-          if [[ ${#configs[@]} -ne 10 ]]; then
-            echo "Expected exactly ten runtime image configurations; found ${#configs[@]}." >&2
+          if [[ ${#configs[@]} -ne 11 ]]; then
+            echo "Expected exactly eleven runtime image configurations; found ${#configs[@]}." >&2
             exit 2
           fi
           for config in "${configs[@]}"; do

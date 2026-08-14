@@ -1278,6 +1278,7 @@ internal fun MainActivity.runtimePackTitle(id: String): String = when (id) {
     "cpp" -> "C / C++"
     "java" -> "Java"
     "gradle" -> "Gradle"
+    "android-sdk" -> getString(R.string.cc_runtime_pack_android_sdk)
     "browser-automation" -> getString(R.string.cc_runtime_pack_browser)
     "ffmpeg" -> "FFmpeg"
     else -> id

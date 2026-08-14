@@ -23,6 +23,7 @@ function fixture(packId = 'python-uv') {
     'node-js': ['node', 'tsx'],
     'browser-automation': ['signalasi-browser', 'playwright'],
     gradle: ['gradle'],
+    'android-sdk': ['aapt2', 'aidl', 'zipalign', 'apksigner', 'd8'],
     ffmpeg: ['ffmpeg', 'ffprobe'],
   }[packId];
   for (const name of names) {
@@ -182,6 +183,28 @@ test('Gradle pack requires Java and exposes only the Gradle launcher', () => {
       },
     });
     assert.deepEqual(result.config.capabilities, ['gradle.execute']);
+    assert.deepEqual(result.config.dependencies, ['java', 'linux-base']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Android SDK pack requires Java and exposes native packaging tools', () => {
+  const { root, source } = fixture('android-sdk');
+  try {
+    const result = buildRuntimeImage({
+      packId: 'android-sdk',
+      version: '36.0.0',
+      sourceRoot: source,
+      outputPath: join(root, 'android-sdk.img'),
+      license: 'Apache-2.0',
+      dependencies: ['java'],
+      platform: 'win32',
+      squashfsBuilder: (stagedRoot, stagedImage) => {
+        copyFileSync(join(stagedRoot, 'bin', 'aapt2'), stagedImage);
+      },
+    });
+    assert.deepEqual(result.config.capabilities, ['android.build', 'android.package', 'android.sign']);
     assert.deepEqual(result.config.dependencies, ['java', 'linux-base']);
   } finally {
     rmSync(root, { recursive: true, force: true });
