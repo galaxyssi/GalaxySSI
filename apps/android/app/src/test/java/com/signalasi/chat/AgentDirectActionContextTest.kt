@@ -75,4 +75,35 @@ class AgentDirectActionContextTest {
 
         assertEquals("false", bound.parameters["_signalasi_long_term_write_allowed"])
     }
+
+    @Test
+    fun `explicit action execution mode survives conversation binding`() {
+        val context = AgentConversationContext(
+            conversationId = "project-conversation",
+            summary = "",
+            turns = emptyList(),
+            privateMode = false
+        )
+        val action = AgentAction(
+            id = "supervise-phone-project",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PROPOSED,
+            description = "Plan the next phone project step",
+            parameters = mapOf(
+                "connector_id" to "codex",
+                INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue
+            )
+        )
+
+        val bound = action.withDirectConversationContext(
+            conversationContext = context,
+            turnId = "project-turn",
+            goal = "Clone the repository on this phone",
+            executionMode = AgentTaskExecutionMode.AUTO_COMPLETE
+        )
+
+        assertEquals("plan_only", bound.parameters[INTERNAL_TASK_EXECUTION_MODE])
+    }
 }
