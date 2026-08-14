@@ -358,7 +358,7 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
                     .filter(String::isNotBlank).joinToString("\n"),
                 INTERNAL_SCREEN_CONTEXT to screenPrompt,
                 INTERNAL_LONG_TERM_WRITE_ALLOWED to (!activeConversationContext.privateMode).toString(),
-                INTERNAL_TASK_EXECUTION_MODE to activeTaskExecutionMode.wireValue
+                INTERNAL_TASK_EXECUTION_MODE to action.executionModeWireValue(activeTaskExecutionMode)
             ))
         }
     )
