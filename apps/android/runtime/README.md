@@ -62,7 +62,8 @@ with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from
 It depends on the Java pack, exposes a Gradle AAPT2 override inside the Guest, and is not embedded in
 the APK. Users install it from the signed software catalog when a phone-local Android build needs it.
 
-`linux-base` 1.2.0 adds authenticated allowlisted task networking while retaining negotiated
+`linux-base` 1.2.1 adds authenticated allowlisted task networking with an in-kernel reject target
+and visible bootstrap failures while retaining negotiated
 `runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for
 non-secret work but is rejected explicitly for secure environment injection instead of silently

@@ -439,7 +439,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.2.0",
+                        "guest_version": "1.2.1",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -824,5 +824,21 @@ def run_service() -> None:
             time.sleep(0.2)
 
 
+def report_fatal_startup(error: BaseException) -> None:
+    try:
+        with Path("/dev/console").open("a", encoding="utf-8") as console:
+            print(
+                f"SignalASI guest startup failed: {type(error).__name__}: {error}",
+                file=console,
+                flush=True,
+            )
+    except OSError:
+        pass
+
+
 if __name__ == "__main__":
-    run_service()
+    try:
+        run_service()
+    except BaseException as error:
+        report_fatal_startup(error)
+        raise
