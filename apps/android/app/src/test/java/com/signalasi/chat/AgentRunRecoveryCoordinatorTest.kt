@@ -9,6 +9,32 @@ import org.junit.Test
 
 class AgentRunRecoveryCoordinatorTest {
     @Test
+    fun activeRunIsExcludedFromStartupRecovery() = runBlocking {
+        val workspaceStore = InMemoryAgentWorkspaceStore(clock = { 2_000L })
+        workspaceStore.upsert(AgentWorkspace(
+            workspaceId = "turn-1",
+            sessionId = "session-1",
+            conversationId = "conversation-1",
+            taskId = "turn-1",
+            parentRunId = "run-1",
+            status = AgentWorkspaceStatus.RUNNING
+        ))
+        val eventStore = RecoveryRunControlStore(runEvent(AgentRunControlEventType.TOOL_PROGRESS, 5L))
+
+        val results = AgentRunRecoveryCoordinator(
+            eventStore,
+            workspaceStore,
+            recordedRun = { runningRecordedRun() },
+            registration = { _, _ -> durableRegistration() },
+            adapterResolver = { null }
+        ).recover(excludedRunIds = setOf("run-1"))
+
+        assertTrue(results.isEmpty())
+        assertTrue(eventStore.appended.isEmpty())
+        assertEquals(AgentWorkspaceStatus.RUNNING, workspaceStore.find("turn-1")?.status)
+    }
+
+    @Test
     fun processRecreationReconnectsRemoteCursorCheckpointAndToolState() = runBlocking {
         val workspaceStore = InMemoryAgentWorkspaceStore(clock = { 2_000L })
         workspaceStore.upsert(AgentWorkspace(

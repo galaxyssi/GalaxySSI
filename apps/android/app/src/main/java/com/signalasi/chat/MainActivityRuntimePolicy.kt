@@ -633,6 +633,7 @@ internal fun MainActivity.permissionModeDescription(mode: PermissionMode): Strin
         PermissionMode.SUGGEST_ONLY -> R.string.cc_permission_suggest_subtitle
         PermissionMode.ASK_BEFORE_ACTION -> R.string.cc_permission_ask_subtitle
         PermissionMode.AUTO_LOW_RISK -> R.string.cc_permission_auto_subtitle
+        PermissionMode.FULL_ACCESS -> R.string.cc_permission_full_access_subtitle
     }
 )
 

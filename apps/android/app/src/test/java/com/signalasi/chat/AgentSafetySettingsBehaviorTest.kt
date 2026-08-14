@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AgentSafetySettingsBehaviorTest {
     @Test
-    fun permissionModesEnforceFourDistinctExecutionBoundaries() {
+    fun permissionModesEnforceDistinctExecutionBoundaries() {
         val read = action(AgentActionKind.READ_SCREEN)
         val draft = action(AgentActionKind.DRAFT_PLAN)
         val direct = action(AgentActionKind.OPEN_APP)
@@ -31,6 +31,13 @@ class AgentSafetySettingsBehaviorTest {
         val automaticReview = review(settings(PermissionMode.AUTO_LOW_RISK), direct)
         assertFalse(automaticReview.blocked)
         assertFalse(automaticReview.requiresConfirmation)
+
+        val fullAccessReview = review(
+            settings(PermissionMode.FULL_ACCESS),
+            action(AgentActionKind.CALL_NATIVE_TOOL, AgentRisk.HIGH)
+        )
+        assertFalse(fullAccessReview.blocked)
+        assertFalse(fullAccessReview.requiresConfirmation)
     }
 
     @Test

@@ -69,10 +69,13 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     fun directInformationConnectorAction(request: AgentRequest): AgentAction? {
         val requirements = AgentTaskRequirementAnalyzer.analyze(request.goal)
-        if (AgentCapability.CODE in requirements.capabilities ||
-            AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+        if (AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+                request.goal,
+                request.conversationContext
+            ) ||
             requirements.executionHorizon != AgentExecutionHorizon.INTERACTIVE ||
-            AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal)
+            AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) ||
+            AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal)
         ) {
             return null
         }
@@ -91,9 +94,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun actionsFor(request: AgentRequest): List<AgentAction> {
         notificationReplyAction(request)?.let { return listOf(it) }
+        deterministicLocalAction(request)?.let { return listOf(it) }
         supervisedProjectActions(request)?.let { return it }
         genericWebResearchActions(request)?.let { return it }
-        deterministicLocalAction(request)?.let { return listOf(it) }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
         val segments = splitGoalSegments(request.goal)
@@ -104,28 +107,33 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun supervisedProjectActions(request: AgentRequest): List<AgentAction>? {
-        if (!AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(request.goal)) return null
+        if (!AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+                request.goal,
+                request.conversationContext
+            )
+        ) return null
         val selected = manualSelectedConnectorAction(request)
         val target = selected?.parameters?.get("connector_id")?.let { connectorId ->
             request.targets.firstOrNull { it.id == connectorId }
         } ?: request.targets
             .asSequence()
             .filter { target ->
-                target.status == AgentConnectorStatus.AVAILABLE &&
-                    target.kind != AgentConnectorKind.DEVICE &&
+                target.kind != AgentConnectorKind.DEVICE &&
                     (AgentCapability.CODE in target.capabilities ||
                         AgentCapability.TASK_EXECUTION in target.capabilities ||
                         AgentCapability.REASONING in target.capabilities)
             }
             .minByOrNull { target ->
                 val identity = "${target.id} ${target.title}".lowercase(Locale.US)
-                when {
+                val identityRank = when {
                     "codex" in identity -> 0
                     "claude" in identity -> 1
                     "hermes" in identity -> 2
                     target.kind == AgentConnectorKind.MODEL -> 3
                     else -> 4
                 }
+                val availabilityRank = if (target.status == AgentConnectorStatus.AVAILABLE) 0 else 10
+                availabilityRank + identityRank
             } ?: return null
         val base = selected ?: connectorAction(
             request = request,

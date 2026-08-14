@@ -915,7 +915,9 @@ internal fun MainActivity.agentExecutionLine(state: AgentUiState, entry: AgentAu
                 .ifBlank { getString(R.string.agent_trace_reasoning_summary, route) }
         }
         AgentAuditEvent.TOOL_STARTED -> getString(
-            if (auditDetailValue(entry.detail, "command").isNotBlank()) {
+            if (auditDetailValue(entry.detail, "planning_only") == "true") {
+                R.string.agent_trace_model_planning
+            } else if (auditDetailValue(entry.detail, "command").isNotBlank()) {
                 R.string.agent_trace_phone_linux_command
             } else {
                 R.string.agent_trace_tool_started

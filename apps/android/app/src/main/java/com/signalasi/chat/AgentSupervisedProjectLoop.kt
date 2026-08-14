@@ -1,5 +1,8 @@
 package com.signalasi.chat
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 internal object AgentSupervisedProjectLoop {
     fun planningPrompt(request: AgentRequest): String = buildPrompt(
         request = request,
@@ -102,15 +105,21 @@ internal object AgentSupervisedProjectLoop {
     )
 
     private fun buildPrompt(request: AgentRequest, evidenceExpected: Boolean): String = buildString {
-        append("You are the supervising software engineer for a project that must be developed on this Android phone. ")
+        append("You are the supervising software engineer for a project initiated from SignalASI on Android. ")
         append("Return exactly one JSON ActionPlan and no markdown, prose, or private chain-of-thought. ")
         append("Use summary for a concise user-visible reasoning summary. Schema: ")
-        append("{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
-        append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL\",\"target\":\"...\",")
+        append("{\"execution_location\":\"phone|desktop\",\"execution_location_evidence\":\"\",")
+        append("\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
+        append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL|CALL_CONNECTOR\",\"target\":\"...\",")
         append("\"description\":\"...\",\"depends_on\":[],\"use_outputs_from\":[],")
-        append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{}}}]}. ")
+        append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{},")
+        append("\"connector_id\":\"exact.connector.id\",\"prompt\":\"complete desktop request\"}}]}. ")
+        append("Execution location and reasoning provider are independent. Default execution_location to phone even when Codex, Hermes, Claude, OpenClaw, a local model, or a cloud model performs the reasoning. ")
+        append("Choose desktop only when the user's original goal explicitly asks to execute on a Desktop, PC, computer, or a named desktop machine. Never choose desktop merely because it is faster, has more tools, hosts the reasoning model, or the phone runtime is inconvenient. ")
+        append("For desktop, execution_location_evidence must be a short verbatim excerpt from the user's goal that contains that explicit request. For phone, leave execution_location_evidence empty. ")
         append("Choose the next smallest evidence-producing batch, not an entire speculative project plan. ")
-        append("Actions must be CALL_NATIVE_TOOL entries from the inventory below, except the single task-complete DRAFT_PLAN marker. ")
+        append("For phone, actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
+        append("For desktop, return exactly one CALL_CONNECTOR action using an exact Desktop execution connector below; put the complete execution request in parameters.prompt. Do not mix phone and desktop actions. ")
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
         append("Use signalasi.project.* for Git and GitHub; credentials are host-owned and must never appear in prompts, files, or commands. ")
         append("Use signalasi.workspace.* for bounded file inspection and edits, and signalasi.runtime.* for runtime status, signed pack installation, build, test, and artifact execution. ")
@@ -120,6 +129,7 @@ internal object AgentSupervisedProjectLoop {
         append("For the final successful build or export, pass every user-facing file or directory in artifact_paths; SignalASI packages directories and multiple paths as one verified ZIP. ")
         append("Do not require an artifact for repository clone, inspection, status, diff, branch, log, or audit tasks unless the user explicitly asks for a deliverable. ")
         append("Do not commit or publish until relevant tests pass. Push and pull-request actions remain owner-approved high-risk operations. ")
+        append("Do not mention or request approval in action descriptions; Android applies the current permission policy independently. ")
         append("When the requested work is fully implemented and verified, return exactly one DRAFT_PLAN action with target task-complete and put the final verified summary in description. ")
         append("Never claim completion from an unverified command or from your own prior statement. ")
         if (evidenceExpected) {
@@ -151,12 +161,28 @@ internal object AgentSupervisedProjectLoop {
                     .append(AgentNativeJsonCodec.stringify(tool.inputSchema.document).take(MAX_TOOL_SCHEMA_CHARACTERS))
                     .append('\n')
             }
+        append("Available Desktop execution connectors:\n")
+        request.targets.asSequence()
+            .filter { target ->
+                target.status == AgentConnectorStatus.AVAILABLE &&
+                    target.kind == AgentConnectorKind.AGENT
+            }
+            .sortedBy(AgentCallableTarget::id)
+            .take(MAX_DESKTOP_CONNECTORS)
+            .forEach { target ->
+                append("- ").append(target.id)
+                    .append(" | ").append(target.title.take(160))
+                    .append(" | capabilities=")
+                    .append(target.capabilities.joinToString(",") { capability -> capability.name })
+                    .append('\n')
+            }
     }.take(MAX_PROMPT_CHARACTERS)
 
     private const val MAX_GOAL_CHARACTERS = 4_000
     private const val MAX_CONVERSATION_CHARACTERS = 8_000
     private const val MAX_HISTORY_ACTIONS = 40
     private const val MAX_TOOL_DESCRIPTORS = 60
+    private const val MAX_DESKTOP_CONNECTORS = 20
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 1_000
     private const val MAX_PROMPT_CHARACTERS = 28_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
@@ -164,9 +190,51 @@ internal object AgentSupervisedProjectLoop {
     private const val MAX_FAILURE_EVIDENCE_CHARACTERS = 6_000
 }
 
+internal object AgentSupervisedProjectRoutingPolicy {
+    fun requiresModelDirectedExecution(
+        goal: String,
+        conversationContext: AgentConversationContext
+    ): Boolean = requiresModelDirectedExecution(goal, conversationContext.hasAttachments)
+
+    fun requiresModelDirectedExecution(
+        goal: String,
+        hasAttachments: Boolean = false
+    ): Boolean {
+        val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+        val classification = AgentTaskIntentClassifier.classify(
+            goal = goal,
+            hasAttachments = hasAttachments
+        )
+        val executableFileRequest = classification.intent == AgentTaskIntent.FILE &&
+            "file-path-operation" in classification.matchedSignals
+        return AgentCapability.CODE in requirements.capabilities ||
+            AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+            classification.intent in setOf(
+                AgentTaskIntent.CODE,
+                AgentTaskIntent.PHONE_CONTROL,
+                AgentTaskIntent.DESKTOP_CONTROL,
+                AgentTaskIntent.AUTOMATION
+            ) ||
+            executableFileRequest ||
+            AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal)
+    }
+}
+
 internal fun AgentAction.isSupervisedProjectConnector(): Boolean =
     kind == AgentActionKind.CALL_CONNECTOR &&
         parameters["connector_task_mode"] == PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+
+internal fun AgentAction.enforceSupervisedPlanningBoundary(): AgentAction =
+    if (isSupervisedProjectConnector()) {
+        copy(
+            parameters = parameters + mapOf(
+                INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue
+            ),
+            requiresConfirmation = false
+        )
+    } else {
+        this
+    }
 
 internal fun AgentAction.isTaskCompleteMarker(): Boolean =
     kind == AgentActionKind.DRAFT_PLAN && target.equals("task-complete", ignoreCase = true)
@@ -174,6 +242,46 @@ internal fun AgentAction.isTaskCompleteMarker(): Boolean =
 internal fun AgentPlan.isSupervisedProjectPlan(): Boolean =
     plannerProfile == PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE ||
         (actionHistory + actions).any(AgentAction::isSupervisedProjectConnector)
+
+private val SUPERVISED_PROJECT_CONTEXT_KEYS = setOf(
+    INTERNAL_CONVERSATION_ID,
+    INTERNAL_CONVERSATION_CONTEXT,
+    INTERNAL_CONVERSATION_HAS_ATTACHMENTS,
+    INTERNAL_TURN_ID,
+    INTERNAL_LONG_TERM_WRITE_ALLOWED,
+    INTERNAL_TASK_EXECUTION_MODE
+)
+
+internal fun AgentAction.bindSupervisedProjectContext(connector: AgentAction): AgentAction = copy(
+    parameters = parameters + connector.parameters.filterKeys { key ->
+        key in SUPERVISED_PROJECT_CONTEXT_KEYS
+    }
+)
+
+internal object AgentSupervisedProjectControlPayload {
+    fun isControlPayload(raw: String): Boolean {
+        val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return false
+        return json.has("execution_location") && json.optJSONArray("actions") != null
+    }
+
+    fun normalize(raw: String): String {
+        val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return raw
+        val actions = json.optJSONArray("actions") ?: return raw
+        if (actions.length() != 1) return raw
+        val action = actions.optJSONObject(0) ?: return raw
+        val parameters = action.optJSONObject("parameters") ?: JSONObject()
+        val completion = action.optString("target").equals("task-complete", ignoreCase = true) ||
+            action.optString("kind").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true) ||
+            parameters.optString("tool_id").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true)
+        if (!completion) return raw
+        action.put("kind", AgentActionKind.DRAFT_PLAN.name)
+        action.put("target", "task-complete")
+        action.put("depends_on", JSONArray())
+        action.put("use_outputs_from", JSONArray())
+        action.put("parameters", JSONObject())
+        return json.toString()
+    }
+}
 
 internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     plan: AgentPlan,
@@ -190,15 +298,12 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         multiAgentCoordination = true,
         maxAgentHops = modelPlannerSettings().maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
-    val parsed = AgentModelPlanParser.parse(request, response, settings)
+    val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(response)
+    val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
+        ?: return supervisedFormatRepairPlan(plan, connector, request, response)
+    val parsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
         ?.takeIf { candidate ->
-            candidate.actions.all { action ->
-                action.isTaskCompleteMarker() ||
-                    (action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
-                        AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(
-                            action.parameters["tool_id"].orEmpty()
-                        ))
-            }
+            AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions)
         }
         ?.takeIf { candidate -> AgentPhoneDevelopmentPolicy.acceptsModelPlan(currentGoal, candidate.actions) }
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
@@ -216,6 +321,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }.toMap()
     val revisedActions = parsed.actions.map { action ->
         action.remapToolGraphIds(idMap.getValue(action.id), idMap)
+            .bindSupervisedProjectContext(connector)
     }
     var revised = parsed.copy(
         planId = plan.planId,
@@ -228,8 +334,16 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         actionHistory = history,
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
-        artifactRichOutputJson = plan.artifactRichOutputJson
+        artifactRichOutputJson = plan.artifactRichOutputJson,
+        routeRationale = parsed.routeRationale,
+        expectedResult = parsed.expectedResult,
+        rollbackStrategy = parsed.rollbackStrategy
     )
+    if (executionSite.site == AgentRequestedExecutionSite.DESKTOP) {
+        return reviewSupervisedProjectPlan(
+            revised.copy(plannerProfile = MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE)
+        )
+    }
     revised = AgentSupervisedProjectLoop.appendReviewer(
         plan = revised,
         connector = connector,
@@ -392,3 +506,4 @@ private const val MAX_SUPERVISED_BATCH_ACTIONS = 11
 private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
 private const val MAX_SUPERVISED_FORMAT_REPAIRS = 2
 internal const val MAX_SUPERVISED_REPLANS = 12
+internal const val MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE = "model-directed-desktop-execution-v1"

@@ -892,7 +892,16 @@ internal fun MobileNativeAgent.completeNotificationCommand(
 
 internal fun MobileNativeAgent.setPermissionModeCommand(mode: PermissionMode): AgentUiState {
     safetySettingsStore.save(safetySettingsStore.load().copy(permissionMode = mode))
-    val result = "Agent permission mode set to ${mode.name.lowercase(Locale.US)}"
+    val modeLabel = appContext.getString(
+        when (mode) {
+            PermissionMode.OBSERVE_ONLY -> R.string.permission_mode_observe_only
+            PermissionMode.SUGGEST_ONLY -> R.string.permission_mode_suggest_only
+            PermissionMode.ASK_BEFORE_ACTION -> R.string.permission_mode_ask_before_action
+            PermissionMode.AUTO_LOW_RISK -> R.string.permission_mode_auto_low_risk
+            PermissionMode.FULL_ACCESS -> R.string.permission_mode_full_access
+        }
+    )
+    val result = appContext.getString(R.string.agent_permission_mode_updated, modeLabel)
     return completeSafetySettingCommand(
         actionId = "set-permission-mode",
         description = "Set Agent permission mode",

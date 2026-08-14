@@ -398,6 +398,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val globalAgentRefreshInProgress = AtomicBoolean(false)
     internal val globalAgentRefreshRequested = AtomicBoolean(false)
     internal val agentTaskRecoveryInProgress = AtomicBoolean(false)
+    internal val agentTaskRecoveryLastStartedAt = AtomicLong(0L)
     internal val agentRegistrySyncInProgress = AtomicBoolean(false)
     internal val agentRegistrySyncRequested = AtomicBoolean(false)
     internal val agentRegistrySyncLock = Any()
@@ -497,6 +498,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
     internal val agentStartupMaintenanceRunnable = Runnable {
         if (!isFinishing && !isDestroyed) {
+            val foregroundTaskActive = pendingAgentReplyIndicators.isNotEmpty() ||
+                provisionalAgentTasks.isNotEmpty() ||
+                AgentTaskRuntime.supervisor(this).activeWorkspaces().any { workspace ->
+                    workspace.status in setOf(
+                        AgentWorkspaceStatus.CREATED,
+                        AgentWorkspaceStatus.RUNNING
+                    )
+            }
+            if (foregroundTaskActive) {
+                handler.postDelayed(
+                    { scheduleAgentStartupMaintenance() },
+                    AGENT_BUSY_MAINTENANCE_RETRY_MILLIS
+                )
+                return@Runnable
+            }
             requestRecoverableAgentRunReconciliation(
                 reason = "startup",
                 refreshRegistry = true

@@ -110,6 +110,12 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     }
     logPlanningLatency("screen", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
+    permissionModeCommandValue(currentGoal)?.let { mode ->
+        return setPermissionModeCommand(mode)
+    }
+    highRiskGuardCommandValue(currentGoal)?.let { enabled ->
+        return setHighRiskGuardCommand(enabled)
+    }
     if (activeTaskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
     callableInventoryCommand(currentGoal)?.let { filter ->
         return showCallableInventoryCommand(filter)
@@ -143,12 +149,6 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     }
     notificationSearchCommandValue(currentGoal)?.let { query ->
         return searchNotificationsCommand(query)
-    }
-    permissionModeCommandValue(currentGoal)?.let { mode ->
-        return setPermissionModeCommand(mode)
-    }
-    highRiskGuardCommandValue(currentGoal)?.let { enabled ->
-        return setHighRiskGuardCommand(enabled)
     }
     if (permissionChecklistCommand(currentGoal)) {
         return showPermissionChecklistCommand()
@@ -358,8 +358,8 @@ internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
                     .filter(String::isNotBlank).joinToString("\n"),
                 INTERNAL_SCREEN_CONTEXT to screenPrompt,
                 INTERNAL_LONG_TERM_WRITE_ALLOWED to (!activeConversationContext.privateMode).toString(),
-                INTERNAL_TASK_EXECUTION_MODE to activeTaskExecutionMode.wireValue
-            ))
+                INTERNAL_TASK_EXECUTION_MODE to action.executionModeWireValue(activeTaskExecutionMode)
+            )).enforceSupervisedPlanningBoundary()
         }
     )
     val draftPlan = AgentTeamPlanCompiler.compile(
@@ -650,7 +650,7 @@ internal fun MobileNativeAgent.executePlannedAction(
             "original_goal" to currentGoal,
             "_signalasi_task_id" to sessionId
         )
-    )
+    ).enforceSupervisedPlanningBoundary()
     val displayCommand = executionAction.phoneDevelopmentDisplayCommand()
     if (executionAction.parameters["prompt"] != hardenedAction.parameters["prompt"]) {
         recordAudit(
@@ -662,6 +662,7 @@ internal fun MobileNativeAgent.executePlannedAction(
     recordAudit(
         AgentAuditEvent.TOOL_STARTED,
         "action=${hardenedAction.id}; kind=${hardenedAction.kind}; target=${hardenedAction.target.take(160)}" +
+            (if (executionAction.isSupervisedProjectConnector()) "; planning_only=true" else "") +
             displayCommand.takeIf(String::isNotBlank)?.let { "; command=${it.take(200)}" }.orEmpty()
     )
     Log.i(

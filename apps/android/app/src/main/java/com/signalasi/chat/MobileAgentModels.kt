@@ -43,6 +43,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 
+private const val MAX_ACTION_EVIDENCE_CHARACTERS = 12_000
+
 data class AgentUiState(
     val phase: AgentPhase,
     val currentGoal: String,
@@ -294,7 +296,12 @@ data class AgentPlan(
                 action.copy(
                     status = status,
                     result = result?.message ?: action.result,
-                    evidence = result?.let { if (it.success) "executor_success" else "executor_failure" } ?: action.evidence
+                    evidence = result?.let { actionResult ->
+                        actionResult.metadata["native_tool_output"]
+                            .orEmpty()
+                            .take(MAX_ACTION_EVIDENCE_CHARACTERS)
+                            .ifBlank { if (actionResult.success) "executor_success" else "executor_failure" }
+                    } ?: action.evidence
                 )
             } else {
                 action
@@ -751,5 +758,6 @@ enum class PermissionMode {
     OBSERVE_ONLY,
     SUGGEST_ONLY,
     ASK_BEFORE_ACTION,
-    AUTO_LOW_RISK
+    AUTO_LOW_RISK,
+    FULL_ACCESS
 }

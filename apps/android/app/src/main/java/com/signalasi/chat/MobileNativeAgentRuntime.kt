@@ -487,7 +487,12 @@ internal fun MobileNativeAgent.executeAction(
         ?: return AgentActionResult(action.id, false, "Native tool is not registered: $toolId")
     val input = runCatching { nativeJsonObject(action.parameters["input_json"].orEmpty()) }
         .getOrElse { return AgentActionResult(action.id, false, it.message ?: "Invalid native tool input") }
-    val effectiveConversationId = conversationIdOverride.ifBlank { activeConversationContext.conversationId }
+    val effectiveConversationId = conversationIdOverride
+        .ifBlank { action.parameters[INTERNAL_CONVERSATION_ID].orEmpty() }
+        .ifBlank { activeConversationContext.conversationId }
+    val effectiveTurnId = turnIdOverride
+        .ifBlank { action.parameters[INTERNAL_TURN_ID].orEmpty() }
+        .ifBlank { activeConversationTurnId }
     val workspaceId = AgentWorkspaceScope.id(effectiveConversationId, sessionId)
     val scopedInput = AgentWorkspaceScope.bindToolInput(toolId, input, workspaceId)
     val confirmationTier = AgentConfirmationPolicy.tier(action)
@@ -496,8 +501,9 @@ internal fun MobileNativeAgent.executeAction(
             AgentConfirmationPolicy.consentKey(action),
             sessionId
         ).allowed
+    val fullAccess = safetyPolicy.permissionMode() == PermissionMode.FULL_ACCESS
     val grantedConsents = if (
-        userConfirmed || confirmationTier == AgentConfirmationTier.DIRECT || rememberedConsent
+        fullAccess || userConfirmed || confirmationTier == AgentConfirmationTier.DIRECT || rememberedConsent
     ) {
         descriptor.requiredConsents.mapTo(linkedSetOf()) { it.id }
     } else {
@@ -506,7 +512,7 @@ internal fun MobileNativeAgent.executeAction(
     val invocationContext = AgentNativeToolInvocationContext(
         sessionId = sessionId,
         conversationId = effectiveConversationId,
-        turnId = turnIdOverride.ifBlank { activeConversationTurnId },
+        turnId = effectiveTurnId,
         callerId = "signalasi.mobile_agent.plan",
         idempotencyKey = if (descriptor.idempotency == AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED) {
             action.id
@@ -518,7 +524,8 @@ internal fun MobileNativeAgent.executeAction(
             "confirmation_id" to action.id,
             "step_id" to action.id,
             "workspace_id" to workspaceId,
-            "explicit_user_approval" to (userConfirmed || rememberedConsent).toString()
+            "explicit_user_approval" to (fullAccess || userConfirmed || rememberedConsent).toString(),
+            "permission_mode" to safetyPolicy.permissionMode().name.lowercase(Locale.US)
         )
     )
     val result = nativeToolRegistry.invoke(

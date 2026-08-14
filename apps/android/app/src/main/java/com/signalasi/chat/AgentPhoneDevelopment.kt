@@ -39,18 +39,8 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u514b\u9686", "\u68c0\u67e5", "\u5ba1\u8ba1", "\u5ba1\u67e5", "\u72b6\u6001", "\u5dee\u5f02", "\u5206\u652f", "\u65e5\u5fd7",
         "\u62c9\u53d6", "\u63d0\u4ea4", "\u63a8\u9001", "\u53d1\u5e03", "\u521b\u5efapr", "\u63d0\u4ea4pr"
     )
-    private val phoneTerms = listOf(
-        "on this phone", "on the phone", "phone local", "on-device", "locally on phone",
-        "\u624b\u673a\u672c\u673a", "\u5728\u624b\u673a", "\u672c\u673a\u6267\u884c", "\u672c\u5730\u6267\u884c", "\u672c\u4f53\u6267\u884c"
-    )
-    private val desktopTerms = listOf(
-        "desktop", "on pc", "on the pc", "on the computer", "use codex", "send to codex",
-        "claude code", "hermes agent",
-        "\u5728\u7535\u8111", "\u7535\u8111\u4e0a\u6267\u884c", "\u684c\u9762\u7aef", "\u684c\u9762\u7248",
-        "\u4ea4\u7ed9codex", "\u53d1\u7ed9codex", "\u4f7f\u7528codex"
-    )
     private val projectScopeTerms = listOf(
-        "repository", "repo", "entire project", "whole project", "android project", "gradle", "xcode",
+        "repository", "repo", "phone project", "entire project", "whole project", "android project", "gradle", "xcode",
         "codebase", "workspace", "existing app", "existing application", "android app", "backend", "frontend",
         "docker", "windows app", "desktop app", "compile apk", "build apk", "release build", "github",
         "pull request", "offline recovery", "all features", "every feature", "ui responsiveness",
@@ -59,12 +49,8 @@ internal object AgentPhoneDevelopmentPolicy {
         "\u79bb\u7ebf\u6062\u590d", "\u9875\u9762\u6d41\u7545\u5ea6", "\u6027\u80fd\u95ee\u9898", "\u7f16\u8bd1apk", "\u6253\u5305apk", "\u63d0\u4ea4github"
     )
     private val implicitPhoneCodeTerms = listOf(
-        "python", "program", "programme", "code", "script", "function", "algorithm",
-        "\u7a0b\u5e8f", "\u4ee3\u7801", "\u811a\u672c", "\u51fd\u6570", "\u7b97\u6cd5", "\u7f16\u7a0b"
-    )
-    private val selfContainedTerms = listOf(
-        "simple", "small", "single-file", "one-file", "standalone", "snippet",
-        "\u7b80\u5355", "\u5c0f\u578b", "\u5355\u6587\u4ef6", "\u72ec\u7acb", "\u4ee3\u7801\u7247\u6bb5"
+        "python", "program", "programme", "code", "script", "function", "algorithm", "app", "application",
+        "\u7a0b\u5e8f", "\u4ee3\u7801", "\u811a\u672c", "\u51fd\u6570", "\u7b97\u6cd5", "\u7f16\u7a0b", "\u5e94\u7528"
     )
 
     fun mode(goal: String): AgentPhoneDevelopmentMode {
@@ -76,13 +62,9 @@ internal object AgentPhoneDevelopmentPolicy {
         val development = (creation && developmentTerms.any { normalized.containsPolicyTerm(it) }) ||
             (projectScope && (creation || projectOperation))
         if (!development) return AgentPhoneDevelopmentMode.NONE
-        if (desktopTerms.any { normalized.containsPolicyTerm(it) }) return AgentPhoneDevelopmentMode.NONE
-        if (projectScope) return AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
-        if (phoneTerms.any { normalized.containsPolicyTerm(it) }) return AgentPhoneDevelopmentMode.MANIFEST
-        val selfContained = selfContainedTerms.any { normalized.containsPolicyTerm(it) }
         val codeArtifact = implicitPhoneCodeTerms.any { normalized.containsPolicyTerm(it) }
-        return if (selfContained && codeArtifact && normalized.length <= MAX_INTERACTIVE_GOAL_CHARACTERS) {
-            AgentPhoneDevelopmentMode.MANIFEST
+        return if ((projectScope || codeArtifact) && normalized.length <= MAX_INTERACTIVE_GOAL_CHARACTERS) {
+            AgentPhoneDevelopmentMode.SUPERVISED_PROJECT
         } else {
             AgentPhoneDevelopmentMode.NONE
         }
@@ -106,7 +88,8 @@ internal object AgentPhoneDevelopmentPolicy {
             toolId in PHONE_RUNTIME_TOOL_IDS
 
     fun acceptsModelPlan(goal: String, actions: List<AgentAction>): Boolean =
-        shouldUsePhoneRuntime(goal) || actions.none { action ->
+        AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal) ||
+            actions.none { action ->
             action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
                 isPhoneDevelopmentTool(action.parameters["tool_id"].orEmpty())
         }

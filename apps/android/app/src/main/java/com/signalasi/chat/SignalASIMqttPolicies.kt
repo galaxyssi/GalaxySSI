@@ -57,6 +57,62 @@ internal class MqttBrokerAckWatchdog(
     }
 }
 
+internal class MqttBrokerDeliveryRegistration(
+    private val maxCompletedMessageIds: Int = 256
+) {
+    private enum class State {
+        ACKNOWLEDGED_BEFORE_REGISTRATION,
+        REGISTERED,
+        COMPLETED
+    }
+
+    init {
+        require(maxCompletedMessageIds > 0)
+    }
+
+    private val states = LinkedHashMap<Int, State>()
+
+    @Synchronized
+    fun onPublished(messageId: Int): Boolean {
+        val acknowledgedEarly = states[messageId] == State.ACKNOWLEDGED_BEFORE_REGISTRATION
+        states[messageId] = State.REGISTERED
+        trimCompleted()
+        return acknowledgedEarly
+    }
+
+    @Synchronized
+    fun onAcknowledged(messageId: Int): Boolean = when (states[messageId]) {
+        State.REGISTERED -> {
+            states[messageId] = State.COMPLETED
+            trimCompleted()
+            true
+        }
+        State.COMPLETED,
+        State.ACKNOWLEDGED_BEFORE_REGISTRATION -> false
+        null -> {
+            states[messageId] = State.ACKNOWLEDGED_BEFORE_REGISTRATION
+            false
+        }
+    }
+
+    @Synchronized
+    fun clear() {
+        states.clear()
+    }
+
+    private fun trimCompleted() {
+        var removeCount = states.values.count { it == State.COMPLETED } - maxCompletedMessageIds
+        if (removeCount <= 0) return
+        val iterator = states.entries.iterator()
+        while (iterator.hasNext() && removeCount > 0) {
+            if (iterator.next().value == State.COMPLETED) {
+                iterator.remove()
+                removeCount -= 1
+            }
+        }
+    }
+}
+
 internal class MqttConnectionRetryPolicy(
     private val delaysMillis: LongArray = longArrayOf(2_000L, 5_000L, 10_000L, 20_000L, 30_000L)
 ) {

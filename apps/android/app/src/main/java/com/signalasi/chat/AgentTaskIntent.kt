@@ -39,6 +39,12 @@ object AgentTaskIntentClassifier {
                 }
             }
         }
+        if (FILE_PATH_PATTERN.containsMatchIn(normalized) &&
+            FILE_OPERATION_PATTERN.containsMatchIn(normalized)
+        ) {
+            scores[AgentTaskIntent.FILE] = scores.getOrDefault(AgentTaskIntent.FILE, 0) + 6
+            signals.getOrPut(AgentTaskIntent.FILE, ::mutableListOf).add("file-path-operation")
+        }
         if (hasAttachments) {
             scores[AgentTaskIntent.FILE] = scores.getOrDefault(AgentTaskIntent.FILE, 0) + 3
             signals.getOrPut(AgentTaskIntent.FILE, ::mutableListOf).add("attachment")
@@ -100,10 +106,12 @@ object AgentTaskIntentClassifier {
             3,
             listOf(
                 "on my phone", "phone setting", "mobile device", "open phone app",
+                "on this phone", "on the phone", "locally on the phone",
                 "launch the app on my phone",
                 "battery", "flashlight", "camera", "take a photo", "sms",
                 "text message", "make a call", "timer", "alarm", "volume",
                 "\u624b\u673a", "\u624b\u673a\u8bbe\u7f6e",
+                "\u5728\u8fd9\u90e8\u624b\u673a", "\u5728\u672c\u673a", "\u5728\u624b\u673a\u672c\u5730",
                 "\u5728\u624b\u673a\u4e0a\u6253\u5f00",
                 "\u6253\u5f00\u624b\u673a app",
                 "\u7535\u91cf", "\u624b\u7535\u7b52", "\u6444\u50cf\u5934",
@@ -169,5 +177,15 @@ object AgentTaskIntentClassifier {
                 "\u6301\u7eed\u76d1\u63a7", "\u63d0\u9192\u6211"
             )
         )
+    )
+
+    private val FILE_PATH_PATTERN = Regex(
+        "(?:^|\\s)(?:[a-z0-9._-]+[/\\\\])+[a-z0-9._-]+(?:\\.[a-z0-9]{1,12})?(?=\\s|$|[,.;:])",
+        RegexOption.IGNORE_CASE
+    )
+    private val FILE_OPERATION_PATTERN = Regex(
+        "\\b(?:create|write|read|edit|modify|delete|rename|move|copy|verify|archive|zip|unzip|extract)\\b|" +
+            "(?:\u521b\u5efa|\u5199\u5165|\u8bfb\u53d6|\u7f16\u8f91|\u4fee\u6539|\u5220\u9664|\u91cd\u547d\u540d|\u79fb\u52a8|\u590d\u5236|\u9a8c\u8bc1|\u538b\u7f29|\u89e3\u538b|\u89e3\u538b\u7f29)",
+        RegexOption.IGNORE_CASE
     )
 }

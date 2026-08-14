@@ -10,6 +10,103 @@ import org.junit.Test
 
 class AgentSystemToolPlannerTest {
     @Test
+    fun normalizesCommonModelCompletionPayloadWithoutExposingControlJson() {
+        val raw = """{"execution_location":"phone","summary":"Verified on the phone.","actions":[{"ref":"done","kind":"CALL_NATIVE_TOOL","target":"task-complete","depends_on":["write"],"use_outputs_from":["write"],"parameters":{"tool_id":"DRAFT_PLAN","arguments":{}}}]}"""
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+        val action = normalized.getJSONArray("actions").getJSONObject(0)
+
+        assertTrue(AgentSupervisedProjectControlPayload.isControlPayload(raw))
+        assertEquals(AgentActionKind.DRAFT_PLAN.name, action.getString("kind"))
+        assertEquals("task-complete", action.getString("target"))
+        assertEquals(0, action.getJSONArray("depends_on").length())
+        assertEquals(0, action.getJSONArray("use_outputs_from").length())
+        assertEquals(0, action.getJSONObject("parameters").length())
+        assertEquals("Verified on the phone.", normalized.getString("summary"))
+    }
+
+    @Test
+    fun supervisedProjectActionsKeepTheirBoundConversationAndTurn() {
+        val modelAction = AgentAction(
+            id = "write",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Write a project file",
+            parameters = mapOf("input_json" to "{}")
+        )
+        val connector = AgentAction(
+            id = "supervisor",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Plan phone project work",
+            parameters = mapOf(
+                INTERNAL_CONVERSATION_ID to "conversation-a",
+                INTERNAL_TURN_ID to "turn-a",
+                INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue
+            )
+        )
+
+        val bound = modelAction.bindSupervisedProjectContext(connector)
+
+        assertEquals("conversation-a", bound.parameters[INTERNAL_CONVERSATION_ID])
+        assertEquals("turn-a", bound.parameters[INTERNAL_TURN_ID])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, bound.parameters[INTERNAL_TASK_EXECUTION_MODE])
+        assertEquals("{}", bound.parameters["input_json"])
+    }
+
+    @Test
+    fun handsStructuredPhoneToolEvidenceToTheSupervisingModel() {
+        val inspect = AgentAction(
+            id = "inspect",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentMobileProjectNativeTools.INSPECT,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Inspect repository"
+        )
+        val reviewer = AgentAction(
+            id = "review",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Review evidence",
+            parameters = mapOf(
+                "prompt" to "Decide whether the goal is complete",
+                "use_outputs_from" to inspect.id
+            )
+        )
+        val output = """{"branch":"main","head_commit":"abc123","clean":true}"""
+        val plan = AgentPlanFactory.actions(
+            request(
+                "Inspect the phone repository",
+                ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),
+                emptyList(),
+                emptyList()
+            ),
+            listOf(inspect, reviewer)
+        ).markAction(
+            inspect.id,
+            AgentActionStatus.COMPLETED,
+            AgentActionResult(
+                actionId = inspect.id,
+                success = true,
+                message = "Phone project operation completed",
+                metadata = mapOf("native_tool_output" to output)
+            )
+        )
+
+        val materialized = plan.materializeToolInput(reviewer, allowOutputHandoff = true)
+
+        assertTrue(materialized.parameters.getValue("prompt").contains(output))
+        assertFalse(materialized.parameters.getValue("prompt").contains("Phone project operation completed"))
+    }
+
+    @Test
     fun preselectsReadOnlyCloudConversationWithoutFullModelPlanning() {
         val cloud = AgentCallableTarget(
             id = "cloud-models",
@@ -51,6 +148,49 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun concretePhonePathOperationCannotBypassTheSupervisedPhoneLoop() {
+        val codex = AgentCallableTarget(
+            id = "codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.CODE, AgentCapability.REASONING)
+        )
+        val goal = "On this phone, create docs/model_reasoning_probe.txt, read it back, and verify it"
+        val request = request(
+            goal,
+            ScreenContext(foregroundApp = "", pageTitle = ""),
+            emptyList(),
+            listOf(codex)
+        )
+
+        assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, request.conversationContext))
+        assertEquals(null, RuleBasedAgentPlanner().directInformationConnectorAction(request))
+        assertTrue(RuleBasedAgentPlanner().plan(request).isSupervisedProjectPlan())
+    }
+
+    @Test
+    fun doesNotBypassThePhoneLoopForAProjectContinuation() {
+        val codex = AgentCallableTarget(
+            id = "codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.CODE, AgentCapability.REASONING)
+        )
+        val goal = "Create a branch in the current phone project, edit a file, then inspect the Git diff"
+        val request = request(
+            goal,
+            ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),
+            emptyList(),
+            listOf(codex)
+        )
+
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(goal))
+        assertEquals(null, RuleBasedAgentPlanner().directInformationConnectorAction(request))
+    }
+
+    @Test
     fun routesSmallChinesePythonWorkToThePhoneRuntime() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val runtime = nativeDescriptor(
@@ -70,15 +210,11 @@ class AgentSystemToolPlannerTest {
         )
 
         assertTrue(plan.validation.valid)
-        assertEquals(listOf(AgentActionKind.CALL_CONNECTOR, AgentActionKind.CALL_NATIVE_TOOL), plan.actions.map { it.kind })
-        val author = plan.actions.first()
-        val execute = plan.actions.last()
-        assertEquals(PHONE_DEVELOPMENT_CONNECTOR_MODE, author.parameters["connector_task_mode"])
-        assertTrue(author.parameters["prompt"].orEmpty().contains("Do not run commands"))
-        assertEquals(author.id, execute.parameters["depends_on"])
-        assertEquals(author.id, execute.parameters["use_outputs_from"])
-        assertTrue(execute.isPhoneDevelopmentRuntimeHandoff())
-        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(execute))
+        assertEquals(listOf(AgentActionKind.CALL_CONNECTOR), plan.actions.map { it.kind })
+        val supervisor = plan.actions.single()
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, supervisor.parameters["connector_task_mode"])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
+        assertTrue(supervisor.parameters["prompt"].orEmpty().contains("Default execution_location to phone"))
 
         val generatedSource = "values = [1, 2, 3]\n    # preserve indentation and / characters\nprint(sum(values) / len(values))\nassert sum(values) == 6"
         val manifest = JSONObject()
@@ -88,7 +224,38 @@ class AgentSystemToolPlannerTest {
             .put("source", generatedSource)
             .put("artifact_paths", emptyList<String>())
             .toString()
-        val completed = plan.markAction(author.id, AgentActionStatus.COMPLETED, AgentActionResult(author.id, true, manifest))
+        val author = AgentAction(
+            id = "legacy-author",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Prepare code",
+            parameters = mapOf("connector_task_mode" to PHONE_DEVELOPMENT_CONNECTOR_MODE)
+        )
+        val execute = AgentAction(
+            id = "legacy-execute",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "Phone Linux",
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Run and verify",
+            parameters = mapOf(
+                "tool_id" to AgentOnDeviceRuntimeTools.EXECUTE,
+                "depends_on" to author.id,
+                "use_outputs_from" to author.id,
+                PHONE_DEVELOPMENT_MANIFEST_PARAMETER to "true"
+            )
+        )
+        val legacyPlan = AgentPlanFactory.actions(
+            request("Write and verify a Python program", screen, listOf(runtime), listOf(codex)),
+            listOf(author, execute)
+        )
+        val completed = legacyPlan.markAction(
+            author.id,
+            AgentActionStatus.COMPLETED,
+            AgentActionResult(author.id, true, manifest)
+        )
         val materialized = completed.materializeToolInput(execute, allowOutputHandoff = false)
         val input = JSONObject(materialized.parameters.getValue("input_json"))
 
@@ -241,18 +408,33 @@ class AgentSystemToolPlannerTest {
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Fix the current SignalASI Android app and submit a pull request"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone https://github.com/signalasi/SignalASI and improve the Android project"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Clone the SignalASI repository on this phone and report the current branch"))
+        assertTrue(
+            AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(
+                "Clone https://github.com/signalasi/SignalASI, inspect the current branch and repository status, and report the verified result."
+            )
+        )
+        assertTrue(
+            AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(
+                "Clone the SignalASI repository on this phone. Do not use Desktop workspace."
+            )
+        )
+        assertTrue(
+            AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject(
+                "\u5728\u624b\u673a\u672c\u673a\u514b\u9686 SignalASI \u4ed3\u5e93\uff0c\u4e0d\u8981\u4f7f\u7528 Desktop \u5de5\u4f5c\u533a"
+            )
+        )
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Inspect the current repository status and report any local changes"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Audit the SignalASI codebase without modifying files"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("\u5728\u624b\u673a\u672c\u673a\u514b\u9686 SignalASI \u4ed3\u5e93\uff0c\u4fee\u590d\u4ee3\u7801\u5e76\u63d0\u4ea4 GitHub PR"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Show the latest GitHub releases"))
         assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Explain how Git branches work"))
 
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Write a Python program on the desktop"))
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Comprehensively test the app and desktop, including offline recovery and UI responsiveness"))
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Analyze this app screenshot and fix the issue"))
-        assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5168\u9762\u6d4b\u8bd5 App \u548c Desktop \u7684\u6240\u6709\u529f\u80fd\uff0c\u5305\u62ec\u79bb\u7ebf\u6062\u590d\u548c\u9875\u9762\u6d41\u7545\u5ea6"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Write a Python program on the desktop"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Comprehensively test the app and desktop, including offline recovery and UI responsiveness"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Analyze this app screenshot and fix the issue"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("\u5168\u9762\u6d4b\u8bd5 App \u548c Desktop \u7684\u6240\u6709\u529f\u80fd\uff0c\u5305\u62ec\u79bb\u7ebf\u6062\u590d\u548c\u9875\u9762\u6d41\u7545\u5ea6"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Write a simple Python program and verify it"))
-        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseManifestAuthoring("Write a simple Python program and verify it"))
+        assertTrue(AgentPhoneDevelopmentPolicy.shouldUseSupervisedProject("Write a simple Python program and verify it"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("\u5728\u624b\u673a\u672c\u673a\u5199\u4e00\u4e2a Python \u811a\u672c\u5e76\u6d4b\u8bd5"))
         assertTrue(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime("Run this Python script locally on the phone and verify it"))
     }
@@ -289,6 +471,8 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, action.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
         assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
+        assertTrue(action.parameters.getValue("prompt").contains("\"execution_location\":\"phone|desktop\""))
+        assertTrue(action.parameters.getValue("prompt").contains("reasoning provider are independent"))
         assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
         assertTrue(action.parameters.getValue("prompt").contains("Do not require an artifact for repository clone"))
         assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))
@@ -327,6 +511,44 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentActionKind.CALL_CONNECTOR, plan.actions.single().kind)
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
         assertEquals(null, RuleBasedAgentPlanner().genericWebResearchActions(request))
+    }
+
+    @Test
+    fun `temporarily unavailable Codex still keeps phone execution planning only`() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val codex = AgentCallableTarget(
+            id = "codex",
+            title = "Codex Agent",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.DISCONNECTED,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING, AgentCapability.TASK_EXECUTION)
+        )
+        val goal = "Create a file named signalasi_phone_probe.txt in the phone project workspace, then verify it"
+
+        val plan = RuleBasedAgentPlanner().plan(request(goal, screen, emptyList(), listOf(codex)))
+
+        assertTrue(plan.isSupervisedProjectPlan())
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, plan.actions.single().parameters[INTERNAL_TASK_EXECUTION_MODE])
+    }
+
+    @Test
+    fun `generic file execution request is planned by the model but executed on the phone`() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val codex = AgentCallableTarget(
+            id = "codex",
+            title = "Codex Agent",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING, AgentCapability.TASK_EXECUTION)
+        )
+        val goal = "On my phone, create docs/probe.txt, read it back, and verify the content"
+
+        val plan = RuleBasedAgentPlanner().plan(request(goal, screen, emptyList(), listOf(codex)))
+
+        assertTrue(plan.isSupervisedProjectPlan())
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, plan.actions.single().parameters[INTERNAL_TASK_EXECUTION_MODE])
     }
 
     @Test
@@ -396,7 +618,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun modelPlannerCannotReintroducePhoneRuntimeForCrossProductWork() {
+    fun modelExecutionSiteDecisionSeparatesReasoningFromExecutionAuthority() {
         val runtimeAction = AgentAction(
             id = "runtime",
             kind = AgentActionKind.CALL_NATIVE_TOOL,
@@ -419,21 +641,111 @@ class AgentSystemToolPlannerTest {
             description = "Send to Codex",
             parameters = mapOf("connector_id" to "codex")
         )
-        val projectGoal = "Comprehensively test the app and desktop, including offline recovery and UI responsiveness"
+        val phone = AgentExecutionSiteDecisionCodec.parse(
+            "{\"execution_location\":\"phone\",\"execution_location_evidence\":\"\"}",
+            "Use Codex to write and verify a program"
+        )
+        val desktop = AgentExecutionSiteDecisionCodec.parse(
+            "{\"execution_location\":\"desktop\",\"execution_location_evidence\":\"on my Desktop\"}",
+            "Build this on my Desktop with Codex"
+        )
 
-        assertFalse(AgentPhoneDevelopmentPolicy.acceptsModelPlan(projectGoal, listOf(runtimeAction)))
-        assertFalse(AgentPhoneDevelopmentPolicy.acceptsModelPlan(projectGoal, listOf(workspaceAction)))
-        assertTrue(AgentPhoneDevelopmentPolicy.acceptsModelPlan(projectGoal, listOf(connectorAction)))
-        assertTrue(
-            AgentPhoneDevelopmentPolicy.acceptsModelPlan(
-                "Run a simple Python script locally on the phone and verify it",
-                listOf(runtimeAction)
+        assertEquals(AgentRequestedExecutionSite.PHONE, phone?.site)
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(phone!!, listOf(runtimeAction, workspaceAction)))
+        assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(phone, listOf(connectorAction)))
+        assertEquals(AgentRequestedExecutionSite.DESKTOP, desktop?.site)
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(desktop!!, listOf(connectorAction)))
+        assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(desktop, listOf(runtimeAction)))
+        assertEquals(
+            null,
+            AgentExecutionSiteDecisionCodec.parse(
+                "{\"execution_location\":\"desktop\",\"execution_location_evidence\":\"faster machine\"}",
+                "Build this project"
             )
         )
     }
 
     @Test
-    fun routesCrossProductTestingToAnAvailableConnectorInsteadOfPhoneLinux() {
+    fun acceptsModelPlannedPhoneWorkspaceCreateAndReadGraph() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val nativeTools = listOf(
+            nativeDescriptor(
+                AgentPhoneNativeToolCatalog.WORKSPACE_CREATE_TEXT,
+                "Create a text file in the phone workspace",
+                AgentNativeToolRisk.MEDIUM
+            ),
+            nativeDescriptor(
+                AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,
+                "Read a text file from the phone workspace",
+                AgentNativeToolRisk.LOW
+            )
+        )
+        val goal = "On this phone, create docs/model_reasoning_probe.txt with content PHONE_REASONING_OK, read it back, and verify it."
+        val request = request(goal, screen, nativeTools)
+        val raw = """
+            {
+              "execution_location":"phone",
+              "summary":"Create the target file in the phone workspace, then read it back and verify its content.",
+              "actions":[
+                {
+                  "ref":"create_probe_file",
+                  "kind":"CALL_NATIVE_TOOL",
+                  "target":"signalasi.workspace.file.create.text",
+                  "description":"Create the verification file",
+                  "depends_on":[],
+                  "use_outputs_from":[],
+                  "parameters":{
+                    "tool_id":"signalasi.workspace.file.create.text",
+                    "arguments":{
+                      "workspace_id":"current",
+                      "path":"docs/model_reasoning_probe.txt",
+                      "text":"PHONE_REASONING_OK",
+                      "create_parents":true
+                    }
+                  }
+                },
+                {
+                  "ref":"read_probe_file",
+                  "kind":"CALL_NATIVE_TOOL",
+                  "target":"signalasi.workspace.file.read.text",
+                  "description":"Read the verification file",
+                  "depends_on":["create_probe_file"],
+                  "use_outputs_from":[],
+                  "parameters":{
+                    "tool_id":"signalasi.workspace.file.read.text",
+                    "arguments":{
+                      "workspace_id":"current",
+                      "path":"docs/model_reasoning_probe.txt",
+                      "max_bytes":64
+                    }
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val site = requireNotNull(AgentExecutionSiteDecisionCodec.parse(raw, goal))
+        val plan = requireNotNull(
+            AgentModelPlanParser.parse(
+                request,
+                raw,
+                AgentModelPlannerSettings(
+                    maxActions = 8,
+                    multiAgentCoordination = true,
+                    maxAgentHops = 8
+                )
+            )
+        )
+
+        assertEquals(AgentRequestedExecutionSite.PHONE, site.site)
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions))
+        assertTrue(AgentPhoneDevelopmentPolicy.acceptsModelPlan(goal, plan.actions))
+        assertEquals(2, plan.actions.size)
+        assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
+    }
+
+    @Test
+    fun routesCrossProductTestingThroughTheModelExecutionSiteDecision() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val runtime = nativeDescriptor(
             AgentOnDeviceRuntimeTools.EXECUTE,
@@ -457,8 +769,10 @@ class AgentSystemToolPlannerTest {
             )
         )
 
+        assertTrue(plan.isSupervisedProjectPlan())
         assertEquals(listOf(AgentActionKind.CALL_CONNECTOR), plan.actions.map { it.kind })
         assertEquals("codex", plan.actions.single().parameters["connector_id"])
+        assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, plan.actions.single().parameters["connector_task_mode"])
         assertFalse(plan.actions.any { it.parameters["tool_id"] == AgentOnDeviceRuntimeTools.EXECUTE })
     }
 

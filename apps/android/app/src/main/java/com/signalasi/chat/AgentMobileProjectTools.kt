@@ -112,6 +112,7 @@ internal class AgentMobileProjectRepository(
                 .setBranch(cleanBranch)
                 .setCloneAllBranches(false)
                 .setDepth(depth)
+                .setTimeout(CLONE_TIMEOUT_SECONDS)
                 .setProgressMonitor(CancellableProgressMonitor(cancellationToken, progress))
             credentials()?.let(command::setCredentialsProvider)
             command.call().use { git ->
@@ -419,6 +420,7 @@ internal class AgentMobileProjectRepository(
         private const val MAX_PULL_REQUEST_TITLE_CHARACTERS = 256
         private const val MAX_PULL_REQUEST_BODY_CHARACTERS = 32 * 1024
         private const val MAX_GITHUB_RESPONSE_CHARACTERS = 256 * 1024
+        private const val CLONE_TIMEOUT_SECONDS = 90
         private const val DEFAULT_AUTHOR_NAME = "SignalASI"
         private const val DEFAULT_AUTHOR_EMAIL = "signalasi@hotmail.com"
 

@@ -8,6 +8,28 @@ import org.junit.Test
 
 class AgentTeamPlanBridgeTest {
     @Test
+    fun `supervised phone project planner is never expanded into a desktop team`() {
+        val action = AgentAction(
+            id = "phone-planner",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PROPOSED,
+            description = "Plan phone work",
+            parameters = mapOf(
+                "connector_id" to "codex",
+                "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue
+            ),
+            requiresConfirmation = false
+        )
+        val original = plan(action)
+
+        val compiled = AgentTeamPlanCompiler.compile(original, targets(), enabled = true)
+
+        assertEquals(original, compiled)
+    }
+    @Test
     fun branchedAgentGraphCompilesIntoOneSupervisedTeamAction() {
         val research = agentAction("research", "researcher").withAgentKnowledge("research-only")
         val review = agentAction("review", "reviewer")

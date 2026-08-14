@@ -1001,7 +1001,8 @@ internal fun MainActivity.nextAgentPermissionMode(current: PermissionMode): Perm
     PermissionMode.OBSERVE_ONLY -> PermissionMode.SUGGEST_ONLY
     PermissionMode.SUGGEST_ONLY -> PermissionMode.ASK_BEFORE_ACTION
     PermissionMode.ASK_BEFORE_ACTION -> PermissionMode.AUTO_LOW_RISK
-    PermissionMode.AUTO_LOW_RISK -> PermissionMode.OBSERVE_ONLY
+    PermissionMode.AUTO_LOW_RISK -> PermissionMode.FULL_ACCESS
+    PermissionMode.FULL_ACCESS -> PermissionMode.OBSERVE_ONLY
 }
 
 internal fun MainActivity.toggleAgentHighRiskGuard() {
@@ -1171,6 +1172,7 @@ internal fun MainActivity.permissionModeLabel(mode: PermissionMode): String = wh
     PermissionMode.SUGGEST_ONLY -> getString(R.string.permission_mode_suggest_only)
     PermissionMode.ASK_BEFORE_ACTION -> getString(R.string.permission_mode_ask_before_action)
     PermissionMode.AUTO_LOW_RISK -> getString(R.string.permission_mode_auto_low_risk)
+    PermissionMode.FULL_ACCESS -> getString(R.string.permission_mode_full_access)
 }
 
 internal fun MainActivity.taskExecutionModeLabel(mode: AgentTaskExecutionMode): String = when (mode) {

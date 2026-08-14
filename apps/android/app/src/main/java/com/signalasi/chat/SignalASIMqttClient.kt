@@ -9,7 +9,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Base64
 import android.util.Log
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
@@ -21,9 +20,6 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import org.json.JSONObject
 import org.json.JSONArray
-import java.io.ByteArrayOutputStream
-import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
@@ -98,6 +94,7 @@ object SignalASIMqttClient {
         }
     }
     private val brokerAckWatchdog = MqttBrokerAckWatchdog(MQTT_BROKER_ACK_TIMEOUT_MILLIS)
+    private val brokerDeliveryRegistration = MqttBrokerDeliveryRegistration()
     private val brokerAckWatchdogRunnable = Runnable {
         val oldestAgeMillis = brokerAckWatchdog.oldestPendingAgeMillis(SystemClock.elapsedRealtime())
         if (connected && oldestAgeMillis != null && oldestAgeMillis >= MQTT_BROKER_ACK_TIMEOUT_MILLIS) {
@@ -112,7 +109,6 @@ object SignalASIMqttClient {
     private val pairingClaimRetryRunnable = Runnable { flushPendingPairingClaim() }
     private val listeners = CopyOnWriteArraySet<Listener>()
     private val deliveryMessageIds = ConcurrentHashMap<Int, String>()
-    private val pendingArtifactDownloads = ConcurrentHashMap.newKeySet<String>()
     private val outboxDispatchLock = Any()
     private val fragmentTransferLock = Any()
     private val fragmentTransfers = LinkedHashMap<String, OutboundFragmentTransfer>()
@@ -153,6 +149,10 @@ object SignalASIMqttClient {
 
     internal fun applicationContext(): Context? = appContext
 
+    internal fun bindApplicationContext(context: Context) {
+        appContext = context.applicationContext
+    }
+
     fun completeIncomingDelivery(context: Context, payload: String) {
         val messageId = runCatching { JSONObject(payload).optString("message_id") }
             .getOrDefault("")
@@ -191,72 +191,29 @@ object SignalASIMqttClient {
         }
     }
 
-    fun publishServerRevocation(context: Context, desktopId: String): Boolean {
-        val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
-        val mqtt = client ?: return false
-        if (!mqtt.isConnected || !link.paired) return false
-        val payload = JSONObject()
-            .put("type", "client_revoked")
-            .put("desktop_id", desktopId)
-            .put("reason", "forgotten_by_client")
-            .put("time", System.currentTimeMillis())
-        val envelope = SignalASILinkProtocol.makeEnvelope(
-            payload, SignalASICrypto.localSignalasiId(), desktopId
-        )
-        val encrypted = SignalASICrypto.encryptPayloadForDesktop(desktopId, envelope) ?: return false
-        val messageId = envelope.getString("message_id")
-        val wirePayload = encrypted.toString()
-        SignalASILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload)
-        SignalASILinkDeliveryStore.markAttempt(context, messageId)
-        if (!publishWirePayload(
-            mqtt,
-            link.routes.control,
-            wirePayload,
-            "server_revocation",
-            messageId
-        )) {
-            scheduleOutboxRetries()
-            return true
-        }
-        return true
-    }
+    fun publishServerRevocation(context: Context, desktopId: String): Boolean =
+        SignalASIMqttDesktopControl.publishServerRevocation(context, desktopId)
 
     fun publishDesktopToolCall(desktopId: String, payload: JSONObject): Boolean =
-        publishDesktopControlPayload(desktopId, payload)
+        SignalASIMqttDesktopControl.publishToolCall(desktopId, payload)
 
     fun publishRemoteWhisperPacket(desktopId: String, payload: JSONObject): Boolean =
-        publishDesktopControlPayload(desktopId, payload, durable = true)
+        SignalASIMqttDesktopControl.publishRemoteWhisperPacket(desktopId, payload)
 
     fun publishDesktopExecutorRequest(
         desktopId: String,
         payload: JSONObject,
         durable: Boolean = true
-    ): Boolean = publishDesktopControlPayload(desktopId, payload, durable)
+    ): Boolean = SignalASIMqttDesktopControl.publishExecutorRequest(desktopId, payload, durable)
 
     fun publishDesktopControlAuthorizationsRequest(desktopId: String): Boolean =
-        publishDesktopControlPayload(
-            desktopId,
-            JSONObject()
-                .put("type", "desktop_control_authorizations_request")
-                .put("time", System.currentTimeMillis())
-        )
+        SignalASIMqttDesktopControl.requestAuthorizations(desktopId)
 
     fun publishDesktopControlRevoke(desktopId: String, authorizationId: String): Boolean =
-        publishDesktopControlPayload(
-            desktopId,
-            JSONObject()
-                .put("type", "desktop_control_revoke")
-                .put("authorization_id", authorizationId)
-                .put("time", System.currentTimeMillis())
-        )
+        SignalASIMqttDesktopControl.revokeAuthorization(desktopId, authorizationId)
 
     fun requestDesktopEvolutionTasks(desktopId: String): Boolean =
-        publishDesktopControlPayload(
-            desktopId,
-            JSONObject()
-                .put("type", "evolution_task_list_request")
-                .put("time", System.currentTimeMillis())
-        )
+        SignalASIMqttDesktopControl.requestEvolutionTasks(desktopId)
 
     fun createDesktopEvolutionTask(
         desktopId: String,
@@ -267,19 +224,15 @@ object SignalASIMqttClient {
         riskLevel: String = "medium",
         maxAttempts: Int = 3,
         agentId: String = "codex"
-    ): Boolean = publishDesktopControlPayload(
+    ): Boolean = SignalASIMqttDesktopControl.createEvolutionTask(
         desktopId,
-        JSONObject()
-            .put("type", "evolution_task_create")
-            .put("problem", problem)
-            .put("scope", JSONArray(scope))
-            .put("acceptance", JSONArray(acceptance))
-            .put("reproduction_steps", JSONArray(reproductionSteps))
-            .put("risk_level", riskLevel)
-            .put("max_attempts", maxAttempts.coerceIn(1, 5))
-            .put("agent_id", agentId)
-            .put("start", true)
-            .put("time", System.currentTimeMillis())
+        problem,
+        scope,
+        acceptance,
+        reproductionSteps,
+        riskLevel,
+        maxAttempts,
+        agentId
     )
 
     fun controlDesktopEvolutionTask(
@@ -288,20 +241,8 @@ object SignalASIMqttClient {
         action: String,
         approvalHash: String = ""
     ): Boolean {
-        val type = when (action) {
-            "cancel" -> "evolution_task_cancel"
-            "rollback" -> "evolution_candidate_rollback"
-            "publish" -> "evolution_candidate_publish"
-            else -> return false
-        }
-        return publishDesktopControlPayload(
-            desktopId,
-            JSONObject()
-                .put("type", type)
-                .put("task_id", taskId)
-                .put("approval_hash", approvalHash)
-                .put("base_branch", "main")
-                .put("time", System.currentTimeMillis())
+        return SignalASIMqttDesktopControl.controlEvolutionTask(
+            desktopId, taskId, action, approvalHash
         )
     }
 
@@ -310,71 +251,14 @@ object SignalASIMqttClient {
         callId: String,
         taskId: String,
         conversationId: String
-    ): Boolean = publishDesktopControlPayload(
-        desktopId,
-        JSONObject()
-            .put("type", "desktop_tool_call_cancel")
-            .put("call_id", callId)
-            .put("invocation_id", callId)
-            .put("task_id", taskId)
-            .put("conversation_id", conversationId)
-            .put("time", System.currentTimeMillis())
+    ): Boolean = SignalASIMqttDesktopControl.publishToolCancel(
+        desktopId, callId, taskId, conversationId
     )
 
-    private fun publishArtifactReceipt(
-        desktopId: String,
-        clientRouteId: String,
-        result: AgentDesktopArtifactIngestResult
-    ): Boolean = publishDesktopControlPayload(
-        desktopId,
-        JSONObject()
-            .put("type", "artifact_receipt")
-            .put("artifact_id", result.artifactId)
-            .put("artifact_uri", result.artifactUri)
-            .put("task_id", result.taskId)
-            .put("sha256", result.sha256)
-            .put("status", "stored")
-            .put("time", System.currentTimeMillis()),
-        clientRouteId = clientRouteId
-    )
+    fun requestDesktopArtifactDownload(block: AgentRichBlock): Boolean =
+        SignalASIMqttDesktopControl.requestArtifactDownload(block)
 
-    fun requestDesktopArtifactDownload(block: AgentRichBlock): Boolean {
-        val context = appContext ?: return false
-        val artifactUri = block.metadata["artifact_source_uri"].orEmpty().ifBlank { block.uri }
-        val digest = block.metadata["sha256"].orEmpty().trim().lowercase()
-        if (artifactUri.isBlank() || digest.length != 64) return false
-        val pairedLinks = SignalASILinkProtocol.allServerLinks(context).filter { it.paired }
-        val desktopId = block.metadata["desktop_id"].orEmpty()
-        val clientRouteId = block.metadata["client_route_id"].orEmpty()
-        val link = when {
-            desktopId.isNotBlank() && clientRouteId.isNotBlank() ->
-                SignalASILinkProtocol.serverLink(context, desktopId, clientRouteId)
-            desktopId.isNotBlank() -> SignalASILinkProtocol.serverLink(context, desktopId)
-            pairedLinks.size == 1 -> pairedLinks.single()
-            else -> null
-        } ?: return false
-        val artifactId = block.metadata["artifact_id"].orEmpty().ifBlank {
-            MessageDigest.getInstance("SHA-256")
-                .digest("$artifactUri\u0000$digest".toByteArray(StandardCharsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
-        }
-        if (!pendingArtifactDownloads.add(artifactUri)) return true
-        val accepted = publishDesktopControlPayload(
-            link.desktopId,
-            JSONObject()
-                .put("type", "artifact_redelivery_request")
-                .put("artifact_id", artifactId)
-                .put("artifact_uri", artifactUri)
-                .put("task_id", block.metadata["task_id"].orEmpty())
-                .put("sha256", digest)
-                .put("time", System.currentTimeMillis()),
-            clientRouteId = link.routes.clientRouteId
-        )
-        if (!accepted) pendingArtifactDownloads.remove(artifactUri)
-        return accepted
-    }
-
-    private fun publishDesktopControlPayload(
+    internal fun publishDesktopControlPayload(
         desktopId: String,
         payload: JSONObject,
         durable: Boolean = true,
@@ -415,14 +299,8 @@ object SignalASIMqttClient {
         return true
     }
 
-    fun verifyPcIdentityFromQr(contents: String): Boolean {
-        val context = appContext ?: return false
-        val qr = runCatching { JSONObject(contents) }.getOrNull() ?: return false
-        if (!SignalASILinkProtocol.validatePairingQr(qr)) return false
-        if (!SignalASICrypto.verifyPcIdentityFromQr(contents)) return false
-        SignalASILinkProtocol.ensureServerLink(context, qr)
-        return true
-    }
+    fun verifyPcIdentityFromQr(contents: String): Boolean =
+        SignalASIMqttDesktopControl.verifyPcIdentityFromQr(contents)
 
     fun connect(context: Context) {
         appContext = context.applicationContext
@@ -748,11 +626,16 @@ object SignalASIMqttClient {
                     JSONArray(outboundAttachments.map(AgentPreparedOutboundAttachment::descriptor))
                 )
             } else {
-                inlineTurnAttachments(context, attachments, mediaProfile)
+                SignalASIMqttAttachmentEncoder.encodeInline(
+                    context,
+                    attachments,
+                    mediaProfile,
+                    MAX_INLINE_ATTACHMENT_BYTES
+                )
                     .takeIf { it.length() > 0 }
                     ?.let { payload.put("attachments", it) }
             }
-            if (attachments.any { attachment -> attachment.isTransportMedia() }) {
+            if (attachments.any(SignalASIMqttAttachmentEncoder::isTransportMedia)) {
                 payload
                     .put("media_network_profile", mediaProfile.id)
                     .put("defer_media_upload", mediaProfile.deferMediaUpload)
@@ -855,76 +738,6 @@ object SignalASIMqttClient {
         return queued
     }
 
-    private fun inlineTurnAttachments(
-        context: Context,
-        attachments: List<AgentInputAttachment>,
-        mediaProfile: AgentMediaDeliveryProfile
-    ): JSONArray {
-        var remaining = MAX_INLINE_ATTACHMENT_BYTES
-        val result = JSONArray()
-        attachments.forEach { attachment ->
-            val item = attachment.descriptor()
-            item.remove("uri")
-            item.put("transport_profile", mediaProfile.id)
-            if (attachment.isImage) {
-                val encoded = AgentImagePipeline.encodeForTransport(
-                    context,
-                    attachment,
-                    minOf(remaining, mediaProfile.imageTargetBytes)
-                )
-                if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {
-                    val transportName = encoded.transportName(attachment.displayName)
-                    if (transportName != attachment.displayName) {
-                        item.put("original_name", attachment.displayName)
-                        item.put("name", transportName)
-                    }
-                    item.put("mime_type", encoded.mimeType)
-                    item.put("transport_size", encoded.bytes.size)
-                    item.put("transport_lossless", encoded.lossless)
-                    item.put("data_b64", Base64.encodeToString(encoded.bytes, Base64.NO_WRAP))
-                    remaining -= encoded.bytes.size
-                } else {
-                    item.put("inline_status", "metadata_only")
-                }
-            } else {
-                val bytes = if (attachment.sizeBytes in 1..remaining.toLong()) {
-                    readBoundedBytes(context, attachment, remaining)
-                } else null
-                if (bytes != null && bytes.isNotEmpty() && bytes.size <= remaining) {
-                    item.put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
-                    remaining -= bytes.size
-                } else {
-                    item.put("inline_status", "metadata_only")
-                }
-            }
-            result.put(item)
-        }
-        return result
-    }
-
-    private fun AgentInputAttachment.isTransportMedia(): Boolean =
-        mimeType.startsWith("image/", ignoreCase = true) ||
-            mimeType.startsWith("audio/", ignoreCase = true) ||
-            mimeType.startsWith("video/", ignoreCase = true)
-
-    private fun readBoundedBytes(
-        context: Context,
-        attachment: AgentInputAttachment,
-        limit: Int
-    ): ByteArray? = runCatching {
-        context.contentResolver.openInputStream(attachment.uri)?.use { input ->
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(16 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                if (output.size() + read > limit) return@use null
-                output.write(buffer, 0, read)
-            }
-            output.toByteArray()
-        }
-    }.getOrNull()
-
     fun publishAgentTaskCancel(
         taskId: String,
         contactId: String,
@@ -932,86 +745,25 @@ object SignalASIMqttClient {
         conversationId: String,
         turnId: String,
         topicOverride: String? = null
-    ): Boolean {
-        if (taskId.isBlank() || conversationId.isBlank() || turnId.isBlank()) return false
-        val payload = JSONObject()
-            .put("type", "agent_task_cancel")
-            .put("task_id", taskId)
-            .put("conversation_id", conversationId)
-            .put("turn_id", turnId)
-            .put("contact_id", contactId)
-            .put("source_message_id", sourceMessageId)
-            .put("time", System.currentTimeMillis())
-        appContext?.let { context ->
-            AppStore.contactById(context, contactId)?.let { contact ->
-                payload
-                    .put("agent_id", contact.optString("agent_id").ifBlank { AppStore.agentIdForContact(context, contactId) })
-                    .put("desktop_id", contact.optString("desktop_id"))
-            }
-        }
-        return publishJson(payload, topicOverride ?: outgoingTopic(contactId), contactId)
-    }
+    ): Boolean = SignalASIMqttMessagePublisher.publishTaskCancel(
+        taskId,
+        contactId,
+        sourceMessageId,
+        conversationId,
+        turnId,
+        topicOverride
+    )
 
     fun publishAgentTaskApproval(
         decision: AgentRemoteApprovalDecision,
         topicOverride: String? = null
-    ): Boolean {
-        val payload = JSONObject()
-            .put("type", "agent_task_approval")
-            .put("task_id", decision.taskId)
-            .put("client_route_id", decision.clientRouteId)
-            .put("conversation_id", decision.conversationId)
-            .put("turn_id", decision.turnId)
-            .put("contact_id", decision.contactId)
-            .put("source_message_id", decision.sourceMessageId)
-            .put("approval_id", decision.approvalId)
-            .put("action_hash", decision.actionHash)
-            .put("decision_scope", decision.choice.wireValue)
-            .put("approved", decision.approved)
-            .put("time", System.currentTimeMillis())
-        appContext?.let { context ->
-            AppStore.contactById(context, decision.contactId)?.let { contact ->
-                payload
-                    .put(
-                        "agent_id",
-                        contact.optString("agent_id").ifBlank {
-                            AppStore.agentIdForContact(context, decision.contactId)
-                        }
-                    )
-                    .put("desktop_id", contact.optString("desktop_id"))
-            }
-        }
-        return publishJson(
-            payload,
-            topicOverride ?: outgoingTopic(decision.contactId),
-            decision.contactId
-        )
-    }
+    ): Boolean = SignalASIMqttMessagePublisher.publishTaskApproval(decision, topicOverride)
 
-    fun publishAgentConversationDelete(conversationId: String, taskIds: Set<String>): Boolean {
-        if (conversationId.isBlank()) return false
-        val payload = JSONObject()
-            .put("type", "agent_conversation_delete")
-            .put("conversation_id", conversationId)
-            .put("task_ids", org.json.JSONArray(taskIds.toList()))
-            .put("cleanup_scope", "records_and_temporary_files")
-            .put("time", System.currentTimeMillis())
-        return publishJson(payload, outgoingTopic("hermes"), "hermes")
-    }
+    fun publishAgentConversationDelete(conversationId: String, taskIds: Set<String>): Boolean =
+        SignalASIMqttMessagePublisher.publishConversationDelete(conversationId, taskIds)
 
-    fun publishProfileUpdate(contactId: String, topicOverride: String? = null): Boolean {
-        val context = appContext ?: return false
-        val profile = AppStore.profile(context)
-        val topic = topicOverride ?: AppStore.outgoingTopicForContact(context, contactId) ?: return false
-        return publishJson(JSONObject()
-            .put("type", "profile_update")
-            .put("contact_id", contactId)
-            .put("sender", SignalASICrypto.localSignalasiId())
-            .put("name", profile.optString("name", "Me"))
-            .put("signalasi_id", profile.optString("signalasi_id"))
-            .put("identity_fingerprint", profile.optString("identity_fingerprint"))
-            .put("time", System.currentTimeMillis()), topic, contactId)
-    }
+    fun publishProfileUpdate(contactId: String, topicOverride: String? = null): Boolean =
+        SignalASIMqttMessagePublisher.publishProfileUpdate(contactId, topicOverride)
 
     fun publishPairingClaim(pairingQr: JSONObject): Boolean {
         val context = appContext ?: return false
@@ -1078,62 +830,13 @@ object SignalASIMqttClient {
         return true
     }
 
-    fun publishPhoneContactRequest(targetCard: JSONObject): Boolean {
-        val context = appContext ?: return false
-        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
-        val targetId = targetCard.optString("signalasi_id")
-        if (targetId == SignalASICrypto.localSignalasiId()) return false
-        val topic = targetCard.optString("mqtt_inbox_topic")
-        val localCard = AppStore.myQrPayload(context)
-        val bundle = SignalASICrypto.localSignalBundleJson()
-        val payload = JSONObject()
-            .put("type", PhoneContactCard.REQUEST_TYPE)
-            .put("version", PhoneContactCard.VERSION)
-            .put("control_id", UUID.randomUUID().toString())
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", targetId)
-            .put("reply_topic", AppStore.localInboxTopic(context))
-            .put("contact_card", localCard)
-            .put("contact_card_signature", localCard.optString("signature"))
-            .put("signal_bundle", bundle)
-            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
-            .put("time", System.currentTimeMillis())
-        payload.put(
-            "control_signature",
-            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
-        )
-        return publishPublicJsonOrConnect(context, topic, payload)
-    }
+    fun publishPhoneContactRequest(targetCard: JSONObject): Boolean =
+        SignalASIMqttMessagePublisher.publishPhoneContactRequest(targetCard)
 
-    private fun publishPhoneContactBundle(targetCard: JSONObject): Boolean {
-        val context = appContext ?: return false
-        if (!PhoneContactCard.isStructurallyValid(targetCard)) return false
-        val localCard = AppStore.myQrPayload(context)
-        val bundle = SignalASICrypto.localSignalBundleJson()
-        val payload = JSONObject()
-            .put("type", PhoneContactCard.BUNDLE_RESPONSE_TYPE)
-            .put("version", PhoneContactCard.VERSION)
-            .put("control_id", UUID.randomUUID().toString())
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", targetCard.optString("signalasi_id"))
-            .put("reply_topic", AppStore.localInboxTopic(context))
-            .put("contact_card", localCard)
-            .put("contact_card_signature", localCard.optString("signature"))
-            .put("signal_bundle", bundle)
-            .put("bundle_identity_fingerprint", SignalASICrypto.signalBundleFingerprint(bundle))
-            .put("time", System.currentTimeMillis())
-        payload.put(
-            "control_signature",
-            SignalASICrypto.signLocalIdentity(PhoneContactCard.canonicalControlBytes(payload))
-        )
-        return publishPublicJsonOrConnect(
-            context,
-            targetCard.optString("mqtt_inbox_topic"),
-            payload
-        )
-    }
+    private fun publishPhoneContactBundle(targetCard: JSONObject): Boolean =
+        SignalASIMqttMessagePublisher.publishPhoneContactBundle(targetCard)
 
-    private fun publishPublicJsonOrConnect(
+    internal fun publishPublicJsonOrConnect(
         context: Context,
         topic: String,
         payload: JSONObject
@@ -1198,17 +901,13 @@ object SignalASIMqttClient {
         groupName: String,
         memberId: String,
         memberTopic: String
-    ): Boolean {
-        return publishJson(JSONObject()
-            .put("type", "text")
-            .put("content", content)
-            .put("sender", SignalASICrypto.localSignalasiId())
-            .put("contact_id", groupId)
-            .put("group_id", groupId)
-            .put("group_name", groupName)
-            .put("delivery_mode", "per_member_signal")
-            .put("time", System.currentTimeMillis()), memberTopic, memberId)
-    }
+    ): Boolean = SignalASIMqttMessagePublisher.publishGroupTextMessage(
+        content,
+        groupId,
+        groupName,
+        memberId,
+        memberTopic
+    )
 
     fun publishFileMessage(
         fileId: String,
@@ -1218,44 +917,29 @@ object SignalASIMqttClient {
         caption: String = "",
         contactId: String = "hermes",
         topicOverride: String? = null
-    ): Boolean {
-        val type = when {
-            contentType.startsWith("image/") -> "image"
-            contentType.startsWith("audio/") -> "audio"
-            else -> "file_notify"
-        }
-        return publishJson(JSONObject()
-            .put("type", type)
-            .put("file_id", fileId)
-            .put("name", name)
-            .put("size", size)
-            .put("caption", caption)
-            .put("content", caption)
-            .put("contact_id", contactId)
-            .put("time", System.currentTimeMillis()), topicOverride ?: outgoingTopic(contactId), contactId)
-    }
+    ): Boolean = SignalASIMqttMessagePublisher.publishFileMessage(
+        fileId,
+        name,
+        size,
+        contentType,
+        caption,
+        contactId,
+        topicOverride
+    )
 
-    fun requestSignalBundleForContact(context: Context, contactId: String): Boolean {
-        appContext = context.applicationContext
-        val contact = AppStore.contactById(context, contactId) ?: return false
-        val topic = contact.optString("mqtt_topic")
-            .ifBlank { contact.optString("mqtt_inbox_topic") }
-        if (topic.isBlank()) return false
-        val request = JSONObject()
-            .put("version", 1)
-            .put("type", "signal_bundle_request")
-            .put("from", SignalASICrypto.localSignalasiId())
-            .put("to", contactId)
-            .put("reply_topic", incomingTopicForContact(context, contactId))
-            .put("requested_fingerprint", contact.optString("identity_fingerprint"))
-            .put("identity_fingerprint", SignalASICrypto.localIdentitySha256())
-            .put("signal_bundle", SignalASICrypto.localSignalBundleJson())
-            .put("time", System.currentTimeMillis())
-        return publishPublicJson(topic, request)
-    }
+    fun requestSignalBundleForContact(context: Context, contactId: String): Boolean =
+        SignalASIMqttMessagePublisher.requestSignalBundle(context, contactId)
 
     private fun publishJson(payload: JSONObject, topic: String?, contactId: String = "hermes"): Boolean =
         publishJsonResult(payload, topic, contactId).accepted
+
+    internal fun publishJsonForTransport(
+        payload: JSONObject,
+        topic: String?,
+        contactId: String
+    ): Boolean = publishJson(payload, topic, contactId)
+
+    internal fun outgoingTopicFor(contactId: String): String? = outgoingTopic(contactId)
 
     private fun publishJsonResult(
         payload: JSONObject,
@@ -1531,11 +1215,11 @@ object SignalASIMqttClient {
                 mqttMessage(packets.first()),
                 purpose
             ) ?: return false
-            trackBrokerDelivery(token)
             if (!durableMessageId.isNullOrBlank()) {
                 deliveryMessageIds[token.messageId] = durableMessageId
             }
-            if (token.isComplete) {
+            val acknowledgedEarly = trackBrokerDelivery(token)
+            if (acknowledgedEarly || token.isComplete) {
                 appContext?.let { context ->
                     retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
                 }
@@ -1607,8 +1291,8 @@ object SignalASIMqttClient {
                 transfer.outstanding += 1
                 fragmentInflight += 1
                 fragmentTransferKeysByMid[token.messageId] = transfer.key
-                trackBrokerDelivery(token)
-                if (token.isComplete) {
+                val acknowledgedEarly = trackBrokerDelivery(token)
+                if (acknowledgedEarly || token.isComplete) {
                     appContext?.let { context ->
                         retryHandler.post { handleBrokerDeliveryComplete(context, token.messageId) }
                     }
@@ -1649,12 +1333,15 @@ object SignalASIMqttClient {
         return true
     }
 
-    private fun trackBrokerDelivery(token: IMqttDeliveryToken) {
+    private fun trackBrokerDelivery(token: IMqttDeliveryToken): Boolean {
+        val acknowledgedEarly = brokerDeliveryRegistration.onPublished(token.messageId)
         brokerAckWatchdog.onPublished(token.messageId, SystemClock.elapsedRealtime())
         scheduleBrokerAckWatchdog()
+        return acknowledgedEarly
     }
 
     private fun handleBrokerDeliveryComplete(context: Context, mid: Int) {
+        if (!brokerDeliveryRegistration.onAcknowledged(mid)) return
         brokerAckWatchdog.onAcknowledged(mid)
         scheduleBrokerAckWatchdog()
         if (completeFragmentDelivery(context, mid)) return
@@ -1706,6 +1393,7 @@ object SignalASIMqttClient {
 
     private fun clearWireTransportState() {
         deliveryMessageIds.clear()
+        brokerDeliveryRegistration.clear()
         brokerAckWatchdog.clear()
         retryHandler.removeCallbacks(brokerAckWatchdogRunnable)
         inboundChunkAssembler.clear()
@@ -1724,6 +1412,9 @@ object SignalASIMqttClient {
         val desktopId = AppStore.desktopIdForContact(context, contactId)
         return SignalASILinkProtocol.serverLink(context, desktopId)?.routes?.down.orEmpty()
     }
+
+    internal fun incomingTopicFor(context: Context, contactId: String): String =
+        incomingTopicForContact(context, contactId)
 
     private fun publishPublicJson(
         topic: String,
@@ -1750,6 +1441,9 @@ object SignalASIMqttClient {
         Log.i(TAG, "Published public MQTT control type=${payload.optString("type")} topic=$topic")
         return true
     }
+
+    internal fun publishPublicJsonForTransport(topic: String, payload: JSONObject): Boolean =
+        publishPublicJson(topic, payload)
 
     private fun clearRetainedPhoneContactControl(topic: String) {
         val mqtt = client ?: return
@@ -2139,8 +1833,13 @@ object SignalASIMqttClient {
                 .getOrNull()
             if (result?.completed == true) {
                 val clientRouteId = payload.optString("client_route_id")
-                publishArtifactReceipt(sourceDesktopId, clientRouteId, result)
-                val requestedDownload = pendingArtifactDownloads.remove(result.artifactUri)
+                SignalASIMqttDesktopControl.publishArtifactReceipt(
+                    sourceDesktopId,
+                    clientRouteId,
+                    result
+                )
+                val requestedDownload =
+                    SignalASIMqttDesktopControl.consumePendingArtifactDownload(result.artifactUri)
                 val savedPath = if (requestedDownload) {
                     AgentDesktopArtifactStore.saveArtifactUriToDownloads(context, result.artifactUri)
                         .getOrNull()
@@ -2161,7 +1860,7 @@ object SignalASIMqttClient {
         if (payload.optString("type") == "artifact_redelivery_result") {
             val artifactUri = payload.optString("artifact_uri")
             if (payload.optString("status") != "stored") {
-                pendingArtifactDownloads.remove(artifactUri)
+                SignalASIMqttDesktopControl.consumePendingArtifactDownload(artifactUri)
                 notifyMessageListeners(
                     JSONObject()
                         .put("type", "artifact_download_failed")

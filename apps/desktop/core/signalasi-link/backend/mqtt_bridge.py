@@ -1605,11 +1605,6 @@ def _force_close_transport_if_still_stale(mqttc, generation: int) -> None:
     if client is not mqttc or stalled_generation != generation:
         return
     try:
-        if not mqttc.is_connected():
-            return
-    except Exception:
-        return
-    try:
         active_socket = mqttc.socket()
         if active_socket is not None:
             active_socket.shutdown(socket.SHUT_RDWR)
@@ -3296,6 +3291,47 @@ def _readable_progress_replay(events: list[dict]) -> list[dict]:
             break
     replay.reverse()
     return replay
+
+
+def _codex_visible_progress_event(event: dict) -> dict | None:
+    """Normalize one public Codex progress item without exposing private reasoning."""
+    progress = event.get("progress_event")
+    if isinstance(progress, dict):
+        kind = str(progress.get("kind") or "step").strip()
+        title = str(
+            progress.get("title")
+            or event.get("current_step")
+            or "Codex is working"
+        ).strip()
+        detail = str(progress.get("detail") or "").strip()
+        if kind or title or detail:
+            return {
+                "event_id": str(progress.get("event_id") or "").strip(),
+                "kind": kind or "step",
+                "title": title or "Codex is working",
+                "status": str(progress.get("status") or "completed"),
+                "detail": detail,
+                "metadata": (
+                    dict(progress.get("metadata"))
+                    if isinstance(progress.get("metadata"), dict)
+                    else {}
+                ),
+            }
+    kind = str(event.get("event_kind") or "").strip()
+    if not kind:
+        return None
+    return {
+        "event_id": str(event.get("event_id") or "").strip(),
+        "kind": kind,
+        "title": str(event.get("event_title") or event.get("current_step") or "Codex step"),
+        "status": str(event.get("event_status") or "running"),
+        "detail": str(event.get("event_detail") or ""),
+        "metadata": (
+            dict(event.get("event_metadata"))
+            if isinstance(event.get("event_metadata"), dict)
+            else {}
+        ),
+    }
 
 
 def _agent_task_payload(
@@ -5084,25 +5120,27 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 return
             add_task_trace(f"codex_{event_status}", event.get("current_step") or "")
-            event_kind = str(event.get("event_kind") or "").strip()
-            if event_kind:
-                event_title = str(event.get("event_title") or event.get("current_step") or "Codex step")
-                event_detail = str(event.get("event_detail") or "")
-                event_id = str(event.get("event_id") or "").strip()
+            visible_progress = _codex_visible_progress_event(event)
+            if visible_progress is not None:
+                event_id = str(visible_progress.get("event_id") or "").strip()
                 if not event_id:
                     digest = hashlib.sha256(
-                        "\u001f".join((event_kind, event_title, event_detail)).encode("utf-8")
+                        "\u001f".join((
+                            str(visible_progress.get("kind") or ""),
+                            str(visible_progress.get("title") or ""),
+                            str(visible_progress.get("detail") or ""),
+                        )).encode("utf-8")
                     ).hexdigest()[:24]
                     event_id = f"codex:{task_id}:{digest}"
                 agent_task_manager.add_event(
                     task_id,
-                    event_kind,
-                    event_title,
+                    str(visible_progress.get("kind") or "step"),
+                    str(visible_progress.get("title") or "Codex is working"),
                     event_id=event_id,
-                    status=str(event.get("event_status") or "running"),
-                    detail=event_detail,
-                    metadata=dict(event.get("event_metadata") or {}),
-                    on_event=None,
+                    status=str(visible_progress.get("status") or "running"),
+                    detail=str(visible_progress.get("detail") or ""),
+                    metadata=dict(visible_progress.get("metadata") or {}),
+                    on_event=publish_event,
                 )
             event_result = _codex_terminal_result(content, event_status, event.get("result"))
             if event_status == "completed" and not parallel_codex_task:
@@ -5398,18 +5436,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if event_status == "completed" and not parallel_codex_task:
                 completed_task = agent_task_manager.get(task_id)
                 mark_conversation_synced("codex", completed_task)
-            progress = event.get("progress_event")
-            if event_status == "running" and isinstance(progress, dict):
-                updated = agent_task_manager.add_event(
-                    task_id=task_id,
-                    event_id=str(progress.get("event_id") or ""),
-                    kind=str(progress.get("kind") or "step"),
-                    title=str(progress.get("title") or event.get("current_step") or "Codex is working"),
-                    status=str(progress.get("status") or "completed"),
-                    detail=str(progress.get("detail") or ""),
-                    metadata=progress.get("metadata") if isinstance(progress.get("metadata"), dict) else {},
-                    on_event=publish_event,
-                )
+            if event_status == "running" and visible_progress is not None:
+                updated = agent_task_manager.get(task_id)
             else:
                 updated = agent_task_manager.update(
                     task_id, event_status, on_event=publish_event,

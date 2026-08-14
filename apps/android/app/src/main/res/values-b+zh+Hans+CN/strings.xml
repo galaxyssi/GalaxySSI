@@ -463,6 +463,9 @@
     <string name="permission_mode_suggest_only">仅建议</string>
     <string name="permission_mode_ask_before_action">执行前询问</string>
     <string name="permission_mode_auto_low_risk">低风险自动执行</string>
+    <string name="permission_mode_full_access">完全访问</string>
+    <string name="agent_permission_mode_updated">权限模式已设置为%1$s</string>
+    <string name="cc_permission_full_access_subtitle">无需确认，直接执行所有受支持的操作</string>
     <string name="agent_section_recent_tasks">最近任务</string>
     <string name="about_product_subtitle">连接用户、Agent、模型与设备的安全超级智能体</string>
     <string name="about_section_product">产品信息</string>

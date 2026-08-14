@@ -1,4 +1,5 @@
 import json
+import socket
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -23,6 +24,29 @@ class _ProbeMqtt:
 
     def is_connected(self):
         return True
+
+
+class _StaleSocket:
+    def __init__(self):
+        self.shutdown_calls = []
+        self.closed = False
+
+    def shutdown(self, how):
+        self.shutdown_calls.append(how)
+
+    def close(self):
+        self.closed = True
+
+
+class _DisconnectingMqtt:
+    def __init__(self):
+        self.active_socket = _StaleSocket()
+
+    def is_connected(self):
+        return False
+
+    def socket(self):
+        return self.active_socket
 
 
 class MqttTransportProbeStateTests(unittest.TestCase):
@@ -168,6 +192,21 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
             mqtt_bridge._transport_probe_tick()
 
         recover.assert_called_once_with(mqttc, "reconnect_guard_timeout")
+
+    def test_force_close_releases_socket_after_paho_marks_it_disconnected(self):
+        mqttc = _DisconnectingMqtt()
+        generation = self.state.connected(100.0)
+        self.assertTrue(self.state.begin("pending", 100.0))
+
+        with (
+            patch.object(mqtt_bridge, "client", mqttc),
+            patch.object(mqtt_bridge.transport_probe_stop_event, "wait", return_value=False),
+            patch.object(mqtt_bridge.time, "monotonic", return_value=110.0),
+        ):
+            mqtt_bridge._force_close_transport_if_still_stale(mqttc, generation)
+
+        self.assertEqual([socket.SHUT_RDWR], mqttc.active_socket.shutdown_calls)
+        self.assertTrue(mqttc.active_socket.closed)
 
     def test_probe_loop_survives_iteration_failure(self):
         class _StopAfterTwoIterations:

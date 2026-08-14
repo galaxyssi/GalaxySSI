@@ -8,6 +8,7 @@ from latency_feature_flags import feature_enabled
 from mqtt_bridge import (
     _TaskProgressEventGate,
     _agent_task_payload,
+    _codex_visible_progress_event,
     _should_publish_task_status,
     _task_event_is_coalescible,
     _trace_metrics,
@@ -226,6 +227,29 @@ class TaskLatencyTests(unittest.TestCase):
             }],
             payload["events"],
         )
+
+    def test_codex_visible_progress_prefers_public_progress_payload(self):
+        event = _codex_visible_progress_event({
+            "event_kind": "reasoning",
+            "event_detail": "private reasoning must not be used",
+            "progress_event": {
+                "event_id": "summary-1",
+                "kind": "narration",
+                "code": "reasoning_summary",
+                "title": "Planning",
+                "detail": "I will inspect the phone project before editing it.",
+                "status": "completed",
+            },
+        })
+
+        self.assertIsNotNone(event)
+        self.assertEqual("summary-1", event["event_id"])
+        self.assertEqual("narration", event["kind"])
+        self.assertEqual(
+            "I will inspect the phone project before editing it.",
+            event["detail"],
+        )
+        self.assertNotIn("private reasoning", str(event))
 
     def test_task_payload_carries_reconnect_safe_cumulative_partial(self):
         payload = _agent_task_payload(
