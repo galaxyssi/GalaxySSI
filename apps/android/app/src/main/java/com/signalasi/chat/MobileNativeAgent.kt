@@ -86,18 +86,23 @@ internal fun AgentAction.withDirectConversationContext(
     turnId: String,
     goal: String,
     executionMode: AgentTaskExecutionMode
-): AgentAction = copy(
-    parameters = parameters + mapOf(
+): AgentAction {
+    val resolvedExecutionMode = parameters[INTERNAL_TASK_EXECUTION_MODE]
+        ?.takeIf(String::isNotBlank)
+        ?: executionMode.wireValue
+    return copy(
+        parameters = parameters + mapOf(
         INTERNAL_CONVERSATION_ID to conversationContext.conversationId,
         INTERNAL_CONVERSATION_CONTEXT to conversationContext.asTransportBlock(maximumTokens = 10_000),
         INTERNAL_CONVERSATION_HAS_ATTACHMENTS to conversationContext.hasAttachments.toString(),
         INTERNAL_TURN_ID to turnId,
         INTERNAL_LONG_TERM_WRITE_ALLOWED to (!conversationContext.privateMode).toString(),
-        INTERNAL_TASK_EXECUTION_MODE to executionMode.wireValue,
+        INTERNAL_TASK_EXECUTION_MODE to resolvedExecutionMode,
         "_signalasi_task_id" to turnId,
         "original_goal" to goal
     )
-)
+    )
+}
 
 internal val SENSITIVE_MEMORY_TERMS = listOf(
     "password",
