@@ -250,6 +250,8 @@ class AgentRichContentTest {
         val files = AgentRichContentCodec.decode(rich).filter { it.type == AgentRichBlockType.FILE }
         assertEquals(listOf("app-debug.apk", "project.zip"), files.map { it.title })
         assertEquals(listOf("open_runtime_artifact", "save_runtime_artifact"), files.first().actions.map { it.verb })
+        assertEquals("Install", files.first().actions.first().label)
+        assertTrue(files.first().fallbackText.contains("Android APK"))
         assertEquals(listOf("preview_runtime_artifact", "save_runtime_artifact"), files.last().actions.map { it.verb })
     }
 

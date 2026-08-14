@@ -296,7 +296,8 @@ data class AgentRuntimePreparedWorkspace(
     val sourceFile: File,
     val guestPath: String,
     val projectDirectory: File,
-    val importedProjectBytes: Long
+    val importedProjectBytes: Long,
+    val buildArtifactBaseline: Map<String, Long>
 )
 
 data class AgentRuntimeProjectSync(
@@ -390,6 +391,10 @@ class AgentRuntimeWorkspaceManager private constructor(
             destination = runDirectory,
             byteLimit = request.resourceLimits.diskBytes
         ).totalBytes
+        val buildArtifactBaseline = buildArtifactCandidates(runDirectory)
+            .associate { candidate ->
+                candidate.relativeTo(runDirectory).path.replace('\\', '/') to artifactStamp(candidate)
+            }
         val sourceFile = File(runDirectory, sourceFileName(request.language))
         sourceFile.writeText(request.source, Charsets.UTF_8)
         check(directorySize(runDirectory, request.resourceLimits.diskBytes) <= request.resourceLimits.diskBytes) {
@@ -412,7 +417,8 @@ class AgentRuntimeWorkspaceManager private constructor(
             sourceFile = sourceFile,
             guestPath = "/workspace/${workspaceDirectory.name}/${runDirectory.name}",
             projectDirectory = projectDirectory,
-            importedProjectBytes = importedProjectBytes
+            importedProjectBytes = importedProjectBytes,
+            buildArtifactBaseline = buildArtifactBaseline
         )
     }
 
@@ -641,12 +647,15 @@ class AgentRuntimeWorkspaceManager private constructor(
         prepared: AgentRuntimePreparedWorkspace,
         request: AgentRuntimeExecutionRequest
     ): List<Map<String, Any?>> {
-        val requested = request.artifactPaths.mapNotNull { relative ->
+        val explicitlyRequested = request.artifactPaths.mapNotNull { relative ->
             val runtimeArtifact = safeChild(prepared.directory, relative) ?: return@mapNotNull null
             val artifact = runtimeArtifact.takeIf { it.exists() }
                 ?: safeChild(prepared.projectDirectory, relative)?.takeIf { it.exists() }
                 ?: return@mapNotNull null
             relative.replace('\\', '/') to artifact
+        }
+        val requested = explicitlyRequested.ifEmpty {
+            discoverChangedBuildArtifact(prepared)?.let(::listOf).orEmpty()
         }
         if (requested.size > 1 || requested.any { it.second.isDirectory }) {
             return listOf(packageProjectArtifacts(prepared, request, requested))
@@ -667,6 +676,48 @@ class AgentRuntimeWorkspaceManager private constructor(
             )
         }
     }
+
+    private fun discoverChangedBuildArtifact(
+        prepared: AgentRuntimePreparedWorkspace
+    ): Pair<String, File>? = buildArtifactCandidates(prepared.directory)
+        .asSequence()
+        .map { candidate -> candidate.relativeTo(prepared.directory).path.replace('\\', '/') to candidate }
+        .filter { (relative, candidate) ->
+            prepared.buildArtifactBaseline[relative] != artifactStamp(candidate)
+        }
+        .sortedWith(
+            compareByDescending<Pair<String, File>> { (_, file) -> buildArtifactPriority(file) }
+                .thenByDescending { (_, file) -> file.lastModified() }
+                .thenBy { (relative, _) -> relative }
+        )
+        .firstOrNull()
+
+    private fun buildArtifactCandidates(directory: File): List<File> {
+        if (!directory.isDirectory) return emptyList()
+        return Files.walk(directory.toPath()).use { paths ->
+            paths.filter { path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) }
+                .map { it.toFile() }
+                .filter(::isStandardBuildArtifact)
+                .limit(MAX_DISCOVERED_BUILD_ARTIFACT_CANDIDATES.toLong())
+                .toList()
+        }
+    }
+
+    private fun isStandardBuildArtifact(file: File): Boolean {
+        val extension = file.extension.lowercase(Locale.ROOT)
+        if (extension !in AUTO_DISCOVERED_BUILD_EXTENSIONS) return false
+        val normalized = file.path.replace('\\', '/').lowercase(Locale.ROOT)
+        return AUTO_DISCOVERED_BUILD_DIRECTORIES.any { marker -> marker in normalized }
+    }
+
+    private fun buildArtifactPriority(file: File): Int = when (file.extension.lowercase(Locale.ROOT)) {
+        "apk" -> 3
+        "aab" -> 2
+        "zip" -> 1
+        else -> 0
+    }
+
+    private fun artifactStamp(file: File): Long = file.lastModified() * 31L + file.length()
 
     private fun packageProjectArtifacts(
         prepared: AgentRuntimePreparedWorkspace,
@@ -979,6 +1030,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_WORKSPACE_ID_CHARS = 64
         private const val MAX_ARTIFACT_PATH_CHARS = 1_024
         private const val MAX_PROJECT_ARCHIVE_FILES = 1_024
+        private const val MAX_DISCOVERED_BUILD_ARTIFACT_CANDIDATES = 128
         private const val MAX_CHECKPOINTS_PER_WORKSPACE = 20
         private const val MAX_CHECKPOINT_BYTES_PER_WORKSPACE = 1024L * 1024L * 1024L
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
@@ -987,6 +1039,14 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val DOMAIN_PATTERN = Regex("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+        private val AUTO_DISCOVERED_BUILD_EXTENSIONS = setOf("apk", "aab", "zip")
+        private val AUTO_DISCOVERED_BUILD_DIRECTORIES = setOf(
+            "/build/outputs/",
+            "/dist/",
+            "/out/",
+            "/release/",
+            "/releases/"
+        )
         private val RUNTIME_CONTROL_FILES = setOf(
             "request.json",
             "status.json",
