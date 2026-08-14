@@ -120,6 +120,40 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun cloneWithoutBranchUsesTheRemoteDefaultBranch() {
+        val trunkSource = File(root, "trunk-source")
+        val trunkRemote = File(root, "trunk-remote.git")
+        Git.init().setDirectory(trunkSource).setInitialBranch("trunk").call().use { git ->
+            File(trunkSource, "README.md").writeText("# Trunk fixture\n")
+            git.add().addFilepattern(".").call()
+            git.commit()
+                .setMessage("Initial trunk fixture")
+                .setAuthor("SignalASI", "signalasi@hotmail.com")
+                .setCommitter("SignalASI", "signalasi@hotmail.com")
+                .call()
+        }
+        Git.cloneRepository()
+            .setURI(trunkSource.toURI().toString())
+            .setDirectory(trunkRemote)
+            .setBare(true)
+            .call()
+            .close()
+
+        val cloned = repository.clone(
+            workspaceId = "default-branch-project",
+            repositoryUrl = trunkRemote.toURI().toString(),
+            branch = "",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        assertEquals("trunk", cloned.branch)
+        assertTrue(cloned.clean)
+    }
+
+    @Test
     fun verifiedProjectMustRemainUnchangedThroughCommitPushAndPullRequest() {
         val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
         val guard = AgentProjectPublicationPolicy(
