@@ -71,6 +71,32 @@ class AgentQemuRuntimeEngineTest {
         assertTrue(AgentQemuLaunchPlanBuilder.packSerial("a".repeat(80)).length <= 20)
     }
 
+    @Test
+    fun `launch plan keeps local runtime available when user networking is absent`() {
+        val root = temporaryFolder.newFolder("offline runtime")
+        val plan = AgentQemuLaunchPlanBuilder.build(
+            spec = AgentRuntimeEngineLaunchSpec(
+                engineFile = File(root, "libsignalasi_qemu.so"),
+                baseImageFile = File(root, "linux-base.img"),
+                socketFile = File(root, "guest.sock"),
+                packsDirectory = File(root, "packs"),
+                workspacesDirectory = File(root, "workspaces"),
+                architecture = "arm64-v8a",
+                sessionKey = ByteArray(32)
+            ),
+            sessionFile = File(root, "guest-session.key"),
+            configFile = File(root, "guest-config.json"),
+            logFile = File(root, "qemu.log"),
+            memoryMegabytes = 512,
+            cpuCount = 2,
+            userNetworkBackendAvailable = false
+        )
+
+        val command = plan.command.joinToString(" ")
+        assertTrue(command.contains("-nic none"))
+        assertFalse(command.contains("signalasi_net"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `launch plan rejects qemu key value delimiter in paths`() {
         val root = File("build/runtime,unsafe")

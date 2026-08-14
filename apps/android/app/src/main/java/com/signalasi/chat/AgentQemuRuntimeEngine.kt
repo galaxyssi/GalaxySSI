@@ -23,7 +23,8 @@ internal object AgentQemuLaunchPlanBuilder {
         configFile: File,
         logFile: File,
         memoryMegabytes: Int,
-        cpuCount: Int
+        cpuCount: Int,
+        userNetworkBackendAvailable: Boolean = true
     ): AgentQemuLaunchPlan {
         val files = buildList {
             add(spec.engineFile)
@@ -57,8 +58,16 @@ internal object AgentQemuLaunchPlanBuilder {
                 "-no-reboot",
                 "-monitor", "none",
                 "-serial", "stdio",
-                "-netdev", "user,id=signalasi_net,restrict=off,ipv6=off",
-                "-device", "virtio-net-device,netdev=signalasi_net",
+            ))
+            if (userNetworkBackendAvailable) {
+                addAll(listOf(
+                    "-netdev", "user,id=signalasi_net,restrict=off,ipv6=off",
+                    "-device", "virtio-net-device,netdev=signalasi_net"
+                ))
+            } else {
+                addAll(listOf("-nic", "none"))
+            }
+            addAll(listOf(
                 "-kernel", spec.baseImageFile.absolutePath,
                 "-append", "console=ttyAMA0,115200 panic=1 quiet loglevel=3 signalasi.runtime=1",
                 "-chardev",
@@ -153,8 +162,12 @@ class AgentQemuRuntimeEngineController(
         check(runtimeDirectory.mkdirs() || runtimeDirectory.isDirectory) { "Runtime storage is unavailable" }
         check(!spec.socketFile.exists() || spec.socketFile.delete()) { "Cannot remove a stale runtime socket" }
         rotateLog()
+        val userNetworkBackendAvailable = userNetworkBackendAvailable(spec.engineFile)
         secureWrite(sessionFile, spec.sessionKey)
-        secureWrite(configFile, runtimeConfig(spec).toString().toByteArray(Charsets.UTF_8))
+        secureWrite(
+            configFile,
+            runtimeConfig(spec, userNetworkBackendAvailable).toString().toByteArray(Charsets.UTF_8)
+        )
         val deviceProfile = AgentDeviceProfileDetector.detect(appContext)
         val plan = AgentQemuLaunchPlanBuilder.build(
             spec = spec,
@@ -164,7 +177,8 @@ class AgentQemuRuntimeEngineController(
             memoryMegabytes = runtimeMemoryMegabytes()
                 .coerceAtMost(deviceProfile.maxQemuMemoryMegabytes),
             cpuCount = Runtime.getRuntime().availableProcessors()
-                .coerceIn(1, deviceProfile.maxQemuCpuCount)
+                .coerceIn(1, deviceProfile.maxQemuCpuCount),
+            userNetworkBackendAvailable = userNetworkBackendAvailable
         )
         val child = try {
             ProcessBuilder(plan.command).apply {
@@ -216,7 +230,10 @@ class AgentQemuRuntimeEngineController(
         }
     }
 
-    private fun runtimeConfig(spec: AgentRuntimeEngineLaunchSpec): JSONObject = JSONObject()
+    private fun runtimeConfig(
+        spec: AgentRuntimeEngineLaunchSpec,
+        userNetworkBackendAvailable: Boolean
+    ): JSONObject = JSONObject()
         .put("format_version", 1)
         .put("guest_api_version", AgentRuntimeGuestProtocol.VERSION)
         .put("host_epoch_millis", System.currentTimeMillis())
@@ -225,7 +242,7 @@ class AgentQemuRuntimeEngineController(
         .put("workspace_mount_tag", "signalasi_workspaces")
         .put("workspace_uid", android.os.Process.myUid())
         .put("workspace_gid", android.os.Process.myUid())
-        .put("network_mode", "host_mediated")
+        .put("network_mode", if (userNetworkBackendAvailable) "host_mediated" else "disabled")
         .put("packs", JSONArray().apply {
             spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
                 put(JSONObject()
@@ -237,6 +254,12 @@ class AgentQemuRuntimeEngineController(
                     .put("device_index", index))
             }
         })
+
+    private fun userNetworkBackendAvailable(engineFile: File): Boolean =
+        engineFile.parentFile
+            ?.listFiles()
+            ?.any { file -> file.isFile && file.name.contains("slirp", ignoreCase = true) }
+            ?: false
 
     private fun runtimeMemoryMegabytes(): Int {
         val memoryClass = appContext.getSystemService(ActivityManager::class.java)?.memoryClass ?: 2_048
