@@ -286,9 +286,11 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentActionKind.CALL_CONNECTOR, action.kind)
         assertEquals("codex-laptop", action.parameters["connector_id"])
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, action.parameters["connector_task_mode"])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, action.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
         assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
         assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
+        assertTrue(action.parameters.getValue("prompt").contains("Do not require an artifact for repository clone"))
         assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))
     }
 
@@ -371,6 +373,7 @@ class AgentSystemToolPlannerTest {
         assertEquals(2, reviewed.actions.size)
         val reviewer = reviewed.actions.last()
         assertTrue(reviewer.isSupervisedProjectConnector())
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, reviewer.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertEquals(listOf(tool.id), reviewer.dependencyIds())
         assertEquals(listOf(tool.id), reviewer.outputSourceIds())
     }

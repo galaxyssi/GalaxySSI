@@ -143,6 +143,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "connector_id" to target.id,
                     "prompt" to AgentSupervisedProjectLoop.planningPrompt(request),
                     "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                    INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue,
                     "supervised_iteration" to "0",
                     "depends_on" to "",
                     "use_outputs_from" to ""

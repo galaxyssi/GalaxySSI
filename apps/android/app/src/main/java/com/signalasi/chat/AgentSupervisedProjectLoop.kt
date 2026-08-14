@@ -118,6 +118,7 @@ internal object AgentSupervisedProjectLoop {
         append("Observe stdout, stderr, diffs, repository state, test output, and artifacts. Change approach after a repeated failure. ")
         append("Set verification_kind to test, build, lint, or package only for a command that genuinely verifies the current project; a successful host receipt is required before commit. ")
         append("For the final successful build or export, pass every user-facing file or directory in artifact_paths; SignalASI packages directories and multiple paths as one verified ZIP. ")
+        append("Do not require an artifact for repository clone, inspection, status, diff, branch, log, or audit tasks unless the user explicitly asks for a deliverable. ")
         append("Do not commit or publish until relevant tests pass. Push and pull-request actions remain owner-approved high-risk operations. ")
         append("When the requested work is fully implemented and verified, return exactly one DRAFT_PLAN action with target task-complete and put the final verified summary in description. ")
         append("Never claim completion from an unverified command or from your own prior statement. ")
