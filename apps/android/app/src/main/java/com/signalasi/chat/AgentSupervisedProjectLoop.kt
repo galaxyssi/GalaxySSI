@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 internal object AgentSupervisedProjectLoop {
     fun planningPrompt(request: AgentRequest): String = buildPrompt(
@@ -125,6 +126,7 @@ internal object AgentSupervisedProjectLoop {
         append("Choose desktop only when the user's original goal explicitly asks to execute on a Desktop, PC, computer, or a named desktop machine. Never choose desktop merely because it is faster, has more tools, hosts the reasoning model, or the phone runtime is inconvenient. ")
         append("For desktop, execution_location_evidence must be a short verbatim excerpt from the user's goal that contains that explicit request. For phone, leave execution_location_evidence empty. ")
         append("Choose the next smallest evidence-producing batch, not an entire speculative project plan. ")
+        append("depends_on and use_outputs_from may reference only actions returned in the same JSON batch. Prior verified ledger actions are already satisfied and must not be repeated as dependencies. ")
         append("For phone, actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
         append("For desktop, return exactly one CALL_CONNECTOR action using an exact Desktop execution connector below; put the complete execution request in parameters.prompt. Do not mix phone and desktop actions. ")
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
@@ -273,23 +275,67 @@ internal object AgentSupervisedProjectControlPayload {
         return json.has("execution_location") && json.optJSONArray("actions") != null
     }
 
-    fun normalize(raw: String): String {
+    fun normalize(raw: String, completedHistory: List<AgentAction> = emptyList()): String {
         val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return raw
         val actions = json.optJSONArray("actions") ?: return raw
-        if (actions.length() != 1) return raw
-        val action = actions.optJSONObject(0) ?: return raw
-        val parameters = action.optJSONObject("parameters") ?: JSONObject()
-        val completion = action.optString("target").equals("task-complete", ignoreCase = true) ||
-            action.optString("kind").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true) ||
-            parameters.optString("tool_id").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true)
-        if (!completion) return raw
-        action.put("kind", AgentActionKind.DRAFT_PLAN.name)
-        action.put("target", "task-complete")
-        action.put("depends_on", JSONArray())
-        action.put("use_outputs_from", JSONArray())
-        action.put("parameters", JSONObject())
-        return json.toString()
+        var changed = removeSatisfiedHistoryReferences(actions, completedHistory)
+        if (actions.length() == 1) {
+            val action = actions.optJSONObject(0) ?: return raw
+            val parameters = action.optJSONObject("parameters") ?: JSONObject()
+            val completion = action.optString("target").equals("task-complete", ignoreCase = true) ||
+                action.optString("kind").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true) ||
+                parameters.optString("tool_id").equals(AgentActionKind.DRAFT_PLAN.name, ignoreCase = true)
+            if (completion) {
+                action.put("kind", AgentActionKind.DRAFT_PLAN.name)
+                action.put("target", "task-complete")
+                action.put("depends_on", JSONArray())
+                action.put("use_outputs_from", JSONArray())
+                action.put("parameters", JSONObject())
+                changed = true
+            }
+        }
+        return if (changed) json.toString() else raw
     }
+
+    private fun removeSatisfiedHistoryReferences(
+        actions: JSONArray,
+        history: List<AgentAction>
+    ): Boolean {
+        val completedRefs = history.asSequence()
+            .filter { action -> action.status == AgentActionStatus.COMPLETED }
+            .flatMap { action -> sequenceOf(action.id, action.parameters["node_ref"].orEmpty()) }
+            .mapNotNull(::normalizedRef)
+            .toSet()
+        if (completedRefs.isEmpty()) return false
+        val currentRefs = buildSet {
+            for (index in 0 until actions.length()) {
+                actions.optJSONObject(index)?.optString("ref")?.let(::normalizedRef)?.let(::add)
+            }
+        }
+        var changed = false
+        for (index in 0 until actions.length()) {
+            val action = actions.optJSONObject(index) ?: continue
+            listOf("depends_on", "use_outputs_from").forEach { field ->
+                val values = action.optJSONArray(field) ?: return@forEach
+                val kept = JSONArray()
+                for (valueIndex in 0 until values.length()) {
+                    val value = values.optString(valueIndex)
+                    val ref = normalizedRef(value)
+                    if (ref != null && ref in completedRefs && ref !in currentRefs) {
+                        changed = true
+                    } else {
+                        kept.put(value)
+                    }
+                }
+                if (kept.length() != values.length()) action.put(field, kept)
+            }
+        }
+        return changed
+    }
+
+    private fun normalizedRef(value: String): String? = value.trim()
+        .lowercase(Locale.US)
+        .takeIf { it.matches(Regex("[a-z0-9][a-z0-9_-]{0,47}")) }
 }
 
 internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
@@ -307,7 +353,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         multiAgentCoordination = true,
         maxAgentHops = modelPlannerSettings().maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
-    val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(response)
+    val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(
+        response,
+        plan.historyForReplan()
+    )
     val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
     val parsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
