@@ -38,3 +38,11 @@ test('runtime launcher leaves fortify configuration to the Buildroot toolchain',
   ), 'utf8');
   assert.doesNotMatch(makefile, /_FORTIFY_SOURCE/);
 });
+
+test('default Linux guest includes the reject target required by its network firewall', () => {
+  const kernelConfig = readFileSync(new URL(
+    '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/linux.config',
+    import.meta.url,
+  ), 'utf8');
+  assert.match(kernelConfig, /^CONFIG_IP_NF_TARGET_REJECT=y$/m);
+});
