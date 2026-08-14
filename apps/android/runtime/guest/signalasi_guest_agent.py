@@ -48,6 +48,7 @@ PACK_ENTRYPOINTS = {
     "rust": ("bin/rustc",),
     "cpp": ("bin/cc", "bin/c++"),
     "java": ("bin/java", "bin/javac"),
+    "gradle": ("bin/gradle",),
     "browser-automation": ("bin/signalasi-browser", "bin/playwright"),
     "ffmpeg": ("bin/ffmpeg", "bin/ffprobe"),
 }
@@ -58,6 +59,7 @@ PACK_REQUIRED_CAPABILITIES = {
     "rust": {"rust.execute"},
     "cpp": {"c.execute", "cpp.execute"},
     "java": {"java.execute"},
+    "gradle": {"gradle.execute"},
     "browser-automation": {"browser.automation.execute"},
     "ffmpeg": {"ffmpeg.execute", "ffprobe.inspect"},
 }
@@ -579,6 +581,8 @@ def runtime_environment() -> dict[str, str]:
         "ZIG_GLOBAL_CACHE_DIR": str(task_temp / "zig-global-cache"),
         "ZIG_LOCAL_CACHE_DIR": str(task_temp / "zig-local-cache"),
         "JAVA_HOME": str(PACK_ROOT / "java"),
+        "GRADLE_HOME": str(PACK_ROOT / "gradle"),
+        "GRADLE_USER_HOME": str(task_temp / "gradle"),
     }
 
 

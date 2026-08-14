@@ -22,6 +22,7 @@ function fixture(packId = 'python-uv') {
     'python-uv': ['python3', 'uv'],
     'node-js': ['node', 'tsx'],
     'browser-automation': ['signalasi-browser', 'playwright'],
+    gradle: ['gradle'],
     ffmpeg: ['ffmpeg', 'ffprobe'],
   }[packId];
   for (const name of names) {
@@ -160,6 +161,28 @@ test('browser automation pack requires its launcher and Playwright CLI', () => {
     });
     assert.deepEqual(result.config.capabilities, ['browser.automation.execute']);
     assert.deepEqual(result.config.dependencies, ['linux-base', 'node-js']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Gradle pack requires Java and exposes only the Gradle launcher', () => {
+  const { root, source } = fixture('gradle');
+  try {
+    const result = buildRuntimeImage({
+      packId: 'gradle',
+      version: '8.14.5',
+      sourceRoot: source,
+      outputPath: join(root, 'gradle.img'),
+      license: 'Apache-2.0',
+      dependencies: ['java'],
+      platform: 'win32',
+      squashfsBuilder: (stagedRoot, stagedImage) => {
+        copyFileSync(join(stagedRoot, 'bin', 'gradle'), stagedImage);
+      },
+    });
+    assert.deepEqual(result.config.capabilities, ['gradle.execute']);
+    assert.deepEqual(result.config.dependencies, ['java', 'linux-base']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
