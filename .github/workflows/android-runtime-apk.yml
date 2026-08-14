@@ -268,7 +268,7 @@ jobs:
             build/runtime/release/linux-base-1.2.1-arm64-v8a.img.config.json
             build/runtime/release/python-uv-0.11.29-arm64-v8a.img
             build/runtime/release/python-uv-0.11.29-arm64-v8a.img.config.json
-          key: android-default-runtime-images-v2-${{ runner.os }}-${{ hashFiles('tools/runtime/build-linux-base.sh', 'tools/runtime/build-python-uv-image.sh', 'tools/runtime/runtime-download.sh', 'tools/runtime/runtime-image.mjs', 'tools/runtime/build-runtime-image.mjs', 'apps/android/runtime/buildroot-external/**') }}
+          key: android-default-runtime-images-v3-${{ runner.os }}-${{ hashFiles('tools/runtime/build-linux-base.sh', 'tools/runtime/build-python-uv-image.sh', 'tools/runtime/runtime-download.sh', 'tools/runtime/runtime-image.mjs', 'tools/runtime/build-runtime-image.mjs', 'apps/android/runtime/buildroot-external/**', 'apps/android/runtime/guest/**') }}
 
       - name: Inspect restored default runtime images
         id: default-images-state
