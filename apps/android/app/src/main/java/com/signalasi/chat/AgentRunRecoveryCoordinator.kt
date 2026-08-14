@@ -26,9 +26,10 @@ class AgentRunRecoveryCoordinator(
     private val adapterResolver: suspend (String) -> AgentAdapter?,
     private val markInterrupted: (String, String) -> Unit = { _, _ -> }
 ) {
-    suspend fun recover(): List<AgentRunRecoveryResult> = runStore.recoverableRuns().map { snapshot ->
-        recover(snapshot)
-    }
+    suspend fun recover(excludedRunIds: Set<String> = emptySet()): List<AgentRunRecoveryResult> =
+        runStore.recoverableRuns()
+            .filterNot { it.runId in excludedRunIds }
+            .map { snapshot -> recover(snapshot) }
 
     private suspend fun recover(snapshot: AgentRunControlSnapshot): AgentRunRecoveryResult {
         val run = recordedRun(snapshot.runId)

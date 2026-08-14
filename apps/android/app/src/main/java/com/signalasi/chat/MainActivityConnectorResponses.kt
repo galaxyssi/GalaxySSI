@@ -224,6 +224,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private const val MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES = 80
+private const val SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS = 250L
+
 internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, message: ChatMessage): Boolean {
     val payload = envelope ?: return false
     if (payload.optString("type").ifBlank { "text" } != "text") return false
@@ -370,6 +373,10 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         response.taskId
     )
     if (runtime == null) {
+        if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+            deferSupervisedProjectControlResponse(response)
+            return
+        }
         val consumed = consumeOrphanedAgentConnectorResponse(response)
         if (!consumed && shouldDiscardUnroutableConnectorResponse(response)) {
             AgentConnectorResponseStore.remove(this, response)
@@ -383,6 +390,72 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
     val responseKey = "${response.sourceMessageId}:${response.contactId}"
     if (!agentConnectorResponsesInFlight.add(responseKey)) return
     resumeAgentConnectorResponse(response, runtime, responseKey)
+}
+
+internal fun MainActivity.deferSupervisedProjectControlResponse(
+    response: AgentConnectorResponse,
+    attempt: Int = 0
+) {
+    val responseKey = "supervised-control:${response.sourceMessageId}:${response.contactId}"
+    if (!agentConnectorResponsesInFlight.add(responseKey)) return
+    handler.postDelayed(
+        {
+            agentConnectorResponsesInFlight.remove(responseKey)
+            val runtime = runtimeForConnectorResponse(
+                response.sourceMessageId,
+                response.contactId,
+                response.conversationId,
+                response.turnId,
+                response.taskId
+            )
+            when {
+                runtime != null -> consumeAgentConnectorResponse(response)
+                attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
+                    deferSupervisedProjectControlResponse(response, attempt + 1)
+                else -> Log.w(
+                    "SignalASIAgent",
+                    "Deferred supervised control response is still waiting for its originating run " +
+                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                )
+            }
+        },
+        SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS
+    )
+}
+
+internal fun MainActivity.rebindAgentConnectorContinuation(
+    response: AgentConnectorResponse,
+    runtime: MobileNativeAgent,
+    state: AgentUiState,
+    conversationId: String,
+    turnId: String
+) {
+    val nextResult = state.lastActionResult
+    val nextSourceMessageId = nextResult?.metadata
+        ?.get("source_message_id")
+        ?.toLongOrNull()
+        ?.takeIf { sourceId ->
+            sourceId > 0L &&
+                nextResult.metadata["awaiting_response"] == "true" &&
+                state.phase == AgentPhase.WAITING_RESPONSE
+        }
+    if (nextSourceMessageId != response.sourceMessageId) {
+        activeAgentTasks.remove(response.sourceMessageId, runtime)
+    }
+    if (nextSourceMessageId == null) return
+    activeAgentTasks[nextSourceMessageId] = runtime
+    provisionalAgentTasks.remove(runtime)
+    AgentPendingDeliveryStore.put(
+        this,
+        AgentPendingDelivery(
+            sourceMessageId = nextSourceMessageId,
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = nextResult.metadata["remote_task_id"].orEmpty().ifBlank { turnId },
+            contactId = nextResult.metadata["contact_id"].orEmpty()
+        )
+    )
+    scheduleConnectorTimeouts(runtime, nextSourceMessageId, conversationId, turnId)
 }
 
 internal fun MainActivity.scheduleAgentConnectorStreamRefresh() {
@@ -405,6 +478,22 @@ internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnector
         update.taskId,
         allowTransportOnly = true
     )
+    val state = runtime?.snapshot()
+    val pendingResult = state?.lastActionResult
+    val pendingAction = state?.plan?.actions?.firstOrNull { action ->
+        action.id == pendingResult?.actionId
+    }
+    if (!AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(
+            phase = state?.phase ?: AgentPhase.OBSERVING,
+            pendingAction = pendingAction,
+            expectedSourceMessageId = pendingResult?.metadata
+                ?.get("source_message_id")?.toLongOrNull() ?: 0L,
+            incomingSourceMessageId = update.sourceMessageId
+        )
+    ) {
+        liveAgentConnectorStreams.remove(update.sourceMessageId)
+        return false
+    }
     val turnId = update.turnId.ifBlank {
         runtime?.let(agentRuntimeTurnIds::get).orEmpty()
     }
@@ -509,8 +598,14 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                 )
                 persistAgentWorkspaceSnapshot(turnId, state, runtime)
                 AgentConnectorResponseStore.remove(this@resumeAgentConnectorResponse, response)
-                activeAgentTasks.remove(response.sourceMessageId)
                 runOnUiThread {
+                    rebindAgentConnectorContinuation(
+                        response,
+                        runtime,
+                        state,
+                        conversationId,
+                        turnId
+                    )
                     finishAgentConnectorResponseUi(
                         response = response,
                         runtime = runtime,
@@ -582,8 +677,14 @@ internal fun MainActivity.consumeLegacyAgentConnectorResponse(
         }
         if (turnId.isNotBlank()) persistAgentWorkspaceSnapshot(turnId, state, runtime)
         AgentConnectorResponseStore.remove(this, response)
-        activeAgentTasks.remove(response.sourceMessageId)
         runOnUiThread {
+            rebindAgentConnectorContinuation(
+                response,
+                runtime,
+                state,
+                conversationId,
+                turnId
+            )
             finishAgentConnectorResponseUi(
                 response,
                 runtime,
@@ -1103,6 +1204,7 @@ internal fun MainActivity.publishAgentTaskPartialResult(
     if (!partial.optBoolean("user_visible", true)) return
     val content = partial.optString("text").trim().take(64_000)
     if (content.isBlank()) return
+    if (AgentSupervisedProjectControlPayload.isControlPayload(content)) return
     val sequence = partial.optLong("sequence", 0L)
     AgentConnectorStreamBus.publish(
         AgentConnectorStreamUpdate(

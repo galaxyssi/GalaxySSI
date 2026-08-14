@@ -34,6 +34,26 @@ class AgentTaskIntentTest {
     }
 
     @Test
+    fun classifiesAConcretePathMutationAsAFileExecutionTask() {
+        val result = AgentTaskIntentClassifier.classify(
+            "Create docs/model_reasoning_probe.txt, read it back, and verify it"
+        )
+
+        assertEquals(AgentTaskIntent.FILE, result.intent)
+        assertTrue("file-path-operation" in result.matchedSignals)
+    }
+
+    @Test
+    fun recognizesThisPhoneAsAnExplicitPhoneExecutionContext() {
+        val result = AgentTaskIntentClassifier.classify(
+            "On this phone, create docs/probe.txt and verify it"
+        )
+
+        assertEquals(AgentTaskIntent.FILE, result.intent)
+        assertTrue(result.matchedSignals.isNotEmpty())
+    }
+
+    @Test
     fun classifiesChineseTaskIntentsWithoutChangingTheProtocolValues() {
         val cases = listOf(
             "\u4f60\u597d" to AgentTaskIntent.CHAT,

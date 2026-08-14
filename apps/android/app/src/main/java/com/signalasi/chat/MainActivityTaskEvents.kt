@@ -338,13 +338,20 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         envelopeTurnId,
         taskId
     )
+    val directBindingMatches = AgentSupervisedProjectPresentationPolicy.matchesDirectConnectorTaskEvent(
+        binding = pendingDirectConnectorRuns[sourceMessageId],
+        contactId = contactId,
+        conversationId = envelopeConversationId,
+        turnId = envelopeTurnId,
+        taskId = taskId
+    )
     updateAgentRegistryTaskHeartbeat(contactId, status)
     if (taskId in completedConnectorTaskIds && status !in setOf("completed", "failed", "cancelled", "timed_out")) {
         return true
     }
     val statusSeq = envelope.optLong("status_seq", 0L)
     val existingMessage = messages[contactId]?.firstOrNull { it.id == sourceMessageId }
-    if (taskRuntime == null && existingMessage != null) {
+    if (taskRuntime == null && existingMessage != null && !directBindingMatches) {
         val expectedConversationId = AgentTaskIdentityPolicy.conversationId(contactId, "")
         val expectedTurnId = AgentTaskIdentityPolicy.turnId(sourceMessageId, "")
         val expectedTaskId = AgentTaskIdentityPolicy.taskId(
@@ -1620,6 +1627,12 @@ internal fun MainActivity.requestRecoverableAgentRunReconciliation(
     reason: String,
     refreshRegistry: Boolean = false
 ) {
+    val now = SystemClock.elapsedRealtime()
+    if (reason == "stall") {
+        val previous = agentTaskRecoveryLastStartedAt.get()
+        if (previous > 0L && now - previous < AGENT_STALL_RECOVERY_MIN_INTERVAL_MS) return
+        if (!agentTaskRecoveryLastStartedAt.compareAndSet(previous, now)) return
+    }
     if (!agentTaskRecoveryInProgress.compareAndSet(false, true)) return
     thread(name = "signalasi-agent-run-recovery") {
         val startedAt = SystemClock.elapsedRealtime()
@@ -1637,8 +1650,18 @@ internal fun MainActivity.requestRecoverableAgentRunReconciliation(
     }
 }
 
+private const val AGENT_STALL_RECOVERY_MIN_INTERVAL_MS = 30_000L
+
 internal fun MainActivity.reconcileRecoverableAgentRuns() {
     if (!isAgentRunEventStoreInitialized() || !isAgentRunRecorderInitialized()) return
+    val activeRunIds = AgentTaskRuntime.supervisor(this).activeWorkspaces()
+        .flatMap { workspace ->
+            listOfNotNull(
+                workspace.parentRunId.takeIf(String::isNotBlank),
+                agentRunIdsByTurn[workspace.taskId]?.takeIf(String::isNotBlank)
+            )
+        }
+        .toSet()
     val registrations = encryptedAgentRegistry.list()
     val recoverableSource = {
         agentHandoffStore.active().map { handoff ->
@@ -1677,7 +1700,7 @@ internal fun MainActivity.reconcileRecoverableAgentRuns() {
             },
             adapterResolver = directory::resolveAdapter,
             markInterrupted = { runId, reason -> agentRunRecorder.markInterrupted(runId, reason) }
-        ).recover()
+        ).recover(excludedRunIds = activeRunIds)
     }
     results.filter { it.outcome in setOf(
         AgentRunRecoveryOutcome.RESTORED_LOCAL_WAIT,

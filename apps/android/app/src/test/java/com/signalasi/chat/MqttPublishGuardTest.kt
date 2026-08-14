@@ -153,4 +153,23 @@ class MqttPublishGuardTest {
         assertEquals(0, watchdog.pendingCount())
         assertEquals(null, watchdog.oldestPendingAgeMillis(nowElapsedMillis = 13_000L))
     }
+
+    @Test
+    fun `broker delivery reconciles an acknowledgement that arrives before registration`() {
+        val registration = MqttBrokerDeliveryRegistration()
+
+        assertFalse(registration.onAcknowledged(42))
+        assertTrue(registration.onPublished(42))
+        assertTrue(registration.onAcknowledged(42))
+        assertFalse(registration.onAcknowledged(42))
+    }
+
+    @Test
+    fun `broker delivery processes a normal acknowledgement exactly once`() {
+        val registration = MqttBrokerDeliveryRegistration()
+
+        assertFalse(registration.onPublished(7))
+        assertTrue(registration.onAcknowledged(7))
+        assertFalse(registration.onAcknowledged(7))
+    }
 }

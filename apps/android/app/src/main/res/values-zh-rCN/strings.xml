@@ -809,6 +809,9 @@
     <string name="permission_mode_suggest_only">仅建议</string>
     <string name="permission_mode_ask_before_action">执行前询问</string>
     <string name="permission_mode_auto_low_risk">低风险自动执行</string>
+    <string name="permission_mode_full_access">完全访问</string>
+    <string name="agent_permission_mode_updated">权限模式已设置为%1$s</string>
+    <string name="cc_permission_full_access_subtitle">无需确认，直接执行所有受支持的操作</string>
     <string name="agent_section_recent_tasks">最近任务</string>
     <string name="agent_team_section_title">智能体团队</string>
     <string name="agent_team_summary">%1$d 个成员 · %2$s</string>
@@ -1810,6 +1813,7 @@
     <string name="agent_trace_phone_linux_verify">手机本地 Linux · 执行并验证</string>
     <string name="agent_trace_runtime_package_manager">运行包管理器</string>
     <string name="agent_trace_tool_started">正在运行 %1$s</string>
+    <string name="agent_trace_model_planning">%1$s 正在规划手机任务</string>
     <string name="agent_trace_tool_completed">%1$s 已完成 · %2$s</string>
     <string name="agent_trace_tool_failed">%1$s 需要修正 · %2$s</string>
     <string name="agent_trace_tool_result_ready">工具结果已准备</string>

@@ -247,6 +247,7 @@ internal fun MainActivity.renderAgentState(
     }
     agentRenderedConversationId = conversationId
     if (state == lastRenderedAgentState) {
+        if (syncTranscript) renderAgentOutput(state, conversationId, turnId)
         updateAgentSubmitButtonAppearance(
             agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
         )
@@ -302,7 +303,9 @@ internal fun MainActivity.recordRunControlProgress(state: AgentUiState, turnId: 
         AgentPhase.OBSERVING -> AgentRunControlEventType.STEP_STARTED
         AgentPhase.PLANNING -> AgentRunControlEventType.PLANNING
         AgentPhase.WAITING_CONFIRMATION -> AgentRunControlEventType.WAITING_FOR_USER
-        AgentPhase.EXECUTING -> if (action != null) {
+        AgentPhase.EXECUTING -> if (action?.isSupervisedProjectConnector() == true) {
+            AgentRunControlEventType.PLANNING
+        } else if (action != null) {
             AgentRunControlEventType.TOOL_STARTED
         } else {
             AgentRunControlEventType.STEP_STARTED
@@ -340,7 +343,8 @@ internal fun MainActivity.recordRunControlProgress(state: AgentUiState, turnId: 
             "execution_runtime_kind" to execution.runtimeKind.name.lowercase(Locale.ROOT),
             "execution_location_id" to execution.locationId,
             "execution_location_name" to execution.locationName,
-            "execution_runtime_id" to execution.runtimeId
+            "execution_runtime_id" to execution.runtimeId,
+            "planning_only" to (action?.isSupervisedProjectConnector() == true).toString()
         ),
         stepId = stepId,
         toolCallId = toolCallId

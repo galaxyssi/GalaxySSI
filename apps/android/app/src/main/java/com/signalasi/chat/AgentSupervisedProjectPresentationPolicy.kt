@@ -1,0 +1,30 @@
+package com.signalasi.chat
+
+/** Keeps model-authored control payloads out of the user-facing transcript. */
+object AgentSupervisedProjectPresentationPolicy {
+    fun shouldExposeConnectorStream(
+        phase: AgentPhase,
+        pendingAction: AgentAction?,
+        expectedSourceMessageId: Long,
+        incomingSourceMessageId: Long
+    ): Boolean = !(
+        phase == AgentPhase.WAITING_RESPONSE &&
+            pendingAction?.isSupervisedProjectConnector() == true &&
+            expectedSourceMessageId > 0L &&
+            expectedSourceMessageId == incomingSourceMessageId
+        )
+
+    internal fun matchesDirectConnectorTaskEvent(
+        binding: PendingDirectConnectorRun?,
+        contactId: String,
+        conversationId: String,
+        turnId: String,
+        taskId: String
+    ): Boolean {
+        binding ?: return false
+        return binding.contactId == contactId &&
+            binding.conversationId == conversationId &&
+            binding.turnId == turnId &&
+            (binding.taskId.isBlank() || taskId.isBlank() || binding.taskId == taskId)
+    }
+}

@@ -79,6 +79,35 @@ class AgentExecutionPresentationTest {
     }
 
     @Test
+    fun supervisedModelPlanningIsPresentedAsPhoneExecution() {
+        val action = AgentAction(
+            id = "supervise-phone-project",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.WAITING_RESPONSE,
+            description = "Plan phone workspace actions",
+            parameters = mapOf(
+                "connector_id" to "codex",
+                "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+            )
+        )
+
+        val location = AgentExecutionPresentationPolicy.location(
+            route = AgentRoute(
+                kind = AgentRouteKind.DESKTOP_AGENT,
+                targetId = "codex",
+                targetTitle = "Codex \u00b7 WORKSTATION"
+            ),
+            action = action
+        )
+
+        assertEquals(AgentExecutionLocationKind.PHONE, location.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.PHONE_NATIVE, location.runtimeKind)
+        assertEquals("signalasi-supervised-project", location.runtimeId)
+    }
+
+    @Test
     fun phoneLinuxIsDerivedFromValidatedToolIdentity() {
         val location = AgentExecutionPresentationPolicy.location(
             route = AgentRoute(kind = AgentRouteKind.LOCAL_SYSTEM),

@@ -272,41 +272,65 @@ internal fun MobileNativeAgent.notificationSearchCommandValue(goal: String): Str
     return goal.drop(prefix.length).trim().takeIf { it.isNotBlank() }
 }
 
-internal fun MobileNativeAgent.permissionModeCommandValue(goal: String): PermissionMode? {
-    val normalized = goal.trim().lowercase(Locale.US)
-    val value = listOf(
-        "set permission mode ",
-        "permission mode ",
-        "set agent mode ",
-        "agent mode "
-    ).firstOrNull { normalized.startsWith(it) }
-        ?.let { normalized.removePrefix(it).trim() }
-        ?: return null
-    return when (value.replace('-', ' ').replace('_', ' ')) {
-        "observe", "observe only", "read only" -> PermissionMode.OBSERVE_ONLY
-        "suggest", "suggest only", "assist", "assisted" -> PermissionMode.SUGGEST_ONLY
-        "confirm", "ask", "ask first", "ask before action" -> PermissionMode.ASK_BEFORE_ACTION
-        "auto", "automatic", "auto low risk", "low risk auto" -> PermissionMode.AUTO_LOW_RISK
-        else -> null
+internal object AgentLocalControlCommandPolicy {
+    fun permissionMode(goal: String): PermissionMode? {
+        val normalized = goal.trim().lowercase(Locale.US)
+        when (normalized.replace(" ", "")) {
+            "\u8bbe\u7f6e\u5b8c\u5168\u8bbf\u95ee",
+            "\u8bbe\u7f6e\u5b8c\u5168\u8bbf\u95ee\u6743\u9650",
+            "\u8bbe\u7f6e\u5b8c\u5168\u8bbf\u95ee\u7684\u6743\u9650",
+            "\u5f00\u542f\u5b8c\u5168\u8bbf\u95ee",
+            "\u542f\u7528\u5b8c\u5168\u8bbf\u95ee",
+            "\u6743\u9650\u6a21\u5f0f\u5b8c\u5168\u8bbf\u95ee" -> return PermissionMode.FULL_ACCESS
+        }
+        val value = listOf(
+            "set permission mode ",
+            "permission mode ",
+            "set agent mode ",
+            "agent mode "
+        ).firstOrNull { normalized.startsWith(it) }
+            ?.let { normalized.removePrefix(it).trim() }
+            ?: return null
+        return when (value.replace('-', ' ').replace('_', ' ')) {
+            "observe", "observe only", "read only" -> PermissionMode.OBSERVE_ONLY
+            "suggest", "suggest only", "assist", "assisted" -> PermissionMode.SUGGEST_ONLY
+            "confirm", "ask", "ask first", "ask before action" -> PermissionMode.ASK_BEFORE_ACTION
+            "auto", "automatic", "auto low risk", "low risk auto" -> PermissionMode.AUTO_LOW_RISK
+            "full", "full access", "unrestricted", "no confirmation" -> PermissionMode.FULL_ACCESS
+            else -> null
+        }
     }
+
+    fun highRiskGuard(goal: String): Boolean? {
+        val normalized = goal.trim().lowercase(Locale.US)
+        when (normalized.replace(" ", "")) {
+            "\u5173\u95ed\u9ad8\u98ce\u9669\u4fdd\u62a4" -> return false
+            "\u5f00\u542f\u9ad8\u98ce\u9669\u4fdd\u62a4",
+            "\u542f\u7528\u9ad8\u98ce\u9669\u4fdd\u62a4" -> return true
+        }
+        val value = listOf(
+            "set high risk guard ",
+            "high risk guard ",
+            "set high-risk guard ",
+            "high-risk guard "
+        ).firstOrNull { normalized.startsWith(it) }
+            ?.let { normalized.removePrefix(it).trim() }
+            ?: return null
+        return when (value) {
+            "on", "enable", "enabled" -> true
+            "off", "disable", "disabled" -> false
+            else -> null
+        }
+    }
+
+    fun matches(goal: String): Boolean = permissionMode(goal) != null || highRiskGuard(goal) != null
 }
 
-internal fun MobileNativeAgent.highRiskGuardCommandValue(goal: String): Boolean? {
-    val normalized = goal.trim().lowercase(Locale.US)
-    val value = listOf(
-        "set high risk guard ",
-        "high risk guard ",
-        "set high-risk guard ",
-        "high-risk guard "
-    ).firstOrNull { normalized.startsWith(it) }
-        ?.let { normalized.removePrefix(it).trim() }
-        ?: return null
-    return when (value) {
-        "on", "enable", "enabled" -> true
-        "off", "disable", "disabled" -> false
-        else -> null
-    }
-}
+internal fun MobileNativeAgent.permissionModeCommandValue(goal: String): PermissionMode? =
+    AgentLocalControlCommandPolicy.permissionMode(goal)
+
+internal fun MobileNativeAgent.highRiskGuardCommandValue(goal: String): Boolean? =
+    AgentLocalControlCommandPolicy.highRiskGuard(goal)
 
 internal fun MobileNativeAgent.auditTrailCommand(goal: String): Boolean {
     val normalized = goal.trim().lowercase(Locale.US)

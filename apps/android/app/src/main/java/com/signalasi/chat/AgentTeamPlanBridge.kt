@@ -32,7 +32,7 @@ internal object AgentTeamPlanCompiler {
         registrations: Collection<AgentRegistration> = emptyList(),
         reputation: AgentReputationSnapshotProvider = AgentReputationSnapshotProvider.NONE
     ): AgentPlan {
-        if (!enabled || !plan.validation.valid) return plan
+        if (!enabled || !plan.validation.valid || plan.isSupervisedProjectPlan()) return plan
         val availableAgents = targets
             .filter { it.kind == AgentConnectorKind.AGENT && it.status == AgentConnectorStatus.AVAILABLE }
             .associateBy(AgentCallableTarget::id)

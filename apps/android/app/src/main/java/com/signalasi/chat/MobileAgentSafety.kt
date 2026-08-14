@@ -155,6 +155,7 @@ class DefaultAgentSafetyPolicy(
                     !it.isPhoneDevelopmentRuntimeHandoff()
             }
             PermissionMode.AUTO_LOW_RISK -> requiresTierConfirmation
+            PermissionMode.FULL_ACCESS -> false
         }
         val warnings = buildList {
             if (highestRisk == AgentRisk.BLOCKED) add("blocked_action")

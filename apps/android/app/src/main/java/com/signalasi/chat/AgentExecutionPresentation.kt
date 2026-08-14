@@ -56,6 +56,15 @@ object AgentExecutionPresentationPolicy {
         route: AgentRoute?,
         action: AgentAction? = null
     ): AgentExecutionLocation {
+        if (action?.isSupervisedProjectConnector() == true) {
+            return AgentExecutionLocation(
+                locationKind = AgentExecutionLocationKind.PHONE,
+                runtimeKind = AgentExecutionRuntimeKind.PHONE_NATIVE,
+                locationId = "signalasi-phone",
+                runtimeId = "signalasi-supervised-project",
+                trusted = true
+            )
+        }
         val routeKind = route?.kind ?: AgentRouteKind.UNKNOWN
         val targetParts = route?.targetTitle
             .orEmpty()

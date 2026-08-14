@@ -1675,6 +1675,9 @@
     <string name="permission_mode_suggest_only">Suggest Only</string>
     <string name="permission_mode_ask_before_action">Ask Before Action</string>
     <string name="permission_mode_auto_low_risk">Auto Low-risk</string>
+    <string name="permission_mode_full_access">Full Access</string>
+    <string name="agent_permission_mode_updated">Permission mode set to %1$s</string>
+    <string name="cc_permission_full_access_subtitle">Execute all supported actions without confirmation</string>
     <string name="on_device_agent_section_permissions">Permissions</string>
     <string name="on_device_agent_screen_access">Screen Access</string>
     <string name="on_device_agent_screen_access_subtitle">Read screen structure and perform confirmed local actions</string>
@@ -1903,6 +1906,7 @@
     <string name="agent_trace_phone_linux_verify">Phone Linux · run and verify</string>
     <string name="agent_trace_runtime_package_manager">Runtime package manager</string>
     <string name="agent_trace_tool_started">Running %1$s</string>
+    <string name="agent_trace_model_planning">%1$s is planning the phone task</string>
     <string name="agent_trace_tool_completed">%1$s completed · %2$s</string>
     <string name="agent_trace_tool_failed">%1$s needs revision · %2$s</string>
     <string name="agent_trace_tool_result_ready">Prepared the tool result</string>

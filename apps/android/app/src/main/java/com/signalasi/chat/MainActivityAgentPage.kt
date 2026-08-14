@@ -1406,7 +1406,9 @@ internal fun MainActivity.continueAgentGoalSubmission(
             originalGoal.ifBlank { goal },
             mobileNativeAgent.safetySettings().taskExecutionMode
         ).mode
+    val localAgentControlCommand = AgentLocalControlCommandPolicy.matches(goal)
     if (
+        !localAgentControlCommand &&
         taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
         handleAgentSkillCommand(goal, conversationId, turnId)
     ) return
@@ -1518,7 +1520,16 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 )
             }
         }
-        if (taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
+        val modelExecutionSiteDecisionRequired =
+            AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+                executionGoal,
+                localConversationContext
+            ) && activeDesktopSteerAction == null
+        if (
+            !localAgentControlCommand &&
+            !modelExecutionSiteDecisionRequired &&
+            taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY
+        ) {
             AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
                 if (AgentResponseSelfCheck.evaluate(executionGoal, response).accepted) {
                     selectVoiceCoordinatorRoute(
@@ -1548,6 +1559,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
         val routeSelectionGoal = executionGoal
         val routeSelectionFuture = if (
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
+            !localAgentControlCommand &&
+            !modelExecutionSiteDecisionRequired &&
             forcedAction == null &&
             !AgentScreenObservationPolicy.requiresObservation(routeSelectionGoal)
         ) {
@@ -1566,7 +1579,11 @@ internal fun MainActivity.continueAgentGoalSubmission(
             "agent_route stage=context_augmented turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
-        val skillMatch = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+        val skillMatch = if (
+            localAgentControlCommand ||
+                modelExecutionSiteDecisionRequired ||
+                taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY
+        ) {
             null
         } else {
             agentSkillMatcher.match(executionGoal)
@@ -1576,7 +1593,11 @@ internal fun MainActivity.continueAgentGoalSubmission(
             "agent_route stage=skill_matched turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
-        val requestedForcedAction = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+        val requestedForcedAction = if (
+            localAgentControlCommand ||
+                modelExecutionSiteDecisionRequired ||
+                taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY
+        ) {
             null
         } else {
             forcedAction ?: activeDesktopSteerAction
@@ -1588,15 +1609,19 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 action
             }
         }
-        val deterministicAction = resolvedForcedAction
-            ?: routeSelectionFuture?.let { future ->
-                runCatching { future.get() }
-                    .onFailure { error ->
-                        Log.w("SignalASILatency", "agent_route preselection_failed", error)
-                    }
-                    .getOrNull()
-            }
-            ?: deterministicSystemActionFor(executionGoal, conversationContext)
+        val deterministicAction = if (localAgentControlCommand || modelExecutionSiteDecisionRequired) {
+            null
+        } else {
+            resolvedForcedAction
+                ?: routeSelectionFuture?.let { future ->
+                    runCatching { future.get() }
+                        .onFailure { error ->
+                            Log.w("SignalASILatency", "agent_route preselection_failed", error)
+                        }
+                        .getOrNull()
+                }
+                ?: deterministicSystemActionFor(executionGoal, conversationContext)
+        }
         Log.i(
             "SignalASILatency",
             "agent_route stage=action_resolved turn=${turnId.take(8)} " +
@@ -1606,6 +1631,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             "SignalASIAgent",
             "route_resolved turn=${turnId.take(8)} tool=${deterministicAction?.parameters?.get("tool_id").orEmpty()} " +
                 "action=${deterministicAction?.id.orEmpty()} skill=${skillMatch != null} " +
+                "model_execution_site=$modelExecutionSiteDecisionRequired " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val run = agentRunRecorder.begin(
