@@ -32,6 +32,7 @@ struct launcher_options {
     rlim_t memory_bytes;
     rlim_t max_processes;
     rlim_t file_size_bytes;
+    bool proxy_network;
     char **command;
 };
 
@@ -108,6 +109,14 @@ static struct launcher_options parse_options(int argc, char **argv)
                 value, 8ULL * 1024ULL * 1024ULL, 8ULL * 1024ULL * 1024ULL * 1024ULL,
                 "invalid file size limit");
             has_file_size = true;
+        } else if (strcmp(name, "--network-mode") == 0) {
+            if (strcmp(value, "isolated") == 0) {
+                options.proxy_network = false;
+            } else if (strcmp(value, "proxy") == 0) {
+                options.proxy_network = true;
+            } else {
+                invalid("invalid network mode");
+            }
         } else {
             invalid("unknown option");
         }
@@ -173,7 +182,10 @@ static void isolate_workspace(const struct launcher_options *options)
         fail("cannot resolve workspace");
     if (strncmp(resolved, WORKSPACE_PREFIX, strlen(WORKSPACE_PREFIX)) != 0)
         invalid("workspace is outside the shared root");
-    if (unshare(CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWPID) != 0)
+    int namespaces = CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWPID;
+    if (!options->proxy_network)
+        namespaces |= CLONE_NEWNET;
+    if (unshare(namespaces) != 0)
         fail("cannot create task namespaces");
     if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
         fail("cannot isolate task mounts");

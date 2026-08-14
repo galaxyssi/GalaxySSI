@@ -7,6 +7,9 @@ runtime_dir=$(CDPATH= cd -- "$script_dir/../../../.." && pwd)
 install -D -m 0755 \
   "$runtime_dir/guest/signalasi_guest_agent.py" \
   "$TARGET_DIR/usr/libexec/signalasi_guest_agent.py"
+install -D -m 0644 \
+  "$runtime_dir/guest/signalasi_network_proxy.py" \
+  "$TARGET_DIR/usr/libexec/signalasi_network_proxy.py"
 
 rm -rf "$TARGET_DIR/usr/libexec/__pycache__"
 
