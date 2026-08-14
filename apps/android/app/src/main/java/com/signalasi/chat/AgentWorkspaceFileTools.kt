@@ -134,6 +134,16 @@ data class AgentWorkspaceMutation(
     val metadata: AgentWorkspaceFileMetadata? = null
 )
 
+data class AgentWorkspaceTextFile(
+    val path: String,
+    val text: String
+)
+
+data class AgentWorkspaceBatchMutation(
+    val files: List<AgentWorkspaceMutation>,
+    val affectedBytes: Long
+)
+
 data class AgentWorkspaceDirectoryListing(
     val path: String,
     val recursive: Boolean,
@@ -417,6 +427,77 @@ class AgentWorkspaceFileTools(
         text: String
     ): AgentWorkspaceFileResult<AgentWorkspaceMutation> =
         append(workspaceId, path, text.toByteArray(Charsets.UTF_8))
+
+    @Synchronized
+    fun writeTextBatch(
+        workspaceId: String,
+        files: List<AgentWorkspaceTextFile>,
+        overwrite: Boolean = true
+    ): AgentWorkspaceFileResult<AgentWorkspaceBatchMutation> =
+        runOperation("write_text_batch", workspaceId, "${files.size} files") {
+            if (files.isEmpty() || files.size > MAX_BATCH_FILES) {
+                limitExceeded("Batch must contain between 1 and $MAX_BATCH_FILES files")
+            }
+            if (files.map(AgentWorkspaceTextFile::path).distinct().size != files.size) {
+                invalidPath("Batch contains duplicate file paths")
+            }
+            val encoded = files.map { item -> item to item.text.toByteArray(Charsets.UTF_8) }
+            val totalBytes = encoded.sumOf { (_, bytes) -> bytes.size.toLong() }
+            if (totalBytes > MAX_BATCH_WRITE_BYTES) {
+                limitExceeded("Batch exceeds the $MAX_BATCH_WRITE_BYTES byte write limit")
+            }
+
+            val root = workspaceRoot(workspaceId)
+            val prepared = encoded.map { (item, bytes) ->
+                if (bytes.size.toLong() > policy.maxWriteBytes) {
+                    limitExceeded("File ${item.path} exceeds the configured size limit")
+                }
+                val target = resolvePath(root, item.path, allowRoot = false)
+                val existed = Files.exists(target, NOFOLLOW_LINKS)
+                if (existed) {
+                    requireFile(target)
+                    if (!overwrite) alreadyExists("File already exists: ${item.path}")
+                }
+                BatchWrite(
+                    target = target,
+                    bytes = bytes,
+                    previous = if (existed) readFileBounded(target, MAX_BATCH_ROLLBACK_BYTES) else null
+                )
+            }
+            val rollbackBytes = prepared.sumOf { it.previous?.size?.toLong() ?: 0L }
+            if (rollbackBytes > MAX_BATCH_ROLLBACK_BYTES) {
+                limitExceeded("Existing files exceed the batch rollback limit")
+            }
+
+            val completed = mutableListOf<BatchWrite>()
+            try {
+                prepared.forEach { item ->
+                    createDirectoriesSafely(root, item.target.parent)
+                    atomicWrite(item.target, item.bytes, replace = item.previous != null)
+                    completed += item
+                }
+            } catch (failure: Throwable) {
+                completed.asReversed().forEach { item ->
+                    runCatching {
+                        if (item.previous == null) Files.deleteIfExists(item.target)
+                        else atomicWrite(item.target, item.previous, replace = true)
+                    }
+                }
+                throw failure
+            }
+
+            AgentWorkspaceBatchMutation(
+                files = prepared.map { item ->
+                    AgentWorkspaceMutation(
+                        kind = AgentWorkspaceMutationKind.WRITE,
+                        path = relativePath(root, item.target),
+                        affectedBytes = item.bytes.size.toLong(),
+                        metadata = metadata(root, item.target)
+                    )
+                },
+                affectedBytes = totalBytes
+            )
+        }
 
     fun move(
         workspaceId: String,
@@ -1399,6 +1480,12 @@ class AgentWorkspaceFileTools(
         message: String
     ) : RuntimeException(message)
 
+    private data class BatchWrite(
+        val target: Path,
+        val bytes: ByteArray,
+        val previous: ByteArray?
+    )
+
     companion object {
         private val WORKSPACE_ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
         private val WINDOWS_ABSOLUTE = Regex("^[A-Za-z]:")
@@ -1406,5 +1493,8 @@ class AgentWorkspaceFileTools(
         private const val MAX_SEARCH_QUERY_CHARACTERS = 4_096
         private const val MAX_SEARCH_EXCERPT_CHARACTERS = 500
         private const val MAX_ERROR_CHARACTERS = 300
+        private const val MAX_BATCH_FILES = 64
+        private const val MAX_BATCH_WRITE_BYTES = 1024L * 1024L
+        private const val MAX_BATCH_ROLLBACK_BYTES = 16L * 1024L * 1024L
     }
 }

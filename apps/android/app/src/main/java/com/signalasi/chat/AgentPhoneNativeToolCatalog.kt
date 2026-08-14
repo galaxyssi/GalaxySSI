@@ -13,6 +13,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_READ_TEXT = "signalasi.workspace.file.read.text"
     const val WORKSPACE_READ_BYTES = "signalasi.workspace.file.read.bytes"
     const val WORKSPACE_WRITE_TEXT = "signalasi.workspace.file.write.text"
+    const val WORKSPACE_WRITE_TEXT_BATCH = "signalasi.workspace.files.write.text.batch"
     const val WORKSPACE_CREATE_TEXT = "signalasi.workspace.file.create.text"
     const val WORKSPACE_APPEND_TEXT = "signalasi.workspace.file.append.text"
     const val WORKSPACE_WRITE_BYTES = "signalasi.workspace.file.write.bytes"
@@ -41,6 +42,8 @@ object AgentPhoneNativeToolCatalog {
     private const val MAX_TEXT_BYTES = 1_048_576
     private const val MAX_BINARY_BYTES = 8 * 1_048_576
     private const val MAX_WRITE_BYTES = 16 * 1_048_576
+    private const val MAX_BATCH_FILES = 64
+    private const val MAX_BATCH_TEXT_BYTES = 1_048_576
     private const val MAX_BASE64_READ_CHARS = 11_184_812
     private const val MAX_BASE64_WRITE_CHARS = 22_369_624
     private const val MAX_LIST_ENTRIES = 10_000
@@ -78,6 +81,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_READ_TEXT,
         WORKSPACE_READ_BYTES,
         WORKSPACE_WRITE_TEXT,
+        WORKSPACE_WRITE_TEXT_BATCH,
         WORKSPACE_CREATE_TEXT,
         WORKSPACE_APPEND_TEXT,
         WORKSPACE_WRITE_BYTES,
@@ -332,6 +336,40 @@ object AgentPhoneNativeToolCatalog {
                 input.boolean("create_parents", false)
             )
         }.withTools(tools),
+        workspaceDefinition(
+            id = WORKSPACE_WRITE_TEXT_BATCH,
+            title = "Write a complete text project batch",
+            description = "Validates and writes up to 64 UTF-8 project files as one bounded operation, rolling back completed writes if the batch fails.",
+            risk = AgentNativeToolRisk.MEDIUM,
+            consentId = WORKSPACE_WRITE_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            inputSchema = objectSchema(
+                properties = mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "files" to AgentNativeJsonSchema.array(
+                        objectSchema(
+                            properties = mapOf(
+                                "path" to pathSchema(),
+                                "text" to AgentNativeJsonSchema.string(maxLength = MAX_BATCH_TEXT_BYTES)
+                            ),
+                            required = setOf("path", "text")
+                        ),
+                        maxItems = MAX_BATCH_FILES
+                    ),
+                    "overwrite" to AgentNativeJsonSchema.boolean()
+                ),
+                required = setOf("workspace_id", "files")
+            ),
+            outputSchema = batchMutationSchema(),
+            execute = { input ->
+                tools.writeTextBatch(
+                    workspaceId = input.string("workspace_id"),
+                    files = input.textFiles("files"),
+                    overwrite = input.boolean("overwrite", true)
+                )
+            },
+            encode = ::batchMutationValue
+        ),
         textMutationDefinition(WORKSPACE_CREATE_TEXT, "Create workspace text file", AgentWorkspaceMutationKind.CREATE) {
                 tools, input ->
             tools.createText(
@@ -1169,6 +1207,15 @@ object AgentPhoneNativeToolCatalog {
         required = setOf("kind", "path", "source_path", "affected_entries", "affected_bytes")
     )
 
+    private fun batchMutationSchema() = objectSchema(
+        properties = mapOf(
+            "files" to AgentNativeJsonSchema.array(mutationSchema(), maxItems = MAX_BATCH_FILES),
+            "affected_entries" to AgentNativeJsonSchema.integer(1, MAX_BATCH_FILES.toLong()),
+            "affected_bytes" to AgentNativeJsonSchema.integer(0, MAX_BATCH_TEXT_BYTES.toLong())
+        ),
+        required = setOf("files", "affected_entries", "affected_bytes")
+    )
+
     private fun directoryListingSchema() = objectSchema(
         properties = mapOf(
             "path" to outputPathSchema(),
@@ -1356,6 +1403,12 @@ object AgentPhoneNativeToolCatalog {
         value.metadata?.let { put("metadata", metadataValue(it)) }
     }
 
+    private fun batchMutationValue(value: AgentWorkspaceBatchMutation): AgentNativeJsonObject = linkedMapOf(
+        "files" to value.files.map(::mutationValue),
+        "affected_entries" to value.files.size,
+        "affected_bytes" to value.affectedBytes
+    )
+
     private fun metadataValue(value: AgentWorkspaceFileMetadata): AgentNativeJsonObject = linkedMapOf(
         "path" to value.path.take(MAX_PATH_CHARS),
         "type" to value.type.name.lowercase(Locale.ROOT),
@@ -1466,6 +1519,15 @@ object AgentPhoneNativeToolCatalog {
 
     private fun AgentNativeJsonObject.stringList(name: String): List<String> =
         (this[name] as? Iterable<*>)?.map { it as String } ?: error("Missing validated string array: $name")
+
+    private fun AgentNativeJsonObject.textFiles(name: String): List<AgentWorkspaceTextFile> =
+        (this[name] as? Iterable<*>)?.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Invalid validated text file entry: $name")
+            AgentWorkspaceTextFile(
+                path = item["path"] as? String ?: error("Missing validated text file path: $name"),
+                text = item["text"] as? String ?: error("Missing validated text file content: $name")
+            )
+        } ?: error("Missing validated text file array: $name")
 
     private fun AgentPhoneCapabilityId.capabilityWireId(): String =
         "phone.${name.lowercase(Locale.ROOT).replace('_', '.')}"

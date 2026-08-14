@@ -123,6 +123,8 @@ internal object AgentSupervisedProjectLoop {
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
         append("Use signalasi.project.* for Git and GitHub; credentials are host-owned and must never appear in prompts, files, or commands. ")
         append("Use signalasi.workspace.* for bounded file inspection and edits, and signalasi.runtime.* for runtime status, signed pack installation, build, test, and artifact execution. ")
+        append("When creating or replacing several text project files, prefer signalasi.workspace.files.write.text.batch so one validated action materializes the complete project without partial files. ")
+        append("For an Android project, use the signed java, gradle, and android-sdk packs, run Gradle from the phone Linux workspace, verify the requested build task, and return the APK in artifact_paths. ")
         append("Do not assume a toolchain exists. Inspect first; after a concrete missing-command or build error, install only the smallest trusted signed pack that resolves that evidence. ")
         append("Observe stdout, stderr, diffs, repository state, test output, and artifacts. Change approach after a repeated failure. ")
         append("Set verification_kind to test, build, lint, or package only for a command that genuinely verifies the current project; a successful host receipt is required before commit. ")

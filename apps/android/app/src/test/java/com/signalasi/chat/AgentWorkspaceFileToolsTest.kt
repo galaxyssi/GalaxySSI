@@ -71,6 +71,26 @@ class AgentWorkspaceFileToolsTest {
     }
 
     @Test
+    fun batchWriteRollsBackCompletedFilesWhenALaterPathFails() {
+        tools.createText("batch", "existing.txt", "before", createParents = true).success()
+        tools.createText("batch", "blocked", "not a directory").success()
+
+        val result = tools.writeTextBatch(
+            workspaceId = "batch",
+            files = listOf(
+                AgentWorkspaceTextFile("existing.txt", "after"),
+                AgentWorkspaceTextFile("created.txt", "temporary"),
+                AgentWorkspaceTextFile("blocked/nested.txt", "must fail")
+            )
+        )
+
+        assertEquals(AgentWorkspaceFileErrorCode.NOT_A_DIRECTORY, result.failureCode())
+        assertEquals("before", tools.readText("batch", "existing.txt").success().text)
+        assertEquals(AgentWorkspaceFileErrorCode.NOT_FOUND, tools.stat("batch", "created.txt").failureCode())
+        assertEquals("not a directory", tools.readText("batch", "blocked").success().text)
+    }
+
+    @Test
     fun copiesMovesSearchesAndDeletesTrees() {
         tools.createText("work", "docs/one.txt", "Needle one\nsecond needle", createParents = true).success()
         tools.createText("work", "docs/two.txt", "nothing here").success()
