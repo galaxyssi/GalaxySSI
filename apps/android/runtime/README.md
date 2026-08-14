@@ -57,6 +57,11 @@ It must not report the runtime as ready unless the engine, verified base image, 
 authenticated Guest health handshake are all present. Other language and media packs remain
 independently downloadable.
 
+The optional `android-sdk` pack combines the official Android 36 platform and Java build tools
+with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from pinned AOSP sources.
+It depends on the Java pack, exposes a Gradle AAPT2 override inside the Guest, and is not embedded in
+the APK. Users install it from the signed software catalog when a phone-local Android build needs it.
+
 `linux-base` 1.2.0 adds authenticated allowlisted task networking while retaining negotiated
 `runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for

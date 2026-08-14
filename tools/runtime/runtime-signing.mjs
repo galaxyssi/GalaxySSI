@@ -106,7 +106,8 @@ export function requireInteger(value, name, minimum, maximum) {
 }
 
 export const PACK_IDS = new Set([
-  'linux-base', 'python-uv', 'node-js', 'go', 'rust', 'cpp', 'java', 'gradle', 'browser-automation', 'ffmpeg',
+  'linux-base', 'python-uv', 'node-js', 'go', 'rust', 'cpp', 'java', 'gradle', 'android-sdk',
+  'browser-automation', 'ffmpeg',
 ]);
 export const PACK_REQUIRED_CAPABILITIES = new Map([
   ['linux-base', ['shell.execute']],
@@ -117,6 +118,7 @@ export const PACK_REQUIRED_CAPABILITIES = new Map([
   ['cpp', ['c.execute', 'cpp.execute']],
   ['java', ['java.execute']],
   ['gradle', ['gradle.execute']],
+  ['android-sdk', ['android.build', 'android.package', 'android.sign']],
   ['browser-automation', ['browser.automation.execute']],
   ['ffmpeg', ['ffmpeg.execute', 'ffprobe.inspect']],
 ]);

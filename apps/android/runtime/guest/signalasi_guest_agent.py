@@ -52,6 +52,7 @@ PACK_ENTRYPOINTS = {
     "cpp": ("bin/cc", "bin/c++"),
     "java": ("bin/java", "bin/javac"),
     "gradle": ("bin/gradle",),
+    "android-sdk": ("bin/aapt2", "bin/aidl", "bin/zipalign", "bin/apksigner", "bin/d8"),
     "browser-automation": ("bin/signalasi-browser", "bin/playwright"),
     "ffmpeg": ("bin/ffmpeg", "bin/ffprobe"),
 }
@@ -63,6 +64,7 @@ PACK_REQUIRED_CAPABILITIES = {
     "cpp": {"c.execute", "cpp.execute"},
     "java": {"java.execute"},
     "gradle": {"gradle.execute"},
+    "android-sdk": {"android.build", "android.package", "android.sign"},
     "browser-automation": {"browser.automation.execute"},
     "ffmpeg": {"ffmpeg.execute", "ffprobe.inspect"},
 }
@@ -500,7 +502,12 @@ class GuestService:
                     token=secrets.token_urlsafe(32),
                     max_transfer_bytes=limits.disk_bytes,
                 )
-                environment.update(network_proxy.start().values)
+                proxy_environment = network_proxy.start().values
+                proxy_gradle_options = proxy_environment.pop("GRADLE_OPTS", "")
+                environment.update(proxy_environment)
+                environment["GRADLE_OPTS"] = " ".join(
+                    value for value in (environment.get("GRADLE_OPTS", ""), proxy_gradle_options) if value
+                )
             inject_secret_environment(environment, payload.get("secret_environment"))
             commands = command_plan(
                 language,
@@ -586,6 +593,7 @@ class GuestService:
 def runtime_environment() -> dict[str, str]:
     pack_bins = [str(path) for path in sorted(PACK_ROOT.glob("*/bin")) if path.is_dir()]
     task_temp = ISOLATED_WORKSPACE_ROOT / ".tmp"
+    android_sdk = PACK_ROOT / "android-sdk" / "sdk"
     return {
         "HOME": str(ISOLATED_WORKSPACE_ROOT),
         "TMPDIR": str(task_temp),
@@ -606,6 +614,12 @@ def runtime_environment() -> dict[str, str]:
         "JAVA_HOME": str(PACK_ROOT / "java"),
         "GRADLE_HOME": str(PACK_ROOT / "gradle"),
         "GRADLE_USER_HOME": str(task_temp / "gradle"),
+        "GRADLE_OPTS": (
+            "-Dorg.gradle.daemon=false "
+            f"-Dorg.gradle.project.android.aapt2FromMavenOverride={PACK_ROOT / 'android-sdk' / 'bin' / 'aapt2'}"
+        ),
+        "ANDROID_HOME": str(android_sdk),
+        "ANDROID_SDK_ROOT": str(android_sdk),
     }
 
 

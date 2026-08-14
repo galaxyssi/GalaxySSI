@@ -2503,4 +2503,5 @@
     <string name="contact_device_model">&#x578B;&#x53F7;</string>
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>
     <string name="contact_device_host">&#x4E3B;&#x673A;&#x540D;</string>
+    <string name="cc_runtime_pack_android_sdk">Android SDK</string>
 </resources>
