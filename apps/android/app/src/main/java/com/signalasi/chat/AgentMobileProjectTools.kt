@@ -93,7 +93,9 @@ internal class AgentMobileProjectRepository(
         val cleanUrl = normalizeRepositoryUrl(repositoryUrl)
         require(repositoryPolicy(cleanUrl)) { "Repository URL is not allowed by the phone project policy" }
         require(depth in 1..100) { "Clone depth is invalid" }
-        val cleanBranch = branch.trim().ifBlank { "main" }.also(::validateRefName)
+        val cleanBranch = branch.trim().also { value ->
+            if (value.isNotBlank()) validateRefName(value)
+        }
         val target = workspaceDirectory(workspaceId)
         require(replaceExisting || target.listFiles().orEmpty().isEmpty()) {
             "The phone project workspace is not empty"
@@ -109,11 +111,11 @@ internal class AgentMobileProjectRepository(
             val command = Git.cloneRepository()
                 .setURI(cleanUrl)
                 .setDirectory(staging)
-                .setBranch(cleanBranch)
                 .setCloneAllBranches(false)
                 .setDepth(depth)
                 .setTimeout(CLONE_TIMEOUT_SECONDS)
                 .setProgressMonitor(CancellableProgressMonitor(cancellationToken, progress))
+            if (cleanBranch.isNotBlank()) command.setBranch(cleanBranch)
             credentials()?.let(command::setCredentialsProvider)
             command.call().use { git ->
                 check(projectBytes(staging) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
@@ -513,7 +515,7 @@ object AgentMobileProjectNativeTools {
                 repository.clone(
                     workspaceId = invocation.string("workspace_id"),
                     repositoryUrl = invocation.string("repository_url"),
-                    branch = invocation.string("branch", "main"),
+                    branch = invocation.string("branch"),
                     depth = invocation.integer("depth", 1),
                     replaceExisting = invocation.boolean("replace_existing", false),
                     cancellationToken = invocation.cancellationToken
