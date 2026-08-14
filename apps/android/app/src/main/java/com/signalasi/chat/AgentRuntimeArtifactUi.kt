@@ -120,6 +120,7 @@ internal object AgentRuntimeArtifactUi {
         ) return null
         val kind = artifact["artifact_kind"]?.toString().orEmpty().ifBlank { "file" }
         val mimeType = mimeType(relativePath)
+        val isAndroidPackage = mimeType == "application/vnd.android.package-archive"
         val payload = AgentRuntimeArtifactActionPayload(
             hostPath = hostPath,
             displayName = File(relativePath).name,
@@ -146,7 +147,17 @@ internal object AgentRuntimeArtifactUi {
                 if (isPreviewable(relativePath)) {
                     add(AgentRichAction("preview", if (zh) "\u67e5\u770b" else "View", "preview_runtime_artifact", payload.encode()))
                 } else if (isOpenable(relativePath)) {
-                    add(AgentRichAction("open", if (zh) "\u6253\u5f00" else "Open", "open_runtime_artifact", payload.encode()))
+                    add(AgentRichAction(
+                        "open",
+                        when {
+                            isAndroidPackage && zh -> "\u5b89\u88c5"
+                            isAndroidPackage -> "Install"
+                            zh -> "\u6253\u5f00"
+                            else -> "Open"
+                        },
+                        "open_runtime_artifact",
+                        payload.encode()
+                    ))
                 }
                 add(AgentRichAction("save", if (zh) "\u4fdd\u5b58" else "Save", "save_runtime_artifact", payload.encode(), "primary"))
             },
@@ -233,6 +244,9 @@ internal object AgentRuntimeArtifactUi {
         "ts" -> "TypeScript"
         "json" -> "JSON"
         "md" -> "Markdown"
+        "apk" -> "Android APK"
+        "aab" -> "Android App Bundle"
+        "zip" -> "ZIP"
         else -> "Source"
     }
 

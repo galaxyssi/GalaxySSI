@@ -106,6 +106,49 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun discoversNewAndroidApkWhenModelOmitsArtifactPaths() {
+        val request = request("run-apk", "./gradlew assembleDebug", emptyList())
+        val prepared = manager.prepare(request)
+        val apk = File(prepared.directory, "app/build/outputs/apk/debug/app-debug.apk").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+
+        val artifacts = manager.collectArtifacts(prepared, request)
+
+        assertEquals(1, artifacts.size)
+        assertEquals("app/build/outputs/apk/debug/app-debug.apk", artifacts.single()["relative_path"])
+        assertEquals(apk.absolutePath, artifacts.single()["host_path"])
+    }
+
+    @Test
+    fun doesNotDeliverUnchangedApkFromAnEarlierRun() {
+        File(projectRoot, "workspace-one/app/build/outputs/apk/debug/app-debug.apk").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+        val request = request("run-stale-apk", "echo unchanged", emptyList())
+        val prepared = manager.prepare(request)
+
+        assertTrue(manager.collectArtifacts(prepared, request).isEmpty())
+    }
+
+    @Test
+    fun explicitArtifactRemainsAuthoritativeWhenBuildOutputsAlsoChange() {
+        val request = request("run-explicit", "echo report", listOf("report.txt"))
+        val prepared = manager.prepare(request)
+        File(prepared.directory, "report.txt").writeText("verified")
+        File(prepared.directory, "app/build/outputs/apk/debug/app-debug.apk").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeBytes(byteArrayOf(9, 8, 7))
+        }
+
+        val artifacts = manager.collectArtifacts(prepared, request)
+
+        assertEquals(listOf("report.txt"), artifacts.map { it["relative_path"] })
+    }
+
+    @Test
     fun checkpointsAndAtomicallyRestoresTheDurableProject() {
         val project = File(projectRoot, "workspace-one").apply { mkdirs() }
         File(project, "README.md").writeText("stable")
