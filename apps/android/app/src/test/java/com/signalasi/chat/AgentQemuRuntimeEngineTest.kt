@@ -13,7 +13,7 @@ class AgentQemuRuntimeEngineTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun `launch plan keeps credentials off the command line and disables guest networking`() {
+    fun `launch plan keeps credentials off the command line and exposes isolated guest networking`() {
         val root = temporaryFolder.newFolder("runtime plan")
         val spec = AgentRuntimeEngineLaunchSpec(
             engineFile = File(root, "libsignalasi_qemu.so"),
@@ -50,7 +50,8 @@ class AgentQemuRuntimeEngineTest {
         )
 
         val command = plan.command.joinToString(" ")
-        assertTrue(command.contains("-nic none"))
+        assertTrue(command.contains("user,id=signalasi_net,restrict=off,ipv6=off"))
+        assertTrue(command.contains("virtio-net-device,netdev=signalasi_net"))
         assertTrue(command.contains("server=on,wait=on"))
         assertFalse(command.contains("server=on,wait=off"))
         assertTrue(command.contains("readonly=on"))

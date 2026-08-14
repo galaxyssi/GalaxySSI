@@ -57,7 +57,8 @@ It must not report the runtime as ready unless the engine, verified base image, 
 authenticated Guest health handshake are all present. Other language and media packs remain
 independently downloadable.
 
-`linux-base` 1.1.0 adds the negotiated `runtime.secret_environment` capability. Hosts send MCP and
+`linux-base` 1.2.0 adds authenticated allowlisted task networking while retaining negotiated
+`runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for
 non-secret work but is rejected explicitly for secure environment injection instead of silently
 running without the requested credential.

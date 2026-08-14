@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import signal
 import stat
 import struct
@@ -20,6 +21,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
+
+from signalasi_network_proxy import AllowlistedHttpProxy
 
 
 PROTOCOL_VERSION = 1
@@ -289,6 +292,7 @@ def launcher_plan(
     workspace: Path,
     limits: ExecutionLimits,
     command: list[str],
+    allow_network_proxy: bool = False,
 ) -> list[str]:
     if not LAUNCHER_PATH.is_file() or not os.access(LAUNCHER_PATH, os.X_OK):
         raise FileNotFoundError("Runtime sandbox launcher is unavailable")
@@ -308,6 +312,8 @@ def launcher_plan(
         str(limits.max_processes),
         "--file-size-bytes",
         str(limits.disk_bytes),
+        "--network-mode",
+        "proxy" if allow_network_proxy else "isolated",
         "--",
         *command,
     ]
@@ -431,7 +437,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.1.0",
+                        "guest_version": "1.2.0",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -475,6 +481,7 @@ class GuestService:
 
     def execute(self, request_id: str, payload: dict[str, Any], cancellation: threading.Event) -> None:
         started = time.monotonic()
+        network_proxy: AllowlistedHttpProxy | None = None
         try:
             workspace = resolve_workspace(str(payload.get("workspace_path", "")))
             language = str(payload.get("language", ""))
@@ -483,9 +490,17 @@ class GuestService:
                 raise ValueError("Runtime arguments are invalid")
             limits = ExecutionLimits.from_payload(payload)
             network = payload.get("network") or {}
-            if bool(network.get("enabled")):
-                raise ValueError("Guest networking must use the host-mediated network tool")
             environment = runtime_environment()
+            if bool(network.get("enabled")):
+                allowed_domains = network.get("allowed_domains") or []
+                if not isinstance(allowed_domains, list) or any(not isinstance(value, str) for value in allowed_domains):
+                    raise ValueError("Runtime network allowlist is invalid")
+                network_proxy = AllowlistedHttpProxy(
+                    allowed_domains=allowed_domains,
+                    token=secrets.token_urlsafe(32),
+                    max_transfer_bytes=limits.disk_bytes,
+                )
+                environment.update(network_proxy.start().values)
             inject_secret_environment(environment, payload.get("secret_environment"))
             commands = command_plan(
                 language,
@@ -504,7 +519,13 @@ class GuestService:
                         self.send(request_id, "cancelled")
                         return
                     process = subprocess.Popen(
-                        launcher_plan(self.config, workspace, limits, command),
+                        launcher_plan(
+                            self.config,
+                            workspace,
+                            limits,
+                            command,
+                            allow_network_proxy=network_proxy is not None,
+                        ),
                         cwd=workspace,
                         stdin=subprocess.DEVNULL,
                         stdout=stdout,
@@ -556,6 +577,8 @@ class GuestService:
         except Exception as error:
             self.send(request_id, "error", {"message": str(error) or "Runtime execution failed"})
         finally:
+            if network_proxy is not None:
+                network_proxy.close()
             with self.state_lock:
                 self.cancellations.pop(request_id, None)
 
@@ -609,6 +632,36 @@ def runtime_readiness(config: dict[str, Any]) -> tuple[bool, str]:
     except (TypeError, ValueError) as error:
         return False, str(error)
     return True, ""
+
+
+def install_task_network_firewall(config: dict[str, Any]) -> None:
+    workspace_uid = positive_config_id(config, "workspace_uid")
+    commands = (
+        ["iptables", "-w", "-N", "SIGNALASI_TASK_OUT"],
+        ["iptables", "-w", "-F", "SIGNALASI_TASK_OUT"],
+        ["iptables", "-w", "-A", "SIGNALASI_TASK_OUT", "-d", "127.0.0.0/8", "-j", "ACCEPT"],
+        ["iptables", "-w", "-A", "SIGNALASI_TASK_OUT", "-j", "REJECT"],
+    )
+    for index, command in enumerate(commands):
+        result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0 and index != 0:
+            raise RuntimeError("Runtime task network firewall is unavailable")
+    check = subprocess.run(
+        [
+            "iptables", "-w", "-C", "OUTPUT", "-m", "owner", "--uid-owner", str(workspace_uid),
+            "-j", "SIGNALASI_TASK_OUT",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if check.returncode != 0:
+        subprocess.run(
+            [
+                "iptables", "-w", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", str(workspace_uid),
+                "-j", "SIGNALASI_TASK_OUT",
+            ],
+            check=True,
+        )
 
 
 def mount_runtime(config: dict[str, Any]) -> None:
@@ -747,6 +800,7 @@ def run_service() -> None:
         raise ValueError("Runtime guest API is incompatible")
     synchronize_guest_clock(config)
     mount_runtime(config)
+    install_task_network_firewall(config)
     while True:
         try:
             channel_path = wait_for_runtime_channel()

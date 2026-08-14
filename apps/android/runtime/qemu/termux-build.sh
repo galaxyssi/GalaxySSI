@@ -5,7 +5,7 @@ TERMUX_PKG_MAINTAINER="SignalASI"
 TERMUX_PKG_VERSION="10.2.1"
 TERMUX_PKG_SRCURL="https://download.qemu.org/qemu-${TERMUX_PKG_VERSION}.tar.xz"
 TERMUX_PKG_SHA256=a3717477d8e2c84d630bfffbc20f6cd3293eb45aa1e6dac6d0cc27689991c9e1
-TERMUX_PKG_DEPENDS="dtc, glib, libandroid-shmem, libpixman, zlib"
+TERMUX_PKG_DEPENDS="dtc, glib, libandroid-shmem, libpixman, libslirp, zlib"
 TERMUX_PKG_BUILD_IN_SRC=true
 
 termux_step_pre_configure() {
@@ -62,7 +62,7 @@ termux_step_configure() {
 		--disable-opengl \
 		--disable-virglrenderer \
 		--disable-spice \
-		--disable-slirp \
+		--enable-slirp \
 		--disable-curl \
 		--disable-gnutls \
 		--disable-nettle \

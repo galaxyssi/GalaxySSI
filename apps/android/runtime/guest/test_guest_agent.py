@@ -83,6 +83,19 @@ class GuestProtocolTest(unittest.TestCase):
             ["/usr/bin/python3", "/work/main.py"],
             plan[plan.index("--") + 1 :],
         )
+        self.assertEqual("isolated", plan[plan.index("--network-mode") + 1])
+
+    def test_launcher_plan_allows_only_the_authenticated_proxy_network_mode(self):
+        limits = guest.ExecutionLimits.from_payload({"limits": {}})
+        with mock.patch.object(guest, "LAUNCHER_PATH", Path(sys.executable)):
+            plan = guest.launcher_plan(
+                {"workspace_uid": 10123, "workspace_gid": 10123},
+                Path("/workspace/a/request"),
+                limits,
+                ["/usr/bin/python3", "/work/main.py"],
+                allow_network_proxy=True,
+            )
+        self.assertEqual("proxy", plan[plan.index("--network-mode") + 1])
 
     def test_command_plan_resolves_executables_from_mounted_pack_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -190,6 +203,26 @@ class GuestProtocolTest(unittest.TestCase):
             ready, reason = guest.runtime_readiness({"workspace_uid": 0, "workspace_gid": 10123})
         self.assertFalse(ready)
         self.assertIn("workspace_uid", reason)
+
+    def test_task_network_firewall_blocks_direct_egress_for_the_sandbox_uid(self):
+        completed = [
+            mock.Mock(returncode=0),
+            mock.Mock(returncode=0),
+            mock.Mock(returncode=0),
+            mock.Mock(returncode=0),
+            mock.Mock(returncode=1),
+            mock.Mock(returncode=0),
+        ]
+        with mock.patch.object(guest.subprocess, "run", side_effect=completed) as run:
+            guest.install_task_network_firewall({"workspace_uid": 10123})
+
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertIn(
+            ["iptables", "-w", "-A", "SIGNALASI_TASK_OUT", "-j", "REJECT"],
+            commands,
+        )
+        self.assertEqual("-I", commands[-1][2])
+        self.assertIn("10123", commands[-1])
 
     def test_runtime_channel_is_discovered_without_udev_named_symlink(self):
         with tempfile.TemporaryDirectory() as directory:

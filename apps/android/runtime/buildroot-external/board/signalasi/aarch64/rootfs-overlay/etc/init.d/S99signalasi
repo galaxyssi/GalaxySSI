@@ -18,6 +18,10 @@ case "$1" in
       echo "SignalASI runtime launcher is unavailable" >&2
       exit 1
     fi
+    if [ -d /sys/class/net/eth0 ]; then
+      ip link set eth0 up
+      udhcpc -q -n -t 5 -i eth0 >/dev/null
+    fi
     /usr/bin/python3 /usr/libexec/signalasi_guest_agent.py >>"$log_file" 2>&1 &
     echo "$!" >"$pid_file"
     ;;
