@@ -69,13 +69,26 @@ internal fun interface AgentProjectCredentialProvider {
     fun token(): String
 }
 
+internal fun interface AgentProjectCloneBackend {
+    fun clone(
+        workspaceId: String,
+        repositoryUrl: String,
+        branch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    )
+}
+
 /** Host-mediated Git operations for one app-private Agent project workspace. */
 internal class AgentMobileProjectRepository(
     projectRoot: File,
     private val credentialProvider: AgentProjectCredentialProvider,
     private val httpClient: OkHttpClient = OkHttpClient(),
     private val repositoryPolicy: (String) -> Boolean = ::isTrustedRepositoryUrl,
-    private val publicationGuard: AgentProjectPublicationGuard = AgentProjectPublicationGuard.ALLOW_ALL
+    private val publicationGuard: AgentProjectPublicationGuard = AgentProjectPublicationGuard.ALLOW_ALL,
+    private val cloneBackend: AgentProjectCloneBackend? = null
 ) {
     private val root = projectRoot.canonicalFile.apply {
         check(mkdirs() || isDirectory) { "Agent project storage is unavailable" }
@@ -99,6 +112,26 @@ internal class AgentMobileProjectRepository(
         val target = workspaceDirectory(workspaceId)
         require(replaceExisting || target.listFiles().orEmpty().isEmpty()) {
             "The phone project workspace is not empty"
+        }
+        cloneBackend?.let { backend ->
+            progress("clone", "Cloning repository in the phone Linux runtime", 0)
+            try {
+                backend.clone(
+                    workspaceId = workspaceId,
+                    repositoryUrl = cleanUrl,
+                    branch = cleanBranch,
+                    depth = depth,
+                    replaceExisting = replaceExisting,
+                    cancellationToken = cancellationToken,
+                    progress = progress
+                )
+                check(projectBytes(target) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
+                publicationGuard.invalidate(workspaceId)
+                progress("clone", "Linux repository clone completed", 100)
+                return@withLock open(workspaceId).use { snapshot(workspaceId, it) }
+            } catch (error: Throwable) {
+                throw projectFailure("Linux repository clone failed", error)
+            }
         }
         val parent = target.parentFile ?: error("Phone project storage is invalid")
         val staging = File(parent, ".${target.name}.clone-staging").canonicalFile
@@ -481,13 +514,26 @@ object AgentMobileProjectNativeTools {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
         val appContext = context.applicationContext
+        val credentialProvider = AgentProjectCredentialProvider {
+            AgentEncryptedWebIntelligenceCredentials(appContext)
+                .credential(AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN)
+        }
+        val runtimeManager = AgentOnDeviceRuntimeManager(appContext)
         val repository = AgentMobileProjectRepository(
             projectRoot = File(appContext.filesDir, "agent-native-workspaces"),
-            credentialProvider = AgentProjectCredentialProvider {
-                AgentEncryptedWebIntelligenceCredentials(appContext)
-                    .credential(AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN)
-            },
-            publicationGuard = AgentEncryptedProjectPublicationGuard(appContext)
+            credentialProvider = credentialProvider,
+            publicationGuard = AgentEncryptedProjectPublicationGuard(appContext),
+            cloneBackend = AgentLinuxProjectCloneBackend(
+                runtime = object : AgentProjectLinuxRuntime {
+                    override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse =
+                        runtimeManager.execute(request)
+
+                    override fun rollback(workspaceId: String, checkpointId: String) {
+                        runtimeManager.rollbackWorkspace(workspaceId, checkpointId)
+                    }
+                },
+                credentialProvider = credentialProvider
+            )
         )
         return definitions(repository)
     }
@@ -496,7 +542,7 @@ object AgentMobileProjectNativeTools {
         definition(
             CLONE,
             "Clone a repository into the phone project",
-            "Clones one trusted GitHub repository into the current app-private project workspace without exposing credentials to the model or Linux guest.",
+            "Clones one trusted GitHub repository directly inside the phone Linux runtime. Credentials are injected only into the built-in clone process and are never shown to the model or stored in the project.",
             input = objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
