@@ -2594,7 +2594,8 @@ final class MessageCoordinator: ObservableObject {
     let plan = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
-      outgoing: outgoing
+      outgoing: outgoing,
+      executionMode: taskExecutionMode
     ) ?? fallbackPlan
     guard var resolvedPlan = plan else {
       return false
@@ -3195,7 +3196,9 @@ final class MessageCoordinator: ObservableObject {
     case .resume:
       success = !localTaskID.isEmpty && resumeLocalNativeAction(taskId: localTaskID)
     case .replan:
-      success = !localTaskID.isEmpty && await replanLocalNativeAction(taskId: localTaskID)
+      if !localTaskID.isEmpty {
+        success = await replanLocalNativeAction(taskId: localTaskID)
+      }
     case .rollback:
       success = !localTaskID.isEmpty && rollbackLastLocalNativeAction(taskId: localTaskID)
     case .cancel:
@@ -3757,8 +3760,8 @@ final class MessageCoordinator: ObservableObject {
       )
     }
     let heading = localReply(
-      english: query.map { "Notification matches: \(matches.count)" } ?? "Active notifications: \(matches.count)",
-      chinese: query.map { "通知匹配项：\(matches.count)" } ?? "活动通知：\(matches.count)"
+      english: query.map { _ in "Notification matches: \(matches.count)" } ?? "Active notifications: \(matches.count)",
+      chinese: query.map { _ in "通知匹配项：\(matches.count)" } ?? "活动通知：\(matches.count)"
     )
     let rows = matches.prefix(12).map { item in
       let app = item.packageName.ifBlank("SignalASI")
@@ -6502,16 +6505,23 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(String(payload.int("time")))
     ) ?? Int64(Date().timeIntervalSince1970 * 1_000)
     let executionView = payload.dictionary("execution_view")
-    let resolvedTarget = executionView?.string("executor_label")
+    let resolvedTarget = (executionView?.string("executor_label") ?? "")
       .ifBlank(executionView?.string("executor_id") ?? "")
       .ifBlank(target)
-    let location = executionView?.string("location_name")
+    let location = (executionView?.string("location_name") ?? "")
       .ifBlank(payload.string("desktop_name"))
-      .ifBlank("Desktop") ?? "Desktop"
+      .ifBlank("Desktop")
     let currentStep = payload.string("current_step")
-    let advertisedCancellable = executionView == nil ||
-      executionView?["cancellable"] == nil ||
-      executionView?.bool("cancellable") == true
+    let advertisedCancellable: Bool
+    if let value = executionView?["cancellable"] as? Bool {
+      advertisedCancellable = value
+    } else if let value = executionView?["cancellable"] as? NSNumber {
+      advertisedCancellable = value.boolValue
+    } else if let value = executionView?["cancellable"] as? String {
+      advertisedCancellable = !["false", "0", "no"].contains(value.lowercased())
+    } else {
+      advertisedCancellable = true
+    }
     let detail = payload.string("status_detail")
       .ifBlank(payload.string("detail"))
       .ifBlank(payload.string("content"))
@@ -7068,9 +7078,8 @@ final class MessageCoordinator: ObservableObject {
   ) -> String {
     let rawContent = payload.string("content")
       .ifBlank(payload.string("text"))
-    let attachmentName = (payload["attachments"] as? [[String: Any]])?
-      .first?
-      .flatMap { attachment in
+    let attachmentName = ((payload["attachments"] as? [[String: Any]])?.first)
+      .map { attachment in
         attachment.string("name")
           .ifBlank(attachment.string("original_name"))
           .ifBlank("")
