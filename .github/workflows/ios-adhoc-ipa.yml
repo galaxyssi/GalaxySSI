@@ -40,6 +40,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
 
       - name: Show Xcode version
         run: |
