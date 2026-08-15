@@ -1166,6 +1166,7 @@ object AgentOnDeviceRuntimeTools {
         ),
         "architecture" to status.architecture,
         "avf_advertised" to status.avfAdvertised,
+        "linux_system" to persistentLinuxSystemOutput(status),
         "packs" to status.packs.map(::packOutput),
         "languages" to AgentRuntimeLanguage.entries.map { language ->
             mapOf(
@@ -1176,6 +1177,22 @@ object AgentOnDeviceRuntimeTools {
             )
         }
     )
+
+    internal fun persistentLinuxSystemOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> {
+        val baseVersion = status.packs.firstOrNull { it.id == "linux-base" }
+            ?.manifest?.version.orEmpty()
+        val packageManagerReady = status.backendReady &&
+            baseVersion.isNotBlank() &&
+            AgentEmbeddedRuntimeBootstrap.compareVersions(baseVersion, "1.3.2") >= 0
+        return mapOf(
+            "distribution" to "Debian 13",
+            "execution_principal" to "root",
+            "persistent" to true,
+            "package_managers" to listOf("apt", "dpkg"),
+            "package_manager_ready" to packageManagerReady,
+            "base_version" to baseVersion
+        )
+    }
 
     private fun packOutput(pack: AgentRuntimePackStatus): Map<String, Any?> = mapOf(
         "id" to pack.id,
