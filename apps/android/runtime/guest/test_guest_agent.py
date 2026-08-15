@@ -367,6 +367,28 @@ class GuestProtocolTest(unittest.TestCase):
                 }),
             )
 
+    def test_guest_dns_uses_direct_public_resolvers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "resolv.conf"
+            guest.configure_guest_dns(
+                {"dns_servers": ["1.1.1.1", "223.5.5.5", "1.1.1.1"]},
+                target,
+            )
+
+            self.assertEqual(
+                "nameserver 1.1.1.1\n"
+                "nameserver 223.5.5.5\n"
+                "options timeout:1 attempts:2 rotate\n",
+                target.read_text(encoding="utf-8"),
+            )
+
+    def test_guest_dns_rejects_non_public_or_malformed_servers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "resolv.conf"
+            for server in ("192.168.3.1", "resolver.invalid"):
+                with self.subTest(server=server), self.assertRaises(ValueError):
+                    guest.configure_guest_dns({"dns_servers": [server]}, target)
+
     def test_task_network_firewall_blocks_direct_egress_for_the_sandbox_uid(self):
         completed = [
             mock.Mock(returncode=0, stdout="", stderr=""),
