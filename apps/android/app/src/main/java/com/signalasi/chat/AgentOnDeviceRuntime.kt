@@ -440,14 +440,28 @@ class AgentOnDeviceRuntimeManager(
         return try {
             val rawResponse = activeBridge.execute(normalizedRequest)
             if (normalizedRequest.source != request.source) prepared.sourceFile.writeText(request.source, Charsets.UTF_8)
-            val artifacts = workspaceManager.collectArtifacts(prepared, normalizedRequest)
-            val commit = workspaceManager.commitProject(
-                prepared = prepared,
-                byteLimit = normalizedRequest.resourceLimits.diskBytes,
-                checkpointId = checkpointId
-            )
-            committedCheckpoint = commit.checkpoint
-            val disposition = if (rawResponse.exitCode == 0) {
+            val succeeded = rawResponse.exitCode == 0
+            val artifacts = if (succeeded) {
+                workspaceManager.collectArtifacts(prepared, normalizedRequest)
+            } else {
+                emptyList()
+            }
+            val commit = if (succeeded) {
+                workspaceManager.commitProject(
+                    prepared = prepared,
+                    byteLimit = normalizedRequest.resourceLimits.diskBytes,
+                    checkpointId = checkpointId
+                ).also { committedCheckpoint = it.checkpoint }
+            } else {
+                null
+            }
+            val durableProject = commit?.project
+            val durableStatus = if (durableProject == null) {
+                workspaceManager.workspaceStatus(normalizedRequest.workspaceId)
+            } else {
+                null
+            }
+            val disposition = if (succeeded) {
                 AgentRuntimeWorkspaceDisposition.COMMITTED
             } else {
                 AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
@@ -455,9 +469,9 @@ class AgentOnDeviceRuntimeManager(
             val response = rawResponse.copy(
                 artifacts = artifacts,
                 requestId = normalizedRequest.requestId,
-                projectFileCount = commit.project.fileCount,
-                projectBytes = commit.project.totalBytes,
-                checkpointId = commit.checkpoint.checkpointId,
+                projectFileCount = durableProject?.fileCount ?: durableStatus?.fileCount ?: 0,
+                projectBytes = durableProject?.totalBytes ?: durableStatus?.totalBytes ?: 0L,
+                checkpointId = commit?.checkpoint?.checkpointId.orEmpty(),
                 workspaceDisposition = disposition
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
