@@ -162,8 +162,8 @@ struct ContactDetailView: View {
 
   @ViewBuilder
   private func phoneContactSecuritySection(_ contact: SignalASIContact) -> some View {
-    guard isPhoneDirectContact(contact) else { return }
-    VStack(alignment: .leading, spacing: 8) {
+    if isPhoneDirectContact(contact) {
+      VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.contact_detail.secure_direct", "Secure Direct Connection"))
       SignalASISecurityStatusRow(
         title: t("signalasi.contact_detail.signal_session", "Signal Protected"),
@@ -175,6 +175,7 @@ struct ContactDetailView: View {
         tint: .signalASIAccent,
         badge: t("signalasi.contact_detail.identity_verified", "Verified")
       )
+      }
     }
   }
 
