@@ -780,6 +780,7 @@ final class SignalASIStore: ObservableObject {
     remoteMessageId: String = "",
     status: ChatDeliveryStatus = .delivered,
     traceStage: String = "received",
+    detail: String = "",
     conversationId: String = "",
     turnId: String = "",
     richOutputJson: String = ""
@@ -792,7 +793,7 @@ final class SignalASIStore: ObservableObject {
       isMine: false,
       createdAt: createdAt,
       deliveryStatus: status,
-      deliveryTrace: [DeliveryTraceEvent(stage: traceStage)],
+      deliveryTrace: [DeliveryTraceEvent(stage: traceStage, detail: detail)],
       conversationId: resolvedConversationId,
       turnId: turnId,
       remoteMessageId: remoteMessageId,
