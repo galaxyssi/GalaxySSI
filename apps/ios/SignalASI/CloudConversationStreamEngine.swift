@@ -205,8 +205,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         contact: contact,
         store: store,
         turns: turns,
-        images: images,
-        requestId: requestId
+        requestId: requestId,
+        images: images
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       var executedToolKeys = Set<String>()

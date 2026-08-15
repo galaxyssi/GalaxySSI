@@ -349,10 +349,12 @@ final class ActionExecutorAgentProvider: AgentProvider {
         registration.status != .unreachable &&
         registration.status != .permissionRequired
     }
-    let requested = (agentIds ?? available.map(\.agentId))
+    let cleanedAgentIds = (agentIds ?? available.map(\.agentId))
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-      .stableDistinct()
+    var seenAgentIds = Set<String>()
+    let requested = cleanedAgentIds
+      .filter { seenAgentIds.insert($0).inserted }
       .filter { id in available.contains { $0.agentId == id } }
       .sorted()
     guard !requested.isEmpty else {

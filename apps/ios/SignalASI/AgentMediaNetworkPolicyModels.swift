@@ -349,10 +349,6 @@ enum AgentMediaLinkPayloadPolicy {
 }
 
 extension SignalASIDraftAttachment {
-  var isAudio: Bool {
-    mimeType.lowercased().hasPrefix("audio/")
-  }
-
   var isVideo: Bool {
     mimeType.lowercased().hasPrefix("video/")
   }

@@ -1030,7 +1030,7 @@ private struct SignalASIGlobalAgentMetricView: View {
   }
 }
 
-private struct SignalASIGlobalAgentBadge: View {
+struct SignalASIGlobalAgentBadge: View {
   var text: String
   var tint: Color
 

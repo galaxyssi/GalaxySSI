@@ -136,7 +136,7 @@ final class UserDefaultsAgentProviderHealthPersistence: AgentProviderHealthPersi
   func clear() { defaults.removeObject(forKey: key) }
 }
 
-final class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
+class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
   private let persistence: AgentProviderHealthPersistence
   private let lock = NSRecursiveLock()
 

@@ -302,11 +302,12 @@ extension SignalASIGlobalAgentRuntimeBridge {
     settled.nextAttemptAtMillis = settled.status == .queued ? nowMillis : 0
     settled.leaseExpiresAtMillis = 0
     settled.updatedAtMillis = nowMillis
-    settled.outcomeSummary = settled.actions
+    let latestOutcome = settled.actions
       .filter { !$0.result.isBlank }
       .map(\.result)
       .last
-      .ifBlank(settled.outcomeSummary)
+      ?? ""
+    settled.outcomeSummary = latestOutcome.ifBlank(settled.outcomeSummary)
     store.upsertAutonomousRun(settled)
     return SignalASIGlobalAutonomousExecutionResult(
       runId: settled.id,
