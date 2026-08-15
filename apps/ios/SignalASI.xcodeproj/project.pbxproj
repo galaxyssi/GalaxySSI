@@ -80,8 +80,6 @@
     A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001463 /* SignalASIWorkflowsView.swift */; };
     A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000995 /* SignalASIAgentMemoryView.swift */; };
     A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */; };
-    A10000000000000000001240 /* SignalASIMemoryControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001240 /* SignalASIMemoryControlView.swift */; };
-    A10000000000000000001241 /* SignalASIMemoryControlDetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */; };
     A10000000000000000000996 /* SignalASIAgentKnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */; };
     A10000000000000000000997 /* SignalASIAgentRecentTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */; };
     A10000000000000000001510 /* SignalASILocalModelArtifactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */; };
@@ -936,8 +934,6 @@
     A20000000000000000001463 /* SignalASIWorkflowsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowsView.swift; sourceTree = "<group>"; };
     A20000000000000000000995 /* SignalASIAgentMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryView.swift; sourceTree = "<group>"; };
     A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentMemoryTelemetryView.swift; sourceTree = "<group>"; };
-    A20000000000000000001240 /* SignalASIMemoryControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlView.swift; sourceTree = "<group>"; };
-    A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIMemoryControlDetailViews.swift; sourceTree = "<group>"; };
     A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentKnowledgeView.swift; sourceTree = "<group>"; };
     A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAgentRecentTasksView.swift; sourceTree = "<group>"; };
     A20000000000000000001510 /* SignalASILocalModelArtifactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILocalModelArtifactView.swift; sourceTree = "<group>"; };
@@ -2297,8 +2293,6 @@
         A20000000000000000001463 /* SignalASIWorkflowsView.swift */,
         A20000000000000000000995 /* SignalASIAgentMemoryView.swift */,
         A20000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift */,
-        A20000000000000000001240 /* SignalASIMemoryControlView.swift */,
-        A20000000000000000001241 /* SignalASIMemoryControlDetailViews.swift */,
         A20000000000000000000996 /* SignalASIAgentKnowledgeView.swift */,
         A20000000000000000000997 /* SignalASIAgentRecentTasksView.swift */,
         A20000000000000000001500 /* SignalASIAgentAuditOperationsView.swift */,
@@ -3289,8 +3283,6 @@
         A10000000000000000001463 /* SignalASIWorkflowsView.swift in Sources */,
         A10000000000000000000995 /* SignalASIAgentMemoryView.swift in Sources */,
         A10000000000000000001160 /* SignalASIAgentMemoryTelemetryView.swift in Sources */,
-        A10000000000000000001240 /* SignalASIMemoryControlView.swift in Sources */,
-        A10000000000000000001241 /* SignalASIMemoryControlDetailViews.swift in Sources */,
         A10000000000000000000996 /* SignalASIAgentKnowledgeView.swift in Sources */,
         A10000000000000000000997 /* SignalASIAgentRecentTasksView.swift in Sources */,
         A10000000000000000001500 /* SignalASIAgentAuditOperationsView.swift in Sources */,

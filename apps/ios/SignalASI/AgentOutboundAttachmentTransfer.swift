@@ -351,6 +351,7 @@ final class AgentOutboundAttachmentTransferStore {
     }
   }
 
+  @MainActor
   func discard(_ transferIds: some Collection<String>, deliveryStore: SignalASILinkDeliveryStore) {
     let normalized = Set(
       transferIds
@@ -367,6 +368,7 @@ final class AgentOutboundAttachmentTransferStore {
   }
 
   @discardableResult
+  @MainActor
   func discard(desktopId: String, deliveryStore: SignalASILinkDeliveryStore) -> Int {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return 0 }
@@ -377,6 +379,7 @@ final class AgentOutboundAttachmentTransferStore {
     return transferIds.count
   }
 
+  @MainActor
   func acknowledgeStored(payload: [String: Any], deliveryStore: SignalASILinkDeliveryStore) -> StoredAcknowledgement? {
     let transferId = payload.string("transfer_id").lowercased()
     guard payload.string("status") == "stored",
