@@ -280,6 +280,16 @@ internal fun AgentAction.bindSupervisedProjectContext(connector: AgentAction): A
 )
 
 internal object AgentSupervisedProjectControlPayload {
+    fun isTranscriptControlPayload(text: String, richOutputJson: String): Boolean =
+        isControlPayloadFragment(text) || isControlPayloadFragment(richOutputJson)
+
+    fun isControlPayloadFragment(raw: String): Boolean {
+        val normalized = raw.trimStart()
+            .removePrefix("```json")
+            .trimStart()
+        return normalized.contains("execution_location")
+    }
+
     fun isControlPayload(raw: String): Boolean {
         val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return false
         return json.has("execution_location") && json.optJSONArray("actions") != null

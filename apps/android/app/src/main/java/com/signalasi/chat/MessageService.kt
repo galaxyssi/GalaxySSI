@@ -167,7 +167,9 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
                         taskId = envelope?.optString("task_id").orEmpty(),
                         richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                     )
-                    if (AgentConnectorResponseBus.publish(this, response)) return
+                    val controlPayload = AgentSupervisedProjectControlPayload
+                        .isControlPayloadFragment(preview.content)
+                    if (AgentConnectorResponseBus.publish(this, response) || controlPayload) return
                 }
             }
             val stored = ChatHistoryStore.appendIncoming(this, payload) ?: return

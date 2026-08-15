@@ -262,6 +262,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val provisionalAgentTasks = ConcurrentHashMap.newKeySet<MobileNativeAgent>()
     internal val completedConnectorTaskIds = ConcurrentHashMap.newKeySet<String>()
     internal val supersededConnectorSourceIds = ConcurrentHashMap.newKeySet<Long>()
+    internal val supervisedProjectConnectorSourceIds = ConcurrentHashMap.newKeySet<Long>()
     internal val agentRuntimeConversationIds = ConcurrentHashMap<MobileNativeAgent, String>()
     internal val agentRuntimeTurnIds = ConcurrentHashMap<MobileNativeAgent, String>()
     internal val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
@@ -2140,20 +2141,40 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
         fun replaceAll(replacement: List<AgentTranscriptEntry>) {
             entries.clear()
-            entries.addAll(replacement)
+            entries.addAll(replacement.filterNot { entry ->
+                AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            })
             notifyDataSetChanged()
         }
 
         fun replaceAt(index: Int, entry: AgentTranscriptEntry) {
+            if (AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            ) {
+                entries.removeAt(index)
+                notifyItemRemoved(index)
+                return
+            }
             entries[index] = entry
             notifyItemChanged(index)
         }
 
         fun append(appended: List<AgentTranscriptEntry>) {
-            if (appended.isEmpty()) return
+            val visibleEntries = appended.filterNot { entry ->
+                AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            }
+            if (visibleEntries.isEmpty()) return
             val start = entries.size
-            entries.addAll(appended)
-            notifyItemRangeInserted(start, appended.size)
+            entries.addAll(visibleEntries)
+            notifyItemRangeInserted(start, visibleEntries.size)
         }
 
         fun clear() {

@@ -6,13 +6,17 @@ object AgentSupervisedProjectPresentationPolicy {
         phase: AgentPhase,
         pendingAction: AgentAction?,
         expectedSourceMessageId: Long,
-        incomingSourceMessageId: Long
-    ): Boolean = !(
-        phase == AgentPhase.WAITING_RESPONSE &&
-            pendingAction?.isSupervisedProjectConnector() == true &&
-            expectedSourceMessageId > 0L &&
-            expectedSourceMessageId == incomingSourceMessageId
-        )
+        incomingSourceMessageId: Long,
+        isSupervisedSource: Boolean = false
+    ): Boolean {
+        if (isSupervisedSource) return false
+        return !(
+            phase == AgentPhase.WAITING_RESPONSE &&
+                pendingAction?.isSupervisedProjectConnector() == true &&
+                expectedSourceMessageId > 0L &&
+                expectedSourceMessageId == incomingSourceMessageId
+            )
+    }
 
     internal fun matchesDirectConnectorTaskEvent(
         binding: PendingDirectConnectorRun?,

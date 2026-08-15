@@ -276,7 +276,8 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
         return true
     }
     if (consumeBoundDirectConnectorResponse(response)) return true
-    return AgentConnectorResponseBus.publish(this, response)
+    AgentConnectorResponseBus.publish(this, response)
+    return true
 }
 
 internal fun MainActivity.consumeBoundDirectConnectorResponse(response: AgentConnectorResponse): Boolean {
@@ -470,6 +471,11 @@ internal fun MainActivity.scheduleAgentConnectorStreamRefresh() {
 
 internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnectorStreamUpdate): Boolean {
     if (update.sourceMessageId in supersededConnectorSourceIds) return false
+    if (AgentSupervisedProjectControlPayload.isControlPayloadFragment(update.content)) {
+        supervisedProjectConnectorSourceIds.add(update.sourceMessageId)
+        liveAgentConnectorStreams.remove(update.sourceMessageId)
+        return false
+    }
     val runtime = runtimeForConnectorResponse(
         update.sourceMessageId,
         update.contactId,
@@ -488,7 +494,8 @@ internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnector
             pendingAction = pendingAction,
             expectedSourceMessageId = pendingResult?.metadata
                 ?.get("source_message_id")?.toLongOrNull() ?: 0L,
-            incomingSourceMessageId = update.sourceMessageId
+            incomingSourceMessageId = update.sourceMessageId,
+            isSupervisedSource = update.sourceMessageId in supervisedProjectConnectorSourceIds
         )
     ) {
         liveAgentConnectorStreams.remove(update.sourceMessageId)
@@ -1204,7 +1211,12 @@ internal fun MainActivity.publishAgentTaskPartialResult(
     if (!partial.optBoolean("user_visible", true)) return
     val content = partial.optString("text").trim().take(64_000)
     if (content.isBlank()) return
-    if (AgentSupervisedProjectControlPayload.isControlPayload(content)) return
+    if (sourceMessageId in supervisedProjectConnectorSourceIds) return
+    if (AgentSupervisedProjectControlPayload.isControlPayloadFragment(content)) {
+        supervisedProjectConnectorSourceIds.add(sourceMessageId)
+        liveAgentConnectorStreams.remove(sourceMessageId)
+        return
+    }
     val sequence = partial.optLong("sequence", 0L)
     AgentConnectorStreamBus.publish(
         AgentConnectorStreamUpdate(
