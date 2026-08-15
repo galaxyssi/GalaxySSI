@@ -39,12 +39,13 @@ test('runtime launcher leaves fortify configuration to the Buildroot toolchain',
   assert.doesNotMatch(makefile, /_FORTIFY_SOURCE/);
 });
 
-test('default Linux guest includes the reject target required by its network firewall', () => {
+test('default Linux guest includes packet sockets, virtio networking, and firewall support', () => {
   const kernelConfig = readFileSync(new URL(
     '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/linux.config',
     import.meta.url,
   ), 'utf8');
   for (const option of [
+    'CONFIG_PACKET=y',
     'CONFIG_NETDEVICES=y',
     'CONFIG_VIRTIO_NET=y',
     'CONFIG_NETFILTER_XTABLES_LEGACY=y',
