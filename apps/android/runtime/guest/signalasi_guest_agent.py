@@ -35,6 +35,7 @@ SESSION_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime
 CONFIG_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime-config/raw")
 WORKSPACE_ROOT = Path("/workspace")
 ISOLATED_WORKSPACE_ROOT = Path("/work")
+PERSISTENT_SYSTEM_ROOT = Path("/var/lib/signalasi")
 PACK_ROOT = Path("/opt/signalasi/packs")
 PACK_NAMESPACE_ROOT = PACK_ROOT.parent
 PACK_DESCRIPTOR_NAME = "signalasi-pack.json"
@@ -458,7 +459,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.3.0",
+                        "guest_version": "1.3.1",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -468,6 +469,7 @@ class GuestService:
                             "runtime.concurrent",
                             "runtime.secret_environment",
                             "runtime.full_access",
+                            "runtime.persistent_system",
                         ],
                         "execution_mode": "full_access" if full_access_enabled(self.config) else "restricted",
                         "execution_principal": "root" if full_access_enabled(self.config) else "workspace",
@@ -619,10 +621,12 @@ def runtime_environment(
     full_access: bool = False,
 ) -> dict[str, str]:
     pack_bins = [str(path) for path in sorted(PACK_ROOT.glob("*/bin")) if path.is_dir()]
-    task_temp = workspace / ".tmp"
+    persistent_home = PERSISTENT_SYSTEM_ROOT / "root" if full_access else workspace
+    task_temp = PERSISTENT_SYSTEM_ROOT / "cache" if full_access else workspace / ".tmp"
     android_sdk = PACK_ROOT / "android-sdk" / "sdk"
     environment = {
-        "HOME": str(workspace),
+        "HOME": str(persistent_home),
+        "SIGNALASI_SYSTEM_ROOT": str(PERSISTENT_SYSTEM_ROOT),
         "TMPDIR": str(task_temp),
         "PATH": os.pathsep.join(pack_bins + ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"]),
         "LANG": "C.UTF-8",
@@ -766,6 +770,63 @@ def mount_runtime(config: dict[str, Any]) -> None:
         validate_mounted_pack(target, pack)
 
 
+def mount_persistent_system(config: dict[str, Any]) -> None:
+    disk = config.get("system_disk") or {}
+    if not isinstance(disk, dict):
+        raise ValueError("Persistent Linux disk configuration is invalid")
+    serial = str(disk.get("serial", ""))
+    filesystem = str(disk.get("filesystem", ""))
+    mount_path = str(disk.get("mount_path", ""))
+    logical_bytes = int(disk.get("logical_bytes", 0))
+    if (
+        serial != "sa-system"
+        or filesystem != "ext4"
+        or mount_path != str(PERSISTENT_SYSTEM_ROOT)
+        or logical_bytes < 1024 * 1024 * 1024
+    ):
+        raise ValueError("Persistent Linux disk configuration is incompatible")
+    PERSISTENT_SYSTEM_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.path.ismount(PERSISTENT_SYSTEM_ROOT):
+        return
+    device = wait_for_block_device(serial)
+    probe = subprocess.run(
+        ["blkid", "-p", "-s", "TYPE", "-o", "value", str(device)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    detected = probe.stdout.strip()
+    if probe.returncode != 0 or not detected:
+        subprocess.run(
+            [
+                "mke2fs", "-q", "-t", "ext4", "-F", "-L", "signalasi-system",
+                "-E", "lazy_itable_init=1,lazy_journal_init=1", str(device),
+            ],
+            check=True,
+        )
+    elif detected != "ext4":
+        raise ValueError(f"Persistent Linux disk uses unsupported filesystem: {detected}")
+    mounted = subprocess.run(
+        ["mount", "-t", "ext4", "-o", "rw,noatime", str(device), str(PERSISTENT_SYSTEM_ROOT)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if mounted.returncode != 0:
+        repaired = subprocess.run(["e2fsck", "-p", str(device)], check=False)
+        if repaired.returncode not in {0, 1}:
+            raise RuntimeError("Persistent Linux disk check failed")
+        subprocess.run(
+            ["mount", "-t", "ext4", "-o", "rw,noatime", str(device), str(PERSISTENT_SYSTEM_ROOT)],
+            check=True,
+        )
+    for directory in (PERSISTENT_SYSTEM_ROOT / "root", PERSISTENT_SYSTEM_ROOT / "cache"):
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory.chmod(0o700)
+
+
 def validate_mounted_pack(target: Path, pack: dict[str, Any]) -> None:
     pack_id = str(pack.get("id", ""))
     version = str(pack.get("version", ""))
@@ -875,6 +936,7 @@ def run_service() -> None:
     if int(config.get("guest_api_version", 0)) != PROTOCOL_VERSION:
         raise ValueError("Runtime guest API is incompatible")
     synchronize_guest_clock(config)
+    mount_persistent_system(config)
     mount_runtime(config)
     if not full_access_enabled(config):
         install_task_network_firewall(config)

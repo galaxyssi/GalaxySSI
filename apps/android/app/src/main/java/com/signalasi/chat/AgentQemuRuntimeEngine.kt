@@ -29,6 +29,7 @@ internal object AgentQemuLaunchPlanBuilder {
         val files = buildList {
             add(spec.engineFile)
             add(spec.baseImageFile)
+            add(spec.systemDiskFile)
             add(spec.socketFile)
             add(spec.workspacesDirectory)
             add(sessionFile)
@@ -81,6 +82,12 @@ internal object AgentQemuLaunchPlanBuilder {
                 "-fw_cfg", "name=opt/com.signalasi/runtime-config,file=${configFile.absolutePath}",
                 "-object", "rng-random,id=signalasi_rng,filename=/dev/urandom",
                 "-device", "virtio-rng-device,rng=signalasi_rng"
+            ))
+            addAll(listOf(
+                "-drive",
+                "if=none,id=signalasi_system,file=${spec.systemDiskFile.absolutePath},format=raw,cache=none,aio=threads",
+                "-device",
+                "virtio-blk-device,drive=signalasi_system,serial=${AgentRuntimePersistentDisk.SERIAL}"
             ))
             spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
                 val driveId = "signalasi_pack_$index"
@@ -146,6 +153,11 @@ internal object AgentQemuRuntimeConfigBuilder {
         .put("execution_mode", "full_access")
         .put("execution_principal", "root")
         .put("network_mode", if (userNetworkBackendAvailable) "host_mediated" else "disabled")
+        .put("system_disk", JSONObject()
+            .put("serial", AgentRuntimePersistentDisk.SERIAL)
+            .put("filesystem", "ext4")
+            .put("mount_path", "/var/lib/signalasi")
+            .put("logical_bytes", AgentRuntimePersistentDisk.LOGICAL_BYTES))
         .put("packs", JSONArray().apply {
             spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
                 put(JSONObject()
@@ -251,6 +263,9 @@ class AgentQemuRuntimeEngineController(
     private fun validate(spec: AgentRuntimeEngineLaunchSpec) {
         check(spec.engineFile.isFile && spec.engineFile.canExecute()) { "Install the SignalASI QEMU engine" }
         check(spec.baseImageFile.isFile && spec.baseImageFile.canRead()) { "The linux-base image is unavailable" }
+        check(spec.systemDiskFile.isFile && spec.systemDiskFile.canRead() && spec.systemDiskFile.canWrite()) {
+            "Persistent Linux system disk is unavailable"
+        }
         check(spec.workspacesDirectory.isDirectory && spec.workspacesDirectory.canWrite()) {
             "Runtime workspace storage is unavailable"
         }

@@ -160,7 +160,8 @@ class AgentRuntimeEngineLaunchSpec internal constructor(
     val workspacesDirectory: File,
     val architecture: String,
     val packAttachments: List<AgentRuntimePackAttachment> = emptyList(),
-    internal val sessionKey: ByteArray
+    internal val sessionKey: ByteArray,
+    val systemDiskFile: File = File(workspacesDirectory.parentFile, "system/signalasi-system.raw")
 ) {
     override fun toString(): String =
         "AgentRuntimeEngineLaunchSpec(engine=${engineFile.name}, architecture=$architecture, sessionKey=[redacted])"
@@ -327,6 +328,7 @@ object AgentOnDeviceRuntimeLifecycle {
             val spec = AgentRuntimeEngineLaunchSpec(
                 engineFile = files.engineFile,
                 baseImageFile = files.baseImageFile,
+                systemDiskFile = files.systemDiskFile,
                 socketFile = files.socketFile,
                 packsDirectory = files.packsDirectory,
                 workspacesDirectory = files.workspacesDirectory,

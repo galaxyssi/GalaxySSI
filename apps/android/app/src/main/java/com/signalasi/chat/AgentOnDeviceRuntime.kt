@@ -219,6 +219,7 @@ data class AgentOnDeviceRuntimeStatus(
 internal data class AgentRuntimeBootstrapFiles(
     val engineFile: File,
     val baseImageFile: File,
+    val systemDiskFile: File,
     val socketFile: File,
     val packsDirectory: File,
     val workspacesDirectory: File,
@@ -519,6 +520,7 @@ class AgentOnDeviceRuntimeManager(
         val workspaces = File(runtimeRoot, "workspaces")
         check(runtimeRoot.mkdirs() || runtimeRoot.isDirectory) { "Runtime storage is unavailable" }
         check(workspaces.mkdirs() || workspaces.isDirectory) { "Runtime workspace storage is unavailable" }
+        val systemDisk = AgentRuntimePersistentDisk.provision(runtimeRoot)
         val packAttachments = REQUIRED_PACKS.asSequence()
             .filterNot { it == "linux-base" }
             .map(::packStatus)
@@ -537,6 +539,7 @@ class AgentOnDeviceRuntimeManager(
         return AgentRuntimeBootstrapFiles(
             engineFile = engine,
             baseImageFile = image,
+            systemDiskFile = systemDisk,
             socketFile = runtimeSocketFile(),
             packsDirectory = packsRoot,
             workspacesDirectory = workspaces,
