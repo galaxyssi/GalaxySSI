@@ -243,9 +243,3 @@ private extension String? {
     return value
   }
 }
-
-private extension Dictionary where Key == String, Value == Any {
-  func string(_ key: String) -> String {
-    (self[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  }
-}

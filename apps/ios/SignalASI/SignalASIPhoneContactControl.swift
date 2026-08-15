@@ -107,7 +107,7 @@ struct SignalASIPhoneContactControl {
     let cardSignature = card.string("signature")
     let bundleFingerprint = payload.string("bundle_identity_fingerprint")
     let controlSignature = payload.string("control_signature")
-    let sentAt = payload.int64("time")
+    let sentAt = (payload["time"] as? NSNumber)?.int64Value ?? 0
     let nowMillis = Int64(now.timeIntervalSince1970 * 1_000)
     guard !localId.isEmpty,
           !controlId.isEmpty,

@@ -438,7 +438,7 @@ enum SignalASIGlobalAgentRuntimeBridge {
         waiting.status = .waitingForResource
         waiting.sourceMessageId = 0
         waiting.leaseExpiresAtMillis = 0
-        waiting.nextAttemptAtMillis = nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(current.attemptCount)
+        waiting.nextAttemptAtMillis = nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(attemptCount: current.attemptCount)
         waiting.lastError = "No trusted reasoning resource is currently available"
         waiting.updatedAtMillis = nowMillis
         return waiting
@@ -499,7 +499,7 @@ enum SignalASIGlobalAgentRuntimeBridge {
         next.leaseExpiresAtMillis = 0
         next.nextAttemptAtMillis = next.status == .failed
           ? 0
-          : nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(current.attemptCount)
+          : nowMillis + GlobalCognitionTaskPolicy.retryDelayMillis(attemptCount: current.attemptCount)
         next.lastError = response.content.ifBlank("The reasoning result was not valid structured cognition data")
         next.updatedAtMillis = nowMillis
         return next
@@ -580,7 +580,8 @@ enum SignalASIGlobalAgentRuntimeBridge {
   }
 
   private static func cognitionCorrelationId(taskId: String, nowMillis: Int64) -> Int64 {
-    let hex = String(GlobalAgentText.privateFingerprint("ios-cognition", taskId, String(nowMillis)).prefix(15))
+    let fingerprintInput = ["ios-cognition", taskId, String(nowMillis)].joined(separator: "\u{001f}")
+    let hex = String(GlobalAgentText.privateFingerprint(fingerprintInput).prefix(15))
     return max(Int64(hex, radix: 16) ?? 1, 1)
   }
 
