@@ -104,6 +104,7 @@ internal class AgentLinuxProjectCloneBackend(
               -exec rm -rf -- {} +
             cp -a "${'$'}clone_dir"/. .
             rm -rf "${'$'}clone_dir" "${'$'}askpass"
+            git config --global --add safe.directory "${'$'}PWD"
             git status --short --branch
         """.trimIndent()
     }

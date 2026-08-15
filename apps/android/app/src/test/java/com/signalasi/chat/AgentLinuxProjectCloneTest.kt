@@ -155,10 +155,11 @@ class AgentLinuxProjectCloneTest {
             val runtimeTemp = File(workspace, ".tmp").apply { mkdirs() }
             val runtime = object : AgentProjectLinuxRuntime {
                 override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
-                    val process = ProcessBuilder(requireNotNull(bash).absolutePath, "-c", request.source)
+                    val processBuilder = ProcessBuilder(requireNotNull(bash).absolutePath, "-c", request.source)
                         .directory(workspace)
                         .redirectErrorStream(false)
-                        .start()
+                    processBuilder.environment()["HOME"] = File(root, "git-home").apply { mkdirs() }.absolutePath
+                    val process = processBuilder.start()
                     val stdout = process.inputStream.bufferedReader().readText()
                     val stderr = process.errorStream.bufferedReader().readText()
                     return AgentRuntimeExecutionResponse(
@@ -187,6 +188,10 @@ class AgentLinuxProjectCloneTest {
             assertFalse(File(workspace, ".signalasi-runtime/git-askpass.sh").exists())
             assertTrue(runtimeFiles.all(File::isFile))
             assertTrue(runtimeTemp.isDirectory)
+            val gitConfig = File(root, "git-home/.gitconfig").readText()
+            assertTrue(gitConfig.contains("[safe]"))
+            assertTrue(gitConfig.contains("directory = "))
+            assertFalse(gitConfig.contains("directory = *"))
         } finally {
             root.deleteRecursively()
         }
