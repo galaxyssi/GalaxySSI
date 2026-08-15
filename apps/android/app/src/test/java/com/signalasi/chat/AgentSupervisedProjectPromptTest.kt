@@ -54,15 +54,15 @@ class AgentSupervisedProjectPromptTest {
 
     @Test
     fun `visible fallback summary follows the user goal language`() {
-        val chineseRequest = request("在手机上修复这个项目并运行测试")
+        val chineseRequest = request("\u5728\u624b\u673a\u4e0a\u4fee\u590d\u8fd9\u4e2a\u9879\u76ee\u5e76\u8fd0\u884c\u6d4b\u8bd5")
         val englishRequest = request("Fix this project on the phone and run its tests")
 
         assertEquals(
-            "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。",
+            "\u6a21\u578b\u8fd4\u56de\u7684\u8ba1\u5212\u6682\u65f6\u65e0\u6cd5\u6267\u884c\uff0c\u5df2\u8981\u6c42\u5b83\u4fee\u6b63\u8ba1\u5212\u7ed3\u6784\u540e\u7ee7\u7eed\u3002",
             AgentSupervisedProjectLoop.visibleSummary(
                 chineseRequest,
                 english = "The model response was not executable.",
-                chinese = "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。"
+                chinese = "\u6a21\u578b\u8fd4\u56de\u7684\u8ba1\u5212\u6682\u65f6\u65e0\u6cd5\u6267\u884c\uff0c\u5df2\u8981\u6c42\u5b83\u4fee\u6b63\u8ba1\u5212\u7ed3\u6784\u540e\u7ee7\u7eed\u3002"
             )
         )
         assertEquals(
@@ -70,7 +70,7 @@ class AgentSupervisedProjectPromptTest {
             AgentSupervisedProjectLoop.visibleSummary(
                 englishRequest,
                 english = "The model response was not executable.",
-                chinese = "模型返回的计划暂时无法执行。"
+                chinese = "\u6a21\u578b\u8fd4\u56de\u7684\u8ba1\u5212\u6682\u65f6\u65e0\u6cd5\u6267\u884c\u3002"
             )
         )
     }
