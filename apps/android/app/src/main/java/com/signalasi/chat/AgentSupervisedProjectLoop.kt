@@ -115,7 +115,9 @@ internal object AgentSupervisedProjectLoop {
     private fun buildPrompt(request: AgentRequest, evidenceExpected: Boolean): String = buildString {
         append("You are the supervising software engineer for a project initiated from SignalASI on Android. ")
         append("Return exactly one JSON ActionPlan and no markdown, prose, or private chain-of-thought. ")
-        append("Use summary for a concise user-visible reasoning summary. Schema: ")
+        append("Use summary for a concise user-visible decision summary, never private chain-of-thought. ")
+        append("Write it in the same language as the user's goal, using one to three short sentences that state the relevant observed evidence, the decision made from it, and the immediate next outcome. ")
+        append("For continuation or recovery, explain what changed and why the next approach differs; avoid generic status text such as processing, working, or continuing. Schema: ")
         append("{\"execution_location\":\"phone|desktop\",\"execution_location_evidence\":\"\",")
         append("\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
         append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL|CALL_CONNECTOR\",\"target\":\"...\",")
