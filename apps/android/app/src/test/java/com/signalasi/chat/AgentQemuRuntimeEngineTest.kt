@@ -51,6 +51,7 @@ class AgentQemuRuntimeEngineTest {
 
         val command = plan.command.joinToString(" ")
         assertTrue(command.contains("user,id=signalasi_net,restrict=off,ipv6=off"))
+        assertFalse(command.contains("dns="))
         assertTrue(command.contains("virtio-net-device,netdev=signalasi_net"))
         assertTrue(command.contains("server=on,wait=on"))
         assertFalse(command.contains("server=on,wait=off"))
@@ -68,10 +69,17 @@ class AgentQemuRuntimeEngineTest {
         val guestConfig = AgentQemuRuntimeConfigBuilder.build(
             spec,
             userNetworkBackendAvailable = true,
+            dnsServers = listOf("1.1.1.1", "223.5.5.5"),
             workspaceUid = 10_427
         )
         assertEquals("full_access", guestConfig.getString("execution_mode"))
         assertEquals("root", guestConfig.getString("execution_principal"))
+        assertEquals(
+            listOf("1.1.1.1", "223.5.5.5"),
+            List(guestConfig.getJSONArray("dns_servers").length()) { index ->
+                guestConfig.getJSONArray("dns_servers").getString(index)
+            }
+        )
         assertEquals(
             AgentRuntimePersistentDisk.LOGICAL_BYTES,
             guestConfig.getJSONObject("system_disk").getLong("logical_bytes")
@@ -128,6 +136,25 @@ class AgentQemuRuntimeEngineTest {
             logFile = File(root, "log"),
             memoryMegabytes = 512,
             cpuCount = 2
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `guest config rejects a non IPv4 DNS server`() {
+        val root = temporaryFolder.newFolder("invalid dns")
+        AgentQemuRuntimeConfigBuilder.build(
+            spec = AgentRuntimeEngineLaunchSpec(
+                engineFile = File(root, "engine"),
+                baseImageFile = File(root, "base"),
+                socketFile = File(root, "socket"),
+                packsDirectory = File(root, "packs"),
+                workspacesDirectory = File(root, "workspaces"),
+                architecture = "arm64-v8a",
+                sessionKey = ByteArray(32)
+            ),
+            userNetworkBackendAvailable = true,
+            dnsServers = listOf("resolver.invalid"),
+            workspaceUid = 10_427
         )
     }
 }

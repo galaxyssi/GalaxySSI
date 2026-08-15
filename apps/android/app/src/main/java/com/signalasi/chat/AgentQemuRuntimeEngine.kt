@@ -140,8 +140,12 @@ internal object AgentQemuRuntimeConfigBuilder {
     fun build(
         spec: AgentRuntimeEngineLaunchSpec,
         userNetworkBackendAvailable: Boolean,
+        dnsServers: List<String> = DEFAULT_DIRECT_DNS_SERVERS,
         workspaceUid: Int = android.os.Process.myUid()
-    ): JSONObject = JSONObject()
+    ): JSONObject {
+        require(dnsServers.size in 1..MAX_DNS_SERVERS) { "Runtime DNS server list is invalid" }
+        require(dnsServers.all(::isIpv4Address)) { "Runtime DNS servers must be IPv4 addresses" }
+        return JSONObject()
         .put("format_version", 1)
         .put("guest_api_version", AgentRuntimeGuestProtocol.VERSION)
         .put("host_epoch_millis", System.currentTimeMillis())
@@ -153,6 +157,7 @@ internal object AgentQemuRuntimeConfigBuilder {
         .put("execution_mode", "full_access")
         .put("execution_principal", "root")
         .put("network_mode", if (userNetworkBackendAvailable) "host_mediated" else "disabled")
+        .put("dns_servers", JSONArray(dnsServers.distinct()))
         .put("system_disk", JSONObject()
             .put("serial", AgentRuntimePersistentDisk.SERIAL)
             .put("filesystem", "ext4")
@@ -169,6 +174,18 @@ internal object AgentQemuRuntimeConfigBuilder {
                     .put("device_index", index))
             }
         })
+    }
+
+    private fun isIpv4Address(value: String): Boolean {
+        val octets = value.split('.')
+        return octets.size == 4 && octets.all { octet ->
+            octet.isNotEmpty() && octet.length <= 3 && octet.all(Char::isDigit) &&
+                octet.toIntOrNull() in 0..255
+        }
+    }
+
+    internal val DEFAULT_DIRECT_DNS_SERVERS = listOf("1.1.1.1", "223.5.5.5", "8.8.8.8")
+    private const val MAX_DNS_SERVERS = 4
 }
 
 class AgentQemuRuntimeEngineController(
