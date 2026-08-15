@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import signal
 import stat
 import struct
@@ -36,6 +37,9 @@ CONFIG_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime-
 WORKSPACE_ROOT = Path("/workspace")
 ISOLATED_WORKSPACE_ROOT = Path("/work")
 PERSISTENT_SYSTEM_ROOT = Path("/var/lib/signalasi")
+PERSISTENT_USERSPACE_ROOT = PERSISTENT_SYSTEM_ROOT / "rootfs"
+PERSISTENT_USERSPACE_ARCHIVE = Path("/usr/share/signalasi/debian-13-slim-arm64-rootfs.tar.gz")
+PERSISTENT_USERSPACE_DIGEST = "1b7200988f192e72703c70486d494e2457935ac9b0f031ac09eb115b01a12d45"
 PACK_ROOT = Path("/opt/signalasi/packs")
 PACK_NAMESPACE_ROOT = PACK_ROOT.parent
 PACK_DESCRIPTOR_NAME = "signalasi-pack.json"
@@ -329,6 +333,14 @@ def full_access_enabled(config: dict[str, Any]) -> bool:
     )
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def execution_plan(
     config: dict[str, Any],
     workspace: Path,
@@ -337,6 +349,17 @@ def execution_plan(
     allow_network_proxy: bool = False,
 ) -> list[str]:
     if full_access_enabled(config):
+        if command and command[0] in {"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh"}:
+            return [
+                "chroot",
+                str(PERSISTENT_USERSPACE_ROOT),
+                "/bin/sh",
+                "-c",
+                'cd "$1" && shift && exec "$@"',
+                "signalasi",
+                str(workspace),
+                *command,
+            ]
         return command
     return launcher_plan(config, workspace, limits, command, allow_network_proxy)
 
@@ -459,7 +482,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.3.1",
+                        "guest_version": "1.3.2",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -621,8 +644,8 @@ def runtime_environment(
     full_access: bool = False,
 ) -> dict[str, str]:
     pack_bins = [str(path) for path in sorted(PACK_ROOT.glob("*/bin")) if path.is_dir()]
-    persistent_home = PERSISTENT_SYSTEM_ROOT / "root" if full_access else workspace
-    task_temp = PERSISTENT_SYSTEM_ROOT / "cache" if full_access else workspace / ".tmp"
+    persistent_home = Path("/root") if full_access else workspace
+    task_temp = persistent_home / ".cache" / "tmp" if full_access else workspace / ".tmp"
     android_sdk = PACK_ROOT / "android-sdk" / "sdk"
     environment = {
         "HOME": str(persistent_home),
@@ -650,6 +673,8 @@ def runtime_environment(
     if full_access:
         environment.update(
             {
+                "DEBIAN_FRONTEND": "noninteractive",
+                "APT_LISTCHANGES_FRONTEND": "none",
                 "UV_PYTHON_DOWNLOADS": "automatic",
                 "CARGO_NET_OFFLINE": "false",
             }
@@ -827,6 +852,55 @@ def mount_persistent_system(config: dict[str, Any]) -> None:
         directory.chmod(0o700)
 
 
+def prepare_persistent_userspace(config: dict[str, Any]) -> None:
+    if not full_access_enabled(config):
+        return
+    if not os.path.ismount(PERSISTENT_SYSTEM_ROOT):
+        raise RuntimeError("Persistent Linux system disk is not mounted")
+    if not PERSISTENT_USERSPACE_ARCHIVE.is_file():
+        raise FileNotFoundError("Persistent Linux userspace seed is unavailable")
+    marker = PERSISTENT_SYSTEM_ROOT / ".userspace-sha256"
+    installed_digest = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+    if installed_digest != PERSISTENT_USERSPACE_DIGEST:
+        archive_digest = sha256_file(PERSISTENT_USERSPACE_ARCHIVE)
+        if archive_digest != PERSISTENT_USERSPACE_DIGEST:
+            raise ValueError("Persistent Linux userspace seed failed integrity verification")
+        shutil.rmtree(PERSISTENT_USERSPACE_ROOT, ignore_errors=True)
+        PERSISTENT_USERSPACE_ROOT.mkdir(mode=0o755, parents=True, exist_ok=True)
+        subprocess.run(
+            ["tar", "-xzf", str(PERSISTENT_USERSPACE_ARCHIVE), "-C", str(PERSISTENT_USERSPACE_ROOT)],
+            check=True,
+        )
+        temporary_marker = PERSISTENT_SYSTEM_ROOT / ".userspace-sha256.tmp"
+        temporary_marker.write_text(PERSISTENT_USERSPACE_DIGEST + "\n", encoding="utf-8")
+        temporary_marker.replace(marker)
+    bind_persistent_userspace()
+
+
+def bind_persistent_userspace() -> None:
+    resolv_source = Path("/etc/resolv.conf")
+    resolv_target = PERSISTENT_USERSPACE_ROOT / "etc" / "resolv.conf"
+    if resolv_source.is_file():
+        resolv_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(resolv_source, resolv_target)
+    persistent_home = PERSISTENT_SYSTEM_ROOT / "root"
+    persistent_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    bindings = (
+        (persistent_home, Path("/root")),
+        (Path("/dev"), PERSISTENT_USERSPACE_ROOT / "dev"),
+        (Path("/proc"), PERSISTENT_USERSPACE_ROOT / "proc"),
+        (Path("/sys"), PERSISTENT_USERSPACE_ROOT / "sys"),
+        (WORKSPACE_ROOT, PERSISTENT_USERSPACE_ROOT / "workspace"),
+        (PACK_ROOT, PERSISTENT_USERSPACE_ROOT / "opt" / "signalasi" / "packs"),
+        (Path("/root"), PERSISTENT_USERSPACE_ROOT / "root"),
+    )
+    for source, target in bindings:
+        target.mkdir(parents=True, exist_ok=True)
+        if os.path.ismount(target):
+            continue
+        subprocess.run(["mount", "--rbind", str(source), str(target)], check=True)
+
+
 def validate_mounted_pack(target: Path, pack: dict[str, Any]) -> None:
     pack_id = str(pack.get("id", ""))
     version = str(pack.get("version", ""))
@@ -938,6 +1012,7 @@ def run_service() -> None:
     synchronize_guest_clock(config)
     mount_persistent_system(config)
     mount_runtime(config)
+    prepare_persistent_userspace(config)
     if not full_access_enabled(config):
         install_task_network_firewall(config)
     while True:

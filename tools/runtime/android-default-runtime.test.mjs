@@ -57,3 +57,22 @@ test('default Linux guest includes the reject target required by its network fir
   assert.match(buildScript, /kernel_configs=\("\$output_dir"\/build\/linux-\*\/\.config\)/);
   assert.match(buildScript, /grep -Fxq "\$option" "\$kernel_config"/);
 });
+
+test('default Linux guest embeds a pinned persistent Debian userspace', () => {
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+  const postBuild = readFileSync(new URL(
+    '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/post-build.sh',
+    import.meta.url,
+  ), 'utf8');
+  const guest = readFileSync(new URL(
+    '../../apps/android/runtime/guest/signalasi_guest_agent.py',
+    import.meta.url,
+  ), 'utf8');
+
+  assert.match(buildScript, /debian_rootfs_digest="sha256:[a-f0-9]{64}"/);
+  assert.match(buildScript, /download_verified_oci_blob/);
+  assert.match(postBuild, /debian-13-slim-arm64-rootfs\.tar\.gz/);
+  assert.match(guest, /PERSISTENT_USERSPACE_DIGEST = "[a-f0-9]{64}"/);
+  assert.match(guest, /chroot/);
+  assert.match(guest, /bind_persistent_userspace/);
+});
