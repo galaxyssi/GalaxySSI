@@ -504,9 +504,9 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
                 "The supervising model will diagnose the latest failed phone action."
             },
             chinese = if (interrupted) {
-                "上次执行意外中断，将先检查手机项目的持久化状态和证据，再安全继续。"
+                "\u4e0a\u6b21\u6267\u884c\u610f\u5916\u4e2d\u65ad\uff0c\u5c06\u5148\u68c0\u67e5\u624b\u673a\u9879\u76ee\u7684\u6301\u4e45\u5316\u72b6\u6001\u548c\u8bc1\u636e\uff0c\u518d\u5b89\u5168\u7ee7\u7eed\u3002"
             } else {
-                "手机上的上一步执行失败，将先分析失败证据，再选择不同的后续操作。"
+                "\u624b\u673a\u4e0a\u7684\u4e0a\u4e00\u6b65\u6267\u884c\u5931\u8d25\uff0c\u5c06\u5148\u5206\u6790\u5931\u8d25\u8bc1\u636e\uff0c\u518d\u9009\u62e9\u4e0d\u540c\u7684\u540e\u7eed\u64cd\u4f5c\u3002"
             }
         )
     )
@@ -552,7 +552,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
             english = "The model response was not executable, so SignalASI requested a corrected ActionPlan.",
-            chinese = "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。"
+            chinese = "\u6a21\u578b\u8fd4\u56de\u7684\u8ba1\u5212\u6682\u65f6\u65e0\u6cd5\u6267\u884c\uff0c\u5df2\u8981\u6c42\u5b83\u4fee\u6b63\u8ba1\u5212\u7ed3\u6784\u540e\u7ee7\u7eed\u3002"
         )
     )
     return reviewSupervisedProjectPlan(candidate)
@@ -595,7 +595,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
             english = "SignalASI kept the project active because its requested publication result was not yet verified.",
-            chinese = "目标产物尚未通过验证，任务将保持运行并继续补齐验证或交付步骤。"
+            chinese = "\u76ee\u6807\u4ea7\u7269\u5c1a\u672a\u901a\u8fc7\u9a8c\u8bc1\uff0c\u4efb\u52a1\u5c06\u4fdd\u6301\u8fd0\u884c\u5e76\u7ee7\u7eed\u8865\u9f50\u9a8c\u8bc1\u6216\u4ea4\u4ed8\u6b65\u9aa4\u3002"
         )
     )
     return reviewSupervisedProjectPlan(candidate)
