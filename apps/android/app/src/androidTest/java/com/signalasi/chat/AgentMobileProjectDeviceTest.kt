@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 class AgentMobileProjectDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var root: File
+    private val persistentWorkspaces = mutableListOf<File>()
 
     @Before
     fun setUp() {
@@ -30,6 +31,7 @@ class AgentMobileProjectDeviceTest {
     @After
     fun tearDown() {
         root.deleteRecursively()
+        persistentWorkspaces.forEach(File::deleteRecursively)
     }
 
     @Test
@@ -127,6 +129,65 @@ class AgentMobileProjectDeviceTest {
         assertTrue(snapshot.headCommit.matches(Regex("[0-9a-f]{40}")))
         assertEquals("https://github.com/octocat/Hello-World.git", snapshot.repositoryUrl)
         assertTrue(File(projects, "github-network-project/README").isFile)
+    }
+
+    @Test
+    fun clonesRepositoryDirectlyInsideThePersistentPhoneLinuxRuntime() {
+        val workspaceId = "linux-clone-${UUID.randomUUID()}"
+        val projects = File(context.filesDir, "agent-native-workspaces")
+        val project = File(projects, workspaceId).apply {
+            check(mkdirs() || isDirectory)
+            persistentWorkspaces += this
+        }
+        val source = File(root, "linux-clone-source")
+        Git.init().setDirectory(source).setInitialBranch("main").call().use { git ->
+            File(source, "README.md").writeText("# Cloned by phone Linux\n")
+            git.add().addFilepattern(".").call()
+            git.commit()
+                .setMessage("Create Linux clone fixture")
+                .setAuthor("SignalASI", "signalasi@hotmail.com")
+                .setCommitter("SignalASI", "signalasi@hotmail.com")
+                .call()
+        }
+        Git.cloneRepository()
+            .setURI(source.toURI().toString())
+            .setDirectory(File(project, "fixture.git"))
+            .setBare(true)
+            .call()
+            .close()
+        val manager = AgentOnDeviceRuntimeManager(context)
+        val repository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "" },
+            repositoryPolicy = { true },
+            cloneBackend = AgentLinuxProjectCloneBackend(
+                runtime = object : AgentProjectLinuxRuntime {
+                    override fun execute(request: AgentRuntimeExecutionRequest) = manager.execute(request)
+
+                    override fun rollback(workspaceId: String, checkpointId: String) {
+                        manager.rollbackWorkspace(workspaceId, checkpointId)
+                    }
+                },
+                credentialProvider = AgentProjectCredentialProvider { "" }
+            )
+        )
+
+        val cloned = repository.clone(
+            workspaceId = workspaceId,
+            repositoryUrl = "fixture.git",
+            branch = "main",
+            depth = 1,
+            replaceExisting = true,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+
+        assertEquals("main", cloned.branch)
+        assertTrue(cloned.clean)
+        assertEquals("# Cloned by phone Linux\n", File(project, "README.md").readText())
+        assertTrue(File(project, ".git").isDirectory)
+        assertFalse(File(project, "fixture.git").exists())
+        assertFalse(File(project, ".signalasi-runtime").exists())
     }
 
     private fun runtimeRequest(workspaceId: String) = AgentRuntimeExecutionRequest(
