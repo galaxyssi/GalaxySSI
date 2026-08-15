@@ -248,6 +248,21 @@ class GuestProtocolTest(unittest.TestCase):
         self.assertNotIn("UV_NO_CACHE", environment)
         self.assertNotIn("PYTHONNOUSERSITE", environment)
 
+    def test_full_access_runtime_creates_persistent_cache_and_temp_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            task_temp = Path(directory) / ".cache" / "tmp"
+            guest.prepare_runtime_temp_directories({"TMPDIR": str(task_temp)}, full_access=True)
+
+            self.assertTrue(task_temp.parent.is_dir())
+            self.assertTrue(task_temp.is_dir())
+
+    def test_isolated_runtime_does_not_create_host_temp_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            task_temp = Path(directory) / ".cache" / "tmp"
+            guest.prepare_runtime_temp_directories({"TMPDIR": str(task_temp)}, full_access=False)
+
+            self.assertFalse(task_temp.parent.exists())
+
     def test_persistent_home_is_shared_by_guest_and_runtime_packs(self):
         commands = []
 
