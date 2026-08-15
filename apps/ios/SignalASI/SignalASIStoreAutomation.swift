@@ -424,8 +424,8 @@ extension SignalASIStore {
     return (task: task, run: run, accepted: true)
   }
 
-  func claimDueAutomationTasks(
-    nowMillis: Int64 = Self.nowMillis()
+  func claimDueAutomationExecutions(
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> [AgentProactiveBackgroundExecution] {
     var executions: [AgentProactiveBackgroundExecution] = []
     let candidates = proactiveTasks.filter {

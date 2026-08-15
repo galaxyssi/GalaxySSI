@@ -39,7 +39,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
-  private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: Self.brokerAckTimeoutSeconds)
+  private let brokerAckWatchdog = MqttBrokerAckWatchdog(timeoutSeconds: 12)
   private struct PendingPublish {
     var topic: String
     var payload: Data
@@ -505,7 +505,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   }
 }
 
-private struct MQTTPacket {
+struct MQTTPacket {
   var header: UInt8
   var payload: Data
 }

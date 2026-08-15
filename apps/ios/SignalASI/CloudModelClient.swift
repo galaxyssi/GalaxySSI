@@ -127,8 +127,8 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
-        images: images,
-        contextWindowTokens: contextWindow
+        contextWindowTokens: contextWindow,
+        images: images
       )
     }
   }
@@ -186,8 +186,8 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
-        images: images,
-        contextWindowTokens: contextWindow
+        contextWindowTokens: contextWindow,
+        images: images
       )
     }
   }
@@ -246,8 +246,8 @@ struct CloudModelClient {
         apiKey: apiKey,
         turns: turns,
         systemPrompt: systemPrompt,
-        images: images,
-        contextWindowTokens: contextWindow
+        contextWindowTokens: contextWindow,
+        images: images
       )
     }
   }
