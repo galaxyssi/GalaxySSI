@@ -168,7 +168,7 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
 
   init(
     defaults: UserDefaults = .standard,
-    key: String = Self.defaultKey,
+    key: String = "signalasi_agent_team_execution_v1",
     secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
     self.defaults = defaults
@@ -297,7 +297,7 @@ final class UserDefaultsAgentTeamExecutionStore: AgentTeamExecutionStore {
 
   static func destroy(
     defaults: UserDefaults = .standard,
-    key: String = Self.defaultKey,
+    key: String = "signalasi_agent_team_execution_v1",
     secrets: SignalASISecretStore = KeychainSecretStore.shared
   ) {
     SignalASIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)

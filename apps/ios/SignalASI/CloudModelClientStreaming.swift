@@ -15,8 +15,8 @@ extension CloudModelClient {
         contact: contact,
         store: store,
         turns: turns,
-        images: images,
-        requestId: normalizedRequestId
+        requestId: normalizedRequestId,
+        images: images
       )
     }
   }
@@ -92,8 +92,8 @@ extension CloudModelClient {
       apiKey: apiKey,
       turns: turns,
       systemPrompt: systemPrompt,
-      images: images,
-      requestId: requestId
+      requestId: requestId,
+      images: images
     )
   }
 

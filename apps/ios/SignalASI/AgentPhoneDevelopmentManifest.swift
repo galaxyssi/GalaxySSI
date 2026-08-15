@@ -15,7 +15,7 @@ struct AgentPhoneDevelopmentManifest: Equatable {
   var artifactPaths: [String]
 
   func runtimeInput() -> AgentMcpJSONObject {
-    let encodedFiles = files.map { file in
+    let encodedFiles: [AgentMcpJSONValue] = files.map { file in
       .object([
         "path": .string(file.path),
         "content_b64": .string(Data(file.content.utf8).base64EncodedString())

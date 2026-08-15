@@ -224,7 +224,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
         withIdentifier: Self.backgroundSessionIdentifier
       )
       configuration.sessionSendsLaunchEvents = true
-      configuration.discretionary = false
+      configuration.isDiscretionary = false
       configuration.allowsCellularAccess = true
       if #available(iOS 13.0, *) {
         configuration.allowsExpensiveNetworkAccess = true
@@ -259,7 +259,7 @@ final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging, AgentIOSD
       migrateLegacyStorageLocked()
     }
     sessionDelegate?.owner = self
-    session.getAllTasks { [weak self] tasks in
+    self.session.getAllTasks { [weak self] tasks in
       guard let self else { return }
       self.queue.async {
         tasks.compactMap { task -> (Int64, URLSessionDownloadTask)? in
