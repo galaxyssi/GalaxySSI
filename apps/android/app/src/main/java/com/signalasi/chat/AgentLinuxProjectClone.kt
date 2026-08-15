@@ -72,9 +72,11 @@ internal class AgentLinuxProjectCloneBackend(
             clone_dir="${'$'}control_dir/repository"
             askpass="${'$'}control_dir/git-askpass.sh"
             mkdir -p "${'$'}control_dir"
+            if test -f /etc/debian_version; then mkdir -p /root/.cache/tmp; fi
             rm -rf "${'$'}clone_dir"
-            if ! command -v git >/dev/null 2>&1; then
+            if ! command -v git >/dev/null 2>&1 || { test -f /etc/debian_version && test ! -s /etc/ssl/certs/ca-certificates.crt; }; then
               printf '%s\n' '__SIGNALASI_STAGE__:install_git'
+              dpkg --configure -a || apt-get -o DPkg::Lock::Timeout=300 -f install -y
               apt-get -o DPkg::Lock::Timeout=300 update
               apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends git ca-certificates openssh-client
             fi
@@ -110,6 +112,8 @@ internal class AgentLinuxProjectCloneBackend(
                 "Phone Linux cannot reach GitHub. Verify that the phone VPN includes SignalASI, then retry."
             "authentication failed" in normalized || "could not read username" in normalized ->
                 "GitHub authentication failed. Update the GitHub credential in SignalASI and retry."
+            "problem with the ssl ca cert" in normalized || "certificate problem" in normalized ->
+                "Phone Linux could not repair its certificate store. Retry the task after the runtime finishes dependency recovery."
             "repository not found" in normalized ->
                 "The GitHub repository was not found or the configured account cannot access it."
             else -> "Phone Linux git clone failed: ${detail.ifBlank { "exit code ${response.exitCode}" }}"

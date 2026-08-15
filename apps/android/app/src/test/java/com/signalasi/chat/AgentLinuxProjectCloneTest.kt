@@ -41,9 +41,40 @@ class AgentLinuxProjectCloneTest {
         assertTrue("github.com" in captured.allowedNetworkDomains)
         assertTrue("git -c credential.helper= clone --depth 1 --branch 'main'" in captured.source)
         assertTrue("apt-get -o DPkg::Lock::Timeout=300 install" in captured.source)
+        assertTrue("dpkg --configure -a" in captured.source)
+        assertTrue("ca-certificates.crt" in captured.source)
+        assertTrue("mkdir -p /root/.cache/tmp" in captured.source)
         assertTrue(".signalasi-runtime/git-askpass.sh" !in captured.source)
         assertFalse("private-token" in captured.source)
         assertEquals("private-token", captured.secretEnvironment["SIGNALASI_GITHUB_TOKEN"])
+    }
+
+    @Test
+    fun reportsCertificateRecoveryGuidanceAfterAnUnrecoverableTlsFailure() {
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest) = AgentRuntimeExecutionResponse(
+                exitCode = 128,
+                stdout = "",
+                stderr = "fatal: Problem with the SSL CA cert (path? access rights?)",
+                durationMillis = 50
+            )
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val failure = runCatching {
+            AgentLinuxProjectCloneBackend(runtime, AgentProjectCredentialProvider { "" }).clone(
+                workspaceId = "phone-project",
+                repositoryUrl = "https://github.com/signalasi/SignalASI.git",
+                branch = "main",
+                depth = 1,
+                replaceExisting = true,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message.orEmpty().contains("certificate store"))
     }
 
     @Test
