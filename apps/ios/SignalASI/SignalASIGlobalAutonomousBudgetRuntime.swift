@@ -1,6 +1,7 @@
 import Foundation
 
 enum SignalASIGlobalAutonomousBudgetRuntime {
+  @MainActor
   static func acquire(
     store: SignalASIStore,
     runId: String,
