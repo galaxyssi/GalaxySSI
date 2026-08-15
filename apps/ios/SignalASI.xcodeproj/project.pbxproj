@@ -7,6 +7,9 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
+    A1000000000000000000F002 /* SignalASIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* SignalASIConversationHubModels.swift */; };
+    A1000000000000000000F003 /* SignalASIServices+Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F003 /* SignalASIServices+Outbox.swift */; };
     A10000000000000000000001 /* SignalASIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SignalASIModels.swift */; };
     A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001133 /* SignalASIConversationDateDivider.swift */; };
     A10000000000000000001134 /* SignalASIChatVoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001134 /* SignalASIChatVoiceRecorder.swift */; };
@@ -860,6 +863,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentKnowledgeImporter.swift; sourceTree = "<group>"; };
+    A2000000000000000000F002 /* SignalASIConversationHubModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationHubModels.swift; sourceTree = "<group>"; };
+    A2000000000000000000F003 /* SignalASIServices+Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SignalASIServices+Outbox.swift"; sourceTree = "<group>"; };
     A20000000000000000000001 /* SignalASIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIModels.swift; sourceTree = "<group>"; };
     A20000000000000000001133 /* SignalASIConversationDateDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIConversationDateDivider.swift; sourceTree = "<group>"; };
     A20000000000000000001134 /* SignalASIChatVoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIChatVoiceRecorder.swift; sourceTree = "<group>"; };
@@ -1732,6 +1738,9 @@
     A40000000000000000000002 /* SignalASI */ = {
       isa = PBXGroup;
       children = (
+        A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */,
+        A2000000000000000000F002 /* SignalASIConversationHubModels.swift */,
+        A2000000000000000000F003 /* SignalASIServices+Outbox.swift */,
         A20000000000000000000001 /* SignalASIModels.swift */,
         A20000000000000000001133 /* SignalASIConversationDateDivider.swift */,
         A20000000000000000001134 /* SignalASIChatVoiceRecorder.swift */,
@@ -2725,6 +2734,9 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */,
+        A1000000000000000000F002 /* SignalASIConversationHubModels.swift in Sources */,
+        A1000000000000000000F003 /* SignalASIServices+Outbox.swift in Sources */,
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
         A10000000000000000001133 /* SignalASIConversationDateDivider.swift in Sources */,
         A10000000000000000001134 /* SignalASIChatVoiceRecorder.swift in Sources */,
