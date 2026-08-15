@@ -76,3 +76,11 @@ test('default Linux guest embeds a pinned persistent Debian userspace', () => {
   assert.match(guest, /chroot/);
   assert.match(guest, /bind_persistent_userspace/);
 });
+
+test('default Linux build preserves full logs without flooding CI output', () => {
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+
+  assert.match(buildScript, /build_log="\$work_root\/buildroot\.log"/);
+  assert.match(buildScript, />"\$build_log" 2>&1/);
+  assert.match(buildScript, /tail -n 300 "\$build_log"/);
+});

@@ -17,6 +17,7 @@ archive="$download_dir/buildroot-$buildroot_version.tar.xz"
 debian_rootfs_archive="$download_dir/debian-13-slim-arm64-rootfs.tar.gz"
 source_dir="$work_root/source"
 output_dir="$work_root/output"
+build_log="$work_root/buildroot.log"
 image_output="${1:-$work_root/linux-base.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -39,6 +40,7 @@ archive="$download_dir/buildroot-$buildroot_version.tar.xz"
 debian_rootfs_archive="$download_dir/debian-13-slim-arm64-rootfs.tar.gz"
 source_dir="$work_root/source"
 output_dir="$work_root/output"
+build_log="$work_root/buildroot.log"
 if [[ -z "$work_root" || "$work_root" == "/" || "$work_root" == "$repository_root" ]]; then
   echo "Refusing to use an unsafe runtime build directory." >&2
   exit 2
@@ -69,8 +71,14 @@ export SOURCE_DATE_EPOCH="$source_date_epoch"
 export SIGNALASI_DEBIAN_ROOTFS_ARCHIVE="$debian_rootfs_archive"
 export SIGNALASI_DEBIAN_ROOTFS_SHA256="$debian_rootfs_sha256"
 make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" signalasi_aarch64_defconfig
-make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" \
-  -j"${SIGNALASI_RUNTIME_BUILD_JOBS:-$(nproc)}"
+echo "Building the SignalASI Linux runtime; full Buildroot output is stored at $build_log"
+if ! make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" \
+  -j"${SIGNALASI_RUNTIME_BUILD_JOBS:-$(nproc)}" >"$build_log" 2>&1; then
+  echo "Buildroot failed. Last 300 log lines:" >&2
+  tail -n 300 "$build_log" >&2
+  exit 1
+fi
+echo "Buildroot completed successfully"
 
 shopt -s nullglob
 kernel_configs=("$output_dir"/build/linux-*/.config)
