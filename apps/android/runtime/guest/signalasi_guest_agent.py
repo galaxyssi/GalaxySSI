@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -484,7 +485,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.3.5",
+                        "guest_version": "1.3.6",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -719,6 +720,31 @@ def runtime_readiness(config: dict[str, Any]) -> tuple[bool, str]:
     except (TypeError, ValueError) as error:
         return False, str(error)
     return True, ""
+
+
+def configure_guest_dns(config: dict[str, Any], target: Path = Path("/etc/resolv.conf")) -> None:
+    raw_servers = config.get("dns_servers")
+    if not isinstance(raw_servers, list) or not 1 <= len(raw_servers) <= 4:
+        raise ValueError("Runtime DNS server list is invalid")
+    servers: list[str] = []
+    for raw_server in raw_servers:
+        if not isinstance(raw_server, str):
+            raise ValueError("Runtime DNS server must be an IPv4 address")
+        try:
+            address = ipaddress.IPv4Address(raw_server)
+        except ipaddress.AddressValueError as error:
+            raise ValueError("Runtime DNS server must be an IPv4 address") from error
+        if not address.is_global:
+            raise ValueError("Runtime DNS server must be globally routable")
+        rendered = str(address)
+        if rendered not in servers:
+            servers.append(rendered)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "".join(f"nameserver {server}\n" for server in servers)
+        + "options timeout:1 attempts:2 rotate\n",
+        encoding="utf-8",
+    )
 
 
 def install_task_network_firewall(config: dict[str, Any]) -> None:
@@ -1014,6 +1040,7 @@ def run_service() -> None:
     synchronize_guest_clock(config)
     mount_persistent_system(config)
     mount_runtime(config)
+    configure_guest_dns(config)
     prepare_persistent_userspace(config)
     if not full_access_enabled(config):
         install_task_network_firewall(config)
