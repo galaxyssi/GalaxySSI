@@ -129,6 +129,36 @@ internal object AgentQemuLaunchPlanBuilder {
     private const val MAX_PACK_SERIAL_CHARS = 20
 }
 
+internal object AgentQemuRuntimeConfigBuilder {
+    fun build(
+        spec: AgentRuntimeEngineLaunchSpec,
+        userNetworkBackendAvailable: Boolean,
+        workspaceUid: Int = android.os.Process.myUid()
+    ): JSONObject = JSONObject()
+        .put("format_version", 1)
+        .put("guest_api_version", AgentRuntimeGuestProtocol.VERSION)
+        .put("host_epoch_millis", System.currentTimeMillis())
+        .put("architecture", spec.architecture)
+        .put("api_channel", "org.signalasi.runtime")
+        .put("workspace_mount_tag", "signalasi_workspaces")
+        .put("workspace_uid", workspaceUid)
+        .put("workspace_gid", workspaceUid)
+        .put("execution_mode", "full_access")
+        .put("execution_principal", "root")
+        .put("network_mode", if (userNetworkBackendAvailable) "host_mediated" else "disabled")
+        .put("packs", JSONArray().apply {
+            spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
+                put(JSONObject()
+                    .put("id", pack.packId)
+                    .put("version", pack.version)
+                    .put("capabilities", JSONArray(pack.capabilities.sorted()))
+                    .put("serial", AgentQemuLaunchPlanBuilder.packSerial(pack.packId))
+                    .put("read_only", true)
+                    .put("device_index", index))
+            }
+        })
+}
+
 class AgentQemuRuntimeEngineController(
     context: Context
 ) : AgentRuntimeEngineController {
@@ -166,7 +196,8 @@ class AgentQemuRuntimeEngineController(
         secureWrite(sessionFile, spec.sessionKey)
         secureWrite(
             configFile,
-            runtimeConfig(spec, userNetworkBackendAvailable).toString().toByteArray(Charsets.UTF_8)
+            AgentQemuRuntimeConfigBuilder.build(spec, userNetworkBackendAvailable)
+                .toString().toByteArray(Charsets.UTF_8)
         )
         val deviceProfile = AgentDeviceProfileDetector.detect(appContext)
         val plan = AgentQemuLaunchPlanBuilder.build(
@@ -229,31 +260,6 @@ class AgentQemuRuntimeEngineController(
             check(pack.imageFile.isFile && pack.imageFile.canRead()) { "Runtime pack image is unavailable: ${pack.packId}" }
         }
     }
-
-    private fun runtimeConfig(
-        spec: AgentRuntimeEngineLaunchSpec,
-        userNetworkBackendAvailable: Boolean
-    ): JSONObject = JSONObject()
-        .put("format_version", 1)
-        .put("guest_api_version", AgentRuntimeGuestProtocol.VERSION)
-        .put("host_epoch_millis", System.currentTimeMillis())
-        .put("architecture", spec.architecture)
-        .put("api_channel", "org.signalasi.runtime")
-        .put("workspace_mount_tag", "signalasi_workspaces")
-        .put("workspace_uid", android.os.Process.myUid())
-        .put("workspace_gid", android.os.Process.myUid())
-        .put("network_mode", if (userNetworkBackendAvailable) "host_mediated" else "disabled")
-        .put("packs", JSONArray().apply {
-            spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
-                put(JSONObject()
-                    .put("id", pack.packId)
-                    .put("version", pack.version)
-                    .put("capabilities", JSONArray(pack.capabilities.sorted()))
-                    .put("serial", AgentQemuLaunchPlanBuilder.packSerial(pack.packId))
-                    .put("read_only", true)
-                    .put("device_index", index))
-            }
-        })
 
     private fun userNetworkBackendAvailable(engineFile: File): Boolean =
         engineFile.parentFile

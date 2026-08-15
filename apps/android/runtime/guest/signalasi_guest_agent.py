@@ -321,6 +321,25 @@ def launcher_plan(
     ]
 
 
+def full_access_enabled(config: dict[str, Any]) -> bool:
+    return (
+        config.get("execution_mode") == "full_access"
+        and config.get("execution_principal") == "root"
+    )
+
+
+def execution_plan(
+    config: dict[str, Any],
+    workspace: Path,
+    limits: ExecutionLimits,
+    command: list[str],
+    allow_network_proxy: bool = False,
+) -> list[str]:
+    if full_access_enabled(config):
+        return command
+    return launcher_plan(config, workspace, limits, command, allow_network_proxy)
+
+
 def prepare_private_directory(path: Path) -> None:
     try:
         path.mkdir(mode=0o700)
@@ -439,7 +458,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.2.3",
+                        "guest_version": "1.3.0",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -448,7 +467,10 @@ class GuestService:
                             "runtime.progress",
                             "runtime.concurrent",
                             "runtime.secret_environment",
+                            "runtime.full_access",
                         ],
+                        "execution_mode": "full_access" if full_access_enabled(self.config) else "restricted",
+                        "execution_principal": "root" if full_access_enabled(self.config) else "workspace",
                     },
                 )
             elif message_type == "heartbeat":
@@ -492,8 +514,10 @@ class GuestService:
                 raise ValueError("Runtime arguments are invalid")
             limits = ExecutionLimits.from_payload(payload)
             network = payload.get("network") or {}
-            environment = runtime_environment()
-            if bool(network.get("enabled")):
+            full_access = full_access_enabled(self.config)
+            command_workspace = workspace if full_access else ISOLATED_WORKSPACE_ROOT
+            environment = runtime_environment(command_workspace, full_access=full_access)
+            if bool(network.get("enabled")) and not full_access:
                 allowed_domains = network.get("allowed_domains") or []
                 if not isinstance(allowed_domains, list) or any(not isinstance(value, str) for value in allowed_domains):
                     raise ValueError("Runtime network allowlist is invalid")
@@ -511,7 +535,7 @@ class GuestService:
             inject_secret_environment(environment, payload.get("secret_environment"))
             commands = command_plan(
                 language,
-                ISOLATED_WORKSPACE_ROOT,
+                command_workspace,
                 [str(value) for value in arguments],
                 environment["PATH"],
             )
@@ -526,7 +550,7 @@ class GuestService:
                         self.send(request_id, "cancelled")
                         return
                     process = subprocess.Popen(
-                        launcher_plan(
+                        execution_plan(
                             self.config,
                             workspace,
                             limits,
@@ -549,14 +573,14 @@ class GuestService:
                             stop_process(process)
                             self.send(request_id, "cancelled")
                             return
-                        if elapsed_ms > limits.wall_clock_ms:
+                        if not full_access and elapsed_ms > limits.wall_clock_ms:
                             stop_process(process)
                             raise TimeoutError("Runtime wall-clock limit exceeded")
                         output_size = stdout_path.stat().st_size + stderr_path.stat().st_size
-                        if output_size > limits.max_output_bytes:
+                        if not full_access and output_size > limits.max_output_bytes:
                             stop_process(process)
                             raise ValueError("Runtime output limit exceeded")
-                        if now >= next_quota_check:
+                        if not full_access and now >= next_quota_check:
                             if bounded_directory_size(workspace, limits.disk_bytes) > limits.disk_bytes:
                                 stop_process(process)
                                 raise ValueError("Runtime workspace limit exceeded")
@@ -590,25 +614,23 @@ class GuestService:
                 self.cancellations.pop(request_id, None)
 
 
-def runtime_environment() -> dict[str, str]:
+def runtime_environment(
+    workspace: Path = ISOLATED_WORKSPACE_ROOT,
+    full_access: bool = False,
+) -> dict[str, str]:
     pack_bins = [str(path) for path in sorted(PACK_ROOT.glob("*/bin")) if path.is_dir()]
-    task_temp = ISOLATED_WORKSPACE_ROOT / ".tmp"
+    task_temp = workspace / ".tmp"
     android_sdk = PACK_ROOT / "android-sdk" / "sdk"
-    return {
-        "HOME": str(ISOLATED_WORKSPACE_ROOT),
+    environment = {
+        "HOME": str(workspace),
         "TMPDIR": str(task_temp),
         "PATH": os.pathsep.join(pack_bins + ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"]),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
-        "PYTHONNOUSERSITE": "1",
         "UV_NO_MODIFY_PATH": "1",
-        "UV_NO_CACHE": "1",
         "UV_PYTHON": "/usr/bin/python3",
-        "UV_PYTHON_DOWNLOADS": "never",
-        "UV_OFFLINE": "1",
         "UV_CACHE_DIR": str(task_temp / "uv-cache"),
         "CARGO_HOME": str(task_temp / "cargo"),
-        "CARGO_NET_OFFLINE": "true",
         "ZIG_GLOBAL_CACHE_DIR": str(task_temp / "zig-global-cache"),
         "ZIG_LOCAL_CACHE_DIR": str(task_temp / "zig-local-cache"),
         "JAVA_HOME": str(PACK_ROOT / "java"),
@@ -621,6 +643,24 @@ def runtime_environment() -> dict[str, str]:
         "ANDROID_HOME": str(android_sdk),
         "ANDROID_SDK_ROOT": str(android_sdk),
     }
+    if full_access:
+        environment.update(
+            {
+                "UV_PYTHON_DOWNLOADS": "automatic",
+                "CARGO_NET_OFFLINE": "false",
+            }
+        )
+    else:
+        environment.update(
+            {
+                "PYTHONNOUSERSITE": "1",
+                "UV_NO_CACHE": "1",
+                "UV_PYTHON_DOWNLOADS": "never",
+                "UV_OFFLINE": "1",
+                "CARGO_NET_OFFLINE": "true",
+            }
+        )
+    return environment
 
 
 def inject_secret_environment(environment: dict[str, str], raw_values: Any) -> None:
@@ -638,6 +678,8 @@ def inject_secret_environment(environment: dict[str, str], raw_values: Any) -> N
 
 
 def runtime_readiness(config: dict[str, Any]) -> tuple[bool, str]:
+    if full_access_enabled(config):
+        return True, ""
     if not LAUNCHER_PATH.is_file() or not os.access(LAUNCHER_PATH, os.X_OK):
         return False, "Runtime sandbox launcher is unavailable"
     try:
@@ -834,7 +876,8 @@ def run_service() -> None:
         raise ValueError("Runtime guest API is incompatible")
     synchronize_guest_clock(config)
     mount_runtime(config)
-    install_task_network_firewall(config)
+    if not full_access_enabled(config):
+        install_task_network_firewall(config)
     while True:
         try:
             channel_path = wait_for_runtime_channel()

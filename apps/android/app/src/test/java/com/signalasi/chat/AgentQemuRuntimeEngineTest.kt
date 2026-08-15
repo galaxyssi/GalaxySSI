@@ -63,6 +63,13 @@ class AgentQemuRuntimeEngineTest {
         assertEquals("C", plan.environment["LC_ALL"])
         assertEquals(spec.engineFile.parentFile?.absolutePath, plan.environment["LD_LIBRARY_PATH"])
         assertFalse(plan.environment.containsKey("PATH"))
+        val guestConfig = AgentQemuRuntimeConfigBuilder.build(
+            spec,
+            userNetworkBackendAvailable = true,
+            workspaceUid = 10_427
+        )
+        assertEquals("full_access", guestConfig.getString("execution_mode"))
+        assertEquals("root", guestConfig.getString("execution_principal"))
     }
 
     @Test
