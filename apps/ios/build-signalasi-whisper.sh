@@ -5,7 +5,8 @@ if [[ "${SIGNALASI_NATIVE_WHISPER:-1}" != "1" ]]; then
   exit 0
 fi
 
-source_dir="${SRCROOT}/apps/android/app/src/main/cpp/whispercpp"
+repo_root="$(cd "${SRCROOT}/../.." && pwd)"
+source_dir="${repo_root}/apps/android/app/src/main/cpp/whispercpp"
 if [[ ! -f "${source_dir}/include/whisper.h" ]]; then
   echo "error: initialize apps/android/app/src/main/cpp/whispercpp before enabling the iOS native Whisper runtime" >&2
   exit 1
@@ -15,7 +16,7 @@ output_dir="${DERIVED_FILE_DIR}/SignalASIWhisperRuntime"
 build_dir="${output_dir}/cmake"
 mkdir -p "${output_dir}"
 
-cmake -S "${SRCROOT}/apps/ios/SignalASIWhisperRuntime" -B "${build_dir}" -G Xcode \
+cmake -S "${SRCROOT}/SignalASIWhisperRuntime" -B "${build_dir}" -G Xcode \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
   -DCMAKE_OSX_ARCHITECTURES="${ARCHS}" \

@@ -2705,7 +2705,7 @@
       outputPaths = ("$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",);
       runOnlyForDeploymentPostprocessing = 0;
       shellPath = /bin/bash;
-      shellScript = "bash \"${SRCROOT}/apps/ios/build-signalasi-llama.sh\"\n";
+      shellScript = "bash \"${SRCROOT}/build-signalasi-llama.sh\"\n";
     };
     A60000000000000000000004 /* Build iOS native Whisper runtime */ = {
       isa = PBXShellScriptBuildPhase;
@@ -2716,7 +2716,7 @@
       outputPaths = ("$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",);
       runOnlyForDeploymentPostprocessing = 0;
       shellPath = /bin/bash;
-      shellScript = "bash \"${SRCROOT}/apps/ios/build-signalasi-whisper.sh\"\n";
+      shellScript = "bash \"${SRCROOT}/build-signalasi-whisper.sh\"\n";
     };
 /* End PBXShellScriptBuildPhase section */
 
