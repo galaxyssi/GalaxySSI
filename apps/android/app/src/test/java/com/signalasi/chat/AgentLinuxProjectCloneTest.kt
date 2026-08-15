@@ -42,6 +42,7 @@ class AgentLinuxProjectCloneTest {
         assertTrue("git -c credential.helper= clone --depth 1 --branch 'main'" in captured.source)
         assertTrue("apt-get -o DPkg::Lock::Timeout=300 install" in captured.source)
         assertTrue("dpkg --configure -a" in captured.source)
+        assertEquals(2, Regex("if ! git_runtime_ready; then").findAll(captured.source).count())
         assertTrue("ca-certificates.crt" in captured.source)
         assertTrue("mkdir -p /root/.cache/tmp" in captured.source)
         assertTrue(".signalasi-runtime/git-askpass.sh" !in captured.source)

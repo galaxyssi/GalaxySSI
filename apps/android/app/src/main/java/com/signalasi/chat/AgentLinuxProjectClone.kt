@@ -74,11 +74,17 @@ internal class AgentLinuxProjectCloneBackend(
             mkdir -p "${'$'}control_dir"
             if test -f /etc/debian_version; then mkdir -p /root/.cache/tmp; fi
             rm -rf "${'$'}clone_dir"
-            if ! command -v git >/dev/null 2>&1 || { test -f /etc/debian_version && test ! -s /etc/ssl/certs/ca-certificates.crt; }; then
+            git_runtime_ready() {
+              command -v git >/dev/null 2>&1 &&
+                { test ! -f /etc/debian_version || test -s /etc/ssl/certs/ca-certificates.crt; }
+            }
+            if ! git_runtime_ready; then
               printf '%s\n' '__SIGNALASI_STAGE__:install_git'
               dpkg --configure -a || apt-get -o DPkg::Lock::Timeout=300 -f install -y
-              apt-get -o DPkg::Lock::Timeout=300 update
-              apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends git ca-certificates openssh-client
+              if ! git_runtime_ready; then
+                apt-get -o DPkg::Lock::Timeout=300 update
+                apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends git ca-certificates openssh-client
+              fi
             fi
             cat > "${'$'}askpass" <<'SIGNALASI_ASKPASS'
             #!/bin/sh
