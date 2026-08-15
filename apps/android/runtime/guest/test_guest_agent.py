@@ -225,6 +225,10 @@ class GuestProtocolTest(unittest.TestCase):
         )
         self.assertEqual(str(guest.PACK_ROOT / "java"), environment["JAVA_HOME"])
         self.assertEqual(str(guest.PACK_ROOT / "gradle"), environment["GRADLE_HOME"])
+        self.assertEqual(
+            str(guest.PACK_ROOT / "python-uv" / "bin" / "python3"),
+            environment["UV_PYTHON"],
+        )
         self.assertEqual(str(task_temp / "gradle"), environment["GRADLE_USER_HOME"])
         self.assertEqual(str(guest.PACK_ROOT / "android-sdk" / "sdk"), environment["ANDROID_HOME"])
         self.assertEqual(environment["ANDROID_HOME"], environment["ANDROID_SDK_ROOT"])

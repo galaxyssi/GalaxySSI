@@ -658,7 +658,7 @@ def runtime_environment(
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "UV_NO_MODIFY_PATH": "1",
-        "UV_PYTHON": "/usr/bin/python3",
+        "UV_PYTHON": str(PACK_ROOT / "python-uv" / "bin" / "python3"),
         "UV_CACHE_DIR": str(task_temp / "uv-cache"),
         "CARGO_HOME": str(task_temp / "cargo"),
         "ZIG_GLOBAL_CACHE_DIR": str(task_temp / "zig-global-cache"),
