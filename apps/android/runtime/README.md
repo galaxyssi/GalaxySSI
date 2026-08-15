@@ -62,7 +62,7 @@ with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from
 It depends on the Java pack, exposes a Gradle AAPT2 override inside the Guest, and is not embedded in
 the APK. Users install it from the signed software catalog when a phone-local Android build needs it.
 
-`linux-base` 1.2.2 adds actionable firewall diagnostics while retaining authenticated allowlisted task networking and the in-kernel reject target
+`linux-base` 1.2.3 verifies the final kernel contains the complete legacy reject path, while retaining actionable firewall diagnostics and authenticated allowlisted task networking
 and visible bootstrap failures while retaining negotiated
 `runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for
