@@ -133,6 +133,8 @@ class AgentMobileProjectDeviceTest {
 
     @Test
     fun clonesRepositoryDirectlyInsideThePersistentPhoneLinuxRuntime() {
+        val runtime = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
+        assertEquals(runtime.reason, AgentRuntimeLifecyclePhase.READY, runtime.phase)
         val workspaceId = "linux-clone-${UUID.randomUUID()}"
         val projects = File(context.filesDir, "agent-native-workspaces")
         val project = File(projects, workspaceId).apply {

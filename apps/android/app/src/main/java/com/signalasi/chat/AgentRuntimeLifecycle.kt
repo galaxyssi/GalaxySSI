@@ -439,7 +439,8 @@ object AgentOnDeviceRuntimeLifecycle {
     private fun store(context: Context): AgentRuntimeLifecycleStore = stateStore
         ?: AgentRuntimeLifecycleStore(context.applicationContext).also { stateStore = it }
 
-    private const val STARTUP_TIMEOUT_MILLIS = 30_000L
+    // First boot formats the sparse system disk and extracts the persistent userspace.
+    private const val STARTUP_TIMEOUT_MILLIS = 3 * 60_000L
     private const val HEALTH_POLL_MILLIS = 200L
     private const val DEFAULT_AUTO_ATTEMPTS = 3
     private const val MAX_AUTO_ATTEMPTS = 8

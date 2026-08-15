@@ -40,6 +40,8 @@ class AgentLinuxGithubVpnDeviceTest {
 
     @Test
     fun clonesPublicGithubRepositoryInsidePhoneLinuxGuest() {
+        val runtime = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
+        assertEquals(runtime.reason, AgentRuntimeLifecyclePhase.READY, runtime.phase)
         val workspaceId = project.name
         val manager = AgentOnDeviceRuntimeManager(context)
         val repository = AgentMobileProjectRepository(
