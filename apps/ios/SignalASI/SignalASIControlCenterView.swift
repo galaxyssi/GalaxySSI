@@ -665,7 +665,7 @@ struct SignalASIControlCenterView: View {
       store.agentSafetySettings.permissionMode.displayTitle,
       store.agentSafetySettings.permissionMode.displayTitle
     )
-    return "\(t(\"cc_task_execution_mode_title\", \"Task execution\")): \(executionMode) / \(t(\"on_device_agent_permission_mode\", \"Execution Mode\")): \(permissionMode)"
+    return "\(t("cc_task_execution_mode_title", "Task execution")): \(executionMode) / \(t("on_device_agent_permission_mode", "Execution Mode")): \(permissionMode)"
   }
 
   private var executionPolicyTint: Color {

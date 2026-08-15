@@ -1434,10 +1434,10 @@ private struct SignalASIRichBlockView: View {
     artifactDownloadRequested = true
     artifactDownloadTimedOut = false
     Task { @MainActor in
-      if !await coordinator.requestDesktopArtifactDownload(
+      if !(await coordinator.requestDesktopArtifactDownload(
         block: block,
         forceRedelivery: retryingTimedOutRequest
-      ) {
+      )) {
         guard artifactDownloadRequestID == requestID else { return }
         artifactDownloadRequested = false
         artifactDownloadError = coordinator.lastError.ifBlank(

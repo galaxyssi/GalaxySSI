@@ -762,9 +762,9 @@ struct SignalASILocalModelHubArtifactView: View {
     case .downloading, .paused:
       return "\(progress.percent)% - \(formatBytes(progress.bytesDownloaded)) / \(formatBytes(artifact.sizeBytes)) - \(details)"
     case .verifying:
-      return "\(t(\"signalasi.local_model.download_verifying\", \"Verifying\")) - \(details)"
+      return "\(t("signalasi.local_model.download_verifying", "Verifying")) - \(details)"
     case .installing:
-      return "\(t(\"signalasi.local_model.download_installing\", \"Installing\")) - \(details)"
+      return "\(t("signalasi.local_model.download_installing", "Installing")) - \(details)"
     case .notInstalled, .ready, .failed:
       return details + failure
     }

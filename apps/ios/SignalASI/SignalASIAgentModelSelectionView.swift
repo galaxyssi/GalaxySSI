@@ -388,6 +388,7 @@ struct SignalASIAgentModelSelectionView: View {
               AddContactView(autoOpenScanner: true)
             }
           }
+          }
           .padding(.horizontal, 12)
           .padding(.top, 12)
           .padding(.bottom, 18)
