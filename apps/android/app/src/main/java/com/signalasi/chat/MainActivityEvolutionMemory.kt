@@ -897,7 +897,10 @@ internal fun MainActivity.renderControlCenterRuntimePage() {
             } else {
                 "runtime.auto_install:${pack.id}"
             },
-            title = runtimePackTitle(pack.id),
+            title = RuntimePackDisplayPolicy.installedTitle(
+                runtimePackTitle(pack.id),
+                pack.manifest?.version.takeIf { pack.state == AgentRuntimePackState.READY }
+            ),
             subtitle = catalogEntry?.let { entry ->
                 getString(
                     R.string.cc_runtime_catalog_pack_subtitle,
