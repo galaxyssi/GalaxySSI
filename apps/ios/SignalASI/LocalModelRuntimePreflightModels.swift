@@ -374,8 +374,8 @@ enum LocalModelRuntimeProfiles {
     keyValueHeadCount: 8,
     headDimension: 64,
     maximumContextTokens: 4_096,
-    defaultContextTokens: 2_048,
     quantizationLabel: "W4A8",
+    defaultContextTokens: 2_048,
     defaultNoThink: true,
     preferredAccelerator: .vendorSDK,
     sourceTrust: .curated,
@@ -395,8 +395,8 @@ enum LocalModelRuntimeProfiles {
     keyValueHeadCount: 8,
     headDimension: 128,
     maximumContextTokens: 32_768,
-    defaultContextTokens: 2_048,
     quantizationLabel: "Q4_0",
+    defaultContextTokens: 2_048,
     defaultNoThink: true,
     preferredAccelerator: .vendorSDK
   )
@@ -413,8 +413,8 @@ enum LocalModelRuntimeProfiles {
     keyValueHeadCount: 8,
     headDimension: 128,
     maximumContextTokens: 4_096,
-    defaultContextTokens: 4_096,
     quantizationLabel: "W4A16",
+    defaultContextTokens: 4_096,
     defaultNoThink: true,
     preferredAccelerator: .vendorSDK,
     sourceTrust: .curated,
@@ -434,8 +434,8 @@ enum LocalModelRuntimeProfiles {
     keyValueHeadCount: 8,
     headDimension: 128,
     maximumContextTokens: 128_000,
-    defaultContextTokens: 2_048,
     quantizationLabel: "Q4_0",
+    defaultContextTokens: 2_048,
     visionCapable: true,
     preferredAccelerator: .vendorSDK
   )
