@@ -1,25 +1,8 @@
 import SwiftUI
 
-private struct AgentTranscriptScrollMetrics: Equatable {
-  var contentMinY: CGFloat = 0
-  var contentMaxY: CGFloat = 0
-  var viewportHeight: CGFloat = 0
-}
-
-private struct AgentTranscriptScrollMetricsKey: PreferenceKey {
-  static let defaultValue = AgentTranscriptScrollMetrics()
-
-  static func reduce(
-    value: inout AgentTranscriptScrollMetrics,
-    nextValue: () -> AgentTranscriptScrollMetrics
-  ) {
-    value = nextValue()
-  }
-}
+private let signalASIAgentTranscriptCoordinateSpace = "signalasi-agent-transcript"
 
 struct SignalASIAgentTranscriptScrollView<Content: View>: View {
-  private static let coordinateSpaceName = "signalasi-agent-transcript"
-
   @Binding var visibleMessageLimit: Int
   @Binding var olderTranscriptAnchor: UUID?
   @Binding var transcriptTopLoadTriggered: Bool
@@ -125,9 +108,9 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
                     key: AgentTranscriptScrollMetricsKey.self,
                     value: AgentTranscriptScrollMetrics(
                       contentMinY: contentGeometry
-                        .frame(in: .named(Self.coordinateSpaceName)).minY,
+                        .frame(in: .named(signalASIAgentTranscriptCoordinateSpace)).minY,
                       contentMaxY: contentGeometry
-                        .frame(in: .named(Self.coordinateSpaceName)).maxY,
+                        .frame(in: .named(signalASIAgentTranscriptCoordinateSpace)).maxY,
                       viewportHeight: viewport.size.height
                     )
                   )
@@ -227,7 +210,7 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
           return
         }
         withAnimation(reduceMotion ? nil : Animation.default) {
-          proxy.scrollTo(latestWaitingIndicatorID ?? last.id, anchor: .bottom)
+          proxy.scrollTo(latestWaitingIndicatorID ?? last.id.uuidString, anchor: .bottom)
         }
       }
       .onChange(of: voiceTranscriptionPending) { pending in
@@ -248,7 +231,7 @@ struct SignalASIAgentTranscriptScrollView<Content: View>: View {
           proxy.scrollTo(replyWaitingViewID, anchor: .bottom)
         }
       }
-      .coordinateSpace(name: Self.coordinateSpaceName)
+      .coordinateSpace(name: signalASIAgentTranscriptCoordinateSpace)
       .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
         transcriptContentMinY = metrics.contentMinY
         let atTop = metrics.contentMinY >= -8

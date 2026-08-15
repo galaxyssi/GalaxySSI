@@ -35,7 +35,7 @@ final class MessageCoordinator: ObservableObject {
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let connectorResponseBus: AgentConnectorResponseBus
   private let richContentMaterializer: AgentRichContentMaterializer
-  fileprivate let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
+  let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
   let signalEngine: SignalASISignalEngine
@@ -92,9 +92,9 @@ final class MessageCoordinator: ObservableObject {
     availableNativeToolIds: Array(AgentPhoneNativeToolCatalog.defaultToolIds)
   )
   let mqttClient: SignalASIMqttClient
-  fileprivate var outboxRetryTask: Task<Void, Never>?
-  fileprivate var outboxFlushInProgress = false
-  fileprivate var outboxFlushRequested = false
+  var outboxRetryTask: Task<Void, Never>?
+  var outboxFlushInProgress = false
+  var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
@@ -104,7 +104,7 @@ final class MessageCoordinator: ObservableObject {
   private var lastConnectorStatusRequestAtMillis: Int64 = 0
   private var lastCapabilityManifestRequestAtMillis: Int64 = 0
   private let transportEpoch = "v10-peer-message-uuid"
-  fileprivate static let maximumOutboxDeliveryAttempts = 6
+  static let maximumOutboxDeliveryAttempts = 6
   private static let automationBackgroundTaskIdentifier = "com.signalasi.ios.automation.refresh"
   private static let connectorStatusRequestThrottleMillis: Int64 = 5_000
   private static let capabilityManifestRequestThrottleMillis: Int64 = 15_000
@@ -1420,7 +1420,7 @@ final class MessageCoordinator: ObservableObject {
     store.setAgentSessionSelectedModelOrAgent(id: conversation, label: label)
   }
 
-  fileprivate func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
+  func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
     var handled = Set<String>()
     for failure in failures {
       let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
