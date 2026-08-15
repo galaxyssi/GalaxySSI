@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +37,29 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("explain what changed"))
         assertTrue(prompt.contains("why the next approach differs"))
         assertTrue(prompt.contains("Gradle dependency resolution failed"))
+    }
+
+    @Test
+    fun `visible fallback summary follows the user goal language`() {
+        val chineseRequest = request("在手机上修复这个项目并运行测试")
+        val englishRequest = request("Fix this project on the phone and run its tests")
+
+        assertEquals(
+            "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。",
+            AgentSupervisedProjectLoop.visibleSummary(
+                chineseRequest,
+                english = "The model response was not executable.",
+                chinese = "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。"
+            )
+        )
+        assertEquals(
+            "The model response was not executable.",
+            AgentSupervisedProjectLoop.visibleSummary(
+                englishRequest,
+                english = "The model response was not executable.",
+                chinese = "模型返回的计划暂时无法执行。"
+            )
+        )
     }
 
     private fun request(goal: String): AgentRequest {
