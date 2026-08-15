@@ -439,7 +439,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.2.1",
+                        "guest_version": "1.2.2",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -657,25 +657,45 @@ def install_task_network_firewall(config: dict[str, Any]) -> None:
         ["iptables", "-w", "-A", "SIGNALASI_TASK_OUT", "-j", "REJECT"],
     )
     for index, command in enumerate(commands):
-        result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        result = run_firewall_command(command)
         if result.returncode != 0 and index != 0:
-            raise RuntimeError("Runtime task network firewall is unavailable")
-    check = subprocess.run(
-        [
-            "iptables", "-w", "-C", "OUTPUT", "-m", "owner", "--uid-owner", str(workspace_uid),
-            "-j", "SIGNALASI_TASK_OUT",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+            raise RuntimeError(firewall_command_failure(command, result))
+    check_command = [
+        "iptables", "-w", "-C", "OUTPUT", "-m", "owner", "--uid-owner", str(workspace_uid),
+        "-j", "SIGNALASI_TASK_OUT",
+    ]
+    check = run_firewall_command(check_command)
     if check.returncode != 0:
-        subprocess.run(
-            [
-                "iptables", "-w", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", str(workspace_uid),
-                "-j", "SIGNALASI_TASK_OUT",
-            ],
-            check=True,
-        )
+        insert_command = [
+            "iptables", "-w", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", str(workspace_uid),
+            "-j", "SIGNALASI_TASK_OUT",
+        ]
+        inserted = run_firewall_command(insert_command)
+        if inserted.returncode != 0:
+            raise RuntimeError(firewall_command_failure(insert_command, inserted))
+
+
+def run_firewall_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
+def firewall_command_failure(
+    command: list[str],
+    result: subprocess.CompletedProcess[str],
+) -> str:
+    diagnostic = (result.stderr or result.stdout or "no diagnostic output").strip()
+    diagnostic = re.sub(r"\s+", " ", diagnostic)[:512]
+    rendered_command = " ".join(command)
+    return (
+        "Runtime task network firewall is unavailable: "
+        f"{rendered_command} failed with exit {result.returncode}: {diagnostic}"
+    )
 
 
 def mount_runtime(config: dict[str, Any]) -> None:

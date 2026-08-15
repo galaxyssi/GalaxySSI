@@ -209,12 +209,12 @@ class GuestProtocolTest(unittest.TestCase):
 
     def test_task_network_firewall_blocks_direct_egress_for_the_sandbox_uid(self):
         completed = [
-            mock.Mock(returncode=0),
-            mock.Mock(returncode=0),
-            mock.Mock(returncode=0),
-            mock.Mock(returncode=0),
-            mock.Mock(returncode=1),
-            mock.Mock(returncode=0),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=1, stdout="", stderr="rule missing"),
+            mock.Mock(returncode=0, stdout="", stderr=""),
         ]
         with mock.patch.object(guest.subprocess, "run", side_effect=completed) as run:
             guest.install_task_network_firewall({"workspace_uid": 10123})
@@ -226,6 +226,20 @@ class GuestProtocolTest(unittest.TestCase):
         )
         self.assertEqual("-I", commands[-1][2])
         self.assertIn("10123", commands[-1])
+
+    def test_task_network_firewall_reports_the_failed_command_and_kernel_diagnostic(self):
+        completed = [
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=3, stdout="", stderr="iptables: Table does not exist\n"),
+        ]
+        with (
+            mock.patch.object(guest.subprocess, "run", side_effect=completed),
+            self.assertRaisesRegex(
+                RuntimeError,
+                r"iptables -w -F SIGNALASI_TASK_OUT failed with exit 3: iptables: Table does not exist",
+            ),
+        ):
+            guest.install_task_network_firewall({"workspace_uid": 10123})
 
     def test_runtime_channel_is_discovered_without_udev_named_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
