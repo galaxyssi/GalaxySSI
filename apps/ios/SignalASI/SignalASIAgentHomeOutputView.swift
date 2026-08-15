@@ -299,7 +299,6 @@ extension AgentHomeView {
           }
         }
       }
-    )
   }
 
 }

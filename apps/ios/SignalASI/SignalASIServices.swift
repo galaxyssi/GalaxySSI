@@ -4302,7 +4302,7 @@ final class MessageCoordinator: ObservableObject {
     }
     localReply(
       english: "\(title) (\(count)):",
-      chinese: "\(chineseTitle)\uff08\(count)\uff09\uff1a"
+      chinese: "\(chineseTitle)\u{ff08}\(count)\u{ff09}\u{ff1a}"
     )
   }
 
@@ -4582,7 +4582,7 @@ final class MessageCoordinator: ObservableObject {
         retryableAction.evidence = task.verification
         task.pendingActions.insert(retryableAction, at: 0)
         task.pendingAction = retryableAction
-        task.executionLog.append("Native tool \(action.parameters[\"tool_id\"] ?? action.target): retained for retry")
+        task.executionLog.append("Native tool \(action.parameters["tool_id"] ?? action.target): retained for retry")
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
       }

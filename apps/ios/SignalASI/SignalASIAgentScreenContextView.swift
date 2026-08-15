@@ -289,7 +289,7 @@ enum SignalASIAgentScreenContextSnapshotBuilder {
         command: sensitive
           ? nil
           : replyAvailable
-            ? "reply notification \(item.packageName.ifBlank(\"SignalASI\")) :: "
+            ? "reply notification \(item.packageName.ifBlank("SignalASI")) :: "
             : "read notifications",
         isNotice: sensitive
       )

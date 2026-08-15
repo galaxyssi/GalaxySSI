@@ -59,7 +59,7 @@ enum AgentPersonalDataCommandRouter {
         text: localized(
           store: store,
           english: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; ask knowledge <query>; forget knowledge <query>.",
-          chinese: "\u{8bb0}\u{5fc6}\u{547d}\u{4ee4}\uff1a\u{8bb0}\u{5fc6}\u{72b6}\u{6001}\uff1b\u{8bb0}\u{4f4f} <\u{5185}\u{5bb9}>\uff1b\u{5220}\u{9664}\u{8bb0}\u{5fc6} <\u{5173}\u{952e}\u{8bcd}>\uff1b\u{6682}\u{505c}\u{8bb0}\u{5fc6}\uff1b\u{6062}\u{590d}\u{8bb0}\u{5fc6}\u{3002}\u{77e5}\u{8bc6}\u{5e93}\u{547d}\u{4ee4}\uff1a\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}\uff1b\u{641c}\u{7d22}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\uff1b\u{8be2}\u{95ee}\u{77e5}\u{8bc6} <\u{95ee}\u{9898}>\uff1b\u{5220}\u{9664}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{3002"
+          chinese: "\u{8bb0}\u{5fc6}\u{547d}\u{4ee4}\u{ff1a}\u{8bb0}\u{5fc6}\u{72b6}\u{6001}\u{ff1b}\u{8bb0}\u{4f4f} <\u{5185}\u{5bb9}>\u{ff1b}\u{5220}\u{9664}\u{8bb0}\u{5fc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{6682}\u{505c}\u{8bb0}\u{5fc6}\u{ff1b}\u{6062}\u{590d}\u{8bb0}\u{5fc6}\u{3002}\u{77e5}\u{8bc6}\u{5e93}\u{547d}\u{4ee4}\u{ff1a}\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}\u{ff1b}\u{641c}\u{7d22}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{8be2}\u{95ee}\u{77e5}\u{8bc6} <\u{95ee}\u{9898}>\u{ff1b}\u{5220}\u{9664}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{3002"
         ),
         actionId: "personal_data_syntax"
       )
@@ -115,7 +115,7 @@ enum AgentPersonalDataCommandRouter {
     var lines = [localized(
       store: store,
       english: "Personal memory: \(snapshot.activeCount); conflicts=\(snapshot.conflicts.count); capture=\(store.agentSafetySettings.memoryCapture ? "on" : "paused")",
-      chinese: "\u{4e2a}\u{4eba}\u{8bb0}\u{5fc6}\uff1a\(snapshot.activeCount) \u{6761}\uff1b\u{51b2}\u{7a81}=\(snapshot.conflicts.count)\uff1b\u{6355}\u{83b7}=\(store.agentSafetySettings.memoryCapture ? "\u{5f00}\u{542f}" : "\u{6682}\u{505c}")"
+      chinese: "\u{4e2a}\u{4eba}\u{8bb0}\u{5fc6}\u{ff1a}\(snapshot.activeCount) \u{6761}\u{ff1b}\u{51b2}\u{7a81}=\(snapshot.conflicts.count)\u{ff1b}\u{6355}\u{83b7}=\(store.agentSafetySettings.memoryCapture ? "\u{5f00}\u{542f}" : "\u{6682}\u{505c}")"
     )]
     if recent.isEmpty {
       lines.append(localized(store: store, english: "No saved memories", chinese: "\u{6ca1}\u{6709}\u{5df2}\u{4fdd}\u{5b58}\u{7684}\u{8bb0}\u{5fc6}"))
@@ -133,7 +133,7 @@ enum AgentPersonalDataCommandRouter {
     var lines = [localized(
       store: store,
       english: "Knowledge base: \(stats.itemCount) items; sources=\(stats.sourceCount)",
-      chinese: "\u{77e5}\u{8bc6}\u{5e93}\uff1a\(stats.itemCount) \u{6761}\uff1b\u{6765}\u{6e90}=\(stats.sourceCount)"
+      chinese: "\u{77e5}\u{8bc6}\u{5e93}\u{ff1a}\(stats.itemCount) \u{6761}\u{ff1b}\u{6765}\u{6e90}=\(stats.sourceCount)"
     )]
     if groups.isEmpty {
       lines.append(localized(store: store, english: "No knowledge items", chinese: "\u{6ca1}\u{6709}\u{77e5}\u{8bc6}\u{6761}\u{76ee}"))
@@ -193,17 +193,19 @@ enum AgentPersonalDataCommandRouter {
       )
     }
     let lines = hits.enumerated().flatMap { index, hit in
+      let sourceTitle = localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}")
+      let excerptTitle = localized(store: store, english: "Excerpt", chinese: "\u{6458}\u{8981}")
       [
         "[\(index + 1)] \(compact(hit.item.title, limit: 100))",
-        "\(localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}"): \(sourceLabel(hit.item.source))",
-        "\(localized(store: store, english: "Excerpt", chinese: "\u{6458}\u{8981}"): \(compact(hit.excerpt, limit: 320))"
+        "\(sourceTitle): \(sourceLabel(hit.item.source))",
+        "\(excerptTitle): \(compact(hit.excerpt, limit: 320))"
       ]
     }
     return Result(
       text: localized(
         store: store,
         english: "Knowledge hits: \(hits.count)\n\(lines.joined(separator: "\n"))",
-        chinese: "\u{77e5}\u{8bc6}\u{5339}\u{914d}\uff1a\(hits.count)\n\(lines.joined(separator: "\n"))"
+        chinese: "\u{77e5}\u{8bc6}\u{5339}\u{914d}\u{ff1a}\(hits.count)\n\(lines.joined(separator: "\n"))"
       ),
       actionId: "knowledge_search"
     )
@@ -235,7 +237,7 @@ enum AgentPersonalDataCommandRouter {
           ? "Matching knowledge exists, but its access policy does not allow this local answer."
           : "No knowledge evidence for \"\(query)\"",
         chinese: rag.blockedMatchCount > 0
-          ? "\u{5b58}\u{5728}\u{5339}\u{914d}\u{7684}\u{77e5}\u{8bc6}\uff0c\u{4f46}\u{5176}\u{8bbf}\u{95ee}\u{7b56}\u{7565}\u{4e0d}\u{5141}\u{8bb8}\u{672c}\u{5730}\u{56de}\u{7b54}\u{3002}"
+          ? "\u{5b58}\u{5728}\u{5339}\u{914d}\u{7684}\u{77e5}\u{8bc6}\u{ff0c}\u{4f46}\u{5176}\u{8bbf}\u{95ee}\u{7b56}\u{7565}\u{4e0d}\u{5141}\u{8bb8}\u{672c}\u{5730}\u{56de}\u{7b54}\u{3002}"
           : "\u{6ca1}\u{6709}\u{5173}\u{4e8e}\u{201c}\(query)\u{201d}\u{7684}\u{77e5}\u{8bc6}\u{8bc1}\u{636e}"
       )
       return Result(
@@ -244,17 +246,20 @@ enum AgentPersonalDataCommandRouter {
       )
     }
     let lines = rag.citations.flatMap { citation in
+      let sourceTitle = localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}")
+      let evidenceTitle = localized(store: store, english: "Evidence", chinese: "\u{8bc1}\u{636e}")
+      let evidenceMode = evidenceModeLabel(citation.evidenceMode, store: store)
       [
         "[\(citation.index)] \(compact(citation.title, limit: 100))",
-        "\(localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}"): \(citation.source)",
-        "\(localized(store: store, english: "Evidence", chinese: "\u{8bc1}\u{636e}") (\(evidenceModeLabel(citation.evidenceMode, store: store))): \(compact(citation.excerpt, limit: 420))"
+        "\(sourceTitle): \(citation.source)",
+        "\(evidenceTitle) (\(evidenceMode)): \(compact(citation.excerpt, limit: 420))"
       ]
     }
     return Result(
       text: localized(
         store: store,
         english: "Knowledge answer from local evidence for \"\(compact(query, limit: 160))\":\n\(lines.joined(separator: "\n"))",
-        chinese: "\u{57fa}\u{4e8e}\u{672c}\u{5730}\u{77e5}\u{8bc6}\u{5bf9}\u{201c}\(compact(query, limit: 160))\u{201d}\u{7684}\u{56de}\u{7b54}\uff1a\n\(lines.joined(separator: "\n"))"
+        chinese: "\u{57fa}\u{4e8e}\u{672c}\u{5730}\u{77e5}\u{8bc6}\u{5bf9}\u{201c}\(compact(query, limit: 160))\u{201d}\u{7684}\u{56de}\u{7b54}\u{ff1a}\n\(lines.joined(separator: "\n"))"
       ),
       actionId: "knowledge_answer"
     )
