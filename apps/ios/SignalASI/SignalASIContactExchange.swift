@@ -351,6 +351,7 @@ enum SignalASIContactExchange {
     let publicKeyFingerprint = Data(base64Encoded: publicKey).map { key in
       SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
     } ?? ""
+    let createdAtMillis = (card["created_at"] as? NSNumber)?.int64Value ?? 0
     guard card.string("type") == contactType,
           card.int("version") == version,
           idMatches,
@@ -363,7 +364,7 @@ enum SignalASIContactExchange {
           publicKeyFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame,
           SignalASILinkProtocol.validRouteId(routeId),
           topic == expectedTopic,
-          card.int64("created_at") > 0,
+          createdAtMillis > 0,
           signature.count >= 40,
           signature.count <= 256,
           SignalASISignalEngine.verifyContactCard(
