@@ -88,8 +88,8 @@ struct SignalASIAgentHomeEmptyStatePanel: View {
       routeReady: routeReady,
       onOpenRouteSelection: onOpenRouteSelection,
       onScreenCommand: onScreenCommand,
-      onRefreshScreenContext: onRefreshScreenContext,
-      t: t
+      t: t,
+      onRefreshScreenContext: onRefreshScreenContext
     )
   }
 }

@@ -83,11 +83,11 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
       .hidden()
       NavigationLink(
         destination: SignalASIAgentScreenContextDetailView(
-          screen: screen,
-          sections: screenSections,
-          onCommand: onScreenCommand,
-          onRefresh: onRefreshScreen,
-          t: t
+            screen: screen,
+            sections: screenSections,
+            onCommand: onScreenCommand,
+            t: t,
+            onRefresh: onRefreshScreen
         ),
         isActive: $agentScreenContextShortcutActive
       ) {

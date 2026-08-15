@@ -139,11 +139,11 @@ struct SignalASIAgentHomeReadinessView: View {
         separator
         NavigationLink(
           destination: SignalASIAgentScreenContextDetailView(
-            screen: screen,
-            sections: screenSections,
-            onCommand: onScreenCommand,
-            onRefresh: onRefreshScreenContext,
-            t: t
+              screen: screen,
+              sections: screenSections,
+              onCommand: onScreenCommand,
+              t: t,
+              onRefresh: onRefreshScreenContext
           )
         ) {
           infoNavigationRow(

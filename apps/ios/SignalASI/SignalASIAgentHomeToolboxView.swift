@@ -141,11 +141,6 @@ struct SignalASIAgentHomeToolboxView: View {
   }
 
   private func example(for tool: AgentNativeToolDescriptor) -> String? {
-    if let declaredExample = tool.examples
-      .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
-      .first(where: { !$0.isEmpty }) {
-      return declaredExample
-    }
     let id = tool.id.lowercased()
     switch true {
     case id.hasSuffix(".read.screen"):

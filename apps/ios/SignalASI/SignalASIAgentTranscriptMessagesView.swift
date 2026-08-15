@@ -146,13 +146,13 @@ struct SignalASIAgentTranscriptMessagesView: View {
         timelineActionTitle: timelineActionTitle,
         timelineActionIcon: timelineActionIcon,
         timelineActionMenuTitle: t("signalasi.agent.task_control.title", "Task controls"),
+        onTimelineAction: { action in
+          onTimelineAction(action, task)
+        },
         canCancel: AgentTaskCenterPolicy.cancellable(task),
         cancelTitle: t("signalasi.agent.task_control.cancel", "Cancel task"),
         onCancel: {
           onCancelAgentTask(task)
-        },
-        onTimelineAction: { action in
-          onTimelineAction(action, task)
         }
       )
     } else if let remoteTask = remoteAgentTask(message) {

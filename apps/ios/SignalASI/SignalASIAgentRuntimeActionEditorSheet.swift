@@ -109,7 +109,7 @@ struct SignalASIAgentRuntimeActionEditorSheet: View {
           Button(t("common_save", "Save")) {
             save()
           }
-          .fontWeight(.semibold)
+          .font(.body.weight(.semibold))
         }
       }
       .alert(

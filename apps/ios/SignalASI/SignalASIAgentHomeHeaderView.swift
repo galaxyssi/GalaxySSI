@@ -39,7 +39,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
           brandButton(compact: compact)
           Spacer(minLength: compact ? 3 : 8)
           sessionNavigation
-            .frame(width: modelColumnWidth, minHeight: 44, alignment: .trailing)
+            .frame(minWidth: modelColumnWidth, maxWidth: modelColumnWidth, minHeight: 44, alignment: .trailing)
           settingsButton
         }
         .padding(.horizontal, compact ? 10 : 12)

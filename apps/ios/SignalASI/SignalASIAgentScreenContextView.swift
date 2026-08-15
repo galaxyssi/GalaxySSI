@@ -973,8 +973,8 @@ struct SignalASIAgentScreenContextDetailView: View {
           screen: screen,
           sections: sections,
           onCommand: onCommand,
-          onRefresh: onRefresh,
           t: t,
+          onRefresh: onRefresh,
           expandedByDefault: true
         )
 
