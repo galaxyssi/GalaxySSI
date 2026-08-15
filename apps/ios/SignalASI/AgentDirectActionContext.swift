@@ -40,9 +40,3 @@ extension AgentPlan {
     return copy
   }
 }
-
-private extension String {
-  func ifBlank(_ fallback: String) -> String {
-    trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : self
-  }
-}

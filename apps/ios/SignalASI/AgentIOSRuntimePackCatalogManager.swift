@@ -96,7 +96,7 @@ final class AgentIOSRuntimePackCatalogManager {
         verifier: signatureVerifier
       )
     }
-    let candidates = (url.map { [$0] } ?? AgentRuntimeDistributionSources.catalogCandidates(languageTag))
+    let candidates = (url.map { [$0] } ?? AgentRuntimeDistributionSources.catalogCandidates(languageTag: languageTag))
       .filter { !$0.isEmpty }
     var lastError: Error?
     for candidate in candidates {
@@ -184,10 +184,15 @@ final class AgentIOSRuntimePackCatalogManager {
   func downloadAndInstall(
     entry: AgentRuntimePackCatalogEntry,
     checkpoint: () throws -> Void = {},
-    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = {},
-    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = {}
+    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
+    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
-    let verifiedCatalog = cachedVerified() ?? (try refresh(checkpoint: checkpoint))
+    let verifiedCatalog: AgentRuntimePackCatalog
+    if let cached = cachedVerified() {
+      verifiedCatalog = cached
+    } else {
+      verifiedCatalog = try refresh(checkpoint: checkpoint)
+    }
     let plan = try installationPlan(for: entry, catalog: verifiedCatalog)
     var results: [AgentRuntimePackInstallResult] = []
     for item in plan {
@@ -237,10 +242,15 @@ final class AgentIOSRuntimePackCatalogManager {
   func install(
     packId: String,
     checkpoint: () throws -> Void = {},
-    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = {},
-    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = {}
+    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
+    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
-    let catalog = cachedVerified() ?? (try refresh(checkpoint: checkpoint))
+    let catalog: AgentRuntimePackCatalog
+    if let cached = cachedVerified() {
+      catalog = cached
+    } else {
+      catalog = try refresh(checkpoint: checkpoint)
+    }
     guard let entry = AgentRuntimePackCatalogPolicy.compatibleEntries(
       in: catalog,
       hostVersionCode: hostVersionCode
@@ -285,11 +295,11 @@ final class AgentIOSRuntimePackCatalogManager {
     session.invalidateAndCancel()
     try checkpoint()
     if let error = delegate.error { throw error }
+    let data = delegate.data
     guard let response = delegate.response as? HTTPURLResponse,
           (200..<300).contains(response.statusCode),
           let finalURL = response.url,
           (try? AgentRuntimePackCatalogPolicy.validateHTTPSURL(finalURL.absoluteString)) != nil,
-          let data = delegate.data,
           !data.isEmpty,
           data.count <= AgentIOSRuntimePackCatalogStore.maximumCatalogBytes else {
       throw AgentRuntimePackArchiveError("Runtime catalog response is invalid")

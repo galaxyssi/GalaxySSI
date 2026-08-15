@@ -23,7 +23,7 @@ final class AgentIOSRuntimePackInstaller {
 
   func install(
     source: URL,
-    onProgress: (AgentRuntimePackInstallProgress) -> Void = {}
+    onProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> AgentRuntimePackInstallResult {
     try fileManager.createDirectory(at: packsRootURL, withIntermediateDirectories: true)
     let sourceBytes = try fileSize(source)

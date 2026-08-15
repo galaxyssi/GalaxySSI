@@ -495,7 +495,7 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
       if !execution.isSuccess, let error = execution.error {
         var details = error.details
         details["checkpoint_id"] = .string(transaction.checkpointId)
-        details["workspace_disposition"] = output["workspace_disposition"] ?? .string(.unchanged.rawValue)
+        details["workspace_disposition"] = output["workspace_disposition"] ?? .string(AgentRuntimeProjectWorkspaceDisposition.unchanged.rawValue)
         return AgentNativeToolExecutionResult(
           output: output,
           message: execution.message,

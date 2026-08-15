@@ -114,7 +114,7 @@ enum AgentWorkflowCommandRouter {
   }
 
   private static func listHistory(historyStore: AgentWorkflowExecutionHistoryStore) -> Result {
-    let records = historyStore.recent(limit: 20)
+    let records = historyStore.recent(20)
     guard !records.isEmpty else {
       return Result(text: "No workflow execution history", actionId: "workflow_history")
     }

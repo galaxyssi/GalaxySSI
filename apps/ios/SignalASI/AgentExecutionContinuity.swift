@@ -131,7 +131,17 @@ enum AgentExecutionContinuity {
   }
 
   static func screenDigest(_ screen: AgentScreenContext) -> String {
-    let payload = [
+    let notifications = screen.notifications.items.prefix(6).map { item in
+      [item.key, item.packageName, item.title, String(item.postedAtMillis), item.sensitiveFlags.joined(separator: ",")]
+        .joined(separator: "\u{001f}")
+    }.joined(separator: "\u{001d}")
+    let clickableElements = screen.clickableElements.prefix(12).map { item in
+      [item.viewId, item.label].joined(separator: "\u{001f}")
+    }.joined(separator: "\u{001d}")
+    let inputFields = screen.inputFields.prefix(8).map { item in
+      [item.viewId, item.label].joined(separator: "\u{001f}")
+    }.joined(separator: "\u{001d}")
+    let payload: [String] = [
       screen.foregroundApp,
       screen.activityName,
       screen.pageTitle,
@@ -139,16 +149,13 @@ enum AgentExecutionContinuity {
       String(screen.clickableNodeCount),
       String(screen.inputFieldCount),
       String(screen.notifications.totalCount),
-      screen.notifications.items.prefix(6).map {
-        [$0.key, $0.packageName, $0.title, String($0.postedAtMillis), $0.sensitiveFlags.joined(separator: ",")]
-          .joined(separator: "\u{001f}")
-      }.joined(separator: "\u{001d}"),
+      notifications,
       screen.clipboard.textHash,
       String(screen.clipboard.textLength),
       screen.clipboard.sensitiveFlags.joined(separator: ","),
       screen.sensitiveFlags.joined(separator: ","),
-      screen.clickableElements.prefix(12).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
-      screen.inputFields.prefix(8).map { [$0.viewId, $0.label].joined(separator: "\u{001f}") }.joined(separator: "\u{001d}"),
+      clickableElements,
+      inputFields,
       screen.scrollableRegions.prefix(6).map(\.viewId).joined(separator: "\u{001d}"),
       String(screen.deviceStatus.batteryPercent),
       String(screen.deviceStatus.charging),
@@ -156,8 +163,8 @@ enum AgentExecutionContinuity {
       screen.deviceStatus.network,
       String(screen.deviceStatus.freeStorageMb),
       screen.deviceStatus.thermalState
-    ].joined(separator: "\u{001e}")
-    return String(javaStringHash(payload))
+    ]
+    return String(javaStringHash(payload.joined(separator: "\u{001e}")))
   }
 
   private static func rollbackAction(for action: AgentAction) -> AgentAction? {

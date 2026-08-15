@@ -29,7 +29,7 @@ final class AgentResponseSectionExpansionStore {
   private let key: String
   private var states: [String: Bool]
 
-  init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+  init(defaults: UserDefaults = .standard, key: String = "signalasi.agent.response.section.expansion") {
     self.defaults = defaults
     self.key = key
     if let data = defaults.data(forKey: key),
