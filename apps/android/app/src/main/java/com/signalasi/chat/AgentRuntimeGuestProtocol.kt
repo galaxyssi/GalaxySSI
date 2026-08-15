@@ -4,12 +4,15 @@ import android.content.Context
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.os.Looper
+import android.system.ErrnoException
+import android.system.OsConstants
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.SocketTimeoutException
@@ -256,19 +259,42 @@ class StreamAgentRuntimeGuestChannel(
     }
 
     override fun receive(timeoutMillis: Long, sessionKey: ByteArray): AgentRuntimeGuestEnvelope {
-        timeoutSetter(timeoutMillis.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt())
-        val size = dataInput.readInt()
+        timeoutSetter(
+            if (timeoutMillis <= 0L) 0
+            else timeoutMillis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        )
+        val size = readSocketFramePart { dataInput.readInt() }
         require(size in 1..AgentRuntimeGuestProtocol.MAX_FRAME_BYTES) { "Runtime protocol frame size is invalid" }
         val bytes = ByteArray(size)
-        dataInput.readFully(bytes)
+        readSocketFramePart { dataInput.readFully(bytes) }
         val envelope = AgentRuntimeGuestProtocol.decode(bytes)
         require(AgentRuntimeGuestProtocol.verify(envelope, sessionKey)) { "Runtime protocol authentication failed" }
         return envelope
     }
 
+    private inline fun <T> readSocketFramePart(read: () -> T): T = try {
+        read()
+    } catch (error: Throwable) {
+        if (!error.isTemporarySocketReadTimeout()) throw error
+        throw SocketTimeoutException("Guest runtime read timed out").apply { initCause(error) }
+    }
+
     override fun close() {
         runCatching { dataInput.close() }
         runCatching { dataOutput.close() }
+    }
+}
+
+internal fun Throwable.isTemporarySocketReadTimeout(): Boolean {
+    if (this is SocketTimeoutException) return true
+    val chain = generateSequence(this as Throwable?) { it.cause }.toList()
+    if (chain.filterIsInstance<ErrnoException>().any { error -> error.errno == OsConstants.EAGAIN }) {
+        return true
+    }
+    return chain.filterIsInstance<IOException>().any { error ->
+        error.message == "Try again" && error.stackTrace.any { frame ->
+            frame.className == "android.net.LocalSocketImpl" && frame.methodName.startsWith("read")
+        }
     }
 }
 
@@ -548,7 +574,7 @@ class AgentRuntimeGuestBridge(
     companion object {
         private const val HANDSHAKE_TIMEOUT_MILLIS = 15_000L
         private const val HEALTH_CACHE_MILLIS = 5_000L
-        private const val READER_POLL_MILLIS = 30_000L
+        private const val BLOCKING_READ_TIMEOUT_MILLIS = 0L
         private const val MAX_PENDING_REQUESTS = 64
         private const val MAX_PENDING_FRAMES = 256
         private const val MAX_STALE_HANDSHAKE_FRAMES = 32
@@ -616,7 +642,7 @@ class AgentRuntimeGuestBridge(
             Thread({
                 while (isActive) {
                     val envelope = try {
-                        channel.receive(READER_POLL_MILLIS, sessionKey)
+                        channel.receive(BLOCKING_READ_TIMEOUT_MILLIS, sessionKey)
                     } catch (_: SocketTimeoutException) {
                         continue
                     } catch (error: Throwable) {

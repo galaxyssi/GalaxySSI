@@ -1,5 +1,7 @@
 package com.signalasi.chat
 
+import android.system.ErrnoException
+import android.system.OsConstants
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -7,6 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.net.SocketTimeoutException
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -112,6 +116,58 @@ class AgentRuntimeGuestProtocolTest {
 
         assertEquals(AgentRuntimeGuestMessageType.HEARTBEAT, received.type)
         assertEquals("ready", received.payload["status"])
+    }
+
+    @Test
+    fun streamChannelTreatsAndroidEagainAsAReadTimeout() {
+        val unavailableInput = object : InputStream() {
+            override fun read(): Int = throw IOException(
+                "Try again",
+                ErrnoException("read", OsConstants.EAGAIN)
+            )
+        }
+
+        val error = assertThrows(SocketTimeoutException::class.java) {
+            StreamAgentRuntimeGuestChannel(unavailableInput, ByteArrayOutputStream()).use { channel ->
+                channel.receive(30_000L, key)
+            }
+        }
+
+        assertTrue(error.cause is IOException)
+    }
+
+    @Test
+    fun streamChannelRecognizesAndroidLocalSocketEagainWithoutAnErrnoCause() {
+        val unavailableInput = object : InputStream() {
+            override fun read(): Int {
+                throw IOException("Try again").apply {
+                    stackTrace = arrayOf(
+                        StackTraceElement("android.net.LocalSocketImpl", "readba_native", "LocalSocketImpl.java", -2)
+                    )
+                }
+            }
+        }
+
+        assertThrows(SocketTimeoutException::class.java) {
+            StreamAgentRuntimeGuestChannel(unavailableInput, ByteArrayOutputStream()).use { channel ->
+                channel.receive(30_000L, key)
+            }
+        }
+    }
+
+    @Test
+    fun streamChannelDoesNotHidePermanentReadFailures() {
+        val failedInput = object : InputStream() {
+            override fun read(): Int = throw IOException("socket closed")
+        }
+
+        val error = assertThrows(IOException::class.java) {
+            StreamAgentRuntimeGuestChannel(failedInput, ByteArrayOutputStream()).use { channel ->
+                channel.receive(30_000L, key)
+            }
+        }
+
+        assertEquals("socket closed", error.message)
     }
 
     @Test
