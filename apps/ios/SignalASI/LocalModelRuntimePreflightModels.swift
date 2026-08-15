@@ -375,12 +375,12 @@ enum LocalModelRuntimeProfiles {
     headDimension: 64,
     maximumContextTokens: 4_096,
     quantizationLabel: "W4A8",
-    defaultContextTokens: 2_048,
     defaultNoThink: true,
     preferredAccelerator: .vendorSDK,
     sourceTrust: .curated,
     artifactFormat: .qairt,
-    targetChipset: "SM8850"
+    targetChipset: "SM8850",
+    defaultContextTokens: 2_048
   )
 
   static let QWEN_3_1_7B_QNN = profile(
@@ -396,9 +396,9 @@ enum LocalModelRuntimeProfiles {
     headDimension: 128,
     maximumContextTokens: 32_768,
     quantizationLabel: "Q4_0",
-    defaultContextTokens: 2_048,
     defaultNoThink: true,
-    preferredAccelerator: .vendorSDK
+    preferredAccelerator: .vendorSDK,
+    defaultContextTokens: 2_048
   )
 
   static let QWEN_3_1_7B_QAIRT = profile(
@@ -414,12 +414,12 @@ enum LocalModelRuntimeProfiles {
     headDimension: 128,
     maximumContextTokens: 4_096,
     quantizationLabel: "W4A16",
-    defaultContextTokens: 4_096,
     defaultNoThink: true,
     preferredAccelerator: .vendorSDK,
     sourceTrust: .curated,
     artifactFormat: .qairt,
-    targetChipset: "SM8850"
+    targetChipset: "SM8850",
+    defaultContextTokens: 4_096
   )
 
   static let GEMMA_4_E4B_QNN = profile(
@@ -435,9 +435,9 @@ enum LocalModelRuntimeProfiles {
     headDimension: 128,
     maximumContextTokens: 128_000,
     quantizationLabel: "Q4_0",
-    defaultContextTokens: 2_048,
     visionCapable: true,
-    preferredAccelerator: .vendorSDK
+    preferredAccelerator: .vendorSDK,
+    defaultContextTokens: 2_048
   )
 
   static let QWEN_3_8B_Q4_K_M = profile(
