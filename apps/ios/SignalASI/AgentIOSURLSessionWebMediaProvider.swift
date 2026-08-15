@@ -288,6 +288,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             )
           } catch let error as AgentIOSURLSessionWebError {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: error))
+          } catch {
+            accumulator.append(
+              AgentIOSWebSearchAttempt(
+                index: index,
+                provider: endpoint.provider,
+                error: .transportFailed(error.localizedDescription)
+              )
+            )
           }
         }
       }
@@ -336,7 +344,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var seenURLs: Set<String> = []
       for attempt in attempts where attempt.resource != nil {
         for result in attempt.results {
-          let key = canonicalURL(result.url)
+          let key = URL(string: result.url).map(canonicalURL) ?? result.url.lowercased()
           guard !key.isEmpty, seenURLs.insert(key).inserted else { continue }
           merged.append(result)
           if merged.count >= maxResults { break }

@@ -135,6 +135,7 @@ struct AgentModelToolLoopRequest {
   var turnId: String
   var taskId: String
   var workspaceId: String
+  var responseLanguage: String
   var messages: [AgentModelMessage]
   var budget: AgentModelToolLoopBudget
   var callerId: String
@@ -152,6 +153,7 @@ struct AgentModelToolLoopRequest {
     messages: [AgentModelMessage],
     budget: AgentModelToolLoopBudget = AgentModelToolLoopBudget(),
     callerId: String = "signalasi.mobile_model_tool_loop",
+    responseLanguage: String = LanguagePolicySettings.auto,
     grantedPermissions: Set<String> = [],
     grantedConsents: Set<String> = [],
     cancellationToken: AgentModelToolLoopCancellationToken = .none,
@@ -171,6 +173,7 @@ struct AgentModelToolLoopRequest {
     self.turnId = turnId
     self.taskId = taskId
     self.workspaceId = workspaceId
+    self.responseLanguage = LanguagePolicySettings.normalizeVoice(responseLanguage)
     self.messages = messages
     self.budget = budget
     self.callerId = callerId
