@@ -59,7 +59,7 @@ enum AgentPersonalDataCommandRouter {
         text: localized(
           store: store,
           english: "Memory commands: memory status; remember <value>; forget memory <query>; pause memory; resume memory. Knowledge commands: knowledge status; search knowledge <query>; ask knowledge <query>; forget knowledge <query>.",
-          chinese: "\u{8bb0}\u{5fc6}\u{547d}\u{4ee4}\u{ff1a}\u{8bb0}\u{5fc6}\u{72b6}\u{6001}\u{ff1b}\u{8bb0}\u{4f4f} <\u{5185}\u{5bb9}>\u{ff1b}\u{5220}\u{9664}\u{8bb0}\u{5fc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{6682}\u{505c}\u{8bb0}\u{5fc6}\u{ff1b}\u{6062}\u{590d}\u{8bb0}\u{5fc6}\u{3002}\u{77e5}\u{8bc6}\u{5e93}\u{547d}\u{4ee4}\u{ff1a}\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}\u{ff1b}\u{641c}\u{7d22}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{8be2}\u{95ee}\u{77e5}\u{8bc6} <\u{95ee}\u{9898}>\u{ff1b}\u{5220}\u{9664}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{3002"
+          chinese: "\u{8bb0}\u{5fc6}\u{547d}\u{4ee4}\u{ff1a}\u{8bb0}\u{5fc6}\u{72b6}\u{6001}\u{ff1b}\u{8bb0}\u{4f4f} <\u{5185}\u{5bb9}>\u{ff1b}\u{5220}\u{9664}\u{8bb0}\u{5fc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{6682}\u{505c}\u{8bb0}\u{5fc6}\u{ff1b}\u{6062}\u{590d}\u{8bb0}\u{5fc6}\u{3002}\u{77e5}\u{8bc6}\u{5e93}\u{547d}\u{4ee4}\u{ff1a}\u{77e5}\u{8bc6}\u{5e93}\u{72b6}\u{6001}\u{ff1b}\u{641c}\u{7d22}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{ff1b}\u{8be2}\u{95ee}\u{77e5}\u{8bc6} <\u{95ee}\u{9898}>\u{ff1b}\u{5220}\u{9664}\u{77e5}\u{8bc6} <\u{5173}\u{952e}\u{8bcd}>\u{3002}"
         ),
         actionId: "personal_data_syntax"
       )
