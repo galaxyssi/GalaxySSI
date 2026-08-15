@@ -62,7 +62,7 @@ with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from
 It depends on the Java pack, exposes a Gradle AAPT2 override inside the Guest, and is not embedded in
 the APK. Users install it from the signed software catalog when a phone-local Android build needs it.
 
-`linux-base` 1.3.0 gives the authenticated Android host a root execution principal with direct guest filesystem and network access. Restricted launcher and firewall support remain available for explicit restricted runtimes, and the final kernel still verifies the complete legacy reject path
+`linux-base` 1.3.1 gives the authenticated Android host a root execution principal with direct guest filesystem and network access. It provisions a private 30 GiB sparse ext4 system disk, mounts durable root caches, and verifies the required filesystem tools and kernel support at build time. Restricted launcher and firewall support remain available for explicit restricted runtimes, and the final kernel still verifies the complete legacy reject path
 and visible bootstrap failures while retaining negotiated
 `runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for

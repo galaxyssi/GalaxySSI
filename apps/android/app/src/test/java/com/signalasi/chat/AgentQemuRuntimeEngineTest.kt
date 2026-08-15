@@ -56,6 +56,8 @@ class AgentQemuRuntimeEngineTest {
         assertFalse(command.contains("server=on,wait=off"))
         assertTrue(command.contains("readonly=on"))
         assertTrue(command.contains("mount_tag=signalasi_workspaces"))
+        assertTrue(command.contains("id=signalasi_system"))
+        assertTrue(command.contains("serial=${AgentRuntimePersistentDisk.SERIAL}"))
         assertTrue(command.contains("name=opt/com.signalasi/runtime-session,file=${sessionFile.absolutePath}"))
         assertFalse(command.contains("Wlpa"))
         assertFalse(command.contains("5a5a5a"))
@@ -70,6 +72,10 @@ class AgentQemuRuntimeEngineTest {
         )
         assertEquals("full_access", guestConfig.getString("execution_mode"))
         assertEquals("root", guestConfig.getString("execution_principal"))
+        assertEquals(
+            AgentRuntimePersistentDisk.LOGICAL_BYTES,
+            guestConfig.getJSONObject("system_disk").getLong("logical_bytes")
+        )
     }
 
     @Test

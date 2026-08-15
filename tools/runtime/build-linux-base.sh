@@ -21,7 +21,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 2
 fi
 
-for command in curl sha256sum tar make install realpath mv grep; do
+for command in curl sha256sum tar make install realpath mv grep find; do
   command -v "$command" >/dev/null || {
     echo "Missing build dependency: $command" >&2
     exit 2
@@ -69,12 +69,20 @@ if (( ${#kernel_configs[@]} != 1 )); then
 fi
 kernel_config="${kernel_configs[0]}"
 for option in \
+  CONFIG_EXT4_FS=y \
   CONFIG_NETFILTER_XTABLES_LEGACY=y \
   CONFIG_IP_NF_IPTABLES_LEGACY=y \
   CONFIG_NF_REJECT_IPV4=y \
   CONFIG_IP_NF_TARGET_REJECT=y; do
   if ! grep -Fxq "$option" "$kernel_config"; then
     echo "Required runtime firewall option is missing from the final kernel: $option" >&2
+    exit 3
+  fi
+done
+
+for binary in blkid e2fsck mke2fs resize2fs; do
+  if ! find "$output_dir/target" -type f -name "$binary" -perm /111 -print -quit | grep -q .; then
+    echo "Required persistent system disk utility is missing: $binary" >&2
     exit 3
   fi
 done

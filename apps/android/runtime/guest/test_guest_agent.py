@@ -191,12 +191,43 @@ class GuestProtocolTest(unittest.TestCase):
         workspace = Path("/workspace/project")
         environment = guest.runtime_environment(workspace, full_access=True)
 
-        self.assertEqual(str(workspace), environment["HOME"])
+        self.assertEqual(str(guest.PERSISTENT_SYSTEM_ROOT / "root"), environment["HOME"])
+        self.assertEqual(str(guest.PERSISTENT_SYSTEM_ROOT / "cache"), environment["TMPDIR"])
         self.assertEqual("automatic", environment["UV_PYTHON_DOWNLOADS"])
         self.assertEqual("false", environment["CARGO_NET_OFFLINE"])
         self.assertNotIn("UV_OFFLINE", environment)
         self.assertNotIn("UV_NO_CACHE", environment)
         self.assertNotIn("PYTHONNOUSERSITE", environment)
+
+    def test_persistent_system_disk_is_formatted_and_mounted_once(self):
+        config = {
+            "system_disk": {
+                "serial": "sa-system",
+                "filesystem": "ext4",
+                "mount_path": str(guest.PERSISTENT_SYSTEM_ROOT),
+                "logical_bytes": 30 * 1024 * 1024 * 1024,
+            }
+        }
+        device = Path("/dev/vda")
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            if command[0] == "blkid":
+                return guest.subprocess.CompletedProcess(command, 2, "", "")
+            return guest.subprocess.CompletedProcess(command, 0, "", "")
+
+        with (
+            mock.patch.object(guest, "wait_for_block_device", return_value=device),
+            mock.patch.object(guest.os.path, "ismount", return_value=False),
+            mock.patch.object(guest.Path, "mkdir"),
+            mock.patch.object(guest.Path, "chmod"),
+            mock.patch.object(guest.subprocess, "run", side_effect=run),
+        ):
+            guest.mount_persistent_system(config)
+
+        self.assertTrue(any(command[0] == "mke2fs" for command in commands))
+        self.assertTrue(any(command[:3] == ["mount", "-t", "ext4"] for command in commands))
 
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}
