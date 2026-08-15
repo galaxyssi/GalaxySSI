@@ -125,7 +125,15 @@ class GuestProtocolTest(unittest.TestCase):
                 plan = guest.command_plan("uv", Path("/work"), [], environment["PATH"])
 
         self.assertEqual(str(uv), plan[0][0])
-        self.assertEqual(["run", "--no-cache", "--offline", str(Path("/work") / "main.py")], plan[0][1:])
+        self.assertEqual(
+            [
+                "run",
+                "--no-cache",
+                "--offline",
+                str(Path("/work") / guest.RUNTIME_CONTROL_DIRECTORY / "main.py"),
+            ],
+            plan[0][1:],
+        )
 
     def test_command_plan_exposes_ffprobe_as_a_separate_read_only_operation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -165,9 +173,44 @@ class GuestProtocolTest(unittest.TestCase):
                 )
 
         self.assertEqual(
-            [[str(launcher), str(Path("/work") / "main.browser.js"), "--trace"]],
+            [[
+                str(launcher),
+                str(Path("/work") / guest.RUNTIME_CONTROL_DIRECTORY / "main.browser.js"),
+                "--trace",
+            ]],
             plan,
         )
+
+    def test_all_source_drivers_execute_from_the_hidden_control_directory(self):
+        workspace = Path("/work")
+        control = workspace / guest.RUNTIME_CONTROL_DIRECTORY
+        source_names = {
+            "shell": "main.sh",
+            "python": "main.py",
+            "uv": "main.py",
+            "javascript": "main.js",
+            "typescript": "main.ts",
+            "go": "main.go",
+            "rust": "main.rs",
+            "c": "main.c",
+            "cpp": "main.cpp",
+            "java": "Main.java",
+            "browser": "main.browser.js",
+        }
+        with mock.patch.object(
+            guest,
+            "executable",
+            side_effect=lambda name, search_path=None: f"/bin/{name}",
+        ):
+            plans = {
+                language: guest.command_plan(language, workspace, [])
+                for language in source_names
+            }
+
+        for language, source_name in source_names.items():
+            flattened = [item for command in plans[language] for item in command]
+            self.assertIn(str(control / source_name), flattened)
+            self.assertNotIn(str(workspace / source_name), flattened)
 
     def test_runtime_environment_keeps_mutable_language_caches_in_private_task_temp(self):
         environment = guest.runtime_environment()

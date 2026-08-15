@@ -1183,7 +1183,7 @@ object AgentOnDeviceRuntimeTools {
             ?.manifest?.version.orEmpty()
         val packageManagerReady = status.backendReady &&
             baseVersion.isNotBlank() &&
-            AgentEmbeddedRuntimeBootstrap.compareVersions(baseVersion, "1.3.2") >= 0
+            AgentEmbeddedRuntimeBootstrap.compareVersions(baseVersion, "1.3.3") >= 0
         return mapOf(
             "distribution" to "Debian 13",
             "execution_principal" to "root",
