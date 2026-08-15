@@ -45,6 +45,8 @@ test('default Linux guest includes the reject target required by its network fir
     import.meta.url,
   ), 'utf8');
   for (const option of [
+    'CONFIG_NETDEVICES=y',
+    'CONFIG_VIRTIO_NET=y',
     'CONFIG_NETFILTER_XTABLES_LEGACY=y',
     'CONFIG_IP_NF_IPTABLES_LEGACY=y',
     'CONFIG_NF_REJECT_IPV4=y',

@@ -90,6 +90,8 @@ fi
 kernel_config="${kernel_configs[0]}"
 for option in \
   CONFIG_EXT4_FS=y \
+  CONFIG_NETDEVICES=y \
+  CONFIG_VIRTIO_NET=y \
   CONFIG_NETFILTER_XTABLES_LEGACY=y \
   CONFIG_IP_NF_IPTABLES_LEGACY=y \
   CONFIG_NF_REJECT_IPV4=y \

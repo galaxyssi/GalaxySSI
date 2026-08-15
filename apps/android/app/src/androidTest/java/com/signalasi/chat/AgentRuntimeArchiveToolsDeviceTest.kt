@@ -10,6 +10,49 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AgentRuntimeArchiveToolsDeviceTest {
     @Test
+    fun linuxGuestResolvesPublicNetworkThroughPhone() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
+        assertTrue("Runtime lifecycle: ${lifecycle.reason}", lifecycle.phase == AgentRuntimeLifecyclePhase.READY)
+        val result = AgentOnDeviceRuntimeManager(context).execute(
+            AgentRuntimeExecutionRequest(
+                language = AgentRuntimeLanguage.SHELL,
+                source = """
+                    set -eu
+                    printf '%s\n' '--- resolv.conf ---'
+                    cat /etc/resolv.conf
+                    printf '%s\n' '--- interfaces ---'
+                    cat /proc/net/dev
+                    printf '%s\n' '--- routes ---'
+                    cat /proc/net/route
+                    awk -F: 'NR > 2 { name = ${'$'}1; gsub(/[[:space:]]/, "", name); if (name != "lo") found = 1 } END { exit !found }' /proc/net/dev
+                    grep -Eq '^[^[:space:]]+[[:space:]]+00000000' /proc/net/route
+                    printf '%s\n' '--- github ---'
+                    getent ahostsv4 github.com
+                """.trimIndent(),
+                arguments = emptyList(),
+                timeoutMillis = 30_000L,
+                networkEnabled = true,
+                allowedNetworkDomains = listOf("github.com"),
+                artifactPaths = emptyList(),
+                workspaceId = "device-network-diagnostic",
+                requestId = "network-diagnostic-${System.currentTimeMillis()}",
+                resourceLimits = AgentRuntimeResourceLimits(
+                    wallClockMillis = 30_000L,
+                    cpuMillis = 15_000L,
+                    memoryBytes = 128L * 1024L * 1024L,
+                    diskBytes = 16L * 1024L * 1024L,
+                    maxProcesses = 16,
+                    maxOutputBytes = 128L * 1024L,
+                    maxArtifactBytes = 1024L
+                )
+            )
+        )
+
+        assertEquals("stdout=${result.stdout}\nstderr=${result.stderr}", 0, result.exitCode)
+    }
+
+    @Test
     fun linuxGuestCanCreateListExtractAndRunAProjectArchive() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
