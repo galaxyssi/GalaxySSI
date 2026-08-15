@@ -209,10 +209,24 @@ data class AgentOnDeviceRuntimeStatus(
     val lifecycleFailures: Int = 0,
     val lifecycleNextAttemptAtMillis: Long = 0L
 ) {
-    fun languageReady(language: AgentRuntimeLanguage): Boolean = backendReady && packs.any { pack ->
-        pack.id == language.requiredPack &&
-            pack.state == AgentRuntimePackState.READY &&
-            language.requiredCapability in pack.manifest?.capabilities.orEmpty()
+    fun languageReady(language: AgentRuntimeLanguage): Boolean = readinessFailure(language) == null
+
+    fun readinessFailure(language: AgentRuntimeLanguage): String? {
+        val pack = packs.firstOrNull { it.id == language.requiredPack }
+            ?: return "${language.wireValue} requires the ${language.requiredPack} pack"
+        if (pack.state != AgentRuntimePackState.READY) {
+            return "${language.requiredPack} is ${pack.state.wireValue}: ${pack.reason.ifBlank { "runtime pack is unavailable" }}"
+        }
+        if (language.requiredCapability !in pack.manifest?.capabilities.orEmpty()) {
+            return "${language.requiredPack} does not provide ${language.requiredCapability}"
+        }
+        if (backend == AgentOnDeviceRuntimeBackend.NONE) {
+            return reason.ifBlank { "The on-device Linux runtime engine is unavailable" }
+        }
+        if (!backendReady) {
+            return lifecycleReason.ifBlank { reason }.ifBlank { "The on-device Linux guest bridge is not ready" }
+        }
+        return null
     }
 }
 
@@ -389,8 +403,8 @@ class AgentOnDeviceRuntimeManager(
         request.resourceLimits.validated()
         if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
         val current = status()
-        check(current.languageReady(request.language)) {
-            "${request.language.wireValue} requires the ${request.language.requiredPack} pack"
+        current.readinessFailure(request.language)?.let { failure ->
+            error(failure)
         }
         val activeBridge = bridge ?: AgentOnDeviceRuntimeBridgeRegistry.current()
             ?: AgentOnDeviceRuntimeSupervisor.discover(appContext)
