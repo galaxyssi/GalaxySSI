@@ -97,6 +97,21 @@ class GuestProtocolTest(unittest.TestCase):
             )
         self.assertEqual("proxy", plan[plan.index("--network-mode") + 1])
 
+    def test_full_access_execution_plan_runs_the_command_as_guest_root(self):
+        command = ["/usr/bin/python3", "/workspace/project/main.py"]
+        plan = guest.execution_plan(
+            {"execution_mode": "full_access", "execution_principal": "root"},
+            Path("/workspace/project"),
+            guest.ExecutionLimits.from_payload({"limits": {}}),
+            command,
+        )
+
+        self.assertIs(command, plan)
+        self.assertTrue(guest.full_access_enabled({
+            "execution_mode": "full_access",
+            "execution_principal": "root",
+        }))
+
     def test_command_plan_resolves_executables_from_mounted_pack_path(self):
         with tempfile.TemporaryDirectory() as directory:
             pack_root = Path(directory) / "python-uv"
@@ -172,6 +187,17 @@ class GuestProtocolTest(unittest.TestCase):
         self.assertEqual(environment["ANDROID_HOME"], environment["ANDROID_SDK_ROOT"])
         self.assertIn("org.gradle.project.android.aapt2FromMavenOverride", environment["GRADLE_OPTS"])
 
+    def test_full_access_runtime_environment_allows_dependency_downloads(self):
+        workspace = Path("/workspace/project")
+        environment = guest.runtime_environment(workspace, full_access=True)
+
+        self.assertEqual(str(workspace), environment["HOME"])
+        self.assertEqual("automatic", environment["UV_PYTHON_DOWNLOADS"])
+        self.assertEqual("false", environment["CARGO_NET_OFFLINE"])
+        self.assertNotIn("UV_OFFLINE", environment)
+        self.assertNotIn("UV_NO_CACHE", environment)
+        self.assertNotIn("PYTHONNOUSERSITE", environment)
+
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}
         guest.inject_secret_environment(environment, {"ACCESS_TOKEN": "secret-value"})
@@ -206,6 +232,16 @@ class GuestProtocolTest(unittest.TestCase):
             ready, reason = guest.runtime_readiness({"workspace_uid": 0, "workspace_gid": 10123})
         self.assertFalse(ready)
         self.assertIn("workspace_uid", reason)
+
+    def test_full_access_runtime_is_ready_without_the_restricted_launcher(self):
+        with mock.patch.object(guest, "LAUNCHER_PATH", Path("/missing/launcher")):
+            self.assertEqual(
+                (True, ""),
+                guest.runtime_readiness({
+                    "execution_mode": "full_access",
+                    "execution_principal": "root",
+                }),
+            )
 
     def test_task_network_firewall_blocks_direct_egress_for_the_sandbox_uid(self):
         completed = [

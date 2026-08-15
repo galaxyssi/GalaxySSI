@@ -385,12 +385,6 @@ class AgentOnDeviceRuntimeManager(
             SECRET_ENVIRONMENT_KEY.matches(name) && value.toByteArray(Charsets.UTF_8).size <= MAX_SECRET_ENVIRONMENT_VALUE_BYTES &&
                 '\u0000' !in value
         }) { "Runtime secret environment is invalid" }
-        if (request.networkEnabled) require(request.allowedNetworkDomains.isNotEmpty()) {
-            "Runtime network access requires an explicit domain allowlist"
-        }
-        if (!request.networkEnabled) require(request.allowedNetworkDomains.isEmpty()) {
-            "Runtime network domains require network access"
-        }
         request.resourceLimits.validated()
         if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
         val current = status()
@@ -872,7 +866,7 @@ object AgentOnDeviceRuntimeTools {
                         required = setOf("checkpoint_id"),
                         additionalProperties = false
                     ),
-                    risk = AgentNativeToolRisk.MEDIUM,
+                    risk = AgentNativeToolRisk.LOW,
                     availability = AgentNativeToolAvailability.AVAILABLE
                 ),
                 executor = AgentNativeToolExecutor { invocation ->
@@ -905,10 +899,10 @@ object AgentOnDeviceRuntimeTools {
             AgentNativeToolDefinition(
                 descriptor = descriptor(
                     id = EXECUTE,
-                    title = "Execute in the on-device Linux sandbox",
-                    description = "Runs bounded shell, language, build, test, or FFmpeg work in a persistent conversation project inside the Android-local Linux runtime. Files and artifacts remain available to later turns.",
+                    title = "Execute in the on-device Linux system",
+                    description = "Runs shell, language, dependency installation, build, test, browser, or media work as root in the persistent Android-local Linux system. Files and artifacts remain available to later turns.",
                     input = executionInputSchema(),
-                    risk = AgentNativeToolRisk.MEDIUM,
+                    risk = AgentNativeToolRisk.LOW,
                     timeoutMillis = 30 * 60_000L,
                     availability = executionAvailability(manager)
                 ),
@@ -961,8 +955,9 @@ object AgentOnDeviceRuntimeTools {
                 executorId = "signalasi.android_runtime_broker",
                 provenanceMetadata = mapOf(
                     "platform" to "android",
-                    "sandbox" to "linux_guest",
-                    "network_default" to "disabled"
+                    "runtime" to "linux_guest",
+                    "execution_principal" to "root",
+                    "network_default" to "enabled"
                 ),
                 availabilityProvider = AgentNativeToolAvailabilityProvider { executionAvailability(manager) }
             )
@@ -1001,7 +996,7 @@ object AgentOnDeviceRuntimeTools {
                 required = setOf("pack_id"),
                 additionalProperties = false
             ),
-            risk = AgentNativeToolRisk.MEDIUM,
+            risk = AgentNativeToolRisk.LOW,
             timeoutMillis = 30 * 60_000L,
             availability = AgentNativeToolAvailability.AVAILABLE
         ),
@@ -1112,7 +1107,7 @@ object AgentOnDeviceRuntimeTools {
         inputSchema = input,
         outputSchema = AgentNativeJsonSchema.any(),
         risk = risk,
-        capabilities = setOf("runtime.android_local", "runtime.linux", "runtime.sandboxed"),
+        capabilities = setOf("runtime.android_local", "runtime.linux", "runtime.full_access", "runtime.root"),
         timeoutMillis = timeoutMillis,
         idempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT,
         availability = availability
