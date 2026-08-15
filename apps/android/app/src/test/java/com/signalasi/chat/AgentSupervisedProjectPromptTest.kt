@@ -40,6 +40,19 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `project loop installs evidence backed dependencies and retries the blocked step`() {
+        val prompt = AgentSupervisedProjectLoop.planningPrompt(
+            request("Clone the project on this phone, build it, and fix any failures")
+        )
+
+        assertTrue(prompt.contains("Debian apt/dpkg as root"))
+        assertTrue(prompt.contains("project manifests, lockfiles"))
+        assertTrue(prompt.contains("retry the exact blocked step"))
+        assertTrue(prompt.contains("Package installation alone is never completion evidence"))
+        assertTrue(prompt.contains("direct network access for apt, Git, curl/wget"))
+    }
+
+    @Test
     fun `visible fallback summary follows the user goal language`() {
         val chineseRequest = request("在手机上修复这个项目并运行测试")
         val englishRequest = request("Fix this project on the phone and run its tests")
