@@ -72,7 +72,7 @@ final class AgentProactiveBackgroundScheduler: ObservableObject {
         task.setTaskCompleted(success: false)
         return
       }
-      let executions = self.store.claimDueAutomationTasks()
+      let executions = self.store.claimDueAutomationExecutions()
       var success = true
       for execution in executions {
         let completed = await self.coordinator.executeProactiveTask(execution.task)

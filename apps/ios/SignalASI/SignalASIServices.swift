@@ -7370,7 +7370,7 @@ enum NotificationService {
 }
 
 
-private extension Data {
+extension Data {
   mutating func appendUInt16(_ value: UInt16) {
     append(UInt8((value >> 8) & 0xff))
     append(UInt8(value & 0xff))
