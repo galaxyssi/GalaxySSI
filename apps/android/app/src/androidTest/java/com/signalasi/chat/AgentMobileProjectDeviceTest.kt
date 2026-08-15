@@ -70,13 +70,22 @@ class AgentMobileProjectDeviceTest {
         assertEquals("main", cloned.branch)
         assertTrue(cloned.clean)
 
-        val candidate = File(projects, "phone-private-project/src/PhoneAnswer.kt").apply {
+        repository.checkoutBranch("phone-private-project", "feature/phone-answer", create = true)
+        val runtime = AgentRuntimeWorkspaceManager(File(root, "runtime"), projects, forTesting = true)
+        val prepared = runtime.prepare(runtimeRequest("phone-private-project"))
+        val candidate = File(prepared.directory, "src/PhoneAnswer.kt").apply {
             requireNotNull(parentFile).mkdirs()
             writeText("fun phoneAnswer() = 42\n")
         }
         assertTrue(candidate.isFile)
+        runtime.commitProject(
+            prepared = prepared,
+            byteLimit = 8L * 1024L * 1024L,
+            checkpointId = "before-phone-answer"
+        )
+        assertFalse(File(projects, "phone-private-project/.signalasi-runtime").exists())
+        assertFalse(File(projects, "phone-private-project/main.sh").exists())
         assertFalse(repository.inspect("phone-private-project").clean)
-        repository.checkoutBranch("phone-private-project", "feature/phone-answer", create = true)
         val commit = repository.commit(
             workspaceId = "phone-private-project",
             message = "Add phone answer",
@@ -119,4 +128,24 @@ class AgentMobileProjectDeviceTest {
         assertEquals("https://github.com/octocat/Hello-World.git", snapshot.repositoryUrl)
         assertTrue(File(projects, "github-network-project/README").isFile)
     }
+
+    private fun runtimeRequest(workspaceId: String) = AgentRuntimeExecutionRequest(
+        language = AgentRuntimeLanguage.SHELL,
+        source = "printf '42\\n' > verification.txt",
+        arguments = emptyList(),
+        timeoutMillis = 1_000L,
+        networkEnabled = false,
+        artifactPaths = listOf("verification.txt"),
+        workspaceId = workspaceId,
+        requestId = "runtime-change",
+        resourceLimits = AgentRuntimeResourceLimits(
+            wallClockMillis = 1_000L,
+            cpuMillis = 750L,
+            memoryBytes = 64L * 1024L * 1024L,
+            diskBytes = 8L * 1024L * 1024L,
+            maxProcesses = 8,
+            maxOutputBytes = 64L * 1024L,
+            maxArtifactBytes = 4L * 1024L * 1024L
+        )
+    )
 }

@@ -41,9 +41,10 @@ class AgentRuntimeProjectWorkspaceTest {
         File(first.directory, ".signalasi-stdout").writeText("private runtime output")
         val sync = manager.syncProject(first, 8L * 1024L * 1024L)
 
-        assertTrue(sync.fileCount >= 3)
+        assertTrue(sync.fileCount >= 2)
         assertEquals("generated", File(project, "result.txt").readText())
-        assertEquals("print('one')", File(project, "main.py").readText())
+        assertFalse(File(project, "main.py").exists())
+        assertFalse(File(project, ".signalasi-runtime").exists())
         assertFalse(File(project, "request.json").exists())
         assertFalse(File(project, ".signalasi-stdout").exists())
 
@@ -52,6 +53,28 @@ class AgentRuntimeProjectWorkspaceTest {
         assertEquals("first", File(second.directory, "README.md").readText())
         assertEquals("print('two')", second.sourceFile.readText())
         assertTrue(second.importedProjectBytes > 0L)
+    }
+
+    @Test
+    fun runtimeDriverCannotOverwriteOrPolluteAProjectEntrypoint() {
+        val project = File(projectRoot, "workspace-one").apply { mkdirs() }
+        File(project, "main.py").writeText("print('project entrypoint')")
+
+        val prepared = manager.prepare(request("run-driver", "print('runtime driver')"))
+
+        assertEquals("print('project entrypoint')", File(prepared.directory, "main.py").readText())
+        assertEquals("print('runtime driver')", prepared.sourceFile.readText())
+        assertTrue(prepared.sourceFile.relativeTo(prepared.directory).invariantSeparatorsPath.startsWith(".signalasi-runtime/"))
+        File(prepared.directory, "generated.txt").writeText("candidate")
+        manager.commitProject(
+            prepared = prepared,
+            byteLimit = 8L * 1024L * 1024L,
+            checkpointId = "before-driver"
+        )
+
+        assertEquals("print('project entrypoint')", File(project, "main.py").readText())
+        assertEquals("candidate", File(project, "generated.txt").readText())
+        assertFalse(File(project, ".signalasi-runtime").exists())
     }
 
     @Test(expected = IllegalStateException::class)
@@ -199,7 +222,7 @@ class AgentRuntimeProjectWorkspaceTest {
         assertEquals("created", File(project, "new.txt").readText())
         assertEquals("pre-run-commit", commit.checkpoint.checkpointId)
         assertEquals(1, commit.checkpoint.fileCount)
-        assertTrue(commit.project.fileCount >= 3)
+        assertTrue(commit.project.fileCount >= 2)
 
         manager.rollback(
             workspaceId = "workspace-one",

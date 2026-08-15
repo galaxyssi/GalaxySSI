@@ -395,7 +395,12 @@ class AgentRuntimeWorkspaceManager private constructor(
             .associate { candidate ->
                 candidate.relativeTo(runDirectory).path.replace('\\', '/') to artifactStamp(candidate)
             }
-        val sourceFile = File(runDirectory, sourceFileName(request.language))
+        val sourceFile = File(runDirectory, sourceFileName(request.language)).apply {
+            val controlDirectory = requireNotNull(parentFile)
+            check(controlDirectory.mkdirs() || controlDirectory.isDirectory) {
+                "Runtime control storage is unavailable"
+            }
+        }
         sourceFile.writeText(request.source, Charsets.UTF_8)
         check(directorySize(runDirectory, request.resourceLimits.diskBytes) <= request.resourceLimits.diskBytes) {
             "Agent project exceeds the runtime disk quota"
@@ -991,7 +996,8 @@ class AgentRuntimeWorkspaceManager private constructor(
 
     private fun isRuntimeControlPath(path: String): Boolean =
         path in RUNTIME_CONTROL_FILES || path == ".tmp" || path.startsWith(".tmp/") ||
-            path == RUNTIME_TOOL_DIRECTORY || path.startsWith("$RUNTIME_TOOL_DIRECTORY/")
+            path == RUNTIME_TOOL_DIRECTORY || path.startsWith("$RUNTIME_TOOL_DIRECTORY/") ||
+            path == RUNTIME_CONTROL_DIRECTORY || path.startsWith("$RUNTIME_CONTROL_DIRECTORY/")
 
     private fun writeExecutable(file: File, source: String) {
         file.writeText(source.trimIndent() + "\n", Charsets.UTF_8)
@@ -1012,18 +1018,18 @@ class AgentRuntimeWorkspaceManager private constructor(
     }
 
     private fun sourceFileName(language: AgentRuntimeLanguage): String = when (language) {
-        AgentRuntimeLanguage.SHELL -> "main.sh"
-        AgentRuntimeLanguage.PYTHON, AgentRuntimeLanguage.UV -> "main.py"
-        AgentRuntimeLanguage.JAVASCRIPT -> "main.js"
-        AgentRuntimeLanguage.TYPESCRIPT -> "main.ts"
-        AgentRuntimeLanguage.GO -> "main.go"
-        AgentRuntimeLanguage.RUST -> "main.rs"
-        AgentRuntimeLanguage.C -> "main.c"
-        AgentRuntimeLanguage.CPP -> "main.cpp"
-        AgentRuntimeLanguage.JAVA -> "Main.java"
-        AgentRuntimeLanguage.BROWSER -> "main.browser.js"
-        AgentRuntimeLanguage.FFMPEG -> "main.ffmpeg.json"
-        AgentRuntimeLanguage.FFPROBE -> "main.ffprobe.json"
+        AgentRuntimeLanguage.SHELL -> "$RUNTIME_CONTROL_DIRECTORY/main.sh"
+        AgentRuntimeLanguage.PYTHON, AgentRuntimeLanguage.UV -> "$RUNTIME_CONTROL_DIRECTORY/main.py"
+        AgentRuntimeLanguage.JAVASCRIPT -> "$RUNTIME_CONTROL_DIRECTORY/main.js"
+        AgentRuntimeLanguage.TYPESCRIPT -> "$RUNTIME_CONTROL_DIRECTORY/main.ts"
+        AgentRuntimeLanguage.GO -> "$RUNTIME_CONTROL_DIRECTORY/main.go"
+        AgentRuntimeLanguage.RUST -> "$RUNTIME_CONTROL_DIRECTORY/main.rs"
+        AgentRuntimeLanguage.C -> "$RUNTIME_CONTROL_DIRECTORY/main.c"
+        AgentRuntimeLanguage.CPP -> "$RUNTIME_CONTROL_DIRECTORY/main.cpp"
+        AgentRuntimeLanguage.JAVA -> "$RUNTIME_CONTROL_DIRECTORY/Main.java"
+        AgentRuntimeLanguage.BROWSER -> "$RUNTIME_CONTROL_DIRECTORY/main.browser.js"
+        AgentRuntimeLanguage.FFMPEG -> "$RUNTIME_CONTROL_DIRECTORY/main.ffmpeg.json"
+        AgentRuntimeLanguage.FFPROBE -> "$RUNTIME_CONTROL_DIRECTORY/main.ffprobe.json"
     }
 
     companion object {
@@ -1035,6 +1041,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_CHECKPOINT_BYTES_PER_WORKSPACE = 1024L * 1024L * 1024L
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".signalasi-tools/bin"
+        private const val RUNTIME_CONTROL_DIRECTORY = ".signalasi-runtime"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")

@@ -36,6 +36,7 @@ SESSION_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime
 CONFIG_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/com.signalasi/runtime-config/raw")
 WORKSPACE_ROOT = Path("/workspace")
 ISOLATED_WORKSPACE_ROOT = Path("/work")
+RUNTIME_CONTROL_DIRECTORY = ".signalasi-runtime"
 PERSISTENT_SYSTEM_ROOT = Path("/var/lib/signalasi")
 PERSISTENT_USERSPACE_ROOT = PERSISTENT_SYSTEM_ROOT / "rootfs"
 PERSISTENT_USERSPACE_ARCHIVE = Path("/usr/share/signalasi/debian-13-slim-arm64-rootfs.tar.gz")
@@ -246,40 +247,41 @@ def command_plan(
 ) -> list[list[str]]:
     if any("\x00" in item or len(item.encode("utf-8")) > 8192 for item in arguments):
         raise ValueError("Runtime argument is invalid")
+    control = workspace / RUNTIME_CONTROL_DIRECTORY
     if language == "shell":
-        return [[executable("sh", search_path), str(workspace / "main.sh"), *arguments]]
+        return [[executable("sh", search_path), str(control / "main.sh"), *arguments]]
     if language == "python":
-        return [[executable("python3", search_path), str(workspace / "main.py"), *arguments]]
+        return [[executable("python3", search_path), str(control / "main.py"), *arguments]]
     if language == "uv":
-        return [[executable("uv", search_path), "run", "--no-cache", "--offline", str(workspace / "main.py"), *arguments]]
+        return [[executable("uv", search_path), "run", "--no-cache", "--offline", str(control / "main.py"), *arguments]]
     if language == "javascript":
-        return [[executable("node", search_path), str(workspace / "main.js"), *arguments]]
+        return [[executable("node", search_path), str(control / "main.js"), *arguments]]
     if language == "typescript":
-        return [[executable("tsx", search_path), str(workspace / "main.ts"), *arguments]]
+        return [[executable("tsx", search_path), str(control / "main.ts"), *arguments]]
     if language == "go":
-        return [[executable("go", search_path), "run", str(workspace / "main.go"), *arguments]]
+        return [[executable("go", search_path), "run", str(control / "main.go"), *arguments]]
     if language == "rust":
         return [
-            [executable("rustc", search_path), str(workspace / "main.rs"), "-o", str(workspace / ".signalasi-main")],
-            [str(workspace / ".signalasi-main"), *arguments],
+            [executable("rustc", search_path), str(control / "main.rs"), "-o", str(control / "main")],
+            [str(control / "main"), *arguments],
         ]
     if language == "c":
         return [
-            [executable("cc", search_path), str(workspace / "main.c"), "-O2", "-o", str(workspace / ".signalasi-main")],
-            [str(workspace / ".signalasi-main"), *arguments],
+            [executable("cc", search_path), str(control / "main.c"), "-O2", "-o", str(control / "main")],
+            [str(control / "main"), *arguments],
         ]
     if language == "cpp":
         return [
-            [executable("c++", search_path), str(workspace / "main.cpp"), "-O2", "-o", str(workspace / ".signalasi-main")],
-            [str(workspace / ".signalasi-main"), *arguments],
+            [executable("c++", search_path), str(control / "main.cpp"), "-O2", "-o", str(control / "main")],
+            [str(control / "main"), *arguments],
         ]
     if language == "java":
         return [
-            [executable("javac", search_path), str(workspace / "Main.java")],
-            [executable("java", search_path), "-cp", str(workspace), "Main", *arguments],
+            [executable("javac", search_path), "-d", str(control), str(control / "Main.java")],
+            [executable("java", search_path), "-cp", str(control), "Main", *arguments],
         ]
     if language == "browser":
-        return [[executable("signalasi-browser", search_path), str(workspace / "main.browser.js"), *arguments]]
+        return [[executable("signalasi-browser", search_path), str(control / "main.browser.js"), *arguments]]
     if language == "ffmpeg":
         return [[executable("ffmpeg", search_path), "-nostdin", *arguments]]
     if language == "ffprobe":
@@ -482,7 +484,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.3.2",
+                        "guest_version": "1.3.3",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
