@@ -231,7 +231,7 @@
     A1000000000000000000F503 /* AgentConversationAttachmentContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */; };
     A1000000000000000000F504 /* AgentPeerChatTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F504 /* AgentPeerChatTransport.swift */; };
     A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000482 /* AgentNoReplyReason.swift */; };
-    A10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* AgentNoReplyReasonTests.swift */; };
+    B10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000483 /* AgentNoReplyReasonTests.swift */; };
     A10000000000000000000484 /* AgentResponseSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000484 /* AgentResponseSections.swift */; };
     A10000000000000000000485 /* AgentResponseSectionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000485 /* AgentResponseSectionsTests.swift */; };
     A10000000000000000000486 /* AgentIdentityPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000486 /* AgentIdentityPresentation.swift */; };
@@ -263,7 +263,7 @@
     A10000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */; };
     A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */; };
     A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */; };
-    A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentExecutionPolicy.swift */; };
+    C10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000707 /* AgentExecutionPolicy.swift */; };
     A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000708 /* AgentModelPlannerSettings.swift */; };
     A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000709 /* LanguagePolicySettings.swift */; };
     A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000710 /* CodexStyleResponsePolicy.swift */; };
@@ -327,7 +327,7 @@
     A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */; };
     A10000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */; };
     A1000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */; };
-    A10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */; };
+    C10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */; };
     A10000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift */; };
     A10000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */; };
     A10000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift */; };
@@ -573,7 +573,7 @@
     A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002008 /* AgentWorkflowTriggers.swift */; };
     A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */; };
     A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */; };
-    A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */; };
+    C10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */; };
     A10000000000000000002016 /* AgentPersonalDataCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002016 /* AgentPersonalDataCommandRouter.swift */; };
     A10000000000000000002015 /* AgentWorkflowTemplateCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002015 /* AgentWorkflowTemplateCommandRouter.swift */; };
     A10000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */; };
@@ -630,7 +630,7 @@
     A10000000000000000000150 /* AgentModelToolProtocolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000150 /* AgentModelToolProtocolModels.swift */; };
     A10000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */; };
     A10000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */; };
-    A10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */; };
+    C10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */; };
     A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */; };
     A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000155 /* AgentModelToolLoopModels.swift */; };
     A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000156 /* AgentModelToolLoop.swift */; };
@@ -664,7 +664,7 @@
     A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */; };
     A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */; };
     A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */; };
-    A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
+    C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
     A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000186 /* AgentActiveTurnPolicy.swift */; };
     A10000000000000000000187 /* AgentResponseSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000187 /* AgentResponseSelfCheck.swift */; };
     A10000000000000000000188 /* AgentTaskBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000188 /* AgentTaskBudgetModels.swift */; };
@@ -842,7 +842,7 @@
     A10000000000000000000268 /* AgentTeamPlanBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000268 /* AgentTeamPlanBridgeTests.swift */; };
     A10000000000000000000271 /* AgentManagedResponseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000271 /* AgentManagedResponseTests.swift */; };
     A10000000000000000000272 /* AgentConnectorResponseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000272 /* AgentConnectorResponseTests.swift */; };
-    A10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000274 /* AgentTeamExecutionTests.swift */; };
+    B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000274 /* AgentTeamExecutionTests.swift */; };
     A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */; };
     A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */; };
     A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */; };
@@ -1086,7 +1086,7 @@
     A2000000000000000000F503 /* AgentConversationAttachmentContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationAttachmentContinuity.swift; sourceTree = "<group>"; };
     A2000000000000000000F504 /* AgentPeerChatTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerChatTransport.swift; sourceTree = "<group>"; };
     A20000000000000000000482 /* AgentNoReplyReason.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReason.swift; sourceTree = "<group>"; };
-    A20000000000000000000483 /* AgentNoReplyReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReasonTests.swift; sourceTree = "<group>"; };
+    B20000000000000000000483 /* AgentNoReplyReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReasonTests.swift; sourceTree = "<group>"; };
     A20000000000000000000484 /* AgentResponseSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSections.swift; sourceTree = "<group>"; };
     A20000000000000000000485 /* AgentResponseSectionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSectionsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000486 /* AgentIdentityPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIdentityPresentation.swift; sourceTree = "<group>"; };
@@ -1118,7 +1118,7 @@
     A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolDefaultStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeActionExecutorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackInstallerTests.swift; sourceTree = "<group>"; };
-    A20000000000000000000707 /* AgentExecutionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPolicy.swift; sourceTree = "<group>"; };
+    C20000000000000000000707 /* AgentExecutionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000708 /* AgentModelPlannerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlannerSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000709 /* LanguagePolicySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000710 /* CodexStyleResponsePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexStyleResponsePolicy.swift; sourceTree = "<group>"; };
@@ -1182,7 +1182,7 @@
     A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperDecodeSchedulerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperTranscriptionSession.swift; sourceTree = "<group>"; };
     A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperFinalAudioChunker.swift; sourceTree = "<group>"; };
-    A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperTranscriptCompletenessPolicy.swift; sourceTree = "<group>"; };
+    C20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperTranscriptCompletenessPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperTranscriptionSessionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperCoordinatorBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperCoordinatorBridgeTests.swift; sourceTree = "<group>"; };
@@ -1350,7 +1350,7 @@
     A20000000000000000002008 /* AgentWorkflowTriggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggers.swift; sourceTree = "<group>"; };
     A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIWorkflowTriggerView.swift; sourceTree = "<group>"; };
     A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProactiveBackgroundScheduler.swift; sourceTree = "<group>"; };
-    A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveWebhookStore.swift; sourceTree = "<group>"; };
+    C20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteProactiveWebhookStore.swift; sourceTree = "<group>"; };
     A20000000000000000002016 /* AgentPersonalDataCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPersonalDataCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002015 /* AgentWorkflowTemplateCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTemplateCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowRunScheduleCommandRouter.swift; sourceTree = "<group>"; };
@@ -1467,7 +1467,7 @@
     A20000000000000000000150 /* AgentModelToolProtocolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolModels.swift; sourceTree = "<group>"; };
     A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolStrictAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolOpenAIAdapter.swift; sourceTree = "<group>"; };
-    A20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolAnthropicAdapter.swift; sourceTree = "<group>"; };
+    C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolAnthropicAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolGeminiAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000155 /* AgentModelToolLoopModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoopModels.swift; sourceTree = "<group>"; };
     A20000000000000000000156 /* AgentModelToolLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoop.swift; sourceTree = "<group>"; };
@@ -1501,7 +1501,7 @@
     A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorLateResponseReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceExecutionSnapshotReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCheckpointReducer.swift; sourceTree = "<group>"; };
-    A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
+    C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000186 /* AgentActiveTurnPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActiveTurnPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000187 /* AgentResponseSelfCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSelfCheck.swift; sourceTree = "<group>"; };
     A20000000000000000000188 /* AgentTaskBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskBudgetModels.swift; sourceTree = "<group>"; };
@@ -1696,7 +1696,7 @@
     A20000000000000000000268 /* AgentTeamPlanBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPlanBridgeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000271 /* AgentManagedResponseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedResponseTests.swift; sourceTree = "<group>"; };
     A20000000000000000000272 /* AgentConnectorResponseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseTests.swift; sourceTree = "<group>"; };
-    A20000000000000000000274 /* AgentTeamExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionTests.swift; sourceTree = "<group>"; };
+    B20000000000000000000274 /* AgentTeamExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeToolTests.swift; sourceTree = "<group>"; };
@@ -1754,7 +1754,7 @@
         A20000000000000000001720 /* SignalASIRichMediaPlayback.swift */,
         A20000000000000000009998 /* CloudImagePayload.swift */,
         A20000000000000000000794 /* CloudModelContextOverflowRetry.swift */,
-        A20000000000000000000707 /* AgentExecutionPolicy.swift */,
+        C20000000000000000000707 /* AgentExecutionPolicy.swift */,
         A20000000000000000000708 /* AgentModelPlannerSettings.swift */,
         A20000000000000000000709 /* LanguagePolicySettings.swift */,
         A20000000000000000000891 /* SignalASILocalization.swift */,
@@ -1887,7 +1887,7 @@
         A20000000000000000002008 /* AgentWorkflowTriggers.swift */,
         A20000000000000000002009 /* SignalASIWorkflowTriggerView.swift */,
         A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */,
-        A20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */,
+        C20000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift */,
         A20000000000000000002016 /* AgentPersonalDataCommandRouter.swift */,
         A20000000000000000002015 /* AgentWorkflowTemplateCommandRouter.swift */,
         A20000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift */,
@@ -1994,7 +1994,7 @@
         A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */,
         A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */,
         A2000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift */,
-        A20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */,
+        C20000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift */,
         A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */,
         A20000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift */,
         A20000000000000000000777 /* VoiceLiveWhisperCaptureController.swift */,
@@ -2064,7 +2064,7 @@
         A20000000000000000000150 /* AgentModelToolProtocolModels.swift */,
         A20000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift */,
         A20000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift */,
-        A20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */,
+        C20000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift */,
         A20000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift */,
         A20000000000000000000155 /* AgentModelToolLoopModels.swift */,
         A20000000000000000000156 /* AgentModelToolLoop.swift */,
@@ -2098,7 +2098,7 @@
         A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */,
         A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */,
         A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */,
-        A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
+        C20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
         A20000000000000000000186 /* AgentActiveTurnPolicy.swift */,
         A20000000000000000000187 /* AgentResponseSelfCheck.swift */,
         A20000000000000000000188 /* AgentTaskBudgetModels.swift */,
@@ -2409,7 +2409,7 @@
         A20000000000000000000686 /* AgentToolCoordinationTests.swift */,
         A20000000000000000000688 /* AgentWorkspacePersistentStoreTests.swift */,
         A20000000000000000000690 /* AgentTaskRuntimeTests.swift */,
-        A20000000000000000000483 /* AgentNoReplyReasonTests.swift */,
+        B20000000000000000000483 /* AgentNoReplyReasonTests.swift */,
         A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
         A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */,
@@ -2568,7 +2568,7 @@
         A20000000000000000000268 /* AgentTeamPlanBridgeTests.swift */,
         A20000000000000000000271 /* AgentManagedResponseTests.swift */,
         A20000000000000000000272 /* AgentConnectorResponseTests.swift */,
-        A20000000000000000000274 /* AgentTeamExecutionTests.swift */,
+        B20000000000000000000274 /* AgentTeamExecutionTests.swift */,
         A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */,
         A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */,
         A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */,
@@ -2730,7 +2730,7 @@
         A10000000000000000001134 /* SignalASIChatVoiceRecorder.swift in Sources */,
         A10000000000000000000101 /* SignalASICoreModels.swift in Sources */,
         A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */,
-        A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */,
+        C10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */,
         A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */,
         A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */,
         A10000000000000000000891 /* SignalASILocalization.swift in Sources */,
@@ -2837,7 +2837,7 @@
         A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */,
         A10000000000000000002009 /* SignalASIWorkflowTriggerView.swift in Sources */,
         A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */,
-        A10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */,
+        C10000000000000000002011 /* AgentRemoteProactiveWebhookStore.swift in Sources */,
         A10000000000000000002016 /* AgentPersonalDataCommandRouter.swift in Sources */,
         A10000000000000000002015 /* AgentWorkflowTemplateCommandRouter.swift in Sources */,
         A10000000000000000002014 /* AgentWorkflowRunScheduleCommandRouter.swift in Sources */,
@@ -2943,7 +2943,7 @@
         A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */,
         A10000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift in Sources */,
         A1000000000000000000C80 /* VoiceWhisperFinalAudioChunker.swift in Sources */,
-        A10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */,
+        C10000000000000000000779 /* VoiceWhisperTranscriptCompletenessPolicy.swift in Sources */,
         A10000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift in Sources */,
         A10000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift in Sources */,
         A10000000000000000000777 /* VoiceLiveWhisperCaptureController.swift in Sources */,
@@ -3013,7 +3013,7 @@
         A10000000000000000000150 /* AgentModelToolProtocolModels.swift in Sources */,
         A10000000000000000000151 /* AgentModelToolProtocolStrictAdapter.swift in Sources */,
         A10000000000000000000152 /* AgentModelToolProtocolOpenAIAdapter.swift in Sources */,
-        A10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */,
+        C10000000000000000000153 /* AgentModelToolProtocolAnthropicAdapter.swift in Sources */,
         A10000000000000000000154 /* AgentModelToolProtocolGeminiAdapter.swift in Sources */,
         A10000000000000000000155 /* AgentModelToolLoopModels.swift in Sources */,
         A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */,
@@ -3064,7 +3064,7 @@
         A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */,
         A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */,
         A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */,
-        A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
+        C10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
         A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */,
         A10000000000000000000187 /* AgentResponseSelfCheck.swift in Sources */,
         A10000000000000000000188 /* AgentTaskBudgetModels.swift in Sources */,
@@ -3389,6 +3389,7 @@
         A10000000000000000000686 /* AgentToolCoordinationTests.swift in Sources */,
         A10000000000000000000688 /* AgentWorkspacePersistentStoreTests.swift in Sources */,
         A10000000000000000000690 /* AgentTaskRuntimeTests.swift in Sources */,
+        B10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */,
         A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
         A10000000000000000000416 /* AgentLargeOutputPolicyTests.swift in Sources */,
@@ -3556,6 +3557,7 @@
         A10000000000000000000268 /* AgentTeamPlanBridgeTests.swift in Sources */,
         A10000000000000000000271 /* AgentManagedResponseTests.swift in Sources */,
         A10000000000000000000272 /* AgentConnectorResponseTests.swift in Sources */,
+        B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */,
         A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */,
         A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */,
         A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */,
