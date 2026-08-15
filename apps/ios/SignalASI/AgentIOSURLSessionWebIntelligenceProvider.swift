@@ -69,7 +69,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let action = string(input, "action", limit: 32).ifBlank("status")
     var documents: [AgentMcpJSONObject] = []
     var results: [AgentMcpJSONObject] = []
-    var metadata = cacheStore.stats()
+    var cacheMetadata = cacheStore.stats()
     switch action {
     case "status":
       break
@@ -87,7 +87,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       documents = [document.value()]
     case "clear", "clear_expired":
       let cleared = cacheStore.clear(expiredOnly: action == "clear_expired")
-      metadata.merge(cleared) { _, next in next }
+      cacheMetadata.merge(cleared) { _, next in next }
     default:
       return failure("invalid_cache_action", "Unsupported iOS web cache action")
     }
@@ -95,7 +95,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["query"] = .string(string(input, "query", limit: 4_096))
     output["documents"] = .array(documents.map { .object($0) })
     output["results"] = .array(results.map { .object($0) })
-    output["cache"] = .object(metadata)
+    output["cache"] = .object(cacheMetadata)
     output["metadata"] = .object([
       "action": .string(action),
       "encryption": .string("ios_keychain_aes_gcm")
@@ -170,7 +170,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
   ) -> AgentNativeToolExecutionResult {
     let action = string(input, "action", limit: 32).ifBlank("list")
     let now = max(0, nowMillis())
-    var metadata: AgentMcpJSONObject = ["action": .string(action)]
+    var watchMetadata: AgentMcpJSONObject = ["action": .string(action)]
     var watchValue: AgentMcpJSONObject = [:]
     var diffValue: AgentMcpJSONObject?
     switch action {
@@ -194,9 +194,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       cacheStore.putWatch(watch)
       watchValue = watch.value()
     case "list":
-      metadata["watches"] = .array(cacheStore.watches().map { .object($0.value()) })
+      watchMetadata["watches"] = .array(cacheStore.watches().map { .object($0.value()) })
     case "remove":
-      metadata["removed"] = .bool(cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)))
+      watchMetadata["removed"] = .bool(cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)))
     case "check", "check_due":
       let selected: [AgentIOSWebIntelligenceCacheWatch]
       if action == "check" {
@@ -233,14 +233,14 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         checked.append(.object(value))
         diffValue = result.output["diff"]?.objectValue
       }
-      metadata["checked"] = .array(checked)
+      watchMetadata["checked"] = .array(checked)
     default:
       return failure("invalid_watch_action", "Unsupported iOS web watch action")
     }
     var output = baseOutput(operation: .watch, invocation: invocation, status: "completed")
     output["watch"] = .object(watchValue)
     output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(false)]) { _, next in next })
-    output["metadata"] = .object(metadata)
+    output["metadata"] = .object(watchMetadata)
     if let diffValue { output["diff"] = .object(diffValue) }
     return AgentNativeToolExecutionResult.success(
       output: output,
