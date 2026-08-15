@@ -949,10 +949,10 @@ struct SignalASIConversationHubView: View {
     Task { @MainActor in
       var failed = 0
       for request in cleanupRequests {
-        if !await coordinator.publishRemoteAgentConversationDelete(
+        if !(await coordinator.publishRemoteAgentConversationDelete(
           conversationId: request.conversationId,
           taskIds: request.taskIds
-        ) {
+        )) {
           failed += 1
         }
       }
