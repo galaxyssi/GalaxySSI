@@ -288,7 +288,7 @@ extension AgentHomeView {
                 .id(Self.voiceTranscriptionPendingViewId)
             }
             if waitingForAgentReply {
-              SignalASIAgentReplyWaitingIndicator()
+              AgentReplyWaitingIndicatorView()
                 .id(Self.replyWaitingViewId)
             }
             if shouldShowAgentRuntimePanel {

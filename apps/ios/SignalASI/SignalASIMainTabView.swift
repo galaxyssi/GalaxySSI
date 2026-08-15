@@ -10,8 +10,8 @@ struct SignalASIMainTabView: View {
     selectedContent
       .onAppear(perform: consumePendingContact)
       .onReceive(NotificationCenter.default.publisher(for: .signalASIOpenContact)) { notification in
-        let contactId = (notification.userInfo?["contactId"] as? String)
-          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let contactId = ((notification.userInfo?["contactId"] as? String) ?? "")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
         routeToContact(contactId)
       }
       .task {

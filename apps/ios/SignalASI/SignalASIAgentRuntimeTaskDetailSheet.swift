@@ -68,8 +68,8 @@ struct SignalASIAgentRuntimeTaskDetailSheet: View {
             dismiss()
           }
         }
-        if !taskActions.isEmpty {
-          ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
+          if !taskActions.isEmpty {
             Menu {
               ForEach(taskActions) { action in
                 Button {

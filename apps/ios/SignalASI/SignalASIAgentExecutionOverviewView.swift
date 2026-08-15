@@ -110,8 +110,8 @@ struct SignalASIAgentExecutionOverviewView: View {
         screen: screen,
         sections: screenSections,
         onCommand: onScreenCommand,
-        onRefresh: onRefreshScreen,
-        t: t
+        t: t,
+        onRefresh: onRefreshScreen
       )
     }
   }

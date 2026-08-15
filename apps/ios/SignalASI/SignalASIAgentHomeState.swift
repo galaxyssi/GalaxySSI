@@ -259,7 +259,7 @@ extension AgentHomeView {
   var agentActionQueueItems: [SignalASIAgentActionQueueItem] {
     var seen = Set<String>()
     return activeAgentTasks.flatMap { task in
-      let actions = task.pendingActions.isEmpty
+      let actions: [AgentAction] = task.pendingActions.isEmpty
         ? task.pendingAction.map { [$0] } ?? []
         : task.pendingActions
       return actions.compactMap { action in
