@@ -14,6 +14,11 @@ import java.security.cert.CertificateFactory
 import java.util.Locale
 import java.util.UUID
 
+internal fun guestArchiveToolPath(guestWorkspacePath: String, relativeToolPath: String): String =
+    "${guestWorkspacePath.trimEnd('/')}/${relativeToolPath.replace('\\', '/').trimStart('/')}"
+
+internal fun shellSingleQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
+
 enum class AgentOnDeviceRuntimeBackend(val wireValue: String) {
     QEMU_TCG("qemu_tcg"),
     ANDROID_VIRTUALIZATION_FRAMEWORK("android_virtualization_framework"),
@@ -412,9 +417,13 @@ class AgentOnDeviceRuntimeManager(
         val prepared = workspaceManager.prepare(request)
         val checkpointId = automaticCheckpointId(request.requestId)
         val archiveToolBin = workspaceManager.installArchiveCompatibilityTools(prepared)
+        val guestArchiveToolBin = guestArchiveToolPath(
+            guestWorkspacePath = prepared.guestPath,
+            relativeToolPath = archiveToolBin.relativeTo(prepared.directory).path
+        )
         val normalizedRequest = request.copy(
             source = if (request.language == AgentRuntimeLanguage.SHELL) {
-                "export PATH=\"\$HOME/${archiveToolBin.relativeTo(prepared.directory).path.replace('\\', '/')}:\$PATH\"\n${request.source}"
+                "export PATH=${shellSingleQuote(guestArchiveToolBin)}:\$PATH\n${request.source}"
             } else {
                 request.source
             },
