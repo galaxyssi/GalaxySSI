@@ -27,6 +27,7 @@ enum AgentAttachmentKnowledgeImporter {
   }
 
   @discardableResult
+  @MainActor
   static func importDocuments(
     _ attachments: [AgentAttachmentKnowledgeInput],
     conversationId: String,

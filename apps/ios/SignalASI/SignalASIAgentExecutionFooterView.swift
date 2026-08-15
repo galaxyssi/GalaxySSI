@@ -147,7 +147,7 @@ struct SignalASIAgentExecutionFooterView: View {
           .font(.system(size: 10, weight: .semibold))
           .frame(width: 42, height: 30)
       }
-      .menuStyle(.borderedButton)
+      .menuStyle(.automatic)
       .accessibilityLabel(Text(resolvedTimelineActionMenuTitle))
       .accessibilityIdentifier("ios.agent.execution-footer.controls")
     }

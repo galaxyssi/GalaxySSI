@@ -317,7 +317,7 @@ struct SignalASIAgentExecutionStatusCard: View {
           .font(.system(size: 16, weight: .semibold))
           .frame(width: 42, height: 36)
       }
-      .menuStyle(.borderedButton)
+      .menuStyle(.automatic)
       .accessibilityLabel(Text(t("signalasi.agent.task_control.title", "Task controls")))
       .accessibilityIdentifier("ios.agent.task.controls")
     }
