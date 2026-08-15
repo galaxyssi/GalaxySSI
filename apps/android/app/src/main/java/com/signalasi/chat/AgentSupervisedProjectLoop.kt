@@ -5,6 +5,9 @@ import org.json.JSONObject
 import java.util.Locale
 
 internal object AgentSupervisedProjectLoop {
+    fun visibleSummary(request: AgentRequest, english: String, chinese: String): String =
+        if (request.goal.any(::isCjkCharacter)) chinese else english
+
     fun planningPrompt(request: AgentRequest): String = buildPrompt(
         request = request,
         evidenceExpected = false
@@ -201,6 +204,8 @@ internal object AgentSupervisedProjectLoop {
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
     private const val MAX_FAILURE_CHARACTERS = 1_000
     private const val MAX_FAILURE_EVIDENCE_CHARACTERS = 6_000
+
+    private fun isCjkCharacter(character: Char): Boolean = character.code in 0x3400..0x9FFF
 }
 
 internal object AgentSupervisedProjectRoutingPolicy {
@@ -488,11 +493,19 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
-        routeRationale = if (interrupted) {
-            "The supervising model will inspect the durable phone project before continuing."
-        } else {
-            "The supervising model will diagnose the latest failed phone action."
-        }
+        routeRationale = AgentSupervisedProjectLoop.visibleSummary(
+            request = request,
+            english = if (interrupted) {
+                "The supervising model will inspect the durable phone project before continuing."
+            } else {
+                "The supervising model will diagnose the latest failed phone action."
+            },
+            chinese = if (interrupted) {
+                "上次执行意外中断，将先检查手机项目的持久化状态和证据，再安全继续。"
+            } else {
+                "手机上的上一步执行失败，将先分析失败证据，再选择不同的后续操作。"
+            }
+        )
     )
     return reviewSupervisedProjectPlan(candidate)?.let { reviewed ->
         if (interrupted) reviewed.markInterruptedRecoveryScheduled() else reviewed
@@ -533,7 +546,11 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
-        routeRationale = "The model response was not executable, so SignalASI requested a corrected ActionPlan."
+        routeRationale = AgentSupervisedProjectLoop.visibleSummary(
+            request = request,
+            english = "The model response was not executable, so SignalASI requested a corrected ActionPlan.",
+            chinese = "模型返回的计划暂时无法执行，已要求它修正计划结构后继续。"
+        )
     )
     return reviewSupervisedProjectPlan(candidate)
 }
@@ -572,7 +589,11 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         checkpoints = plan.checkpoints,
         verificationResults = plan.verificationResults,
         artifactRichOutputJson = plan.artifactRichOutputJson,
-        routeRationale = "SignalASI kept the project active because its requested publication result was not yet verified."
+        routeRationale = AgentSupervisedProjectLoop.visibleSummary(
+            request = request,
+            english = "SignalASI kept the project active because its requested publication result was not yet verified.",
+            chinese = "目标产物尚未通过验证，任务将保持运行并继续补齐验证或交付步骤。"
+        )
     )
     return reviewSupervisedProjectPlan(candidate)
 }
