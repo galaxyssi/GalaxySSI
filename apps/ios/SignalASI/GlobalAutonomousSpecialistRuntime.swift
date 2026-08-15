@@ -62,14 +62,15 @@ enum GlobalAutonomousSpecialistContractPolicy {
       .map { clean($0, limit: 600) }
       .filter { !$0.isEmpty }
     let role = role(for: action)
-    let contractId = "assignment-\(GlobalAgentText.stableKey(
+    let stableKey = GlobalAgentText.stableKey(
       run.id,
       action.id,
       action.planKey,
       action.goal,
       action.expectedResult,
       resourceId
-    ).prefix(24))"
+    )
+    let contractId = "assignment-\(stableKey.prefix(24))"
     return GlobalAutonomousSpecialistAssignment(
       contractId: contractId,
       role: role,

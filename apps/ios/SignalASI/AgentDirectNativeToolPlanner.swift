@@ -1050,7 +1050,7 @@ enum AgentDirectNativeToolPlanner {
   private static func isVPNConsentGoal(_ lower: String) -> Bool {
     containsAny(lower, [
       "set up vpn", "configure vpn", "vpn consent", "vpn settings", "open vpn settings",
-      "\u{914d}\u{7f6evpn", "vpn\u{8bbe}\u{7f6e}", "\u{6253}\u{5f00}vpn\u{8bbe}\u{7f6e}"
+      "\u{914d}\u{7f6e}vpn", "vpn\u{8bbe}\u{7f6e}", "\u{6253}\u{5f00}vpn\u{8bbe}\u{7f6e}"
     ])
   }
 
