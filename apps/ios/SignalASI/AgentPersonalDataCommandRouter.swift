@@ -195,7 +195,7 @@ enum AgentPersonalDataCommandRouter {
     let lines = hits.enumerated().flatMap { index, hit in
       let sourceTitle = localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}")
       let excerptTitle = localized(store: store, english: "Excerpt", chinese: "\u{6458}\u{8981}")
-      [
+      return [
         "[\(index + 1)] \(compact(hit.item.title, limit: 100))",
         "\(sourceTitle): \(sourceLabel(hit.item.source))",
         "\(excerptTitle): \(compact(hit.excerpt, limit: 320))"
@@ -249,7 +249,7 @@ enum AgentPersonalDataCommandRouter {
       let sourceTitle = localized(store: store, english: "Source", chinese: "\u{6765}\u{6e90}")
       let evidenceTitle = localized(store: store, english: "Evidence", chinese: "\u{8bc1}\u{636e}")
       let evidenceMode = evidenceModeLabel(citation.evidenceMode, store: store)
-      [
+      return [
         "[\(citation.index)] \(compact(citation.title, limit: 100))",
         "\(sourceTitle): \(citation.source)",
         "\(evidenceTitle) (\(evidenceMode)): \(compact(citation.excerpt, limit: 420))"

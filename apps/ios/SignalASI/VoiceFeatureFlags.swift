@@ -537,8 +537,8 @@ enum VoiceRolloutPolicy {
 enum VoiceCohortAssigner {
   static func bucket(stableDeviceId: String, feature: VoicePipelineFeature) -> Int {
     let identity = stableDeviceId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("anonymous-device")
-    let digest = SHA256.hash(data: Data("\(identity):\(feature.rawValue)".utf8))
-    let unsigned = (Int(digest[digest.startIndex]) << 8) | Int(digest[digest.index(after: digest.startIndex)])
+    let digest = Array(SHA256.hash(data: Data("\(identity):\(feature.rawValue)".utf8)))
+    let unsigned = (Int(digest[0]) << 8) | Int(digest[1])
     return unsigned % 100
   }
 }

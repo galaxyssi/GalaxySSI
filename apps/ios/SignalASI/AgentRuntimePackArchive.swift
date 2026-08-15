@@ -28,7 +28,7 @@ enum AgentRuntimePackArchiveReader {
     archive: URL,
     to destination: URL,
     fileManager: FileManager = .default,
-    onProgress: (Int64) -> Void = {}
+    onProgress: (Int64) -> Void = { _ in }
   ) throws -> Int64 {
     let attributes = try fileManager.attributesOfItem(atPath: archive.path)
     let archiveBytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0

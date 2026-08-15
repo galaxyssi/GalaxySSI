@@ -150,7 +150,7 @@ enum AgentSelfModelReducer {
       lastFailureCategory: completed || cancelled ? "" : failureCategory(task),
       lastObservedAtMillis: now
     )
-    let beliefs = (current.beliefs.filter { $0.key != key } + [belief])
+    var beliefs = (current.beliefs.filter { $0.key != key } + [belief])
       .sorted { $0.lastObservedAtMillis > $1.lastObservedAtMillis }
     beliefs = Array(beliefs.prefix(512))
     let after = AgentSelfModel(
@@ -231,7 +231,7 @@ enum AgentSelfModelReducer {
       requirements.dataSensitivity == .confidential || requirements.dataSensitivity == .restricted {
       return capabilityFamily(requirements.capabilities)
     }
-    return AgentLearningAnalyzer.taskFamily(request).ifBlank(capabilityFamily(capabilities))
+    return AgentLearningAnalyzer.taskFamily(request).ifBlank(capabilityFamily(requirements.capabilities))
   }
 
   private static func capabilityFamily(_ capabilities: Set<AgentCapability>) -> String {

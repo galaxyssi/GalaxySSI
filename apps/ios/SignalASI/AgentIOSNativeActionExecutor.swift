@@ -37,7 +37,7 @@ enum AgentIOSNativeToolHandoffPresenter {
 
   static func openIfNeeded(_ result: AgentNativeToolResult) {
     guard result.isSuccess else { return }
-    openIfNeeded(.object(result.output))
+    openIfNeeded(result.output)
   }
 
   private static func openIfNeeded(_ output: AgentMcpJSONObject) {

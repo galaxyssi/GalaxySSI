@@ -33,14 +33,14 @@ struct AgentDesktopArtifactRequestPayload: Equatable {
   }
 
   var richBlock: AgentRichBlock {
-    let metadata = Dictionary(uniqueKeysWithValues: [
+    let metadata = [
       "artifact_id": artifactID,
       "artifact_source_uri": artifactURI,
       "client_route_id": clientRouteID,
       "desktop_id": desktopID,
       "sha256": sha256,
       "task_id": taskID
-    ].filter { !$0.value.isEmpty })
+    ].filter { !$0.value.isEmpty }
     return AgentRichBlock(
       id: artifactID.ifBlank(artifactURI),
       type: .file,

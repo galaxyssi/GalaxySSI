@@ -591,8 +591,8 @@ enum LocalModelRuntimeProfiles {
       layerCount: layerCount,
       keyValueHeadCount: keyValueHeadCount,
       headDimension: headDimension,
-      defaultContextTokens: defaultContextTokens,
       maximumContextTokens: maximumContextTokens,
+      defaultContextTokens: defaultContextTokens,
       quantizationLabel: quantizationLabel,
       repositoryId: repositoryId,
       fileName: fileName,
@@ -600,8 +600,8 @@ enum LocalModelRuntimeProfiles {
       parameterCountBillions: parameterCountBillions,
       defaultNoThink: defaultNoThink,
       visionCapable: visionCapable,
-      preferredAccelerator: preferredAccelerator,
       sourceTrust: sourceTrust,
+      preferredAccelerator: preferredAccelerator,
       artifactFormat: artifactFormat,
       targetChipset: targetChipset
     )
