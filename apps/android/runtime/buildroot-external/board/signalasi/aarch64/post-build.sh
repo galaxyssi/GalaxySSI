@@ -11,6 +11,13 @@ install -D -m 0644 \
   "$runtime_dir/guest/signalasi_network_proxy.py" \
   "$TARGET_DIR/usr/libexec/signalasi_network_proxy.py"
 
+test -f "${SIGNALASI_DEBIAN_ROOTFS_ARCHIVE:?Debian root filesystem archive is required}"
+install -D -m 0644 \
+  "$SIGNALASI_DEBIAN_ROOTFS_ARCHIVE" \
+  "$TARGET_DIR/usr/share/signalasi/debian-13-slim-arm64-rootfs.tar.gz"
+printf '%s\n' "${SIGNALASI_DEBIAN_ROOTFS_SHA256:?Debian root filesystem digest is required}" \
+  >"$TARGET_DIR/usr/share/signalasi/debian-13-slim-arm64-rootfs.sha256"
+
 rm -rf "$TARGET_DIR/usr/libexec/__pycache__"
 
 # Ship SSH tooling without exposing a listening service by default. SignalASI may start sshd only

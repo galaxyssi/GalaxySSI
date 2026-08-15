@@ -191,13 +191,39 @@ class GuestProtocolTest(unittest.TestCase):
         workspace = Path("/workspace/project")
         environment = guest.runtime_environment(workspace, full_access=True)
 
-        self.assertEqual(str(guest.PERSISTENT_SYSTEM_ROOT / "root"), environment["HOME"])
-        self.assertEqual(str(guest.PERSISTENT_SYSTEM_ROOT / "cache"), environment["TMPDIR"])
+        self.assertEqual(str(Path("/root")), environment["HOME"])
+        self.assertEqual(str(Path("/root") / ".cache" / "tmp"), environment["TMPDIR"])
+        self.assertEqual("noninteractive", environment["DEBIAN_FRONTEND"])
+        self.assertEqual("none", environment["APT_LISTCHANGES_FRONTEND"])
         self.assertEqual("automatic", environment["UV_PYTHON_DOWNLOADS"])
         self.assertEqual("false", environment["CARGO_NET_OFFLINE"])
         self.assertNotIn("UV_OFFLINE", environment)
         self.assertNotIn("UV_NO_CACHE", environment)
         self.assertNotIn("PYTHONNOUSERSITE", environment)
+
+    def test_persistent_home_is_shared_by_guest_and_runtime_packs(self):
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            return guest.subprocess.CompletedProcess(command, 0, "", "")
+
+        with (
+            mock.patch.object(guest.os.path, "ismount", return_value=False),
+            mock.patch.object(guest.shutil, "copyfile"),
+            mock.patch.object(guest.Path, "mkdir"),
+            mock.patch.object(guest.subprocess, "run", side_effect=run),
+        ):
+            guest.bind_persistent_userspace()
+
+        self.assertIn(
+            ["mount", "--rbind", str(guest.PERSISTENT_SYSTEM_ROOT / "root"), str(Path("/root"))],
+            commands,
+        )
+        self.assertIn(
+            ["mount", "--rbind", str(Path("/root")), str(guest.PERSISTENT_USERSPACE_ROOT / "root")],
+            commands,
+        )
 
     def test_persistent_system_disk_is_formatted_and_mounted_once(self):
         config = {
@@ -228,6 +254,30 @@ class GuestProtocolTest(unittest.TestCase):
 
         self.assertTrue(any(command[0] == "mke2fs" for command in commands))
         self.assertTrue(any(command[:3] == ["mount", "-t", "ext4"] for command in commands))
+
+    def test_shell_execution_enters_persistent_userspace(self):
+        plan = guest.execution_plan(
+            {"execution_mode": "full_access", "execution_principal": "root"},
+            Path("/workspace/project"),
+            guest.ExecutionLimits.from_payload({"limits": {"wall_clock_ms": 1_000, "cpu_ms": 750}}),
+            ["/bin/bash", "main.sh"],
+        )
+
+        self.assertEqual("chroot", plan[0])
+        self.assertEqual(str(guest.PERSISTENT_USERSPACE_ROOT), plan[1])
+        self.assertIn(str(Path("/workspace/project")), plan)
+        self.assertEqual(["/bin/bash", "main.sh"], plan[-2:])
+
+    def test_non_shell_runtime_pack_execution_remains_compatible(self):
+        command = ["/opt/signalasi/packs/python-uv/bin/python3", "main.py"]
+        plan = guest.execution_plan(
+            {"execution_mode": "full_access", "execution_principal": "root"},
+            Path("/workspace/project"),
+            guest.ExecutionLimits.from_payload({"limits": {"wall_clock_ms": 1_000, "cpu_ms": 750}}),
+            command,
+        )
+
+        self.assertEqual(command, plan)
 
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}
