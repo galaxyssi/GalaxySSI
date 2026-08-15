@@ -44,5 +44,16 @@ test('default Linux guest includes the reject target required by its network fir
     '../../apps/android/runtime/buildroot-external/board/signalasi/aarch64/linux.config',
     import.meta.url,
   ), 'utf8');
-  assert.match(kernelConfig, /^CONFIG_IP_NF_TARGET_REJECT=y$/m);
+  for (const option of [
+    'CONFIG_NETFILTER_XTABLES_LEGACY=y',
+    'CONFIG_IP_NF_IPTABLES_LEGACY=y',
+    'CONFIG_NF_REJECT_IPV4=y',
+    'CONFIG_IP_NF_TARGET_REJECT=y',
+  ]) {
+    assert.match(kernelConfig, new RegExp(`^${option}$`, 'm'));
+  }
+
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+  assert.match(buildScript, /kernel_configs=\("\$output_dir"\/build\/linux-\*\/\.config\)/);
+  assert.match(buildScript, /grep -Fxq "\$option" "\$kernel_config"/);
 });

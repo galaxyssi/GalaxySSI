@@ -21,7 +21,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 2
 fi
 
-for command in curl sha256sum tar make install realpath mv; do
+for command in curl sha256sum tar make install realpath mv grep; do
   command -v "$command" >/dev/null || {
     echo "Missing build dependency: $command" >&2
     exit 2
@@ -59,6 +59,25 @@ export SOURCE_DATE_EPOCH="$source_date_epoch"
 make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" signalasi_aarch64_defconfig
 make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$external_tree" \
   -j"${SIGNALASI_RUNTIME_BUILD_JOBS:-$(nproc)}"
+
+shopt -s nullglob
+kernel_configs=("$output_dir"/build/linux-*/.config)
+shopt -u nullglob
+if (( ${#kernel_configs[@]} != 1 )); then
+  echo "Expected exactly one final Linux kernel configuration; found ${#kernel_configs[@]}" >&2
+  exit 3
+fi
+kernel_config="${kernel_configs[0]}"
+for option in \
+  CONFIG_NETFILTER_XTABLES_LEGACY=y \
+  CONFIG_IP_NF_IPTABLES_LEGACY=y \
+  CONFIG_NF_REJECT_IPV4=y \
+  CONFIG_IP_NF_TARGET_REJECT=y; do
+  if ! grep -Fxq "$option" "$kernel_config"; then
+    echo "Required runtime firewall option is missing from the final kernel: $option" >&2
+    exit 3
+  fi
+done
 
 install -m 0644 "$output_dir/images/Image" "$image_output"
 sha256sum "$image_output"

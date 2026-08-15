@@ -439,7 +439,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.2.2",
+                        "guest_version": "1.2.3",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
