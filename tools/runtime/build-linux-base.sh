@@ -90,6 +90,7 @@ fi
 kernel_config="${kernel_configs[0]}"
 for option in \
   CONFIG_EXT4_FS=y \
+  CONFIG_PACKET=y \
   CONFIG_NETDEVICES=y \
   CONFIG_VIRTIO_NET=y \
   CONFIG_NETFILTER_XTABLES_LEGACY=y \
@@ -97,7 +98,7 @@ for option in \
   CONFIG_NF_REJECT_IPV4=y \
   CONFIG_IP_NF_TARGET_REJECT=y; do
   if ! grep -Fxq "$option" "$kernel_config"; then
-    echo "Required runtime firewall option is missing from the final kernel: $option" >&2
+    echo "Required runtime kernel option is missing from the final kernel: $option" >&2
     exit 3
   fi
 done
