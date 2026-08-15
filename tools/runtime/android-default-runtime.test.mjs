@@ -77,6 +77,20 @@ test('default Linux guest embeds a pinned persistent Debian userspace', () => {
   assert.match(guest, /bind_persistent_userspace/);
 });
 
+test('default Linux guest includes every persistent disk utility', () => {
+  const defconfig = readFileSync(new URL(
+    '../../apps/android/runtime/buildroot-external/configs/signalasi_aarch64_defconfig',
+    import.meta.url,
+  ), 'utf8');
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+
+  assert.match(defconfig, /^BR2_PACKAGE_E2FSPROGS=y$/m);
+  assert.match(defconfig, /^BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y$/m);
+  for (const utility of ['blkid', 'e2fsck', 'mke2fs', 'resize2fs']) {
+    assert.match(buildScript, new RegExp(`for binary in[\\s\\S]*${utility}`));
+  }
+});
+
 test('default Linux build preserves full logs without flooding CI output', () => {
   const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
 
