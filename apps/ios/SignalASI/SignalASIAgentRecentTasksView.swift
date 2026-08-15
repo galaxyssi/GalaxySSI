@@ -169,7 +169,7 @@ struct SignalASIAgentRecentTasksView: View {
   }
 
   private func refreshTeamSnapshots() {
-    teamSnapshots = teamHistoryStore.recent(limit: 20)
+    teamSnapshots = teamHistoryStore.recent(20)
   }
 
   @ViewBuilder

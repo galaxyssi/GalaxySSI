@@ -409,15 +409,15 @@ struct AddContactView: View {
     }
     let source = SignalASIContactExchange.connectorAgentSource(from: object)
     let agentObjects = source?.agents ?? [object]
+    let rawAgentIDs: [String] = agentObjects.flatMap { agent in
+      [
+        agent.string("agent_id"),
+        agent.string("mobile_contact_id"),
+        agent.string("id")
+      ]
+    }
     let requestedIDs = Set(
-      agentObjects.flatMap { agent in
-        [
-          agent.string("agent_id"),
-          agent.string("mobile_contact_id"),
-          agent.string("id")
-        ]
-      }
-      .flatMap { rawID in
+      rawAgentIDs.flatMap { rawID in
         let cleanID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanID.isEmpty else { return [] }
         return [cleanID, cleanID.split(separator: ":").last.map(String.init) ?? cleanID]

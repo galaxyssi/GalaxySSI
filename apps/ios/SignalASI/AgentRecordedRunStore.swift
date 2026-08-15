@@ -13,7 +13,7 @@ final class UserDefaultsAgentRecordedRunStore: AgentRecordedRunStoring {
   private let key: String
   private let lock = NSRecursiveLock()
 
-  init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentRecordedRunStore.defaultKey) {
     self.defaults = defaults
     self.key = key
   }

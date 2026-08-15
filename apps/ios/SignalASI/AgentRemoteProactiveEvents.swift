@@ -116,9 +116,3 @@ final class UserDefaultsAgentRemoteProactiveEventStore: ObservableObject {
 private extension Int64 {
   var nonZero: Int64? { self > 0 ? self : nil }
 }
-
-private extension Int {
-  func clamped(to range: ClosedRange<Int>) -> Int {
-    Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
-  }
-}

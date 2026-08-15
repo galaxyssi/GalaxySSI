@@ -377,7 +377,7 @@ struct SignalASIAgentKnowledgeView: View {
 
   private func decodeWebBody(_ data: Data, response: URLResponse) -> String {
     if let encoding = response.textEncodingName,
-       let stringEncoding = String.Encoding(ianaCharSet: encoding),
+       let stringEncoding = String.Encoding(ianaName: encoding),
        let value = String(data: data, encoding: stringEncoding) {
       return value
     }

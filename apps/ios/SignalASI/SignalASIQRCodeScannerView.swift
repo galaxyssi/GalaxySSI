@@ -261,7 +261,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   @objc private func openPhotoPicker() {
     guard !didFinish else { return }
     stopSession()
-    let configuration = PHPickerConfiguration(photoLibrary: .shared())
+    var configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
     configuration.selectionLimit = 1
     let picker = PHPickerViewController(configuration: configuration)
@@ -401,7 +401,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     }
     if let metadataConnection = session.outputs
       .compactMap({ $0 as? AVCaptureMetadataOutput })
-      .first?.connection,
+      .first?.connection(with: .video),
        metadataConnection.isVideoOrientationSupported {
       metadataConnection.videoOrientation = orientation
     }
