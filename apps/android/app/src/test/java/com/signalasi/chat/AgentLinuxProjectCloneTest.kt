@@ -144,6 +144,15 @@ class AgentLinuxProjectCloneTest {
             } else {
                 remote.toURI().toString()
             }
+            val runtimeFiles = listOf(
+                "request.json",
+                "status.json",
+                ".signalasi-checkpoint.json",
+                ".signalasi-stdout",
+                ".signalasi-stderr",
+                ".signalasi-main"
+            ).map { name -> File(workspace, name).apply { writeText(name) } }
+            val runtimeTemp = File(workspace, ".tmp").apply { mkdirs() }
             val runtime = object : AgentProjectLinuxRuntime {
                 override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
                     val process = ProcessBuilder(requireNotNull(bash).absolutePath, "-c", request.source)
@@ -176,6 +185,8 @@ class AgentLinuxProjectCloneTest {
             assertTrue(File(workspace, ".git").isDirectory)
             assertFalse(File(workspace, ".signalasi-runtime/repository").exists())
             assertFalse(File(workspace, ".signalasi-runtime/git-askpass.sh").exists())
+            assertTrue(runtimeFiles.all(File::isFile))
+            assertTrue(runtimeTemp.isDirectory)
         } finally {
             root.deleteRecursively()
         }

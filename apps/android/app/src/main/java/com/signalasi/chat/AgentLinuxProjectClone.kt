@@ -92,7 +92,16 @@ internal class AgentLinuxProjectCloneBackend(
             printf '%s\n' '__SIGNALASI_STAGE__:clone_repository'
             git -c credential.helper= clone --depth $depth$branchArgument -- ${shellQuote(repositoryUrl)} "${'$'}clone_dir"
             printf '%s\n' '__SIGNALASI_STAGE__:activate_repository'
-            find . -mindepth 1 -maxdepth 1 ! -name "${'$'}control_dir" -exec rm -rf -- {} +
+            find . -mindepth 1 -maxdepth 1 \
+              ! -name "${'$'}control_dir" \
+              ! -name '.tmp' \
+              ! -name 'request.json' \
+              ! -name 'status.json' \
+              ! -name '.signalasi-checkpoint.json' \
+              ! -name '.signalasi-stdout' \
+              ! -name '.signalasi-stderr' \
+              ! -name '.signalasi-main' \
+              -exec rm -rf -- {} +
             cp -a "${'$'}clone_dir"/. .
             rm -rf "${'$'}clone_dir" "${'$'}askpass"
             git status --short --branch
