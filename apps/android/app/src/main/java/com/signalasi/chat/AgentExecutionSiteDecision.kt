@@ -34,8 +34,15 @@ internal object AgentExecutionSiteDecisionCodec {
             if (evidence.isBlank()) return null
             val normalizedGoal = userGoal.trim().replace(Regex("\\s+"), " ").lowercase(Locale.US)
             if (!normalizedGoal.contains(evidence.lowercase(Locale.US))) return null
+            if (desktopEvidenceIsNegated(evidence)) return null
         }
         return AgentExecutionSiteDecision(site = site, evidence = evidence)
+    }
+
+    private fun desktopEvidenceIsNegated(evidence: String): Boolean {
+        val normalized = evidence.lowercase(Locale.US)
+        return Regex("\\b(?:do not|don't|never|without)\\b").containsMatchIn(normalized) ||
+            listOf("不要", "禁止", "不得", "不能在", "别在").any(normalized::contains)
     }
 
     fun acceptsActions(

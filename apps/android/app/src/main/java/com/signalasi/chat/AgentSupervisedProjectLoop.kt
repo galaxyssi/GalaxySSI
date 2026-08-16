@@ -280,6 +280,33 @@ internal fun AgentAction.bindSupervisedProjectContext(connector: AgentAction): A
 )
 
 internal object AgentSupervisedProjectControlPayload {
+    fun visibleModelOutput(raw: String): String {
+        val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw)
+        val summary = json?.optString("summary")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (summary != null) return sanitizeVisibleOutput(summary)
+
+        val actionDescriptions = json?.optJSONArray("actions")?.let { actions ->
+            buildList {
+                for (index in 0 until actions.length()) {
+                    actions.optJSONObject(index)
+                        ?.optString("description")
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?.let(::add)
+                }
+            }.distinct().take(MAX_VISIBLE_MODEL_ACTIONS)
+        }.orEmpty()
+        if (actionDescriptions.isNotEmpty()) {
+            return actionDescriptions.joinToString("\n") { description -> "- $description" }
+                .take(MAX_VISIBLE_MODEL_OUTPUT_CHARACTERS)
+        }
+
+        if (json != null || isControlPayloadFragment(raw)) return ""
+        return sanitizeVisibleOutput(raw)
+    }
+
     fun isTranscriptControlPayload(text: String, richOutputJson: String): Boolean =
         isControlPayloadFragment(text) || isControlPayloadFragment(richOutputJson)
 
@@ -316,6 +343,14 @@ internal object AgentSupervisedProjectControlPayload {
         }
         return if (changed) json.toString() else raw
     }
+
+    private fun sanitizeVisibleOutput(raw: String): String = CodexStyleResponsePolicy
+        .sanitizeAssistantText(raw)
+        .replace(PRIVATE_REASONING_BLOCK, "")
+        .replace(MARKDOWN_JSON_FENCE, "")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+        .take(MAX_VISIBLE_MODEL_OUTPUT_CHARACTERS)
 
     private fun removeSatisfiedHistoryReferences(
         actions: JSONArray,
@@ -356,6 +391,13 @@ internal object AgentSupervisedProjectControlPayload {
     private fun normalizedRef(value: String): String? = value.trim()
         .lowercase(Locale.US)
         .takeIf { it.matches(Regex("[a-z0-9][a-z0-9_-]{0,47}")) }
+
+    private val PRIVATE_REASONING_BLOCK = Regex(
+        "(?is)<\\s*(think|analysis|reasoning)\\s*>.*?<\\s*/\\s*\\1\\s*>"
+    )
+    private val MARKDOWN_JSON_FENCE = Regex("(?im)^\\s*```(?:json)?\\s*$")
+    private const val MAX_VISIBLE_MODEL_ACTIONS = 6
+    private const val MAX_VISIBLE_MODEL_OUTPUT_CHARACTERS = 4_000
 }
 
 internal fun MobileNativeAgent.acceptSupervisedProjectPlan(

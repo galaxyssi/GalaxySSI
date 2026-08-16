@@ -75,8 +75,10 @@ object AgentExecutionPresentationPolicy {
             ?.takeUnless { it == AgentExecutionLocationKind.UNKNOWN }
         val declaredRuntime = route?.executionRuntimeKind
             ?.takeUnless { it == AgentExecutionRuntimeKind.UNKNOWN }
+        val nativeToolAction = action?.kind == AgentActionKind.CALL_NATIVE_TOOL
         val locationKind = declaredLocation ?: when {
             toolId == AgentOnDeviceRuntimeTools.EXECUTE -> AgentExecutionLocationKind.PHONE
+            nativeToolAction -> AgentExecutionLocationKind.PHONE
             routeKind == AgentRouteKind.DESKTOP_AGENT -> AgentExecutionLocationKind.DESKTOP
             routeKind == AgentRouteKind.LOCAL_MODEL &&
                 route?.executionDeviceId.orEmpty().isNotBlank() -> AgentExecutionLocationKind.DESKTOP
@@ -91,6 +93,7 @@ object AgentExecutionPresentationPolicy {
         }
         val runtimeKind = declaredRuntime ?: when {
             toolId == AgentOnDeviceRuntimeTools.EXECUTE -> AgentExecutionRuntimeKind.PHONE_LINUX
+            nativeToolAction -> AgentExecutionRuntimeKind.PHONE_NATIVE
             routeKind == AgentRouteKind.DESKTOP_AGENT -> AgentExecutionRuntimeKind.DESKTOP_AGENT
             routeKind == AgentRouteKind.LOCAL_MODEL &&
                 locationKind == AgentExecutionLocationKind.DESKTOP ->
