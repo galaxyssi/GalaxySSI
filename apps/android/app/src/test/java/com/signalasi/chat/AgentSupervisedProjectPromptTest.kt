@@ -75,6 +75,46 @@ class AgentSupervisedProjectPromptTest {
         )
     }
 
+    @Test
+    fun `every structured model round exposes its public summary`() {
+        val response = """
+            {"execution_location":"phone","summary":"Inspected the runtime and selected the next verified step.","actions":[]}
+        """.trimIndent()
+
+        assertEquals(
+            "Inspected the runtime and selected the next verified step.",
+            AgentSupervisedProjectControlPayload.visibleModelOutput(response)
+        )
+    }
+
+    @Test
+    fun `invalid model round remains visible without private reasoning`() {
+        val response = """
+            <think>private chain of thought</think>
+            The runtime check failed, so I will inspect the installed packs next.
+        """.trimIndent()
+
+        assertEquals(
+            "The runtime check failed, so I will inspect the installed packs next.",
+            AgentSupervisedProjectControlPayload.visibleModelOutput(response)
+        )
+    }
+
+    @Test
+    fun `structured round without summary exposes bounded action descriptions`() {
+        val response = """
+            {"execution_location":"phone","actions":[
+              {"description":"Inspect the phone runtime"},
+              {"description":"Run the verified program"}
+            ]}
+        """.trimIndent()
+
+        assertEquals(
+            "- Inspect the phone runtime\n- Run the verified program",
+            AgentSupervisedProjectControlPayload.visibleModelOutput(response)
+        )
+    }
+
     private fun request(goal: String): AgentRequest {
         val screen = ScreenContext(
             foregroundApp = "com.signalasi.chat",
