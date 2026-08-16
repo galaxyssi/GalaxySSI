@@ -571,6 +571,12 @@ internal fun MainActivity.resumeAgentConnectorResponse(
             hook = AgentTaskResumeHook { context, _ ->
                 bindAgentExecutionLoop(runtime, turnId, context)
                 context.progress("connector.response", "Connector response received")
+                recordSupervisedModelOutput(
+                    response = response,
+                    runtime = runtime,
+                    conversationId = conversationId,
+                    turnId = turnId
+                )
                 var state = try {
                     runtime.acceptConnectorResponse(
                         sourceMessageId = response.sourceMessageId,
@@ -662,6 +668,12 @@ internal fun MainActivity.consumeLegacyAgentConnectorResponse(
     thread(name = "signalasi-agent-response-${response.sourceMessageId}") {
         val turnId = agentRuntimeTurnIds[runtime].orEmpty().ifBlank { response.turnId }
         bindAgentExecutionLoop(runtime, turnId)
+        recordSupervisedModelOutput(
+            response = response,
+            runtime = runtime,
+            conversationId = conversationId,
+            turnId = turnId
+        )
         var state = runtime.acceptConnectorResponse(
             sourceMessageId = response.sourceMessageId,
             contactId = response.contactId,
@@ -702,6 +714,34 @@ internal fun MainActivity.consumeLegacyAgentConnectorResponse(
             )
         }
     }
+}
+
+internal fun MainActivity.recordSupervisedModelOutput(
+    response: AgentConnectorResponse,
+    runtime: MobileNativeAgent,
+    conversationId: String,
+    turnId: String
+) {
+    val snapshot = runtime.snapshot()
+    val pendingActionId = snapshot.lastActionResult?.actionId.orEmpty()
+    val pendingAction = snapshot.plan?.actions?.firstOrNull { action ->
+        action.id == pendingActionId
+    }
+    val supervised = pendingAction?.isSupervisedProjectConnector() == true ||
+        AgentSupervisedProjectControlPayload.isControlPayloadFragment(response.content)
+    if (!supervised) return
+    val visibleOutput = AgentSupervisedProjectControlPayload.visibleModelOutput(response.content)
+    if (visibleOutput.isBlank()) return
+    val taskId = response.taskId.ifBlank { snapshot.sessionId }.ifBlank { turnId }
+    agentTranscriptStore.upsert(
+        role = AgentTranscriptRole.PROCESS,
+        text = visibleOutput,
+        dedupeKey = "supervised-model-output:$taskId:REASONING_SUMMARY:${response.sourceMessageId}",
+        timestampMillis = response.receivedAtMillis,
+        conversationId = conversationId,
+        turnId = turnId,
+        taskId = taskId
+    )
 }
 
 internal fun MainActivity.finishAgentConnectorResponseUi(
