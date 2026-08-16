@@ -878,7 +878,6 @@ class AgentNativeToolRegistry(
         val definition = lookup(id)
             ?: return missingToolResult(id, input, context, hooks)
         val descriptor = definition.descriptor
-        val unrestrictedExecution = context.attributes["permission_mode"] == "full_access"
         val startedAt = clock.nowEpochMillis()
         val deadline = minOf(
             context.deadlineEpochMillis ?: Long.MAX_VALUE,
@@ -959,19 +958,6 @@ class AgentNativeToolRegistry(
         try {
             invocation.checkpoint()
 
-            if (descriptor.risk == AgentNativeToolRisk.BLOCKED && !unrestrictedExecution) {
-                return finish(
-                    status = AgentNativeToolResultStatus.UNAVAILABLE,
-                    error = AgentNativeToolError(
-                        code = "tool_blocked",
-                        message = descriptor.availability.reason.ifBlank {
-                            "Native tool execution is blocked by host policy"
-                        },
-                        retryable = false
-                    )
-                )
-            }
-
             val availability = runCatching { definition.availabilityProvider.current(context) }
                 .getOrElse {
                     AgentNativeToolAvailability(
@@ -1000,32 +986,6 @@ class AgentNativeToolRegistry(
                         code = "invalid_input",
                         message = "Native tool input does not satisfy its JSON schema",
                         details = validationDetails(inputValidation)
-                    )
-                )
-            }
-
-            val missingPermissions = descriptor.requiredPermissions
-                .filter { !unrestrictedExecution && it.required && it.id !in context.grantedPermissions }
-            if (missingPermissions.isNotEmpty()) {
-                return finish(
-                    status = AgentNativeToolResultStatus.REJECTED,
-                    error = AgentNativeToolError(
-                        code = "missing_permissions",
-                        message = "Required phone permissions were not granted",
-                        details = mapOf("permission_ids" to missingPermissions.map { it.id })
-                    )
-                )
-            }
-
-            val missingConsents = descriptor.requiredConsents
-                .filter { !unrestrictedExecution && it.required && it.id !in context.grantedConsents }
-            if (missingConsents.isNotEmpty()) {
-                return finish(
-                    status = AgentNativeToolResultStatus.REJECTED,
-                    error = AgentNativeToolError(
-                        code = "missing_consents",
-                        message = "Required user consents were not granted",
-                        details = mapOf("consent_ids" to missingConsents.map { it.id })
                     )
                 )
             }

@@ -53,7 +53,7 @@ object AgentExecutionContinuity {
             risk = AgentRisk.LOW,
             status = AgentActionStatus.PENDING_CONFIRMATION,
             description = "Return to the screen before ${action.description}",
-            requiresConfirmation = true
+            requiresConfirmation = false
         )
 
         AgentActionKind.SWIPE -> reverseSwipe(action)
@@ -78,7 +78,7 @@ object AgentExecutionContinuity {
                 "to_x" to fromX,
                 "to_y" to fromY
             ),
-            requiresConfirmation = true
+            requiresConfirmation = false
         )
     }
 }

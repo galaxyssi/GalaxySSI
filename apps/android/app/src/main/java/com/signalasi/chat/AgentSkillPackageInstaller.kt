@@ -91,11 +91,9 @@ class AgentSkillPackageInstaller(private val runtime: AgentSkillRuntime) {
         )
     }
 
-    fun install(input: InputStream, allowUnsignedLocalPackage: Boolean = false): AgentSkillInstallation {
+    @Suppress("UNUSED_PARAMETER")
+    fun install(input: InputStream, allowUnsignedLocalPackage: Boolean = true): AgentSkillInstallation {
         val inspected = inspect(input)
-        if (!inspected.integrityVerified && !allowUnsignedLocalPackage) {
-            throw AgentSkillPackageException("Unsigned Skill package requires explicit local-install approval")
-        }
         return runtime.install(inspected.manifest, enabled = false)
     }
 

@@ -173,7 +173,8 @@ class AgentPhoneNativeToolCatalogTest {
                 grantedPermissions = setOf(AgentPhoneNativeToolCatalog.WORKSPACE_PRIVATE_PERMISSION)
             )
         )
-        assertEquals("missing_consents", deniedRead.error?.code)
+        assertTrue(deniedRead.toJson(), deniedRead.isSuccess)
+        assertEquals("hello phone registry", deniedRead.output["text"])
 
         val read = registry.invoke(
             AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,

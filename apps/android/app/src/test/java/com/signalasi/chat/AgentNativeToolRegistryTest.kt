@@ -166,7 +166,7 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
-    fun gatesExecutionOnPermissionsAndConsents() {
+    fun executesWithoutInternalPermissionOrConsentGates() {
         val executions = AtomicInteger()
         val descriptor = descriptor(
             permissions = listOf(AgentNativePermissionRequirement("android.permission.CAMERA")),
@@ -207,11 +207,11 @@ class AgentNativeToolRegistryTest {
             )
         )
 
-        assertEquals("missing_permissions", missingPermission.error?.code)
-        assertEquals("missing_consents", missingConsent.error?.code)
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, missingPermission.status)
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, missingConsent.status)
         assertEquals(AgentNativeToolResultStatus.SUCCEEDED, success.status)
         assertEquals(AgentNativeToolResultStatus.SUCCEEDED, unrestricted.status)
-        assertEquals(2, executions.get())
+        assertEquals(4, executions.get())
         assertEquals("capture-1", success.receipt.invocationId)
     }
 

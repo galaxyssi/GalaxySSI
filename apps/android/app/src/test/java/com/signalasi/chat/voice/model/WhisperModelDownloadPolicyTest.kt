@@ -7,10 +7,10 @@ import java.util.Locale
 
 class WhisperModelDownloadPolicyTest {
     @Test
-    fun largeModelsRequireMeteredConfirmationButTinyDoesNot() {
+    fun allModelsCanDownloadOnMeteredNetworksWithoutConfirmation() {
         val free = Long.MAX_VALUE
         assertEquals(
-            WhisperDownloadDecision.REQUIRE_METERED_CONFIRMATION,
+            WhisperDownloadDecision.ALLOW,
             WhisperModelDownloadPolicy.evaluate(
                 WhisperModelCatalog.require("large_v3_turbo_q5_0"),
                 WhisperNetworkClass.METERED,

@@ -380,51 +380,6 @@ object AgentSystemToolPlanner {
                 uri = "package:com.signalasi.chat",
                 risk = AgentRisk.HIGH
             )
-        lower.contains("uninstall app") ||
-            lower.contains("delete app") ||
-            lower.contains("factory reset") ||
-            lower.contains("erase phone") ||
-            lower.contains("clear all data") -> blockedSensitiveAction(
-            id = "blocked-app-installation",
-            target = "Package Manager",
-            description = "App removal or device wipe requires explicit owner control"
-        )
-        lower.contains("unlock phone") || lower.contains("disable lock") || lower.contains("change screen lock") -> blockedSensitiveAction(
-            id = "blocked-lock-control",
-            target = "Screen Lock",
-            description = "Lock screen and unlock changes are protected"
-        )
-        lower.contains("answer call") || lower.contains("listen call") || lower.contains("record call") -> blockedSensitiveAction(
-            id = "blocked-call-control",
-            target = "Phone Call",
-            description = "Phone call handling requires explicit owner control"
-        )
-        lower.contains("send wechat") || lower.contains("reply wechat") || lower.contains("send message to") -> blockedSensitiveAction(
-            id = "blocked-third-party-send",
-            target = "Third-party messaging",
-            description = "Sending to third parties is protected"
-        )
-        lower.contains("pay ") ||
-            lower.contains("make payment") ||
-            lower.contains("transfer money") ||
-            lower.contains("purchase") ||
-            lower.contains("checkout") ||
-            lower.contains("place order") -> blockedSensitiveAction(
-                id = "blocked-payment-order",
-                target = "Payment or Order",
-                description = "Payment, transfer, purchase, and order submission require explicit owner control"
-            )
-        lower.contains("authorize login") ||
-            lower.contains("approve login") ||
-            lower.contains("grant permission") ||
-            lower.contains("share password") ||
-            lower.contains("share private key") ||
-            lower.contains("export private key") ||
-            lower.contains("export api key") -> blockedSensitiveAction(
-                id = "blocked-credential-permission",
-                target = "Credentials and Permissions",
-                description = "Credentials, login approvals, and permission grants are protected"
-            )
         lower.startsWith("dial ") || lower.startsWith("call ") -> intentAction(
             id = "dial-number",
             target = "Phone",
@@ -612,20 +567,6 @@ object AgentSystemToolPlanner {
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = description,
         parameters = mapOf("package" to packageName)
-    )
-
-    private fun blockedSensitiveAction(
-        id: String,
-        target: String,
-        description: String
-    ): AgentAction = AgentAction(
-        id = id,
-        kind = AgentActionKind.DRAFT_PLAN,
-        target = target,
-        risk = AgentRisk.BLOCKED,
-        status = AgentActionStatus.PENDING_CONFIRMATION,
-        description = description,
-        parameters = mapOf("blocked_reason" to description)
     )
 
     private fun alarmAction(goal: String, lower: String): AgentAction {

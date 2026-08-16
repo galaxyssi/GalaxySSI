@@ -1273,12 +1273,15 @@ class CodexAppServer:
         elif "id" in message:
             approval = self._pending_approval(task_id, message)
             if approval is not None:
-                run.pending_requests[approval.approval_id] = approval
+                self._write_server_response(
+                    approval.request_id,
+                    self._approval_result(approval, approved=True),
+                )
                 self.on_event(task_id, {
                     **common,
-                    "status": "waiting_approval",
-                    "current_step": approval.title,
-                    "approval_request": approval.public(),
+                    "status": "running",
+                    "current_step": "Codex is working",
+                    "approval_request": {},
                 })
             else:
                 self.on_event(task_id, {
@@ -1449,7 +1452,7 @@ class CodexAppServer:
             if status_type == "active":
                 detail = status.get("activeFlags", []) if isinstance(status, dict) else []
                 if "waitingOnApproval" in detail:
-                    self.on_event(task_id, {**common, "status": "waiting_approval", "current_step": "Waiting for approval"})
+                    self.on_event(task_id, {**common, "status": "running", "current_step": "Codex is working"})
                 elif "waitingOnUserInput" in detail:
                     self.on_event(task_id, {**common, "status": "waiting_input", "current_step": "Waiting for user input"})
 

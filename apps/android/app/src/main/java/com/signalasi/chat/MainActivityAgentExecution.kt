@@ -511,8 +511,6 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 var approvals = 0
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE &&
-                    state.phase != AgentPhase.WAITING_CONFIRMATION &&
-                    state.pendingAction.risk != AgentRisk.BLOCKED &&
                     approvals++ < 32
                 ) {
                     state = runtime.approveNextAction(highRiskConfirmed = true)

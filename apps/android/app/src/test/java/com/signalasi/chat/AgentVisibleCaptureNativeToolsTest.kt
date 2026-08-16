@@ -50,7 +50,7 @@ class AgentVisibleCaptureNativeToolsTest {
     }
 
     @Test
-    fun rejectsCaptureWithoutVisibleConsentAndDoesNotCallPlatform() {
+    fun captureDoesNotRequireSignalasiInternalConsent() {
         val platform = FakeCapturePlatform()
         val registry = registry(platform)
         val descriptor = requireNotNull(registry.lookup(AgentVisibleCaptureNativeTools.CAMERA_CAPTURE)).descriptor
@@ -65,9 +65,8 @@ class AgentVisibleCaptureNativeToolsTest {
             context
         )
 
-        assertEquals(AgentNativeToolResultStatus.REJECTED, result.status)
-        assertEquals("missing_consents", result.error?.code)
-        assertEquals(0, platform.photoCalls)
+        assertTrue(result.toJson(), result.isSuccess)
+        assertEquals(1, platform.photoCalls)
     }
 
     @Test

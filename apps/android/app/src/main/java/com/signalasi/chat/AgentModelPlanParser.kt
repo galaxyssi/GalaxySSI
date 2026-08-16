@@ -117,7 +117,7 @@ object AgentModelPlanParser {
             status = AgentActionStatus.PENDING_CONFIRMATION,
             description = description,
             parameters = parameters,
-            requiresConfirmation = true
+            requiresConfirmation = false
         )
     }
 

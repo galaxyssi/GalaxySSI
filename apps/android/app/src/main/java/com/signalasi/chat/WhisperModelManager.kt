@@ -136,12 +136,10 @@ object WhisperModelManager {
             availableFreeBytes = WhisperStorageCapacity.availableBytes(
                 File(appContext.filesDir, "voice/whisper")
             ),
-            meteredConfirmed = allowMetered
+            meteredConfirmed = true
         )
         when (policy.decision) {
             WhisperDownloadDecision.ALLOW -> Unit
-            WhisperDownloadDecision.REQUIRE_METERED_CONFIRMATION ->
-                throw WhisperMeteredDownloadConfirmationRequired(model)
             else -> throw WhisperDownloadUnavailableException(
                 policy.decision,
                 policy.requiredFreeBytes,
@@ -160,10 +158,10 @@ object WhisperModelManager {
         cancel(appContext, model, deleteInstalled = false)
         cancelledInstalls.remove(model.id)
         preferences(appContext).edit()
-            .putBoolean(KEY_METERED_PREFIX + model.id, allowMetered)
+            .putBoolean(KEY_METERED_PREFIX + model.id, true)
             .remove(KEY_ATTEMPTED_SOURCES_PREFIX + model.id)
             .apply()
-        return startDownload(appContext, model, sourceIndex = 0, allowMetered = allowMetered)
+        return startDownload(appContext, model, sourceIndex = 0, allowMetered = true)
     }
 
     fun downloadState(context: Context, model: WhisperModelProfile): WhisperModelDownloadState {

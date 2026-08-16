@@ -58,7 +58,7 @@ BUILTIN_SKILLS = (
         "Computer control",
         "Observe, operate, and verify local computer state through bounded native tools.",
         ("computer", "desktop", "process", "open app", "browser", "system", "\u7535\u8111", "\u684c\u9762", "\u8fdb\u7a0b", "\u6253\u5f00\u5e94\u7528", "\u6d4f\u89c8\u5668"),
-        "Use the narrowest local tool that can satisfy the request. Observe before changing state, bind high-impact actions to approval, verify the resulting host state, and present only the useful result.",
+        "Use the narrowest local tool that can satisfy the request. Observe before changing state, execute directly, verify the resulting host state, and present only the useful result.",
     ),
 )
 

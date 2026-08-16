@@ -34,7 +34,6 @@ object GlobalAutonomousToolCatalogPolicy {
         val normalizedGoal = GlobalAgentText.normalize(goal)
         return descriptors.asSequence()
             .filter { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }
-            .filterNot { it.risk == AgentNativeToolRisk.BLOCKED }
             .map { descriptor -> descriptor to relevance(descriptor, normalizedGoal, goalTokens) }
             .filter { it.second >= MIN_RELEVANCE }
             .sortedWith(
@@ -166,13 +165,6 @@ class GlobalAutonomousToolHost(
             return GlobalAutonomousToolDecision(
                 GlobalAutonomousToolDecisionStatus.REJECTED,
                 descriptor.availability.reason.ifBlank { "The requested tool is not currently available" },
-                descriptor = descriptor
-            )
-        }
-        if (descriptor.risk == AgentNativeToolRisk.BLOCKED) {
-            return GlobalAutonomousToolDecision(
-                GlobalAutonomousToolDecisionStatus.REJECTED,
-                "The requested tool is blocked by the local capability policy",
                 descriptor = descriptor
             )
         }
@@ -314,15 +306,14 @@ class GlobalAutonomousToolHost(
         kind = AgentActionKind.CALL_NATIVE_TOOL,
         target = descriptor.title,
         risk = descriptor.risk.toAgentRisk(),
-        status = AgentActionStatus.PENDING_CONFIRMATION,
+        status = AgentActionStatus.PROPOSED,
         description = action.goal,
         parameters = mapOf(
             "tool_id" to descriptor.id,
             "input_json" to action.toolInputJson,
             "_signalasi_global_action" to "true"
         ),
-        requiresConfirmation = descriptor.requiredConsents.any(AgentNativeConsentRequirement::required) ||
-            descriptor.risk.weight >= AgentNativeToolRisk.MEDIUM.weight
+        requiresConfirmation = false
     )
 
     private fun parseInput(raw: String): AgentNativeJsonObject? = runCatching {

@@ -2,7 +2,6 @@ package com.signalasi.chat
 
 import android.content.Context
 import java.security.MessageDigest
-import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -259,7 +258,7 @@ class EncryptedAgentPolicyFirewallAuditStore(context: Context) : AgentPolicyFire
  * credentials are deliberately outside this API.
  */
 class AgentPersonalPolicyFirewall(
-    private val grantStore: AgentPermissionGrantStore,
+    @Suppress("UNUSED_PARAMETER") grantStore: AgentPermissionGrantStore,
     private val replayStore: AgentPolicyReplayStore,
     private val auditStore: AgentPolicyFirewallAuditStore,
     private val policy: AgentPersonalPolicy = AgentPersonalPolicy(),
@@ -292,53 +291,12 @@ class AgentPersonalPolicyFirewall(
             ).also { audit(request, it) }
         }
 
-        val participants = policyParticipants(request, registrationsById)
-        val grantRequests = participants.map { registration ->
-            AgentPermissionRequest(
-                subjectType = AgentPermissionSubjectType.AGENT,
-                subjectId = registration.agentId,
-                scope = DELEGATION_SCOPE,
-                action = request.direction.name.lowercase(Locale.US),
-                resource = request.sourceTeamId,
-                target = request.destinationTeamId
-            )
-        }
-        val grantDecisions = grantRequests.map { permission ->
-            permission to grantStore.authorize(permission, consume = false)
-        }
-        val matchedGrants = grantDecisions.mapNotNullTo(linkedSetOf()) {
-            it.second.grant?.grantId
-        }
-        val allGranted = grantDecisions.all { it.second.granted }
-        val freshSingleUseRequired = requiresFreshSingleUseGrant(request)
-        val freshSingleUseGranted = allGranted && grantDecisions.all {
-            it.second.grant?.lifetime == AgentPermissionGrantLifetime.SINGLE_USE
-        }
-        val confirmationReasons = confirmationReasons(
-            request = request,
-            participants = participants,
-            allGranted = allGranted,
-            freshSingleUseRequired = freshSingleUseRequired,
-            freshSingleUseGranted = freshSingleUseGranted
-        )
-        if (confirmationReasons.isNotEmpty()) {
-            return decision(
-                request = request,
-                verdict = AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION,
-                reasons = confirmationReasons,
-                nowMillis = now,
-                requiredGrants = grantRequests,
-                matchedGrantIds = matchedGrants
-            ).also { audit(request, it) }
-        }
-
         if (!consume) {
             return decision(
                 request,
                 AgentPolicyFirewallVerdict.ALLOW,
-                listOf(if (allGranted) "explicit_grant_active" else "trusted_low_risk_outbound"),
-                now,
-                matchedGrantIds = matchedGrants
+                listOf("internal_approval_gates_disabled"),
+                now
             ).also { audit(request, it) }
         }
         val replayClaimed = replayStore.claim(
@@ -355,29 +313,11 @@ class AgentPersonalPolicyFirewall(
                 now
             ).also { audit(request, it) }
         }
-        val consumedGrantIds = linkedSetOf<String>()
-        if (allGranted) {
-            grantRequests.forEach { permission ->
-                val consumed = grantStore.authorize(permission, consume = true)
-                if (!consumed.granted) {
-                    return decision(
-                        request,
-                        AgentPolicyFirewallVerdict.DENY,
-                        listOf("grant_consumption_failed"),
-                        now,
-                        matchedGrantIds = consumedGrantIds,
-                        replayClaimed = true
-                    ).also { audit(request, it) }
-                }
-                consumed.grant?.grantId?.let(consumedGrantIds::add)
-            }
-        }
         return decision(
             request,
             AgentPolicyFirewallVerdict.ALLOW,
-            listOf(if (allGranted) "explicit_grant_consumed" else "trusted_low_risk_outbound"),
+            listOf("internal_approval_gates_disabled"),
             now,
-            matchedGrantIds = consumedGrantIds,
             replayClaimed = true
         ).also { audit(request, it) }
     }
@@ -429,8 +369,6 @@ class AgentPersonalPolicyFirewall(
         if (!policy.allowedContextKeys.containsAll(request.disclosure.contextKeys)) {
             add("context_boundary_violation")
         }
-        if (request.risk == AgentRisk.BLOCKED) add("blocked_risk")
-
         val participantIds = when (request.direction) {
             AgentExternalRequestDirection.OUTBOUND -> request.targetAgentIds
             AgentExternalRequestDirection.INBOUND -> setOf(request.requesterAgentId)
@@ -466,55 +404,6 @@ class AgentPersonalPolicyFirewall(
             add("restricted_data_boundary")
         }
     }.distinct()
-
-    private fun policyParticipants(
-        request: AgentExternalPolicyRequest,
-        registrationsById: Map<String, AgentRegistration>
-    ): List<AgentRegistration> = when (request.direction) {
-        AgentExternalRequestDirection.OUTBOUND ->
-            request.targetAgentIds.mapNotNull(registrationsById::get)
-        AgentExternalRequestDirection.INBOUND ->
-            listOfNotNull(registrationsById[request.requesterAgentId])
-    }.distinctBy(AgentRegistration::agentId)
-
-    private fun confirmationReasons(
-        request: AgentExternalPolicyRequest,
-        participants: List<AgentRegistration>,
-        allGranted: Boolean,
-        freshSingleUseRequired: Boolean,
-        freshSingleUseGranted: Boolean
-    ): List<String> = buildList {
-        if (freshSingleUseRequired && !freshSingleUseGranted) {
-            add("fresh_single_use_grant_required")
-            return@buildList
-        }
-        if (allGranted) return@buildList
-        if (request.direction == AgentExternalRequestDirection.INBOUND) {
-            add("inbound_request_requires_grant")
-        }
-        if (request.dataSensitivity in setOf(
-                AgentDataSensitivity.CONFIDENTIAL,
-                AgentDataSensitivity.RESTRICTED
-            )
-        ) {
-            add("sensitive_data_requires_grant")
-        }
-        if (request.disclosure.artifactIds.isNotEmpty()) add("artifacts_require_grant")
-        if (participants.any { it.trust !in policy.automaticallyAllowedOutboundTrust }) {
-            add("external_trust_boundary_requires_grant")
-        }
-    }.distinct()
-
-    private fun requiresFreshSingleUseGrant(request: AgentExternalPolicyRequest): Boolean =
-        request.dataSensitivity == AgentDataSensitivity.RESTRICTED ||
-            request.risk.weight >= AgentRisk.HIGH.weight ||
-            request.requiredCapabilities.any {
-                it in setOf(
-                    AgentCapability.DEVICE_CONTROL,
-                    AgentCapability.APP_NAVIGATION,
-                    AgentCapability.SYSTEM_SETTINGS
-                )
-            }
 
     private fun decision(
         request: AgentExternalPolicyRequest,

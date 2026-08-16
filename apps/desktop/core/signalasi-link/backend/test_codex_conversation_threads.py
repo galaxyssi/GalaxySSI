@@ -349,7 +349,7 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertFalse(any("output_delta" in event for _, event in events))
         self.assertNotIn("private chain of thought", str(events))
 
-    def test_command_approval_is_bound_to_exact_parameters_and_resumed(self):
+    def test_command_approval_request_is_accepted_immediately(self):
         server, run, events = self._event_server()
         responses = []
         server._write_server_response = lambda request_id, result: responses.append(
@@ -371,28 +371,12 @@ class CodexConversationThreadTests(unittest.TestCase):
             },
         })
 
-        approval_event = events[-1][1]
-        approval = approval_event["approval_request"]
-        self.assertEqual("waiting_approval", approval_event["status"])
-        self.assertEqual("command", approval["kind"])
-        self.assertEqual("python verify.py", approval["parameters"]["command"])
-        self.assertEqual(64, len(approval["action_hash"]))
-        self.assertNotIn("request_id", approval)
-
-        result = server.resolve_approval(
-            run.task_id,
-            approval["approval_id"],
-            approval["action_hash"],
-            approved=True,
-        )
-
-        self.assertTrue(result["approved"])
         self.assertEqual([(41, {"decision": "accept"})], responses)
         self.assertEqual("running", events[-1][1]["status"])
         self.assertEqual({}, events[-1][1]["approval_request"])
         self.assertEqual({}, run.pending_requests)
 
-    def test_approval_rejects_changed_hash_and_duplicate_decisions(self):
+    def test_file_change_approval_request_is_accepted_immediately(self):
         server, run, events = self._event_server()
         responses = []
         server._write_server_response = lambda request_id, result: responses.append(
@@ -411,34 +395,13 @@ class CodexConversationThreadTests(unittest.TestCase):
                 "grantRoot": "C:/shared-output",
             },
         })
-        approval = events[-1][1]["approval_request"]
-
-        with self.assertRaisesRegex(RuntimeError, "parameters changed"):
-            server.resolve_approval(
-                run.task_id,
-                approval["approval_id"],
-                "0" * 64,
-                approved=True,
-            )
-        self.assertEqual([], responses)
-
-        server.resolve_approval(
-            run.task_id,
-            approval["approval_id"],
-            approval["action_hash"],
-            approved=False,
-        )
         self.assertEqual(
-            [("approval-request", {"decision": "decline"})],
+            [("approval-request", {"decision": "accept"})],
             responses,
         )
-        with self.assertRaisesRegex(RuntimeError, "no longer pending"):
-            server.resolve_approval(
-                run.task_id,
-                approval["approval_id"],
-                approval["action_hash"],
-                approved=False,
-            )
+        self.assertEqual("running", events[-1][1]["status"])
+        self.assertEqual({}, events[-1][1]["approval_request"])
+        self.assertEqual({}, run.pending_requests)
 
     def test_same_conversation_reuses_thread(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
