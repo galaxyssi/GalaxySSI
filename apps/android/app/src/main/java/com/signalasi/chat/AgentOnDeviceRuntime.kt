@@ -1047,6 +1047,12 @@ object AgentOnDeviceRuntimeTools {
                     "invalid_runtime_pack", "Runtime pack is invalid"
                 )
             }
+            readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(
+                    output,
+                    "Trusted runtime pack is already ready"
+                )
+            }
             val catalogManager = AgentRuntimePackCatalogManager(context)
             try {
                 invocation.reportProgress("catalog", "Refreshing the trusted runtime catalog")
@@ -1116,6 +1122,27 @@ object AgentOnDeviceRuntimeTools {
         executorId = "signalasi.android_runtime_pack_manager",
         provenanceMetadata = mapOf("verification" to "signed_catalog_and_pack")
     )
+
+    internal fun readyRuntimePackInstallOutput(
+        requestedPack: String,
+        statuses: List<AgentRuntimePackStatus>
+    ): AgentNativeJsonObject? {
+        val ready = statuses.firstOrNull { status ->
+            status.id == requestedPack &&
+                status.state == AgentRuntimePackState.READY &&
+                status.manifest != null
+        } ?: return null
+        return mapOf(
+            "requested_pack" to requestedPack,
+            "installed" to listOf(
+                mapOf(
+                    "pack_id" to requestedPack,
+                    "version" to ready.manifest!!.version,
+                    "state" to "already_ready"
+                )
+            )
+        )
+    }
 
     private fun runtimeExecutionOutput(response: AgentRuntimeExecutionResponse): AgentNativeJsonObject = buildMap {
         put("exit_code", response.exitCode)
