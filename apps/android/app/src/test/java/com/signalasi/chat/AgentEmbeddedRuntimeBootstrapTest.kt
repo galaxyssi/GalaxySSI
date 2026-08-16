@@ -35,6 +35,42 @@ class AgentEmbeddedRuntimeBootstrapTest {
         assertEquals(0, AgentEmbeddedRuntimeBootstrap.compareVersions("1.2.0+build.2", "1.2.0+build.1"))
     }
 
+    @Test
+    fun `embedded defaults retain only matching same-version content`() {
+        val bundledSha = "a".repeat(64)
+
+        assertEquals(true, AgentEmbeddedRuntimeBootstrap.shouldRetainInstalledPack(
+            installedVersion = "1.2.1",
+            bundledVersion = "1.2.0",
+            installedArchiveSha256 = null,
+            bundledArchiveSha256 = bundledSha
+        ))
+        assertEquals(true, AgentEmbeddedRuntimeBootstrap.shouldRetainInstalledPack(
+            installedVersion = "1.2.0",
+            bundledVersion = "1.2.0",
+            installedArchiveSha256 = bundledSha.uppercase(),
+            bundledArchiveSha256 = bundledSha
+        ))
+        assertEquals(false, AgentEmbeddedRuntimeBootstrap.shouldRetainInstalledPack(
+            installedVersion = "1.2.0",
+            bundledVersion = "1.2.0",
+            installedArchiveSha256 = null,
+            bundledArchiveSha256 = bundledSha
+        ))
+        assertEquals(false, AgentEmbeddedRuntimeBootstrap.shouldRetainInstalledPack(
+            installedVersion = "1.2.0",
+            bundledVersion = "1.2.0",
+            installedArchiveSha256 = "b".repeat(64),
+            bundledArchiveSha256 = bundledSha
+        ))
+        assertEquals(false, AgentEmbeddedRuntimeBootstrap.shouldRetainInstalledPack(
+            installedVersion = "1.1.9",
+            bundledVersion = "1.2.0",
+            installedArchiveSha256 = bundledSha,
+            bundledArchiveSha256 = bundledSha
+        ))
+    }
+
     private fun indexJson(): String = """
         {"format_version":1,"architecture":"arm64-v8a","packs":[
           {"pack_id":"linux-base","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/linux-base.sarpack","archive_sha256":"${"a".repeat(64)}","archive_size_bytes":1024,"installed_size_bytes":2048,"dependencies":[]},

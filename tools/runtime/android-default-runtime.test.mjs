@@ -5,7 +5,7 @@ import { validateDefaultEntries } from './android-default-runtime.mjs';
 
 const entry = (packId, dependencies = []) => ({
   pack_id: packId,
-  version: packId === 'python-uv' ? '0.12.0' : '1.0.0',
+  version: packId === 'python-uv' ? '0.12.1' : '1.0.0',
   architecture: 'arm64-v8a',
   archive_sha256: 'a'.repeat(64),
   archive_size_bytes: 1_024,

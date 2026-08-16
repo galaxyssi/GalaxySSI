@@ -2,7 +2,7 @@
 set -euo pipefail
 
 uv_version="0.11.29"
-pack_version="0.12.0"
+pack_version="0.12.1"
 uv_archive_sha256="593d79a797ece3f1dfaaf3e0a973263422a135d9262c7dbc6cd75d9c11acc0b4"
 python_version="3.13.15"
 python_release="20260814"
