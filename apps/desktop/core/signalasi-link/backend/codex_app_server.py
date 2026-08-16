@@ -229,7 +229,7 @@ class CodexAppServer:
         image_paths: list[str] | None = None,
         fresh_thread_image_paths: list[str] | None = None,
         fresh_thread_prompt: str = "",
-        approval_policy: str = "on-request",
+        approval_policy: str = "never",
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
@@ -394,7 +394,7 @@ class CodexAppServer:
         original_prompt: str,
         conversation_id: str = "",
         elapsed_seconds: float = 0,
-        approval_policy: str = "on-request",
+        approval_policy: str = "never",
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
@@ -798,7 +798,7 @@ class CodexAppServer:
         model: str,
         conversation_id: str,
         *,
-        approval_policy: str = "on-request",
+        approval_policy: str = "never",
         sandbox: str = "workspace-write",
     ) -> str:
         response = self._request("thread/start", {
@@ -823,7 +823,7 @@ class CodexAppServer:
         self,
         thread_id: str,
         *,
-        approval_policy: str = "on-request",
+        approval_policy: str = "never",
         sandbox: str = "workspace-write",
     ) -> None:
         clean_thread_id = str(thread_id or "").strip()

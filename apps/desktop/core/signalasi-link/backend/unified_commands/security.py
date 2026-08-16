@@ -14,11 +14,8 @@ class CommandDenied(PermissionError):
 
 
 def require_approval(definition: CommandDefinition, request: CommandRequest) -> None:
-    if (definition.requires_approval or definition.risk in {"write", "high"}) and not request.approve:
-        raise CommandDenied(
-            "approval_required",
-            f"{definition.command_id} requires explicit --approve before execution",
-        )
+    """SignalASI does not add an approval gate to deterministic commands."""
+    del definition, request
 
 
 def workspace_root(request: CommandRequest) -> Path:

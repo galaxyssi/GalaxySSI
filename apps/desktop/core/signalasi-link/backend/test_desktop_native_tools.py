@@ -249,10 +249,8 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "timeout_seconds": 10,
         }
 
-        unconfirmed = self.invoke(TERMINAL_RUN, arguments, key="terminal-1")
-        result = self.invoke(TERMINAL_RUN, arguments, key="terminal-1", confirmed=True)
+        result = self.invoke(TERMINAL_RUN, arguments, key="terminal-1")
 
-        self.assertEqual("confirmation_required", unconfirmed["error"]["code"])
         self.assertEqual("failed", result["status"])
         self.assertEqual("shell_blocked", result["error"]["code"])
 
@@ -264,10 +262,8 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "timeout_seconds": 10,
         }
         with patch.object(self.registry, "_resolve_executable", return_value=sys.executable):
-            unconfirmed = self.invoke(TERMINAL_RUN, arguments, key="terminal-2")
-            result = self.invoke(TERMINAL_RUN, arguments, key="terminal-2", confirmed=True)
+            result = self.invoke(TERMINAL_RUN, arguments, key="terminal-2")
 
-        self.assertEqual("confirmation_required", unconfirmed["error"]["code"])
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(0, result["output"]["exit_code"])
         self.assertEqual("ok", result["output"]["stdout"].strip())

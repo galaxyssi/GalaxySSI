@@ -65,27 +65,16 @@ class UnifiedCommandsTest(unittest.TestCase):
         self.assertEqual(result.status, "not_found")
         self.assertEqual(result.error_code, "command_not_found")
 
-    def test_file_write_requires_approval(self):
+    def test_file_write_runs_without_internal_approval(self):
         result = self.engine.execute(CommandRequest("file.write", {"path": "a.txt", "content": "x"}, workspace=str(self.workspace)))
-        self.assertEqual(result.status, "denied")
-        self.assertEqual(result.error_code, "approval_required")
-        self.assertFalse((self.workspace / "a.txt").exists())
+        self.assertEqual(result.status, "completed")
+        self.assertEqual((self.workspace / "a.txt").read_text(encoding="utf-8"), "x")
 
-    def test_high_risk_dry_run_requires_approval(self):
+    def test_high_risk_dry_run_runs_without_internal_approval(self):
         result = self.engine.execute(
             CommandRequest("file.write", {"path": "a.txt", "content": "x", "dry_run": True}, workspace=str(self.workspace))
         )
-        self.assertEqual(result.status, "denied")
-        self.assertEqual(result.error_code, "approval_required")
-        approved = self.engine.execute(
-            CommandRequest(
-                "file.write",
-                {"path": "a.txt", "content": "x", "dry_run": True},
-                workspace=str(self.workspace),
-                approve=True,
-            )
-        )
-        self.assertEqual(approved.status, "completed")
+        self.assertEqual(result.status, "completed")
 
     def test_file_write_read_and_snapshot_are_deterministic(self):
         first = self.engine.execute(
@@ -165,7 +154,7 @@ class UnifiedCommandsTest(unittest.TestCase):
         self.assertGreater(result.data["unsupported_count"], 0)
         self.assertGreater(result.data["needs_input_count"], 0)
 
-    def test_all_write_and_high_risk_commands_are_denied_without_approval(self):
+    def test_all_write_and_high_risk_commands_bypass_internal_approval(self):
         failures = []
         protected = [
             command for command in self.engine.registry.list()
@@ -179,14 +168,14 @@ class UnifiedCommandsTest(unittest.TestCase):
                     workspace=str(self.workspace),
                 )
             )
-            if result.status != "denied" or result.error_code != "approval_required":
+            if result.error_code == "approval_required" or command["requires_approval"]:
                 failures.append(
                     (command["command_id"], result.status, result.error_code)
                 )
         self.assertGreater(len(protected), 0)
         self.assertEqual(failures, [])
 
-    def test_all_high_risk_commands_simulate_approved_dispatch_without_side_effects(self):
+    def test_all_high_risk_commands_simulate_dispatch_without_side_effects(self):
         high_risk = [
             command
             for command in self.engine.registry.list()
@@ -208,7 +197,7 @@ class UnifiedCommandsTest(unittest.TestCase):
                     "simulated": True,
                     "command_id": definition.command_id,
                 },
-                display={"type": "approval_simulation_receipt"},
+                display={"type": "full_access_simulation_receipt"},
                 started_at=completed,
                 completed_at=completed,
             )
@@ -217,41 +206,26 @@ class UnifiedCommandsTest(unittest.TestCase):
             command_id = command["command_id"]
             original_handler = self.engine.registry.handler(command_id)
             self.assertIsNotNone(original_handler)
-            denied = self.engine.execute(
-                CommandRequest(
-                    command_id,
-                    workspace=str(self.workspace),
-                )
-            )
-            if (
-                denied.status != "denied"
-                or denied.error_code != "approval_required"
-            ):
-                failures.append(
-                    (command_id, "denied", denied.status, denied.error_code)
-                )
-                continue
             try:
                 self.engine.registry.register(command_id, simulated_handler)
-                approved = self.engine.execute(
+                dispatched = self.engine.execute(
                     CommandRequest(
                         command_id,
-                        source="approval_simulation",
+                        source="full_access_simulation",
                         requested_by="test",
                         workspace=str(self.workspace),
-                        approve=True,
                     )
                 )
             finally:
                 self.engine.registry.register(command_id, original_handler)
             if (
-                approved.status != "completed"
-                or approved.data.get("simulated") is not True
-                or approved.display.get("type")
-                != "approval_simulation_receipt"
+                dispatched.status != "completed"
+                or dispatched.data.get("simulated") is not True
+                or dispatched.display.get("type")
+                != "full_access_simulation_receipt"
             ):
                 failures.append(
-                    (command_id, "approved", approved.public())
+                    (command_id, "dispatched", dispatched.public())
                 )
 
         after = sorted(
@@ -263,7 +237,7 @@ class UnifiedCommandsTest(unittest.TestCase):
                 """
                 SELECT COUNT(*)
                 FROM command_runs
-                WHERE source = 'approval_simulation' AND status = 'completed'
+                WHERE source = 'full_access_simulation' AND status = 'completed'
                 """
             ).fetchone()[0]
             simulated_receipts = conn.execute(
@@ -274,7 +248,7 @@ class UnifiedCommandsTest(unittest.TestCase):
                   AND run_id IN (
                       SELECT run_id
                       FROM command_runs
-                      WHERE source = 'approval_simulation'
+                      WHERE source = 'full_access_simulation'
                   )
                 """
             ).fetchone()[0]

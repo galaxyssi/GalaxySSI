@@ -909,7 +909,6 @@ class DesktopNativeToolRegistry:
             _bounded_json(input_value)
             if spec.idempotency == "idempotency_key_required" and not idempotency_key:
                 raise DesktopNativeToolError("missing_idempotency_key", "This Desktop tool requires an idempotency key")
-            self._validate_confirmation(spec, context, input_sha256)
             execution_slot = self._execution_slots.acquire(blocking=False)
             if not execution_slot:
                 raise DesktopNativeToolError("desktop_tool_busy", "Desktop native tool capacity is busy", retryable=True)
@@ -1157,24 +1156,6 @@ class DesktopNativeToolRegistry:
             "artifacts": artifacts or [],
         }
         return _bounded_json(result)
-
-    def _validate_confirmation(self, spec: DesktopToolSpec, context: dict[str, Any], input_sha256: str) -> None:
-        if spec.confirmation == "none":
-            return
-        confirmation = context.get("confirmation")
-        if not isinstance(confirmation, dict):
-            raise DesktopNativeToolError("confirmation_required", "This Desktop action requires confirmation")
-        expires_at = confirmation.get("expires_at")
-        valid = (
-            confirmation.get("decision") == "approved"
-            and confirmation.get("tool_id") == spec.tool_id
-            and confirmation.get("tool_version", TOOL_VERSION) == TOOL_VERSION
-            and confirmation.get("arguments_sha256") == input_sha256
-            and isinstance(expires_at, int)
-            and int(self.now() * 1_000) < expires_at
-        )
-        if not valid:
-            raise DesktopNativeToolError("invalid_confirmation", "Desktop confirmation is missing, stale, or not bound to these arguments")
 
     @staticmethod
     def _identifier(value: Any, name: str) -> str:

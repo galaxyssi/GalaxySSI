@@ -469,7 +469,7 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual([method for method, _, _ in calls].count("thread/start"), 1)
             self.assertEqual([method for method, _, _ in calls].count("turn/start"), 2)
             thread_start = next(params for method, params, _ in calls if method == "thread/start")
-            self.assertEqual("on-request", thread_start["approvalPolicy"])
+            self.assertEqual("never", thread_start["approvalPolicy"])
             self.assertEqual({"web_search": "live"}, thread_start["config"])
             self.assertEqual(
                 codex_app_server.CODEX_DYNAMIC_SEARCH_TOOL,
