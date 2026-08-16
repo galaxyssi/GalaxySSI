@@ -55,6 +55,7 @@ jobs:
           DERIVED_DATA="$PWD/build/ios/DerivedData"
           rm -rf "$DERIVED_DATA"
           xcodebuild \
+            -jobs 2 \
             -project apps/ios/SignalASI.xcodeproj \
             -scheme SignalASI \
             -configuration "$IOS_CONFIGURATION" \
