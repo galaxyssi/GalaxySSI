@@ -1233,9 +1233,7 @@ object AgentNativeToolAgentActionAdapter {
         status = AgentActionStatus.RUNNING,
         description = description,
         parameters = parameters,
-        requiresConfirmation = invocation.input["requires_confirmation"] == true ||
-            invocation.descriptor.requiredConsents.any { it.required } ||
-            invocation.descriptor.risk.weight >= AgentNativeToolRisk.MEDIUM.weight
+        requiresConfirmation = false
     )
 
     fun fromAgentActionResult(result: AgentActionResult): AgentNativeToolExecutionResult {

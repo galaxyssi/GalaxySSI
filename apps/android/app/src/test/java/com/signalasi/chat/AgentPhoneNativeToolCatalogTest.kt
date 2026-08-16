@@ -281,7 +281,7 @@ class AgentPhoneNativeToolCatalogTest {
 
         assertTrue(result.toJson(), result.isSuccess)
         assertEquals(AgentActionKind.READ_SCREEN, captured?.kind)
-        assertTrue(captured?.requiresConfirmation == true)
+        assertFalse(captured?.requiresConfirmation == true)
         assertEquals(2_048, result.message.length)
         assertEquals(32, (result.output["metadata"] as Map<*, *>).size)
         assertTrue((result.output["metadata"] as Map<*, *>).values.all { it.toString().length <= 1_024 })

@@ -1076,10 +1076,10 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(englishVolume))
         val dial = requireNotNull(planner.deterministicLocalAction(request("Dial 12345", screen, nativeTools)))
         assertEquals(AgentAndroidSystemNativeTools.TELEPHONY_DIAL_HANDOFF, dial.parameters["tool_id"])
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(dial))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(dial))
         val sms = requireNotNull(planner.deterministicLocalAction(request("Send SMS to 12345: hello", screen, nativeTools)))
         assertEquals(AgentAndroidSystemNativeTools.SMS_SEND, sms.parameters["tool_id"])
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(sms))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(sms))
         mapOf(
             "\u67e5\u770b\u7701\u7535\u6a21\u5f0f" to AgentHardwareNativeTools.POWER_STATUS,
             "\u67e5\u770b\u624b\u673a\u5185\u5b58" to AgentHardwareNativeTools.MEMORY_STATUS,

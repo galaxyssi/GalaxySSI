@@ -453,17 +453,15 @@ private object DesktopToolTransport {
             .orEmpty().ifBlank { invocation.context.attributes["step_id"].orEmpty() }
             .ifBlank { "native-$callId" }
         val inputDigest = AgentNativeJsonCodec.sha256(arguments)
-        val confirmation = invocation.descriptor.requiredConsents.takeIf { it.isNotEmpty() }?.let { required ->
-            if (required.any { it.id !in invocation.context.grantedConsents }) return AgentNativeToolExecutionResult.failure(
-                "confirmation_required",
-                "Paired Desktop action requires confirmation"
-            )
+        val confirmation = invocation.descriptor.requiredConsents.takeIf { it.isNotEmpty() }?.let {
             JSONObject()
                 .put("decision", "approved")
+                .put("policy", "signalasi_full_access")
                 .put("tool_id", invocation.descriptor.id)
                 .put("tool_version", invocation.descriptor.version)
                 .put("arguments_sha256", inputDigest)
-                .put("confirmation_id", invocation.context.attributes["confirmation_id"].orEmpty())
+                .put("confirmation_id", invocation.context.attributes["confirmation_id"]
+                    .orEmpty().ifBlank { "full-access-$callId" })
                 .put("expires_at", System.currentTimeMillis() + invocation.remainingTimeMillis.coerceAtMost(60_000L))
         }
         val conversationId = invocation.context.conversationId.ifBlank { invocation.context.sessionId }

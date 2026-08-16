@@ -27,20 +27,20 @@ class AgentConfirmationPolicyTest {
     }
 
     @Test
-    fun sensitiveCapabilitiesRequireOneRememberedConfirmation() {
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, tier("location", AgentActionKind.CALL_NATIVE_TOOL, "Read location"))
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, tier("download", AgentActionKind.CALL_NATIVE_TOOL, "Download file"))
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, tier("contact-upsert", AgentActionKind.CALL_NATIVE_TOOL, "Create contact"))
+    fun sensitiveCapabilitiesRunDirectlyUnderFullAccess() {
+        assertEquals(AgentConfirmationTier.DIRECT, tier("location", AgentActionKind.CALL_NATIVE_TOOL, "Read location"))
+        assertEquals(AgentConfirmationTier.DIRECT, tier("download", AgentActionKind.CALL_NATIVE_TOOL, "Download file"))
+        assertEquals(AgentConfirmationTier.DIRECT, tier("contact-upsert", AgentActionKind.CALL_NATIVE_TOOL, "Create contact"))
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ONCE,
+            AgentConfirmationTier.DIRECT,
             nativeTier(AgentHardwareNativeTools.BLUETOOTH_DISCOVERY_FOREGROUND, "Discover nearby Bluetooth devices once")
         )
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ONCE,
+            AgentConfirmationTier.DIRECT,
             nativeTier(AgentHardwareNativeTools.INSTALLED_APPS_LIST, "List query-visible installed apps")
         )
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, nativeTier(AgentVisibleCaptureNativeTools.MICROPHONE_RECORD, "Record audio"))
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, nativeTier(AgentNotificationNativeTools.NOTIFICATIONS_LIST, "Read notifications"))
+        assertEquals(AgentConfirmationTier.DIRECT, nativeTier(AgentVisibleCaptureNativeTools.MICROPHONE_RECORD, "Record audio"))
+        assertEquals(AgentConfirmationTier.DIRECT, nativeTier(AgentNotificationNativeTools.NOTIFICATIONS_LIST, "Read notifications"))
     }
 
     @Test
@@ -61,24 +61,24 @@ class AgentConfirmationPolicyTest {
     }
 
     @Test
-    fun consequentialActionsAlwaysRequireConfirmation() {
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, tier("sms-send", AgentActionKind.CALL_NATIVE_TOOL, "Send SMS message"))
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, tier("delete-file", AgentActionKind.CALL_NATIVE_TOOL, "Delete file"))
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, tier("lock", AgentActionKind.LOCK_SCREEN, "Lock device"))
+    fun consequentialActionsAlsoRunDirectlyUnderFullAccess() {
+        assertEquals(AgentConfirmationTier.DIRECT, tier("sms-send", AgentActionKind.CALL_NATIVE_TOOL, "Send SMS message"))
+        assertEquals(AgentConfirmationTier.DIRECT, tier("delete-file", AgentActionKind.CALL_NATIVE_TOOL, "Delete file"))
+        assertEquals(AgentConfirmationTier.DIRECT, tier("lock", AgentActionKind.LOCK_SCREEN, "Lock device"))
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ALWAYS,
+            AgentConfirmationTier.DIRECT,
             nativeTier(AgentNotificationNativeTools.NOTIFICATION_REPLY, "Reply to a notification")
         )
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ALWAYS,
+            AgentConfirmationTier.DIRECT,
             nativeTier(AgentDesktopRemoteNativeTools.TERMINAL_RUN, "Run a Desktop workspace command")
         )
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ALWAYS,
+            AgentConfirmationTier.DIRECT,
             tier("submit-code", AgentActionKind.CALL_CONNECTOR, "Git commit and push the code")
         )
         assertEquals(
-            AgentConfirmationTier.CONFIRM_ALWAYS,
+            AgentConfirmationTier.DIRECT,
             tier("system-settings", AgentActionKind.CALL_CONNECTOR, "Change a system setting")
         )
     }

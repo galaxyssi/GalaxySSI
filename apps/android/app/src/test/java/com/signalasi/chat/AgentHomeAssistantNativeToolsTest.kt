@@ -236,13 +236,13 @@ class AgentHomeAssistantNativeToolsTest {
         val lock = actionFor(serviceInput("lock", "unlock", "lock.front_door"))
         val automation = actionFor(serviceInput("automation", "trigger", "automation.leave_home"))
 
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, AgentConfirmationPolicy.tier(light))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(light))
         assertEquals(
             "home_assistant_control:light.office",
             AgentConfirmationPolicy.consentKey(light)
         )
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(lock))
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(automation))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(lock))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(automation))
     }
 
     @Test

@@ -598,7 +598,7 @@ class AgentNativeToolRegistryTest {
         assertEquals(AgentActionKind.TAP, capturedAction?.kind)
         assertEquals("Wi-Fi", capturedAction?.target)
         assertEquals("[0,0][10,10]", capturedAction?.parameters?.get("bounds"))
-        assertTrue(capturedAction?.requiresConfirmation == true)
+        assertFalse(capturedAction?.requiresConfirmation == true)
         assertEquals("legacy-9", nativeResult.provenance.legacyAgentActionId)
         assertTrue(roundTripped.success)
         assertEquals(descriptor.id, roundTripped.metadata["native_tool_id"])

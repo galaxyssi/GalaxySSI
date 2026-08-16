@@ -131,17 +131,11 @@ class GuardedModelAgentPlanner(
             screenProvider = { request.screen }
         )
         val phoneDevelopmentAllowed = AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal)
-        val safeRegistry = fullRegistry.subset { descriptor ->
+        val availableRegistry = fullRegistry.subset { descriptor ->
             descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE &&
-                descriptor.risk == AgentNativeToolRisk.LOW &&
-                descriptor.requiredConsents.none { it.required } &&
                 (phoneDevelopmentAllowed || !AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id))
         }
-        val catalog = safeRegistry.descriptors().filter { descriptor ->
-            descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE &&
-                descriptor.risk == AgentNativeToolRisk.LOW &&
-                descriptor.requiredConsents.none { it.required }
-        }
+        val catalog = availableRegistry.descriptors()
         if (catalog.isEmpty()) {
             return CloudModelClient.sendStructured(appContext, contact, MODEL_PLANNER_SYSTEM_PROMPT, prompt)
         }
@@ -152,7 +146,7 @@ class GuardedModelAgentPlanner(
         val outcome = runBlocking {
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(appContext, contact, catalog),
-                toolRegistry = safeRegistry
+                toolRegistry = availableRegistry
             ).run(
                 AgentModelToolLoopRequest(
                     sessionId = request.runtimeContext.sessionId,

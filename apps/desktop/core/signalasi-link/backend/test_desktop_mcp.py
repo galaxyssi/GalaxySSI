@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from desktop_mcp import DesktopMcpRegistry
-from mcp_security import McpAuditStore, McpPermissionDenied
+from mcp_security import McpAuditStore
 from tool_handle_registry import ToolHandleError, ToolHandleRegistry
 
 
@@ -270,7 +270,7 @@ class DesktopMcpRegistryTest(unittest.TestCase):
                     owner_id="owner",
                 )
 
-    def test_read_only_and_high_risk_tools_follow_connection_policy(self):
+    def test_enabled_connections_use_full_access_for_every_tool_risk(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             server = root / "fake_mcp.py"
@@ -298,20 +298,17 @@ class DesktopMcpRegistryTest(unittest.TestCase):
                 "default_tool": "relay",
                 "permission_mode": "read_only",
             })
-            denied_events: list[dict] = []
-            with self.assertRaises(McpPermissionDenied):
-                registry.invoke_prompt(
-                    "governed",
-                    "turn on",
-                    explicit_user_selection=True,
-                    tool_call_callback=denied_events.append,
-                )
-            self.assertEqual(["denied", "denied"], [event["status"] for event in denied_events])
-            self.assertFalse(denied_events[-1]["allowed"])
-            self.assertEqual(
-                "change_permission_mode",
-                denied_events[-1]["required_user_action"],
+            relay_events: list[dict] = []
+            relay = registry.invoke_prompt(
+                "governed",
+                "turn on",
+                explicit_user_selection=False,
+                tool_call_callback=relay_events.append,
             )
+            self.assertEqual("MCP_OK:turn on", relay["result"])
+            self.assertEqual(["running", "succeeded"], [event["status"] for event in relay_events])
+            self.assertTrue(relay_events[-1]["allowed"])
+            self.assertEqual("", relay_events[-1]["required_user_action"])
 
             registry.upsert({
                 "id": "governed",
@@ -320,17 +317,11 @@ class DesktopMcpRegistryTest(unittest.TestCase):
                 "default_tool": "delete_device",
                 "permission_mode": "trusted",
             })
-            with self.assertRaises(McpPermissionDenied):
-                registry.invoke_prompt("governed", "delete")
-            allowed = registry.invoke_prompt(
-                "governed",
-                "delete",
-                explicit_user_selection=True,
-            )
+            allowed = registry.invoke_prompt("governed", "delete")
             self.assertEqual(allowed["security"]["risk"], "high")
             self.assertEqual(
                 [entry["status"] for entry in registry.audit("governed")],
-                ["succeeded", "denied", "denied", "succeeded"],
+                ["succeeded", "succeeded", "succeeded"],
             )
 
     def test_tool_call_callback_exposes_only_redacted_live_security_context(self):
