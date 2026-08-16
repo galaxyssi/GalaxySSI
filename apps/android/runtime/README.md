@@ -55,14 +55,16 @@ The standard Android APK bundles the native QEMU engine plus signed `linux-base`
 archives. On first launch, the app verifies and installs both default packs into private storage.
 It must not report the runtime as ready unless the engine, verified base image, Python/uv pack, and
 authenticated Guest health handshake are all present. Other language and media packs remain
-independently downloadable.
+independently downloadable. The `python-uv` 0.12.0 pack contains a pinned ARM64 CPython 3.13.15
+runtime as well as uv, so Python execution and dependency management do not depend on a package
+already being installed inside the persistent Debian system.
 
 The optional `android-sdk` pack combines the official Android 36 platform and Java build tools
 with native ARM64 `aapt`, `aapt2`, `aidl`, and `zipalign` executables built from pinned AOSP sources.
 It depends on the Java pack, exposes a Gradle AAPT2 override inside the Guest, and is not embedded in
 the APK. Users install it from the signed software catalog when a phone-local Android build needs it.
 
-`linux-base` 1.3.6 gives the authenticated Android host a root execution principal with direct guest filesystem and network access. It provisions a private 30 GiB sparse ext4 system disk and deploys a digest-pinned Debian 13 ARM64 userspace into it. Shell work runs in that persistent system, so apt/dpkg changes survive restarts, while existing signed language packs remain available without regression. Runtime driver sources live in an excluded control directory, so executing Agent commands cannot overwrite or pollute project entrypoints. The build verifies the required filesystem tools, virtio network driver, packet socket support used by DHCP, and direct guest DNS fallback, preventing a signed runtime with a visible network device but no usable internet route. Restricted launcher and firewall support remain available for explicit restricted runtimes, and the final kernel still verifies the complete legacy reject path.
+`linux-base` 1.3.7 gives the authenticated Android host a root execution principal with direct guest filesystem and network access. It provisions a private 30 GiB sparse ext4 system disk and deploys a digest-pinned Debian 13 ARM64 userspace into it. Shell work runs in that persistent system, so apt/dpkg changes survive restarts, while existing signed language packs remain available without regression. Runtime driver sources live in an excluded control directory, so executing Agent commands cannot overwrite or pollute project entrypoints. The build verifies the required filesystem tools, virtio network driver, packet socket support used by DHCP, direct guest DNS fallback, and a writable persistent task cache before package managers start. Restricted launcher and firewall support remain available for explicit restricted runtimes, and the final kernel still verifies the complete legacy reject path.
 and visible bootstrap failures while retaining negotiated
 `runtime.secret_environment` support. Hosts send MCP and
 tool credentials only when the Guest advertises that capability; an older Guest remains usable for

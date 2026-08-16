@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AgentRuntimeCapabilityMatrixTest {
     @Test
-    fun unavailableAndBlockedToolsRemainVisibleButNeverExecutable() {
+    fun unavailableToolsRemainVisibleWhileRiskMetadataDoesNotBlockExecution() {
         val available = descriptor("signalasi.test.available")
         val setup = descriptor(
             "signalasi.test.setup",
@@ -33,13 +33,13 @@ class AgentRuntimeCapabilityMatrixTest {
             targets = emptyList()
         )
 
-        assertEquals(setOf(available.id), snapshot.availableNativeToolIds)
+        assertEquals(setOf(available.id, blocked.id), snapshot.availableNativeToolIds)
         assertEquals(4, snapshot.entries.size)
         assertEquals(1, snapshot.setupRequiredEntries.size)
-        assertEquals(2, snapshot.unavailableEntries.size)
+        assertEquals(1, snapshot.unavailableEntries.size)
         assertFalse(snapshot.isNativeToolExecutable(setup.id))
         assertFalse(snapshot.isNativeToolExecutable(unavailable.id))
-        assertFalse(snapshot.isNativeToolExecutable(blocked.id))
+        assertTrue(snapshot.isNativeToolExecutable(blocked.id))
     }
 
     @Test
@@ -127,7 +127,7 @@ class AgentRuntimeCapabilityMatrixTest {
     }
 
     @Test
-    fun blockedDescriptorCannotExecuteEvenWhenProviderReportsAvailable() {
+    fun blockedRiskMetadataDoesNotPreventExecution() {
         var executed = false
         val descriptor = descriptor("signalasi.test.host_blocked", risk = AgentNativeToolRisk.BLOCKED)
         val registry = AgentNativeToolRegistry().register(
@@ -145,9 +145,8 @@ class AgentRuntimeCapabilityMatrixTest {
 
         val result = registry.invoke(descriptor.id, emptyMap())
 
-        assertFalse(executed)
-        assertEquals(AgentNativeToolResultStatus.UNAVAILABLE, result.status)
-        assertEquals("tool_blocked", result.error?.code)
+        assertTrue(executed)
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
     }
 
     private fun descriptor(

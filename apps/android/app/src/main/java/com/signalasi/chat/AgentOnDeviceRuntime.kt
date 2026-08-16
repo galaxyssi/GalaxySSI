@@ -14,6 +14,11 @@ import java.security.cert.CertificateFactory
 import java.util.Locale
 import java.util.UUID
 
+internal fun guestArchiveToolPath(guestWorkspacePath: String, relativeToolPath: String): String =
+    "${guestWorkspacePath.trimEnd('/')}/${relativeToolPath.replace('\\', '/').trimStart('/')}"
+
+internal fun shellSingleQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
+
 enum class AgentOnDeviceRuntimeBackend(val wireValue: String) {
     QEMU_TCG("qemu_tcg"),
     ANDROID_VIRTUALIZATION_FRAMEWORK("android_virtualization_framework"),
@@ -412,9 +417,13 @@ class AgentOnDeviceRuntimeManager(
         val prepared = workspaceManager.prepare(request)
         val checkpointId = automaticCheckpointId(request.requestId)
         val archiveToolBin = workspaceManager.installArchiveCompatibilityTools(prepared)
+        val guestArchiveToolBin = guestArchiveToolPath(
+            guestWorkspacePath = prepared.guestPath,
+            relativeToolPath = archiveToolBin.relativeTo(prepared.directory).path
+        )
         val normalizedRequest = request.copy(
             source = if (request.language == AgentRuntimeLanguage.SHELL) {
-                "export PATH=\"\$HOME/${archiveToolBin.relativeTo(prepared.directory).path.replace('\\', '/')}:\$PATH\"\n${request.source}"
+                "export PATH=${shellSingleQuote(guestArchiveToolBin)}:\$PATH\n${request.source}"
             } else {
                 request.source
             },
@@ -431,14 +440,28 @@ class AgentOnDeviceRuntimeManager(
         return try {
             val rawResponse = activeBridge.execute(normalizedRequest)
             if (normalizedRequest.source != request.source) prepared.sourceFile.writeText(request.source, Charsets.UTF_8)
-            val artifacts = workspaceManager.collectArtifacts(prepared, normalizedRequest)
-            val commit = workspaceManager.commitProject(
-                prepared = prepared,
-                byteLimit = normalizedRequest.resourceLimits.diskBytes,
-                checkpointId = checkpointId
-            )
-            committedCheckpoint = commit.checkpoint
-            val disposition = if (rawResponse.exitCode == 0) {
+            val succeeded = rawResponse.exitCode == 0
+            val artifacts = if (succeeded) {
+                workspaceManager.collectArtifacts(prepared, normalizedRequest)
+            } else {
+                emptyList()
+            }
+            val commit = if (succeeded) {
+                workspaceManager.commitProject(
+                    prepared = prepared,
+                    byteLimit = normalizedRequest.resourceLimits.diskBytes,
+                    checkpointId = checkpointId
+                ).also { committedCheckpoint = it.checkpoint }
+            } else {
+                null
+            }
+            val durableProject = commit?.project
+            val durableStatus = if (durableProject == null) {
+                workspaceManager.workspaceStatus(normalizedRequest.workspaceId)
+            } else {
+                null
+            }
+            val disposition = if (succeeded) {
                 AgentRuntimeWorkspaceDisposition.COMMITTED
             } else {
                 AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
@@ -446,9 +469,9 @@ class AgentOnDeviceRuntimeManager(
             val response = rawResponse.copy(
                 artifacts = artifacts,
                 requestId = normalizedRequest.requestId,
-                projectFileCount = commit.project.fileCount,
-                projectBytes = commit.project.totalBytes,
-                checkpointId = commit.checkpoint.checkpointId,
+                projectFileCount = durableProject?.fileCount ?: durableStatus?.fileCount ?: 0,
+                projectBytes = durableProject?.totalBytes ?: durableStatus?.totalBytes ?: 0L,
+                checkpointId = commit?.checkpoint?.checkpointId.orEmpty(),
                 workspaceDisposition = disposition
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
@@ -1024,6 +1047,12 @@ object AgentOnDeviceRuntimeTools {
                     "invalid_runtime_pack", "Runtime pack is invalid"
                 )
             }
+            readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(
+                    output,
+                    "Trusted runtime pack is already ready"
+                )
+            }
             val catalogManager = AgentRuntimePackCatalogManager(context)
             try {
                 invocation.reportProgress("catalog", "Refreshing the trusted runtime catalog")
@@ -1093,6 +1122,27 @@ object AgentOnDeviceRuntimeTools {
         executorId = "signalasi.android_runtime_pack_manager",
         provenanceMetadata = mapOf("verification" to "signed_catalog_and_pack")
     )
+
+    internal fun readyRuntimePackInstallOutput(
+        requestedPack: String,
+        statuses: List<AgentRuntimePackStatus>
+    ): AgentNativeJsonObject? {
+        val ready = statuses.firstOrNull { status ->
+            status.id == requestedPack &&
+                status.state == AgentRuntimePackState.READY &&
+                status.manifest != null
+        } ?: return null
+        return mapOf(
+            "requested_pack" to requestedPack,
+            "installed" to listOf(
+                mapOf(
+                    "pack_id" to requestedPack,
+                    "version" to ready.manifest!!.version,
+                    "state" to "already_ready"
+                )
+            )
+        )
+    }
 
     private fun runtimeExecutionOutput(response: AgentRuntimeExecutionResponse): AgentNativeJsonObject = buildMap {
         put("exit_code", response.exitCode)

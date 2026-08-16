@@ -28,14 +28,12 @@ object WhisperModelDownloadPolicy {
         profile: WhisperModelProfile,
         network: WhisperNetworkClass,
         availableFreeBytes: Long,
-        meteredConfirmed: Boolean = false
+        @Suppress("UNUSED_PARAMETER") meteredConfirmed: Boolean = false
     ): WhisperDownloadPolicyResult {
         val required = safeAdd(safeMultiply(profile.expectedSizeBytes, 2L), profile.minFreeStorageBytes)
         val decision = when {
             availableFreeBytes in 0 until required -> WhisperDownloadDecision.INSUFFICIENT_SPACE
             network == WhisperNetworkClass.OFFLINE -> WhisperDownloadDecision.WAIT_FOR_NETWORK
-            requiresUnmetered(profile) && network == WhisperNetworkClass.METERED && !meteredConfirmed ->
-                WhisperDownloadDecision.REQUIRE_METERED_CONFIRMATION
             else -> WhisperDownloadDecision.ALLOW
         }
         return WhisperDownloadPolicyResult(decision, required, availableFreeBytes)

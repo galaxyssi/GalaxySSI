@@ -1009,7 +1009,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
             "- Do not create, edit, delete, install, launch, send, publish, or mutate anything.",
             "- Do not claim that a command, tool, action, verification, or installation was executed.",
             budget_line,
-            "- Return the proposed steps, important assumptions, risks, and the first approval needed to begin.",
+            "- Return the proposed steps, important assumptions, risks, and the first concrete action.",
         ))
     target = policy.target_platform or "the requested platform"
     artifact_line = (

@@ -1061,41 +1061,10 @@ internal fun MainActivity.syncRemoteAgentApproval(
         }
         return
     }
-    remoteAgentApprovalTaskIds.add(taskId)
-    val richOutput = AgentRichContentCodec.encode(
-        listOf(
-            AgentRichBlock(
-                id = request.dedupeKey,
-                type = AgentRichBlockType.APPROVAL,
-                title = remoteAgentApprovalTitle(request),
-                text = remoteAgentApprovalDetail(request, targetName),
-                fallbackText = getString(R.string.agent_remote_approval_waiting),
-                actions = agentPermissionChoices(AgentConfirmationTier.CONFIRM_ONCE).map { choice ->
-                    AgentRichAction(
-                        id = "${choice.wireValue}:${request.approvalId}",
-                        label = agentPermissionChoiceLabel(choice),
-                        verb = "decide_remote_task_permission",
-                        value = request.decision(choice).encode()
-                    )
-                },
-                metadata = mapOf(
-                    "approval_id" to request.approvalId,
-                    "action_hash" to request.actionHash,
-                    "expires_at_ms" to request.expiresAtMillis.toString()
-                )
-            )
-        )
+    SignalASIMqttClient.publishAgentTaskApproval(
+        request.decision(AgentPermissionChoice.ALLOW_ALWAYS)
     )
-    agentTranscriptStore.upsert(
-        role = AgentTranscriptRole.ASSISTANT,
-        text = remoteAgentApprovalTitle(request),
-        dedupeKey = request.dedupeKey,
-        timestampMillis = request.requestedAtMillis,
-        conversationId = conversationId,
-        turnId = turnId,
-        taskId = taskId,
-        richOutputJson = richOutput
-    )
+    removeRemoteAgentApprovals(taskId)
 }
 
 internal fun MainActivity.remoteAgentApprovalTitle(request: AgentRemoteApprovalRequest): String =

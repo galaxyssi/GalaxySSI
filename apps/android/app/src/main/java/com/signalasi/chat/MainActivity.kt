@@ -248,8 +248,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var agentOutputLayout: LinearLayoutManager
     internal lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
     internal lateinit var agentSettingsButton: ImageButton
-    internal lateinit var agentPermissionModeButton: TextView
-    internal lateinit var agentHighRiskGuardButton: TextView
     internal lateinit var agentMemoryCaptureButton: TextView
     internal lateinit var agentToolboxList: LinearLayout
     internal lateinit var agentCurrentAppText: TextView
@@ -262,6 +260,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val provisionalAgentTasks = ConcurrentHashMap.newKeySet<MobileNativeAgent>()
     internal val completedConnectorTaskIds = ConcurrentHashMap.newKeySet<String>()
     internal val supersededConnectorSourceIds = ConcurrentHashMap.newKeySet<Long>()
+    internal val supervisedProjectConnectorSourceIds = ConcurrentHashMap.newKeySet<Long>()
     internal val agentRuntimeConversationIds = ConcurrentHashMap<MobileNativeAgent, String>()
     internal val agentRuntimeTurnIds = ConcurrentHashMap<MobileNativeAgent, String>()
     internal val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
@@ -937,8 +936,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentSubtitleText = findViewById(R.id.agentSubtitleText)
         agentOutputList = findViewById(R.id.agentOutputList)
         agentSettingsButton = findViewById(R.id.agentSettingsButton)
-        agentPermissionModeButton = findViewById(R.id.agentPermissionModeButton)
-        agentHighRiskGuardButton = findViewById(R.id.agentHighRiskGuardButton)
         agentMemoryCaptureButton = findViewById(R.id.agentMemoryCaptureButton)
         agentToolboxList = findViewById(R.id.agentToolboxList)
         agentCurrentAppText = findViewById(R.id.agentCurrentAppText)
@@ -2140,20 +2137,40 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
         fun replaceAll(replacement: List<AgentTranscriptEntry>) {
             entries.clear()
-            entries.addAll(replacement)
+            entries.addAll(replacement.filterNot { entry ->
+                AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            })
             notifyDataSetChanged()
         }
 
         fun replaceAt(index: Int, entry: AgentTranscriptEntry) {
+            if (AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            ) {
+                entries.removeAt(index)
+                notifyItemRemoved(index)
+                return
+            }
             entries[index] = entry
             notifyItemChanged(index)
         }
 
         fun append(appended: List<AgentTranscriptEntry>) {
-            if (appended.isEmpty()) return
+            val visibleEntries = appended.filterNot { entry ->
+                AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                    entry.text,
+                    entry.richOutputJson
+                )
+            }
+            if (visibleEntries.isEmpty()) return
             val start = entries.size
-            entries.addAll(appended)
-            notifyItemRangeInserted(start, appended.size)
+            entries.addAll(visibleEntries)
+            notifyItemRangeInserted(start, visibleEntries.size)
         }
 
         fun clear() {

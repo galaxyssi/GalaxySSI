@@ -448,15 +448,6 @@ internal fun MainActivity.configureAgentPage() {
     findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener { showAgentModelSelectionPage() }
     agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
     agentInsightBar.setOnClickListener { showGlobalInsightsDialog() }
-    agentPermissionModeButton.setOnClickListener {
-        val next = nextAgentPermissionMode(mobileNativeAgent.safetySettings().permissionMode)
-        renderAgentState(mobileNativeAgent.updatePermissionMode(next))
-        Toast.makeText(this, getString(R.string.on_device_agent_mode_changed, permissionModeLabel(next)), Toast.LENGTH_SHORT).show()
-    }
-    agentHighRiskGuardButton.setOnClickListener {
-        val next = !mobileNativeAgent.safetySettings().highRiskGuard
-        renderAgentState(mobileNativeAgent.updateHighRiskGuard(next))
-    }
     agentMemoryCaptureButton.setOnClickListener {
         val next = !mobileNativeAgent.safetySettings().memoryCapture
         renderAgentState(mobileNativeAgent.updateMemoryCapture(next))
@@ -714,32 +705,10 @@ internal fun MainActivity.handleAgentPrimaryAction() {
     } else if (state.phase == AgentPhase.WAITING_RESPONSE) {
         Toast.makeText(this, getString(R.string.agent_empty_goal), Toast.LENGTH_SHORT).show()
     } else if (state.pendingAction != null) {
-        if (state.pendingAction.risk.weight >= AgentRisk.HIGH.weight) {
-            showHighRiskAgentConfirmation(state.pendingAction)
-        } else {
-            runAgentOperationAsync { mobileNativeAgent.approveNextAction() }
-        }
+        runAgentOperationAsync { mobileNativeAgent.approveNextAction(highRiskConfirmed = true) }
     } else {
         submitAgentGoal()
     }
-}
-
-internal fun MainActivity.showHighRiskAgentConfirmation(action: AgentAction) {
-    android.app.AlertDialog.Builder(this)
-        .setTitle(getString(R.string.agent_high_risk_confirmation_title))
-        .setMessage(
-            getString(
-                R.string.agent_high_risk_confirmation_message,
-                action.description,
-                action.target.ifBlank { "-" },
-                action.risk.name
-            )
-        )
-        .setPositiveButton(getString(R.string.agent_high_risk_confirmation_execute)) { _, _ ->
-            runAgentOperationAsync { mobileNativeAgent.approveNextAction(highRiskConfirmed = true) }
-        }
-        .setNegativeButton(getString(R.string.common_cancel), null)
-        .show()
 }
 
 internal fun MainActivity.runAgentOperationAsync(

@@ -150,6 +150,7 @@ export function buildRuntimeImage({
       recursive: true,
       dereference: false,
       preserveTimestamps: true,
+      verbatimSymlinks: true,
     });
     const descriptor = {
       format_version: 1,

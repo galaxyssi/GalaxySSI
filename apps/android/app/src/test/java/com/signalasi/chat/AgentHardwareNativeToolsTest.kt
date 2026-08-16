@@ -93,7 +93,7 @@ class AgentHardwareNativeToolsTest {
     }
 
     @Test
-    fun foregroundLocationRequiresPermissionAndPerInvocationConsent() {
+    fun foregroundLocationRunsWithoutInternalPermissionOrConsentGates() {
         val platform = FakeHardwarePlatform()
         val registry = AgentHardwareNativeTools.createRegistry(platform)
 
@@ -108,9 +108,9 @@ class AgentHardwareNativeToolsTest {
             context(permissions = setOf(AgentHardwareNativeTools.ACCESS_COARSE_LOCATION_PERMISSION))
         )
 
-        assertEquals("missing_permissions", missingPermission.error?.code)
-        assertEquals("missing_consents", missingConsent.error?.code)
-        assertEquals(0, platform.locationCalls)
+        assertTrue(missingPermission.toJson(), missingPermission.isSuccess)
+        assertTrue(missingConsent.toJson(), missingConsent.isSuccess)
+        assertEquals(2, platform.locationCalls)
 
         val result = registry.invoke(
             AgentHardwareNativeTools.LOCATION_FOREGROUND_READ,
@@ -122,7 +122,7 @@ class AgentHardwareNativeToolsTest {
         )
 
         assertTrue(result.toJson(), result.isSuccess)
-        assertEquals(1, platform.locationCalls)
+        assertEquals(3, platform.locationCalls)
         assertEquals(2_000L, platform.lastLocationTimeout)
         assertEquals("single_foreground_fix", result.output["capture_mode"])
         assertEquals(false, result.output["background_capture"])
@@ -205,16 +205,16 @@ class AgentHardwareNativeToolsTest {
         assertEquals(2, listed.output["result_count"])
         assertEquals(true, listed.output["truncated"])
         assertEquals(false, listed.output["sampling_started"])
-        assertEquals("missing_consents", denied.error?.code)
+        assertTrue(denied.toJson(), denied.isSuccess)
         assertTrue(sampled.toJson(), sampled.isSuccess)
-        assertEquals(1, platform.sampleCalls)
+        assertEquals(2, platform.sampleCalls)
         assertEquals(AgentHardwareNativeTools.MAX_SENSOR_VALUES, (sampled.output["values"] as List<*>).size)
         assertEquals("single_foreground_sample", sampled.output["capture_mode"])
         assertEquals(false, sampled.output["background_capture"])
     }
 
     @Test
-    fun flashlightIsExplicitConsentGatedAndNeverClaimsVerifiedState() {
+    fun flashlightRunsWithoutInternalConsentAndNeverClaimsVerifiedState() {
         val platform = FakeHardwarePlatform()
         val registry = AgentHardwareNativeTools.createRegistry(platform)
         val permissions = setOf(AgentHardwareNativeTools.CAMERA_PERMISSION)
@@ -224,8 +224,8 @@ class AgentHardwareNativeToolsTest {
             mapOf("enabled" to true),
             context(permissions = permissions)
         )
-        assertEquals("missing_consents", denied.error?.code)
-        assertEquals(0, platform.flashlightCalls)
+        assertTrue(denied.toJson(), denied.isSuccess)
+        assertEquals(1, platform.flashlightCalls)
 
         val accepted = registry.invoke(
             AgentHardwareNativeTools.FLASHLIGHT_SET,
@@ -237,7 +237,7 @@ class AgentHardwareNativeToolsTest {
         )
 
         assertTrue(accepted.toJson(), accepted.isSuccess)
-        assertEquals(1, platform.flashlightCalls)
+        assertEquals(2, platform.flashlightCalls)
         assertEquals(true, platform.lastFlashlightEnabled)
         assertEquals(true, accepted.output["request_accepted"])
         assertEquals(false, accepted.output["state_verified"])
@@ -299,7 +299,7 @@ class AgentHardwareNativeToolsTest {
             context(permissions = setOf(AgentHardwareNativeTools.NFC_PERMISSION))
         )
 
-        assertEquals("missing_permissions", denied.error?.code)
+        assertTrue(denied.toJson(), denied.isSuccess)
         assertTrue(result.toJson(), result.isSuccess)
         assertEquals(true, result.output["enabled"])
         assertEquals(false, result.output["tag_capture_started"])

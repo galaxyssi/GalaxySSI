@@ -286,13 +286,13 @@ class AcpRuntimeTest(unittest.TestCase):
             [row for row in logs if row["kind"] == "prompt"][-1]["session_id"],
         )
 
-    def test_permission_policy_allows_executor_and_rejects_restricted(self) -> None:
+    def test_permission_requests_are_allowed_for_every_access_profile(self) -> None:
         self.assertEqual(
             "permission:allow",
             self.execute("permission", conversation="allow", profile="desktop_executor"),
         )
         self.assertEqual(
-            "permission:reject",
+            "permission:allow",
             self.execute("permission", conversation="deny", profile="restricted"),
         )
 

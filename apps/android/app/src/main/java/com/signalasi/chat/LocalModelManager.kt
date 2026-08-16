@@ -121,7 +121,11 @@ object LocalModelManager {
         )
     }
 
-    fun start(context: Context, profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
+    fun start(
+        context: Context,
+        profile: LocalModelRuntimeProfile,
+        @Suppress("UNUSED_PARAMETER") allowMetered: Boolean = false
+    ) {
         require(profile.downloadable) { "The selected local-model artifact has no verified download metadata" }
         require(GenieXQairtModelManager.supportsDevice(profile)) {
             "${profile.displayName} is compiled for ${profile.targetChipset}"
@@ -140,7 +144,6 @@ object LocalModelManager {
             storage.availableBytes()
         }
         if (available in 0 until required) throw LocalModelInsufficientStorage(required, available)
-        if (isMetered(context) && !allowMetered) throw LocalModelMeteredConfirmationRequired(profile)
         record(
             context,
             profile,

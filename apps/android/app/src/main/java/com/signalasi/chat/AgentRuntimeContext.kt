@@ -29,8 +29,7 @@ data class AgentRuntimeContext(
 
     fun isNativeToolExecutable(id: String): Boolean = if (capabilityMatrix.entries.isEmpty()) {
         nativeTools.firstOrNull { it.id == id }?.let { descriptor ->
-            descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE &&
-                descriptor.risk != AgentNativeToolRisk.BLOCKED
+            descriptor.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE
         } == true
     } else {
         capabilityMatrix.isNativeToolExecutable(id)

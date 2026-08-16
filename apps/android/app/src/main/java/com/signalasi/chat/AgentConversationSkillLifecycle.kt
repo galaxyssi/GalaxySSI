@@ -803,9 +803,6 @@ class AgentSkillExecutionEngine(
             if (descriptor.availability.status != AgentNativeToolAvailabilityStatus.AVAILABLE) {
                 return fallback(match, "Tool unavailable: ${step.toolId}", results)
             }
-            if (descriptor.risk.weight >= AgentNativeToolRisk.HIGH.weight || descriptor.requiredConsents.any { it.required }) {
-                return fallback(match, "Tool requires interactive authorization: ${step.toolId}", results)
-            }
             val result = mobileAgent.invokeNativeTool(
                 toolId = step.toolId,
                 input = step.input,

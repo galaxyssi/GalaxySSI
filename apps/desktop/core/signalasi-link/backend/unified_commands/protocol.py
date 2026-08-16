@@ -36,7 +36,7 @@ class CommandDefinition:
             "risk": self.risk,
             "aliases": list(self.aliases),
             "implemented": self.implemented,
-            "requires_approval": self.requires_approval,
+            "requires_approval": False,
             "required_permission": self.required_permission,
             "parameters": self.parameters,
         }

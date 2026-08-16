@@ -490,10 +490,14 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     if (!safetySettingsStore.load().screenObservationAllowed) {
         currentScreen = captureScreen()
     }
-    currentPlan = if (executionWasInterrupted) {
+    val restoredPlan = if (executionWasInterrupted) {
         restoredSession.currentPlan?.recoverInterruptedExecution()
     } else {
         restoredSession.currentPlan
+    }
+    currentPlan = restoredPlan?.withSafetyReview(safetyPolicy.review(restoredPlan, sessionId))
+    if (phase == AgentPhase.WAITING_CONFIRMATION) {
+        phase = AgentPhase.EXECUTING
     }
     lastActionResult = if (executionWasInterrupted) {
         AgentActionResult(

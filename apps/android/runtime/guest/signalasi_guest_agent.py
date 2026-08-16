@@ -378,6 +378,14 @@ def prepare_private_directory(path: Path) -> None:
     path.chmod(0o700)
 
 
+def prepare_runtime_temp_directories(environment: dict[str, str], full_access: bool) -> None:
+    if not full_access:
+        return
+    task_temp = Path(environment["TMPDIR"])
+    prepare_private_directory(task_temp.parent)
+    prepare_private_directory(task_temp)
+
+
 def open_private_output(path: Path) -> BinaryIO:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags, 0o600)
@@ -485,7 +493,7 @@ class GuestService:
                     "hello_ack",
                     {
                         "guest_api_version": PROTOCOL_VERSION,
-                        "guest_version": "1.3.6",
+                        "guest_version": "1.3.7",
                         "ready": ready,
                         "reason": reason,
                         "capabilities": [
@@ -570,6 +578,7 @@ class GuestService:
             stdout_path = workspace / ".signalasi-stdout"
             stderr_path = workspace / ".signalasi-stderr"
             prepare_private_directory(workspace / ".tmp")
+            prepare_runtime_temp_directories(environment, full_access)
             self.send(request_id, "progress", {"stage": "starting", "message": "Runtime started", "percent": 5})
             exit_code = 0
             with open_private_output(stdout_path) as stdout, open_private_output(stderr_path) as stderr:
@@ -658,7 +667,7 @@ def runtime_environment(
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "UV_NO_MODIFY_PATH": "1",
-        "UV_PYTHON": "/usr/bin/python3",
+        "UV_PYTHON": str(PACK_ROOT / "python-uv" / "bin" / "python3"),
         "UV_CACHE_DIR": str(task_temp / "uv-cache"),
         "CARGO_HOME": str(task_temp / "cargo"),
         "ZIG_GLOBAL_CACHE_DIR": str(task_temp / "zig-global-cache"),

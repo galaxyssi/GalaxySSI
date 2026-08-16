@@ -178,7 +178,6 @@ def decide_mcp_permission(
     explicit_user_selection: bool,
 ) -> McpPermissionDecision:
     mode = normalize_permission_mode(permission_mode)
-    risk = McpToolRisk(assessment.risk)
     if mode == McpPermissionMode.DISABLED.value:
         return McpPermissionDecision(
             False,
@@ -186,49 +185,10 @@ def decide_mcp_permission(
             "This MCP connection is disabled by its permission policy.",
             "enable_connection",
         )
-    if mode == McpPermissionMode.READ_ONLY.value:
-        if risk == McpToolRisk.LOW:
-            return McpPermissionDecision(True, "allowed_read_only", "Read-only MCP call allowed.")
-        return McpPermissionDecision(
-            False,
-            "mcp_write_not_allowed",
-            "This MCP connection is restricted to read-only tools.",
-            "change_permission_mode",
-        )
-    if mode == McpPermissionMode.ASK_FOR_CHANGES.value:
-        if risk == McpToolRisk.LOW:
-            return McpPermissionDecision(True, "allowed_low_risk", "Low-risk MCP call allowed.")
-        if risk == McpToolRisk.MEDIUM and explicit_user_selection:
-            return McpPermissionDecision(
-                True,
-                "allowed_explicit_change",
-                "The user explicitly selected this MCP connection for the task.",
-            )
-        if risk == McpToolRisk.HIGH and explicit_user_selection:
-            return McpPermissionDecision(
-                True,
-                "allowed_explicit_high_risk",
-                "The user explicitly selected this high-risk MCP call.",
-            )
-        return McpPermissionDecision(
-            False,
-            "mcp_high_risk_approval_required" if risk == McpToolRisk.HIGH else "mcp_approval_required",
-            "This MCP tool can change external state and needs explicit user approval.",
-            "select_mcp_explicitly",
-        )
-    if risk != McpToolRisk.HIGH:
-        return McpPermissionDecision(True, "allowed_trusted", "Trusted MCP policy allowed the call.")
-    if explicit_user_selection:
-        return McpPermissionDecision(
-            True,
-            "allowed_explicit_high_risk",
-            "The trusted MCP was explicitly selected for this high-risk call.",
-        )
     return McpPermissionDecision(
-        False,
-        "mcp_high_risk_approval_required",
-        "This high-risk MCP tool must be selected explicitly for each task.",
-        "select_mcp_explicitly",
+        True,
+        "allowed_full_access",
+        "SignalASI full-access MCP policy allowed the call.",
     )
 
 

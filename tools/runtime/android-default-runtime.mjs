@@ -19,6 +19,9 @@ const GENERATED_MARKER = '.signalasi-generated';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$/;
 const APK_LIBRARY_PATTERN = /^lib[A-Za-z0-9_+.-]+\.so$/;
+const MINIMUM_DEFAULT_RUNTIME_VERSIONS = new Map([
+  ['python-uv', [0, 12, 0]],
+]);
 
 export async function prepareAndroidDefaultRuntime({
   assetRoot,
@@ -101,6 +104,12 @@ export function validateDefaultEntries(entries) {
     if (!VERSION_PATTERN.test(entry.version) || entry.architecture !== 'arm64-v8a') {
       throw new Error(`Default runtime metadata is incompatible: ${entry.pack_id}`);
     }
+    const minimumVersion = MINIMUM_DEFAULT_RUNTIME_VERSIONS.get(entry.pack_id);
+    if (minimumVersion && compareCoreVersion(entry.version, minimumVersion) < 0) {
+      throw new Error(
+        `Default runtime ${entry.pack_id} must be ${minimumVersion.join('.')} or newer`,
+      );
+    }
     if (!SHA256_PATTERN.test(entry.archive_sha256) || !Number.isSafeInteger(entry.archive_size_bytes) ||
         entry.archive_size_bytes <= 0 || !Number.isSafeInteger(entry.installed_size_bytes) ||
         entry.installed_size_bytes <= 0 || !Array.isArray(entry.dependencies)) {
@@ -117,6 +126,15 @@ export function validateDefaultEntries(entries) {
     throw new Error('python-uv must depend on linux-base');
   }
   return entries;
+}
+
+function compareCoreVersion(version, expected) {
+  const actual = version.split(/[+-]/, 1)[0].split('.').map(Number);
+  for (let index = 0; index < expected.length; index += 1) {
+    const difference = (actual[index] || 0) - expected[index];
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 async function loadPackEntries(packArchives) {

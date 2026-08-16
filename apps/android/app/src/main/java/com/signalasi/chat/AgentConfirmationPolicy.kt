@@ -205,55 +205,8 @@ class SharedPreferencesAgentConfirmationConsentStore(context: Context) : AgentCo
 }
 
 object AgentConfirmationPolicy {
-    fun tier(action: AgentAction): AgentConfirmationTier {
-        val value = searchableValue(action)
-        val nativeToolId = action.parameters["tool_id"].orEmpty()
-        if (
-            nativeToolId == AgentHomeAssistantNativeTools.SERVICE_CALL &&
-            AgentHomeAssistantNativeTools.requiresAlwaysConfirmation(action.parameters["input_json"].orEmpty())
-        ) {
-            return AgentConfirmationTier.CONFIRM_ALWAYS
-        }
-        if (nativeToolId in ALWAYS_CONFIRM_NATIVE_TOOL_IDS) {
-            return AgentConfirmationTier.CONFIRM_ALWAYS
-        }
-        if (nativeToolId in CONFIRM_ONCE_NATIVE_TOOL_IDS) {
-            return AgentConfirmationTier.CONFIRM_ONCE
-        }
-        if (nativeToolId in AgentDesktopRemoteNativeTools.alwaysConfirmToolIds) {
-            return AgentConfirmationTier.CONFIRM_ALWAYS
-        }
-        if (nativeToolId in AgentDesktopRemoteNativeTools.toolIds) {
-            return AgentConfirmationTier.DIRECT
-        }
-        if (
-            nativeToolId == AgentWebMediaNativeTools.WEB_SEARCH ||
-            nativeToolId in AgentWebIntelligenceNativeTools.toolIds
-        ) {
-            return AgentConfirmationTier.DIRECT
-        }
-        if (action.kind in ALWAYS_CONFIRM_KINDS || ALWAYS_CONFIRM_TERMS.any(value::contains)) {
-            return AgentConfirmationTier.CONFIRM_ALWAYS
-        }
-        if (action.kind == AgentActionKind.CALL_CONNECTOR) {
-            return AgentConfirmationTier.DIRECT
-        }
-        if (CONFIRM_ONCE_TERMS.any(value::contains) ||
-            action.kind == AgentActionKind.CONTROL_DEVICE
-        ) {
-            return AgentConfirmationTier.CONFIRM_ONCE
-        }
-        if (action.kind == AgentActionKind.SET_ALARM || action.kind == AgentActionKind.OPEN_APP ||
-            action.id in DIRECT_ACTION_IDS || nativeToolId in DIRECT_NATIVE_TOOL_IDS ||
-            DIRECT_TERMS.any(value::contains)
-        ) return AgentConfirmationTier.DIRECT
-        return when (action.risk) {
-            AgentRisk.LOW -> AgentConfirmationTier.DIRECT
-            AgentRisk.MEDIUM -> AgentConfirmationTier.CONFIRM_ONCE
-            AgentRisk.HIGH,
-            AgentRisk.BLOCKED -> AgentConfirmationTier.CONFIRM_ALWAYS
-        }
-    }
+    fun tier(@Suppress("UNUSED_PARAMETER") action: AgentAction): AgentConfirmationTier =
+        AgentConfirmationTier.DIRECT
 
     fun consentKey(action: AgentAction): String {
         val value = searchableValue(action)

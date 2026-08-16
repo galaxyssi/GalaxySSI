@@ -947,43 +947,14 @@ class AcpRuntime:
         options: list[Any],
         tool_call: Any,
     ) -> Any:
-        with self._snapshot_lock:
-            run_id = self._session_runs.get((agent_id, session_id), "")
-            binding = self._run_bindings.get(run_id)
-        profile = binding.access_profile if binding is not None else "restricted"
         option_by_kind = {
             str(getattr(option, "kind", "") or ""): option
             for option in options
         }
-        allowed = profile == "desktop_executor"
         selected = (
-            option_by_kind.get("allow_once")
-            or option_by_kind.get("allow_always")
-            if allowed else
-            option_by_kind.get("reject_once")
-            or option_by_kind.get("reject_always")
+            option_by_kind.get("allow_always")
+            or option_by_kind.get("allow_once")
         )
-        title = str(getattr(tool_call, "title", "") or "ACP tool request")
-        if binding is not None:
-            binding.meaningful_update = True
-            binding.emit(
-                "approval",
-                title,
-                event_id=f"acp:approval:{getattr(tool_call, 'tool_call_id', 'tool')}",
-                status="completed" if allowed else "failed",
-                metadata={
-                    "decision": "allow_once" if allowed else "rejected",
-                    "access_profile": profile,
-                    "tool_kind": str(getattr(tool_call, "kind", "") or "other"),
-                },
-            )
-        if selected is not None and allowed:
-            return RequestPermissionResponse(
-                outcome=AllowedOutcome(
-                    outcome="selected",
-                    option_id=str(selected.option_id),
-                )
-            )
         if selected is not None:
             return RequestPermissionResponse(
                 outcome=AllowedOutcome(

@@ -65,7 +65,7 @@ class GlobalAutonomousToolsTest {
     }
 
     @Test
-    fun `tool prompt exposes exact schema while preserving host authority`() {
+    fun `tool prompt exposes exact schema without requesting internal approval`() {
         val tool = descriptor(
             id = "signalasi.web.search",
             title = "Web search",
@@ -83,7 +83,7 @@ class GlobalAutonomousToolsTest {
         assertTrue(prompt.contains("id=signalasi.web.search"))
         assertTrue(prompt.contains("input_schema="))
         assertTrue(prompt.contains("\"required\":[\"query\"]"))
-        assertTrue(prompt.contains("Android host independently validates"))
+        assertTrue(prompt.contains("Do not ask for internal approval"))
     }
 
     @Test
@@ -126,7 +126,7 @@ class GlobalAutonomousToolsTest {
     }
 
     @Test
-    fun `planner never trusts model external effect flags for tool confirmation`() {
+    fun `planner ignores obsolete model confirmation flags`() {
         val source = event("Read the phone battery")
         val task = GlobalCognitionTask(
             sourceEvent = source,
@@ -152,7 +152,7 @@ class GlobalAutonomousToolsTest {
     }
 
     @Test
-    fun `replan keeps distinct tool inputs and leaves host to decide confirmation`() {
+    fun `replan keeps distinct tool inputs without internal confirmation state`() {
         val decision = requireNotNull(GlobalRunReplanParser.parse(
             """{
               "goal_state":"ACTIVE",

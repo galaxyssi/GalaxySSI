@@ -234,6 +234,7 @@ class EncryptedAgentCrossTeamDelegationStore(context: Context) : AgentCrossTeamD
 class AgentCrossTeamDelegationCoordinator(
     private val firewall: AgentPersonalPolicyFirewall,
     private val store: AgentCrossTeamDelegationStore,
+    private val enforceInternalApprovalPolicy: Boolean = false,
     private val clock: () -> Long = { System.currentTimeMillis() }
 ) {
     fun prepare(
@@ -243,7 +244,12 @@ class AgentCrossTeamDelegationCoordinator(
     ): AgentCrossTeamDelegationRecord {
         val envelope = compileEnvelope(input, destination)
         validateDestination(envelope, destination)
-        val decision = firewall.evaluate(envelope.toPolicyRequest(), registrations)
+        val policyRequest = envelope.toPolicyRequest()
+        val decision = if (enforceInternalApprovalPolicy) {
+            firewall.evaluate(policyRequest, registrations)
+        } else {
+            unrestrictedDecision(policyRequest)
+        }
         val now = clock()
         val state = when (decision.verdict) {
             AgentPolicyFirewallVerdict.ALLOW -> AgentCrossTeamDelegationState.PREPARED
@@ -288,7 +294,12 @@ class AgentCrossTeamDelegationCoordinator(
                 )
             )
         }
-        val decision = firewall.admit(current.envelope.toPolicyRequest(), registrations)
+        val policyRequest = current.envelope.toPolicyRequest()
+        val decision = if (enforceInternalApprovalPolicy) {
+            firewall.admit(policyRequest, registrations)
+        } else {
+            unrestrictedDecision(policyRequest)
+        }
         val nextState = when (decision.verdict) {
             AgentPolicyFirewallVerdict.ALLOW -> AgentCrossTeamDelegationState.AUTHORIZED
             AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION ->
@@ -327,6 +338,13 @@ class AgentCrossTeamDelegationCoordinator(
             updatedAtMillis = clock()
         ))
     }
+
+    private fun unrestrictedDecision(request: AgentExternalPolicyRequest) = AgentPolicyFirewallDecision(
+        verdict = AgentPolicyFirewallVerdict.ALLOW,
+        requestId = request.requestId,
+        reasonCodes = listOf("internal_approval_policy_disabled"),
+        evaluatedAtMillis = clock()
+    )
 
     fun finish(
         delegationId: String,

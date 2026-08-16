@@ -239,22 +239,6 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
         )
     ))
     addSectionTitle(getString(R.string.on_device_agent_section_execution))
-    featureContent.addView(featureValueRow(
-        getString(R.string.on_device_agent_permission_mode),
-        getString(R.string.on_device_agent_permission_mode_subtitle),
-        R.drawable.ic_security_shield,
-        permissionModeLabel(safetySettings.permissionMode)
-    ).apply {
-        setOnClickListener { cycleAgentPermissionMode() }
-    })
-    featureContent.addView(featureSwitchRow(
-        getString(R.string.on_device_agent_high_risk_guard),
-        getString(R.string.on_device_agent_high_risk_guard_subtitle),
-        R.drawable.ic_security_shield,
-        safetySettings.highRiskGuard
-    ).apply {
-        setOnClickListener { toggleAgentHighRiskGuard() }
-    })
     featureContent.addView(featureSwitchRow(
         getString(R.string.on_device_agent_memory_capture),
         getString(R.string.on_device_agent_memory_capture_subtitle),
@@ -492,14 +476,6 @@ internal fun MainActivity.showOnDeviceAgentFeaturePage() {
     ).apply {
         setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
     })
-}
-
-internal fun MainActivity.cycleAgentPermissionMode() {
-    val current = mobileNativeAgent.safetySettings().permissionMode
-    val next = nextAgentPermissionMode(current)
-    mobileNativeAgent.updatePermissionMode(next)
-    Toast.makeText(this, getString(R.string.on_device_agent_mode_changed, permissionModeLabel(next)), Toast.LENGTH_SHORT).show()
-    showOnDeviceAgentFeaturePage()
 }
 
 internal fun MainActivity.showAgentMemoryPage(filterKinds: Set<AgentMemoryKind> = emptySet()) {
@@ -997,20 +973,6 @@ internal fun MainActivity.memorySourceLabel(source: String): String = getString(
     }
 )
 
-internal fun MainActivity.nextAgentPermissionMode(current: PermissionMode): PermissionMode = when (current) {
-    PermissionMode.OBSERVE_ONLY -> PermissionMode.SUGGEST_ONLY
-    PermissionMode.SUGGEST_ONLY -> PermissionMode.ASK_BEFORE_ACTION
-    PermissionMode.ASK_BEFORE_ACTION -> PermissionMode.AUTO_LOW_RISK
-    PermissionMode.AUTO_LOW_RISK -> PermissionMode.FULL_ACCESS
-    PermissionMode.FULL_ACCESS -> PermissionMode.OBSERVE_ONLY
-}
-
-internal fun MainActivity.toggleAgentHighRiskGuard() {
-    val next = !mobileNativeAgent.safetySettings().highRiskGuard
-    mobileNativeAgent.updateHighRiskGuard(next)
-    showOnDeviceAgentFeaturePage()
-}
-
 internal fun MainActivity.toggleAgentMemoryCapture() {
     val next = !mobileNativeAgent.safetySettings().memoryCapture
     mobileNativeAgent.updateMemoryCapture(next)
@@ -1165,14 +1127,6 @@ internal fun MainActivity.toggleAgentDeviceControl() {
     val next = !mobileNativeAgent.safetySettings().deviceControlAllowed
     mobileNativeAgent.updateDeviceControlAllowed(next)
     showOnDeviceAgentFeaturePage()
-}
-
-internal fun MainActivity.permissionModeLabel(mode: PermissionMode): String = when (mode) {
-    PermissionMode.OBSERVE_ONLY -> getString(R.string.permission_mode_observe_only)
-    PermissionMode.SUGGEST_ONLY -> getString(R.string.permission_mode_suggest_only)
-    PermissionMode.ASK_BEFORE_ACTION -> getString(R.string.permission_mode_ask_before_action)
-    PermissionMode.AUTO_LOW_RISK -> getString(R.string.permission_mode_auto_low_risk)
-    PermissionMode.FULL_ACCESS -> getString(R.string.permission_mode_full_access)
 }
 
 internal fun MainActivity.taskExecutionModeLabel(mode: AgentTaskExecutionMode): String = when (mode) {

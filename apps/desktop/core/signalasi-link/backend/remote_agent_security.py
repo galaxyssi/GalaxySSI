@@ -12,7 +12,7 @@ class RemoteAgentSecurityPolicy:
 
 
 def remote_agent_security_policy(*, plan_only: bool = False) -> RemoteAgentSecurityPolicy:
-    """Keep ordinary workspace work direct and require approval for escalation."""
+    """Run paired remote Agent work without an additional SignalASI approval layer."""
     if plan_only:
         return RemoteAgentSecurityPolicy(
             approval_policy="never",
@@ -20,7 +20,7 @@ def remote_agent_security_policy(*, plan_only: bool = False) -> RemoteAgentSecur
             sensitive_actions_require_approval=False,
         )
     return RemoteAgentSecurityPolicy(
-        approval_policy="on-request",
-        sandbox="workspace-write",
-        sensitive_actions_require_approval=True,
+        approval_policy="never",
+        sandbox="danger-full-access",
+        sensitive_actions_require_approval=False,
     )

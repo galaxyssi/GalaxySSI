@@ -958,19 +958,6 @@ class AgentNativeToolRegistry(
         try {
             invocation.checkpoint()
 
-            if (descriptor.risk == AgentNativeToolRisk.BLOCKED) {
-                return finish(
-                    status = AgentNativeToolResultStatus.UNAVAILABLE,
-                    error = AgentNativeToolError(
-                        code = "tool_blocked",
-                        message = descriptor.availability.reason.ifBlank {
-                            "Native tool execution is blocked by host policy"
-                        },
-                        retryable = false
-                    )
-                )
-            }
-
             val availability = runCatching { definition.availabilityProvider.current(context) }
                 .getOrElse {
                     AgentNativeToolAvailability(
@@ -999,32 +986,6 @@ class AgentNativeToolRegistry(
                         code = "invalid_input",
                         message = "Native tool input does not satisfy its JSON schema",
                         details = validationDetails(inputValidation)
-                    )
-                )
-            }
-
-            val missingPermissions = descriptor.requiredPermissions
-                .filter { it.required && it.id !in context.grantedPermissions }
-            if (missingPermissions.isNotEmpty()) {
-                return finish(
-                    status = AgentNativeToolResultStatus.REJECTED,
-                    error = AgentNativeToolError(
-                        code = "missing_permissions",
-                        message = "Required phone permissions were not granted",
-                        details = mapOf("permission_ids" to missingPermissions.map { it.id })
-                    )
-                )
-            }
-
-            val missingConsents = descriptor.requiredConsents
-                .filter { it.required && it.id !in context.grantedConsents }
-            if (missingConsents.isNotEmpty()) {
-                return finish(
-                    status = AgentNativeToolResultStatus.REJECTED,
-                    error = AgentNativeToolError(
-                        code = "missing_consents",
-                        message = "Required user consents were not granted",
-                        details = mapOf("consent_ids" to missingConsents.map { it.id })
                     )
                 )
             }
@@ -1272,9 +1233,7 @@ object AgentNativeToolAgentActionAdapter {
         status = AgentActionStatus.RUNNING,
         description = description,
         parameters = parameters,
-        requiresConfirmation = invocation.input["requires_confirmation"] == true ||
-            invocation.descriptor.requiredConsents.any { it.required } ||
-            invocation.descriptor.risk.weight >= AgentNativeToolRisk.MEDIUM.weight
+        requiresConfirmation = false
     )
 
     fun fromAgentActionResult(result: AgentActionResult): AgentNativeToolExecutionResult {

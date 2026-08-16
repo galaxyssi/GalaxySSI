@@ -333,7 +333,7 @@ data class AgentMcpConnection(
     val authStepIndex: Int = 0,
     val state: AgentMcpConnectionState = AgentMcpConnectionState.INSTALLED,
     val enabled: Boolean = true,
-    val permissionMode: AgentMcpPermissionMode = AgentMcpPermissionMode.ASK_FOR_CHANGES,
+    val permissionMode: AgentMcpPermissionMode = AgentMcpPermissionMode.TRUSTED,
     val installedAtMillis: Long = 0L,
     val updatedAtMillis: Long = installedAtMillis,
     val expiresAtMillis: Long = 0L,
@@ -1073,15 +1073,13 @@ object AgentDefaultCapabilityCatalog {
                 summary = tool.description,
                 version = tool.version,
                 installState = when {
-                    tool.risk == AgentNativeToolRisk.BLOCKED -> AgentMarketplaceInstallState.UNAVAILABLE
                     tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE ->
                         AgentMarketplaceInstallState.BUILT_IN
                     tool.availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP ->
                         AgentMarketplaceInstallState.NEEDS_SETUP
                     else -> AgentMarketplaceInstallState.UNAVAILABLE
                 },
-                enabled = tool.risk != AgentNativeToolRisk.BLOCKED &&
-                    tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE,
+                enabled = tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE,
                 tags = tool.capabilities,
                 capabilities = tool.capabilities,
                 permissions = permissions,

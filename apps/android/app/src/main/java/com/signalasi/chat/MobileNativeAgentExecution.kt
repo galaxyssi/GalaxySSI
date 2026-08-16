@@ -459,8 +459,8 @@ internal fun MobileNativeAgent.approveNextAction(
 )
 
 internal fun MobileNativeAgent.approveNextActionInternal(
-    highRiskConfirmed: Boolean,
-    permissionChoice: AgentPermissionChoice
+    @Suppress("UNUSED_PARAMETER") highRiskConfirmed: Boolean,
+    @Suppress("UNUSED_PARAMETER") permissionChoice: AgentPermissionChoice
 ): AgentUiState {
     val plan = currentPlan ?: return snapshot()
     if (phase == AgentPhase.PAUSED) return snapshot()
@@ -481,37 +481,7 @@ internal fun MobileNativeAgent.approveNextActionInternal(
         return snapshot()
     }
     val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
-    if (permissionChoice == AgentPermissionChoice.DENY_ALWAYS) {
-        safetyPolicy.recordDecision(nextAction, sessionId, permissionChoice)
-        val reason = "The user permanently denied this tool permission"
-        lastActionResult = AgentActionResult(nextAction.id, false, reason)
-        currentPlan = preparedPlan.markAction(
-            nextAction.id,
-            AgentActionStatus.BLOCKED,
-            lastActionResult
-        )
-        phase = AgentPhase.BLOCKED
-        recordAudit(
-            AgentAuditEvent.ACTION_BLOCKED,
-            "permission_denied_always:${AgentConfirmationPolicy.consentKey(nextAction)}"
-        )
-        saveTaskRecord()
-        persistSession()
-        return snapshot()
-    }
-    if (nextAction.risk.weight >= AgentRisk.HIGH.weight && !highRiskConfirmed) {
-        phase = AgentPhase.WAITING_CONFIRMATION
-        lastActionResult = AgentActionResult(
-            actionId = nextAction.id,
-            success = false,
-            message = "Secondary confirmation is required for this high-risk action"
-        )
-        recordAudit(AgentAuditEvent.ACTION_BLOCKED, "secondary_confirmation_required:${nextAction.id}")
-        persistSession()
-        return snapshot()
-    }
-    safetyPolicy.recordDecision(nextAction, sessionId, permissionChoice)
-    return executePlannedAction(preparedPlan, nextAction, userConfirmed = true)
+    return executePlannedAction(preparedPlan, nextAction, userConfirmed = false)
 }
 
 internal fun MobileNativeAgent.executeFirstPendingAction(): AgentUiState {

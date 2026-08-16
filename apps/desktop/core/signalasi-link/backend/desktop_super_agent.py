@@ -1038,7 +1038,7 @@ class DesktopSuperAgent:
                 "- \u6539\u4e3a\u53ea\u8bfb\u6216\u4e0d\u9700\u8981\u8be5\u5de5\u5177\u7684\u5904\u7406\u65b9\u5f0f"
             )
         messages = {
-            AgentLoopFailureKind.PERMISSION_REQUIRED: "This step requires approval and was not executed.",
+            AgentLoopFailureKind.PERMISSION_REQUIRED: "The operating system or external service denied this step.",
             AgentLoopFailureKind.INPUT_REQUIRED: "Required task information is missing.",
             AgentLoopFailureKind.TIMEOUT: "Execution timed out, so no unverified result was reported as successful.",
             AgentLoopFailureKind.TOOL_UNAVAILABLE: "The required tool or Agent is currently unavailable.",
@@ -1051,7 +1051,7 @@ class DesktopSuperAgent:
             f"{heading}\n\n"
             "You can:\n"
             "- Check the Desktop Agent and required tools, then retry\n"
-            "- Provide the missing parameter or approval\n"
+            "- Provide the missing parameter or external credential\n"
             "- Choose a read-only path that does not require this tool"
         )
 

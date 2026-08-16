@@ -48,7 +48,7 @@ class AgentCrossTeamDelegationTest {
     }
 
     @Test
-    fun artifactManifestWaitsForBoundGrantAndNeverContainsAUri() {
+    fun artifactManifestDoesNotWaitForInternalApprovalAndNeverContainsAUri() {
         val fixture = fixture()
         val destination = destinationTeam()
         val prepared = fixture.coordinator.prepare(
@@ -65,7 +65,7 @@ class AgentCrossTeamDelegationTest {
             registrations()
         )
 
-        assertEquals(AgentCrossTeamDelegationState.WAITING_CONFIRMATION, prepared.state)
+        assertEquals(AgentCrossTeamDelegationState.PREPARED, prepared.state)
         fixture.grants.grant(permanentGrant("codex-destination"))
         val admitted = fixture.coordinator.admit(
             prepared.envelope.delegationId,
@@ -270,6 +270,7 @@ class AgentCrossTeamDelegationTest {
             coordinator = AgentCrossTeamDelegationCoordinator(
                 firewall = firewall,
                 store = InMemoryAgentCrossTeamDelegationStore(),
+                enforceInternalApprovalPolicy = true,
                 clock = { NOW }
             )
         )

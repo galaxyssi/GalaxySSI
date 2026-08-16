@@ -79,7 +79,7 @@ class AgentHomeAssistantNativeToolsTest {
     }
 
     @Test
-    fun entityReadsRequireConsentAndRedactProtectedState() {
+    fun entityReadsDoNotRequireInternalConsentAndRedactProtectedState() {
         val platform = FakeHomeAssistantPlatform()
         val registry = AgentHomeAssistantNativeTools.createRegistry(platform)
         val listDescriptor = descriptor(registry, AgentHomeAssistantNativeTools.ENTITIES_LIST)
@@ -89,8 +89,8 @@ class AgentHomeAssistantNativeToolsTest {
             mapOf("limit" to 5),
             grantedContext(listDescriptor).copy(grantedConsents = emptySet())
         )
-        assertEquals("missing_consents", denied.error?.code)
-        assertEquals(0, platform.listCalls)
+        assertTrue(denied.toJson(), denied.isSuccess)
+        assertEquals(1, platform.listCalls)
 
         val listed = registry.invoke(
             AgentHomeAssistantNativeTools.ENTITIES_LIST,
@@ -108,7 +108,7 @@ class AgentHomeAssistantNativeToolsTest {
     }
 
     @Test
-    fun deterministicServiceCallRequiresConsentAndIdempotencyThenVerifiesControllerState() {
+    fun deterministicServiceCallRequiresOnlyIdempotencyThenVerifiesControllerState() {
         val platform = FakeHomeAssistantPlatform()
         val registry = AgentHomeAssistantNativeTools.createRegistry(platform)
         val descriptor = descriptor(registry, AgentHomeAssistantNativeTools.SERVICE_CALL)
@@ -117,16 +117,16 @@ class AgentHomeAssistantNativeToolsTest {
         val missingConsent = registry.invoke(
             AgentHomeAssistantNativeTools.SERVICE_CALL,
             input,
-            grantedContext(descriptor, "light-on-1").copy(grantedConsents = emptySet())
+            grantedContext(descriptor, "light-on-unrestricted").copy(grantedConsents = emptySet())
         )
         val missingKey = registry.invoke(
             AgentHomeAssistantNativeTools.SERVICE_CALL,
             input,
             grantedContext(descriptor).copy(invocationId = "missing-key")
         )
-        assertEquals("missing_consents", missingConsent.error?.code)
+        assertTrue(missingConsent.toJson(), missingConsent.isSuccess)
         assertEquals("missing_idempotency_key", missingKey.error?.code)
-        assertEquals(0, platform.serviceCalls)
+        assertEquals(1, platform.serviceCalls)
 
         val context = grantedContext(descriptor, "light-on-1").copy(invocationId = "service-first")
         val first = registry.invoke(AgentHomeAssistantNativeTools.SERVICE_CALL, input, context)
@@ -142,7 +142,7 @@ class AgentHomeAssistantNativeToolsTest {
         assertEquals(false, first.output["physical_outcome_verified"])
         assertEquals(false, first.metadata["physical_outcome_verified"])
         assertTrue(replay.receipt.replayed)
-        assertEquals(1, platform.serviceCalls)
+        assertEquals(2, platform.serviceCalls)
     }
 
     @Test
@@ -236,13 +236,13 @@ class AgentHomeAssistantNativeToolsTest {
         val lock = actionFor(serviceInput("lock", "unlock", "lock.front_door"))
         val automation = actionFor(serviceInput("automation", "trigger", "automation.leave_home"))
 
-        assertEquals(AgentConfirmationTier.CONFIRM_ONCE, AgentConfirmationPolicy.tier(light))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(light))
         assertEquals(
             "home_assistant_control:light.office",
             AgentConfirmationPolicy.consentKey(light)
         )
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(lock))
-        assertEquals(AgentConfirmationTier.CONFIRM_ALWAYS, AgentConfirmationPolicy.tier(automation))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(lock))
+        assertEquals(AgentConfirmationTier.DIRECT, AgentConfirmationPolicy.tier(automation))
     }
 
     @Test

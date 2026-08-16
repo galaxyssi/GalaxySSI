@@ -10,6 +10,76 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AgentRuntimeArchiveToolsDeviceTest {
     @Test
+    fun linuxGuestProvidesWritablePersistentTaskTempDirectory() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
+        assertTrue("Runtime lifecycle: ${lifecycle.reason}", lifecycle.phase == AgentRuntimeLifecyclePhase.READY)
+        val result = AgentOnDeviceRuntimeManager(context).execute(
+            AgentRuntimeExecutionRequest(
+                language = AgentRuntimeLanguage.SHELL,
+                source = """
+                    set -eu
+                    test "${'$'}TMPDIR" = /root/.cache/tmp
+                    test -d "${'$'}TMPDIR"
+                    probe="${'$'}TMPDIR/signalasi-write-probe-${'$'}${'$'}"
+                    printf 'ready\n' > "${'$'}probe"
+                    rm -f "${'$'}probe"
+                    printf 'persistent-task-temp-ready\n'
+                """.trimIndent(),
+                arguments = emptyList(),
+                timeoutMillis = 30_000L,
+                networkEnabled = false,
+                artifactPaths = emptyList(),
+                workspaceId = "device-runtime-temp-check",
+                requestId = "runtime-temp-check-${System.currentTimeMillis()}",
+                resourceLimits = AgentRuntimeResourceLimits(
+                    wallClockMillis = 30_000L,
+                    cpuMillis = 15_000L,
+                    memoryBytes = 64L * 1024L * 1024L,
+                    diskBytes = 8L * 1024L * 1024L,
+                    maxProcesses = 8,
+                    maxOutputBytes = 8L * 1024L,
+                    maxArtifactBytes = 1024L
+                )
+            )
+        )
+
+        assertEquals("stdout=${result.stdout}\nstderr=${result.stderr}", 0, result.exitCode)
+        assertTrue(result.stdout, result.stdout.contains("persistent-task-temp-ready"))
+    }
+
+    @Test
+    fun linuxGuestRemainsConnectedAcrossIdleReadPoll() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
+        assertTrue("Runtime lifecycle: ${lifecycle.reason}", lifecycle.phase == AgentRuntimeLifecyclePhase.READY)
+        val result = AgentOnDeviceRuntimeManager(context).execute(
+            AgentRuntimeExecutionRequest(
+                language = AgentRuntimeLanguage.SHELL,
+                source = "sleep 35; printf 'long-task-ready\\n'",
+                arguments = emptyList(),
+                timeoutMillis = 50_000L,
+                networkEnabled = false,
+                artifactPaths = emptyList(),
+                workspaceId = "device-long-task-check",
+                requestId = "long-task-check-${System.currentTimeMillis()}",
+                resourceLimits = AgentRuntimeResourceLimits(
+                    wallClockMillis = 50_000L,
+                    cpuMillis = 5_000L,
+                    memoryBytes = 64L * 1024L * 1024L,
+                    diskBytes = 8L * 1024L * 1024L,
+                    maxProcesses = 8,
+                    maxOutputBytes = 8L * 1024L,
+                    maxArtifactBytes = 1024L
+                )
+            )
+        )
+
+        assertEquals("stdout=${result.stdout}\nstderr=${result.stderr}", 0, result.exitCode)
+        assertTrue(result.stdout, result.stdout.contains("long-task-ready"))
+    }
+
+    @Test
     fun linuxGuestResolvesPublicNetworkThroughPhone() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)

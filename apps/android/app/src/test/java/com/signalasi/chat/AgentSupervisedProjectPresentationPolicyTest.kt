@@ -40,6 +40,32 @@ class AgentSupervisedProjectPresentationPolicyTest {
     }
 
     @Test
+    fun `hides a registered supervised source after runtime phase changes`() {
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(
+                phase = AgentPhase.EXECUTING,
+                pendingAction = null,
+                expectedSourceMessageId = 0L,
+                incomingSourceMessageId = 42L,
+                isSupervisedSource = true
+            )
+        )
+    }
+
+    @Test
+    fun `does not hide an ordinary source solely because another plan is supervised`() {
+        assertTrue(
+            AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(
+                phase = AgentPhase.EXECUTING,
+                pendingAction = supervisedConnector(),
+                expectedSourceMessageId = 42L,
+                incomingSourceMessageId = 43L,
+                isSupervisedSource = false
+            )
+        )
+    }
+
+    @Test
     fun `identifies model control payloads so streams never render them as replies`() {
         assertTrue(
             AgentSupervisedProjectControlPayload.isControlPayload(
@@ -47,6 +73,38 @@ class AgentSupervisedProjectPresentationPolicyTest {
             )
         )
         assertFalse(AgentSupervisedProjectControlPayload.isControlPayload("A normal assistant reply"))
+    }
+
+    @Test
+    fun `identifies an incomplete supervised control stream before valid JSON exists`() {
+        assertTrue(
+            AgentSupervisedProjectControlPayload.isControlPayloadFragment(
+                """{"execution_location":"phone","summary":"Inspecting""""
+            )
+        )
+        assertTrue(
+            AgentSupervisedProjectControlPayload.isControlPayloadFragment(
+                """```json
+                    {"execution_location":"phone"
+                """.trimIndent()
+            )
+        )
+        assertTrue(
+            AgentSupervisedProjectControlPayload.isControlPayloadFragment(
+                "\uFEFF{\"execution_location\":\"phone\",\"actions\":["
+            )
+        )
+        assertFalse(
+            AgentSupervisedProjectControlPayload.isControlPayloadFragment(
+                "A normal answer containing a phone execution summary."
+            )
+        )
+        assertTrue(
+            AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+                text = "",
+                richOutputJson = """{"blocks":[{"text":"{\"execution_location\":\"phone\"}"}]}"""
+            )
+        )
     }
 
     @Test

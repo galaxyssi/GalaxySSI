@@ -420,9 +420,16 @@ internal fun MainActivity.scheduleNavigationContentPrewarm() {
 }
 
 internal fun MainActivity.startMessageService() {
-    // MainActivity is visible here, so avoid starting the foreground-service deadline
-    // before the service's main-thread lifecycle callback can run.
-    startService(Intent(this, MessageService::class.java))
+    val intent = Intent(this, MessageService::class.java)
+    runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }.onFailure { error ->
+        Log.w("SignalASIStartup", "Message service start was deferred", error)
+    }
 }
 
 internal fun MainActivity.requestAgentNotificationPermissionIfNeeded() {

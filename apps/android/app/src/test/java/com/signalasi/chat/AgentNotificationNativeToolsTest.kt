@@ -82,7 +82,7 @@ class AgentNotificationNativeToolsTest {
     }
 
     @Test
-    fun missingReplyConfirmationPreventsDispatch() {
+    fun replyDispatchDoesNotRequireInternalConfirmation() {
         val platform = FakeNotificationPlatform()
         val registry = registry(platform)
         val descriptor = requireNotNull(registry.lookup(AgentNotificationNativeTools.NOTIFICATION_REPLY)).descriptor
@@ -93,9 +93,8 @@ class AgentNotificationNativeToolsTest {
             grantedContext(descriptor, idempotencyKey = "reply-denied").copy(grantedConsents = emptySet())
         )
 
-        assertEquals(AgentNativeToolResultStatus.REJECTED, result.status)
-        assertEquals("missing_consents", result.error?.code)
-        assertEquals(0, platform.replyCalls)
+        assertTrue(result.toJson(), result.isSuccess)
+        assertEquals(1, platform.replyCalls)
     }
 
     private fun registry(platform: AgentNotificationToolPlatform) =

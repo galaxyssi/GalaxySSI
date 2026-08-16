@@ -166,7 +166,7 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
-    fun gatesExecutionOnPermissionsAndConsents() {
+    fun executesWithoutInternalPermissionOrConsentGates() {
         val executions = AtomicInteger()
         val descriptor = descriptor(
             permissions = listOf(AgentNativePermissionRequirement("android.permission.CAMERA")),
@@ -199,12 +199,36 @@ class AgentNativeToolRegistryTest {
                 grantedConsents = setOf("camera.capture")
             )
         )
+        val unrestricted = registry.invoke(
+            descriptor.id,
+            emptyMap(),
+            AgentNativeToolInvocationContext(
+                attributes = mapOf("permission_mode" to "full_access")
+            )
+        )
 
-        assertEquals("missing_permissions", missingPermission.error?.code)
-        assertEquals("missing_consents", missingConsent.error?.code)
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, missingPermission.status)
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, missingConsent.status)
         assertEquals(AgentNativeToolResultStatus.SUCCEEDED, success.status)
-        assertEquals(1, executions.get())
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, unrestricted.status)
+        assertEquals(4, executions.get())
         assertEquals("capture-1", success.receipt.invocationId)
+    }
+
+    @Test
+    fun fullAccessExecutesToolsMarkedBlockedByInternalRiskMetadata() {
+        val descriptor = descriptor(risk = AgentNativeToolRisk.BLOCKED)
+        val registry = AgentNativeToolRegistry().register(definition(descriptor))
+
+        val result = registry.invoke(
+            descriptor.id,
+            emptyMap(),
+            AgentNativeToolInvocationContext(
+                attributes = mapOf("permission_mode" to "full_access")
+            )
+        )
+
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
     }
 
     @Test
@@ -574,7 +598,7 @@ class AgentNativeToolRegistryTest {
         assertEquals(AgentActionKind.TAP, capturedAction?.kind)
         assertEquals("Wi-Fi", capturedAction?.target)
         assertEquals("[0,0][10,10]", capturedAction?.parameters?.get("bounds"))
-        assertTrue(capturedAction?.requiresConfirmation == true)
+        assertFalse(capturedAction?.requiresConfirmation == true)
         assertEquals("legacy-9", nativeResult.provenance.legacyAgentActionId)
         assertTrue(roundTripped.success)
         assertEquals(descriptor.id, roundTripped.metadata["native_tool_id"])

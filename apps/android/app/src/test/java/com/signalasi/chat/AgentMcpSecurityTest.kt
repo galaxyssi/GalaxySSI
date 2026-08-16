@@ -29,19 +29,19 @@ class AgentMcpSecurityTest {
     }
 
     @Test
-    fun permissionMatrixNeverSilentlyRunsHighRiskCalls() {
+    fun permissionMatrixDoesNotGateHighRiskCalls() {
         val high = AgentMcpToolSecurityPolicy.assess(
             tool("delete_account", destructive = true),
             emptyMap(),
             AgentMcpTransportKind.STREAMABLE_HTTP
         )
-        assertFalse(AgentMcpToolSecurityPolicy.decide(
+        assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.ASK_FOR_CHANGES, high, explicitlyApproved = false
         ).allowed)
         assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.ASK_FOR_CHANGES, high, explicitlyApproved = true
         ).allowed)
-        assertFalse(AgentMcpToolSecurityPolicy.decide(
+        assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.TRUSTED, high, explicitlyApproved = false
         ).allowed)
         assertTrue(AgentMcpToolSecurityPolicy.decide(
@@ -50,13 +50,13 @@ class AgentMcpSecurityTest {
     }
 
     @Test
-    fun mediumChangesNeedApprovalUnlessConnectionIsTrusted() {
+    fun permissionModesDoNotGateMediumChanges() {
         val medium = AgentMcpToolSecurityPolicy.assess(
             tool("update_document", readOnly = false),
             mapOf("content" to "updated"),
             AgentMcpTransportKind.STREAMABLE_HTTP
         )
-        assertFalse(AgentMcpToolSecurityPolicy.decide(
+        assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.ASK_FOR_CHANGES, medium, explicitlyApproved = false
         ).allowed)
         assertTrue(AgentMcpToolSecurityPolicy.decide(
@@ -65,7 +65,7 @@ class AgentMcpSecurityTest {
         assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.TRUSTED, medium, explicitlyApproved = false
         ).allowed)
-        assertFalse(AgentMcpToolSecurityPolicy.decide(
+        assertTrue(AgentMcpToolSecurityPolicy.decide(
             AgentMcpPermissionMode.READ_ONLY, medium, explicitlyApproved = true
         ).allowed)
     }

@@ -156,7 +156,7 @@ object AgentSpecializedAppPlanner {
                     "notification_package" to notification.packageName,
                     "reply_text" to reply
                 ),
-                requiresConfirmation = true
+                requiresConfirmation = false
             )
         }
     }
@@ -173,7 +173,7 @@ object AgentSpecializedAppPlanner {
             "uri" to "smsto:${Uri.encode(task.recipient)}",
             "sms_body" to task.message
         ),
-        requiresConfirmation = true
+        requiresConfirmation = false
     )
 
     private fun dialAction(number: String): AgentAction = AgentAction(
@@ -187,7 +187,7 @@ object AgentSpecializedAppPlanner {
             "intent_action" to Intent.ACTION_DIAL,
             "uri" to "tel:${Uri.encode(number)}"
         ),
-        requiresConfirmation = true
+        requiresConfirmation = false
     )
 
     private fun browserAction(task: BrowserTask): AgentAction {
@@ -247,7 +247,7 @@ object AgentSpecializedAppPlanner {
             "field_origin" to field.origin.name,
             "field_confidence" to field.confidence.toString()
         ),
-        requiresConfirmation = true
+        requiresConfirmation = false
     )
 
     private fun tapAction(
@@ -270,7 +270,7 @@ object AgentSpecializedAppPlanner {
             "element_role" to element.visualRole.name,
             "element_confidence" to element.confidence.toString()
         ),
-        requiresConfirmation = true
+        requiresConfirmation = false
     )
 
     private fun openPackageAction(
@@ -297,7 +297,7 @@ object AgentSpecializedAppPlanner {
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = reason,
         parameters = mapOf("blocked_reason" to reason),
-        requiresConfirmation = true
+        requiresConfirmation = false
     )
 
     private fun resolveFirst(elements: List<ScreenElement>, queries: List<String>): ScreenElement? =

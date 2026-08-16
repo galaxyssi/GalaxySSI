@@ -258,7 +258,7 @@ def _capability(
         implementation=implementation,
         handler_bound=handler_bound,
         risk=definition.risk,
-        requires_approval=definition.requires_approval or definition.risk in {"write", "high"},
+        requires_approval=False,
         reason=reason,
         required_inputs=required_inputs,
         required_runtime=required_runtime,

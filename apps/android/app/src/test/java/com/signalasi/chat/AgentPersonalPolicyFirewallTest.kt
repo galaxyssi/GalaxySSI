@@ -15,11 +15,11 @@ class AgentPersonalPolicyFirewallTest {
 
         assertEquals(AgentPolicyFirewallVerdict.ALLOW, decision.verdict)
         assertTrue(decision.replayClaimed)
-        assertTrue("trusted_low_risk_outbound" in decision.reasonCodes)
+        assertTrue("internal_approval_gates_disabled" in decision.reasonCodes)
     }
 
     @Test
-    fun inboundRequestRequiresAnExactUserGrant() {
+    fun inboundRequestDoesNotRequireAnInternalGrant() {
         val fixture = fixture()
         val incoming = request(
             direction = AgentExternalRequestDirection.INBOUND,
@@ -40,14 +40,13 @@ class AgentPersonalPolicyFirewallTest {
         ))
         val after = fixture.firewall.admit(incoming, registrations)
 
-        assertEquals(AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION, before.verdict)
-        assertTrue("inbound_request_requires_grant" in before.reasonCodes)
+        assertEquals(AgentPolicyFirewallVerdict.ALLOW, before.verdict)
         assertEquals(AgentPolicyFirewallVerdict.ALLOW, after.verdict)
-        assertTrue(after.matchedGrantIds.isNotEmpty())
+        assertTrue(after.matchedGrantIds.isEmpty())
     }
 
     @Test
-    fun restrictedDataRequiresFreshSingleUseGrantEvenForPairedAgent() {
+    fun restrictedDataDoesNotRequireAnInternalGrantForPairedAgent() {
         val fixture = fixture()
         val first = request(
             requestId = "restricted-one",
@@ -66,8 +65,7 @@ class AgentPersonalPolicyFirewallTest {
         )
 
         assertEquals(AgentPolicyFirewallVerdict.ALLOW, admitted.verdict)
-        assertEquals(AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION, next.verdict)
-        assertTrue("fresh_single_use_grant_required" in next.reasonCodes)
+        assertEquals(AgentPolicyFirewallVerdict.ALLOW, next.verdict)
     }
 
     @Test
@@ -178,7 +176,7 @@ class AgentPersonalPolicyFirewallTest {
     }
 
     @Test
-    fun deviceControlAlwaysRequiresFreshSingleUseGrant() {
+    fun deviceControlDoesNotRequireAnInternalGrant() {
         val fixture = fixture()
         val registration = verifiedAgent(
             "device-agent",
@@ -193,12 +191,12 @@ class AgentPersonalPolicyFirewallTest {
         fixture.grants.grant(singleUseGrant("device-agent"))
         val after = fixture.firewall.admit(request, listOf(registration))
 
-        assertEquals(AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION, before.verdict)
+        assertEquals(AgentPolicyFirewallVerdict.ALLOW, before.verdict)
         assertEquals(AgentPolicyFirewallVerdict.ALLOW, after.verdict)
     }
 
     @Test
-    fun everyParticipantInExternalTeamNeedsGrantWhenTrustBoundaryRequiresIt() {
+    fun configuredExternalTeamDoesNotRequireInternalGrants() {
         val fixture = fixture()
         val request = request(targetAgentIds = setOf("cloud-one", "cloud-two"))
         val registrations = listOf(cloudAgent("cloud-one"), cloudAgent("cloud-two"))
@@ -218,8 +216,8 @@ class AgentPersonalPolicyFirewallTest {
         ))
         val complete = fixture.firewall.admit(request, registrations)
 
-        assertEquals(AgentPolicyFirewallVerdict.REQUIRE_CONFIRMATION, partial.verdict)
-        assertEquals(2, partial.requiredGrants.size)
+        assertEquals(AgentPolicyFirewallVerdict.ALLOW, partial.verdict)
+        assertTrue(partial.requiredGrants.isEmpty())
         assertEquals(AgentPolicyFirewallVerdict.ALLOW, complete.verdict)
     }
 

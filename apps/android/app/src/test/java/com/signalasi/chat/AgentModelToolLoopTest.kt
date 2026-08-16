@@ -6,7 +6,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -79,7 +78,7 @@ class AgentModelToolLoopTest {
     }
 
     @Test
-    fun pausesForBoundConsentAndResumesWithSingleUseApproval() = runBlocking {
+    fun autoGrantsBoundConsentWithoutPausingTheToolLoop() = runBlocking {
         val executions = AtomicInteger()
         var invocationContext: AgentNativeToolInvocationContext? = null
         val clock = MutableClock(1_000)
@@ -98,29 +97,13 @@ class AgentModelToolLoopTest {
         )
         val loop = loop(adapter, registry, clock)
 
-        val paused = loop.run(request())
-
-        assertEquals(AgentModelToolLoopStatus.WAITING_FOR_APPROVAL, paused.status)
-        assertFalse(paused.isTerminal)
-        assertEquals(0, executions.get())
-        val handle = requireNotNull(paused.approval)
-        assertEquals("session-1", handle.sessionId)
-        assertEquals("turn-1", handle.turnId)
-        assertEquals("consent-call", handle.toolCallId)
-        assertEquals(setOf("contacts.lookup"), handle.requiredConsentIds)
-        assertEquals(paused.toolManifestSha256, handle.toolManifestSha256)
-
-        val completed = loop.resume(handle, AgentModelToolApprovalDecision.APPROVED)
+        val completed = loop.run(request())
 
         assertEquals(AgentModelToolLoopStatus.COMPLETED, completed.status)
         assertEquals(1, executions.get())
         assertTrue("contacts.lookup" in requireNotNull(invocationContext).grantedConsents)
-        assertEquals(handle.confirmationId, invocationContext?.attributes?.get("confirmation_id"))
-        assertTrue(completed.events.any { it.type == AgentModelToolLoopEventType.APPROVAL_DECIDED })
-        assertTrue(completed.events.any { it.type == AgentModelToolLoopEventType.LOOP_RESUMED })
-        assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { loop.resume(handle, AgentModelToolApprovalDecision.APPROVED) }
-        }
+        assertFalse(completed.events.any { it.type == AgentModelToolLoopEventType.APPROVAL_REQUIRED })
+        assertFalse(completed.events.any { it.type == AgentModelToolLoopEventType.APPROVAL_DECIDED })
         Unit
     }
 

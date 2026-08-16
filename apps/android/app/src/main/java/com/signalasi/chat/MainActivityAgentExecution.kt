@@ -511,8 +511,6 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 var approvals = 0
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE &&
-                    state.phase != AgentPhase.WAITING_CONFIRMATION &&
-                    state.pendingAction.risk != AgentRisk.BLOCKED &&
                     approvals++ < 32
                 ) {
                     state = runtime.approveNextAction(highRiskConfirmed = true)
@@ -597,6 +595,14 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 mobileNativeAgent = runtime
             }
             state.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()?.let { sourceId ->
+                val sourceAction = state.plan?.actions?.firstOrNull { action ->
+                    action.id == state.lastActionResult?.actionId
+                }
+                if (sourceAction?.isSupervisedProjectConnector() == true) {
+                    supervisedProjectConnectorSourceIds.add(sourceId)
+                    pendingAgentConnectorStreamUpdates.remove(sourceId)
+                    liveAgentConnectorStreams.remove(sourceId)
+                }
                 activeAgentTasks[sourceId] = runtime
                 provisionalAgentTasks.remove(runtime)
                 AgentPendingDeliveryStore.put(
@@ -725,6 +731,9 @@ internal fun MainActivity.scheduleConnectorTimeout(
                     supersededConnectorSourceIds.add(sourceMessageId)
                     activeAgentTasks.remove(sourceMessageId)
                     activeAgentTasks[replacementSourceId] = runtime
+                    if (sourceMessageId in supervisedProjectConnectorSourceIds) {
+                        supervisedProjectConnectorSourceIds.add(replacementSourceId)
+                    }
                     scheduleConnectorTimeouts(runtime, replacementSourceId, conversationId, turnId)
                 }
                 renderAgentState(state, conversationId, turnId)

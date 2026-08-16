@@ -105,6 +105,7 @@ internal object AgentEmbeddedRuntimeBootstrap {
         val bundle = loadBundle(appContext) ?: return AgentEmbeddedRuntimeBootstrapResult(bundled = false)
         val manager = AgentOnDeviceRuntimeManager(appContext)
         val installer = AgentRuntimePackInstaller(appContext)
+        val fingerprints = appContext.getSharedPreferences(FINGERPRINT_PREFERENCES, Context.MODE_PRIVATE)
         val installed = mutableListOf<String>()
         val retained = mutableListOf<String>()
         bundle.packs.forEach { pack ->
@@ -113,8 +114,15 @@ internal object AgentEmbeddedRuntimeBootstrap {
                 expectedId = pack.id,
                 checkDependencies = true
             )
-            if (current.state == AgentRuntimePackState.READY &&
-                current.manifest != null && compareVersions(current.manifest.version, pack.version) >= 0
+            val installedVersion = current.manifest?.version
+            val installedArchiveSha256 = fingerprints.getString(fingerprintKey(pack.id), null)
+            if (current.state == AgentRuntimePackState.READY && installedVersion != null &&
+                shouldRetainInstalledPack(
+                    installedVersion = installedVersion,
+                    bundledVersion = pack.version,
+                    installedArchiveSha256 = installedArchiveSha256,
+                    bundledArchiveSha256 = pack.archiveSha256
+                )
             ) {
                 retained += pack.id
                 return@forEach
@@ -125,6 +133,9 @@ internal object AgentEmbeddedRuntimeBootstrap {
                 check(result.state == AgentRuntimePackState.READY) {
                     result.reason.ifBlank { "Embedded runtime pack did not become ready: ${pack.id}" }
                 }
+                fingerprints.edit()
+                    .putString(fingerprintKey(pack.id), pack.archiveSha256)
+                    .apply()
                 installed += pack.id
             } finally {
                 archive.delete()
@@ -199,6 +210,20 @@ internal object AgentEmbeddedRuntimeBootstrap {
         }
     }
 
+    internal fun shouldRetainInstalledPack(
+        installedVersion: String,
+        bundledVersion: String,
+        installedArchiveSha256: String?,
+        bundledArchiveSha256: String
+    ): Boolean {
+        val versionComparison = compareVersions(installedVersion, bundledVersion)
+        return versionComparison > 0 ||
+            (versionComparison == 0 && installedArchiveSha256.equals(bundledArchiveSha256, ignoreCase = true))
+    }
+
+    private fun fingerprintKey(packId: String): String = "archive_sha256.$packId"
+
     private const val INDEX_ASSET = "runtime/bootstrap/index.json"
+    private const val FINGERPRINT_PREFERENCES = "signalasi_embedded_runtime_bootstrap_v1"
     private const val COPY_BUFFER_BYTES = 256 * 1024
 }

@@ -28,7 +28,7 @@ data class AgentRuntimeCapabilityEntry(
     val requiredConsents: Set<String> = emptySet()
 ) {
     val executable: Boolean
-        get() = state == AgentRuntimeCapabilityState.AVAILABLE && risk != AgentNativeToolRisk.BLOCKED.wireValue
+        get() = state == AgentRuntimeCapabilityState.AVAILABLE
 }
 
 data class AgentRuntimeCapabilitySnapshot(
@@ -93,7 +93,6 @@ object AgentRuntimeCapabilityMatrix {
 
     private fun nativeEntry(tool: AgentNativeToolDescriptor): AgentRuntimeCapabilityEntry {
         val state = when {
-            tool.risk == AgentNativeToolRisk.BLOCKED -> AgentRuntimeCapabilityState.BLOCKED
             tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE ->
                 AgentRuntimeCapabilityState.AVAILABLE
             tool.availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP ->
@@ -121,10 +120,8 @@ object AgentRuntimeCapabilityMatrix {
         val hostOwnedWorkflow = tool.id.startsWith("workflow:") || tool.id.startsWith("template:")
         val native = nativeById[AgentNativeToolAgentActionAdapter.defaultToolId(tool.kind)]
         val state = when {
-            tool.risk == AgentRisk.BLOCKED -> AgentRuntimeCapabilityState.BLOCKED
             hostOwnedWorkflow -> AgentRuntimeCapabilityState.AVAILABLE
             native == null -> AgentRuntimeCapabilityState.UNAVAILABLE
-            native.risk == AgentNativeToolRisk.BLOCKED -> AgentRuntimeCapabilityState.BLOCKED
             native.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE ->
                 AgentRuntimeCapabilityState.AVAILABLE
             native.availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP ->

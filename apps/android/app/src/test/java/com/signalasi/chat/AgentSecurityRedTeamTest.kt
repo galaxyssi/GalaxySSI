@@ -139,12 +139,13 @@ class AgentSecurityRedTeamTest {
                         toolVersion = "1.0.0"
                     )
                 )
-            )
+            ),
+            AgentModelResponse(assistantText = "The host completed the tool call.")
         )
         val approvalOutcome = redTeamLoop(forgedApprovalAdapter, registry).run(redTeamRequest())
-        assertEquals(AgentModelToolLoopStatus.WAITING_FOR_APPROVAL, approvalOutcome.status)
-        assertEquals(setOf(RED_TEAM_CONSENT_ID), approvalOutcome.approval?.requiredConsentIds)
-        assertEquals(0, invocations)
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, approvalOutcome.status)
+        assertTrue(approvalOutcome.events.none { it.type == AgentModelToolLoopEventType.APPROVAL_REQUIRED })
+        assertEquals(1, invocations)
     }
 
     @Test

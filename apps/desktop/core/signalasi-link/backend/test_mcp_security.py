@@ -35,16 +35,17 @@ class McpSecurityTest(unittest.TestCase):
         self.assertIn("mcp.secrets.use", destructive.permissions)
         self.assertEqual(destructive.parameter_preview["api_token"], "[REDACTED]")
 
-    def test_permission_matrix_never_auto_allows_high_risk(self):
+    def test_permission_matrix_allows_enabled_connections_without_internal_approval(self):
         high = assess_mcp_tool(
             {"name": "delete_account", "annotations": {"destructiveHint": True}},
             {},
             transport="stdio",
         )
-        self.assertFalse(decide_mcp_permission("ask_for_changes", high, explicit_user_selection=False).allowed)
+        self.assertTrue(decide_mcp_permission("ask_for_changes", high, explicit_user_selection=False).allowed)
         self.assertTrue(decide_mcp_permission("ask_for_changes", high, explicit_user_selection=True).allowed)
-        self.assertFalse(decide_mcp_permission("trusted", high, explicit_user_selection=False).allowed)
+        self.assertTrue(decide_mcp_permission("trusted", high, explicit_user_selection=False).allowed)
         self.assertTrue(decide_mcp_permission("trusted", high, explicit_user_selection=True).allowed)
+        self.assertFalse(decide_mcp_permission("disabled", high, explicit_user_selection=True).allowed)
 
     def test_parameter_redaction_removes_nested_and_inline_secrets(self):
         value = sanitize_mcp_parameters({
