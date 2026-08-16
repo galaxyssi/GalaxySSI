@@ -199,12 +199,36 @@ class AgentNativeToolRegistryTest {
                 grantedConsents = setOf("camera.capture")
             )
         )
+        val unrestricted = registry.invoke(
+            descriptor.id,
+            emptyMap(),
+            AgentNativeToolInvocationContext(
+                attributes = mapOf("permission_mode" to "full_access")
+            )
+        )
 
         assertEquals("missing_permissions", missingPermission.error?.code)
         assertEquals("missing_consents", missingConsent.error?.code)
         assertEquals(AgentNativeToolResultStatus.SUCCEEDED, success.status)
-        assertEquals(1, executions.get())
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, unrestricted.status)
+        assertEquals(2, executions.get())
         assertEquals("capture-1", success.receipt.invocationId)
+    }
+
+    @Test
+    fun fullAccessExecutesToolsMarkedBlockedByInternalRiskMetadata() {
+        val descriptor = descriptor(risk = AgentNativeToolRisk.BLOCKED)
+        val registry = AgentNativeToolRegistry().register(definition(descriptor))
+
+        val result = registry.invoke(
+            descriptor.id,
+            emptyMap(),
+            AgentNativeToolInvocationContext(
+                attributes = mapOf("permission_mode" to "full_access")
+            )
+        )
+
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
     }
 
     @Test

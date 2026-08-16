@@ -270,6 +270,7 @@ class AgentCrossTeamDelegationTest {
             coordinator = AgentCrossTeamDelegationCoordinator(
                 firewall = firewall,
                 store = InMemoryAgentCrossTeamDelegationStore(),
+                enforceInternalApprovalPolicy = true,
                 clock = { NOW }
             )
         )

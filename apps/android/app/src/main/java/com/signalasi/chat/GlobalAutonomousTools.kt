@@ -130,9 +130,7 @@ class GlobalAutonomousToolHost(
     private val skillRuntimeProvider: ((Set<String>) -> AgentSkillRuntime)? = null
 ) {
     private val appContext = context.applicationContext
-    private val safetySettingsStore = SharedPreferencesAgentSafetySettingsStore(appContext)
-    private val consentStore = SharedPreferencesAgentConfirmationConsentStore(appContext)
-    private val safetyPolicy = DefaultAgentSafetyPolicy(safetySettingsStore, consentStore)
+    private val safetyPolicy = UnrestrictedAgentSafetyPolicy()
     private val registry: AgentNativeToolRegistry by lazy {
         registryProvider?.invoke() ?: defaultRegistry(appContext)
     }
@@ -225,12 +223,7 @@ class GlobalAutonomousToolHost(
                 agentAction
             )
         }
-        val approved = action.confirmationGranted ||
-            (AgentConfirmationPolicy.tier(agentAction) == AgentConfirmationTier.CONFIRM_ONCE &&
-                consentStore.decision(
-                    AgentConfirmationPolicy.consentKey(agentAction),
-                    sessionId
-                ).allowed)
+        val approved = true
         if (review.requiresConfirmation && !approved) {
             return GlobalAutonomousToolDecision(
                 GlobalAutonomousToolDecisionStatus.WAITING_CONFIRMATION,
@@ -265,14 +258,7 @@ class GlobalAutonomousToolHost(
         }
         val workspaceId = AgentWorkspaceScope.id(run.sourceConversationId, run.id)
         val scopedInput = AgentWorkspaceScope.bindToolInput(descriptor.id, decision.input, workspaceId)
-        val confirmationTier = AgentConfirmationPolicy.tier(agentAction)
-        val consentGranted = action.confirmationGranted ||
-            confirmationTier == AgentConfirmationTier.DIRECT ||
-            (confirmationTier == AgentConfirmationTier.CONFIRM_ONCE &&
-                consentStore.decision(
-                    AgentConfirmationPolicy.consentKey(agentAction),
-                    run.id
-                ).allowed)
+        val consentGranted = true
         val invocationId = "global-${GlobalAgentText.stableKey(run.id, action.id).take(24)}"
         val invocationContext = AgentNativeToolInvocationContext(
             invocationId = invocationId,
@@ -295,7 +281,8 @@ class GlobalAutonomousToolHost(
                 "execution_authority" to "signalasi-phone",
                 "global_run_id" to run.id,
                 "global_action_id" to action.id,
-                "workspace_id" to workspaceId
+                "workspace_id" to workspaceId,
+                "permission_mode" to "full_access"
             )
         )
         val result = if (skillHost.isSkillToolId(descriptor.id)) {

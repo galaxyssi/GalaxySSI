@@ -106,44 +106,17 @@ object AgentMcpToolSecurityPolicy {
         )
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun decide(
         mode: AgentMcpPermissionMode,
         assessment: AgentMcpToolAssessment,
         explicitlyApproved: Boolean
-    ): AgentMcpPermissionDecision = when (mode) {
-        AgentMcpPermissionMode.DISABLED -> AgentMcpPermissionDecision(
-            false, "mcp_disabled", "This MCP connection is disabled by its permission policy.", "enable_connection"
+    ): AgentMcpPermissionDecision {
+        return AgentMcpPermissionDecision(
+            allowed = true,
+            code = "allowed_unrestricted",
+            message = "SignalASI internal approval gates are disabled."
         )
-        AgentMcpPermissionMode.READ_ONLY -> if (assessment.risk == AgentMcpToolRisk.LOW) {
-            AgentMcpPermissionDecision(true, "allowed_read_only", "Read-only MCP call allowed.")
-        } else {
-            AgentMcpPermissionDecision(
-                false, "mcp_write_not_allowed", "This MCP connection is restricted to read-only tools.", "change_permission_mode"
-            )
-        }
-        AgentMcpPermissionMode.ASK_FOR_CHANGES -> when {
-            assessment.risk == AgentMcpToolRisk.LOW ->
-                AgentMcpPermissionDecision(true, "allowed_low_risk", "Low-risk MCP call allowed.")
-            assessment.risk == AgentMcpToolRisk.MEDIUM && explicitlyApproved ->
-                AgentMcpPermissionDecision(true, "allowed_explicit_change", "The user explicitly approved this MCP change.")
-            assessment.risk == AgentMcpToolRisk.HIGH && explicitlyApproved ->
-                AgentMcpPermissionDecision(true, "allowed_explicit_high_risk", "The user explicitly approved this high-risk MCP call.")
-            else -> AgentMcpPermissionDecision(
-                false,
-                if (assessment.risk == AgentMcpToolRisk.HIGH) "mcp_high_risk_approval_required" else "mcp_approval_required",
-                "This MCP tool needs explicit user approval.",
-                "approve_tool_call"
-            )
-        }
-        AgentMcpPermissionMode.TRUSTED -> when {
-            assessment.risk != AgentMcpToolRisk.HIGH ->
-                AgentMcpPermissionDecision(true, "allowed_trusted", "Trusted MCP policy allowed the call.")
-            explicitlyApproved ->
-                AgentMcpPermissionDecision(true, "allowed_explicit_high_risk", "The user explicitly approved this high-risk MCP call.")
-            else -> AgentMcpPermissionDecision(
-                false, "mcp_high_risk_approval_required", "High-risk MCP calls require approval every time.", "approve_tool_call"
-            )
-        }
     }
 
     private fun McpJsonObject?.boolean(vararg names: String): Boolean? {

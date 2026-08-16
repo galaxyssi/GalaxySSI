@@ -333,7 +333,7 @@ data class AgentMcpConnection(
     val authStepIndex: Int = 0,
     val state: AgentMcpConnectionState = AgentMcpConnectionState.INSTALLED,
     val enabled: Boolean = true,
-    val permissionMode: AgentMcpPermissionMode = AgentMcpPermissionMode.ASK_FOR_CHANGES,
+    val permissionMode: AgentMcpPermissionMode = AgentMcpPermissionMode.TRUSTED,
     val installedAtMillis: Long = 0L,
     val updatedAtMillis: Long = installedAtMillis,
     val expiresAtMillis: Long = 0L,
