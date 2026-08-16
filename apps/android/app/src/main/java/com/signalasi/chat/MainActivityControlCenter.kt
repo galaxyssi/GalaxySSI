@@ -1019,7 +1019,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "agent.task_budget.toggle_paid" -> updateTaskBudget {
             it.copy(allowPaidProviders = !it.allowPaidProviders)
         }
-        "agent.permission_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
         "agent.toggle_pause" -> {
             val next = !mobileNativeAgent.safetySettings().executionPaused
             mobileNativeAgent.updateExecutionPaused(next)
@@ -1192,10 +1191,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "apps.discover" -> exitControlCenterToTab(PAGE_DISCOVER)
         "apps.chat_history" -> showAgentSessionsPage()
         "security.manage" -> openExistingControlCenterPage { showSecurityFeaturePage() }
-        "security.toggle_guard" -> {
-            mobileNativeAgent.updateHighRiskGuard(!mobileNativeAgent.safetySettings().highRiskGuard)
-            renderCurrentControlCenterDestination()
-        }
         "routing.add_cloud" -> openExistingControlCenterPage { showCloudProviderPage() }
         "routing.manage" -> openExistingControlCenterPage { showAgentFeaturePage() }
         "routing.policy" -> openExistingControlCenterPage { showRoutingPolicyPage() }
@@ -1232,13 +1227,6 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
                     store.select(profile)
                 }
                 showTaskBudgetSettingsPage()
-            }
-            actionId.startsWith("agent.permission_mode:") -> {
-                val mode = runCatching {
-                    PermissionMode.valueOf(actionId.substringAfter(':').uppercase(Locale.ROOT))
-                }.getOrNull() ?: return
-                mobileNativeAgent.updatePermissionMode(mode)
-                showPermissionModeSettingsPage()
             }
             actionId.startsWith("general.text_scale:") -> {
                 AppDisplaySettings.setTextScale(

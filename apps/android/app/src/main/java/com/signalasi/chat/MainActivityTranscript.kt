@@ -258,17 +258,6 @@ internal fun MainActivity.renderAgentState(
     val pendingAction = state.pendingAction
     if (syncTranscript) renderAgentOutput(state, conversationId, turnId)
     val safetySettings = mobileNativeAgent.safetySettings()
-    agentPermissionModeButton.text = getString(
-        R.string.agent_safety_permission_mode_value,
-        permissionModeLabel(safetySettings.permissionMode)
-    )
-    agentHighRiskGuardButton.text = getString(
-        R.string.agent_safety_high_risk_guard_value,
-        onOffLabel(safetySettings.highRiskGuard)
-    )
-    agentHighRiskGuardButton.setTextColor(
-        if (safetySettings.highRiskGuard) getColorCompat(R.color.wechat_green) else getColorCompat(R.color.text_secondary)
-    )
     agentMemoryCaptureButton.text = getString(
         R.string.agent_safety_memory_capture_value,
         onOffLabel(safetySettings.memoryCapture)

@@ -228,15 +228,14 @@ internal fun MainActivity.showPermissionModeSettingsPage() {
     val settings = mobileNativeAgent.safetySettings()
     val selectedPreferenceMode = mobileNativeAgent.preferenceMode()
     val selectedExecutionMode = settings.taskExecutionMode
-    val selectedPermissionMode = settings.permissionMode
     showControlCenterFeature(
-        getString(R.string.on_device_agent_permission_mode),
+        getString(R.string.cc_task_execution_mode_title),
         ControlCenterPageSpec(
             banner = ControlCenterBannerSpec(
-                getString(R.string.cc_permission_mode_banner_title),
-                getString(R.string.cc_permission_mode_banner_subtitle),
-                R.drawable.ic_security_shield,
-                ControlCenterTone.BLUE
+                getString(R.string.cc_task_execution_mode_title),
+                getString(R.string.cc_task_execution_mode_subtitle),
+                R.drawable.ic_agent_control,
+                ControlCenterTone.GREEN
             ),
             sections = listOf(
                 ControlCenterSectionSpec(
@@ -273,21 +272,6 @@ internal fun MainActivity.showPermissionModeSettingsPage() {
                             title = taskExecutionModeLabel(mode),
                             subtitle = taskExecutionModeDescription(mode),
                             iconRes = R.drawable.ic_agent_control,
-                            status = if (isSelected) getString(R.string.settings_language_selected) else "",
-                            tone = if (isSelected) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL,
-                            showChevron = false
-                        )
-                    }
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_permission_mode_section),
-                    PermissionMode.entries.map { mode ->
-                        val isSelected = mode == selectedPermissionMode
-                        ControlCenterRowSpec(
-                            actionId = if (isSelected) "" else "agent.permission_mode:${mode.name}",
-                            title = permissionModeLabel(mode),
-                            subtitle = permissionModeDescription(mode),
-                            iconRes = R.drawable.ic_security_shield,
                             status = if (isSelected) getString(R.string.settings_language_selected) else "",
                             tone = if (isSelected) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL,
                             showChevron = false
@@ -627,16 +611,6 @@ internal fun MainActivity.taskBudgetMemoryBytesValue(value: Long): String =
     if (value <= 0L) getString(R.string.cc_task_budget_system_managed)
     else formatBytes(value)
 
-internal fun MainActivity.permissionModeDescription(mode: PermissionMode): String = getString(
-    when (mode) {
-        PermissionMode.OBSERVE_ONLY -> R.string.cc_permission_observe_subtitle
-        PermissionMode.SUGGEST_ONLY -> R.string.cc_permission_suggest_subtitle
-        PermissionMode.ASK_BEFORE_ACTION -> R.string.cc_permission_ask_subtitle
-        PermissionMode.AUTO_LOW_RISK -> R.string.cc_permission_auto_subtitle
-        PermissionMode.FULL_ACCESS -> R.string.cc_permission_full_access_subtitle
-    }
-)
-
 internal fun MainActivity.showAgentPlannerSettingsPage() {
     val settings = mobileNativeAgent.modelPlannerSettings()
     val sources = configuredAgentPlannerSources()
@@ -718,24 +692,9 @@ internal fun MainActivity.renderControlCenterExecutionPolicyPage() {
         ControlCenterPageSpec(
             sections = listOf(
                 ControlCenterSectionSpec(
-                    getString(R.string.cc_permission_mode_section),
-                    listOf(
-                        ControlCenterRowSpec("agent.permission_mode", getString(R.string.on_device_agent_permission_mode), getString(R.string.on_device_agent_permission_mode_subtitle), R.drawable.ic_security_shield, permissionModeLabel(safety.permissionMode), ControlCenterTone.BLUE),
-                        ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
-                        ControlCenterRowSpec("security.toggle_guard", getString(R.string.on_device_agent_high_risk_guard), getString(R.string.on_device_agent_high_risk_guard_subtitle), R.drawable.ic_security_shield, switchValue = safety.highRiskGuard, showChevron = false)
-                    )
-                ),
-                ControlCenterSectionSpec(
-                    getString(R.string.cc_section_confirmation_rules),
-                    listOf(
-                        ControlCenterRowSpec("", getString(R.string.cc_direct_execution_title), getString(R.string.cc_direct_execution_subtitle), R.drawable.ic_send_plane, getString(R.string.cc_status_direct), ControlCenterTone.GREEN, showChevron = false),
-                        ControlCenterRowSpec("", getString(R.string.cc_first_confirm_title), getString(R.string.cc_first_confirm_subtitle), R.drawable.ic_info_outline, getString(R.string.cc_status_ask), ControlCenterTone.AMBER, showChevron = false),
-                        ControlCenterRowSpec("", getString(R.string.cc_always_confirm_title), getString(R.string.cc_always_confirm_subtitle), R.drawable.ic_security_shield, getString(R.string.common_confirm), ControlCenterTone.RED, showChevron = false)
-                    )
-                ),
-                ControlCenterSectionSpec(
                     getString(R.string.cc_section_task_control),
                     listOf(
+                        ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
                         ControlCenterRowSpec("", getString(R.string.cc_max_concurrency_title), getString(R.string.cc_max_concurrency_subtitle), R.drawable.ic_agent_history, "3 + 1", ControlCenterTone.BLUE, showChevron = false),
                         ControlCenterRowSpec("agent.planner", getString(R.string.cc_tool_budget_title), getString(R.string.cc_tool_budget_subtitle), R.drawable.ic_agent_control, planner.maxToolCalls.toString(), ControlCenterTone.VIOLET),
                         ControlCenterRowSpec("general.notifications", getString(R.string.cc_long_task_notifications_title), getString(R.string.cc_long_task_notifications_subtitle), R.drawable.ic_settings_notification, getString(if (notificationsEnabled) R.string.status_enabled else R.string.status_needs_setup), if (notificationsEnabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER)

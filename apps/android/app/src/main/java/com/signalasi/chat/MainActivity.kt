@@ -248,8 +248,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var agentOutputLayout: LinearLayoutManager
     internal lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
     internal lateinit var agentSettingsButton: ImageButton
-    internal lateinit var agentPermissionModeButton: TextView
-    internal lateinit var agentHighRiskGuardButton: TextView
     internal lateinit var agentMemoryCaptureButton: TextView
     internal lateinit var agentToolboxList: LinearLayout
     internal lateinit var agentCurrentAppText: TextView
@@ -938,8 +936,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentSubtitleText = findViewById(R.id.agentSubtitleText)
         agentOutputList = findViewById(R.id.agentOutputList)
         agentSettingsButton = findViewById(R.id.agentSettingsButton)
-        agentPermissionModeButton = findViewById(R.id.agentPermissionModeButton)
-        agentHighRiskGuardButton = findViewById(R.id.agentHighRiskGuardButton)
         agentMemoryCaptureButton = findViewById(R.id.agentMemoryCaptureButton)
         agentToolboxList = findViewById(R.id.agentToolboxList)
         agentCurrentAppText = findViewById(R.id.agentCurrentAppText)

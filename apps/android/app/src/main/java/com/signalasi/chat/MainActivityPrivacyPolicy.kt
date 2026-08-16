@@ -361,8 +361,7 @@ internal fun MainActivity.renderControlCenterSmartSpacesPage() {
                     listOf(
                         ControlCenterRowSpec("spaces.entities", getString(R.string.cc_home_entities_title), getString(R.string.cc_home_entities_subtitle), R.drawable.ic_group, if (homeAssistantReady) getString(R.string.common_view) else getString(R.string.status_needs_setup), if (homeAssistantReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER, enabled = homeAssistantReady),
                         ControlCenterRowSpec("spaces.automations", getString(R.string.cc_home_automations_title), getString(R.string.cc_home_automations_subtitle), R.drawable.ic_automation_line, if (homeAssistantReady) getString(R.string.common_view) else getString(R.string.status_needs_setup), if (homeAssistantReady) ControlCenterTone.BLUE else ControlCenterTone.AMBER, enabled = homeAssistantReady),
-                        ControlCenterRowSpec("spaces.configure", getString(R.string.cc_custom_devices_title), getString(R.string.cc_custom_devices_subtitle), R.drawable.ic_device_node, customDevices.size.toString(), ControlCenterTone.VIOLET),
-                        ControlCenterRowSpec(routeAction(ControlCenterRoute.EXECUTION_POLICY), getString(R.string.cc_high_risk_devices_title), getString(R.string.cc_high_risk_devices_subtitle), R.drawable.ic_security_shield, getString(R.string.common_confirm), ControlCenterTone.RED)
+                        ControlCenterRowSpec("spaces.configure", getString(R.string.cc_custom_devices_title), getString(R.string.cc_custom_devices_subtitle), R.drawable.ic_device_node, customDevices.size.toString(), ControlCenterTone.VIOLET)
                     )
                 )
             )
@@ -468,7 +467,6 @@ internal fun MainActivity.renderControlCenterSecurityPage() {
     val fingerprint = SignalASICrypto.localIdentitySha256()
     val trustedDevices = desktopSecuritySummaries(activePcConnectorContacts()).size
     val trustedContacts = storedContacts().count { AppStore.canCommunicateWith(this, it.id) }
-    val guard = mobileNativeAgent.safetySettings().highRiskGuard
     val notificationsEnabled = appNotificationsEnabled()
     showControlCenterFeature(
         getString(R.string.cc_security_title),
@@ -497,7 +495,6 @@ internal fun MainActivity.renderControlCenterSecurityPage() {
                 ControlCenterSectionSpec(
                     getString(R.string.feature_identity_protection),
                     listOf(
-                        ControlCenterRowSpec("security.toggle_guard", getString(R.string.on_device_agent_high_risk_guard), getString(R.string.cc_always_confirm_subtitle), R.drawable.ic_security_shield, switchValue = guard, showChevron = false),
                         ControlCenterRowSpec("general.notifications", getString(R.string.cc_notifications_title), getString(R.string.cc_notifications_subtitle), R.drawable.ic_settings_notification, getString(if (notificationsEnabled) R.string.status_enabled else R.string.status_needs_setup), if (notificationsEnabled) ControlCenterTone.GREEN else ControlCenterTone.AMBER)
                     )
                 )
@@ -967,13 +964,6 @@ internal fun MainActivity.renderControlCenterPermissionsPage() {
     val microphone = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     val camera = checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     val granted = listOf(accessibility, notificationAccess, microphone, camera).count { it }
-    val toolGrants = EncryptedAgentPermissionGrantStore(this)
-        .list(includeInactive = false)
-        .filter {
-            it.subjectType == AgentPermissionSubjectType.CONSEQUENTIAL_ACTION &&
-                it.lifetime != AgentPermissionGrantLifetime.SINGLE_USE
-        }
-        .take(24)
     showControlCenterFeature(
         getString(R.string.cc_permissions_title),
         ControlCenterPageSpec(
@@ -981,7 +971,6 @@ internal fun MainActivity.renderControlCenterPermissionsPage() {
                 title = getString(R.string.cc_permissions_title),
                 subtitle = getString(R.string.cc_permissions_summary, granted, 4),
                 iconRes = R.drawable.ic_settings_fingerprint,
-                badges = listOf(ControlCenterBadgeSpec(permissionModeLabel(mobileNativeAgent.safetySettings().permissionMode), ControlCenterTone.BLUE)),
                 metrics = listOf(
                     ControlCenterMetricSpec("$granted/4", getString(R.string.cc_section_android_permissions)),
                     ControlCenterMetricSpec(mobileNativeAgent.snapshot().auditTrail.size.toString(), getString(R.string.feature_audit_log)),
@@ -999,36 +988,6 @@ internal fun MainActivity.renderControlCenterPermissionsPage() {
                         )
                     )
                 )
-                if (toolGrants.isNotEmpty()) {
-                    add(ControlCenterSectionSpec(
-                            getString(R.string.agent_permission_saved_title),
-                            toolGrants.map { grant ->
-                                val choice = when {
-                                    grant.effect == AgentPermissionGrantEffect.DENY ->
-                                        AgentPermissionChoice.DENY_ALWAYS
-                                    grant.lifetime == AgentPermissionGrantLifetime.SESSION ->
-                                        AgentPermissionChoice.ALLOW_SESSION
-                                    else -> AgentPermissionChoice.ALLOW_ALWAYS
-                                }
-                                ControlCenterRowSpec(
-                                    actionId = "permissions.tool_grant:${grant.grantId}",
-                                    title = getString(
-                                        R.string.agent_permission_scope_label,
-                                        grant.scope
-                                    ),
-                                    subtitle = agentPermissionChoiceLabel(choice),
-                                    iconRes = R.drawable.ic_security_shield,
-                                    status = getString(R.string.agent_permission_revoke),
-                                    tone = if (choice.approved) {
-                                        ControlCenterTone.GREEN
-                                    } else {
-                                        ControlCenterTone.AMBER
-                                    }
-                                )
-                            }
-                        )
-                    )
-                }
                 add(ControlCenterSectionSpec(
                         getString(R.string.feature_audit_log),
                         listOf(ControlCenterRowSpec("audit.operations", getString(R.string.cc_recent_operations_title), getString(R.string.cc_recent_operations_subtitle), R.drawable.ic_agent_history, getString(R.string.common_view), ControlCenterTone.VIOLET))
