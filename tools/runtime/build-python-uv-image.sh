@@ -25,7 +25,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   echo "The python-uv image must be built on Linux." >&2
   exit 2
 fi
-for command in curl sha256sum tar install node realpath mv cp; do
+for command in curl sha256sum tar install node realpath mv cp unsquashfs; do
   command -v "$command" >/dev/null || {
     echo "Missing build dependency: $command" >&2
     exit 2
@@ -95,3 +95,12 @@ node "$repository_root/tools/runtime/build-runtime-image.mjs" \
   --source "$source_root" \
   --output "$output" \
   --license "PSF-2.0 AND (Apache-2.0 OR MIT)"
+
+smoke_root="$work_root/image-smoke"
+rm -rf "$smoke_root"
+unsquashfs -no-progress -d "$smoke_root" "$output" >/dev/null
+test -x "$smoke_root/bin/python3"
+test -x "$smoke_root/bin/uv"
+test -x "$smoke_root/python/bin/python3.13"
+test "$(realpath "$smoke_root/python/bin/python3")" = "$smoke_root/python/bin/python3.13"
+rm -rf "$smoke_root"

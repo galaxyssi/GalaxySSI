@@ -233,3 +233,4 @@ jobs:
           path: |
             build/runtime/signing/runtime-cert.pem
             build/runtime/release/python-uv-0.12.0-arm64-v8a.sarpack
+            build/runtime/release/python-uv-0.12.0-arm64-v8a.sarpack.metadata.json

@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readlinkSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -106,6 +107,36 @@ test('runtime image builder emits a matching descriptor and signing config', () 
     assert.equal(result.config.id, 'ffmpeg');
     assert.deepEqual(result.config.dependencies, ['linux-base']);
     assert.equal(JSON.parse(readFileSync(`${output}.config.json`, 'utf8')).version, '8.0.1');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runtime image builder preserves relative symbolic links verbatim', (context) => {
+  if (process.platform === 'win32') {
+    context.skip('Windows symlink creation requires host policy support');
+    return;
+  }
+  const { root, source } = fixture('node-js');
+  try {
+    mkdirSync(join(source, 'lib'), { recursive: true });
+    writeFileSync(join(source, 'lib', 'node-real'), '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(join(source, 'lib', 'node-real'), 0o755);
+    rmSync(join(source, 'bin', 'node'));
+    symlinkSync('../lib/node-real', join(source, 'bin', 'node'));
+
+    buildRuntimeImage({
+      packId: 'node-js',
+      version: '24.18.0',
+      sourceRoot: source,
+      outputPath: join(root, 'node.img'),
+      license: 'MIT',
+      platform: 'linux',
+      squashfsBuilder: (stagedRoot, stagedImage) => {
+        assert.equal(readlinkSync(join(stagedRoot, 'bin', 'node')), '../lib/node-real');
+        copyFileSync(join(stagedRoot, 'lib', 'node-real'), stagedImage);
+      },
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
