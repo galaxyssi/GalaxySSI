@@ -3757,9 +3757,7 @@
         );
         OTHER_LDFLAGS = (
           "$(inherited)",
-          "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
-          "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",
           "-framework",
           Accelerate,
@@ -3816,9 +3814,7 @@
         );
         OTHER_LDFLAGS = (
           "$(inherited)",
-          "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASILlamaRuntime/libsignalasi-llama.a",
-          "-force_load",
           "$(DERIVED_FILE_DIR)/SignalASIWhisperRuntime/libsignalasi-whisper.a",
           "-framework",
           Accelerate,
