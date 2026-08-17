@@ -7,6 +7,25 @@ import org.junit.Test
 
 class AgentSessionPersistencePolicyTest {
     @Test
+    fun recoveryMetadataSurvivesEntryCompaction() {
+        val metadata = buildMap {
+            repeat(AgentSessionPersistencePolicy.MAX_METADATA_ENTRIES + 12) { index ->
+                put("ordinary_$index", "value-$index")
+            }
+            put("delivery_failed", "true")
+            put("source_message_id", "1450")
+            put("failure_domain", "desktop")
+        }
+
+        val compact = AgentSessionPersistencePolicy.compactMetadata(metadata)
+
+        assertEquals(AgentSessionPersistencePolicy.MAX_METADATA_ENTRIES, compact.size)
+        assertEquals("true", compact["delivery_failed"])
+        assertEquals("1450", compact["source_message_id"])
+        assertEquals("desktop", compact["failure_domain"])
+    }
+
+    @Test
     fun oversizedLegacyCheckpointIsRejectedBeforeDecryption() {
         assertFalse(AgentSessionPersistencePolicy.shouldDiscardEncodedValue(128 * 1024))
         assertTrue(AgentSessionPersistencePolicy.shouldDiscardEncodedValue(256 * 1024))

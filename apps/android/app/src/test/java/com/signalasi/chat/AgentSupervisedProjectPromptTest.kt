@@ -3,8 +3,26 @@ package com.signalasi.chat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class AgentSupervisedProjectPromptTest {
+    @Test
+    fun `each model iteration selects exactly one observable action`() {
+        val first = AgentAction(
+            id = "inspect",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "signalasi.project.repository.inspect",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Inspect repository",
+            requiresConfirmation = false
+        )
+        val second = first.copy(id = "build", description = "Build project")
+
+        assertTrue(AgentSupervisedProjectLoop.acceptsIteration(listOf(first)))
+        assertEquals(false, AgentSupervisedProjectLoop.acceptsIteration(listOf(first, second)))
+    }
+
     @Test
     fun `project summaries are visible grounded and written in the user language`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(request("Fix the Android build on this phone"))
@@ -13,6 +31,8 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("one to three short sentences"))
         assertTrue(prompt.contains("relevant observed evidence"))
         assertTrue(prompt.contains("never private chain-of-thought"))
+        assertTrue(prompt.contains("exactly one next evidence-producing action"))
+        assertTrue(prompt.contains("return its observation and ask you to reason again"))
     }
 
     @Test
@@ -50,6 +70,67 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("retry the exact blocked step"))
         assertTrue(prompt.contains("Package installation alone is never completion evidence"))
         assertTrue(prompt.contains("direct network access for apt, Git, curl/wget"))
+        assertTrue(prompt.contains("Never create, repair, or imitate .git metadata manually"))
+        assertTrue(prompt.contains("installs Git, CA certificates, and the SSH client"))
+        assertTrue(prompt.contains("GitHub pull request URL"))
+        assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
+        assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE))
+        assertTrue(prompt.contains("/root and /workspace are phone Linux guest paths"))
+        assertTrue(AgentMobileProjectArchiveTools.toolIds.all(AgentPhoneNativeToolCatalog.defaultToolIds::contains))
+    }
+
+    @Test
+    fun `remote repository is cloned before a model can inspect an empty workspace`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Inspect the workspace first.","actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+
+        val enforced = JSONObject(AgentSupervisedRepositoryPolicy.enforceBootstrap(
+            raw = raw,
+            goal = "Make a small change in https://github.com/signalasi/SignalASI on this phone",
+            history = emptyList()
+        ))
+        val action = enforced.getJSONArray("actions").getJSONObject(0)
+        val arguments = action.getJSONObject("parameters").getJSONObject("arguments")
+
+        assertEquals(1, enforced.getJSONArray("actions").length())
+        assertEquals(AgentMobileProjectNativeTools.CLONE, action.getJSONObject("parameters").getString("tool_id"))
+        assertEquals("https://github.com/signalasi/SignalASI", arguments.getString("repository_url"))
+        assertEquals("current", arguments.getString("workspace_id"))
+        assertTrue(enforced.getString("summary").contains("prepare Git"))
+    }
+
+    @Test
+    fun `verified clone lets the model choose the next project action`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Inspect the cloned repository.","actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+        val clone = AgentAction(
+            id = "clone",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentMobileProjectNativeTools.CLONE,
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.COMPLETED,
+            description = "Clone repository",
+            parameters = mapOf("tool_id" to AgentMobileProjectNativeTools.CLONE)
+        )
+
+        assertEquals(
+            raw,
+            AgentSupervisedRepositoryPolicy.enforceBootstrap(
+                raw,
+                "Improve https://github.com/signalasi/SignalASI on this phone",
+                listOf(clone)
+            )
+        )
     }
 
     @Test

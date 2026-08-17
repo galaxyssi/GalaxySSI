@@ -5,6 +5,8 @@ import org.json.JSONObject
 import java.util.Locale
 
 internal object AgentSupervisedProjectLoop {
+    fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
+
     fun visibleSummary(request: AgentRequest, english: String, chinese: String): String =
         if (request.goal.any(::isCjkCharacter)) chinese else english
 
@@ -128,14 +130,22 @@ internal object AgentSupervisedProjectLoop {
         append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{},")
         append("\"connector_id\":\"exact.connector.id\",\"prompt\":\"complete desktop request\"}}]}. ")
         append("Execution location and reasoning provider are independent. Default execution_location to phone even when Codex, Hermes, Claude, OpenClaw, a local model, or a cloud model performs the reasoning. ")
+        append("DeepSeek and every other configured cloud model may select the same phone-native Linux tools as connected or local reasoning providers. The provider reasons; Android validates and executes the tool on the phone; the resulting observation returns to this same loop. ")
+        append("Do not start Linux for pure conversation or explanation. Use it when the goal needs commands, files, dependencies, builds, tests, browser automation, media processing, or other executable evidence. ")
         append("Choose desktop only when the user's original goal explicitly asks to execute on a Desktop, PC, computer, or a named desktop machine. Never choose desktop merely because it is faster, has more tools, hosts the reasoning model, or the phone runtime is inconvenient. ")
         append("For desktop, execution_location_evidence must be a short verbatim excerpt from the user's goal that contains that explicit request. For phone, leave execution_location_evidence empty. ")
-        append("Choose the next smallest evidence-producing batch, not an entire speculative project plan. ")
+        append("Choose exactly one next evidence-producing action, not a batch or an entire speculative project plan. ")
+        append("After that action finishes, SignalASI will return its observation and ask you to reason again. ")
         append("depends_on and use_outputs_from may reference only actions returned in the same JSON batch. Prior verified ledger actions are already satisfied and must not be repeated as dependencies. ")
         append("For phone, actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
         append("For desktop, return exactly one CALL_CONNECTOR action using an exact Desktop execution connector below; put the complete execution request in parameters.prompt. Do not mix phone and desktop actions. ")
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
         append("Use signalasi.project.* for Git and GitHub; credentials are host-owned and must never appear in prompts, files, or commands. ")
+        append("Honor an explicit execution-environment constraint from the user's goal. When the user requires phone Linux, the Linux guest must perform the requested mutation or verification through signalasi.runtime.execute. signalasi.workspace.* may stage or inspect files, but its Android-host receipt is not Linux execution evidence and must never be described as such. ")
+        append("When the user provides a tar.gz under /sdcard/Download/SignalASI, use signalasi.project.archive.import; Android resolves that shared-storage alias into the isolated phone workspace. ")
+        append("Use signalasi.project.gradle_cache.import for a staged Gradle modules-2 archive. /root and /workspace are phone Linux guest paths, never Desktop paths. ")
+        append("When the user supplies a GitHub repository URL and the verified ledger has no clone, the first batch must contain only signalasi.project.repository.clone. Never create, repair, or imitate .git metadata manually. The clone tool installs Git, CA certificates, and the SSH client inside phone Linux when they are missing. ")
+        append("Before modifying a cloned repository, create a dedicated feature branch. For a requested project change, completion requires verified tests, commit, push, and a GitHub pull request URL unless the user explicitly asks for local-only work. ")
         append("Use signalasi.workspace.* for bounded file inspection and edits, and signalasi.runtime.* for runtime status, signed pack installation, build, test, and artifact execution. ")
         append("When creating or replacing several text project files, prefer signalasi.workspace.files.write.text.batch so one validated action materializes the complete project without partial files. ")
         append("For an Android project, use the signed java, gradle, and android-sdk packs, run Gradle from the phone Linux workspace, verify the requested build task, and return the APK in artifact_paths. ")
@@ -259,6 +269,10 @@ internal fun AgentAction.enforceSupervisedPlanningBoundary(): AgentAction =
 
 internal fun AgentAction.isTaskCompleteMarker(): Boolean =
     kind == AgentActionKind.DRAFT_PLAN && target.equals("task-complete", ignoreCase = true)
+
+internal object AgentTaskCompletionPolicy {
+    fun closesFromVerifiedEvidence(action: AgentAction): Boolean = action.isTaskCompleteMarker()
+}
 
 internal fun AgentPlan.isSupervisedProjectPlan(): Boolean =
     plannerProfile == PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE ||
@@ -415,17 +429,21 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         multiAgentCoordination = true,
         maxAgentHops = modelPlannerSettings().maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
-    val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(
+    val normalizedResponse = AgentSupervisedRepositoryPolicy.enforceBootstrap(
+        raw = AgentSupervisedProjectControlPayload.normalize(
         response,
         plan.historyForReplan()
+        ),
+        goal = currentGoal,
+        history = plan.historyForReplan()
     )
     val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
     val parsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
+        ?.takeIf { candidate -> AgentSupervisedProjectLoop.acceptsIteration(candidate.actions) }
         ?.takeIf { candidate ->
             AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions)
         }
-        ?.takeIf { candidate -> AgentPhoneDevelopmentPolicy.acceptsModelPlan(currentGoal, candidate.actions) }
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {

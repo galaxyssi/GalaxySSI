@@ -87,13 +87,6 @@ internal object AgentPhoneDevelopmentPolicy {
             toolId.startsWith(PHONE_PROJECT_TOOL_PREFIX) ||
             toolId in PHONE_RUNTIME_TOOL_IDS
 
-    fun acceptsModelPlan(goal: String, actions: List<AgentAction>): Boolean =
-        AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal) ||
-            actions.none { action ->
-            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
-                isPhoneDevelopmentTool(action.parameters["tool_id"].orEmpty())
-        }
-
     fun planningPrompt(goal: String): String = buildString {
         append("Act only as a code author for SignalASI's Android-local Linux runtime. ")
         append("Do not run commands, create files, or modify anything on this desktop. ")

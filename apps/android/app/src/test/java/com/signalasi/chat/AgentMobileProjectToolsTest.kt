@@ -223,6 +223,33 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun verificationReceiptDoesNotFailForPlainLinuxWorkspace() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        File(projects, "plain-workspace").apply {
+            mkdirs()
+            resolve("result.txt").writeText("verified")
+        }
+
+        guard.recordVerification(successfulVerificationReceipt("plain-workspace", "verification-plain"))
+
+        assertFalse(tickets.containsKey("plain-workspace"))
+    }
+
+    @Test
     fun validatesPublicRepositoryAndRefBoundaries() {
         assertTrue(AgentMobileProjectRepository.isTrustedRepositoryUrl("https://github.com/signalasi/SignalASI.git"))
         assertFalse(AgentMobileProjectRepository.isTrustedRepositoryUrl("http://github.com/signalasi/SignalASI.git"))

@@ -91,6 +91,49 @@ class MqttSubscriptionTests(unittest.TestCase):
             active_topics = set(mqtt_bridge.mqtt_subscription_active)
         self.assertIn(f"signalasichat/v1/{SERVER_ROUTE_ID}/phone-b/up", active_topics)
 
+    def test_periodic_reconcile_renews_routes_even_when_local_state_says_active(self) -> None:
+        mqttc = FakeMqttClient()
+        client = paired_client("phone-a")
+        expected_topics = {
+            f"signalasichat/v1/{SERVER_ROUTE_ID}/pair",
+            f"signalasichat/v1/{SERVER_ROUTE_ID}/health",
+            client["topics"]["up"],
+            client["topics"]["control"],
+        }
+        with mqtt_bridge.mqtt_subscription_lock:
+            mqtt_bridge.mqtt_subscription_active.update(
+                {topic: "phone-a" for topic in expected_topics}
+            )
+        mqtt_bridge.mqtt_subscription_last_reconcile = 1.0
+
+        with (
+            patch.object(mqtt_bridge, "client", mqttc),
+            patch.object(mqtt_bridge, "server_route_id", return_value=SERVER_ROUTE_ID),
+            patch.object(mqtt_bridge, "list_clients", return_value=[client]),
+            patch.object(mqtt_bridge.time, "monotonic", return_value=100.0),
+            patch.object(mqtt_bridge.transport_probe_state, "stalled", return_value=(False, 0.0, 1)),
+            patch.object(mqtt_bridge.transport_probe_state, "should_publish", return_value=False),
+        ):
+            mqtt_bridge._transport_probe_tick()
+
+        self.assertEqual(expected_topics, {topic for topic, _qos, _mid in mqttc.subscriptions})
+
+    def test_subscription_status_reports_missing_expected_routes(self) -> None:
+        client = paired_client("phone-a")
+        with (
+            patch.object(mqtt_bridge, "server_route_id", return_value=SERVER_ROUTE_ID),
+            patch.object(mqtt_bridge, "list_clients", return_value=[client]),
+        ):
+            with mqtt_bridge.mqtt_subscription_lock:
+                mqtt_bridge.mqtt_subscription_active[
+                    f"signalasichat/v1/{SERVER_ROUTE_ID}/pair"
+                ] = ""
+            status = mqtt_bridge.mqtt_subscription_status()
+
+        self.assertEqual(4, status["expected"])
+        self.assertEqual(1, status["active"])
+        self.assertEqual(3, status["missing"])
+
 
 if __name__ == "__main__":
     unittest.main()

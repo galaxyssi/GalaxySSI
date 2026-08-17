@@ -67,7 +67,6 @@ object AgentAutonomyGuard {
     )
 
     private fun AgentActionKind.isLoopSensitiveToolCall(): Boolean = this in setOf(
-        AgentActionKind.CALL_CONNECTOR,
         AgentActionKind.CONTROL_DEVICE,
         AgentActionKind.OPEN_URL,
         AgentActionKind.OPEN_APP

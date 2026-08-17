@@ -370,6 +370,15 @@ class AgentRuntimeWorkspaceManager private constructor(
             "Runtime artifact paths must be unique"
         }
         request.artifactPaths.forEach(::validateRelativePath)
+        require(request.hostInputFiles.size <= MAX_HOST_INPUT_FILES) { "Too many runtime host input files" }
+        require(request.hostInputFiles.map { it.relativePath }.distinct().size == request.hostInputFiles.size) {
+            "Runtime host input paths must be unique"
+        }
+        request.hostInputFiles.forEach { input ->
+            validateRelativePath(input.relativePath)
+            require(input.sourceFile.isFile && input.sourceFile.canRead()) { "Runtime host input is unavailable" }
+            require(!Files.isSymbolicLink(input.sourceFile.toPath())) { "Runtime host input cannot be a symbolic link" }
+        }
         request.allowedNetworkDomains.forEach(::validateDomain)
         if (!request.networkEnabled) require(request.allowedNetworkDomains.isEmpty()) {
             "Runtime network domains require network access"
@@ -391,6 +400,23 @@ class AgentRuntimeWorkspaceManager private constructor(
             destination = runDirectory,
             byteLimit = request.resourceLimits.diskBytes
         ).totalBytes
+        var stagedInputBytes = importedProjectBytes
+        request.hostInputFiles.forEach { input ->
+            val target = safeChild(runDirectory, "$RUNTIME_INPUT_DIRECTORY/${input.relativePath}")
+                ?: error("Runtime host input path is invalid")
+            stagedInputBytes += input.sourceFile.length()
+            check(stagedInputBytes <= request.resourceLimits.diskBytes) {
+                "Runtime host inputs exceed the runtime disk quota"
+            }
+            check(target.parentFile?.mkdirs() != false || target.parentFile?.isDirectory == true) {
+                "Runtime host input storage is unavailable"
+            }
+            Files.copy(
+                input.sourceFile.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
         val buildArtifactBaseline = buildArtifactCandidates(runDirectory)
             .associate { candidate ->
                 candidate.relativeTo(runDirectory).path.replace('\\', '/') to artifactStamp(candidate)
@@ -997,7 +1023,8 @@ class AgentRuntimeWorkspaceManager private constructor(
     private fun isRuntimeControlPath(path: String): Boolean =
         path in RUNTIME_CONTROL_FILES || path == ".tmp" || path.startsWith(".tmp/") ||
             path == RUNTIME_TOOL_DIRECTORY || path.startsWith("$RUNTIME_TOOL_DIRECTORY/") ||
-            path == RUNTIME_CONTROL_DIRECTORY || path.startsWith("$RUNTIME_CONTROL_DIRECTORY/")
+            path == RUNTIME_CONTROL_DIRECTORY || path.startsWith("$RUNTIME_CONTROL_DIRECTORY/") ||
+            path == RUNTIME_INPUT_DIRECTORY || path.startsWith("$RUNTIME_INPUT_DIRECTORY/")
 
     private fun writeExecutable(file: File, source: String) {
         file.writeText(source.trimIndent() + "\n", Charsets.UTF_8)
@@ -1034,6 +1061,7 @@ class AgentRuntimeWorkspaceManager private constructor(
 
     companion object {
         private const val MAX_WORKSPACE_ID_CHARS = 64
+        private const val MAX_HOST_INPUT_FILES = 8
         private const val MAX_ARTIFACT_PATH_CHARS = 1_024
         private const val MAX_PROJECT_ARCHIVE_FILES = 1_024
         private const val MAX_DISCOVERED_BUILD_ARTIFACT_CANDIDATES = 128
@@ -1042,6 +1070,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".signalasi-tools/bin"
         private const val RUNTIME_CONTROL_DIRECTORY = ".signalasi-runtime"
+        private const val RUNTIME_INPUT_DIRECTORY = ".signalasi-inputs"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")

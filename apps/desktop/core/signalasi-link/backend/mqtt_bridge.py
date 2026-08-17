@@ -1542,6 +1542,20 @@ def reconcile_mqtt_subscriptions(mqttc=None, *, force: bool = False) -> dict:
     }
 
 
+def mqtt_subscription_status() -> dict[str, int]:
+    """Report route subscription health without exposing private route IDs."""
+    expected = set(_expected_subscriptions())
+    with mqtt_subscription_lock:
+        active = set(mqtt_subscription_active)
+        pending = {topic for topic, _route_id in mqtt_subscription_pending.values()}
+    return {
+        "expected": len(expected),
+        "active": len(active & expected),
+        "pending": len(pending & expected),
+        "missing": len(expected - active - pending),
+    }
+
+
 def forget_paired_client_transport(client_route_id: str, mqttc=None) -> dict:
     """Close and erase transport state owned by a revoked phone."""
     route_id = str(client_route_id or "").strip()
@@ -1682,7 +1696,12 @@ def _transport_probe_tick() -> None:
         log.warning("MQTT transport connection check failed: %s", exc)
         return
     if now - mqtt_subscription_last_reconcile >= MQTT_SUBSCRIPTION_RECONCILE_SECONDS:
-        reconcile_mqtt_subscriptions(mqttc)
+        # A broker or intermediary can silently lose an individual topic while
+        # the TCP connection and the health-topic probe remain alive. Paho's
+        # local subscription bookkeeping cannot detect that condition. MQTT
+        # subscriptions are idempotent, so renew every expected route instead
+        # of trusting a potentially stale local "active" entry.
+        reconcile_mqtt_subscriptions(mqttc, force=True)
     stalled, elapsed, generation = transport_probe_state.stalled(now)
     if stalled:
         log.warning(
@@ -2169,7 +2188,7 @@ def mqtt_bridge_status() -> dict[str, Any]:
             if not connected and mqtt_disconnected_at > 0.0
             else 0.0
         )
-        return {
+        status = {
             "running": bool(running and worker_alive),
             "connected": connected,
             "supervised": supervisor_alive,
@@ -2183,6 +2202,8 @@ def mqtt_bridge_status() -> dict[str, Any]:
             "disconnected_seconds": round(disconnected_seconds, 3),
             "last_error": mqtt_last_error,
         }
+    status["subscriptions"] = mqtt_subscription_status()
+    return status
 
 
 def on_connect(mqttc, userdata, flags, reason_code, properties=None):

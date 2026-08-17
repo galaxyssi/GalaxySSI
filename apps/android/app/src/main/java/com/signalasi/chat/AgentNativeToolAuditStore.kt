@@ -3,6 +3,7 @@ package com.signalasi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import java.util.UUID
 
 data class AgentNativeToolAuditRecord(
@@ -221,5 +222,21 @@ class EncryptedAgentNativeToolAuditStore(context: Context) : AgentNativeToolAudi
     companion object {
         const val DATABASE = "signalasi_native_tool_audit_v1"
         private const val KEY_RECORDS = "records"
+    }
+}
+
+internal object AgentNativeToolAuditDispatcher {
+    private val writer = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-native-tool-audit").apply { isDaemon = true }
+    }
+
+    fun append(store: AgentNativeToolAuditStore, record: AgentNativeToolAuditRecord) {
+        if (store !is EncryptedAgentNativeToolAuditStore) {
+            store.append(record)
+            return
+        }
+        writer.execute {
+            runCatching { store.append(record) }
+        }
     }
 }

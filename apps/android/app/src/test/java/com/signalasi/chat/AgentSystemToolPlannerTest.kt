@@ -786,8 +786,8 @@ class AgentSystemToolPlannerTest {
 
         assertEquals(AgentRequestedExecutionSite.PHONE, site.site)
         assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions))
-        assertTrue(AgentPhoneDevelopmentPolicy.acceptsModelPlan(goal, plan.actions))
         assertEquals(2, plan.actions.size)
+        assertTrue(plan.actions.all { it.kind == AgentActionKind.CALL_NATIVE_TOOL })
         assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
     }
 

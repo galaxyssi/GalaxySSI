@@ -91,6 +91,7 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentNotificationNativeTools.toolIds)
             addAll(AgentAndroidSystemNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
+            addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)

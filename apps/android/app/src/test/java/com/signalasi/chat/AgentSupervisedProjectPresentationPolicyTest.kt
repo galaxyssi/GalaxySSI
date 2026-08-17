@@ -121,6 +121,23 @@ class AgentSupervisedProjectPresentationPolicyTest {
     }
 
     @Test
+    fun `task complete marker closes from existing verified evidence without another screen capture`() {
+        val completion = AgentAction(
+            id = "complete",
+            kind = AgentActionKind.DRAFT_PLAN,
+            target = "task-complete",
+            description = "The phone result was verified.",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PROPOSED,
+            requiresConfirmation = false
+        )
+        val ordinaryDraft = completion.copy(target = "local-agent-runtime")
+
+        assertTrue(AgentTaskCompletionPolicy.closesFromVerifiedEvidence(completion))
+        assertFalse(AgentTaskCompletionPolicy.closesFromVerifiedEvidence(ordinaryDraft))
+    }
+
+    @Test
     fun `direct connector progress is accepted only for its exact conversation turn`() {
         val binding = PendingDirectConnectorRun(
             action = supervisedConnector(),

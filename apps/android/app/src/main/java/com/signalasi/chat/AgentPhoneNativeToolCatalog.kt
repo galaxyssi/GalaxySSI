@@ -111,6 +111,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentNotificationNativeTools.toolIds)
             addAll(AgentAndroidSystemNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
+            addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
@@ -160,6 +161,8 @@ object AgentPhoneNativeToolCatalog {
             AgentAndroidSystemNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentMcpNativeTools.definitions(context.applicationContext)
+        ).registerAll(
+            AgentMobileProjectArchiveTools.definitions(context.applicationContext)
         ).registerAll(
             AgentMobileProjectNativeTools.definitions(context.applicationContext)
         ).registerAll(

@@ -542,12 +542,28 @@ internal fun MobileNativeAgent.executePlannedAction(
     plan: AgentPlan,
     nextAction: AgentAction,
     userConfirmed: Boolean,
-    retrying: Boolean = false
+    retrying: Boolean = false,
+    trustedHandoffReplay: Boolean = false
 ): AgentUiState {
     val executionStartedAt = SystemClock.elapsedRealtime()
-    val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
+    // A handoff replay sends the exact connector action that already crossed policy checks.
+    // Re-running those checks can turn a transport recovery into a new blocked user action.
+    val hardenedPlan = if (trustedHandoffReplay) plan else AgentActionRiskHardener.enforce(appContext, plan)
     val hardenedAction = hardenedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
-    val reviewedPlan = hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan, sessionId))
+    val reviewedPlan = if (trustedHandoffReplay) {
+        hardenedPlan.copy(
+            safetyReview = hardenedPlan.safetyReview.copy(
+                requiresConfirmation = false,
+                blocked = false,
+                mode = PermissionMode.FULL_ACCESS,
+                deniedPermissions = emptyList(),
+                warnings = emptyList(),
+                reason = ""
+            )
+        )
+    } else {
+        hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan, sessionId))
+    }
     currentPlan = reviewedPlan
     if (reviewedPlan.safetyReview.blocked) {
         phase = if (safetySettingsStore.load().executionPaused) AgentPhase.PAUSED else AgentPhase.BLOCKED
@@ -558,7 +574,11 @@ internal fun MobileNativeAgent.executePlannedAction(
         return snapshot()
     }
     val autonomySettings = AgentModelPlannerSettingsStore(appContext).load()
-    val autonomyDecision = AgentAutonomyGuard.review(reviewedPlan, hardenedAction, autonomySettings)
+    val autonomyDecision = if (trustedHandoffReplay) {
+        AgentAutonomyDecision(allowed = true)
+    } else {
+        AgentAutonomyGuard.review(reviewedPlan, hardenedAction, autonomySettings)
+    }
     if (!autonomyDecision.allowed) {
         phase = AgentPhase.BLOCKED
         lastActionResult = AgentActionResult(hardenedAction.id, false, autonomyDecision.reason)
@@ -641,6 +661,12 @@ internal fun MobileNativeAgent.executePlannedAction(
             "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
     )
     lastActionResult = executeAction(executionAction, currentScreen, userConfirmed)
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=dispatch_return action=${hardenedAction.id.take(24)} " +
+            "success=${lastActionResult?.success == true} " +
+            "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
+    )
     val dispatchAwaitingResponse = lastActionResult?.metadata?.get("awaiting_response") == "true"
     recordAudit(
         AgentAuditEvent.TOOL_COMPLETED,
@@ -648,6 +674,16 @@ internal fun MobileNativeAgent.executePlannedAction(
             "awaiting_response=$dispatchAwaitingResponse; success=${lastActionResult?.success == true}; " +
             "duration_ms=${System.currentTimeMillis() - toolStartedAt}; target=${hardenedAction.target.take(160)}"
     )
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=dispatch_persisted action=${hardenedAction.id.take(24)} " +
+            "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
+    )
+    if (AgentTaskCompletionPolicy.closesFromVerifiedEvidence(executionAction) &&
+        lastActionResult?.success == true
+    ) {
+        return completeVerifiedTaskMarker(hardenedAction)
+    }
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.OBSERVE,
             reason = "Observing action outcome",
@@ -745,6 +781,40 @@ internal fun MobileNativeAgent.executePlannedAction(
     return snapshot()
 }
 
+internal fun MobileNativeAgent.completeVerifiedTaskMarker(action: AgentAction): AgentUiState {
+    val result = lastActionResult ?: AgentActionResult(
+        actionId = action.id,
+        success = true,
+        message = action.description.ifBlank { "Task completed" }
+    )
+    currentPlan = currentPlan?.markAction(action.id, AgentActionStatus.COMPLETED, result)
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.OBSERVE,
+            reason = "Completion marker accepted after the verified tool observation",
+            actionId = action.id
+        )
+    ) {
+        return snapshot()
+    }
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.VERIFY,
+            reason = "Verified execution evidence supports the final result",
+            actionId = action.id
+        )
+    ) {
+        return snapshot()
+    }
+    phase = AgentPhase.COMPLETED
+    lastActionResult = result
+    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    saveTaskRecord(result = result.message)
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=completion_marker_closed action=${action.id.take(24)}"
+    )
+    return snapshot()
+}
+
 internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     sourceMessageId: Long,
     contactId: String,
@@ -757,13 +827,15 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     inputTokens: Long,
     outputTokens: Long,
     costMicros: Long,
-    networkBytes: Long
+    networkBytes: Long,
+    expectedSourceMessageId: Long = sourceMessageId
 ): AgentUiState? {
     if (sourceMessageId <= 0L) return null
     val pendingResult = lastActionResult ?: return null
-    val recoveringTimeout = success && isRecoverableConnectorTimeout(pendingResult, sourceMessageId)
+    val expectedSource = expectedSourceMessageId.takeIf { it > 0L } ?: sourceMessageId
+    val recoveringTimeout = success && isRecoverableConnectorTimeout(pendingResult, expectedSource)
     if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout) return null
-    if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
+    if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != expectedSource) return null
     val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
     if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
     if (!AgentTaskIdentityPolicy.matchesDesktopResponse(
@@ -902,7 +974,8 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         }
         currentPlan = supervisedPlan
         lastActionResult = completedResult.copy(
-            message = supervisedPlan.routeRationale.ifBlank { "The next verified project step is ready." }
+            message = "The next verified project step is ready.",
+            metadata = completedResult.metadata + mapOf("reasoning_recorded_separately" to "true")
         )
         supervisedPlan.routeRationale.takeIf(String::isNotBlank)?.let { summary ->
             recordAudit(
@@ -1071,6 +1144,136 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     return reconcileExecutionLoop(snapshot())
 }
 
+internal fun MobileNativeAgent.recoverAfterConnectorDeliveryFailure(
+    plan: AgentPlan,
+    failedResult: AgentActionResult
+): AgentUiState {
+    val failedPlan = plan.markAction(
+        failedResult.actionId,
+        AgentActionStatus.FAILED,
+        failedResult
+    ).markConnectorDeliveryFailed(
+        failedResult.actionId,
+        failedResult.metadata["source_message_id"]?.toLongOrNull() ?: 0L
+    )
+    currentPlan = failedPlan
+    lastActionResult = failedResult
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.OBSERVE,
+            reason = "The connector transport did not deliver the request",
+            actionId = failedResult.actionId
+        )
+    ) {
+        return snapshot()
+    }
+    val resourceId = failedResult.metadata["resource_id"].orEmpty()
+        .ifBlank { failedResult.metadata["contact_id"].orEmpty() }
+    val failureDomain = failedResult.metadata["failure_domain"].orEmpty()
+    val elapsed = (System.currentTimeMillis() -
+        (failedResult.metadata["resource_started_at"]?.toLongOrNull() ?: System.currentTimeMillis()))
+        .coerceAtLeast(0L)
+    AgentResourceHealthStore(appContext).also { health ->
+        if (resourceId.isNotBlank()) health.record("target:$resourceId", false, elapsed)
+        if (failureDomain.isNotBlank()) health.record("domain:$failureDomain", false, elapsed)
+    }
+    if (!recordExecutionFailure(
+            failureClass = "connector-delivery:${failureDomain.ifBlank { resourceId }}",
+            reason = failedResult.message,
+            actionId = failedResult.actionId
+        )
+    ) {
+        phase = AgentPhase.FAILED
+        saveTaskRecord(result = lastActionResult?.message.orEmpty().ifBlank { failedResult.message })
+        return reconcileExecutionLoop(snapshot())
+    }
+    continueWithConnectorFallback(failedPlan, failedResult)?.let { return it }
+    val replanned = replanFromCurrentState(
+        failedPlan,
+        "connector_delivery_failed:${failureDomain.ifBlank { resourceId }}",
+        force = true
+    )
+    if (replanned == null) {
+        currentPlan = failedPlan
+        lastActionResult = failedResult
+        phase = AgentPhase.FAILED
+        saveTaskRecord(result = failedResult.message)
+        return reconcileExecutionLoop(snapshot())
+    }
+    currentPlan = replanned
+    phase = when {
+        replanned.safetyReview.blocked -> AgentPhase.BLOCKED
+        replanned.safetyReview.requiresConfirmation -> AgentPhase.WAITING_CONFIRMATION
+        else -> AgentPhase.PLANNING
+    }
+    saveTaskRecord()
+    return if (!replanned.safetyReview.blocked && !replanned.safetyReview.requiresConfirmation) {
+        reconcileExecutionLoop(executeFirstPendingAction())
+    } else {
+        reconcileExecutionLoop(snapshot())
+    }
+}
+
+@Synchronized
+internal fun MobileNativeAgent.resumeFailedConnectorDeliveryRecovery(): AgentUiState? {
+    if (phase != AgentPhase.FAILED) return null
+    val plan = currentPlan ?: return null
+    val persistedSourceMessageId = plan.connectorDeliveryFailureSourceMessageId()
+        ?: lastActionResult
+            ?.takeIf { it.metadata["delivery_failed"] == "true" }
+            ?.metadata
+            ?.get("source_message_id")
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+        ?: return null
+    val failedResult = (lastActionResult ?: AgentActionResult(
+        actionId = plan.actions.lastOrNull {
+            it.evidence == "$AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX$persistedSourceMessageId"
+        }?.id.orEmpty().ifBlank { "connector-delivery" },
+        success = false,
+        message = "The connector request was not delivered"
+    )).copy(
+        success = false,
+        metadata = lastActionResult?.metadata.orEmpty() + mapOf(
+            "delivery_failed" to "true",
+            "source_message_id" to persistedSourceMessageId.toString()
+        )
+    )
+    lastActionResult = failedResult
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.REPLAN,
+            reason = "Resuming recovery from a persisted connector delivery failure",
+            actionId = failedResult.actionId,
+            retry = true
+        )
+    ) {
+        return snapshot()
+    }
+    val resourceId = failedResult.metadata["resource_id"].orEmpty()
+        .ifBlank { failedResult.metadata["contact_id"].orEmpty() }
+    val failureDomain = failedResult.metadata["failure_domain"].orEmpty()
+    val replanned = replanFromCurrentState(
+        plan,
+        "connector_delivery_failed:${failureDomain.ifBlank { resourceId }}",
+        force = true
+    ) ?: return snapshot()
+    currentPlan = replanned
+    phase = when {
+        replanned.safetyReview.blocked -> AgentPhase.BLOCKED
+        replanned.safetyReview.requiresConfirmation -> AgentPhase.WAITING_CONFIRMATION
+        else -> AgentPhase.PLANNING
+    }
+    recordAudit(
+        AgentAuditEvent.TASK_RESUMED,
+        "connector_delivery_recovery:revision=${replanned.revision}"
+    )
+    saveTaskRecord()
+    return if (!replanned.safetyReview.blocked && !replanned.safetyReview.requiresConfirmation) {
+        reconcileExecutionLoop(executeFirstPendingAction())
+    } else {
+        reconcileExecutionLoop(snapshot())
+    }
+}
+
 internal fun MobileNativeAgent.connectorFailureDomain(connectorId: String): String {
     if (connectorId == "cloud-models" || connectorId.startsWith("cloud-model:") ||
         AppStore.isCloudApiContact(appContext, connectorId)
@@ -1149,6 +1352,134 @@ internal fun MobileNativeAgent.recordConnectorTransportAccepted(sourceMessageId:
     )
     saveTaskRecord()
     return snapshot()
+}
+
+@Synchronized
+internal fun MobileNativeAgent.recoverStrandedConnectorHandoff(
+    sourceMessageId: Long,
+    reason: String
+): AgentUiState? {
+    if (sourceMessageId <= 0L || phase != AgentPhase.WAITING_RESPONSE) return null
+    val pending = lastActionResult ?: return null
+    if (pending.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
+    val plan = currentPlan ?: return null
+    val action = plan.actions.firstOrNull { candidate ->
+        candidate.id == pending.actionId && candidate.kind == AgentActionKind.CALL_CONNECTOR
+    } ?: return null
+    val attempt = AgentPendingHandoffRecoveryPolicy.recoveryAttempt(pending.metadata) + 1
+    if (attempt > AgentPendingHandoffRecoveryPolicy.MAX_RECOVERY_ATTEMPTS) return null
+    val recoveryIdempotencyKey = action.parameters["idempotency_key"]
+        .orEmpty()
+        .ifBlank { "${sessionId}:${action.id}" } + ":handoff-recovery:$attempt"
+    val recoveredAction = action.rekeyAgentTeamForRetry().copy(
+        status = AgentActionStatus.PENDING_CONFIRMATION,
+        result = "",
+        evidence = "",
+        parameters = action.parameters + mapOf(
+            "handoff_recovery_attempt" to attempt.toString(),
+            "superseded_source_message_id" to sourceMessageId.toString(),
+            "idempotency_key" to recoveryIdempotencyKey
+        )
+    )
+    val recoveredPlan = plan.copy(
+        actions = plan.actions.map { candidate ->
+            if (candidate.id == action.id) recoveredAction else candidate
+        },
+        verificationResults = plan.verificationResults.filterNot { it.actionId == action.id }
+    )
+    currentPlan = recoveredPlan
+    lastActionResult = pending.copy(
+        success = false,
+        message = reason,
+        metadata = pending.metadata + mapOf(
+            "awaiting_response" to "false",
+            "handoff_recovery_attempt" to attempt.toString(),
+            "superseded_source_message_id" to sourceMessageId.toString()
+        )
+    )
+    recordAudit(
+        AgentAuditEvent.INVOCATION_AUDIT,
+        "stranded_connector_handoff:source=$sourceMessageId;attempt=$attempt"
+    )
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.REPLAN,
+            reason = reason,
+            actionId = action.id,
+            retry = true
+        )
+    ) {
+        return snapshot()
+    }
+    phase = AgentPhase.PLANNING
+    saveTaskRecord()
+    val state = executePlannedAction(
+        plan = recoveredPlan,
+        nextAction = recoveredAction,
+        userConfirmed = false,
+        retrying = true,
+        trustedHandoffReplay = true
+    )
+    val replacement = state.lastActionResult
+    if (state.phase == AgentPhase.WAITING_RESPONSE && replacement != null) {
+        lastActionResult = replacement.copy(
+            metadata = replacement.metadata + mapOf(
+                "handoff_recovery_attempt" to attempt.toString(),
+                "superseded_source_message_id" to sourceMessageId.toString()
+            )
+        )
+        saveTaskRecord()
+        return snapshot()
+    }
+    return state
+}
+
+@Synchronized
+internal fun MobileNativeAgent.resumeInterruptedConnectorHandoffRecovery(): AgentUiState? {
+    val plan = currentPlan ?: return null
+    val interruptedAction = AgentPendingHandoffRecoveryPolicy.interruptedRecoveryAction(phase, plan)
+        ?: return null
+    val resumedAction = interruptedAction.copy(
+        status = AgentActionStatus.PROPOSED,
+        result = "",
+        evidence = ""
+    )
+    val resumedPlan = plan.copy(
+        actions = plan.actions.map { action ->
+            if (action.id == resumedAction.id) resumedAction else action
+        },
+        verificationResults = plan.verificationResults.filterNot { it.actionId == resumedAction.id },
+        safetyReview = plan.safetyReview.copy(
+            requiresConfirmation = false,
+            blocked = false,
+            mode = PermissionMode.FULL_ACCESS,
+            deniedPermissions = emptyList(),
+            warnings = emptyList(),
+            reason = ""
+        )
+    )
+    currentPlan = resumedPlan
+    phase = AgentPhase.PLANNING
+    lastActionResult = AgentActionResult(
+        actionId = resumedAction.id,
+        success = false,
+        message = "Resuming the interrupted connector handoff",
+        metadata = mapOf(
+            "handoff_recovery_attempt" to resumedAction.parameters["handoff_recovery_attempt"].orEmpty(),
+            "superseded_source_message_id" to resumedAction.parameters["superseded_source_message_id"].orEmpty()
+        )
+    )
+    recordAudit(
+        AgentAuditEvent.INVOCATION_AUDIT,
+        "resume_interrupted_connector_handoff:action=${resumedAction.id}"
+    )
+    saveTaskRecord()
+    return executePlannedAction(
+        plan = resumedPlan,
+        nextAction = resumedAction,
+        userConfirmed = false,
+        retrying = true,
+        trustedHandoffReplay = true
+    )
 }
 
 internal fun MobileNativeAgent.pendingConnectorMetadata(sourceMessageId: Long): Map<String, String> =

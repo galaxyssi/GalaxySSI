@@ -77,6 +77,40 @@ class AgentRuntimeProjectWorkspaceTest {
         assertFalse(File(project, ".signalasi-runtime").exists())
     }
 
+    @Test
+    fun stagesHostInputsForOneRunWithoutPersistingThemInTheProject() {
+        val archive = File(root, "project.tar.gz").apply { writeText("archive payload") }
+        val prepared = manager.prepare(
+            request("run-host-input", "print('import')").copy(
+                hostInputFiles = listOf(
+                    AgentRuntimeHostInput(archive, "archives/project.tar.gz")
+                )
+            )
+        )
+
+        val staged = File(prepared.directory, ".signalasi-inputs/archives/project.tar.gz")
+        assertEquals("archive payload", staged.readText())
+        File(prepared.directory, "imported.txt").writeText("project file")
+        manager.syncProject(prepared, 8L * 1024L * 1024L)
+
+        assertEquals("project file", File(projectRoot, "workspace-one/imported.txt").readText())
+        assertFalse(File(projectRoot, "workspace-one/.signalasi-inputs").exists())
+    }
+
+    @Test
+    fun rejectsUnsafeHostInputPaths() {
+        val archive = File(root, "project.tar.gz").apply { writeText("archive payload") }
+        val result = runCatching {
+            manager.prepare(
+                request("run-unsafe-input", "print('import')").copy(
+                    hostInputFiles = listOf(AgentRuntimeHostInput(archive, "../project.tar.gz"))
+                )
+            )
+        }
+
+        assertTrue(result.isFailure)
+    }
+
     @Test(expected = IllegalStateException::class)
     fun rejectsProjectSnapshotsThatExceedTheRuntimeQuota() {
         val prepared = manager.prepare(request("run-quota", "print('quota')"))
