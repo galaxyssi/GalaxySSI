@@ -126,7 +126,7 @@ struct SignalASIGlobalAgentRunsView: View {
        let localized = Self.zhOverrides[key] {
       return localized
     }
-    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+    return SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 
   private static let zhOverrides: [String: String] = [
