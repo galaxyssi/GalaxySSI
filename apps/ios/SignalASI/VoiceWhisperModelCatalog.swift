@@ -557,7 +557,7 @@ enum VoiceWhisperModelCatalog {
 
   static func downloadURL(for model: VoiceWhisperModelProfile) -> URL? {
     guard model.supportsIOSRuntime else { return nil }
-    URL(string: "\(mirrorRoot)/\(model.fileName)")
+    return URL(string: "\(mirrorRoot)/\(model.fileName)")
   }
 
   static func downloadURL(
@@ -565,7 +565,7 @@ enum VoiceWhisperModelCatalog {
     locale: Locale
   ) -> URL? {
     guard model.supportsIOSRuntime else { return nil }
-    VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: locale).compactMap(URL.init(string:)).first
+    return VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: locale).compactMap(URL.init(string:)).first
   }
 
   static func defaultModelsDirectory(
