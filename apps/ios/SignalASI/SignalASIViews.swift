@@ -481,55 +481,12 @@ struct ConversationView: View {
         ScrollView {
           LazyVStack(spacing: 10) {
             ForEach(Array(renderedMessages.enumerated()), id: \.element.id) { index, message in
-              if SignalASIConversationDateDivider.shouldShow(
-                for: message.createdAt,
-                previous: index > 0 ? renderedMessages[index - 1].createdAt : nil
-              ) {
-                SignalASIConversationDateDivider(
-                  date: message.createdAt,
-                  language: interfaceLanguage
-                )
-              }
-              MessageBubble(
+              conversationMessageRow(
+                index: index,
                 message: message,
-                myAvatarData: store.profile.avatarData,
-                remoteContact: contact,
-                onAction: handleRichAction,
-                isRetrying: retryingMessageIDs.contains(message.id),
-                onRetry: { retryMessage(message) }
+                firstRenderedMessageID: firstRenderedMessageID,
+                proxy: proxy
               )
-                .id(message.id)
-                .contextMenu {
-                  if !message.isSystem {
-                    Button {
-                      selectedMessageForDetails = message
-                    } label: {
-                      Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
-                    }
-                    Button {
-                      UIPasteboard.general.string = message.content
-                    } label: {
-                      Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
-                    }
-                    Button(role: .destructive) {
-                      store.deleteMessage(message.id, contactId: contact.id)
-                    } label: {
-                      Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
-                    }
-                  }
-                }
-              if waitingMessageIDs.contains(message.id) {
-                AgentReplyWaitingIndicatorView()
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
-              }
-              if message.id == firstRenderedMessageID {
-                Color.clear
-                  .frame(height: 1)
-                  .onAppear {
-                    loadOlderMessages(anchorID: message.id, proxy: proxy)
-                  }
-              }
             }
           }
           .padding(.horizontal, 12)
@@ -665,6 +622,64 @@ struct ConversationView: View {
           .environmentObject(store)
       }
       .navigationViewStyle(StackNavigationViewStyle())
+    }
+  }
+
+  @ViewBuilder
+  private func conversationMessageRow(
+    index: Int,
+    message: ChatMessage,
+    firstRenderedMessageID: UUID?,
+    proxy: ScrollViewProxy
+  ) -> some View {
+    if SignalASIConversationDateDivider.shouldShow(
+      for: message.createdAt,
+      previous: index > 0 ? renderedMessages[index - 1].createdAt : nil
+    ) {
+      SignalASIConversationDateDivider(
+        date: message.createdAt,
+        language: interfaceLanguage
+      )
+    }
+    MessageBubble(
+      message: message,
+      myAvatarData: store.profile.avatarData,
+      remoteContact: contact,
+      onAction: handleRichAction,
+      isRetrying: retryingMessageIDs.contains(message.id),
+      onRetry: { retryMessage(message) }
+    )
+      .id(message.id)
+      .contextMenu {
+        if !message.isSystem {
+          Button {
+            selectedMessageForDetails = message
+          } label: {
+            Label(t("signalasi.message.details", "Details"), systemImage: "info.circle")
+          }
+          Button {
+            UIPasteboard.general.string = message.content
+          } label: {
+            Label(t("signalasi.common.copy", "Copy"), systemImage: "doc.on.doc")
+          }
+          Button(role: .destructive) {
+            store.deleteMessage(message.id, contactId: contact.id)
+          } label: {
+            Label(t("signalasi.message.delete", "Delete Message"), systemImage: "trash")
+          }
+        }
+      }
+    if waitingMessageIDs.contains(message.id) {
+      AgentReplyWaitingIndicatorView()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
+    }
+    if message.id == firstRenderedMessageID {
+      Color.clear
+        .frame(height: 1)
+        .onAppear {
+          loadOlderMessages(anchorID: message.id, proxy: proxy)
+        }
     }
   }
 
