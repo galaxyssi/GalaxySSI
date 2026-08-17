@@ -258,11 +258,11 @@ extension AgentHomeView {
 
   var agentActionQueueItems: [SignalASIAgentActionQueueItem] {
     var seen = Set<String>()
-    return activeAgentTasks.flatMap { task in
+    return activeAgentTasks.flatMap { task -> [SignalASIAgentActionQueueItem] in
       let actions: [AgentAction] = task.pendingActions.isEmpty
         ? task.pendingAction.map { [$0] } ?? []
         : task.pendingActions
-      return actions.compactMap { action in
+      return actions.compactMap { action -> SignalASIAgentActionQueueItem? in
         let actionID = action.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !actionID.isEmpty, seen.insert("\(task.taskId)-\(actionID)").inserted else {
           return nil
