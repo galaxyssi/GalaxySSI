@@ -1066,7 +1066,7 @@ object SignalASIMqttClient {
             wirePayload,
             requiresValidatedNetwork = deferMediaUpload,
             blockedByAttachmentTransferIds = blockedByAttachmentTransferIds,
-            clientSourceMessageId = payload.optLong("source_message_id"),
+            clientSourceMessageId = SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload),
             contactId = contactId
         )
         if (queueOnly) {

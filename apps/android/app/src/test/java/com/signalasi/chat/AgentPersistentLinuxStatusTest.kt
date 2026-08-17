@@ -6,9 +6,9 @@ import org.junit.Test
 class AgentPersistentLinuxStatusTest {
     @Test
     fun `runtime status advertises apt only for a ready persistent userspace`() {
-        val ready = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.2", backendReady = true))
-        val legacy = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.1", backendReady = true))
-        val disconnected = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.2", backendReady = false))
+        val ready = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.3", backendReady = true))
+        val legacy = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.2", backendReady = true))
+        val disconnected = AgentOnDeviceRuntimeTools.persistentLinuxSystemOutput(status("1.3.3", backendReady = false))
 
         assertEquals("Debian 13", ready["distribution"])
         assertEquals("root", ready["execution_principal"])

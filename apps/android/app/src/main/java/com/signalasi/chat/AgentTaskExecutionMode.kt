@@ -59,6 +59,11 @@ object AgentTaskExecutionModePolicy {
         "proceed with the plan"
     )
 
+    private val scopedEnglishExecutionTargets = Regex(
+        "^(?:on|in|via|using|through|from)\\s+(?:the\\s+)?" +
+            "(?:desktop|pc|computer|server|cloud|remote(?:\\s+machine)?)(?:\\b|$)"
+    )
+
     fun resolve(
         request: String,
         configuredMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE
@@ -67,7 +72,9 @@ object AgentTaskExecutionModePolicy {
             .lowercase(Locale.ROOT)
             .replace(Regex("\\s+"), " ")
             .trim()
-        planOnlySignals.firstOrNull(normalized::contains)?.let { signal ->
+        planOnlySignals.firstOrNull { signal ->
+            normalized.contains(signal) && !isScopedExecutionRestriction(normalized, signal)
+        }?.let { signal ->
             return AgentTaskExecutionModeResolution(
                 mode = AgentTaskExecutionMode.PLAN_ONLY,
                 explicitlyRequested = true,
@@ -82,5 +89,16 @@ object AgentTaskExecutionModePolicy {
             )
         }
         return AgentTaskExecutionModeResolution(configuredMode)
+    }
+
+    private fun isScopedExecutionRestriction(request: String, signal: String): Boolean {
+        if (signal !in setOf("do not execute", "don't execute", "without executing")) return false
+        var matchAt = request.indexOf(signal)
+        while (matchAt >= 0) {
+            val suffix = request.substring(matchAt + signal.length).trimStart()
+            if (scopedEnglishExecutionTargets.containsMatchIn(suffix)) return true
+            matchAt = request.indexOf(signal, matchAt + signal.length)
+        }
+        return false
     }
 }

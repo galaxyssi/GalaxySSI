@@ -128,6 +128,30 @@ class AgentExecutionPresentationTest {
     }
 
     @Test
+    fun phoneNativeToolRemainsPhoneHostedWhenDesktopAgentProvidesReasoning() {
+        val location = AgentExecutionPresentationPolicy.location(
+            route = AgentRoute(
+                kind = AgentRouteKind.DESKTOP_AGENT,
+                targetId = "codex",
+                targetTitle = "Codex \u00b7 WORKSTATION"
+            ),
+            action = AgentAction(
+                id = "inspect-phone-runtime",
+                kind = AgentActionKind.CALL_NATIVE_TOOL,
+                target = "Phone runtime",
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.RUNNING,
+                description = "Inspect the phone runtime",
+                parameters = mapOf("tool_id" to "signalasi.runtime.inspect")
+            )
+        )
+
+        assertEquals(AgentExecutionLocationKind.PHONE, location.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.PHONE_NATIVE, location.runtimeKind)
+        assertEquals("signalasi.runtime.inspect", location.runtimeId)
+    }
+
+    @Test
     fun desktopNativeToolUsesDesktopExecutionHost() {
         val route = AgentRouteResolver.resolve(
             action = AgentAction(

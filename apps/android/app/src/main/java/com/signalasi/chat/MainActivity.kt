@@ -497,14 +497,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
     internal val agentStartupMaintenanceRunnable = Runnable {
         if (!isFinishing && !isDestroyed) {
-            val foregroundTaskActive = pendingAgentReplyIndicators.isNotEmpty() ||
+            val foregroundTaskActive = initialAgentHydrationPending ||
+                pendingAgentReplyIndicators.isNotEmpty() ||
                 provisionalAgentTasks.isNotEmpty() ||
+                activeAgentTasks.isNotEmpty() ||
                 AgentTaskRuntime.supervisor(this).activeWorkspaces().any { workspace ->
                     workspace.status in setOf(
                         AgentWorkspaceStatus.CREATED,
-                        AgentWorkspaceStatus.RUNNING
+                        AgentWorkspaceStatus.QUEUED,
+                        AgentWorkspaceStatus.RUNNING,
+                        AgentWorkspaceStatus.WAITING_RESPONSE
                     )
-            }
+                }
             if (foregroundTaskActive) {
                 handler.postDelayed(
                     { scheduleAgentStartupMaintenance() },
@@ -1422,7 +1426,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     finishAgentDeliveryFailureUi(delivery)
                 }
             } else {
-                runOnUiThread { renderAgentState(state, conversationId, turnId) }
+                val nextSourceMessageId = state.lastActionResult?.metadata
+                    ?.get("source_message_id")
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0L && it != sourceMessageId }
+                if (nextSourceMessageId != null) {
+                    AgentPendingDeliveryStore.markRecoveryPredecessor(
+                        this,
+                        sourceMessageId,
+                        nextSourceMessageId
+                    )
+                }
+                runOnUiThread {
+                    rebindAgentConnectorContinuation(
+                        previousSourceMessageId = sourceMessageId,
+                        runtime = runtime,
+                        state = state,
+                        conversationId = conversationId,
+                        turnId = turnId
+                    )
+                    renderAgentState(state, conversationId, turnId)
+                }
             }
         }
         logDeliveryFailure(sourceMessageId, contactId, reason)

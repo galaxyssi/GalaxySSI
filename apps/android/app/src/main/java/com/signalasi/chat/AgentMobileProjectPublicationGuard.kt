@@ -67,6 +67,10 @@ internal class AgentProjectPublicationPolicy(
         require(receipt.verificationKind != AgentRuntimeVerificationKind.NONE) {
             "Runtime verification kind is required"
         }
+        if (!AgentProjectStateDigester.isRepository(projectRoot, receipt.workspaceId)) {
+            ticketStore.remove(receipt.workspaceId)
+            return
+        }
         val ticket = AgentProjectVerificationTicket(
             workspaceId = receipt.workspaceId,
             verificationKind = receipt.verificationKind,
@@ -218,13 +222,22 @@ internal object AgentProjectStateDigester {
         }
     }
 
+    fun isRepository(projectRoot: File, workspaceId: String): Boolean = runCatching {
+        workspaceDirectory(projectRoot, workspaceId).resolve(".git").isDirectory
+    }.getOrDefault(false)
+
     private fun open(projectRoot: File, workspaceId: String) = run {
+        val workspace = workspaceDirectory(projectRoot, workspaceId)
+        val gitDirectory = File(workspace, ".git")
+        require(gitDirectory.isDirectory) { "The phone workspace does not contain a Git repository" }
+        FileRepositoryBuilder().setGitDir(gitDirectory).setWorkTree(workspace).build()
+    }
+
+    private fun workspaceDirectory(projectRoot: File, workspaceId: String): File {
         require(workspaceId.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))) { "Phone project workspace id is invalid" }
         val root = projectRoot.canonicalFile
         val workspace = File(root, workspaceId).canonicalFile
         require(workspace.path.startsWith(root.path + File.separator)) { "Phone project path escapes app storage" }
-        val gitDirectory = File(workspace, ".git")
-        require(gitDirectory.isDirectory) { "The phone workspace does not contain a Git repository" }
-        FileRepositoryBuilder().setGitDir(gitDirectory).setWorkTree(workspace).build()
+        return workspace
     }
 }

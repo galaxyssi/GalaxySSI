@@ -11,6 +11,36 @@ import org.junit.Test
 import java.util.UUID
 
 class SignalASILinkProtocolTest {
+
+    @Test
+    fun agentRequestUsesClientMessageIdForDeliveryFailureCorrelation() {
+        val payload = JSONObject()
+            .put("type", "text")
+            .put("client_message_id", 1308L)
+            .put("source_message_id", 99L)
+
+        assertEquals(1308L, SignalASILinkDeliveryStore.outboundClientSourceMessageId(payload))
+        assertEquals(
+            99L,
+            SignalASILinkDeliveryStore.outboundClientSourceMessageId(
+                JSONObject().put("source_message_id", "99")
+            )
+        )
+        assertEquals(0L, SignalASILinkDeliveryStore.outboundClientSourceMessageId(JSONObject()))
+    }
+
+    @Test
+    fun reliableOutboxCanFindAConnectorHandoffByClientSource() {
+        val values = JSONArray()
+            .put(outboxMessage("first", "topic").put("client_source_message_id", 1308L))
+            .put(outboxMessage("second", "topic").put("client_source_message_id", 1400L))
+
+        assertTrue(SignalASILinkDeliveryStore.containsClientSourceMessageId(values, 1308L))
+        assertTrue(SignalASILinkDeliveryStore.containsClientSourceMessageId(values, 1400L))
+        assertFalse(SignalASILinkDeliveryStore.containsClientSourceMessageId(values, 9999L))
+        assertFalse(SignalASILinkDeliveryStore.containsClientSourceMessageId(values, 0L))
+    }
+
     @Test
     fun envelopeBoundaryReplacesNonUuidMessageIds() {
         val envelope = SignalASILinkProtocol.makeEnvelope(

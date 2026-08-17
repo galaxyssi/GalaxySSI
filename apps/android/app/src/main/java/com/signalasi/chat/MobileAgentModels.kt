@@ -77,6 +77,7 @@ data class AgentSessionSnapshot(
     val activeWorkflowExecutionId: String = "",
     val taskExecutionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val executionLoopSnapshot: AgentExecutionLoopSnapshot? = null,
+    val processInstanceId: String = "",
     val updatedAtMillis: Long
 )
 

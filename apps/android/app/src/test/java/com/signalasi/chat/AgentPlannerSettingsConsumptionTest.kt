@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentPlannerSettingsConsumptionTest {
@@ -110,6 +111,37 @@ class AgentPlannerSettingsConsumptionTest {
         )
 
         assertFalse(decision.allowed)
+    }
+
+    @Test
+    fun repeatedConnectorReasoningIsLimitedByBudgetInsteadOfLoopSignature() {
+        val completed = (1..2).map { index ->
+            AgentAction(
+                id = "connector-$index",
+                kind = AgentActionKind.CALL_CONNECTOR,
+                target = "Codex",
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.COMPLETED,
+                description = "Continue reasoning",
+                parameters = mapOf("prompt" to "Continue from the latest observation"),
+                requiresConfirmation = false
+            )
+        }
+        val pending = completed.first().copy(
+            id = "connector-next",
+            status = AgentActionStatus.PROPOSED
+        )
+        val plan = AgentPlanFactory.actions(request(), listOf(pending)).copy(
+            actionHistory = completed
+        )
+
+        val decision = AgentAutonomyGuard.review(
+            plan = plan,
+            action = pending,
+            settings = AgentModelPlannerSettings(maxToolCalls = 8)
+        )
+
+        assertTrue(decision.allowed)
     }
 
     private fun request(replanReason: String = ""): AgentRequest {

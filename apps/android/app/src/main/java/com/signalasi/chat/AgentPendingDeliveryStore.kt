@@ -8,12 +8,14 @@ internal data class AgentPendingDelivery(
     val conversationId: String,
     val turnId: String,
     val taskId: String,
-    val contactId: String
+    val contactId: String,
+    val recoverySuccessorSourceMessageId: Long = 0L
 )
 
 internal object AgentPendingDeliveryStore {
     private const val PREFS = "signalasi_agent_pending_deliveries"
     private const val KEY_PREFIX = "source:"
+    private const val TURN_KEY_PREFIX = "turn:"
 
     @Synchronized
     fun put(context: Context, delivery: AgentPendingDelivery) {
@@ -21,7 +23,8 @@ internal object AgentPendingDeliveryStore {
             delivery.conversationId.isBlank() ||
             delivery.turnId.isBlank()
         ) return
-        AgentEncryptedPreferences(context, PREFS).writeString(
+        val preferences = AgentEncryptedPreferences(context, PREFS)
+        preferences.writeString(
             key(delivery.sourceMessageId),
             JSONObject()
                 .put("source_message_id", delivery.sourceMessageId)
@@ -29,8 +32,10 @@ internal object AgentPendingDeliveryStore {
                 .put("turn_id", delivery.turnId)
                 .put("task_id", delivery.taskId)
                 .put("contact_id", delivery.contactId)
+                .put("recovery_successor_source_message_id", delivery.recoverySuccessorSourceMessageId)
                 .toString()
         )
+        preferences.writeString(turnKey(delivery.conversationId, delivery.turnId), delivery.sourceMessageId.toString())
     }
 
     @Synchronized
@@ -50,16 +55,104 @@ internal object AgentPendingDeliveryStore {
             conversationId = conversationId,
             turnId = turnId,
             taskId = value.optString("task_id").ifBlank { turnId },
-            contactId = storedContactId
+            contactId = storedContactId,
+            recoverySuccessorSourceMessageId = value.optLong("recovery_successor_source_message_id")
         )
     }
 
     @Synchronized
-    fun remove(context: Context, sourceMessageId: Long) {
-        if (sourceMessageId > 0L) AgentEncryptedPreferences(context, PREFS).remove(key(sourceMessageId))
+    fun markRecoveryPredecessor(
+        context: Context,
+        predecessorSourceMessageId: Long,
+        successorSourceMessageId: Long
+    ): AgentPendingDelivery? {
+        if (predecessorSourceMessageId <= 0L || successorSourceMessageId <= 0L ||
+            predecessorSourceMessageId == successorSourceMessageId
+        ) return null
+        val predecessor = find(context, predecessorSourceMessageId) ?: return null
+        val updated = predecessor.copy(recoverySuccessorSourceMessageId = successorSourceMessageId)
+        val preferences = AgentEncryptedPreferences(context, PREFS)
+        preferences.writeString(
+            key(predecessorSourceMessageId),
+            JSONObject()
+                .put("source_message_id", updated.sourceMessageId)
+                .put("conversation_id", updated.conversationId)
+                .put("turn_id", updated.turnId)
+                .put("task_id", updated.taskId)
+                .put("contact_id", updated.contactId)
+                .put("recovery_successor_source_message_id", successorSourceMessageId)
+                .toString()
+        )
+        return updated
     }
 
+    @Synchronized
+    fun recoverySuccessorForResponse(
+        context: Context,
+        sourceMessageId: Long,
+        conversationId: String,
+        turnId: String
+    ): Long? {
+        val predecessor = find(context, sourceMessageId) ?: return null
+        if (predecessor.conversationId != conversationId || predecessor.turnId != turnId) return null
+        return predecessor.recoverySuccessorSourceMessageId.takeIf { it > 0L }
+    }
+
+    @Synchronized
+    fun completeResponse(context: Context, delivery: AgentPendingDelivery?) {
+        if (delivery == null) return
+        val preferences = AgentEncryptedPreferences(context, PREFS)
+        val currentSource = preferences
+            .readString(turnKey(delivery.conversationId, delivery.turnId), "")
+            .toLongOrNull()
+            .orZero()
+        setOf(
+            delivery.sourceMessageId,
+            delivery.recoverySuccessorSourceMessageId,
+            currentSource
+        ).filter { it > 0L }.forEach { preferences.remove(key(it)) }
+        preferences.remove(turnKey(delivery.conversationId, delivery.turnId))
+    }
+
+    @Synchronized
+    fun remove(context: Context, sourceMessageId: Long) {
+        if (sourceMessageId <= 0L) return
+        val delivery = find(context, sourceMessageId)
+        val preferences = AgentEncryptedPreferences(context, PREFS)
+        preferences.remove(key(sourceMessageId))
+        if (delivery != null) {
+            val turnKey = turnKey(delivery.conversationId, delivery.turnId)
+            if (preferences.readString(turnKey, "").toLongOrNull() == sourceMessageId) {
+                preferences.remove(turnKey)
+            }
+        }
+    }
+
+    @Synchronized
+    fun isSuperseded(
+        context: Context,
+        sourceMessageId: Long,
+        conversationId: String,
+        turnId: String
+    ): Boolean {
+        if (sourceMessageId <= 0L || conversationId.isBlank() || turnId.isBlank()) return false
+        val currentSource = AgentEncryptedPreferences(context, PREFS)
+            .readString(turnKey(conversationId, turnId), "")
+            .toLongOrNull()
+            ?: return false
+        if (currentSource == sourceMessageId) return false
+        val delivery = find(context, sourceMessageId) ?: return true
+        return delivery.conversationId != conversationId ||
+            delivery.turnId != turnId ||
+            delivery.recoverySuccessorSourceMessageId != currentSource
+    }
+
+    private fun Long?.orZero(): Long = this ?: 0L
+
     private fun key(sourceMessageId: Long): String = "$KEY_PREFIX$sourceMessageId"
+
+    private fun turnKey(conversationId: String, turnId: String): String =
+        "$TURN_KEY_PREFIX${conversationId.trim()}:${turnId.trim()}"
 }
 
 internal object AgentDeliveryFailureRecorder {

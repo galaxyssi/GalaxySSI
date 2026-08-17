@@ -1592,6 +1592,14 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
     }
 }
 
+internal fun MainActivity.agentRuntimeForWorkspace(workspaceId: String): MobileNativeAgent? = buildList {
+    addAll(activeAgentTasks.values)
+    addAll(provisionalAgentTasks)
+    add(mobileNativeAgent)
+}.asSequence()
+    .distinct()
+    .firstOrNull { runtime -> agentRuntimeTurnIds[runtime] == workspaceId }
+
 internal fun MainActivity.requestRecoverableAgentRunReconciliation(
     reason: String,
     refreshRegistry: Boolean = false
@@ -1623,7 +1631,23 @@ private const val AGENT_STALL_RECOVERY_MIN_INTERVAL_MS = 30_000L
 
 internal fun MainActivity.reconcileRecoverableAgentRuns() {
     if (!isAgentRunEventStoreInitialized() || !isAgentRunRecorderInitialized()) return
-    val activeRunIds = AgentTaskRuntime.supervisor(this).activeWorkspaces()
+    val liveRuntimeWorkspaceIds = buildSet {
+        val runtimes = buildSet {
+            addAll(provisionalAgentTasks)
+            addAll(activeAgentTasks.values)
+            if (isMobileNativeAgentInitialized()) add(mobileNativeAgent)
+        }
+        runtimes.forEach { runtime ->
+            val phase = runtime.snapshot().phase
+            if (phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED)) {
+                agentRuntimeTurnIds[runtime]?.takeIf(String::isNotBlank)?.let(::add)
+            }
+        }
+    }
+    val activeRunIds = (AgentTaskRuntime.supervisor(this).activeWorkspaces().map { it.workspaceId } +
+        liveRuntimeWorkspaceIds)
+        .distinct()
+        .mapNotNull { workspaceId -> EncryptedAgentWorkspaceStore(this).find(workspaceId) }
         .flatMap { workspace ->
             listOfNotNull(
                 workspace.parentRunId.takeIf(String::isNotBlank),

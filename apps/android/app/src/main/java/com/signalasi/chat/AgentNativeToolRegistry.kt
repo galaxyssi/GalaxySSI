@@ -946,11 +946,10 @@ class AgentNativeToolRegistry(
                     metadata = definition.provenanceMetadata
                 )
             )
-            runCatching {
-                auditStore.append(
-                    AgentNativeToolAuditRecord.from(result, context, descriptor.risk)
-                )
-            }
+            AgentNativeToolAuditDispatcher.append(
+                auditStore,
+                AgentNativeToolAuditRecord.from(result, context, descriptor.risk)
+            )
             runHook { hooks.onFinished(result) }
             return result
         }
@@ -1033,7 +1032,8 @@ class AgentNativeToolRegistry(
             }
 
             val execution = definition.executor.execute(invocation)
-            invocation.checkpoint()
+            // Once an executor has returned, preserve its real outcome. A cancellation
+            // arriving after a side effect completed must not rewrite success as cancelled.
             if (!execution.isSuccess) {
                 return finish(
                     status = AgentNativeToolResultStatus.FAILED,
@@ -1060,7 +1060,6 @@ class AgentNativeToolRegistry(
             }
 
             val verification = definition.verifier?.verify(invocation, execution)
-            invocation.checkpoint()
             if (verification?.status == AgentNativeVerificationStatus.FAILED) {
                 return finish(
                     status = AgentNativeToolResultStatus.VERIFICATION_FAILED,

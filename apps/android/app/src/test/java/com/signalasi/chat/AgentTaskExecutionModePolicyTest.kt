@@ -51,6 +51,29 @@ class AgentTaskExecutionModePolicyTest {
     }
 
     @Test
+    fun desktopOnlyExecutionRestrictionKeepsPhoneProjectAutomatic() {
+        val resolution = AgentTaskExecutionModePolicy.resolve(
+            "Clone the repository, run the tests on this phone, and package the result. " +
+                "Do not execute on Desktop and do not push.",
+            AgentTaskExecutionMode.AUTO_COMPLETE
+        )
+
+        assertEquals(AgentTaskExecutionMode.AUTO_COMPLETE, resolution.mode)
+        assertFalse(resolution.explicitlyRequested)
+    }
+
+    @Test
+    fun globalEnglishDoNotExecuteStillProducesPlanOnly() {
+        val resolution = AgentTaskExecutionModePolicy.resolve(
+            "Review the repository but do not execute anything.",
+            AgentTaskExecutionMode.AUTO_COMPLETE
+        )
+
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY, resolution.mode)
+        assertTrue(resolution.explicitlyRequested)
+    }
+
+    @Test
     fun wireValuesRoundTrip() {
         assertEquals(
             AgentTaskExecutionMode.PLAN_ONLY,

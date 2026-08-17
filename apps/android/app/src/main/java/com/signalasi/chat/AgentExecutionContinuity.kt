@@ -112,6 +112,204 @@ fun AgentPlan.hasInterruptedExecutionEvidence(): Boolean =
         action.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
     }
 
+fun AgentPlan.hasPendingInterruptedRecovery(): Boolean =
+    (actionHistory + actions).any { action ->
+        action.evidence in setOf(
+            AGENT_INTERRUPTED_EXECUTION_EVIDENCE,
+            AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE
+        )
+    }
+
+fun AgentPlan.markConnectorDeliveryFailed(actionId: String, sourceMessageId: Long): AgentPlan {
+    if (sourceMessageId <= 0L) return this
+    val marker = "$AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX$sourceMessageId"
+    fun AgentAction.mark(): AgentAction =
+        if (id == actionId) copy(evidence = marker) else this
+    return copy(
+        actions = actions.map(AgentAction::mark),
+        actionHistory = actionHistory.map(AgentAction::mark)
+    )
+}
+
+fun AgentPlan.connectorDeliveryFailureSourceMessageId(): Long? =
+    (actions.asReversed() + actionHistory.asReversed())
+        .asSequence()
+        .mapNotNull { action ->
+            action.evidence
+                .takeIf { it.startsWith(AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX) }
+                ?.removePrefix(AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+        }
+        .firstOrNull()
+
+object AgentInterruptedWorkspaceRecoveryPolicy {
+    fun shouldResume(
+        workspaceStatus: AgentWorkspaceStatus,
+        phase: AgentPhase,
+        plan: AgentPlan?,
+        lastActionResult: AgentActionResult?
+    ): Boolean =
+        workspaceStatus !in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) &&
+            phase == AgentPhase.PAUSED &&
+            plan != null &&
+            lastActionResult?.actionId == "agent-interrupted"
+}
+
+object AgentWorkspaceRestorePolicy {
+    fun shouldRestore(
+        workspaceStatus: AgentWorkspaceStatus,
+        phase: AgentPhase,
+        belongsToCurrentConversation: Boolean,
+        hasPendingAction: Boolean,
+        interruptedRecovery: Boolean,
+        interruptedHandoffRecovery: Boolean = false,
+        failedDeliveryRecovery: Boolean = false
+    ): Boolean = interruptedRecovery || interruptedHandoffRecovery || failedDeliveryRecovery || when (workspaceStatus) {
+        AgentWorkspaceStatus.RUNNING -> false
+        AgentWorkspaceStatus.WAITING_CONFIRMATION ->
+            belongsToCurrentConversation &&
+                phase == AgentPhase.WAITING_CONFIRMATION &&
+                hasPendingAction
+        AgentWorkspaceStatus.WAITING_RESPONSE -> phase == AgentPhase.WAITING_RESPONSE
+        AgentWorkspaceStatus.PAUSED ->
+            belongsToCurrentConversation && phase == AgentPhase.PAUSED
+        AgentWorkspaceStatus.FAILED -> phase == AgentPhase.WAITING_RESPONSE
+        else -> false
+    }
+}
+
+object AgentConnectorDeliveryRecoveryPolicy {
+    fun shouldResume(
+        workspaceStatus: AgentWorkspaceStatus,
+        phase: AgentPhase,
+        lastActionResult: AgentActionResult?,
+        plan: AgentPlan?
+    ): Boolean = workspaceStatus == AgentWorkspaceStatus.FAILED &&
+        phase == AgentPhase.FAILED &&
+        plan != null &&
+        (plan.connectorDeliveryFailureSourceMessageId() ?: metadataSource(lastActionResult)) != null
+
+    private fun metadataSource(result: AgentActionResult?): Long? = result
+        ?.takeIf { it.metadata["delivery_failed"] == "true" }
+        ?.metadata
+        ?.get("source_message_id")
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+}
+
+object AgentWorkspaceRestoreArbitrationPolicy {
+    fun shouldScanPersistedWorkspaces(
+        hasLiveRuntimeInConversation: Boolean,
+        hasActiveSupervisorTaskInConversation: Boolean
+    ): Boolean = !hasLiveRuntimeInConversation && !hasActiveSupervisorTaskInConversation
+
+    fun belongsToActiveConversation(
+        candidateConversationId: String,
+        activeConversationId: String
+    ): Boolean = candidateConversationId.isNotBlank() &&
+        activeConversationId.isNotBlank() &&
+        candidateConversationId == activeConversationId
+
+    fun stillOwnsRecovery(
+        candidateWorkspaceId: String,
+        startedConversationId: String,
+        currentConversationId: String,
+        activeSupervisorWorkspaceIds: Set<String>,
+        liveRuntimeWorkspaceIds: Set<String>
+    ): Boolean {
+        if (!belongsToActiveConversation(startedConversationId, currentConversationId)) return false
+        val competingSupervisorTask = activeSupervisorWorkspaceIds.any {
+            it.isNotBlank() && it != candidateWorkspaceId
+        }
+        val competingRuntime = liveRuntimeWorkspaceIds.any {
+            it.isNotBlank() && it != candidateWorkspaceId
+        }
+        return !competingSupervisorTask && !competingRuntime
+    }
+}
+
+object AgentPendingHandoffRecoveryPolicy {
+    const val MAX_RECOVERY_ATTEMPTS = 2
+
+    fun shouldRecover(
+        phase: AgentPhase,
+        sourceMessageId: Long,
+        remainsInReliableOutbox: Boolean,
+        metadata: Map<String, String>,
+        nowMillis: Long = System.currentTimeMillis(),
+        staleAfterMillis: Long = 90_000L
+    ): Boolean {
+        return isStranded(
+            phase,
+            sourceMessageId,
+            remainsInReliableOutbox,
+            metadata,
+            nowMillis,
+            staleAfterMillis
+        ) && recoveryAttempt(metadata) < MAX_RECOVERY_ATTEMPTS
+    }
+
+    fun recoveryAttempt(metadata: Map<String, String>): Int =
+        metadata["handoff_recovery_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+
+    fun interruptedRecoveryAction(
+        phase: AgentPhase,
+        plan: AgentPlan?
+    ): AgentAction? {
+        if (phase != AgentPhase.BLOCKED) return null
+        return plan?.actions?.firstOrNull { action ->
+            action.kind == AgentActionKind.CALL_CONNECTOR &&
+                recoveryAttempt(action.parameters) in 1..MAX_RECOVERY_ATTEMPTS &&
+                action.parameters["superseded_source_message_id"]?.toLongOrNull()?.let { it > 0L } == true &&
+                action.status in setOf(
+                    AgentActionStatus.PROPOSED,
+                    AgentActionStatus.PENDING_CONFIRMATION,
+                    AgentActionStatus.BLOCKED
+                )
+        }
+    }
+
+    fun isExhausted(
+        phase: AgentPhase,
+        sourceMessageId: Long,
+        remainsInReliableOutbox: Boolean,
+        metadata: Map<String, String>,
+        nowMillis: Long = System.currentTimeMillis(),
+        staleAfterMillis: Long = 90_000L
+    ): Boolean = isStranded(
+        phase,
+        sourceMessageId,
+        remainsInReliableOutbox,
+        metadata,
+        nowMillis,
+        staleAfterMillis
+    ) && recoveryAttempt(metadata) >= MAX_RECOVERY_ATTEMPTS
+
+    private fun isStranded(
+        phase: AgentPhase,
+        sourceMessageId: Long,
+        remainsInReliableOutbox: Boolean,
+        metadata: Map<String, String>,
+        nowMillis: Long,
+        staleAfterMillis: Long
+    ): Boolean {
+        if (phase != AgentPhase.WAITING_RESPONSE || sourceMessageId <= 0L) return false
+        if (remainsInReliableOutbox) return false
+        val status = metadata["remote_task_status"].orEmpty().lowercase()
+        if (status in setOf("running", "waiting_on_approval", "waiting_on_user_input")) return false
+        if (status !in setOf("", "accepted", "queued", "starting")) return false
+        val acceptedAt = sequenceOf(
+            metadata["remote_task_status_updated_at"],
+            metadata["transport_accepted_at"],
+            metadata["resource_started_at"]
+        ).mapNotNull { it?.toLongOrNull() }.maxOrNull() ?: 0L
+        if (status.isBlank() && metadata["transport_accepted_at"].orEmpty().isBlank()) return true
+        if (acceptedAt <= 0L) return true
+        return nowMillis - acceptedAt >= staleAfterMillis.coerceAtLeast(1L)
+    }
+}
+
 fun AgentPlan.markInterruptedRecoveryScheduled(): AgentPlan = copy(
     actions = actions.map(AgentAction::markInterruptedRecoveryScheduled),
     actionHistory = actionHistory.map(AgentAction::markInterruptedRecoveryScheduled)
@@ -136,3 +334,4 @@ private fun AgentAction.markInterruptedRecoveryScheduled(): AgentAction =
 
 internal const val AGENT_INTERRUPTED_EXECUTION_EVIDENCE = "interrupted_unverified"
 internal const val AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE = "interrupted_recovery_scheduled"
+internal const val AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX = "connector_delivery_failed:"
