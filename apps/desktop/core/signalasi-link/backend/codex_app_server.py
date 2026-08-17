@@ -1273,14 +1273,21 @@ class CodexAppServer:
         elif "id" in message:
             approval = self._pending_approval(task_id, message)
             if approval is not None:
+                approved = (
+                    run.execution_policy.execution_mode.value != "plan_only"
+                )
                 self._write_server_response(
                     approval.request_id,
-                    self._approval_result(approval, approved=True),
+                    self._approval_result(approval, approved=approved),
                 )
                 self.on_event(task_id, {
                     **common,
                     "status": "running",
-                    "current_step": "Codex is working",
+                    "current_step": (
+                        "Codex is working"
+                        if approved else
+                        "Desktop tool blocked; requesting a phone ActionPlan"
+                    ),
                     "approval_request": {},
                 })
             else:

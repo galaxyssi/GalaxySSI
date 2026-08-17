@@ -123,22 +123,20 @@ internal object AgentSupervisedProjectLoop {
         append("Use summary for a concise user-visible decision summary, never private chain-of-thought. ")
         append("Write it in the same language as the user's goal, using one to three short sentences that state the relevant observed evidence, the decision made from it, and the immediate next outcome. ")
         append("For continuation or recovery, explain what changed and why the next approach differs; avoid generic status text such as processing, working, or continuing. Schema: ")
-        append("{\"execution_location\":\"phone|desktop\",\"execution_location_evidence\":\"\",")
+        append("{\"execution_location\":\"phone\",\"execution_location_evidence\":\"\",")
         append("\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
-        append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL|CALL_CONNECTOR\",\"target\":\"...\",")
+        append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"CALL_NATIVE_TOOL\",\"target\":\"...\",")
         append("\"description\":\"...\",\"depends_on\":[],\"use_outputs_from\":[],")
-        append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{},")
-        append("\"connector_id\":\"exact.connector.id\",\"prompt\":\"complete desktop request\"}}]}. ")
-        append("Execution location and reasoning provider are independent. Default execution_location to phone even when Codex, Hermes, Claude, OpenClaw, a local model, or a cloud model performs the reasoning. ")
+        append("\"parameters\":{\"tool_id\":\"exact.inventory.id\",\"arguments\":{}}}]}. ")
+        append("Execution location and reasoning provider are independent. Always set execution_location to phone even when Codex, Hermes, Claude, OpenClaw, a local model, or a cloud model performs the reasoning. ")
         append("DeepSeek and every other configured cloud model may select the same phone-native Linux tools as connected or local reasoning providers. The provider reasons; Android validates and executes the tool on the phone; the resulting observation returns to this same loop. ")
+        append("Never call Desktop files, terminal, Git, build, device-control, MCP, Skill, or automation tools. Desktop-hosted browser search and public-page fetch are the only allowed Desktop tools, and they may be used only as reasoning evidence; every returned ActionPlan action still executes on the phone. ")
         append("Do not start Linux for pure conversation or explanation. Use it when the goal needs commands, files, dependencies, builds, tests, browser automation, media processing, or other executable evidence. ")
-        append("Choose desktop only when the user's original goal explicitly asks to execute on a Desktop, PC, computer, or a named desktop machine. Never choose desktop merely because it is faster, has more tools, hosts the reasoning model, or the phone runtime is inconvenient. ")
-        append("For desktop, execution_location_evidence must be a short verbatim excerpt from the user's goal that contains that explicit request. For phone, leave execution_location_evidence empty. ")
+        append("Leave execution_location_evidence empty. A task initiated from the Android Agent remains phone-executed even when its reasoning model is hosted by Desktop. ")
         append("Choose exactly one next evidence-producing action, not a batch or an entire speculative project plan. ")
         append("After that action finishes, SignalASI will return its observation and ask you to reason again. ")
         append("depends_on and use_outputs_from may reference only actions returned in the same JSON batch. Prior verified ledger actions are already satisfied and must not be repeated as dependencies. ")
-        append("For phone, actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
-        append("For desktop, return exactly one CALL_CONNECTOR action using an exact Desktop execution connector below; put the complete execution request in parameters.prompt. Do not mix phone and desktop actions. ")
+        append("Actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
         append("Use signalasi.project.* for Git and GitHub; credentials are host-owned and must never appear in prompts, files, or commands. ")
         append("Honor an explicit execution-environment constraint from the user's goal. When the user requires phone Linux, the Linux guest must perform the requested mutation or verification through signalasi.runtime.execute. signalasi.workspace.* may stage or inspect files, but its Android-host receipt is not Linux execution evidence and must never be described as such. ")
@@ -190,28 +188,12 @@ internal object AgentSupervisedProjectLoop {
                     .append(AgentNativeJsonCodec.stringify(tool.inputSchema.document).take(MAX_TOOL_SCHEMA_CHARACTERS))
                     .append('\n')
             }
-        append("Available Desktop execution connectors:\n")
-        request.targets.asSequence()
-            .filter { target ->
-                target.status == AgentConnectorStatus.AVAILABLE &&
-                    target.kind == AgentConnectorKind.AGENT
-            }
-            .sortedBy(AgentCallableTarget::id)
-            .take(MAX_DESKTOP_CONNECTORS)
-            .forEach { target ->
-                append("- ").append(target.id)
-                    .append(" | ").append(target.title.take(160))
-                    .append(" | capabilities=")
-                    .append(target.capabilities.joinToString(",") { capability -> capability.name })
-                    .append('\n')
-            }
     }.take(MAX_PROMPT_CHARACTERS)
 
     private const val MAX_GOAL_CHARACTERS = 4_000
     private const val MAX_CONVERSATION_CHARACTERS = 8_000
     private const val MAX_HISTORY_ACTIONS = 40
     private const val MAX_TOOL_DESCRIPTORS = 60
-    private const val MAX_DESKTOP_CONNECTORS = 20
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 1_000
     private const val MAX_PROMPT_CHARACTERS = 28_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
@@ -248,6 +230,30 @@ internal object AgentSupervisedProjectRoutingPolicy {
             ) ||
             executableFileRequest ||
             AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal)
+    }
+}
+
+internal object AgentSupervisedProjectContinuationPolicy {
+    fun mergedGoal(
+        latestRequest: String,
+        conversationContext: AgentConversationContext
+    ): String? {
+        val request = latestRequest.trim()
+        if (!AgentActiveTurnPolicy.continuesPriorTask(request)) return null
+        val priorGoal = conversationContext.turns.asReversed()
+            .asSequence()
+            .filter { entry -> entry.role == AgentTranscriptRole.USER }
+            .map { entry -> entry.text.trim() }
+            .firstOrNull { candidate ->
+                candidate.isNotBlank() &&
+                    AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(candidate)
+            }
+            ?: return null
+        return AgentActiveTurnPolicy.supersedingGoal(
+            activeGoal = priorGoal,
+            intervention = request,
+            kind = AgentActiveTurnInterventionKind.CONSTRAINT
+        )
     }
 }
 
@@ -439,6 +445,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     )
     val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
+    if (executionSite.site != AgentRequestedExecutionSite.PHONE) {
+        return supervisedFormatRepairPlan(plan, connector, request, response)
+    }
     val parsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
         ?.takeIf { candidate -> AgentSupervisedProjectLoop.acceptsIteration(candidate.actions) }
         ?.takeIf { candidate ->
@@ -487,11 +496,6 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         expectedResult = parsed.expectedResult,
         rollbackStrategy = parsed.rollbackStrategy
     )
-    if (executionSite.site == AgentRequestedExecutionSite.DESKTOP) {
-        return reviewSupervisedProjectPlan(
-            revised.copy(plannerProfile = MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE)
-        )
-    }
     revised = AgentSupervisedProjectLoop.appendReviewer(
         plan = revised,
         connector = connector,

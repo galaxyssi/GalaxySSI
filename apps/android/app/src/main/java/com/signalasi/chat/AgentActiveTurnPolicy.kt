@@ -25,6 +25,14 @@ data class AgentActiveTurnDecision(
 }
 
 object AgentActiveTurnPolicy {
+    fun continuesPriorTask(request: String): Boolean {
+        val clean = normalize(request)
+        if (clean.isBlank() || clean in INTERRUPT_COMMANDS) return false
+        if (INDEPENDENT_PREFIXES.any(clean::startsWith)) return false
+        return CONTINUATION_PREFIXES.any(clean::startsWith) ||
+            CONTINUATION_REFERENCES.any(clean::contains)
+    }
+
     fun decide(
         request: String,
         activeGoal: String,

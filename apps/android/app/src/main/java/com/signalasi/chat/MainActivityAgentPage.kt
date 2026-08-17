@@ -1438,6 +1438,16 @@ internal fun MainActivity.continueAgentGoalSubmission(
         } else {
             goal
         }
+        AgentSupervisedProjectContinuationPolicy.mergedGoal(
+            latestRequest = originalGoal.ifBlank { executionGoal },
+            conversationContext = localConversationContext
+        )?.let { resumedGoal ->
+            executionGoal = resumedGoal
+            Log.i(
+                "SignalASIAgent",
+                "restored supervised phone project context turn=${turnId.take(8)}"
+            )
+        }
         val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
             null
         } else {
