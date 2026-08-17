@@ -205,7 +205,7 @@ struct SignalASIAgentsModelsNodesView: View {
       !contact.deleted &&
         contact.desktopId == link.desktopId &&
         (contact.type == "agent" || contact.id == "hermes" || contact.deliveryMode.isSignalASILinkFamily)
-    }.count
+    }
   }
 
   private func cloudConnectorStatus(_ contact: SignalASIContact) -> AgentConnectorStatus {
