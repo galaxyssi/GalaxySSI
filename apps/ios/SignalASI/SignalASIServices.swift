@@ -1791,11 +1791,19 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
+    let workflowCommand: (text: String, actionId: String)? = {
+      if let result = AgentWorkflowCommandRouter.handle(displayText) {
+        return (result.text, result.actionId)
+      }
+      if let result = AgentWorkflowTriggerCommandRouter.handle(displayText) {
+        return (result.text, result.actionId)
+      }
+      return nil
+    }()
     if taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
-       let commandResult = AgentWorkflowCommandRouter.handle(displayText)
-        ?? AgentWorkflowTriggerCommandRouter.handle(displayText) {
+       let commandResult = workflowCommand {
       store.appendDeliveryTrace(
         outgoing.id,
         contactId: contact.id,
@@ -2591,6 +2599,10 @@ final class MessageCoordinator: ObservableObject {
       responseLanguage: store.languagePolicy.responseLanguage
     )
     let fallbackPlan = AgentDirectNativeToolPlanner.plan(request: planRequest)
+    let taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+      request: task.goal,
+      configuredMode: store.agentSafetySettings.taskExecutionMode
+    ).mode
     let plan = await modelPlannedLocalNativeActions(
       requestText: task.goal,
       attachments: [],
@@ -6556,7 +6568,7 @@ final class MessageCoordinator: ObservableObject {
       updatedAtMillis: updatedAtMillis,
       history: history
     )
-    if snapshot.isTerminal {
+    if AgentRemoteTaskStatusPolicy.isTerminal(snapshot.status) {
       remoteAgentTaskStatuses.removeValue(forKey: snapshot.id)
       return
     }
