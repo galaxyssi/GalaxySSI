@@ -38,7 +38,7 @@ final class AgentIOSRuntimePackDownloader {
     entry: AgentRuntimePackCatalogEntry,
     from sourceURL: String,
     isCancelled: @escaping () -> Bool = { false },
-    onProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in }
+    onProgress: @escaping (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in }
   ) throws -> URL {
     guard entry.archiveSizeBytes > 0,
           entry.archiveSizeBytes <= AgentRuntimePackArchiveReader.maximumArchiveBytes,
