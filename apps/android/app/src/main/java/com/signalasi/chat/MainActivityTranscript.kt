@@ -1069,7 +1069,8 @@ internal fun MainActivity.agentReplyWaitingTranscriptRow(): View = LinearLayout(
         AgentVoiceTranscriptionPendingView(
             context = this@agentReplyWaitingTranscriptRow,
             bubbleBackground = false,
-            accessibilityText = getString(R.string.agent_status_waiting_response)
+            accessibilityText = getString(R.string.agent_status_waiting_response),
+            dotColorRes = R.color.text_primary
         ),
         LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
