@@ -378,7 +378,7 @@ struct SignalASIControlCenterView: View {
 
   private var securityDataSection: some View {
     let needsAttention = systemStatusNeedsAttention
-    VStack(alignment: .leading, spacing: 8) {
+    return VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_section_security_data", "Security & data"))
       SignalASIControlCenterNavigationRow(
         title: t("cc_system_status_title", "System Status"),
@@ -453,12 +453,14 @@ struct SignalASIControlCenterView: View {
   }
 
   private var capabilityLibraryInstalledCount: Int {
+    let installedMcp = SignalASIMcpControlStores.makeRegistry().list()
+    let installedAutomations = UserDefaultsAgentSkillStore().list()
     let items = AgentDefaultCapabilityCatalog.marketplaceItems(
       nativeTools: AgentPhoneNativeToolCatalog.descriptors(
         capabilityStatuses: AgentPhoneCapabilityCatalog.declaredStatuses()
       ),
-      installedMcp: SignalASIMcpControlStores.makeRegistry().list(),
-      installedAutomations: UserDefaultsAgentSkillStore().list()
+      installedMcp: installedMcp,
+      installedAutomations: installedAutomations
     )
     return items.filter {
       $0.installState == .builtIn || $0.installState == .installed

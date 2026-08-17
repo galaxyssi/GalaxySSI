@@ -1298,7 +1298,7 @@ private struct SignalASIMcpAuthenticationView: View {
   }
 }
 
-private enum SignalASIMcpControlStores {
+enum SignalASIMcpControlStores {
   static let permissionModes: [AgentMcpPermissionMode] = [
     .askForChanges,
     .readOnly,

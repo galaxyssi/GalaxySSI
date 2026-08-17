@@ -45,7 +45,7 @@ struct SignalASIRichContentView: View {
   }
 
   var body: some View {
-    _ = coordinator.artifactRevision
+    let artifactRevision = coordinator.artifactRevision
     let blocks = resolvedBlocks
     let layout = AgentResponseSectionOrganizer.organize(
       blocks,
@@ -106,6 +106,7 @@ struct SignalASIRichContentView: View {
         }
       }
     }
+    .id(artifactRevision)
     .environment(\.signalASIInterfaceLanguage, interfaceLanguage)
     .textSelection(.enabled)
     .fileExporter(
@@ -179,6 +180,10 @@ struct SignalASIRichContentView: View {
       .ifBlank(t("rich_output_load_failed", "Unable to display preview"))
     let preview = String(source.prefix(AgentLargeOutputPolicy.previewCharacters))
     return preview.count < source.count ? preview + "..." : preview
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
 
   fileprivate func exportArtifact(_ block: AgentRichBlock) {
@@ -500,59 +505,61 @@ private struct SignalASIRichBlockView: View {
   @State private var artifactDownloadRequestID = UUID()
 
   var body: some View {
-    switch block.type {
-    case .text:
-      selectableText(displayText)
-    case .heading:
-      headingBlock
-    case .quote:
-      quoteBlock
-    case .list:
-      listBlock
-    case .divider:
-      Divider()
-        .padding(.vertical, 2)
-    case .code, .json, .diff:
-      codeBlock
-    case .keyValue:
-      keyValueBlock
-    case .table:
-      tableBlock
-    case .image:
-      imageBlock
-    case .video:
-      videoBlock
-    case .audio:
-      audioBlock
-    case .gallery:
-      galleryBlock
-    case .chart:
-      chartBlock
-    case .status:
-      statusBlock
-    case .progress:
-      progressBlock
-    case .metric:
-      metricBlock
-    case .tool:
-      toolBlock
-    case .timeline:
-      timelineBlock
-    case .notice:
-      noticeBlock
-    case .actions:
-      actionsBlock(title: block.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t("rich_output_actions", "Actions") : block.title)
-    case .approval:
-      approvalBlock
-        .frame(maxWidth: UIScreen.main.bounds.width * Self.approvalWidthRatio, alignment: .leading)
-    case .form:
-      formBlock
-    case .html:
-      htmlBlock
-    case .webpage:
-      webpageBlock
-    case .file, .link, .citation, .unknown:
-      resourceBlock
+    Group {
+      switch block.type {
+      case .text:
+        selectableText(displayText)
+      case .heading:
+        headingBlock
+      case .quote:
+        quoteBlock
+      case .list:
+        listBlock
+      case .divider:
+        Divider()
+          .padding(.vertical, 2)
+      case .code, .json, .diff:
+        codeBlock
+      case .keyValue:
+        keyValueBlock
+      case .table:
+        tableBlock
+      case .image:
+        imageBlock
+      case .video:
+        videoBlock
+      case .audio:
+        audioBlock
+      case .gallery:
+        galleryBlock
+      case .chart:
+        chartBlock
+      case .status:
+        statusBlock
+      case .progress:
+        progressBlock
+      case .metric:
+        metricBlock
+      case .tool:
+        toolBlock
+      case .timeline:
+        timelineBlock
+      case .notice:
+        noticeBlock
+      case .actions:
+        actionsBlock(title: block.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? t("rich_output_actions", "Actions") : block.title)
+      case .approval:
+        approvalBlock
+          .frame(maxWidth: UIScreen.main.bounds.width * Self.approvalWidthRatio, alignment: .leading)
+      case .form:
+        formBlock
+      case .html:
+        htmlBlock
+      case .webpage:
+        webpageBlock
+      case .file, .link, .citation, .unknown:
+        resourceBlock
+      }
     }
     .sheet(isPresented: $extractedArchivePresented) {
       SignalASIActivitySheet(items: extractedArchiveURLs)
@@ -767,6 +774,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private var imageBlock: some View {
     if isDesktopArtifact {
       if let data = inlineImageData ?? localImageData ?? localDesktopArtifactImageData {
@@ -856,6 +864,7 @@ private struct SignalASIRichBlockView: View {
     )
   }
 
+  @ViewBuilder
   private var audioBlock: some View {
     if let url = mediaURL {
       SignalASIAudioArtifactView(
@@ -886,6 +895,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private var webpageBlock: some View {
     if let url = webpageURL {
       SignalASIWebPagePreviewView(
@@ -898,6 +908,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private var videoBlock: some View {
     if let url = mediaURL {
       SignalASIVideoArtifactView(
@@ -909,6 +920,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private var galleryBlock: some View {
     let items = galleryImageItems
     VStack(alignment: .leading, spacing: 8) {
@@ -1201,6 +1213,7 @@ private struct SignalASIRichBlockView: View {
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 
+  @ViewBuilder
   private var resourceBlock: some View {
     if isDesktopArtifact {
       desktopArtifactBlock
@@ -1223,6 +1236,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private var localDownloadBlock: some View {
     let available = SignalASILocalFileResource.url(for: block) != nil
     VStack(alignment: .leading, spacing: 8) {
@@ -1481,6 +1495,7 @@ private struct SignalASIRichBlockView: View {
       block.metadata["saved_to_downloads"] == "true"
   }
 
+  @ViewBuilder
   private func actionsBlock(title: String) -> some View {
     let isStandalone = block.type == .actions
     VStack(alignment: .leading, spacing: 8) {
@@ -1575,6 +1590,7 @@ private struct SignalASIRichBlockView: View {
     }
   }
 
+  @ViewBuilder
   private func tableRow(_ values: [String], header: Bool, columnCount: Int, rowIndex: Int) -> some View {
     let columnWidth = tableColumnWidth(columnCount)
     HStack(spacing: 0) {
@@ -2560,7 +2576,6 @@ private final class SignalASIAudioArtifactPlayer: NSObject, ObservableObject {
   private func pauseForCoordinator() {
     player?.pause()
     isPlaying = false
-    stopTimer()
   }
 
   private func removeObservers() {
