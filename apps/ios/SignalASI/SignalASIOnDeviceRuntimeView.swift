@@ -307,6 +307,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   @State private var isRefreshingCatalog = false
   @State private var installingPackID: String?
   @State private var installMessage = ""
+  @State private var catalogMessage = ""
 
   private var filteredPacks: [AgentRuntimePackStatus] {
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -505,7 +506,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   @ViewBuilder
   private func catalogEntryRow(_ entry: AgentRuntimePackCatalogEntry) -> some View {
     let installed = SignalASIOnDeviceRuntimeView.packStatus(entry.packId)
-    let ready = installed?.state == .ready && installed?.manifest?.version == entry.version
+    let ready = installed.state == .ready && installed.manifest?.version == entry.version
     let installing = installingPackID == entry.packId
     SignalASISecurityActionRow(
       title: SignalASIOnDeviceRuntimeView.packTitle(entry.packId, language: interfaceLanguage),

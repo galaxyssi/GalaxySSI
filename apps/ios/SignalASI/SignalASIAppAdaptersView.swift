@@ -427,6 +427,7 @@ struct SignalASIAppAdapterDetailView: View {
     case .bluetooth: return t("signalasi.capability.bluetooth", "Bluetooth")
     case .nfc: return t("signalasi.capability.nfc", "NFC")
     case .battery: return t("signalasi.capability.battery", "Battery")
+    case .deviceMemory: return t("signalasi.capability.device_memory", "Device Memory")
     case .network: return t("signalasi.capability.network", "Network")
     case .installedApps: return t("signalasi.capability.installed_apps", "Installed Apps")
     case .intentLaunch: return t("signalasi.capability.intent_launch", "App Handoff")
@@ -528,6 +529,8 @@ private func capabilityIcon(_ id: AgentPhoneCapabilityId) -> String {
     return "wave.3.right"
   case .battery:
     return "battery.75"
+  case .deviceMemory:
+    return "cpu"
   case .network:
     return "network"
   case .installedApps:
