@@ -410,6 +410,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentSubmissionExecutor = Executors.newSingleThreadExecutor()
     internal val outboundMessageExecutor = Executors.newSingleThreadExecutor()
     internal val agentRoutingExecutor = Executors.newSingleThreadExecutor()
+    internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
@@ -482,9 +483,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
     internal val agentConnectorResponseListener = AgentConnectorResponseListener { response ->
         pendingAgentConnectorStreamUpdates.remove(response.sourceMessageId)
-        runOnUiThread {
-            liveAgentConnectorStreams.remove(response.sourceMessageId)
-            consumeAgentConnectorResponse(response)
+        val recoveryKey = "runtime-restore:${response.sourceMessageId}:${response.contactId}"
+        if (!agentConnectorResponsesInFlight.add(recoveryKey)) return@AgentConnectorResponseListener
+        agentRuntimeRecoveryExecutor.execute {
+            runtimeForConnectorResponse(
+                sourceMessageId = response.sourceMessageId,
+                contactId = response.contactId,
+                conversationId = response.conversationId,
+                turnId = response.turnId,
+                taskId = response.taskId,
+                restorePersisted = true
+            )
+            handler.post {
+                agentConnectorResponsesInFlight.remove(recoveryKey)
+                if (isFinishing || isDestroyed) return@post
+                liveAgentConnectorStreams.remove(response.sourceMessageId)
+                consumeAgentConnectorResponse(response)
+            }
         }
     }
     internal val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
@@ -1150,6 +1165,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentSubmissionExecutor.shutdown()
         outboundMessageExecutor.shutdown()
         agentRoutingExecutor.shutdown()
+        agentRuntimeRecoveryExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
         navigationContentExecutor.shutdown()
