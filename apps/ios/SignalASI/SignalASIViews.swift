@@ -514,11 +514,15 @@ struct ConversationView: View {
         .onChange(of: waitingMessageIDs.count) { _ in
           guard let last = displayedMessages.last else { return }
           let animation: Animation? = deviceInputPolicy.reduceMotion ? nil : .default
-          let targetID = waitingMessageIDs.contains(last.id)
-            ? AgentReplyWaitingIndicatorPolicy.viewID(for: last)
-            : last.id
           withAnimation(animation) {
-            proxy.scrollTo(targetID, anchor: .bottom)
+            if waitingMessageIDs.contains(last.id) {
+              proxy.scrollTo(
+                AgentReplyWaitingIndicatorPolicy.viewID(for: last),
+                anchor: .bottom
+              )
+            } else {
+              proxy.scrollTo(last.id, anchor: .bottom)
+            }
           }
         }
       }
