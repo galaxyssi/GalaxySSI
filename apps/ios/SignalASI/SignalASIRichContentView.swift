@@ -1986,7 +1986,7 @@ private struct SignalASIRichBlockView: View {
         return details.joined(separator: " | ")
       }
     }
-    firstNonEmpty([block.text, block.uri, block.mimeType])
+    return firstNonEmpty([block.text, block.uri, block.mimeType])
   }
 
   private var resourceTypeLabel: String {
