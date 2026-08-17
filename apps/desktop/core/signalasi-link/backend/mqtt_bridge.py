@@ -3879,6 +3879,10 @@ def _interrupt_agent_runtime(task, on_event=None) -> None:
 
 
 def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: list[dict], content: str, msg_type: str) -> None:
+    from agent_connector_modes import (
+        is_structured_connector_task_mode,
+        normalize_connector_task_mode,
+    )
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
     source_message_id = str(payload.get("client_message_id") or payload.get("message_id") or "")
@@ -3963,6 +3967,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     image_artifact_required = has_image_attachment and _current_request_needs_returned_image(content)
     has_attachments = bool(attachments) if isinstance(attachments, list) else False
+    connector_task_mode = normalize_connector_task_mode(payload.get("connector_task_mode"))
+    structured_connector_response = is_structured_connector_task_mode(connector_task_mode)
     active_conversation_task = None
     if payload.get("_recovered_task") is not True:
         active_conversation_task = agent_task_manager.active_for_conversation(
@@ -4004,9 +4010,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             for item in attachments
             if isinstance(item, dict)
         ),
-        requested_execution_mode=str(
-            payload.get("execution_mode")
-            or AgentExecutionMode.AUTO_COMPLETE.value
+        requested_execution_mode=(
+            AgentExecutionMode.PLAN_ONLY.value
+            if structured_connector_response
+            else str(
+                payload.get("execution_mode")
+                or AgentExecutionMode.AUTO_COMPLETE.value
+            )
         ),
         requested_task_budget=(
             payload.get("task_budget")
@@ -4362,7 +4372,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 on_event=publish_event,
             )
         current_agent_id = agent_id
-        next_prompt = content_with_attachments(task.task_id)
+        next_prompt = (
+            content
+            if structured_connector_response
+            else content_with_attachments(task.task_id)
+        )
         last_visible_reply = ""
         while True:
             selected_spec = all_agent_specs().get(current_agent_id)
@@ -4430,6 +4444,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         invocation_mode="direct" if recovery_attempts == 0 else "handoff",
                         caller_agent_id=agent_id if recovery_attempts else "",
                         parent_run_id=task.task_id if recovery_attempts else "",
+                        connector_task_mode=connector_task_mode,
                     )
             except Exception as exc:
                 execution_error = exc
@@ -4471,6 +4486,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     on_event=publish_event,
                 )
                 reply = str((delivery or {}).get("reply") or "")
+                if structured_connector_response:
+                    return reply
                 parsed = parse_model_recovery(reply, mobile_context.attachments)
                 parsed_reply = parsed.visible_reply
                 decision = parsed.decision
@@ -4612,14 +4629,18 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 client_route_id=client_route_id,
                 retain_on_desktop=retain_on_desktop,
             )
-        cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs + hidden_artifact_paths)
-        cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, deliverable_output_files)
-        reply, rich_output = build_rich_output(
-            cleaned_reply,
-            deliverable_output_files,
-            task_id,
-            inline_artifacts=False,
-        )
+        if structured_connector_response:
+            reply = raw_result.strip()
+            rich_output = None
+        else:
+            cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs + hidden_artifact_paths)
+            cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, deliverable_output_files)
+            reply, rich_output = build_rich_output(
+                cleaned_reply,
+                deliverable_output_files,
+                task_id,
+                inline_artifacts=False,
+            )
         add_task_trace(
             "agent_replied",
             f"{agent_id} chars={len(reply)}",
@@ -4705,6 +4726,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     from response_policy import clarification_question, response_language_tag
 
     if (
+        not structured_connector_response
+        and
         payload.get("_recovered_task") is not True
         and active_conversation_task is not None
         and active_turn_decision is not None
@@ -4780,6 +4803,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         ),
     )
     if (
+        not structured_connector_response
+        and
         clarification.mode == AgentClarificationMode.ASK_LOCALLY
         and payload.get("_recovered_task") is not True
     ):
@@ -5408,7 +5433,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         event_status = "failed"
                         event_result = _missing_returned_image_message(content)
                         event["error"] = "Requested image artifact was not generated"
-            if event_status == "completed":
+            if event_status == "completed" and not structured_connector_response:
                 from task_workspace import task_artifacts
 
                 generated_artifacts = task_artifacts(task_id)
@@ -5622,8 +5647,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             "conversation_attachments_restored",
                             len(restored_context_paths),
                         )
-                styled_turn = apply_response_policy(content, preferred_response_language)
-                compact_turn = compact_codex_turn_prompt(content, preferred_response_language)
+                styled_turn = (
+                    content
+                    if structured_connector_response
+                    else apply_response_policy(content, preferred_response_language)
+                )
+                compact_turn = (
+                    content
+                    if structured_connector_response
+                    else compact_codex_turn_prompt(content, preferred_response_language)
+                )
                 has_prior_mobile_dialogue = bool(
                     mobile_context.messages
                     or mobile_context.summary
@@ -5634,7 +5667,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if fast_chat_delivery and not has_prior_mobile_dialogue
                     else styled_turn
                 )
-                full_turn = (
+                full_turn = content if structured_connector_response else (
                     (
                         fresh_turn
                         if full_desktop_executor
@@ -5675,7 +5708,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     selected_turn = compact_turn
                 else:
                     selected_turn = styled_turn
-                task_prompt = (
+                task_prompt = content if structured_connector_response else (
                     (
                         selected_turn
                         if full_desktop_executor
@@ -5684,10 +5717,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if fast_chat_delivery
                     else content_with_attachments(task.task_id, selected_turn)
                 )
-                if restored_context_note:
+                if restored_context_note and not structured_connector_response:
                     task_prompt += restored_context_note
                 fresh_task_prompt = full_turn
-                if not fast_chat_delivery:
+                if not fast_chat_delivery and not structured_connector_response:
                     task_prompt += f"\n\n{execution_contract(execution_policy)}"
                     fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
                 input_paths = (

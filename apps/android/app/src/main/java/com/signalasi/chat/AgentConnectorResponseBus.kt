@@ -239,6 +239,28 @@ object AgentConnectorResponseStore {
     }
 
     @Synchronized
+    fun removeHandled(
+        context: Context,
+        response: AgentConnectorResponse,
+        terminal: Boolean
+    ) {
+        save(context, retainedAfterHandledResponse(pending(context), response, terminal))
+    }
+
+    internal fun retainedAfterHandledResponse(
+        responses: List<AgentConnectorResponse>,
+        handled: AgentConnectorResponse,
+        terminal: Boolean
+    ): List<AgentConnectorResponse> = responses.filterNot { candidate ->
+        if (terminal && handled.conversationId.isNotBlank() && handled.turnId.isNotBlank()) {
+            candidate.conversationId == handled.conversationId && candidate.turnId == handled.turnId
+        } else {
+            candidate.sourceMessageId == handled.sourceMessageId &&
+                candidate.contactId == handled.contactId
+        }
+    }
+
+    @Synchronized
     fun removeTurn(context: Context, conversationId: String, turnId: String) {
         if (conversationId.isBlank() || turnId.isBlank()) return
         save(

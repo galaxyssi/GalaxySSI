@@ -552,6 +552,7 @@ def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
 
 
 def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) -> str:
+    from agent_connector_modes import is_structured_connector_task_mode
     from agent_collaboration_channels import (
         CollaborationContext,
         CollaborationScope,
@@ -632,6 +633,9 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             attachments=attachment_names,
         )
     )
+    structured_connector_response = is_structured_connector_task_mode(
+        request.checkpoint.get("connector_task_mode")
+    )
     harness = AgentExecutionHarness(
         request.run_id,
         agent_id,
@@ -645,13 +649,13 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     if collaboration_context.text:
         base_prompt = f"{base_prompt}\n\n{collaboration_context.text}"
     current_prompt = base_prompt
-    if "SignalASI execution contract:" not in current_prompt:
+    if not structured_connector_response and "SignalASI execution contract:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{contract}"
     self_check_contract = response_self_check_contract(
         execution_prompt,
         attachment_names,
     )
-    if "SignalASI final response self-check:" not in current_prompt:
+    if not structured_connector_response and "SignalASI final response self-check:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{self_check_contract}"
     failure = ""
     failed_self_check = None
@@ -790,7 +794,18 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             cloud_provider=cloud_provider,
             paid_provider=cloud_provider,
         )
-        reply = sanitize_assistant_response(raw_reply)
+        reply = (
+            str(raw_reply or "").strip()
+            if structured_connector_response
+            else sanitize_assistant_response(raw_reply)
+        )
+        if structured_connector_response and reply:
+            harness.progress("observe")
+            add_phase("observe", "Structured Agent result received")
+            harness.progress("verify", response_nonempty=True)
+            add_phase("verify", "Structured Agent result received")
+            harness.progress("finalize")
+            return reply
         if reply and not _agent_reply_failed(reply) and not looks_failed_reply(reply):
             harness.progress("observe")
             add_phase("observe", "Agent result received")
@@ -1829,6 +1844,7 @@ def deliver_agent_sync(
     collaboration_task_id: str = "",
     repository_id: str = "",
     working_directory: str = "",
+    connector_task_mode: str = "",
     run_id: str = "",
     invocation_mode: str | AgentInvocationMode = AgentInvocationMode.DIRECT,
     caller_agent_id: str = "",
@@ -1895,6 +1911,7 @@ def deliver_agent_sync(
                     ).strip(),
                     "repository_id": str(repository_id or "").strip(),
                     "working_directory": str(working_directory or "").strip(),
+                    "connector_task_mode": str(connector_task_mode or "").strip(),
                 },
             )
         )

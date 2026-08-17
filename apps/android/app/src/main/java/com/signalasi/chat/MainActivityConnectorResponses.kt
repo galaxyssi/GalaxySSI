@@ -659,10 +659,12 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         .toString()
                 )
                 persistAgentWorkspaceSnapshot(turnId, state, runtime)
-                AgentConnectorResponseStore.removeTurn(
+                // A continuation response can arrive before this hook finishes. Keep later
+                // responses for a live turn and clear the whole turn only after terminal state.
+                AgentConnectorResponseStore.removeHandled(
                     this@resumeAgentConnectorResponse,
-                    conversationId,
-                    turnId
+                    response,
+                    terminal = state.phase.isTerminalAgentPhase()
                 )
                 AgentPendingDeliveryStore.completeResponse(
                     this@resumeAgentConnectorResponse,
@@ -838,6 +840,11 @@ internal fun MainActivity.finishAgentConnectorResponseUi(
         clearAgentTaskWatchdogTranscript(conversationId, turnId)
     }
     renderAgentState(state, conversationId, turnId)
+    if (state.phase == AgentPhase.WAITING_RESPONSE) {
+        // Rebind happens immediately above. Consume a continuation that raced the previous
+        // response instead of leaving it parked until another connector event or app restart.
+        consumePendingAgentConnectorResponses()
+    }
     if (state.phase == AgentPhase.COMPLETED || state.phase == AgentPhase.FAILED ||
         state.phase == AgentPhase.CANCELLED
     ) {

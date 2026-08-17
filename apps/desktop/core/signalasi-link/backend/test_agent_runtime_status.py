@@ -164,11 +164,16 @@ class AgentRuntimeStatusTest(unittest.TestCase):
                 caller_agent_id="coordinator",
                 parent_run_id="parent-run",
                 handoff_chain=("root",),
+                connector_task_mode="phone_supervised_project_plan_v1",
             )
 
         request = captured[0]
         self.assertEqual("child-run", request.run_id)
         self.assertEqual("parent-run", request.checkpoint["task_id"])
+        self.assertEqual(
+            "phone_supervised_project_plan_v1",
+            request.checkpoint["connector_task_mode"],
+        )
         self.assertEqual(AgentInvocationMode.TOOL, request.invocation_mode)
         self.assertEqual("coordinator", request.caller_agent_id)
         self.assertEqual("parent-run", request.parent_run_id)

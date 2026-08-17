@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from desktop_agent_adapters import AgentAdapterRequest
@@ -156,6 +157,9 @@ def test_common_agent_adapter_repairs_acknowledgement_before_returning():
     with patch("agent_gateway.all_agent_specs", return_value={"hermes": spec}), patch(
         "agent_gateway._ask_agent_sync_inner",
         side_effect=ask,
+    ), patch(
+        "acp_runtime.acp_runtime",
+        return_value=SimpleNamespace(execute=lambda *_args, **_kwargs: None),
     ):
         reply = _execute_agent_adapter_request(
             "hermes",
@@ -169,3 +173,41 @@ def test_common_agent_adapter_repairs_acknowledgement_before_returning():
     assert reply.startswith("The report contains")
     assert len(prompts) == 2
     assert "Repair the final answer" in prompts[1]
+
+
+def test_structured_phone_planner_returns_raw_json_without_generic_contracts():
+    spec = AgentSpec(
+        id="hermes",
+        name="Hermes Agent",
+        kind="local-cli",
+        command=["hermes"],
+        timeout=10,
+    )
+    raw_plan = '{"summary":"Inspect the phone workspace","actions":[]}'
+    prompts: list[str] = []
+
+    def ask(*args, **kwargs):
+        prompts.append(str(args[1] if len(args) > 1 else kwargs.get("prompt") or ""))
+        return raw_plan
+
+    with patch("agent_gateway.all_agent_specs", return_value={"hermes": spec}), patch(
+        "agent_gateway._ask_agent_sync_inner",
+        side_effect=ask,
+    ):
+        reply = _execute_agent_adapter_request(
+            "hermes",
+            AgentAdapterRequest(
+                agent_id="hermes",
+                prompt="Return exactly one JSON ActionPlan",
+                checkpoint={
+                    "execution_prompt": "Plan a phone-local project task",
+                    "execution_policy": {"execution_mode": "plan_only"},
+                    "connector_task_mode": "phone_supervised_project_plan_v1",
+                },
+            ),
+        )
+
+    assert reply == raw_plan
+    assert len(prompts) == 1
+    assert "SignalASI execution contract:" not in prompts[0]
+    assert "SignalASI final response self-check:" not in prompts[0]

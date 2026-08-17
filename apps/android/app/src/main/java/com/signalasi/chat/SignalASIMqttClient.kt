@@ -448,6 +448,7 @@ object SignalASIMqttClient {
         turnId: String = "",
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
+        connectorTaskMode: String = "",
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         runId: String = ""
     ): Boolean = publishUserMessageResult(
@@ -461,6 +462,7 @@ object SignalASIMqttClient {
         taskId = taskId,
         runId = runId,
         executionMode = executionMode,
+        connectorTaskMode = connectorTaskMode,
         traceId = traceId
     ).accepted
 
@@ -474,6 +476,7 @@ object SignalASIMqttClient {
         turnId: String = "",
         taskId: String = "",
         executionMode: AgentTaskExecutionMode? = null,
+        connectorTaskMode: String = "",
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         runId: String = ""
     ): MqttPublishResult {
@@ -525,6 +528,9 @@ object SignalASIMqttClient {
             .put("execution_mode", resolvedExecutionMode.wireValue)
             .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("time", System.currentTimeMillis())
+        connectorTaskMode.trim().takeIf(String::isNotBlank)?.let {
+            payload.put("connector_task_mode", it.take(96))
+        }
         recordPublishStage("payload_ready", "chars=${content.length}")
         runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }
         val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
