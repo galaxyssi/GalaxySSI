@@ -36,24 +36,18 @@ internal object AgentReplyWaitingIndicatorPolicy {
         val unresolved = relevant.asSequence()
             .filterNot { it.turnId in resolved }
             .toList()
-        val indicatorsByTurn = unresolved.associateBy(PendingAgentReplyIndicator::turnId)
-        val insertedTurnIds = mutableSetOf<String>()
+        val latestUnresolved = unresolved.maxByOrNull(PendingAgentReplyIndicator::startedAtMillis)
+        val supersededTurnIds = unresolved.asSequence()
+            .filterNot { it === latestUnresolved }
+            .map(PendingAgentReplyIndicator::turnId)
+            .toSet()
         val visibleEntries = buildList {
-            entries.forEach { transcriptEntry ->
-                add(transcriptEntry)
-                if (transcriptEntry.role != AgentTranscriptRole.USER) return@forEach
-                val turnId = transcriptEntry.turnId.ifBlank { transcriptEntry.taskId }
-                indicatorsByTurn[turnId]
-                    ?.takeIf { insertedTurnIds.add(turnId) }
-                    ?.let { add(entry(it)) }
-            }
-            unresolved.asSequence()
-                .filterNot { it.turnId in insertedTurnIds }
-                .forEach { add(entry(it)) }
+            addAll(entries)
+            latestUnresolved?.let { add(entry(it)) }
         }
         return AgentReplyWaitingRenderResult(
             entries = visibleEntries,
-            resolvedTurnIds = resolved
+            resolvedTurnIds = resolved + supersededTurnIds
         )
     }
 
