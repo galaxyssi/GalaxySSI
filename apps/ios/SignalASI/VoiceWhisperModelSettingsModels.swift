@@ -108,7 +108,7 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
         "\(model.sizeLabel) · \(model.targetChipset.isEmpty ? model.artifactFormat.rawValue : model.targetChipset)"
       )
     }
-    String(
+    return String(
       format: localized("voice_asr_model_profile_detail", "%@ - %@\n%@"),
       model.sizeLabel,
       model.quantization.rawValue,
