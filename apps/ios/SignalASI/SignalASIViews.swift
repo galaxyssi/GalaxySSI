@@ -131,7 +131,7 @@ struct RootView: View {
   private var interfaceLanguage: String {
     // Re-evaluate automatic language after iOS reports a locale or time change.
     _ = systemLocaleRevision
-    LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
+    return LanguagePolicySettings.resolveInterface(store.languagePolicy.interfaceLanguage)
   }
 
   var body: some View {
