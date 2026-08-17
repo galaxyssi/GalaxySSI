@@ -403,6 +403,37 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual({}, events[-1][1]["approval_request"])
         self.assertEqual({}, run.pending_requests)
 
+    def test_plan_only_command_approval_is_declined(self):
+        from agent_execution_harness import AgentExecutionMode, execution_policy_for
+
+        server, run, events = self._event_server()
+        run.execution_policy = execution_policy_for(
+            "Return a phone ActionPlan",
+            requested_execution_mode=AgentExecutionMode.PLAN_ONLY,
+        )
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append(
+            (request_id, result)
+        )
+
+        server._handle_event({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "itemId": "blocked-phone-plan-command",
+                "startedAtMs": int(time.time() * 1000),
+                "command": "git clone https://github.com/signalasi/SignalASI",
+                "cwd": "C:/workspace",
+                "reason": "Inspect the repository",
+            },
+        })
+
+        self.assertEqual([(42, {"decision": "decline"})], responses)
+        self.assertIn("phone ActionPlan", events[-1][1]["current_step"])
+
     def test_same_conversation_reuses_thread(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,

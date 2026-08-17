@@ -258,7 +258,7 @@ class AgentSystemToolPlannerTest {
         val supervisor = plan.actions.single()
         assertEquals(PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE, supervisor.parameters["connector_task_mode"])
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
-        assertTrue(supervisor.parameters["prompt"].orEmpty().contains("Default execution_location to phone"))
+        assertTrue(supervisor.parameters["prompt"].orEmpty().contains("Always set execution_location to phone"))
 
         val generatedSource = "values = [1, 2, 3]\n    # preserve indentation and / characters\nprint(sum(values) / len(values))\nassert sum(values) == 6"
         val manifest = JSONObject()
@@ -515,8 +515,10 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, action.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(action.parameters.getValue("prompt").contains(AgentMobileProjectNativeTools.CLONE))
         assertTrue(action.parameters.getValue("prompt").contains("Return exactly one JSON ActionPlan"))
-        assertTrue(action.parameters.getValue("prompt").contains("\"execution_location\":\"phone|desktop\""))
+        assertTrue(action.parameters.getValue("prompt").contains("\"execution_location\":\"phone\""))
         assertTrue(action.parameters.getValue("prompt").contains("reasoning provider are independent"))
+        assertTrue(action.parameters.getValue("prompt").contains("Desktop-hosted browser search"))
+        assertFalse(action.parameters.getValue("prompt").contains("Available Desktop execution connectors"))
         assertTrue(action.parameters.getValue("prompt").contains("artifact_paths"))
         assertTrue(action.parameters.getValue("prompt").contains("Do not require an artifact for repository clone"))
         assertTrue(action.parameters.getValue("prompt").contains("verified ZIP"))

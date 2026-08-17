@@ -2622,7 +2622,7 @@ def _plan_only_command(spec: AgentSpec, command: list[str]) -> list[str]:
             command,
             {
                 "--sandbox": "read-only",
-                "--ask-for-approval": "never",
+                "--ask-for-approval": "untrusted",
             },
         )
     if spec.id == "claude":

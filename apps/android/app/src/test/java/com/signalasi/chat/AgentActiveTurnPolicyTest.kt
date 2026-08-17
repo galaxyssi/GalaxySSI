@@ -7,6 +7,14 @@ import org.junit.Test
 
 class AgentActiveTurnPolicyTest {
     @Test
+    fun explicitContinuationsAreRecognizedWithoutChangingIndependentTasks() {
+        assertTrue(AgentActiveTurnPolicy.continuesPriorTask("继续"))
+        assertTrue(AgentActiveTurnPolicy.continuesPriorTask("Use the previous result and retry"))
+        assertFalse(AgentActiveTurnPolicy.continuesPriorTask("新任务：查今天的新闻"))
+        assertFalse(AgentActiveTurnPolicy.continuesPriorTask("hello"))
+    }
+
+    @Test
     fun standaloneCommandsInterruptTheActiveTask() {
         listOf(
             "Stop",

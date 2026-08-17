@@ -15,7 +15,7 @@ def remote_agent_security_policy(*, plan_only: bool = False) -> RemoteAgentSecur
     """Run paired remote Agent work without an additional SignalASI approval layer."""
     if plan_only:
         return RemoteAgentSecurityPolicy(
-            approval_policy="never",
+            approval_policy="untrusted",
             sandbox="read-only",
             sensitive_actions_require_approval=False,
         )
