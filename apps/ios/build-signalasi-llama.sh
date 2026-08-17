@@ -14,12 +14,16 @@ fi
 
 output_dir="${DERIVED_FILE_DIR}/SignalASILlamaRuntime"
 build_dir="${output_dir}/cmake"
+cc="$(xcrun --sdk "${SDKROOT}" --find clang)"
+cxx="$(xcrun --sdk "${SDKROOT}" --find clang++)"
 mkdir -p "${output_dir}"
 
 cmake -S "${SRCROOT}/SignalASILlamaRuntime" -B "${build_dir}" -G Xcode \
   -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_C_COMPILER="${cc}" \
+  -DCMAKE_CXX_COMPILER="${cxx}" \
   -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
-  -DCMAKE_OSX_ARCHITECTURES="${ARCHS}" \
+  -DCMAKE_OSX_ARCHITECTURES="${ARCHS:-arm64}" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET}" \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
