@@ -61,19 +61,18 @@ internal class AgentLinuxProjectCloneBackend(
     }
 
     private fun cloneScript(repositoryUrl: String, branch: String, depth: Int): String {
-        val branchArgument = branch.takeIf(String::isNotBlank)
-            ?.let { " --branch ${shellQuote(it)} --single-branch" }
-            .orEmpty()
+        val localBranch = branch.trim().ifBlank { "main" }
+        val remoteRef = branch.trim().takeIf(String::isNotBlank)
+            ?.let { "refs/heads/$it" }
+            ?: "HEAD"
         return """
             set -eu
             export LC_ALL=C
             export GIT_TERMINAL_PROMPT=0
             control_dir='.signalasi-runtime'
-            clone_dir="${'$'}control_dir/repository"
             askpass="${'$'}control_dir/git-askpass.sh"
             mkdir -p "${'$'}control_dir"
             if test -f /etc/debian_version; then mkdir -p /root/.cache/tmp; fi
-            rm -rf "${'$'}clone_dir"
             git_runtime_ready() {
               command -v git >/dev/null 2>&1 &&
                 { test ! -f /etc/debian_version || test -s /etc/ssl/certs/ca-certificates.crt; }
@@ -95,9 +94,7 @@ internal class AgentLinuxProjectCloneBackend(
             SIGNALASI_ASKPASS
             chmod 700 "${'$'}askpass"
             export GIT_ASKPASS="${'$'}PWD/${'$'}askpass"
-            printf '%s\n' '__SIGNALASI_STAGE__:clone_repository'
-            git -c credential.helper= clone --depth $depth$branchArgument -- ${shellQuote(repositoryUrl)} "${'$'}clone_dir"
-            printf '%s\n' '__SIGNALASI_STAGE__:activate_repository'
+            printf '%s\n' '__SIGNALASI_STAGE__:prepare_repository'
             find . -mindepth 1 -maxdepth 1 \
               ! -name "${'$'}control_dir" \
               ! -name '.tmp' \
@@ -108,9 +105,15 @@ internal class AgentLinuxProjectCloneBackend(
               ! -name '.signalasi-stderr' \
               ! -name '.signalasi-main' \
               -exec rm -rf -- {} +
-            cp -a "${'$'}clone_dir"/. .
-            rm -rf "${'$'}clone_dir" "${'$'}askpass"
             git config --global --add safe.directory "${'$'}PWD"
+            git init -q .
+            git remote add origin ${shellQuote(repositoryUrl)}
+            printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
+            git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
+            printf '%s\n' '__SIGNALASI_STAGE__:checkout_repository'
+            git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+            rm -f "${'$'}askpass"
+            printf '%s\n' '__SIGNALASI_STAGE__:verify_repository'
             git status --short --branch
         """.trimIndent()
     }

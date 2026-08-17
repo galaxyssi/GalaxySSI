@@ -46,10 +46,11 @@ class AgentQemuRuntimeEngineTest {
             configFile = configFile,
             logFile = File(root, "qemu.log"),
             memoryMegabytes = 512,
-            cpuCount = 2
+            cpuCount = 6
         )
 
         val command = plan.command.joinToString(" ")
+        assertTrue(command.contains("-smp 6"))
         assertTrue(command.contains("user,id=signalasi_net,restrict=off,ipv6=off"))
         assertFalse(command.contains("dns="))
         assertTrue(command.contains("virtio-net-device,netdev=signalasi_net"))

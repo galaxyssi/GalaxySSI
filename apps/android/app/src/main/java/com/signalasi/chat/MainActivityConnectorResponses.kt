@@ -404,27 +404,28 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
     if (!agentConnectorResponsesInFlight.add(responseKey)) return
     handler.postDelayed(
         {
-            agentConnectorResponsesInFlight.remove(responseKey)
-            val runtime = runtimeForConnectorResponse(
-                response.sourceMessageId,
-                response.contactId,
-                response.conversationId,
-                response.turnId,
-                response.taskId
-            )
-            when {
-                runtime != null -> consumeAgentConnectorResponse(response)
-                attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
-                    deferSupervisedProjectControlResponse(response, attempt + 1)
-                else -> {
-                    // Keep the durable response parked without rebuilding an Agent on every
-                    // liveness sweep. A real connector event can still consume it immediately.
+            agentRuntimeRecoveryExecutor.execute {
+                val runtime = runtimeForConnectorResponse(
+                    sourceMessageId = response.sourceMessageId,
+                    contactId = response.contactId,
+                    conversationId = response.conversationId,
+                    turnId = response.turnId,
+                    taskId = response.taskId,
+                    restorePersisted = true
+                )
+                handler.post {
                     agentConnectorResponsesInFlight.remove(responseKey)
-                    Log.i(
-                        "SignalASIAgent",
-                        "Parked supervised control response until its originating run is available " +
-                            "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
-                    )
+                    if (isFinishing || isDestroyed) return@post
+                    when {
+                        runtime != null -> consumeAgentConnectorResponse(response)
+                        attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
+                            deferSupervisedProjectControlResponse(response, attempt + 1)
+                        else -> Log.i(
+                            "SignalASIAgent",
+                            "Parked supervised control response until its originating run is available " +
+                                "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                        )
+                    }
                 }
             }
         },
@@ -879,6 +880,16 @@ internal fun MainActivity.consumePendingAgentConnectorResponsesAsync() {
             "Pending connector responses count=${pending.size}"
         )
         if (pending.isEmpty()) return@thread
+        pending.forEach { response ->
+            runtimeForConnectorResponse(
+                sourceMessageId = response.sourceMessageId,
+                contactId = response.contactId,
+                conversationId = response.conversationId,
+                turnId = response.turnId,
+                taskId = response.taskId,
+                restorePersisted = true
+            )
+        }
         runOnUiThread { pending.forEach(::consumeAgentConnectorResponse) }
     }
 }
@@ -889,7 +900,8 @@ internal fun MainActivity.runtimeForConnectorResponse(
     conversationId: String = "",
     turnId: String = "",
     taskId: String = "",
-    allowTransportOnly: Boolean = false
+    allowTransportOnly: Boolean = false,
+    restorePersisted: Boolean = Looper.myLooper() != Looper.getMainLooper()
 ): MobileNativeAgent? {
     fun MobileNativeAgent.accepts(): Boolean =
         if (allowTransportOnly) {
@@ -930,6 +942,10 @@ internal fun MainActivity.runtimeForConnectorResponse(
         provisionalAgentTasks.remove(runtime)
         return runtime
     }
+    mobileNativeAgent.takeIf {
+        it.accepts() || it.acceptsRecoveryPredecessor()
+    }?.let { return it }
+    if (!restorePersisted || Looper.myLooper() == Looper.getMainLooper()) return null
     val cleanTurnId = turnId.trim()
     if (cleanTurnId.isNotBlank()) {
         val restored = MobileNativeAgent(
@@ -971,9 +987,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
             return restored
         }
     }
-    return mobileNativeAgent.takeIf {
-        it.accepts() || it.acceptsRecoveryPredecessor()
-    }
+    return null
 }
 
 internal fun MainActivity.consumeOrphanedAgentConnectorResponse(response: AgentConnectorResponse): Boolean {

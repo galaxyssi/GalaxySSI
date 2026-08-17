@@ -103,7 +103,7 @@ object AgentDeviceProfilePolicy {
                 id = "tablet",
                 readTasks = 3,
                 teamConcurrency = 4,
-                qemuCpu = 4,
+                qemuCpu = 6,
                 qemuMemoryMb = 1_536,
                 captureLongEdgePx = 2_048,
                 touchTargetDp = 48
@@ -125,7 +125,7 @@ object AgentDeviceProfilePolicy {
                 id = "phone",
                 readTasks = 2,
                 teamConcurrency = 3,
-                qemuCpu = 4,
+                qemuCpu = 6,
                 qemuMemoryMb = 1_536,
                 captureLongEdgePx = 1_920,
                 touchTargetDp = 48

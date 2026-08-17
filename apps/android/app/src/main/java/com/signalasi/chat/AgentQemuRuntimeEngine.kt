@@ -130,7 +130,7 @@ internal object AgentQemuLaunchPlanBuilder {
 
     private const val MIN_MEMORY_MEGABYTES = 256
     private const val MAX_MEMORY_MEGABYTES = 2_048
-    private const val MAX_CPU_COUNT = 4
+    private const val MAX_CPU_COUNT = 8
     private const val MAX_COMMAND_ARGUMENTS = 256
     private const val MAX_UNIX_SOCKET_PATH_BYTES = 100
     private const val MAX_PACK_SERIAL_CHARS = 20
