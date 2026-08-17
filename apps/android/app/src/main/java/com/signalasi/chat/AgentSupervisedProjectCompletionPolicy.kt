@@ -62,7 +62,8 @@ internal object AgentSupervisedProjectCompletionPolicy {
     )
     private val COMMIT_PATTERNS = listOf(
         Regex("\\bgit\\s+commit\\b"),
-        Regex("\\bcommit\\b"),
+        Regex("\\bcommit\\s+(?:the\\s+)?(?:change|changes|code|work|files?|project)\\b"),
+        Regex("\\b(?:create|make|record|save)\\s+(?:a\\s+)?commit\\b"),
         Regex("\u63d0\u4ea4.{0,8}(?:\u4ee3\u7801|\u6539\u52a8|\u4fee\u6539|\u53d8\u66f4|\u63d0\u4ea4\u8bb0\u5f55)")
     )
     private val PROJECT_CHANGE_PATTERNS = listOf(

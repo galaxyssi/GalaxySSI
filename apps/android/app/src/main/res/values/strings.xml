@@ -2532,7 +2532,7 @@
     <string name="agent_no_reply_invalid_title">This request could not be used</string>
     <string name="agent_no_reply_invalid_message">%1$s could not use the input or file format. Check the request or choose a supported file, then retry.</string>
     <string name="agent_no_reply_unknown_title">No verified result</string>
-    <string name="agent_no_reply_unknown_message">%1$s stopped without a verified result. Retry once; if it happens again, open diagnostics.</string>
+    <string name="agent_no_reply_unknown_message">The task did not produce a verified result. Retry once; if it happens again, open diagnostics.</string>
     <string name="agent_recovery_retry">Retry</string>
     <string name="agent_recovery_switch_agent">Use another Agent</string>
     <string name="agent_recovery_degrade">Safe fallback</string>

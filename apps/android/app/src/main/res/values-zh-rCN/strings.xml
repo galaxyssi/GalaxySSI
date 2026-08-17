@@ -2439,7 +2439,7 @@
     <string name="agent_no_reply_invalid_title">当前请求无法处理</string>
     <string name="agent_no_reply_invalid_message">%1$s 无法使用当前输入或文件格式。请检查请求或换用支持的文件后重试。</string>
     <string name="agent_no_reply_unknown_title">没有得到有效结果</string>
-    <string name="agent_no_reply_unknown_message">%1$s 已停止，但没有返回经过验证的结果。请先重试一次；如果再次发生，再打开诊断。</string>
+    <string name="agent_no_reply_unknown_message">任务未能获得经过验证的结果。请重试；如果再次发生，再打开诊断查看具体失败步骤。</string>
     <string name="agent_recovery_retry">重试</string>
     <string name="agent_recovery_switch_agent">更换 Agent</string>
     <string name="agent_recovery_degrade">安全降级</string>

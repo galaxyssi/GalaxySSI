@@ -47,6 +47,37 @@ class AgentSupervisedProjectCompletionPolicyTest {
     }
 
     @Test
+    fun commitHashQueriesDoNotBecomeRepositoryMutations() {
+        listOf(
+            "Return the observed branch and commit",
+            "Inspect the current branch and HEAD commit",
+            "Show the current commit hash",
+            "Return the HEAD commit SHA"
+        ).forEach { goal ->
+            assertTrue(
+                goal,
+                AgentSupervisedProjectCompletionPolicy.missingEvidence(goal, emptyList()).isEmpty()
+            )
+        }
+    }
+
+    @Test
+    fun explicitCommitMutationsStillRequireAReceipt() {
+        listOf(
+            "Git commit the changes",
+            "Commit the project changes",
+            "Create a commit",
+            "Make a commit"
+        ).forEach { goal ->
+            assertEquals(
+                goal,
+                listOf("a successful commit of the verified phone project"),
+                AgentSupervisedProjectCompletionPolicy.missingEvidence(goal, emptyList())
+            )
+        }
+    }
+
+    @Test
     fun ordinaryLocalProjectDoesNotRequirePublication() {
         assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(
             "Write and verify a Python program on this phone",

@@ -58,7 +58,7 @@ internal fun MobileNativeAgent.submitGoal(
         retryTaskCommand(requestedGoal) -> return retryFailedAction()
         approveTaskCommand(requestedGoal) -> return approveNextAction()
         pauseTaskCommand(requestedGoal) -> return pauseCurrentTask()
-        resumeTaskCommand(requestedGoal) -> return resumeCurrentTask()
+        resumeTaskCommand(requestedGoal) -> return continueCurrentTask()
         replanTaskCommand(requestedGoal) -> return replanCurrentTask()
         rollbackTaskCommand(requestedGoal) -> return rollbackLastAction()
         cancelTaskCommand(requestedGoal) -> return cancelCurrentTask()
@@ -735,7 +735,7 @@ internal fun MobileNativeAgent.executePlannedAction(
     if (lastActionResult?.success != true && replanReason.isNotBlank()) {
         val failureReason = lastActionResult?.message.orEmpty().ifBlank { replanReason }
         if (!recordExecutionFailure(
-                failureClass = "action:${hardenedAction.kind.name}",
+                failureClass = AgentActionFailureIdentity.failureClass(hardenedAction),
                 reason = failureReason,
                 actionId = hardenedAction.id
             )
@@ -1699,6 +1699,17 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
     }
     return reconcileExecutionLoop(snapshot())
+}
+
+internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {
+    val plan = currentPlan ?: return snapshot()
+    return when {
+        phase == AgentPhase.PAUSED -> resumeCurrentTask()
+        plan.actions.any { it.status == AgentActionStatus.FAILED } -> retryFailedAction()
+        phase == AgentPhase.FAILED -> replanCurrentTask()
+        plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } -> executeFirstPendingAction()
+        else -> snapshot()
+    }
 }
 
 internal fun MobileNativeAgent.retryFailedAction(): AgentUiState {

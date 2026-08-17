@@ -151,7 +151,12 @@ internal fun MobileNativeAgent.resumeTaskCommand(goal: String): Boolean {
     return normalized == "resume" ||
         normalized == "resume task" ||
         normalized == "resume execution" ||
-        normalized == "continue task"
+        normalized == "continue" ||
+        normalized == "continue task" ||
+        normalized == "continue execution" ||
+        normalized == "继续" ||
+        normalized == "继续任务" ||
+        normalized == "继续执行"
 }
 
 internal fun MobileNativeAgent.replanTaskCommand(goal: String): Boolean {

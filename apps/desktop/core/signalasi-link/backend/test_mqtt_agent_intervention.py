@@ -151,6 +151,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
         content: str,
         execution_mode: str = "auto_complete",
         task_budget: dict | None = None,
+        connector_task_mode: str = "",
     ):
         manager = _TaskManager()
         provider = _Provider()
@@ -180,6 +181,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
                     "attachments": [],
                     "execution_mode": execution_mode,
                     "task_budget": task_budget or {},
+                    "connector_task_mode": connector_task_mode,
                 },
                 trace=[],
                 content=content,
@@ -248,6 +250,17 @@ class MqttAgentInterventionTests(unittest.TestCase):
         self.assertEqual(1_048_576, budget["max_network_bytes"])
         self.assertFalse(budget["allow_cloud"])
         self.assertFalse(budget["allow_paid_providers"])
+
+    def test_supervised_phone_planner_forces_an_independent_plan_only_task(self):
+        manager, provider, _published = self._dispatch(
+            "Return exactly one JSON ActionPlan",
+            execution_mode="auto_complete",
+            connector_task_mode="phone_supervised_project_plan_v1",
+        )
+
+        self.assertEqual([], manager.cancelled)
+        self.assertEqual([], provider.cancelled)
+        self.assertEqual("plan_only", manager.created_execution_policy["execution_mode"])
 
 
 if __name__ == "__main__":
