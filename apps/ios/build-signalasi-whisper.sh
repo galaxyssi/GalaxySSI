@@ -18,16 +18,17 @@ cc="$(xcrun --sdk "${SDKROOT}" --find clang)"
 cxx="$(xcrun --sdk "${SDKROOT}" --find clang++)"
 mkdir -p "${output_dir}"
 
-cmake -S "${SRCROOT}/SignalASIWhisperRuntime" -B "${build_dir}" -G Xcode \
+cmake -S "${SRCROOT}/SignalASIWhisperRuntime" -B "${build_dir}" -G "Unix Makefiles" \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_C_COMPILER="${cc}" \
   -DCMAKE_CXX_COMPILER="${cxx}" \
+  -DCMAKE_BUILD_TYPE="${CONFIGURATION}" \
   -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
   -DCMAKE_OSX_ARCHITECTURES="${ARCHS:-arm64}" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET}" \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
-cmake --build "${build_dir}" --config "${CONFIGURATION}" --target signalasi-whisper
+cmake --build "${build_dir}" --target signalasi-whisper -- -j1
 
 archives=()
 while IFS= read -r archive; do
