@@ -125,7 +125,7 @@ final class LocalModelArtifactDownloadCoordinator: ObservableObject {
       withIdentifier: Self.backgroundSessionIdentifier
     )
     configuration.sessionSendsLaunchEvents = true
-    configuration.discretionary = false
+    configuration.isDiscretionary = false
     configuration.allowsCellularAccess = true
     if #available(iOS 13.0, *) {
       configuration.allowsExpensiveNetworkAccess = true
@@ -528,7 +528,7 @@ enum LocalModelHubArtifactClient {
     return files.compactMap { file in
       let path = file["Path"] as? String
       let name = file["Name"] as? String
-      guard let fileName = [path, name].compactMap({ value in
+      guard let fileName = [path, name].compactMap({ (value: String?) -> String? in
         guard let value, !value.isEmpty else { return nil }
         return value
       }).first,

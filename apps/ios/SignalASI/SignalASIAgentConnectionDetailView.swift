@@ -370,7 +370,7 @@ private struct SignalASIAgentConnectionHeroCard: View {
         .lineLimit(2)
         .minimumScaleFactor(0.7)
         .multilineTextAlignment(.center)
-        .frame(width: 74, minHeight: 30)
+        .frame(width: 74, height: 30)
         .background(tint.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -469,7 +469,7 @@ private struct SignalASIAgentConnectionRowContent: View {
         .minimumScaleFactor(0.7)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 8)
-        .frame(width: 76, minHeight: 30)
+        .frame(width: 76, height: 30)
         .background(tint.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 

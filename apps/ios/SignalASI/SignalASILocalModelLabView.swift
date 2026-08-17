@@ -199,7 +199,7 @@ struct SignalASILocalModelLabView: View {
       ) {
         SignalASILocalModelSearchView()
       }
-      SignalASILocalModelLabNavigationRow(
+      SignalASILocalModelLabActionRow(
         title: t("signalasi.local_model.import_title", "Import verified model"),
         subtitle: t(
           "signalasi.local_model.import_subtitle",
@@ -1199,9 +1199,10 @@ struct LocalModelHubSearchResult: Identifiable, Decodable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = (try container.decodeIfPresent(String.self, forKey: .modelId)) ??
-      (try container.decodeIfPresent(String.self, forKey: .id)) ??
-      ""
+    id = try (
+      container.decodeIfPresent(String.self, forKey: .modelId) ??
+        container.decodeIfPresent(String.self, forKey: .id)
+    ) ?? ""
     author = (try container.decodeIfPresent(String.self, forKey: .author)) ?? ""
     downloads = Self.decodeLossyInt(container, forKey: .downloads)
     let tags = (try? container.decodeIfPresent([String].self, forKey: .tags)) ?? []

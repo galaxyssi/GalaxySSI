@@ -236,9 +236,9 @@ struct SignalASIMcpControlCenterView: View {
     }
   }
 
-  private func handlePackageImport(_ result: Result<URL, Error>) {
+  private func handlePackageImport(_ result: Result<[URL], Error>) {
     do {
-      let url = try result.get()
+      guard let url = try result.get().first else { return }
       let didAccess = url.startAccessingSecurityScopedResource()
       defer {
         if didAccess {
@@ -1159,7 +1159,7 @@ private struct SignalASIMcpAuthenticationView: View {
           subtitle: field.placeholder.ifBlank(t("agent_mcp_sign_in_subtitle", "Only enter fields required by this service")),
           systemImage: "list.bullet",
           tint: .blue,
-          badge: fieldValues[field.id].nilIfEmpty ?? field.options.first ?? ""
+          badge: fieldValues[field.id]?.nilIfEmpty ?? field.options.first ?? ""
         )
       }
       .buttonStyle(.plain)

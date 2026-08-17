@@ -497,6 +497,7 @@ private enum TaskBudgetEditableLimit: String, CaseIterable, Identifiable {
     }
   }
 
+  @MainActor
   func apply(raw: String, store: SignalASIStore) -> Bool {
     switch self {
     case .time:

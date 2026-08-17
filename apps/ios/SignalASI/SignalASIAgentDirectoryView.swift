@@ -454,6 +454,7 @@ struct SignalASIMyAgentsView: View {
   }
 }
 
+@MainActor
 private struct SignalASIAgentDirectorySnapshot {
   private let store: SignalASIStore
   private let language: String
@@ -852,7 +853,7 @@ private struct SignalASIAgentDirectoryRow: View {
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .minimumScaleFactor(0.75)
-        .frame(width: 68, minHeight: 34)
+        .frame(width: 68, height: 34)
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 12)
