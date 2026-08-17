@@ -273,12 +273,12 @@ private extension Data {
 
   func uint16LE(at offset: Int) -> UInt16? {
     guard rangeFits(start: offset, length: 2) else { return nil }
-    UInt16(self[offset]) | UInt16(self[offset + 1]) << 8
+    return UInt16(self[offset]) | UInt16(self[offset + 1]) << 8
   }
 
   func uint32LE(at offset: Int) -> UInt32? {
     guard rangeFits(start: offset, length: 4) else { return nil }
-    UInt32(self[offset]) |
+    return UInt32(self[offset]) |
       UInt32(self[offset + 1]) << 8 |
       UInt32(self[offset + 2]) << 16 |
       UInt32(self[offset + 3]) << 24
