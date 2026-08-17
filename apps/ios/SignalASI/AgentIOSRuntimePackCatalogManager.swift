@@ -184,8 +184,8 @@ final class AgentIOSRuntimePackCatalogManager {
   func downloadAndInstall(
     entry: AgentRuntimePackCatalogEntry,
     checkpoint: @escaping () throws -> Void = {},
-    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
-    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
+    onDownloadProgress: @escaping (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
+    onInstallProgress: @escaping (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
     let verifiedCatalog: AgentRuntimePackCatalog
     if let cached = cachedVerified() {
@@ -242,8 +242,8 @@ final class AgentIOSRuntimePackCatalogManager {
   func install(
     packId: String,
     checkpoint: @escaping () throws -> Void = {},
-    onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
-    onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
+    onDownloadProgress: @escaping (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
+    onInstallProgress: @escaping (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
     let catalog: AgentRuntimePackCatalog
     if let cached = cachedVerified() {
