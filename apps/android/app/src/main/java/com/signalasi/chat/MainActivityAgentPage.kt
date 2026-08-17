@@ -1027,14 +1027,6 @@ internal fun MainActivity.activeAgentTurnForConversation(
     conversationId: String,
     excludingTurnId: String
 ): ActiveAgentTurn? {
-    val activePhases = setOf(
-        AgentPhase.PLANNING,
-        AgentPhase.WAITING_CONFIRMATION,
-        AgentPhase.EXECUTING,
-        AgentPhase.VERIFYING,
-        AgentPhase.WAITING_RESPONSE,
-        AgentPhase.PAUSED
-    )
     return buildList {
         addAll(activeAgentTasks.values)
         addAll(provisionalAgentTasks)
@@ -1045,11 +1037,18 @@ internal fun MainActivity.activeAgentTurnForConversation(
             val runtimeConversationId = agentRuntimeConversationIds[runtime].orEmpty()
             val runtimeTurnId = agentRuntimeTurnIds[runtime].orEmpty()
             val state = runtime.snapshot()
+            val persistedTaskPhase = state.plan?.planId?.let { planId ->
+                state.recentTasks.firstOrNull { it.taskId == planId }?.phase
+            }
             if (
                 runtimeConversationId == conversationId &&
                 runtimeTurnId.isNotBlank() &&
                 runtimeTurnId != excludingTurnId &&
-                state.phase in activePhases
+                AgentActiveTurnPolicy.isRuntimeActive(
+                    phase = state.phase,
+                    loopPhase = state.executionLoop?.phase,
+                    persistedTaskPhase = persistedTaskPhase
+                )
             ) {
                 ActiveAgentTurn(runtime, runtimeTurnId, state)
             } else {

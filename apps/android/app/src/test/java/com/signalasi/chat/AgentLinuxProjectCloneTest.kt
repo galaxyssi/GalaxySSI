@@ -47,6 +47,8 @@ class AgentLinuxProjectCloneTest {
         assertEquals(2, Regex("if ! git_runtime_ready; then").findAll(captured.source).count())
         assertTrue("ca-certificates.crt" in captured.source)
         assertTrue("mkdir -p /root/.cache/tmp" in captured.source)
+        assertTrue("! -name '.signalasi-tools'" in captured.source)
+        assertTrue("! -name '.signalasi-inputs'" in captured.source)
         assertTrue(".signalasi-runtime/git-askpass.sh" !in captured.source)
         assertFalse("private-token" in captured.source)
         assertEquals("private-token", captured.secretEnvironment["SIGNALASI_GITHUB_TOKEN"])

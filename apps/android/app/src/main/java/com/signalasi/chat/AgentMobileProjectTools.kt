@@ -110,7 +110,7 @@ internal class AgentMobileProjectRepository(
             if (value.isNotBlank()) validateRefName(value)
         }
         val target = workspaceDirectory(workspaceId)
-        require(replaceExisting || target.listFiles().orEmpty().isEmpty()) {
+        require(replaceExisting || !hasCloneBlockingContent(target)) {
             "The phone project workspace is not empty"
         }
         cloneBackend?.let { backend ->
@@ -364,6 +364,14 @@ internal class AgentMobileProjectRepository(
         return candidate
     }
 
+    private fun hasCloneBlockingContent(workspace: File): Boolean {
+        val entries = workspace.listFiles().orEmpty()
+        if (cloneBackend == null) return entries.isNotEmpty()
+        return entries.any { entry ->
+            Files.isSymbolicLink(entry.toPath()) || entry.name !in LINUX_RUNTIME_MANAGED_ENTRIES
+        }
+    }
+
     private fun currentBranch(workspaceId: String): String = open(workspaceId).use { it.branch.orEmpty() }
 
     private fun credentials(): UsernamePasswordCredentialsProvider? = credentialProvider.token().trim()
@@ -448,6 +456,18 @@ internal class AgentMobileProjectRepository(
         private val BRANCH_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._/-]{0,127}")
         private val REMOTE_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
         private val EMAIL_PATTERN = Regex("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")
+        private val LINUX_RUNTIME_MANAGED_ENTRIES = setOf(
+            ".signalasi-tools",
+            ".signalasi-runtime",
+            ".signalasi-inputs",
+            ".tmp",
+            "request.json",
+            "status.json",
+            ".signalasi-checkpoint.json",
+            ".signalasi-stdout",
+            ".signalasi-stderr",
+            ".signalasi-main"
+        )
         private const val MAX_PROJECT_BYTES = 2L * 1024L * 1024L * 1024L
         private const val MAX_PROJECT_FILES = 200_000
         private const val MAX_DIFF_CHARACTERS = 256 * 1024

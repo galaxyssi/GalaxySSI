@@ -154,6 +154,62 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun linuxCloneAllowsRuntimeManagedEntriesButRejectsProjectFiles() {
+        val calls = mutableListOf<String>()
+        val linuxRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "" },
+            repositoryPolicy = { true },
+            cloneBackend = AgentProjectCloneBackend { workspaceId, _, _, _, _, _, _ ->
+                calls += workspaceId
+                val workspace = File(projects, workspaceId)
+                Git.init().setDirectory(workspace).setInitialBranch("main").call().use { git ->
+                    File(workspace, "README.md").writeText("# Cloned fixture\n")
+                    git.add().addFilepattern("README.md").call()
+                    git.commit()
+                        .setMessage("Clone fixture")
+                        .setAuthor("SignalASI", "signalasi@hotmail.com")
+                        .setCommitter("SignalASI", "signalasi@hotmail.com")
+                        .call()
+                }
+            }
+        )
+        val managedWorkspace = File(projects, "managed-only").apply { mkdirs() }
+        File(managedWorkspace, ".signalasi-tools/bin").mkdirs()
+        File(managedWorkspace, ".signalasi-checkpoint.json").writeText("{}")
+
+        linuxRepository.clone(
+            workspaceId = "managed-only",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        assertEquals(listOf("managed-only"), calls)
+
+        val occupiedWorkspace = File(projects, "occupied").apply { mkdirs() }
+        File(occupiedWorkspace, ".signalasi-tools/bin").mkdirs()
+        File(occupiedWorkspace, "user-notes.txt").writeText("keep")
+        val failure = runCatching {
+            linuxRepository.clone(
+                workspaceId = "occupied",
+                repositoryUrl = remote.toURI().toString(),
+                branch = "main",
+                depth = 1,
+                replaceExisting = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("workspace is not empty"))
+        assertEquals("keep", File(occupiedWorkspace, "user-notes.txt").readText())
+    }
+
+    @Test
     fun verifiedProjectMustRemainUnchangedThroughCommitPushAndPullRequest() {
         val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
         val guard = AgentProjectPublicationPolicy(
