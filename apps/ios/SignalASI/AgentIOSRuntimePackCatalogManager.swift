@@ -87,7 +87,7 @@ final class AgentIOSRuntimePackCatalogManager {
 
   func refresh(
     url: String? = nil,
-    checkpoint: () throws -> Void = {}
+    checkpoint: @escaping () throws -> Void = {}
   ) throws -> AgentRuntimePackCatalog {
     let previous = store.load().flatMap { cached in
       try? AgentRuntimePackCatalogPolicy.validate(
@@ -183,7 +183,7 @@ final class AgentIOSRuntimePackCatalogManager {
 
   func downloadAndInstall(
     entry: AgentRuntimePackCatalogEntry,
-    checkpoint: () throws -> Void = {},
+    checkpoint: @escaping () throws -> Void = {},
     onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
     onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
@@ -241,7 +241,7 @@ final class AgentIOSRuntimePackCatalogManager {
 
   func install(
     packId: String,
-    checkpoint: () throws -> Void = {},
+    checkpoint: @escaping () throws -> Void = {},
     onDownloadProgress: (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
     onInstallProgress: (AgentRuntimePackInstallProgress) -> Void = { _ in }
   ) throws -> [AgentRuntimePackInstallResult] {
@@ -271,7 +271,7 @@ final class AgentIOSRuntimePackCatalogManager {
 
   private func fetchCatalog(
     _ source: String,
-    checkpoint: () throws -> Void
+    checkpoint: @escaping () throws -> Void
   ) throws -> Data {
     guard let components = try? AgentRuntimePackCatalogPolicy.validateHTTPSURL(source),
           let url = components.url else {
