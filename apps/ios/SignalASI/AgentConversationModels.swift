@@ -260,7 +260,7 @@ enum AgentTranscriptLifecyclePolicy {
           candidate.turnId == turnId
       }
       guard !hasAssistantReply else { return nil }
-      AgentStaleConnectorRecovery(
+      return AgentStaleConnectorRecovery(
         conversationId: message.conversationId.ifBlank(task.sessionId),
         turnId: turnId,
         taskId: task.taskId,
