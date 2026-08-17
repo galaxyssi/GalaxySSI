@@ -417,7 +417,7 @@ struct AddContactView: View {
       ]
     }
     let requestedIDs = Set(
-      rawAgentIDs.flatMap { rawID in
+      rawAgentIDs.flatMap { rawID -> [String] in
         let cleanID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanID.isEmpty else { return [] }
         return [cleanID, cleanID.split(separator: ":").last.map(String.init) ?? cleanID]
