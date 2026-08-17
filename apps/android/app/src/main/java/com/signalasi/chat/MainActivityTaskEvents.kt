@@ -611,13 +611,13 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         turnId = turnId,
         taskId = taskId
     )
-    if (status in setOf("failed", "timed_out", "not_found") &&
-        AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
-            pendingAction = pendingNativeAction,
-            isSupervisedSource = supervisedControlTask,
-            isSupervisedPlan = supervisedPlan
-        )
-    ) {
+    val terminalFailure = status in setOf("failed", "timed_out", "not_found")
+    val showFailureRecovery = AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+        pendingAction = pendingNativeAction,
+        isSupervisedSource = supervisedControlTask,
+        isSupervisedPlan = supervisedPlan
+    )
+    if (terminalFailure && taskRuntime == null && showFailureRecovery) {
         syncAgentFailureRecoveryCard(
             envelope = envelope,
             conversationId = conversationId,
@@ -680,7 +680,9 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
             taskId = taskId,
             status = status,
             statusSeq = statusSeq,
-            message = envelope.optString("error").ifBlank { statusLabel }
+            message = envelope.optString("error").ifBlank { statusLabel },
+            envelope = JSONObject(envelope.toString()),
+            showFailureRecovery = showFailureRecovery
         )
     }
     traceTaskEvent("render_state")
@@ -696,7 +698,9 @@ internal fun MainActivity.settleAgentConnectorTerminalEvent(
     taskId: String,
     status: String,
     statusSeq: Long,
-    message: String
+    message: String,
+    envelope: JSONObject,
+    showFailureRecovery: Boolean
 ) {
     val responseKey = "terminal:$sourceMessageId:$contactId:$taskId"
     if (!agentConnectorResponsesInFlight.add(responseKey)) return
@@ -719,6 +723,7 @@ internal fun MainActivity.settleAgentConnectorTerminalEvent(
         }
         state = finalizeAgentExecutionLoop(runtime, turnId, state)
         persistAgentWorkspaceSnapshot(turnId, state, runtime)
+        val settledState = state
         val terminalResponse = AgentConnectorResponse(
             sourceMessageId = sourceMessageId,
             contactId = contactId,
@@ -734,8 +739,31 @@ internal fun MainActivity.settleAgentConnectorTerminalEvent(
             ?.toLongOrNull()
             ?.takeIf { replacement -> replacement > 0L && replacement != sourceMessageId }
         runOnUiThread {
+            if (AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                    pendingAction = settledState.pendingAction,
+                    isSupervisedSource = false,
+                    isSupervisedPlan = settledState.plan?.isSupervisedProjectPlan() == true,
+                    terminalAccepted = true,
+                    settledPhase = settledState.phase
+                ) && showFailureRecovery
+            ) {
+                syncAgentFailureRecoveryCard(
+                    envelope = envelope,
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    taskId = taskId,
+                    agentId = contactId,
+                    targetName = contactById(contactId).name,
+                    statusLabel = message
+                )
+            } else {
+                deleteAgentTranscriptByDedupeKey(
+                    conversationId,
+                    agentFailureRecoveryDedupeKey(taskId)
+                )
+            }
             activeAgentTasks.remove(sourceMessageId)
-            if (state.phase == AgentPhase.WAITING_RESPONSE && replacementSourceId != null) {
+            if (settledState.phase == AgentPhase.WAITING_RESPONSE && replacementSourceId != null) {
                 supersededConnectorSourceIds.add(sourceMessageId)
                 activeAgentTasks[replacementSourceId] = runtime
                 scheduleConnectorTimeouts(
@@ -748,7 +776,7 @@ internal fun MainActivity.settleAgentConnectorTerminalEvent(
             finishAgentConnectorResponseUi(
                 response = terminalResponse,
                 runtime = runtime,
-                state = state,
+                state = settledState,
                 conversationId = conversationId,
                 turnId = turnId,
                 responseKey = responseKey

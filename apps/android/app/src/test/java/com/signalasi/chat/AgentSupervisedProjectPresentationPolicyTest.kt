@@ -46,6 +46,34 @@ class AgentSupervisedProjectPresentationPolicyTest {
     }
 
     @Test
+    fun `stale or recovered terminal events never create a failure card`() {
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = null,
+                isSupervisedSource = false,
+                terminalAccepted = false,
+                settledPhase = AgentPhase.FAILED
+            )
+        )
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = null,
+                isSupervisedSource = false,
+                terminalAccepted = true,
+                settledPhase = AgentPhase.WAITING_RESPONSE
+            )
+        )
+        assertTrue(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = null,
+                isSupervisedSource = false,
+                terminalAccepted = true,
+                settledPhase = AgentPhase.FAILED
+            )
+        )
+    }
+
+    @Test
     fun `hides the matching supervised ActionPlan stream`() {
         assertFalse(
             AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(

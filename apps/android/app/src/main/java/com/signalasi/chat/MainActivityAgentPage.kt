@@ -1443,6 +1443,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             conversationContext = localConversationContext
         )?.let { resumedGoal ->
             executionGoal = resumedGoal
+            clearSupersededAgentFailureEntries(conversationId)
             Log.i(
                 "SignalASIAgent",
                 "restored supervised phone project context turn=${turnId.take(8)}"
@@ -1781,6 +1782,28 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 turnId,
                 executionMode = taskExecutionMode
             )
+        }
+    }
+}
+
+internal fun MainActivity.clearSupersededAgentFailureEntries(conversationId: String) {
+    val staleEntries = agentTranscriptStore.list(conversationId).filter { entry ->
+        entry.dedupeKey.startsWith("task-watchdog:") ||
+            entry.dedupeKey.startsWith("task-watchdog-timeout:") ||
+            entry.dedupeKey.startsWith("agent-recovery:")
+    }
+    if (staleEntries.isEmpty()) return
+    staleEntries.map(AgentTranscriptEntry::dedupeKey)
+        .distinct()
+        .forEach { dedupeKey ->
+            agentTranscriptStore.deleteByDedupeKey(conversationId, dedupeKey)
+        }
+    runOnUiThread {
+        if (agentTranscriptWindow.conversationId == conversationId) {
+            staleEntries.map(AgentTranscriptEntry::id).forEach(agentTranscriptWindow::remove)
+        }
+        if (conversationId == agentTranscriptStore.activeConversation().id) {
+            refreshAgentTranscriptWindow(conversationId)
         }
     }
 }

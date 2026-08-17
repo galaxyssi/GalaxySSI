@@ -5,8 +5,12 @@ object AgentSupervisedProjectPresentationPolicy {
     fun shouldShowFailureRecovery(
         pendingAction: AgentAction?,
         isSupervisedSource: Boolean,
-        isSupervisedPlan: Boolean = false
-    ): Boolean = !isSupervisedSource &&
+        isSupervisedPlan: Boolean = false,
+        terminalAccepted: Boolean = true,
+        settledPhase: AgentPhase? = null
+    ): Boolean = terminalAccepted &&
+        (settledPhase == null || settledPhase == AgentPhase.FAILED) &&
+        !isSupervisedSource &&
         !isSupervisedPlan &&
         pendingAction?.isSupervisedProjectConnector() != true
 

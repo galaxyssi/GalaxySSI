@@ -690,8 +690,18 @@ internal fun MobileNativeAgent.executePlannedAction(
             actionId = hardenedAction.id
         )
     ) {
+        Log.w(
+            "SignalASIAgentLifecycle",
+            "Stopped before observation action=${hardenedAction.id.take(32)} " +
+                "loop=${executionLoopSnapshot()?.phase} phase=$phase"
+        )
         return snapshot()
     }
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=observe_started action=${hardenedAction.id.take(24)} " +
+            "elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
+    )
     phase = AgentPhase.VERIFYING
     val observation = captureVerificationScreen(
         action = hardenedAction,
@@ -700,6 +710,11 @@ internal fun MobileNativeAgent.executePlannedAction(
     )
     currentScreen = observation.screen
     lastActionResult = applyObservationResult(hardenedAction, lastActionResult, observation)
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=observe_completed action=${hardenedAction.id.take(24)} " +
+            "decision=${observation.decision} elapsed_ms=${SystemClock.elapsedRealtime() - executionStartedAt}"
+    )
     val recovery = recoverActionIfSafe(hardenedAction, lastActionResult, observation)
     currentScreen = recovery.observation.screen
     lastActionResult = applyRecoveryMetadata(recovery.result, recovery)
@@ -716,6 +731,12 @@ internal fun MobileNativeAgent.executePlannedAction(
     val updatedPlan = observedPlan?.let { candidate ->
         ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult)
     }
+    Log.i(
+        "SignalASIAgentLifecycle",
+        "Observed action=${hardenedAction.id.take(32)} success=${lastActionResult?.success == true} " +
+            "next=${updatedPlan?.nextRunnableAction()?.id.orEmpty().take(32)} " +
+            "supervised=${updatedPlan?.isSupervisedProjectPlan() == true}"
+    )
     val hasPendingBeforeReplan = updatedPlan?.actions?.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     } == true
@@ -1540,12 +1561,29 @@ internal fun MobileNativeAgent.captureVerificationScreen(
     action: AgentAction,
     beforeAction: ScreenContext,
     actionResult: AgentActionResult?
-): AgentObservationOutcome = observationController.observe(
-    beforeAction = beforeAction,
-    actionSucceeded = actionResult?.success == true,
-    changeExpected = action.kind.mayChangeScreen(),
-    capture = { captureScreen() }
-)
+): AgentObservationOutcome {
+    if (!action.kind.mayChangeScreen()) {
+        return AgentObservationOutcome(
+            screen = currentScreen,
+            decision = if (actionResult?.success == true) {
+                AgentObservationDecision.NO_CHANGE_REQUIRED
+            } else {
+                AgentObservationDecision.ACTION_FAILED
+            },
+            sampleCount = 0,
+            durationMillis = 0L,
+            screenChanged = false,
+            screenStable = true,
+            evidence = "tool_receipt_only=true; screen_capture_skipped=true"
+        )
+    }
+    return observationController.observe(
+        beforeAction = beforeAction,
+        actionSucceeded = actionResult?.success == true,
+        changeExpected = true,
+        capture = { captureScreen() }
+    )
+}
 
 internal fun MobileNativeAgent.applyObservationResult(
     action: AgentAction,

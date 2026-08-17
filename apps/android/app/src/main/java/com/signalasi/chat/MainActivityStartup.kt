@@ -239,7 +239,12 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                     )
                 }
                 val initialConversation = agentTranscriptStore.activeConversation()
-                val initialEntries = agentTranscriptStore.list(initialConversation.id)
+                var initialEntries = agentTranscriptStore.list(initialConversation.id)
+                AgentTranscriptLifecyclePolicy.supersededFailureDedupeKeys(initialEntries)
+                    .forEach { dedupeKey ->
+                        agentTranscriptStore.deleteByDedupeKey(initialConversation.id, dedupeKey)
+                    }
+                initialEntries = agentTranscriptStore.list(initialConversation.id)
                 val state = restoreRecoverableAgentRuntime(
                     conversationId = initialConversation.id,
                     transcriptEntries = initialEntries
