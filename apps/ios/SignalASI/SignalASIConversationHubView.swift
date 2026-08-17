@@ -980,7 +980,7 @@ struct SignalASIConversationHubView: View {
 
   private func contactRow(_ contact: SignalASIContact) -> some View {
     let kindPresentation = SignalASIContactKindPresentation.forContact(contact, t: t)
-    NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+    return NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
       hubRowContent(
         title: contact.displayName,
         subtitle: "",
