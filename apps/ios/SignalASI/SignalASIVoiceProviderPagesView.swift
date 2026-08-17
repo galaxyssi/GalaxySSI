@@ -630,14 +630,15 @@ struct SignalASIVoiceTTSProviderView: View {
   @ViewBuilder
   private func ttsCapabilityRow(provider: VoiceTTSProvider, capability: VoiceProviderCapability) -> some View {
     let selected = settings.ttsProvider == provider
-    let action: String
-    if selected {
-      action = t("section_current", "Current")
-    } else if capability.ready {
-      action = t("settings_language_use", "Use")
-    } else {
-      action = SignalASIVoiceProviderFormatter.capabilityStatus(capability, language: interfaceLanguage)
-    }
+    let action: String = {
+      if selected {
+        return t("section_current", "Current")
+      }
+      if capability.ready {
+        return t("settings_language_use", "Use")
+      }
+      return SignalASIVoiceProviderFormatter.capabilityStatus(capability, language: interfaceLanguage)
+    }()
     if capability.ready && !selected {
       SignalASISecurityActionRow(
         title: SignalASIVoiceProviderFormatter.capabilityTitle(capability.id, language: interfaceLanguage),

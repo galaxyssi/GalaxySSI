@@ -32,7 +32,7 @@ final class SignalASIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
-    let contactId = (response.notification.request.content.userInfo["signalasi_open_contact_id"] as? String)
+    let contactId = (response.notification.request.content.userInfo["signalasi_open_contact_id"] as? String)?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     if !contactId.isEmpty {
       UserDefaults.standard.set(contactId, forKey: "signalasi.pending_open_contact")
@@ -474,6 +474,7 @@ struct ConversationView: View {
   }
 
   var body: some View {
+    let firstRenderedMessageID = renderedMessages.first?.id
     VStack(spacing: 0) {
       conversationHeader
       ScrollViewReader { proxy in
@@ -522,7 +523,7 @@ struct ConversationView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .id(AgentReplyWaitingIndicatorPolicy.viewID(for: message))
               }
-              if message.id == renderedMessages.first?.id {
+              if message.id == firstRenderedMessageID {
                 Color.clear
                   .frame(height: 1)
                   .onAppear {
@@ -1648,7 +1649,7 @@ struct ContactsView: View {
   private func isDeviceContact(_ contact: SignalASIContact) -> Bool {
     contact.type == "device" ||
       contact.agentKind == "device" ||
-      !contact.deviceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      !(contact.deviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 }
 
@@ -1842,7 +1843,12 @@ struct VoiceSettingsView: View {
           ))
         }
         Section(t("voice_settings_section_wake", "Wake")) {
-          LabeledContent(t("voice_wake_words", "Wake Words"), value: WakeWordPolicy.wakeWord)
+          HStack {
+            Text(t("voice_wake_words", "Wake Words"))
+            Spacer()
+            Text(WakeWordPolicy.wakeWord)
+              .foregroundColor(.secondary)
+          }
           VStack(alignment: .leading, spacing: 6) {
             HStack {
               Text(t("voice_wake_threshold", "Wake Threshold"))
