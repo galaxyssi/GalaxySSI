@@ -22,7 +22,7 @@ class AgentReplyWaitingIndicatorPolicyTest {
     }
 
     @Test
-    fun indicatorIsAlwaysImmediatelyBelowItsUserMessage() {
+    fun indicatorIsAlwaysAfterTheLatestVisibleOutput() {
         val user = entry("user", AgentTranscriptRole.USER, "turn-1", 100L)
         val process = entry("process", AgentTranscriptRole.PROCESS, "turn-1", 120L)
 
@@ -33,8 +33,8 @@ class AgentReplyWaitingIndicatorPolicyTest {
         )
 
         assertEquals("user", result.entries[0].id)
-        assertTrue(AgentReplyWaitingIndicatorPolicy.isIndicator(result.entries[1]))
-        assertEquals("process", result.entries[2].id)
+        assertEquals("process", result.entries[1].id)
+        assertTrue(AgentReplyWaitingIndicatorPolicy.isIndicator(result.entries[2]))
     }
 
     @Test
@@ -94,6 +94,26 @@ class AgentReplyWaitingIndicatorPolicyTest {
 
         assertEquals(1, result.entries.count(AgentReplyWaitingIndicatorPolicy::isIndicator))
         assertEquals("turn-1", result.entries.last().turnId)
+    }
+
+    @Test
+    fun multiplePendingTurnsRenderOnlyTheLatestIndicatorAtTheBottom() {
+        val result = AgentReplyWaitingIndicatorPolicy.apply(
+            entries = listOf(
+                entry("user-1", AgentTranscriptRole.USER, "turn-1", 100L),
+                entry("process", AgentTranscriptRole.PROCESS, "turn-1", 110L),
+                entry("user-2", AgentTranscriptRole.USER, "turn-2", 120L)
+            ),
+            pending = listOf(
+                PendingAgentReplyIndicator("conversation", "turn-1", 101L),
+                PendingAgentReplyIndicator("conversation", "turn-2", 121L)
+            ),
+            conversationId = "conversation"
+        )
+
+        assertEquals(1, result.entries.count(AgentReplyWaitingIndicatorPolicy::isIndicator))
+        assertEquals("turn-2", result.entries.last().turnId)
+        assertEquals(setOf("turn-1"), result.resolvedTurnIds)
     }
 
     @Test

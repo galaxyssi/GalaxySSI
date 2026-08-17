@@ -7,15 +7,17 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
 import kotlin.math.PI
 import kotlin.math.sin
 
 internal class AgentVoiceTranscriptionPendingView(
     context: Context,
     bubbleBackground: Boolean = true,
-    accessibilityText: CharSequence = context.getString(R.string.voice_status_recognizing)
+    accessibilityText: CharSequence = context.getString(R.string.voice_status_recognizing),
+    dotColorRes: Int = R.color.agent_voice_transcript_dot
 ) : LinearLayout(context) {
-    private val dots = List(DOT_COUNT) { createDot() }
+    private val dots = List(DOT_COUNT) { createDot(dotColorRes) }
     private var pulseAnimator: ValueAnimator? = null
 
     init {
@@ -50,8 +52,12 @@ internal class AgentVoiceTranscriptionPendingView(
         super.onDetachedFromWindow()
     }
 
-    private fun createDot(): View = View(context).apply {
+    private fun createDot(dotColorRes: Int): View = View(context).apply {
         background = ContextCompat.getDrawable(context, R.drawable.agent_voice_transcription_dot)
+            ?.mutate()
+            ?.also { drawable ->
+                DrawableCompat.setTint(drawable, ContextCompat.getColor(context, dotColorRes))
+            }
         alpha = MIN_ALPHA
     }
 
