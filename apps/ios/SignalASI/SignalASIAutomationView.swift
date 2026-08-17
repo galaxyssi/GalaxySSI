@@ -311,12 +311,6 @@ struct SignalASIAutomationView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .onChange(of: draft.triggerKind) { kind in
-      draft.applyTriggerKind(kind)
-    }
-    .onChange(of: draft.actionKind) { kind in
-      draft.applyActionKind(kind)
-    }
     .alert(t("signalasi.automation.invalid", "The proactive task is invalid"), isPresented: Binding(
       get: { !errorMessage.isEmpty },
       set: { if !$0 { errorMessage = "" } }

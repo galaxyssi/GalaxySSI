@@ -667,7 +667,8 @@ struct SignalASIGlobalAgentInsightInboxView: View {
               subtitle: t("cc_global_pending_insights_subtitle", "Findings waiting for the right delivery moment"),
               systemImage: "sparkles",
               tint: .purple,
-              badge: "0"
+              badge: "0",
+              showsDisclosure: false
             )
           } else {
             ForEach(items) { item in
