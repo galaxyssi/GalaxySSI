@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -376,10 +377,14 @@ struct SignalASIAgentKnowledgeView: View {
   }
 
   private func decodeWebBody(_ data: Data, response: URLResponse) -> String {
-    if let encoding = response.textEncodingName,
-       let stringEncoding = String.Encoding(ianaName: encoding),
-       let value = String(data: data, encoding: stringEncoding) {
-      return value
+    if let encoding = response.textEncodingName {
+      let cfEncoding = CFStringConvertIANACharSetNameToEncoding(encoding as CFString)
+      if cfEncoding != kCFStringEncodingInvalidId {
+        let stringEncoding = String.Encoding(rawValue: UInt(cfEncoding))
+        if let value = String(data: data, encoding: stringEncoding) {
+          return value
+        }
+      }
     }
     return String(decoding: data, as: UTF8.self)
   }

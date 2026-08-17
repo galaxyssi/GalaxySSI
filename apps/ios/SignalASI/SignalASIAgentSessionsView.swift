@@ -148,6 +148,7 @@ struct SignalASIAgentSessionsView: View {
                   selectionMode: multiDeleteMode,
                   marked: selectedSessionIDs.contains(row.session.id),
                   metrics: row.metrics,
+                  title: sessionDisplayTitle(row.session),
                   subtitle: sessionSubtitle(row.session, metrics: row.metrics),
                   badge: rowBadge(row.session),
                   onOpen: {
@@ -763,7 +764,7 @@ struct SignalASIAgentSessionsView: View {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: interfaceLanguage == LanguagePolicySettings.zhCN ? "zh_Hans_CN" : "en_US_POSIX")
     formatter.dateFormat = "MM-dd HH:mm"
-    return formatter.string(from: date(millis))
+    return formatter.string(from: Self.date(millis))
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -862,6 +863,7 @@ private struct AgentSessionRow<Actions: View>: View {
   var selectionMode: Bool
   var marked: Bool
   var metrics: AgentSessionMetrics
+  var title: String
   var subtitle: String
   var badge: String
   var onOpen: () -> Void
@@ -873,6 +875,7 @@ private struct AgentSessionRow<Actions: View>: View {
     selectionMode: Bool,
     marked: Bool,
     metrics: AgentSessionMetrics,
+    title: String,
     subtitle: String,
     badge: String,
     onOpen: @escaping () -> Void,
@@ -883,6 +886,7 @@ private struct AgentSessionRow<Actions: View>: View {
     self.selectionMode = selectionMode
     self.marked = marked
     self.metrics = metrics
+    self.title = title
     self.subtitle = subtitle
     self.badge = badge
     self.onOpen = onOpen
@@ -910,7 +914,7 @@ private struct AgentSessionRow<Actions: View>: View {
           }
           .frame(width: 14, height: 14)
           VStack(alignment: .leading, spacing: 4) {
-            Text(sessionDisplayTitle(session))
+            Text(title)
               .font(.system(size: 15, weight: .semibold))
               .foregroundColor(.signalASITextPrimary)
               .lineLimit(2)
