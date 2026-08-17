@@ -120,7 +120,7 @@ struct GuardedModelAgentPlanner {
   ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
-    request.planRequest.nativeTools
+    return request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
         descriptor.risk == .low &&
