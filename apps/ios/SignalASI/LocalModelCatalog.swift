@@ -105,6 +105,7 @@ enum LocalModelRuntimeCatalog {
       sourceTrust: .hubVerified,
       sourceHub: artifact.source
     )
+    return profile
   }
 
   static func artifact(for profile: LocalModelRuntimeProfile) -> LocalModelHubArtifact? {

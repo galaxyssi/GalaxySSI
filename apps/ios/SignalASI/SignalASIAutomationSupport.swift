@@ -32,7 +32,7 @@ struct AutomationEditorDraft {
     goalId = task.trigger.goalId.ifBlank(task.taskId)
     webhookId = task.trigger.webhookId.ifBlank(task.taskId)
     actionKind = task.action.kind
-    targetId = task.action.targetId.ifBlank(defaultTarget(for: task.action.kind))
+    targetId = task.action.targetId.ifBlank(Self.defaultTarget(for: task.action.kind))
     prompt = task.action.prompt
     argumentsJson = task.action.argumentsJson.ifBlank("{}")
     teamText = task.action.team.isEmpty
@@ -106,13 +106,13 @@ struct AutomationEditorDraft {
     actionKind = kind
     switch kind {
     case .agent:
-      targetId = defaultTarget(for: .agent)
+      targetId = Self.defaultTarget(for: .agent)
     case .subagentTeam:
       teamText = teamText.ifBlank("lead:codex")
     case .workflow:
-      targetId = defaultTarget(for: .workflow)
+      targetId = Self.defaultTarget(for: .workflow)
     case .nativeTool:
-      targetId = defaultTarget(for: .nativeTool)
+      targetId = Self.defaultTarget(for: .nativeTool)
       argumentsJson = argumentsJson.ifBlank("{}")
     }
   }
@@ -156,13 +156,13 @@ struct AutomationEditorDraft {
     case .nativeTool:
       return try AgentProactiveAction(
         kind: .nativeTool,
-        targetId: targetId.ifBlank(defaultTarget(for: .nativeTool)),
+        targetId: targetId.ifBlank(Self.defaultTarget(for: .nativeTool)),
         prompt: prompt,
         argumentsJson: argumentsJson,
         deliveryMode: deliveryMode
       )
     case .workflow:
-      let reference = targetId.ifBlank(defaultTarget(for: .workflow))
+      let reference = targetId.ifBlank(Self.defaultTarget(for: .workflow))
       guard AgentWorkflowResolver.resolve(reference) != nil else {
         throw AgentProactiveTaskError.invalid("Workflow '\(reference)' was not found")
       }
@@ -175,7 +175,7 @@ struct AutomationEditorDraft {
     case .agent:
       return try AgentProactiveAction(
         kind: .agent,
-        targetId: targetId.ifBlank(defaultTarget(for: .agent)),
+        targetId: targetId.ifBlank(Self.defaultTarget(for: .agent)),
         prompt: prompt,
         argumentsJson: "{}",
         deliveryMode: deliveryMode
@@ -201,7 +201,7 @@ struct AutomationEditorDraft {
     return members.isEmpty ? [try AgentProactiveTeamMember(agentId: "codex", role: .lead)] : members
   }
 
-  private func defaultTarget(for kind: AgentProactiveActionKind) -> String {
+  private static func defaultTarget(for kind: AgentProactiveActionKind) -> String {
     switch kind {
     case .agent: return "codex"
     case .subagentTeam: return ""
