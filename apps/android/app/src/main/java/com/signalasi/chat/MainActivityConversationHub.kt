@@ -163,6 +163,12 @@ internal fun MainActivity.showConversationHub(
             ConversationHubTab.GROUPS -> renderConversationHubGroups(body)
         }
     }
+    val contactsChangedListener: (List<Contact>) -> Unit = { latest ->
+        if (dialog.isShowing) {
+            contacts = latest
+            if (selectedTab == ConversationHubTab.CONTACTS) renderBody()
+        }
+    }
     searchInput.addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderBody()
@@ -171,6 +177,9 @@ internal fun MainActivity.showConversationHub(
     dialog.setContentView(root)
     dialog.setOnDismissListener {
         if (agentSessionsDialog === dialog) agentSessionsDialog = null
+        if (conversationHubContactsChangedListener === contactsChangedListener) {
+            conversationHubContactsChangedListener = null
+        }
         navigationContentGate.invalidateIfCurrent(contentGeneration)
     }
     dialog.window?.apply {
@@ -185,6 +194,7 @@ internal fun MainActivity.showConversationHub(
     dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     renderTabs()
     renderBody()
+    conversationHubContactsChangedListener = contactsChangedListener
     navigationContentExecutor.execute {
         val conversationSnapshot = runCatching {
             agentTranscriptStore.conversations(includeArchived = true)
@@ -364,6 +374,14 @@ private fun MainActivity.renderConversationHubContacts(
         getString(R.string.conversation_hub_new_friends_subtitle),
         R.drawable.ic_tab_contacts
     ) { showFriendRequestsDialog() })
+    body.addView(conversationHubActionRow(
+        getString(R.string.conversation_hub_add_cloud_model),
+        getString(R.string.add_cloud_model_subtitle),
+        R.drawable.ic_avatar_cloud_model
+    ) {
+        dialog.dismiss()
+        showCloudProviderPage(returnToContacts = true)
+    })
     body.addView(conversationHubActionRow(
         getString(R.string.conversation_hub_scan_add),
         getString(R.string.conversation_hub_scan_add_subtitle),

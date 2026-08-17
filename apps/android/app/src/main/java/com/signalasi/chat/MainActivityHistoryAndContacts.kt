@@ -699,6 +699,7 @@ internal fun MainActivity.refreshDirectoryContacts() {
     directoryContacts.addAll(items)
     runOnUiThread {
         directoryAdapter?.replaceContacts(items)
+        conversationHubContactsChangedListener?.invoke(items)
     }
 }
 
@@ -759,8 +760,14 @@ internal fun MainActivity.showAddContactMenu() {
     })
 }
 
-internal fun MainActivity.showCloudProviderPage() {
+internal fun MainActivity.showCloudProviderPage(returnToContacts: Boolean = false) {
     showFeaturePage(getString(R.string.cloud_models_title))
+    if (returnToContacts) {
+        setFeatureBackAction {
+            hideFeaturePage()
+            showConversationHub(ConversationHubTab.CONTACTS)
+        }
+    }
     featureContent.addView(featureHeroCard(
         getString(R.string.cloud_select_provider),
         getString(R.string.cloud_provider_hero_subtitle),
@@ -771,19 +778,19 @@ internal fun MainActivity.showCloudProviderPage() {
     addSectionTitle("Provider")
     cloudProviders().forEach { provider ->
         featureContent.addView(featureRow(provider, providerSubtitle(provider), providerIcon(provider), getString(R.string.cloud_provider_count, modelsForProvider(provider).size)).apply {
-            setOnClickListener { showCloudModelPage(provider) }
+            setOnClickListener { showCloudModelPage(provider, returnToContacts) }
         })
     }
 }
 
-internal fun MainActivity.showCloudModelPage(provider: String) {
+internal fun MainActivity.showCloudModelPage(provider: String, returnToContacts: Boolean = false) {
     showFeaturePage(provider)
-    setFeatureBackAction { showCloudProviderPage() }
+    setFeatureBackAction { showCloudProviderPage(returnToContacts) }
     featureContent.addView(featureHeroCard(provider, providerSubtitle(provider), providerIcon(provider), providerColor(provider), getString(R.string.cloud_select_model)))
     addSectionTitle(getString(R.string.cloud_section_model))
     modelsForProvider(provider).forEach { preset ->
         featureContent.addView(featureRow(preset.name, "", R.drawable.ic_protocol_link, getString(R.string.common_select)).apply {
-            setOnClickListener { showCloudModelConfigPage(preset) }
+            setOnClickListener { showCloudModelConfigPage(preset, returnToContacts) }
         })
     }
     if (provider != "Custom") {
@@ -796,7 +803,7 @@ internal fun MainActivity.showCloudModelPage(provider: String) {
                     "model-id",
                     base?.endpoint ?: "https://api.example.com/v1/chat/completions",
                     base?.apiStyle ?: "openai"
-                ))
+                ), returnToContacts)
             }
         })
     }
@@ -825,9 +832,12 @@ internal fun MainActivity.debugSeedCloudProvider(provider: String): Contact? {
     return Contact(contact.getString("id"), contact.optString("name", normalizedProvider), "")
 }
 
-internal fun MainActivity.showCloudModelConfigPage(preset: CloudModelPreset) {
+internal fun MainActivity.showCloudModelConfigPage(
+    preset: CloudModelPreset,
+    returnToContacts: Boolean = false
+) {
     showFeaturePage(getString(R.string.cloud_config_title))
-    setFeatureBackAction { showCloudModelPage(preset.provider) }
+    setFeatureBackAction { showCloudModelPage(preset.provider, returnToContacts) }
     featureContent.addView(featureHeroCard(
         preset.name,
         "${preset.provider} · ${preset.apiStyle}",
@@ -871,7 +881,12 @@ internal fun MainActivity.showCloudModelConfigPage(preset: CloudModelPreset) {
             Toast.makeText(this@showCloudModelConfigPage, getString(R.string.cloud_added_model, preset.name), Toast.LENGTH_SHORT).show()
             refreshContactList()
             refreshDirectoryContacts()
-            showChatPage(contact)
+            if (returnToContacts) {
+                hideFeaturePage()
+                showConversationHub(ConversationHubTab.CONTACTS)
+            } else {
+                showChatPage(contact)
+            }
         }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(20) })
 }
