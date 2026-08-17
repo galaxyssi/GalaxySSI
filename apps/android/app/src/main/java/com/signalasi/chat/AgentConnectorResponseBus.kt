@@ -171,6 +171,13 @@ object AgentConnectorResponseStore {
 
     @Synchronized
     fun append(context: Context, response: AgentConnectorResponse) {
+        if (AgentPendingDeliveryStore.isSuperseded(
+                context,
+                response.sourceMessageId,
+                response.conversationId,
+                response.turnId
+            )
+        ) return
         val next = pending(context)
             .filterNot { it.sourceMessageId == response.sourceMessageId && it.contactId == response.contactId }
             .plus(response)
@@ -185,7 +192,7 @@ object AgentConnectorResponseStore {
         return runCatching {
             val array = JSONArray(raw)
             val cutoff = System.currentTimeMillis() - MAX_RESPONSE_AGE_MILLIS
-            buildList {
+            val responses = buildList {
                 for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     val sourceMessageId = item.optLong("source_message_id")
@@ -193,8 +200,7 @@ object AgentConnectorResponseStore {
                     val receivedAt = item.optLong("received_at", System.currentTimeMillis())
                     val richOutput = AgentRichContentCodec.normalize(item.optString("rich_output"))
                     if (sourceMessageId <= 0L || (content.isBlank() && richOutput.isBlank()) || receivedAt < cutoff) continue
-                    add(
-                        AgentConnectorResponse(
+                    val response = AgentConnectorResponse(
                             sourceMessageId = sourceMessageId,
                             contactId = item.optString("contact_id"),
                             content = content.ifBlank { AgentRichContentCodec.fallbackText(richOutput) },
@@ -208,9 +214,17 @@ object AgentConnectorResponseStore {
                             richOutputJson = richOutput,
                             receivedAtMillis = receivedAt
                         )
-                    )
+                    if (!AgentPendingDeliveryStore.isSuperseded(
+                            context,
+                            response.sourceMessageId,
+                            response.conversationId,
+                            response.turnId
+                        )
+                    ) add(response)
                 }
             }
+            if (responses.size != array.length()) save(context, responses)
+            responses
         }.getOrDefault(emptyList())
     }
 
@@ -220,6 +234,17 @@ object AgentConnectorResponseStore {
             context,
             pending(context).filterNot {
                 it.sourceMessageId == response.sourceMessageId && it.contactId == response.contactId
+            }
+        )
+    }
+
+    @Synchronized
+    fun removeTurn(context: Context, conversationId: String, turnId: String) {
+        if (conversationId.isBlank() || turnId.isBlank()) return
+        save(
+            context,
+            pending(context).filterNot {
+                it.conversationId == conversationId && it.turnId == turnId
             }
         )
     }

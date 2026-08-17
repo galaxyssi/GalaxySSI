@@ -224,8 +224,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-private const val MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES = 80
-private const val SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS = 250L
+private const val MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES = 3
+private const val SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS = 500L
 
 internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, message: ChatMessage): Boolean {
     val payload = envelope ?: return false
@@ -388,6 +388,9 @@ internal fun MainActivity.consumeAgentConnectorResponse(response: AgentConnector
         }
         return
     }
+    agentConnectorResponsesInFlight.remove(
+        "supervised-control:${response.sourceMessageId}:${response.contactId}"
+    )
     val responseKey = "${response.sourceMessageId}:${response.contactId}"
     if (!agentConnectorResponsesInFlight.add(responseKey)) return
     resumeAgentConnectorResponse(response, runtime, responseKey)
@@ -413,11 +416,16 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                 runtime != null -> consumeAgentConnectorResponse(response)
                 attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
                     deferSupervisedProjectControlResponse(response, attempt + 1)
-                else -> Log.w(
-                    "SignalASIAgent",
-                    "Deferred supervised control response is still waiting for its originating run " +
-                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
-                )
+                else -> {
+                    // Keep the durable response parked without rebuilding an Agent on every
+                    // liveness sweep. A real connector event can still consume it immediately.
+                    agentConnectorResponsesInFlight.remove(responseKey)
+                    Log.i(
+                        "SignalASIAgent",
+                        "Parked supervised control response until its originating run is available " +
+                            "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                    )
+                }
             }
         },
         SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS
@@ -426,6 +434,20 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
 
 internal fun MainActivity.rebindAgentConnectorContinuation(
     response: AgentConnectorResponse,
+    runtime: MobileNativeAgent,
+    state: AgentUiState,
+    conversationId: String,
+    turnId: String
+) = rebindAgentConnectorContinuation(
+    previousSourceMessageId = response.sourceMessageId,
+    runtime = runtime,
+    state = state,
+    conversationId = conversationId,
+    turnId = turnId
+)
+
+internal fun MainActivity.rebindAgentConnectorContinuation(
+    previousSourceMessageId: Long,
     runtime: MobileNativeAgent,
     state: AgentUiState,
     conversationId: String,
@@ -440,8 +462,8 @@ internal fun MainActivity.rebindAgentConnectorContinuation(
                 nextResult.metadata["awaiting_response"] == "true" &&
                 state.phase == AgentPhase.WAITING_RESPONSE
         }
-    if (nextSourceMessageId != response.sourceMessageId) {
-        activeAgentTasks.remove(response.sourceMessageId, runtime)
+    if (nextSourceMessageId != previousSourceMessageId) {
+        activeAgentTasks.remove(previousSourceMessageId, runtime)
     }
     if (nextSourceMessageId == null) return
     activeAgentTasks[nextSourceMessageId] = runtime
@@ -549,8 +571,34 @@ internal fun MainActivity.resumeAgentConnectorResponse(
         consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
         return
     }
-    if (response.success) {
-        supervisor.reconcileLateConnectorResponse(turnId, response.sourceMessageId)
+    val durableDelivery = AgentPendingDeliveryStore.find(
+        this,
+        response.sourceMessageId,
+        response.contactId
+    )
+    val expectedSourceMessageId = AgentPendingDeliveryStore.recoverySuccessorForResponse(
+        this,
+        response.sourceMessageId,
+        conversationId,
+        turnId
+    ) ?: response.sourceMessageId
+    val reconciledWorkspace = supervisor.reconcileLateConnectorResponse(
+        workspaceId = turnId,
+        sourceMessageId = response.sourceMessageId,
+        durableTurnId = durableDelivery
+            ?.takeIf { delivery ->
+                delivery.turnId == turnId &&
+                    delivery.conversationId == conversationId
+            }
+            ?.turnId
+            .orEmpty()
+    )
+    if (reconciledWorkspace?.status == AgentWorkspaceStatus.WAITING_RESPONSE) {
+        Log.i(
+            "SignalASIAgentLifecycle",
+            "Reconciled authenticated connector response source=${response.sourceMessageId} " +
+                "workspace=${turnId.take(8)}"
+        )
     }
     if (turnId in supervisor.activeTaskIds()) {
         if (attempt < 100) {
@@ -593,7 +641,8 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         networkBytes = (
                             response.content.toByteArray(Charsets.UTF_8).size +
                                 response.richOutputJson.toByteArray(Charsets.UTF_8).size
-                            ).toLong()
+                            ).toLong(),
+                        expectedSourceMessageId = expectedSourceMessageId
                     ) ?: runtime.snapshot()
                 } catch (failure: Throwable) {
                     agentConnectorResponsesInFlight.remove(responseKey)
@@ -610,7 +659,15 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         .toString()
                 )
                 persistAgentWorkspaceSnapshot(turnId, state, runtime)
-                AgentConnectorResponseStore.remove(this@resumeAgentConnectorResponse, response)
+                AgentConnectorResponseStore.removeTurn(
+                    this@resumeAgentConnectorResponse,
+                    conversationId,
+                    turnId
+                )
+                AgentPendingDeliveryStore.completeResponse(
+                    this@resumeAgentConnectorResponse,
+                    durableDelivery
+                )
                 runOnUiThread {
                     rebindAgentConnectorContinuation(
                         response,
@@ -654,7 +711,16 @@ internal fun MainActivity.resumeAgentConnectorResponse(
             )
         } else {
             agentConnectorResponsesInFlight.remove(responseKey)
-            consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
+            if (AgentSupervisedProjectControlPayload.isControlPayload(response.content)) {
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "Keeping supervised response durable after resume failure " +
+                        "source=${response.sourceMessageId} workspace=${turnId.take(8)}",
+                    resumed.exceptionOrNull()
+                )
+            } else {
+                consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
+            }
         }
     }
 }
@@ -735,7 +801,7 @@ internal fun MainActivity.recordSupervisedModelOutput(
     val taskId = response.taskId.ifBlank { snapshot.sessionId }.ifBlank { turnId }
     agentTranscriptStore.upsert(
         role = AgentTranscriptRole.PROCESS,
-        text = visibleOutput,
+        text = getString(R.string.agent_loop_reason_format, visibleOutput),
         dedupeKey = "supervised-model-output:$taskId:REASONING_SUMMARY:${response.sourceMessageId}",
         timestampMillis = response.receivedAtMillis,
         conversationId = conversationId,
@@ -830,11 +896,28 @@ internal fun MainActivity.runtimeForConnectorResponse(
                 taskId
             )
         }
+    fun MobileNativeAgent.acceptsRecoveryPredecessor(): Boolean {
+        if (allowTransportOnly || conversationId.isBlank() || turnId.isBlank()) return false
+        val successor = AgentPendingDeliveryStore.recoverySuccessorForResponse(
+            this@runtimeForConnectorResponse,
+            sourceMessageId,
+            conversationId,
+            turnId
+        ) ?: return false
+        return canAcceptConnectorResponse(successor, contactId, conversationId, turnId, taskId)
+    }
     activeAgentTasks[sourceMessageId]
-        ?.takeIf { it.accepts() }
+        ?.takeIf { it.accepts() || it.acceptsRecoveryPredecessor() }
         ?.let { return it }
+    activeAgentTasks.values.asSequence()
+        .distinct()
+        .firstOrNull { it.acceptsRecoveryPredecessor() }
+        ?.let { runtime ->
+            activeAgentTasks[sourceMessageId] = runtime
+            return runtime
+        }
     provisionalAgentTasks.firstOrNull {
-        it.accepts()
+        it.accepts() || it.acceptsRecoveryPredecessor()
     }?.let { runtime ->
         activeAgentTasks[sourceMessageId] = runtime
         provisionalAgentTasks.remove(runtime)
@@ -847,7 +930,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
             sessionStore = SharedPreferencesAgentSessionStore(this, "task:$cleanTurnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
-        if (restored.accepts()) {
+        if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = cleanTurnId
             connectorConversationId(conversationId, restored, cleanTurnId)?.let {
@@ -868,7 +951,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
             sessionStore = SharedPreferencesAgentSessionStore(this, storageKey),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
-        if (restored.accepts()) {
+        if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = storedTurnId
             connectorConversationId(conversationId, restored, storedTurnId)?.let {
@@ -882,7 +965,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
         }
     }
     return mobileNativeAgent.takeIf {
-        it.accepts()
+        it.accepts() || it.acceptsRecoveryPredecessor()
     }
 }
 

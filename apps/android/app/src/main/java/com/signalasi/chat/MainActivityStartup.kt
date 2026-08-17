@@ -238,15 +238,21 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                         "Materialized inline rich entries=$materializedRichEntries"
                     )
                 }
-                val conversation = agentTranscriptStore.activeConversation()
-                val initialEntries = agentTranscriptStore.list(conversation.id)
+                val initialConversation = agentTranscriptStore.activeConversation()
+                val initialEntries = agentTranscriptStore.list(initialConversation.id)
                 val state = restoreRecoverableAgentRuntime(
-                    conversationId = conversation.id,
+                    conversationId = initialConversation.id,
                     transcriptEntries = initialEntries
                 ) ?: mobileNativeAgent.snapshot()
+                val conversation = agentTranscriptStore.activeConversation()
+                val hydratedEntries = if (conversation.id == initialConversation.id) {
+                    initialEntries
+                } else {
+                    agentTranscriptStore.list(conversation.id)
+                }
                 val tasks = SQLiteAgentTaskStore(applicationContext).forSession(conversation.id)
                 AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
-                    entries = initialEntries,
+                    entries = hydratedEntries,
                     tasks = tasks,
                     activeTaskIds = AgentTaskRuntime.supervisor(applicationContext).activeTaskIds(),
                     nowMillis = System.currentTimeMillis()
@@ -335,60 +341,376 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
 ): AgentUiState? {
     val resolvedConversationId = agentTranscriptStore.resolveMergedConversationId(conversationId)
         ?: conversationId
-    val workspace = EncryptedAgentWorkspaceStore(this).list().firstOrNull { candidate ->
+    val workspaceStore = EncryptedAgentWorkspaceStore(this)
+    val allWorkspaces = workspaceStore.list()
+    val activeSupervisorTaskIds = AgentTaskRuntime.supervisor(this).activeTaskIds()
+    val hasActiveSupervisorTaskInConversation = allWorkspaces.any { workspace ->
+        workspace.workspaceId in activeSupervisorTaskIds &&
+            (agentTranscriptStore.resolveMergedConversationId(workspace.conversationId)
+                ?: workspace.conversationId) == resolvedConversationId
+    }
+    val liveRuntimes = buildSet {
+        addAll(provisionalAgentTasks)
+        addAll(activeAgentTasks.values)
+        if (isMobileNativeAgentInitialized()) add(mobileNativeAgent)
+    }
+    val hasLiveRuntimeInConversation = liveRuntimes.any { runtime ->
+        val runtimeConversationId = agentRuntimeConversationIds[runtime]
+            ?.let { agentTranscriptStore.resolveMergedConversationId(it) ?: it }
+            .orEmpty()
+        runtimeConversationId == resolvedConversationId && runtime.snapshot().runningTaskCount > 0
+    }
+    if (!AgentWorkspaceRestoreArbitrationPolicy.shouldScanPersistedWorkspaces(
+            hasLiveRuntimeInConversation = hasLiveRuntimeInConversation,
+            hasActiveSupervisorTaskInConversation = hasActiveSupervisorTaskInConversation
+        )
+    ) {
+        Log.i(
+            "SignalASIAgentLifecycle",
+            "skipping persisted workspace restore for active conversation=" +
+                "${resolvedConversationId.take(8)} live_runtime=$hasLiveRuntimeInConversation " +
+                "supervisor_task=$hasActiveSupervisorTaskInConversation"
+        )
+        return null
+    }
+    val workspaces = allWorkspaces.filter { candidate ->
         val candidateConversationId = agentTranscriptStore
             .resolveMergedConversationId(candidate.conversationId)
             ?: candidate.conversationId
-        candidateConversationId == resolvedConversationId &&
+        AgentWorkspaceRestoreArbitrationPolicy.belongsToActiveConversation(
+            candidateConversationId,
+            resolvedConversationId
+        ) &&
             candidate.status in setOf(
+                AgentWorkspaceStatus.RUNNING,
                 AgentWorkspaceStatus.WAITING_CONFIRMATION,
                 AgentWorkspaceStatus.WAITING_RESPONSE,
-                AgentWorkspaceStatus.PAUSED
-            ) &&
-            !AgentTaskTerminalReplyPolicy.hasTerminalReply(
-                transcriptEntries,
-                candidate.taskId
+                AgentWorkspaceStatus.PAUSED,
+                AgentWorkspaceStatus.BLOCKED,
+                AgentWorkspaceStatus.FAILED
             )
-    } ?: return null
-    val runtime = MobileNativeAgent(
-        this,
-        sessionStore = SharedPreferencesAgentSessionStore(this, "task:${workspace.workspaceId}"),
-        nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
-    )
-    val state = runtime.snapshot()
-    val recoverable = when (workspace.status) {
-        AgentWorkspaceStatus.WAITING_CONFIRMATION ->
-            state.phase == AgentPhase.WAITING_CONFIRMATION && state.pendingAction != null
-        AgentWorkspaceStatus.WAITING_RESPONSE ->
-            state.phase == AgentPhase.WAITING_RESPONSE
-        AgentWorkspaceStatus.PAUSED ->
-            state.phase == AgentPhase.PAUSED
-        else -> false
     }
-    if (!recoverable) return null
-    mobileNativeAgent = runtime
-    agentRuntimeConversationIds[runtime] = resolvedConversationId
-    agentRuntimeTurnIds[runtime] = workspace.workspaceId
-    state.lastActionResult?.metadata
-        ?.get("source_message_id")
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-        ?.let { sourceMessageId ->
-            activeAgentTasks[sourceMessageId] = runtime
-            if (state.phase == AgentPhase.WAITING_RESPONSE) {
-                scheduleConnectorTimeouts(
-                    runtime = runtime,
-                    sourceMessageId = sourceMessageId,
-                    conversationId = resolvedConversationId,
-                    turnId = workspace.workspaceId
+    fun recoveryStillOwnsForeground(candidateWorkspaceId: String): Boolean {
+        val currentConversationId = runCatching { agentTranscriptStore.activeConversation().id }
+            .getOrDefault("")
+            .let { agentTranscriptStore.resolveMergedConversationId(it) ?: it }
+        val liveRuntimeWorkspaceIds = buildSet {
+            provisionalAgentTasks.forEach { runtime ->
+                if (runtime.snapshot().runningTaskCount > 0) {
+                    agentRuntimeTurnIds[runtime]?.takeIf(String::isNotBlank)?.let(::add)
+                }
+            }
+            activeAgentTasks.values.forEach { runtime ->
+                if (runtime.snapshot().runningTaskCount > 0) {
+                    agentRuntimeTurnIds[runtime]?.takeIf(String::isNotBlank)?.let(::add)
+                }
+            }
+        }
+        return AgentWorkspaceRestoreArbitrationPolicy.stillOwnsRecovery(
+            candidateWorkspaceId = candidateWorkspaceId,
+            startedConversationId = resolvedConversationId,
+            currentConversationId = currentConversationId,
+            activeSupervisorWorkspaceIds = AgentTaskRuntime.supervisor(this).activeTaskIds(),
+            liveRuntimeWorkspaceIds = liveRuntimeWorkspaceIds
+        )
+    }
+    workspaces.forEach { workspace ->
+        if (!recoveryStillOwnsForeground(workspace.workspaceId)) {
+            Log.i(
+                "SignalASIAgentLifecycle",
+                "abandoning stale workspace restore=${workspace.workspaceId.take(8)} before hydration"
+            )
+            return null
+        }
+        val candidateConversationId = agentTranscriptStore
+            .resolveMergedConversationId(workspace.conversationId)
+            ?: workspace.conversationId
+        val candidateEntries = if (candidateConversationId == resolvedConversationId) {
+            transcriptEntries
+        } else {
+            agentTranscriptStore.list(candidateConversationId)
+        }
+        if (AgentTaskTerminalReplyPolicy.hasTerminalReply(candidateEntries, workspace.taskId)) {
+            return@forEach
+        }
+        val runtime = MobileNativeAgent(
+            this,
+            sessionStore = SharedPreferencesAgentSessionStore(this, "task:${workspace.workspaceId}"),
+            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
+        )
+        var state = runtime.snapshot()
+        val interruptedRecovery = AgentInterruptedWorkspaceRecoveryPolicy.shouldResume(
+            workspace.status,
+            state.phase,
+            state.plan,
+            state.lastActionResult
+        )
+        val interruptedHandoffRecovery =
+            AgentPendingHandoffRecoveryPolicy.interruptedRecoveryAction(state.phase, state.plan) != null
+        val failedDeliveryRecovery = AgentConnectorDeliveryRecoveryPolicy.shouldResume(
+            workspaceStatus = workspace.status,
+            phase = state.phase,
+            lastActionResult = state.lastActionResult,
+            plan = state.plan
+        )
+        val belongsToCurrentConversation = candidateConversationId == resolvedConversationId
+        val recoverable = AgentWorkspaceRestorePolicy.shouldRestore(
+            workspaceStatus = workspace.status,
+            phase = state.phase,
+            belongsToCurrentConversation = belongsToCurrentConversation,
+            hasPendingAction = state.pendingAction != null,
+            interruptedRecovery = interruptedRecovery,
+            interruptedHandoffRecovery = interruptedHandoffRecovery,
+            failedDeliveryRecovery = failedDeliveryRecovery
+        )
+        if (!recoverable) return@forEach
+        if (!recoveryStillOwnsForeground(workspace.workspaceId)) {
+            Log.i(
+                "SignalASIAgentLifecycle",
+                "abandoning stale workspace restore=${workspace.workspaceId.take(8)} before recovery"
+            )
+            return null
+        }
+        val failedWaitingWorkspaceRecovery = workspace.status == AgentWorkspaceStatus.FAILED &&
+            state.phase == AgentPhase.WAITING_RESPONSE
+        if (failedWaitingWorkspaceRecovery) {
+            runCatching {
+                AgentTaskRuntime.supervisor(this).reopenInterruptedWorkspace(
+                    workspace.workspaceId,
+                    "A durable connector handoff is still waiting and must be reconciled"
+                )
+            }.onFailure { error ->
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "failed to reopen waiting workspace=${workspace.workspaceId.take(8)}",
+                    error
+                )
+                return@forEach
+            }
+        }
+        if (interruptedRecovery) {
+            if (!recoveryStillOwnsForeground(workspace.workspaceId)) return null
+            if (workspace.status == AgentWorkspaceStatus.FAILED && !failedWaitingWorkspaceRecovery) {
+                runCatching {
+                    AgentTaskRuntime.supervisor(this).reopenInterruptedWorkspace(
+                        workspace.workspaceId
+                    )
+                }.onFailure { error ->
+                    Log.w(
+                        "SignalASIAgentLifecycle",
+                        "failed to reopen interrupted workspace=${workspace.workspaceId.take(8)}",
+                        error
+                    )
+                    return@forEach
+                }
+            }
+            Log.i(
+                "SignalASIAgentLifecycle",
+                "resuming interrupted workspace=${workspace.workspaceId.take(8)} from durable evidence"
+            )
+            state = runCatching(runtime::resumeCurrentTask).getOrElse { error ->
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "failed to resume interrupted workspace=${workspace.workspaceId.take(8)}",
+                    error
+                )
+                runtime.snapshot()
+            }
+        }
+        if (interruptedHandoffRecovery) {
+            if (!recoveryStillOwnsForeground(workspace.workspaceId)) return null
+            Log.w(
+                "SignalASIAgentLifecycle",
+                "resuming interrupted connector recovery workspace=${workspace.workspaceId.take(8)}"
+            )
+            state = runCatching(runtime::resumeInterruptedConnectorHandoffRecovery).getOrElse { error ->
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "failed to resume connector recovery workspace=${workspace.workspaceId.take(8)}",
+                    error
+                )
+                null
+            } ?: runtime.snapshot()
+            persistAgentWorkspaceSnapshot(
+                workspace.workspaceId,
+                state,
+                runtime,
+                interruptedRecoveryReason = "Interrupted connector recovery resumed from durable state"
+            )
+        }
+        if (failedDeliveryRecovery) {
+            if (!recoveryStillOwnsForeground(workspace.workspaceId)) return null
+            runCatching {
+                AgentTaskRuntime.supervisor(this).reopenInterruptedWorkspace(
+                    workspace.workspaceId,
+                    "A connector delivery failure is being observed and replanned"
+                )
+            }.onFailure { error ->
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "failed to reopen delivery failure workspace=${workspace.workspaceId.take(8)}",
+                    error
+                )
+                return@forEach
+            }
+            Log.w(
+                "SignalASIAgentLifecycle",
+                "resuming connector delivery recovery workspace=${workspace.workspaceId.take(8)}"
+            )
+            state = runCatching(runtime::resumeFailedConnectorDeliveryRecovery).getOrElse { error ->
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "failed to replan delivery failure workspace=${workspace.workspaceId.take(8)}",
+                    error
+                )
+                null
+            } ?: runtime.snapshot()
+            persistAgentWorkspaceSnapshot(
+                workspace.workspaceId,
+                state,
+                runtime,
+                interruptedRecoveryReason = "Connector delivery recovery resumed from durable state"
+            )
+        }
+        val waitingSourceMessageId = state.lastActionResult?.metadata
+            ?.get("source_message_id")
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+        if (waitingSourceMessageId != null && state.phase == AgentPhase.WAITING_RESPONSE) {
+            if (!recoveryStillOwnsForeground(workspace.workspaceId)) return null
+            val waitingMetadata = state.lastActionResult?.metadata.orEmpty()
+            val remainsInReliableOutbox = SignalASILinkDeliveryStore.hasPendingClientSourceMessageId(
+                this,
+                waitingSourceMessageId
+            )
+            val durableResponseAlreadyArrived = AgentConnectorResponseStore.pending(this).any { response ->
+                response.conversationId == candidateConversationId &&
+                    response.turnId == workspace.workspaceId
+            }
+            val recoveryDeadline = AgentConnectorTimingPolicy
+                .deadlines(waitingMetadata["has_attachments"] == "true")
+                .runningMs
+            Log.i(
+                "SignalASIAgentLifecycle",
+                "handoff recovery audit source=$waitingSourceMessageId " +
+                    "outbox=$remainsInReliableOutbox " +
+                    "remote_status=${waitingMetadata["remote_task_status"].orEmpty().ifBlank { "none" }} " +
+                    "attempt=${AgentPendingHandoffRecoveryPolicy.recoveryAttempt(waitingMetadata)}"
+            )
+            if (!durableResponseAlreadyArrived && AgentPendingHandoffRecoveryPolicy.shouldRecover(
+                    phase = state.phase,
+                    sourceMessageId = waitingSourceMessageId,
+                    remainsInReliableOutbox = remainsInReliableOutbox,
+                    metadata = waitingMetadata,
+                    staleAfterMillis = recoveryDeadline
+                )
+            ) {
+                Log.w(
+                    "SignalASIAgentLifecycle",
+                    "recovering stranded connector source=$waitingSourceMessageId " +
+                        "workspace=${workspace.workspaceId.take(8)}"
+                )
+                state = runtime.recoverStrandedConnectorHandoff(
+                    waitingSourceMessageId,
+                    "The previous connector handoff was not accepted; dispatching it again"
+                ) ?: runtime.snapshot()
+                state.lastActionResult?.metadata
+                    ?.get("source_message_id")
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0L && it != waitingSourceMessageId }
+                    ?.let { replacementSourceMessageId ->
+                        AgentPendingDeliveryStore.markRecoveryPredecessor(
+                            this,
+                            waitingSourceMessageId,
+                            replacementSourceMessageId
+                        )
+                    }
+                persistAgentWorkspaceSnapshot(
+                    workspace.workspaceId,
+                    state,
+                    runtime,
+                    interruptedRecoveryReason = "Stranded connector handoff was recovered from durable state"
+                )
+            } else if (AgentPendingHandoffRecoveryPolicy.isExhausted(
+                    phase = state.phase,
+                    sourceMessageId = waitingSourceMessageId,
+                    remainsInReliableOutbox = remainsInReliableOutbox,
+                    metadata = waitingMetadata,
+                    staleAfterMillis = recoveryDeadline
+                )
+            ) {
+                Log.e(
+                    "SignalASIAgentLifecycle",
+                    "connector recovery exhausted source=$waitingSourceMessageId " +
+                        "workspace=${workspace.workspaceId.take(8)}"
+                )
+                state = runtime.handleConnectorDeliveryFailure(
+                    waitingSourceMessageId,
+                    "The task could not reach the selected model after automatic recovery"
+                ) ?: runtime.snapshot()
+                AgentPendingDeliveryStore.remove(this, waitingSourceMessageId)
+                persistAgentWorkspaceSnapshot(
+                    workspace.workspaceId,
+                    state,
+                    runtime,
+                    interruptedRecoveryReason = "Connector recovery exhaustion was reconciled from durable state"
                 )
             }
         }
-    Log.i(
-        "SignalASIAgentLifecycle",
-        "restored active workspace=${workspace.workspaceId.take(8)} phase=${state.phase.name}"
-    )
-    return state
+        if (!recoveryStillOwnsForeground(workspace.workspaceId)) {
+            Log.i(
+                "SignalASIAgentLifecycle",
+                "abandoning stale workspace restore=${workspace.workspaceId.take(8)} before binding"
+            )
+            return null
+        }
+        mobileNativeAgent = runtime
+        agentRuntimeConversationIds[runtime] = candidateConversationId
+        agentRuntimeTurnIds[runtime] = workspace.workspaceId
+        if (interruptedRecovery) {
+            // resumeCurrentTask() may create a replacement connector handoff. Persist the
+            // new source and WAITING_RESPONSE state before a reply or watchdog event arrives.
+            persistAgentWorkspaceSnapshot(
+                workspace.workspaceId,
+                state,
+                runtime,
+                interruptedRecoveryReason = "Interrupted execution resumed from durable state"
+            )
+        }
+        state.lastActionResult?.metadata
+            ?.get("source_message_id")
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+            ?.let { sourceMessageId ->
+                activeAgentTasks[sourceMessageId] = runtime
+                if (state.phase == AgentPhase.WAITING_RESPONSE) {
+                    AgentPendingDeliveryStore.put(
+                        this,
+                        AgentPendingDelivery(
+                            sourceMessageId = sourceMessageId,
+                            conversationId = candidateConversationId,
+                            turnId = workspace.workspaceId,
+                            taskId = state.lastActionResult?.metadata?.get("remote_task_id").orEmpty()
+                                .ifBlank { workspace.workspaceId },
+                            contactId = state.lastActionResult?.metadata?.get("contact_id").orEmpty()
+                        )
+                    )
+                    scheduleConnectorTimeouts(
+                        runtime = runtime,
+                        sourceMessageId = sourceMessageId,
+                        conversationId = candidateConversationId,
+                        turnId = workspace.workspaceId
+                    )
+                    consumePendingAgentConnectorResponsesAsync()
+                }
+            }
+        Log.i(
+            "SignalASIAgentLifecycle",
+            "restored active workspace=${workspace.workspaceId.take(8)} phase=${state.phase.name}"
+        )
+        return state
+    }
+    return null
 }
 
 internal fun MainActivity.scheduleAgentSkillBootstrap() {

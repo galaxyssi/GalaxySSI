@@ -2597,4 +2597,11 @@
     <string name="contact_device_platform">System</string>
     <string name="contact_device_host">Host name</string>
     <string name="cc_runtime_pack_android_sdk">Android SDK</string>
+    <string name="agent_loop_context_phone_project">Context · Loaded this conversation, the phone project workspace, and available development tools.</string>
+    <string name="agent_loop_reason_format">Reason · %1$s</string>
+    <string name="agent_loop_action_format">Running %1$s</string>
+    <string name="agent_loop_action_progress_format">Running %1$s · %2$d%%</string>
+    <string name="agent_loop_action_detail_format">Running %1$s · %2$s</string>
+    <string name="agent_loop_observation_format">Ran %1$s</string>
+    <string name="agent_loop_observation_failed_format">%1$s failed · %2$s</string>
 </resources>

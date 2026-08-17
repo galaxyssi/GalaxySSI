@@ -356,6 +356,8 @@ class MobileNativeAgent(
     internal var activeWorkflowExecutionId: String? = null
     internal var executionLoop = AgentExecutionLoop.create()
     internal var executionLoopEventSink: AgentExecutionLoopEventSink = executionLoopEventSink
+    @Volatile internal var activeNativeToolCancellationSource: AgentNativeToolCancellationSource? = null
+    @Volatile internal var activeNativeToolCancellationReason: String = ""
     internal val auditTrail = mutableListOf<AgentAuditEntry>()
     @Volatile internal var cachedRuntimeContext: AgentRuntimeContext? = null
     @Volatile internal var cachedRuntimeContextAtElapsedMillis: Long = 0L
@@ -428,7 +430,8 @@ class MobileNativeAgent(
         inputTokens: Long = 0L,
         outputTokens: Long = 0L,
         costMicros: Long = 0L,
-        networkBytes: Long = 0L
+        networkBytes: Long = 0L,
+        expectedSourceMessageId: Long = sourceMessageId
     ): AgentUiState? = acceptConnectorResponseInternal(
         sourceMessageId,
         contactId,
@@ -441,7 +444,8 @@ class MobileNativeAgent(
         inputTokens,
         outputTokens,
         costMicros,
-        networkBytes
+        networkBytes,
+        expectedSourceMessageId
     )?.let(::reconcileExecutionLoop)
 
 
@@ -737,15 +741,11 @@ class MobileNativeAgent(
             )
         )
         val plan = currentPlan ?: return null
-        lastActionResult = failed
-        currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
-        phase = AgentPhase.FAILED
         recordAudit(
             AgentAuditEvent.INVOCATION_AUDIT,
             "connector_delivery_failed:source=$sourceMessageId"
         )
-        saveTaskRecord(result = message)
-        return reconcileExecutionLoop(snapshot())
+        return recoverAfterConnectorDeliveryFailure(plan, failed)
     }
 
     @Synchronized

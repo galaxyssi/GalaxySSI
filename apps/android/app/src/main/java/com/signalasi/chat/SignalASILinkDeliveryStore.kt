@@ -36,6 +36,13 @@ object SignalASILinkDeliveryStore {
 
     enum class IncomingStageResult { STAGED, PENDING, COMPLETED, INVALID }
 
+    internal fun outboundClientSourceMessageId(payload: JSONObject): Long =
+        payload.optString("client_message_id").toLongOrNull()
+            ?: payload.optLong("client_message_id", 0L).takeIf { it > 0L }
+            ?: payload.optString("source_message_id").toLongOrNull()
+            ?: payload.optLong("source_message_id", 0L).takeIf { it > 0L }
+            ?: 0L
+
     data class PendingMessage(
         val messageId: String,
         val topic: String,
@@ -298,6 +305,22 @@ object SignalASILinkDeliveryStore {
         item.optString("wire_payload").ifBlank {
             readWirePayload(context, item.optString(WIRE_PAYLOAD_FILE))
         }
+    }
+
+    @Synchronized
+    fun hasPendingClientSourceMessageId(context: Context, sourceMessageId: Long): Boolean =
+        sourceMessageId > 0L && containsClientSourceMessageId(outboxArray(context), sourceMessageId)
+
+    internal fun containsClientSourceMessageId(values: JSONArray, sourceMessageId: Long): Boolean {
+        if (sourceMessageId <= 0L) return false
+        for (index in 0 until values.length()) {
+            if (values.optJSONObject(index)
+                    ?.optLong("client_source_message_id", 0L) == sourceMessageId
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     @Synchronized

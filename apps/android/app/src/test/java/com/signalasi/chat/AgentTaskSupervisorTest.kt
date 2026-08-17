@@ -15,6 +15,75 @@ import org.junit.Test
 
 class AgentTaskSupervisorTest {
     @Test
+    fun explicitlyReopensInterruptedFailedWorkspaceWithAuditEvent() {
+        val store = InMemoryAgentWorkspaceStore()
+        val failed = store.upsert(
+            workspace("interrupted", AgentWorkspaceStatus.FAILED),
+            expectedRevision = 0L
+        )
+        val supervisor = AgentTaskSupervisor(store)
+
+        val reopened = supervisor.reopenInterruptedWorkspace(failed.workspaceId)
+
+        assertEquals(AgentWorkspaceStatus.PAUSED, reopened.status)
+        assertEquals("", reopened.errorMessage)
+        assertEquals(AgentTaskEventKinds.RECOVERED_INTERRUPTED, reopened.eventJournal.last().kind)
+        supervisor.close()
+    }
+
+    @Test
+    fun atomicallyRecordsRecoveredWaitingSnapshotFromFailedWorkspace() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(
+            workspace("atomic-recovery", AgentWorkspaceStatus.FAILED).copy(
+                errorMessage = "Process was interrupted"
+            ),
+            expectedRevision = 0L
+        )
+        val supervisor = AgentTaskSupervisor(store)
+
+        val recovered = supervisor.recordRecoveredExecutionSnapshot(
+            workspaceId = "workspace-atomic-recovery",
+            snapshot = AgentWorkspaceExecutionSnapshot(
+                status = AgentWorkspaceStatus.WAITING_RESPONSE,
+                remoteRunId = "731",
+                handoffIds = listOf("codex:731")
+            )
+        )
+
+        assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, recovered.status)
+        assertEquals("", recovered.errorMessage)
+        assertEquals("731", recovered.remoteRunId)
+        assertTrue(recovered.eventJournal.any {
+            it.kind == AgentTaskEventKinds.RECOVERED_INTERRUPTED
+        })
+        assertEquals(AgentTaskEventKinds.SNAPSHOT, recovered.eventJournal.last().kind)
+        supervisor.close()
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun recoveredSnapshotCannotReopenCancelledWorkspace() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(
+            workspace("cancelled-recovery", AgentWorkspaceStatus.CANCELLED).copy(
+                cancellationRequested = true
+            ),
+            expectedRevision = 0L
+        )
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            supervisor.recordRecoveredExecutionSnapshot(
+                workspaceId = "workspace-cancelled-recovery",
+                snapshot = AgentWorkspaceExecutionSnapshot(
+                    status = AgentWorkspaceStatus.WAITING_RESPONSE
+                )
+            )
+        } finally {
+            supervisor.close()
+        }
+    }
+
+    @Test
     fun memoryObserverReceivesQueuedAndTerminalTaskIdentity() = runBlocking {
         val store = InMemoryAgentWorkspaceStore()
         val observed = Collections.synchronizedList(mutableListOf<AgentWorkspace>())
@@ -377,6 +446,35 @@ class AgentTaskSupervisorTest {
         )
         val recovered = requireNotNull(
             supervisor.reconcileLateConnectorResponse("workspace-late", 731L)
+        )
+
+        assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, recovered.status)
+        assertEquals("", recovered.errorMessage)
+        assertEquals(AgentTaskEventKinds.LATE_RESPONSE, recovered.eventJournal.last().kind)
+        supervisor.close()
+    }
+
+    @Test
+    fun durableTurnBindingRecoversReplacementHandoffThatWasNotCheckpointed() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(
+            workspace("durable-late", status = AgentWorkspaceStatus.FAILED).copy(
+                handoffIds = listOf("codex:100"),
+                errorMessage = "Connector response timed out"
+            )
+        )
+        val supervisor = AgentTaskSupervisor(store)
+
+        assertEquals(
+            null,
+            supervisor.reconcileLateConnectorResponse("workspace-durable-late", 200L)
+        )
+        val recovered = requireNotNull(
+            supervisor.reconcileLateConnectorResponse(
+                workspaceId = "workspace-durable-late",
+                sourceMessageId = 200L,
+                durableTurnId = "workspace-durable-late"
+            )
         )
 
         assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, recovered.status)

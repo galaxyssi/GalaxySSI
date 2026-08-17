@@ -529,14 +529,43 @@ internal fun MobileNativeAgent.executeAction(
             "permission_mode" to safetyPolicy.permissionMode().name.lowercase(Locale.US)
         )
     )
-    val result = nativeToolRegistry.invoke(
-        id = toolId,
-        input = scopedInput,
-        context = invocationContext,
-        hooks = nativeToolHooks(toolId, invocationContext)
+    val toolCancellationSource = AgentNativeToolCancellationSource()
+    synchronized(this) {
+        activeNativeToolCancellationSource = toolCancellationSource
+        activeNativeToolCancellationReason = ""
+    }
+    val result = try {
+        nativeToolRegistry.invoke(
+            id = toolId,
+            input = scopedInput,
+            context = invocationContext,
+            hooks = nativeToolHooks(toolId, invocationContext, toolCancellationSource.token)
+        )
+    } finally {
+        synchronized(this) {
+            if (activeNativeToolCancellationSource === toolCancellationSource) {
+                activeNativeToolCancellationSource = null
+            }
+        }
+    }
+    Log.i(
+        "SignalASILatency",
+        "agent_native_tool stage=registry_return tool=${toolId.take(48)} " +
+            "status=${result.status.wireValue} invocation=${result.receipt.invocationId.take(8)}"
     )
     val renderedOutput = AgentNativeJsonCodec.stringify(result.output).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
-    val nativeMessage = result.message.ifBlank { result.error?.message.orEmpty() }
+    val cancellationReason = synchronized(this) {
+        activeNativeToolCancellationReason.also {
+            if (activeNativeToolCancellationSource == null) activeNativeToolCancellationReason = ""
+        }
+    }
+    val nativeMessage = if (
+        result.status == AgentNativeToolResultStatus.CANCELLED && cancellationReason.isNotBlank()
+    ) {
+        cancellationReason
+    } else {
+        result.message.ifBlank { result.error?.message.orEmpty() }
+    }
     val responseLanguage = action.parameters["response_language"].orEmpty()
     val zh = responseLanguage == "zh" || (responseLanguage.isBlank() && currentGoal.any { it in '\u3400'..'\u9fff' })
     val developmentFile = action.parameters[PHONE_DEVELOPMENT_FILE_PARAMETER].orEmpty()
@@ -567,6 +596,14 @@ internal fun MobileNativeAgent.executeAction(
             "provenance" to result.provenance.executorId
         ) + richOutput.takeIf(String::isNotBlank)?.let { mapOf("rich_output" to it) }.orEmpty()
     )
+}
+
+internal fun MobileNativeAgent.cancelActiveNativeTool(reason: String): Boolean = synchronized(this) {
+    val source = activeNativeToolCancellationSource ?: return@synchronized false
+    activeNativeToolCancellationReason = reason.trim().ifBlank {
+        "The native tool stopped reporting progress"
+    }
+    source.cancel()
 }
 
 internal fun MobileNativeAgent.nativeToolHooks(

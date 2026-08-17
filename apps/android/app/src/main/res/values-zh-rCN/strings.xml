@@ -2504,4 +2504,11 @@
     <string name="contact_device_platform">&#x7CFB;&#x7EDF;</string>
     <string name="contact_device_host">&#x4E3B;&#x673A;&#x540D;</string>
     <string name="cc_runtime_pack_android_sdk">Android SDK</string>
+    <string name="agent_loop_context_phone_project">&#x4E0A;&#x4E0B;&#x6587; &#xB7; &#x5DF2;&#x52A0;&#x8F7D;&#x5F53;&#x524D;&#x4F1A;&#x8BDD;&#x3001;&#x624B;&#x673A;&#x9879;&#x76EE;&#x5DE5;&#x4F5C;&#x533A;&#x4E0E;&#x53EF;&#x7528;&#x5F00;&#x53D1;&#x5DE5;&#x5177;&#x3002;</string>
+    <string name="agent_loop_reason_format">&#x63A8;&#x7406; &#xB7; %1$s</string>
+    <string name="agent_loop_action_format">&#x6B63;&#x5728;&#x6267;&#x884C; %1$s</string>
+    <string name="agent_loop_action_progress_format">&#x6B63;&#x5728;&#x6267;&#x884C; %1$s &#xB7; %2$d%%</string>
+    <string name="agent_loop_action_detail_format">&#x6B63;&#x5728;&#x6267;&#x884C; %1$s &#xB7; %2$s</string>
+    <string name="agent_loop_observation_format">&#x5DF2;&#x6267;&#x884C; %1$s</string>
+    <string name="agent_loop_observation_failed_format">%1$s &#x6267;&#x884C;&#x5931;&#x8D25; &#xB7; %2$s</string>
 </resources>

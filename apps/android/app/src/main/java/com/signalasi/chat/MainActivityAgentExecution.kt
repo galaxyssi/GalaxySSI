@@ -385,6 +385,16 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
         )
     }
     val label = projection.label ?: return
+    if (runtime.snapshot().plan?.isSupervisedProjectPlan() == true && label in setOf(
+            AgentExecutionLoopTimelineLabel.ACT,
+            AgentExecutionLoopTimelineLabel.OBSERVE,
+            AgentExecutionLoopTimelineLabel.VERIFY,
+            AgentExecutionLoopTimelineLabel.FINALIZE,
+            AgentExecutionLoopTimelineLabel.LEARN
+        )
+    ) {
+        return
+    }
     val state = runtime.snapshot()
     agentTranscriptStore.append(
         AgentTranscriptRole.PROCESS,
@@ -449,6 +459,23 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     executionMode: AgentTaskExecutionMode? = null
 ) {
     val submissionStartedAt = SystemClock.elapsedRealtime()
+    val supervisedProject = deterministicAction == null &&
+        AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext)
+    if (supervisedProject) {
+        agentTranscriptStore.upsert(
+            role = AgentTranscriptRole.PROCESS,
+            text = getString(R.string.agent_loop_context_phone_project),
+            dedupeKey = "agent-loop-context:$turnId",
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = turnId
+        )
+        runOnUiThread {
+            if (conversationId == agentTranscriptStore.activeConversation().id) {
+                refreshAgentTranscriptWindow(conversationId)
+            }
+        }
+    }
     val workspace = AgentWorkspace(
         workspaceId = turnId,
         sessionId = turnId,
@@ -999,7 +1026,8 @@ internal fun MainActivity.recordSkillAgentRun(turnId: String, result: AgentSkill
 internal fun MainActivity.persistAgentWorkspaceSnapshot(
     turnId: String,
     state: AgentUiState,
-    runtime: MobileNativeAgent = mobileNativeAgent
+    runtime: MobileNativeAgent = mobileNativeAgent,
+    interruptedRecoveryReason: String = ""
 ) {
     runCatching {
         val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
@@ -1079,9 +1107,7 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
             .toString()
         val profile = AppStore.profile(this)
         val supervisor = AgentTaskRuntime.supervisor(this)
-        supervisor.recordExecutionSnapshot(
-            turnId,
-            AgentWorkspaceExecutionSnapshot(
+        val snapshot = AgentWorkspaceExecutionSnapshot(
                 status = state.phase.toWorkspaceStatus(),
                 planSnapshot = planJson,
                 resultJson = resultJson,
@@ -1101,7 +1127,15 @@ internal fun MainActivity.persistAgentWorkspaceSnapshot(
                     .ifBlank { sourceMessageId },
                 lastRemoteEventSequence = result?.metadata?.get("last_event_sequence")?.toLongOrNull() ?: 0L
             )
-        )
+        if (interruptedRecoveryReason.isNotBlank()) {
+            supervisor.recordRecoveredExecutionSnapshot(
+                workspaceId = turnId,
+                snapshot = snapshot,
+                reason = interruptedRecoveryReason
+            )
+        } else {
+            supervisor.recordExecutionSnapshot(turnId, snapshot)
+        }
         supervisor.checkpoint(
             workspaceId = turnId,
             checkpointId = "state-${state.sessionId.take(48)}",
@@ -1311,6 +1345,13 @@ internal fun MainActivity.ensureRecordedRunTimeline(
 }
 
 internal fun MainActivity.recordNativeToolLifecycleEvent(event: AgentNativeToolLifecycleEvent) {
+    agentTaskPersistenceExecutor.execute {
+        recordNativeToolLifecycleEventPersisted(event)
+    }
+}
+
+private fun MainActivity.recordNativeToolLifecycleEventPersisted(event: AgentNativeToolLifecycleEvent) {
+    recordNativeToolTranscript(event)
     val runId = agentRunIdsByTurn[event.turnId] ?: return
     val run = agentRunRecorder.run(runId) ?: return
     if (event.turnId.isNotBlank()) {
@@ -1347,6 +1388,75 @@ internal fun MainActivity.recordNativeToolLifecycleEvent(event: AgentNativeToolL
         stepId = event.stepId,
         toolCallId = event.invocationId
     )
+}
+
+internal fun MainActivity.recordNativeToolTranscript(event: AgentNativeToolLifecycleEvent) {
+    if (event.conversationId.isBlank() || event.turnId.isBlank()) return
+    val descriptorTitle = mobileNativeAgent.nativeToolCatalog()
+        .firstOrNull { descriptor -> descriptor.id == event.toolId }
+        ?.title
+        .orEmpty()
+    val toolTitle = descriptorTitle.ifBlank {
+        event.toolId.substringAfterLast('.')
+            .replace('_', ' ')
+            .replaceFirstChar { character ->
+                if (character.isLowerCase()) character.titlecase(Locale.getDefault()) else character.toString()
+            }
+    }
+    val progress = event.percent?.coerceIn(0, 100)
+    val detail = event.progressStage.trim()
+        .takeIf(String::isNotBlank)
+        ?: event.message.trim().takeIf(String::isNotBlank)
+    val text = when (event.stage) {
+        AgentNativeToolLifecycleStage.STARTED -> getString(
+            R.string.agent_loop_action_format,
+            toolTitle
+        )
+        AgentNativeToolLifecycleStage.PROGRESS -> when {
+            progress != null -> getString(
+                R.string.agent_loop_action_progress_format,
+                toolTitle,
+                progress
+            )
+            detail != null -> getString(
+                R.string.agent_loop_action_detail_format,
+                toolTitle,
+                detail.take(160)
+            )
+            else -> getString(R.string.agent_loop_action_format, toolTitle)
+        }
+        AgentNativeToolLifecycleStage.FINISHED -> {
+            val failed = event.status != null && event.status != AgentNativeToolResultStatus.SUCCEEDED
+            if (failed) {
+                getString(
+                    R.string.agent_loop_observation_failed_format,
+                    toolTitle,
+                    event.message.trim().ifBlank { event.status?.wireValue.orEmpty() }.take(240)
+                )
+            } else {
+                getString(
+                    R.string.agent_loop_observation_format,
+                    toolTitle
+                )
+            }
+        }
+    }
+    val changed = agentTranscriptStore.upsert(
+        role = AgentTranscriptRole.PROCESS,
+        text = text,
+        dedupeKey = "agent-loop-tool:${event.turnId}:${event.invocationId}",
+        timestampMillis = event.timestampMillis,
+        conversationId = event.conversationId,
+        turnId = event.turnId,
+        taskId = event.turnId
+    )
+    if (changed) {
+        runOnUiThread {
+            if (event.conversationId == agentTranscriptStore.activeConversation().id) {
+                refreshAgentTranscriptWindow(event.conversationId)
+            }
+        }
+    }
 }
 
 internal fun MainActivity.runtimeArtifactsFromResult(resultJson: String): List<AgentArtifactReference> = runCatching {

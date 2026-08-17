@@ -42,7 +42,7 @@ internal object AgentExecutionSiteDecisionCodec {
     private fun desktopEvidenceIsNegated(evidence: String): Boolean {
         val normalized = evidence.lowercase(Locale.US)
         return Regex("\\b(?:do not|don't|never|without)\\b").containsMatchIn(normalized) ||
-            listOf("不要", "禁止", "不得", "不能在", "别在").any(normalized::contains)
+            listOf("\u4e0d\u8981", "\u7981\u6b62", "\u4e0d\u5f97", "\u4e0d\u80fd\u5728", "\u522b\u5728").any(normalized::contains)
     }
 
     fun acceptsActions(

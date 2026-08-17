@@ -479,9 +479,7 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
         appContext.getString(R.string.agent_stale_connector_no_result)
     )
     logRestoredLifecycle(session, restoredSession, persistedTask)
-    val executionWasInterrupted = restoredSession.phase == AgentPhase.EXECUTING ||
-        restoredSession.phase == AgentPhase.VERIFYING ||
-        executionLoop.snapshot?.phase?.isActive == true
+    val executionWasInterrupted = AgentSessionInterruptionPolicy.wasInterrupted(restoredSession)
     sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
     activeTaskExecutionMode = restoredSession.taskExecutionMode
     phase = if (executionWasInterrupted) AgentPhase.PAUSED else restoredSession.phase
@@ -520,6 +518,7 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
     if (executionWasInterrupted) {
         executionLoop.recoverInterrupted()
         recordAudit(AgentAuditEvent.TASK_INTERRUPTED, "restored_to_safe_pause")
+        persistSession()
     }
 }
 
@@ -555,6 +554,7 @@ internal fun MobileNativeAgent.persistSession() {
             activeWorkflowExecutionId = activeWorkflowExecutionId.orEmpty(),
             taskExecutionMode = activeTaskExecutionMode,
             executionLoopSnapshot = executionLoop.snapshot,
+            processInstanceId = AgentProcessIdentity.instanceId,
             updatedAtMillis = System.currentTimeMillis()
         )
     )

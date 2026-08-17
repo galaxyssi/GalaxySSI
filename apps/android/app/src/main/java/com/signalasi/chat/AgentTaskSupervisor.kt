@@ -51,6 +51,7 @@ object AgentTaskEventKinds {
     const val STALLED = "task.stalled"
     const val TIMED_OUT = "task.timed_out"
     const val LATE_RESPONSE = "task.late_response"
+    const val RECOVERED_INTERRUPTED = "task.recovered_interrupted"
 }
 
 fun interface AgentTaskResumeHook {
@@ -315,6 +316,27 @@ class AgentTaskSupervisor(
 
     fun recoverableTasks(): List<AgentWorkspace> = workspaceStore.recoverable()
 
+    fun reopenInterruptedWorkspace(
+        workspaceId: String,
+        reason: String = "Interrupted execution is ready to resume"
+    ): AgentWorkspace = synchronized(storeMutationLock) {
+        mutateWorkspaceLocked(workspaceId) { current ->
+            require(current.status == AgentWorkspaceStatus.FAILED) {
+                "Only an interrupted failed workspace can be reopened"
+            }
+            appendEventCandidate(
+                current = current,
+                kind = AgentTaskEventKinds.RECOVERED_INTERRUPTED,
+                message = reason.ifBlank { "Interrupted execution is ready to resume" },
+                payloadJson = ""
+            ).copy(
+                status = AgentWorkspaceStatus.PAUSED,
+                errorMessage = "",
+                cancellationRequested = false
+            )
+        }
+    }
+
     fun resume(
         workspaceId: String,
         lane: AgentTaskLane = AgentTaskLane.READ_REASONING,
@@ -435,7 +457,8 @@ class AgentTaskSupervisor(
      */
     fun reconcileLateConnectorResponse(
         workspaceId: String,
-        sourceMessageId: Long
+        sourceMessageId: Long,
+        durableTurnId: String = ""
     ): AgentWorkspace? = synchronized(storeMutationLock) {
         if (sourceMessageId <= 0L) return@synchronized null
         val current = workspaceStore.find(workspaceId.trim()) ?: return@synchronized null
@@ -445,7 +468,10 @@ class AgentTaskSupervisor(
         val sourceSuffix = ":$sourceMessageId"
         val handoffMatches = current.handoffIds.any { it.endsWith(sourceSuffix) } ||
             current.remoteRunId == sourceMessageId.toString()
-        if (!handoffMatches) return@synchronized null
+        val durableBindingMatches = durableTurnId.trim().let { turnId ->
+            turnId.isNotBlank() && turnId == current.workspaceId
+        }
+        if (!handoffMatches && !durableBindingMatches) return@synchronized null
         mutateWorkspaceLocked(current.workspaceId) { latest ->
             if (latest.status != AgentWorkspaceStatus.FAILED || latest.cancellationRequested) {
                 latest
@@ -622,49 +648,48 @@ class AgentTaskSupervisor(
         snapshot: AgentWorkspaceExecutionSnapshot
     ): AgentWorkspace = synchronized(storeMutationLock) {
         mutateWorkspaceLocked(workspaceId) { current ->
+            applyExecutionSnapshotCandidate(current, snapshot)
+        }
+    }.also(::notifyMemoryObserver)
+
+    /**
+     * Atomically reopens an interrupted workspace and records the recovered runtime state.
+     * This is intentionally separate from normal snapshot persistence so terminal-state
+     * protection remains strict for every non-recovery caller.
+     */
+    fun recordRecoveredExecutionSnapshot(
+        workspaceId: String,
+        snapshot: AgentWorkspaceExecutionSnapshot,
+        reason: String = "Interrupted execution resumed from durable state"
+    ): AgentWorkspace = synchronized(storeMutationLock) {
+        mutateWorkspaceLocked(workspaceId) { current ->
+            require(!current.cancellationRequested) {
+                "Cancelled workspace $workspaceId cannot be recovered"
+            }
+            require(current.status != AgentWorkspaceStatus.COMPLETED &&
+                current.status != AgentWorkspaceStatus.CANCELLED
+            ) {
+                "Terminal workspace $workspaceId cannot be recovered from ${current.status}"
+            }
             val nextStatus = snapshot.status ?: current.status
-            val withEvent = if (nextStatus != current.status) {
-                transitionCandidate(
-                    current = current,
-                    status = nextStatus,
-                    eventKind = AgentTaskEventKinds.SNAPSHOT,
-                    message = nextStatus.name.lowercase()
-                )
-            } else {
+            require(!nextStatus.isTerminal) {
+                "Recovery snapshot for $workspaceId must be non-terminal"
+            }
+            val reopened = if (current.status == AgentWorkspaceStatus.FAILED) {
                 appendEventCandidate(
                     current = current,
-                    kind = AgentTaskEventKinds.SNAPSHOT,
-                    message = nextStatus.name.lowercase(),
+                    kind = AgentTaskEventKinds.RECOVERED_INTERRUPTED,
+                    message = reason.ifBlank { "Interrupted execution resumed from durable state" },
                     payloadJson = ""
+                ).copy(
+                    status = AgentWorkspaceStatus.PAUSED,
+                    errorMessage = "",
+                    cancellationRequested = false
                 )
+            } else {
+                current
             }
-            withEvent.copy(
-                currentPlanSnapshot = snapshot.planSnapshot.ifBlank { current.currentPlanSnapshot },
-                resultJson = snapshot.resultJson.ifBlank { current.resultJson },
-                errorMessage = snapshot.errorMessage.ifBlank { current.errorMessage },
-                toolCalls = (current.toolCalls + snapshot.toolCalls)
-                    .distinctBy(AgentToolCallRecord::id)
-                    .takeLast(AgentWorkspaceLimits.MAX_TOOL_CALLS),
-                artifacts = (current.artifacts + snapshot.artifacts)
-                    .distinctBy(AgentArtifactReference::id)
-                    .takeLast(AgentWorkspaceLimits.MAX_ARTIFACTS),
-                permissionGrantIds = (current.permissionGrantIds + snapshot.permissionGrantIds)
-                    .distinct()
-                    .takeLast(AgentWorkspaceLimits.MAX_PERMISSION_BINDINGS),
-                permissionScopes = (current.permissionScopes + snapshot.permissionScopes)
-                    .distinct()
-                    .takeLast(AgentWorkspaceLimits.MAX_PERMISSION_BINDINGS),
-                handoffIds = (current.handoffIds + snapshot.handoffIds)
-                    .distinct()
-                    .takeLast(AgentWorkspaceLimits.MAX_HANDOFF_IDS),
-                agentId = snapshot.agentId.ifBlank { current.agentId },
-                deviceId = snapshot.deviceId.ifBlank { current.deviceId },
-                remoteRunId = snapshot.remoteRunId.ifBlank { current.remoteRunId },
-                lastRemoteEventSequence = maxOf(
-                    current.lastRemoteEventSequence,
-                    snapshot.lastRemoteEventSequence
-                )
-            )
+            applyExecutionSnapshotCandidate(reopened, snapshot)
         }
     }.also(::notifyMemoryObserver)
 
@@ -989,6 +1014,55 @@ class AgentTaskSupervisor(
         return appendEventCandidate(current, eventKind, message, payloadJson).copy(
             status = status,
             cancellationRequested = cancellationRequested
+        )
+    }
+
+    private fun applyExecutionSnapshotCandidate(
+        current: AgentWorkspace,
+        snapshot: AgentWorkspaceExecutionSnapshot
+    ): AgentWorkspace {
+        val nextStatus = snapshot.status ?: current.status
+        val withEvent = if (nextStatus != current.status) {
+            transitionCandidate(
+                current = current,
+                status = nextStatus,
+                eventKind = AgentTaskEventKinds.SNAPSHOT,
+                message = nextStatus.name.lowercase()
+            )
+        } else {
+            appendEventCandidate(
+                current = current,
+                kind = AgentTaskEventKinds.SNAPSHOT,
+                message = nextStatus.name.lowercase(),
+                payloadJson = ""
+            )
+        }
+        return withEvent.copy(
+            currentPlanSnapshot = snapshot.planSnapshot.ifBlank { current.currentPlanSnapshot },
+            resultJson = snapshot.resultJson.ifBlank { current.resultJson },
+            errorMessage = snapshot.errorMessage.ifBlank { current.errorMessage },
+            toolCalls = (current.toolCalls + snapshot.toolCalls)
+                .distinctBy(AgentToolCallRecord::id)
+                .takeLast(AgentWorkspaceLimits.MAX_TOOL_CALLS),
+            artifacts = (current.artifacts + snapshot.artifacts)
+                .distinctBy(AgentArtifactReference::id)
+                .takeLast(AgentWorkspaceLimits.MAX_ARTIFACTS),
+            permissionGrantIds = (current.permissionGrantIds + snapshot.permissionGrantIds)
+                .distinct()
+                .takeLast(AgentWorkspaceLimits.MAX_PERMISSION_BINDINGS),
+            permissionScopes = (current.permissionScopes + snapshot.permissionScopes)
+                .distinct()
+                .takeLast(AgentWorkspaceLimits.MAX_PERMISSION_BINDINGS),
+            handoffIds = (current.handoffIds + snapshot.handoffIds)
+                .distinct()
+                .takeLast(AgentWorkspaceLimits.MAX_HANDOFF_IDS),
+            agentId = snapshot.agentId.ifBlank { current.agentId },
+            deviceId = snapshot.deviceId.ifBlank { current.deviceId },
+            remoteRunId = snapshot.remoteRunId.ifBlank { current.remoteRunId },
+            lastRemoteEventSequence = maxOf(
+                current.lastRemoteEventSequence,
+                snapshot.lastRemoteEventSequence
+            )
         )
     }
 

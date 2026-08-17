@@ -54,6 +54,45 @@ class AgentSupervisedProjectCompletionPolicyTest {
         ).isEmpty())
     }
 
+    @Test
+    fun phoneLinuxGoalCannotCompleteFromAndroidHostWorkspaceReceipt() {
+        val missing = AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            "\u8bf7\u5728\u624b\u673a\u672c\u673a Linux \u5de5\u4f5c\u533a\u5199\u5165\u6587\u4ef6\u5e76\u9a8c\u8bc1",
+            listOf(completed(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT))
+        )
+
+        assertEquals(
+            listOf("a successful signalasi.runtime.execute receipt from the phone Linux guest"),
+            missing
+        )
+    }
+
+    @Test
+    fun verifiedPhoneLinuxExecutionSatisfiesExecutionEnvironmentContract() {
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            "Run and verify this in the on-device Linux runtime",
+            listOf(completed(AgentOnDeviceRuntimeTools.EXECUTE))
+        ).isEmpty())
+    }
+
+    @Test
+    fun githubProjectChangeRequiresAPullRequestByDefault() {
+        val missing = AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            "Make a small Android UI improvement in https://github.com/signalasi/SignalASI",
+            listOf(completed(AgentMobileProjectNativeTools.COMMIT), completed(AgentMobileProjectNativeTools.PUSH))
+        )
+
+        assertEquals(listOf("a successfully created pull request with its URL"), missing)
+    }
+
+    @Test
+    fun explicitLocalOnlyRepositoryChangeDoesNotRequirePublication() {
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            "Modify https://github.com/signalasi/SignalASI locally only and do not push",
+            emptyList()
+        ).isEmpty())
+    }
+
     private fun completed(toolId: String) = AgentAction(
         id = toolId,
         kind = AgentActionKind.CALL_NATIVE_TOOL,

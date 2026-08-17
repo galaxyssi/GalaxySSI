@@ -34,6 +34,7 @@ object GlobalAutonomousToolCatalogPolicy {
         val normalizedGoal = GlobalAgentText.normalize(goal)
         return descriptors.asSequence()
             .filter { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }
+            .filter { it.risk != AgentNativeToolRisk.BLOCKED }
             .map { descriptor -> descriptor to relevance(descriptor, normalizedGoal, goalTokens) }
             .filter { it.second >= MIN_RELEVANCE }
             .sortedWith(

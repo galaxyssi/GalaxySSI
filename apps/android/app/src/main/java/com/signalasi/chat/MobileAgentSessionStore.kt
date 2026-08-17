@@ -49,6 +49,19 @@ interface AgentSessionStore {
     fun clear()
 }
 
+internal object AgentProcessIdentity {
+    val instanceId: String = UUID.randomUUID().toString()
+}
+
+internal object AgentSessionInterruptionPolicy {
+    fun wasInterrupted(snapshot: AgentSessionSnapshot): Boolean {
+        val active = snapshot.phase == AgentPhase.EXECUTING ||
+            snapshot.phase == AgentPhase.VERIFYING ||
+            snapshot.executionLoopSnapshot?.phase?.isActive == true
+        return active && snapshot.processInstanceId != AgentProcessIdentity.instanceId
+    }
+}
+
 class InMemoryAgentSessionStore : AgentSessionStore {
     @Volatile internal var snapshot: AgentSessionSnapshot? = null
     override fun load(): AgentSessionSnapshot? = snapshot
@@ -93,7 +106,7 @@ class SharedPreferencesAgentSessionStore(
     }
 
     internal fun encodeSession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
-        .put("version", 6)
+        .put("version", 7)
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
         .put("current_goal", AgentSessionPersistencePolicy.compactText(snapshot.currentGoal))
@@ -111,10 +124,11 @@ class SharedPreferencesAgentSessionStore(
                 ?.let(AgentExecutionLoopJsonCodec::encode)
                 ?.let(::JSONObject)
         )
+        .put("process_instance_id", snapshot.processInstanceId)
         .put("updated_at", snapshot.updatedAtMillis)
 
     internal fun encodeRecoverySession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
-        .put("version", 6)
+        .put("version", 7)
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
         .put("current_goal", AgentSessionPersistencePolicy.compactText(snapshot.currentGoal))
@@ -132,6 +146,7 @@ class SharedPreferencesAgentSessionStore(
                 ?.let(AgentExecutionLoopJsonCodec::encode)
                 ?.let(::JSONObject)
         )
+        .put("process_instance_id", snapshot.processInstanceId)
         .put("updated_at", snapshot.updatedAtMillis)
 
     internal fun decodeSession(json: JSONObject): AgentSessionSnapshot = AgentSessionSnapshot(
@@ -150,6 +165,7 @@ class SharedPreferencesAgentSessionStore(
         executionLoopSnapshot = json.optJSONObject("execution_loop")
             ?.toString()
             ?.let(AgentExecutionLoopJsonCodec::decode),
+        processInstanceId = json.optString("process_instance_id"),
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 
@@ -873,10 +889,22 @@ internal object AgentSessionPersistencePolicy {
     fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)
 
     fun compactMetadata(metadata: Map<String, String>): Map<String, String> = metadata.entries
+        .sortedBy { (key, _) -> if (key in RECOVERY_METADATA_KEYS) 0 else 1 }
         .take(MAX_METADATA_ENTRIES)
         .associate { (key, value) ->
             key.take(128) to value.take(MAX_METADATA_VALUE_CHARACTERS)
         }
+
+    private val RECOVERY_METADATA_KEYS = setOf(
+        "delivery_failed",
+        "source_message_id",
+        "awaiting_response",
+        "contact_id",
+        "resource_id",
+        "failure_domain",
+        "resource_started_at",
+        "handoff_recovery_attempt"
+    )
 
     fun compactScreen(screen: ScreenContext): ScreenContext = screen.copy(
         foregroundApp = screen.foregroundApp.take(256),

@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.Base64
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -264,7 +266,14 @@ data class AgentRuntimeExecutionRequest(
     val cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
     val progressListener: (AgentRuntimeProgress) -> Unit = {},
     val guestWorkspacePath: String = "",
-    val secretEnvironment: Map<String, String> = emptyMap()
+    val secretEnvironment: Map<String, String> = emptyMap(),
+    val hostInputFiles: List<AgentRuntimeHostInput> = emptyList()
+)
+
+/** A host-owned file staged read-only in spirit into one isolated guest run. */
+data class AgentRuntimeHostInput(
+    val sourceFile: File,
+    val relativePath: String
 )
 
 data class AgentRuntimeExecutionResponse(
@@ -438,7 +447,13 @@ class AgentOnDeviceRuntimeManager(
         receiptStore.begin(normalizedRequest, packVersions)
         var committedCheckpoint: AgentRuntimeWorkspaceCheckpoint? = null
         return try {
+            val bridgeStartedAt = SystemClock.elapsedRealtime()
             val rawResponse = activeBridge.execute(normalizedRequest)
+            Log.i(
+                "SignalASILatency",
+                "agent_runtime stage=bridge_completed request=${normalizedRequest.requestId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - bridgeStartedAt} exit_code=${rawResponse.exitCode}"
+            )
             if (normalizedRequest.source != request.source) prepared.sourceFile.writeText(request.source, Charsets.UTF_8)
             val succeeded = rawResponse.exitCode == 0
             val artifacts = if (succeeded) {
@@ -476,7 +491,15 @@ class AgentOnDeviceRuntimeManager(
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
             if (receipt != null && receipt.verificationKind != AgentRuntimeVerificationKind.NONE && response.exitCode == 0) {
-                publicationGuard.recordVerification(receipt)
+                runCatching { publicationGuard.recordVerification(receipt) }
+                    .onFailure { error ->
+                        Log.w(
+                            "SignalASIAgentRuntime",
+                            "Project publication verification was not recorded request=${normalizedRequest.requestId} " +
+                                "workspace=${normalizedRequest.workspaceId}",
+                            error
+                        )
+                    }
             }
             runCatching {
                 workspaceManager.markFinished(
@@ -484,8 +507,19 @@ class AgentOnDeviceRuntimeManager(
                     if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
                 )
             }
+            Log.i(
+                "SignalASILatency",
+                "agent_runtime stage=result_committed request=${normalizedRequest.requestId.take(8)} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - bridgeStartedAt}"
+            )
             response.copy(executionReceipt = receipt)
         } catch (error: Throwable) {
+            Log.e(
+                "SignalASIAgentRuntime",
+                "Runtime result finalization failed request=${normalizedRequest.requestId} " +
+                    "workspace=${normalizedRequest.workspaceId} exit_success=${committedCheckpoint != null}",
+                error
+            )
             if (normalizedRequest.source != request.source) {
                 runCatching { prepared.sourceFile.writeText(request.source, Charsets.UTF_8) }
             }
@@ -977,8 +1011,20 @@ object AgentOnDeviceRuntimeTools {
                         }
                     )
                     runCatching { manager.execute(request) }.fold(
-                        onSuccess = ::runtimeExecutionResult,
+                        onSuccess = { response ->
+                            Log.i(
+                                "SignalASILatency",
+                                "agent_runtime stage=tool_executor_return request=${request.requestId.take(8)}"
+                            )
+                            runtimeExecutionResult(response)
+                        },
                         onFailure = { error ->
+                            Log.e(
+                                "SignalASIAgentRuntime",
+                                "On-device runtime request failed before returning request=${request.requestId} " +
+                                    "workspace=${request.workspaceId}",
+                                error
+                            )
                             val evidence = manager.receipt(request.requestId)?.toEvidenceMap()
                             AgentNativeToolExecutionResult(
                                 output = evidence?.let { mapOf("execution_receipt" to it) }.orEmpty(),

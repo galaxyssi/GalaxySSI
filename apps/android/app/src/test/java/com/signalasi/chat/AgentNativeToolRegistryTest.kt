@@ -346,6 +346,29 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
+    fun preservesCompletedSideEffectWhenCancellationArrivesWithExecutorResult() {
+        val cancellation = AgentNativeToolCancellationSource()
+        val registry = AgentNativeToolRegistry().register(
+            AgentNativeToolDefinition(
+                descriptor(),
+                AgentNativeToolExecutor {
+                    cancellation.cancel()
+                    AgentNativeToolExecutionResult.success(mapOf("verified" to true))
+                }
+            )
+        )
+
+        val result = registry.invoke(
+            "phone.test.tool",
+            emptyMap(),
+            hooks = AgentNativeToolInvocationHooks(cancellationToken = cancellation.token)
+        )
+
+        assertEquals(AgentNativeToolResultStatus.SUCCEEDED, result.status)
+        assertEquals(true, result.output["verified"])
+    }
+
+    @Test
     fun replaysSuccessfulKeyedIdempotentInvocation() {
         val executions = AtomicInteger()
         val auditStore = InMemoryAgentNativeToolAuditStore()
