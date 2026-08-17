@@ -170,9 +170,9 @@ final class MessageCoordinator: ObservableObject {
     self.signalEngine = SignalASISignalEngine(profileName: store.profile.signalASIId)
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.transportConnected = self.mqttClient.isConnected
-    self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { [weak self] in
+    self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener {
       Task { @MainActor in
-        _ = self?.store.deliverPendingGlobalProactiveMessages()
+        _ = store.deliverPendingGlobalProactiveMessages()
       }
     }
     self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
@@ -371,6 +371,7 @@ final class MessageCoordinator: ObservableObject {
           nowMillis: nowMillis
         )
         self.refreshAgentHomeState()
+        return
       }
     }
     return true
@@ -2173,6 +2174,8 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
+      finishPendingAgentReply(for: outgoing)
+      return true
     } catch {
       finishPendingAgentReply(for: outgoing)
       agentHomeDisplayContactIdsByTurnId.removeValue(
@@ -3186,7 +3189,7 @@ final class MessageCoordinator: ObservableObject {
     let active = activeAgentTurn(for: conversationId)
     let localTask = active?.localTask
     let localTaskID = localTask?.taskId ?? ""
-    let success: Bool
+    var success = false
     switch command {
     case .approve:
       guard let localTask,
@@ -4315,7 +4318,7 @@ final class MessageCoordinator: ObservableObject {
     case "Capabilities": chineseTitle = "\u{80fd}\u{529b}"
     default: chineseTitle = title
     }
-    localReply(
+    return localReply(
       english: "\(title) (\(count)):",
       chinese: "\(chineseTitle)\u{ff08}\(count)\u{ff09}\u{ff1a}"
     )
@@ -7323,7 +7326,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func serverLink(for topic: String, payload: [String: Any]) -> ServerLink? {
     let clientRouteId = payload.string("client_route_id")
-    store.serverLinks.first { link in
+    return store.serverLinks.first { link in
       let routeMatches = clientRouteId.isEmpty || link.routes.clientRouteId == clientRouteId
       return routeMatches && (
         topic == link.routes.downTopic ||
