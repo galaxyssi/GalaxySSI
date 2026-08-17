@@ -171,6 +171,59 @@ class AgentExecutionLoopTest {
         assertEquals(AgentExecutionTaskKind.BUILD, started.snapshot.taskKind)
         assertEquals(AgentExecutionReasoningEffort.MEDIUM, started.snapshot.reasoningEffort)
         assertTrue(started.snapshot.budget.noProgressTimeoutMillis >= 420_000L)
+        assertFalse(started.snapshot.budget.enforceCountLimits)
+    }
+
+    @Test
+    fun supervisedProjectContinuesPastFixedActionAndReplanCounts() {
+        val profile = AgentExecutionProfile.forGoal(
+            "Update the Android project, verify it, and create a pull request"
+        )
+        val budget = AgentModelPlannerSettings().executionLoopBudget(profile)
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("continuous-project", budget, profile)
+
+        repeat(30) { index ->
+            loop.transition(
+                AgentExecutionLoopPhase.ACT,
+                actionId = "project-action-$index",
+                toolCall = true
+            )
+            loop.transition(
+                AgentExecutionLoopPhase.OBSERVE,
+                actionId = "project-action-$index"
+            )
+            loop.transition(AgentExecutionLoopPhase.REPLAN, "Continue from verified evidence")
+        }
+
+        val snapshot = requireNotNull(loop.snapshot)
+        assertEquals(AgentExecutionLoopPhase.REPLAN, snapshot.phase)
+        assertTrue(snapshot.usage.actions > budget.maxActions)
+        assertTrue(snapshot.usage.replans > budget.maxReplans)
+        assertTrue(snapshot.usage.toolCalls > budget.maxToolCalls)
+        assertTrue(snapshot.budgetFailure.isBlank())
+    }
+
+    @Test
+    fun continuousProjectBudgetSurvivesCheckpointRoundTrip() {
+        val profile = AgentExecutionProfile.forGoal(
+            "Build the project on the phone and publish a pull request"
+        )
+        val loop = AgentExecutionLoop.create { 2_000L }
+        val started = loop.start(
+            "continuous-project-json",
+            AgentModelPlannerSettings().executionLoopBudget(profile),
+            profile
+        )
+
+        val restored = requireNotNull(
+            AgentExecutionLoopJsonCodec.decode(
+                AgentExecutionLoopJsonCodec.encode(started.snapshot)
+            )
+        )
+
+        assertFalse(restored.budget.enforceCountLimits)
+        assertEquals(AgentExecutionTaskKind.BUILD, restored.taskKind)
     }
 
     @Test

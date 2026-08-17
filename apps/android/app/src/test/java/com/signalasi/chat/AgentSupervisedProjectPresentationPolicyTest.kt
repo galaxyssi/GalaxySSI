@@ -6,6 +6,46 @@ import org.junit.Test
 
 class AgentSupervisedProjectPresentationPolicyTest {
     @Test
+    fun `internal supervised planning failures do not create a user recovery card`() {
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = supervisedConnector(),
+                isSupervisedSource = false
+            )
+        )
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = null,
+                isSupervisedSource = true
+            )
+        )
+        assertTrue(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = null,
+                isSupervisedSource = false
+            )
+        )
+    }
+
+    @Test
+    fun `supervised plan failure stays internal after current action changes`() {
+        assertFalse(
+            AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = AgentAction(
+                    id = "inspect",
+                    kind = AgentActionKind.CALL_NATIVE_TOOL,
+                    target = "signalasi.project.repository.inspect",
+                    description = "Inspect the phone repository",
+                    risk = AgentRisk.LOW,
+                    status = AgentActionStatus.COMPLETED
+                ),
+                isSupervisedSource = false,
+                isSupervisedPlan = true
+            )
+        )
+    }
+
+    @Test
     fun `hides the matching supervised ActionPlan stream`() {
         assertFalse(
             AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(

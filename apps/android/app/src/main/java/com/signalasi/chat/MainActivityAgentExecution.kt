@@ -462,6 +462,11 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     val supervisedProject = deterministicAction == null &&
         AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext)
     if (supervisedProject) {
+        agentTranscriptStore.entriesForTurn(turnId)
+            .filter { entry -> entry.dedupeKey.startsWith("agent-recovery:") }
+            .forEach { entry ->
+                deleteAgentTranscriptByDedupeKey(conversationId, entry.dedupeKey)
+            }
         agentTranscriptStore.upsert(
             role = AgentTranscriptRole.PROCESS,
             text = getString(R.string.agent_loop_context_phone_project),

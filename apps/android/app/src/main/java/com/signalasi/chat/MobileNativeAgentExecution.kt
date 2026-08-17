@@ -709,10 +709,13 @@ internal fun MobileNativeAgent.executePlannedAction(
         awaitingResponse -> AgentActionStatus.WAITING_RESPONSE
         else -> AgentActionStatus.COMPLETED
     }
-    val updatedPlan = currentPlan
+    val observedPlan = currentPlan
         ?.addArtifactRichOutput(lastActionResult?.metadata?.get("rich_output").orEmpty())
         ?.markAction(hardenedAction.id, finalStatus, lastActionResult)
         ?.addVerification(AgentVerificationResult.from(hardenedAction.id, lastActionResult, recovery))
+    val updatedPlan = observedPlan?.let { candidate ->
+        ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult)
+    }
     val hasPendingBeforeReplan = updatedPlan?.actions?.any {
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     } == true
@@ -779,6 +782,51 @@ internal fun MobileNativeAgent.executePlannedAction(
     recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${hardenedAction.kind}:${finalStatus}")
     saveTaskRecord()
     return snapshot()
+}
+
+internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
+    plan: AgentPlan,
+    completedAction: AgentAction,
+    result: AgentActionResult?
+): AgentPlan {
+    if (!plan.isSupervisedProjectPlan() ||
+        completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL ||
+        result?.success != true ||
+        result.metadata["awaiting_response"] == "true" ||
+        !AgentSupervisedProjectLoop.needsRunnableReviewer(plan)
+    ) {
+        return plan
+    }
+    val connector = (plan.actionHistory + plan.actions)
+        .lastOrNull(AgentAction::isSupervisedProjectConnector)
+        ?: return plan
+    val request = supervisedProjectRequest(plan, continuation = true)
+    val appended = AgentSupervisedProjectLoop.appendReviewer(
+        plan = plan,
+        connector = connector,
+        request = request,
+        idSuffix = "recovered-${plan.revision + 1}-${completedAction.id.take(24)}"
+    )
+    if (appended.actions.size <= plan.actions.size) return plan
+    val recovered = appended.copy(
+        revision = plan.revision + 1,
+        replanCount = plan.replanCount + 1
+    ).let { candidate ->
+        candidate.copy(validation = AgentPlanValidator.validate(candidate))
+    }
+    val reviewed = AgentActionRiskHardener.enforce(appContext, recovered).let { hardened ->
+        hardened.withSafetyReview(safetyPolicy.review(hardened, sessionId))
+    }
+    recordAudit(
+        AgentAuditEvent.INVOCATION_AUDIT,
+        "restored_missing_supervised_reviewer:after=${completedAction.id}; revision=${reviewed.revision}"
+    )
+    Log.i(
+        "SignalASIAgentLifecycle",
+        "Restored runnable supervised reviewer after=${completedAction.id.take(32)} " +
+            "revision=${reviewed.revision}"
+    )
+    return reviewed
 }
 
 internal fun MobileNativeAgent.completeVerifiedTaskMarker(action: AgentAction): AgentUiState {

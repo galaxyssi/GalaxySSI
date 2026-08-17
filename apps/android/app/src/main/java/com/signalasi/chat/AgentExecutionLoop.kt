@@ -38,7 +38,8 @@ data class AgentExecutionLoopBudget(
     val maxToolCalls: Int = 16,
     val maxRetries: Int = 2,
     val maxSameFailureAttempts: Int = 2,
-    val noProgressTimeoutMillis: Long = 3 * 60_000L
+    val noProgressTimeoutMillis: Long = 3 * 60_000L,
+    val enforceCountLimits: Boolean = true
 ) {
     init {
         require(maxIterations > 0) { "Maximum loop iterations must be positive" }
@@ -407,15 +408,15 @@ class AgentExecutionLoop private constructor(
         taskBudgetUsage: AgentTaskBudgetUsage,
         taskBudget: AgentTaskBudget
     ): String = when {
-        usage.iterations > budget.maxIterations ->
+        budget.enforceCountLimits && usage.iterations > budget.maxIterations ->
             "Loop iteration budget exhausted (${budget.maxIterations})"
-        usage.actions > budget.maxActions ->
+        budget.enforceCountLimits && usage.actions > budget.maxActions ->
             "Action budget exhausted (${budget.maxActions})"
-        usage.replans > budget.maxReplans ->
+        budget.enforceCountLimits && usage.replans > budget.maxReplans ->
             "Replan budget exhausted (${budget.maxReplans})"
-        usage.toolCalls > budget.maxToolCalls ->
+        budget.enforceCountLimits && usage.toolCalls > budget.maxToolCalls ->
             "Tool-call budget exhausted (${budget.maxToolCalls})"
-        usage.retries > budget.maxRetries ->
+        budget.enforceCountLimits && usage.retries > budget.maxRetries ->
             "Retry budget exhausted (${budget.maxRetries})"
         else -> AgentTaskBudgetPolicy.evaluate(taskBudget, taskBudgetUsage).reason
     }
@@ -553,7 +554,8 @@ object AgentExecutionLoopJsonCodec {
             .put("max_tool_calls", snapshot.budget.maxToolCalls)
             .put("max_retries", snapshot.budget.maxRetries)
             .put("max_same_failure_attempts", snapshot.budget.maxSameFailureAttempts)
-            .put("no_progress_timeout_ms", snapshot.budget.noProgressTimeoutMillis))
+            .put("no_progress_timeout_ms", snapshot.budget.noProgressTimeoutMillis)
+            .put("enforce_count_limits", snapshot.budget.enforceCountLimits))
         .put("usage", JSONObject()
             .put("iterations", snapshot.usage.iterations)
             .put("actions", snapshot.usage.actions)
@@ -570,6 +572,10 @@ object AgentExecutionLoopJsonCodec {
         val root = JSONObject(value)
         val budget = root.getJSONObject("budget")
         val usage = root.getJSONObject("usage")
+        val taskKind = enumValue(
+            root.optString("task_kind"),
+            AgentExecutionTaskKind.CHAT
+        )
         AgentExecutionLoopSnapshot(
             taskId = root.getString("task_id"),
             phase = enumValue(root.getString("phase"), AgentExecutionLoopPhase.PLAN),
@@ -580,7 +586,11 @@ object AgentExecutionLoopJsonCodec {
                 maxToolCalls = budget.getInt("max_tool_calls"),
                 maxRetries = budget.getInt("max_retries"),
                 maxSameFailureAttempts = budget.optInt("max_same_failure_attempts", 2),
-                noProgressTimeoutMillis = budget.optLong("no_progress_timeout_ms", 180_000L)
+                noProgressTimeoutMillis = budget.optLong("no_progress_timeout_ms", 180_000L),
+                enforceCountLimits = budget.optBoolean(
+                    "enforce_count_limits",
+                    taskKind !in CONTINUOUS_PROJECT_TASK_KINDS
+                )
             ),
             usage = AgentExecutionLoopUsage(
                 iterations = usage.getInt("iterations"),
@@ -602,7 +612,7 @@ object AgentExecutionLoopJsonCodec {
             lastActionId = root.optString("last_action_id"),
             lastReason = root.optString("last_reason"),
             budgetFailure = root.optString("budget_failure"),
-            taskKind = enumValue(root.optString("task_kind"), AgentExecutionTaskKind.CHAT),
+            taskKind = taskKind,
             taskIntent = enumValue(root.optString("task_intent"), AgentTaskIntent.CHAT),
             taskIntentConfidence = root.optInt("task_intent_confidence", 100)
                 .coerceIn(0, 100),
@@ -643,6 +653,11 @@ object AgentExecutionLoopJsonCodec {
         val constants = fallback.declaringJavaClass.enumConstants ?: return fallback
         return constants.firstOrNull { it.name == value } ?: fallback
     }
+
+    private val CONTINUOUS_PROJECT_TASK_KINDS = setOf(
+        AgentExecutionTaskKind.BUILD,
+        AgentExecutionTaskKind.INSTALL
+    )
 }
 
 internal fun AgentModelPlannerSettings.executionLoopBudget(
@@ -662,7 +677,8 @@ internal fun AgentModelPlannerSettings.executionLoopBudget(
         noProgressTimeoutMillis = maxOf(
             noProgressTimeoutSeconds * 1_000L,
             profile.noProgressTimeoutMillis
-        )
+        ),
+        enforceCountLimits = !projectTask
     )
 }
 

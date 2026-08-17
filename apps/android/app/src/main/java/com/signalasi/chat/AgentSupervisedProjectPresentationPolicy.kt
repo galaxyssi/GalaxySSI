@@ -2,6 +2,14 @@ package com.signalasi.chat
 
 /** Keeps model-authored control payloads out of the user-facing transcript. */
 object AgentSupervisedProjectPresentationPolicy {
+    fun shouldShowFailureRecovery(
+        pendingAction: AgentAction?,
+        isSupervisedSource: Boolean,
+        isSupervisedPlan: Boolean = false
+    ): Boolean = !isSupervisedSource &&
+        !isSupervisedPlan &&
+        pendingAction?.isSupervisedProjectConnector() != true
+
     fun shouldExposeConnectorStream(
         phase: AgentPhase,
         pendingAction: AgentAction?,

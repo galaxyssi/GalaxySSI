@@ -428,6 +428,14 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     } else {
         taskStatusState
     }
+    val pendingNativeAction = nativeState?.lastActionResult?.actionId?.let { pendingActionId ->
+        nativeState.plan?.actions?.firstOrNull { action -> action.id == pendingActionId }
+    }
+    val supervisedPlan = nativeState?.plan?.isSupervisedProjectPlan() == true ||
+        taskRuntime?.snapshot()?.plan?.isSupervisedProjectPlan() == true
+    val supervisedControlTask = sourceMessageId in supervisedProjectConnectorSourceIds ||
+        pendingNativeAction?.isSupervisedProjectConnector() == true ||
+        supervisedPlan
     traceTaskEvent("runtime_status")
     if (isSteeredCompletion) {
         activeAgentTasks.remove(sourceMessageId)
@@ -603,7 +611,13 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         turnId = turnId,
         taskId = taskId
     )
-    if (status in setOf("failed", "timed_out", "not_found")) {
+    if (status in setOf("failed", "timed_out", "not_found") &&
+        AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+            pendingAction = pendingNativeAction,
+            isSupervisedSource = supervisedControlTask,
+            isSupervisedPlan = supervisedPlan
+        )
+    ) {
         syncAgentFailureRecoveryCard(
             envelope = envelope,
             conversationId = conversationId,

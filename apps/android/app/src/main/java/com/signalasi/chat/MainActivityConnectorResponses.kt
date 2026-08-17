@@ -269,6 +269,9 @@ internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, m
             AgentRichContentCodec.fromEnvelope(payload)
         )
     )
+    // A verified final response owns this remote task's terminal outcome. Ignore
+    // status envelopes that arrive later and would regress a continuing loop.
+    response.taskId.takeIf(String::isNotBlank)?.let(completedConnectorTaskIds::add)
     if (isGlobalSuperAgentRuntimeInitialized() &&
         globalSuperAgentRuntime.consumeResearchResponse(response)
     ) {
@@ -420,11 +423,14 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                         runtime != null -> consumeAgentConnectorResponse(response)
                         attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
                             deferSupervisedProjectControlResponse(response, attempt + 1)
-                        else -> Log.i(
-                            "SignalASIAgent",
-                            "Parked supervised control response until its originating run is available " +
-                                "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
-                        )
+                        else -> {
+                            AgentConnectorResponseStore.remove(this@deferSupervisedProjectControlResponse, response)
+                            Log.i(
+                                "SignalASIAgent",
+                                "Retired stale supervised control response after its originating run was unavailable " +
+                                    "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                            )
+                        }
                     }
                 }
             }
@@ -796,9 +802,22 @@ internal fun MainActivity.recordSupervisedModelOutput(
     val pendingAction = snapshot.plan?.actions?.firstOrNull { action ->
         action.id == pendingActionId
     }
-    val supervised = pendingAction?.isSupervisedProjectConnector() == true ||
+    val supervised = snapshot.plan?.isSupervisedProjectPlan() == true ||
+        pendingAction?.isSupervisedProjectConnector() == true ||
         AgentSupervisedProjectControlPayload.isControlPayloadFragment(response.content)
     if (!supervised) return
+    agentTranscriptStore.entriesForTurn(turnId)
+        .asSequence()
+        .filter { entry -> entry.dedupeKey.startsWith("agent-recovery:") }
+        .forEach { entry ->
+            deleteAgentTranscriptByDedupeKey(conversationId, entry.dedupeKey)
+        }
+    response.taskId.takeIf(String::isNotBlank)?.let { taskId ->
+        deleteAgentTranscriptByDedupeKey(
+            conversationId,
+            agentFailureRecoveryDedupeKey(taskId)
+        )
+    }
     val visibleOutput = AgentSupervisedProjectControlPayload.visibleModelOutput(response.content)
     if (visibleOutput.isBlank()) return
     val taskId = response.taskId.ifBlank { snapshot.sessionId }.ifBlank { turnId }
