@@ -463,6 +463,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal lateinit var agentRuntimePackCatalogManager: AgentRuntimePackCatalogManager
     internal val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
     internal var agentSessionsDialog: android.app.Dialog? = null
+    internal var conversationHubContactsChangedListener: ((List<Contact>) -> Unit)? = null
     internal val pendingAgentConnectorStreamUpdates =
         ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
     internal val agentConnectorStreamRefreshScheduled = AtomicBoolean(false)

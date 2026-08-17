@@ -1113,6 +1113,7 @@
     <string name="conversation_hub_contacts_section">Contacts</string>
     <string name="conversation_hub_scan_add">Scan to add</string>
     <string name="conversation_hub_scan_add_subtitle">Add a contact, Agent, or computer</string>
+    <string name="conversation_hub_add_cloud_model">Add cloud model</string>
     <string name="conversation_hub_new_friends_subtitle">Review pending contact requests</string>
     <string name="conversation_hub_groups_empty">No groups yet</string>
     <string name="conversation_hub_groups_empty_subtitle">Secure group communication will be available in a later version.</string>
