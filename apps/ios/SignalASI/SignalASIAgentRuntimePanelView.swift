@@ -589,7 +589,7 @@ struct SignalASIAgentRuntimePanelView: View {
         )
       }
     }
-    activeTasks.map { task in
+    return activeTasks.map { task in
       SignalASIAgentRuntimeRow(
         id: "queue-\(task.taskId)",
         title: task.goal.ifBlank(statusText(task)),
@@ -1185,7 +1185,7 @@ struct SignalASIAgentRuntimePanelView: View {
     let status = granted
       ? t("agent_requirement_granted", "Ready")
       : t("agent_requirement_missing", "Needed")
-    SignalASIAgentRuntimeRow(
+    return SignalASIAgentRuntimeRow(
       id: "requirement-\(id)",
       title: granted ? title : missingTitle,
       detail: String(
