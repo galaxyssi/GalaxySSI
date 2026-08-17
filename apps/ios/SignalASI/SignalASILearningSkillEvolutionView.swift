@@ -8,7 +8,7 @@ final class UserDefaultsAgentLearningProposalStore: AgentLearningProposalStoring
   private let key: String
   private let lock = NSRecursiveLock()
 
-  init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentLearningProposalStore.defaultKey) {
     self.defaults = defaults
     self.key = key
   }
@@ -46,7 +46,7 @@ final class UserDefaultsAgentSkillStore: AgentSkillStore {
   private let key: String
   private let lock = NSRecursiveLock()
 
-  init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+  init(defaults: UserDefaults = .standard, key: String = UserDefaultsAgentSkillStore.defaultKey) {
     self.defaults = defaults
     self.key = key
   }

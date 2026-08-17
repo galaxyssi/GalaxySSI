@@ -14,7 +14,7 @@ final class LocalModelInferenceRuntime {
   private var loadedProfile = ""
   private var loadedContextTokens = 0
   private var foregroundWaiters = 0
-  private var foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + Self.backgroundStartupGraceSeconds
+  private var foregroundLeaseUntilUptime = ProcessInfo.processInfo.systemUptime + LocalModelInferenceRuntime.backgroundStartupGraceSeconds
   private var idleReleaseWorkItem: DispatchWorkItem?
 
   init(

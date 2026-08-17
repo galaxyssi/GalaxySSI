@@ -166,13 +166,6 @@ private extension View {
     }
   }
 
-  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
-    frame(
-      minWidth: CGFloat(policy.minimumTouchTargetDp),
-      minHeight: CGFloat(policy.minimumTouchTargetDp)
-    )
-    .contentShape(Rectangle())
-  }
 }
 
 private extension AppTextScaleMode {
