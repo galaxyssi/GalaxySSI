@@ -89,6 +89,12 @@ object AgentTranscriptPresentationPolicy {
         else -> "entry:${entry.id}"
     }
 
+    fun processNarrationIdentity(value: String): String = value
+        .trim()
+        .replace(PROCESS_NARRATION_PREFIX, "")
+        .replace(Regex("\\s+"), " ")
+        .lowercase()
+
     fun collapseProcessGroups(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
         val retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filterNot { entry ->
             isRedundantConnectorCompletion(entry) ||
@@ -242,6 +248,10 @@ object AgentTranscriptPresentationPolicy {
         "task cancelled", "task canceled" -> ControlMessageKind.CANCELLED
         else -> null
     }
+
+    private val PROCESS_NARRATION_PREFIX = Regex(
+        "(?i)^(?:reason|reasoning|analysis|analyzing the request|推理|分析|正在分析请求)\\s*[·:：-]?\\s*"
+    )
 
     fun isUserRelevantProcessEntry(entry: AgentTranscriptEntry): Boolean {
         if (entry.role != AgentTranscriptRole.PROCESS) return false

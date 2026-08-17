@@ -6,6 +6,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentTranscriptPresentationPolicyTest {
+
+    @Test
+    fun reasoningPrefixDoesNotCreateDuplicateNarrationIdentity() {
+        val summary = "上次克隆失败，将先检查现有工作区。"
+
+        assertEquals(
+            AgentTranscriptPresentationPolicy.processNarrationIdentity(summary),
+            AgentTranscriptPresentationPolicy.processNarrationIdentity("推理 · $summary")
+        )
+        assertEquals(
+            AgentTranscriptPresentationPolicy.processNarrationIdentity("Inspect the repository first."),
+            AgentTranscriptPresentationPolicy.processNarrationIdentity(
+                "Reason · Inspect the repository first."
+            )
+        )
+    }
     @Test
     fun placesOneProcessGroupBetweenTheUserAndAssistant() {
         val conversationId = "conversation"

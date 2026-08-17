@@ -114,6 +114,47 @@ class AgentPlannerSettingsConsumptionTest {
     }
 
     @Test
+    fun supervisedPhoneProjectIsNotStoppedByLifetimeToolCallCount() {
+        val completed = (1..40).map { index ->
+            action("completed-$index", AgentActionStatus.COMPLETED).copy(
+                kind = AgentActionKind.CALL_NATIVE_TOOL,
+                target = "signalasi.project.repository.inspect",
+                parameters = mapOf("tool_id" to "signalasi.project.repository.inspect")
+            )
+        }
+        val supervisor = AgentAction(
+            id = "supervisor",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.COMPLETED,
+            description = "Choose the next phone action",
+            parameters = mapOf(
+                "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+            ),
+            requiresConfirmation = false
+        )
+        val pending = action("pending", AgentActionStatus.PENDING_CONFIRMATION).copy(
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "signalasi.project.repository.inspect",
+            parameters = mapOf("tool_id" to "signalasi.project.repository.inspect")
+        )
+        val plan = AgentPlanFactory.actions(request(), listOf(pending)).copy(
+            actionHistory = completed + supervisor,
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+        )
+
+        val decision = AgentAutonomyGuard.review(
+            plan = plan,
+            action = pending,
+            settings = AgentModelPlannerSettings(maxToolCalls = 4)
+        )
+
+        assertTrue(decision.allowed)
+        assertEquals(41, decision.completedToolCalls)
+    }
+
+    @Test
     fun repeatedConnectorReasoningIsLimitedByBudgetInsteadOfLoopSignature() {
         val completed = (1..2).map { index ->
             AgentAction(

@@ -19,12 +19,7 @@ object AgentAutonomyGuard {
     ): AgentAutonomyDecision {
         val history = plan.actionHistory + plan.actions
         val completedCalls = completedToolCalls(plan)
-        val effectiveToolBudget = if (plan.isSupervisedProjectPlan()) {
-            settings.maxToolCalls.coerceAtLeast(MIN_SUPERVISED_PROJECT_TOOL_CALLS)
-        } else {
-            settings.maxToolCalls
-        }
-        if (completedCalls >= effectiveToolBudget) {
+        if (!plan.isSupervisedProjectPlan() && completedCalls >= settings.maxToolCalls) {
             return AgentAutonomyDecision(
                 allowed = false,
                 reason = "Autonomous tool-call budget reached",
@@ -79,5 +74,4 @@ object AgentAutonomyGuard {
         AgentActionStatus.ROLLED_BACK
     )
     private const val MAX_REPEATED_TOOL_CALLS = 2
-    private const val MIN_SUPERVISED_PROJECT_TOOL_CALLS = 24
 }
