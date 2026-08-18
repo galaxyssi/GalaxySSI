@@ -30,6 +30,7 @@ enum class AgentRuntimeVerificationKind(val wireValue: String) {
 enum class AgentRuntimeWorkspaceDisposition(val wireValue: String) {
     UNCHANGED("unchanged"),
     COMMITTED("committed"),
+    PERSISTED_WITH_FAILURE("persisted_with_failure"),
     FAILED_CANDIDATE("failed_candidate"),
     ROLLED_BACK("rolled_back"),
     ROLLBACK_FAILED("rollback_failed")
@@ -297,7 +298,9 @@ data class AgentRuntimePreparedWorkspace(
     val guestPath: String,
     val projectDirectory: File,
     val importedProjectBytes: Long,
-    val buildArtifactBaseline: Map<String, Long>
+    val buildArtifactBaseline: Map<String, Long>,
+    val direct: Boolean = false,
+    val metadataDirectory: File = directory
 )
 
 data class AgentRuntimeProjectSync(
@@ -308,7 +311,7 @@ data class AgentRuntimeProjectSync(
 
 data class AgentRuntimeProjectCommit(
     val project: AgentRuntimeProjectSync,
-    val checkpoint: AgentRuntimeWorkspaceCheckpoint
+    val checkpoint: AgentRuntimeWorkspaceCheckpoint?
 )
 
 data class AgentRuntimeWorkspaceCheckpoint(
@@ -344,19 +347,27 @@ data class AgentRuntimeWorkspaceStatus(
 class AgentRuntimeWorkspaceManager private constructor(
     private val root: File,
     private val projectRoot: File,
-    private val checkpointRoot: File
+    private val checkpointRoot: File,
+    private val directExecution: Boolean
 ) {
     constructor(context: Context) : this(
         File(context.applicationContext.filesDir, "agent-runtime/workspaces"),
         File(context.applicationContext.filesDir, "agent-native-workspaces"),
-        File(context.applicationContext.filesDir, "agent-runtime/checkpoints")
+        File(context.applicationContext.filesDir, "agent-runtime/checkpoints"),
+        true
     )
 
-    internal constructor(runtimeRoot: File, projectRoot: File, forTesting: Boolean = true) :
+    internal constructor(
+        runtimeRoot: File,
+        projectRoot: File,
+        forTesting: Boolean = true,
+        directExecution: Boolean = false
+    ) :
         this(
             runtimeRoot,
             projectRoot,
-            File(runtimeRoot.parentFile ?: runtimeRoot, "checkpoints")
+            File(runtimeRoot.parentFile ?: runtimeRoot, "checkpoints"),
+            directExecution
         )
 
     @Synchronized
@@ -395,14 +406,24 @@ class AgentRuntimeWorkspaceManager private constructor(
             ?: error("Runtime request path is invalid")
         check(!runDirectory.exists()) { "Runtime request workspace already exists" }
         check(runDirectory.mkdirs()) { "Runtime request workspace could not be created" }
-        val importedProjectBytes = copyTree(
-            source = projectDirectory,
-            destination = runDirectory,
-            byteLimit = request.resourceLimits.diskBytes
-        ).totalBytes
+        val executionDirectory = if (directExecution) projectDirectory else runDirectory
+        if (directExecution) {
+            cleanupRuntimeFiles(executionDirectory)
+            excludeRuntimeFilesFromGit(executionDirectory)
+            writeGitCheckpoint(executionDirectory, File(runDirectory, GIT_CHECKPOINT_MANIFEST))
+        }
+        val importedProjectBytes = if (directExecution) {
+            0L
+        } else {
+            copyTree(
+                source = projectDirectory,
+                destination = executionDirectory,
+                byteLimit = request.resourceLimits.diskBytes
+            ).totalBytes
+        }
         var stagedInputBytes = importedProjectBytes
         request.hostInputFiles.forEach { input ->
-            val target = safeChild(runDirectory, "$RUNTIME_INPUT_DIRECTORY/${input.relativePath}")
+            val target = safeChild(executionDirectory, "$RUNTIME_INPUT_DIRECTORY/${input.relativePath}")
                 ?: error("Runtime host input path is invalid")
             stagedInputBytes += input.sourceFile.length()
             check(stagedInputBytes <= request.resourceLimits.diskBytes) {
@@ -417,19 +438,21 @@ class AgentRuntimeWorkspaceManager private constructor(
                 StandardCopyOption.REPLACE_EXISTING
             )
         }
-        val buildArtifactBaseline = buildArtifactCandidates(runDirectory)
+        val buildArtifactBaseline = buildArtifactCandidates(executionDirectory)
             .associate { candidate ->
-                candidate.relativeTo(runDirectory).path.replace('\\', '/') to artifactStamp(candidate)
+                candidate.relativeTo(executionDirectory).path.replace('\\', '/') to artifactStamp(candidate)
             }
-        val sourceFile = File(runDirectory, sourceFileName(request.language)).apply {
+        val sourceFile = File(executionDirectory, sourceFileName(request.language)).apply {
             val controlDirectory = requireNotNull(parentFile)
             check(controlDirectory.mkdirs() || controlDirectory.isDirectory) {
                 "Runtime control storage is unavailable"
             }
         }
         sourceFile.writeText(request.source, Charsets.UTF_8)
-        check(directorySize(runDirectory, request.resourceLimits.diskBytes) <= request.resourceLimits.diskBytes) {
-            "Agent project exceeds the runtime disk quota"
+        if (!directExecution) {
+            check(directorySize(executionDirectory, request.resourceLimits.diskBytes) <= request.resourceLimits.diskBytes) {
+                "Agent project exceeds the runtime disk quota"
+            }
         }
         File(runDirectory, "request.json").writeText(
             JSONObject()
@@ -444,18 +467,27 @@ class AgentRuntimeWorkspaceManager private constructor(
         return AgentRuntimePreparedWorkspace(
             requestId = request.requestId,
             workspaceId = request.workspaceId,
-            directory = runDirectory,
+            directory = executionDirectory,
             sourceFile = sourceFile,
-            guestPath = "/workspace/${workspaceDirectory.name}/${runDirectory.name}",
+            guestPath = if (directExecution) {
+                "/workspace/${projectDirectory.name}"
+            } else {
+                "/workspace/${workspaceDirectory.name}/${runDirectory.name}"
+            },
             projectDirectory = projectDirectory,
             importedProjectBytes = importedProjectBytes,
-            buildArtifactBaseline = buildArtifactBaseline
+            buildArtifactBaseline = buildArtifactBaseline,
+            direct = directExecution,
+            metadataDirectory = runDirectory
         )
     }
 
     /** Replaces the durable project snapshot only after a complete, bounded copy succeeds. */
     @Synchronized
     fun syncProject(prepared: AgentRuntimePreparedWorkspace, byteLimit: Long): AgentRuntimeProjectSync {
+        if (prepared.direct) {
+            return AgentRuntimeProjectSync(0, 0L, prepared.projectDirectory)
+        }
         val parent = prepared.projectDirectory.parentFile ?: error("Agent project storage is invalid")
         val staging = safeChild(parent, ".${prepared.projectDirectory.name}.${prepared.requestId}.staging")
             ?: error("Agent project staging path is invalid")
@@ -492,6 +524,12 @@ class AgentRuntimeWorkspaceManager private constructor(
         checkpointId: String
     ): AgentRuntimeProjectCommit {
         require(checkpointId.matches(ID_PATTERN)) { "Runtime checkpoint id is invalid" }
+        if (prepared.direct) {
+            return AgentRuntimeProjectCommit(
+                project = AgentRuntimeProjectSync(0, 0L, prepared.projectDirectory),
+                checkpoint = null
+            )
+        }
         val current = prepared.projectDirectory
         val parent = current.parentFile ?: error("Agent project storage is invalid")
         val projectStaging = safeChild(parent, ".${current.name}.${prepared.requestId}.commit-staging")
@@ -840,13 +878,14 @@ class AgentRuntimeWorkspaceManager private constructor(
 
     @Synchronized
     fun markFinished(prepared: AgentRuntimePreparedWorkspace, status: AgentRuntimeReceiptStatus) {
-        File(prepared.directory, "status.json").writeText(
+        File(prepared.metadataDirectory, "status.json").writeText(
             JSONObject()
                 .put("status", status.name.lowercase(Locale.ROOT))
                 .put("completed_at_millis", System.currentTimeMillis())
                 .toString(),
             Charsets.UTF_8
         )
+        if (prepared.direct) cleanupRuntimeFiles(prepared.directory)
     }
 
     @Synchronized
@@ -1006,6 +1045,74 @@ class AgentRuntimeWorkspaceManager private constructor(
         return AgentRuntimeProjectSync(files, bytes, destination)
     }
 
+    private fun cleanupRuntimeFiles(directory: File) {
+        listOf(
+            RUNTIME_CONTROL_DIRECTORY,
+            RUNTIME_INPUT_DIRECTORY,
+            RUNTIME_TOOL_DIRECTORY.substringBefore('/')
+        ).forEach { relative ->
+            safeChild(directory, relative)?.deleteRecursively()
+        }
+        RUNTIME_CONTROL_FILES.forEach { relative -> safeChild(directory, relative)?.delete() }
+    }
+
+    private fun excludeRuntimeFilesFromGit(directory: File) {
+        val exclude = File(directory, ".git/info/exclude")
+        val parent = exclude.parentFile ?: return
+        if (!parent.isDirectory || !exclude.canWrite() && exclude.exists()) return
+        val entries = listOf(
+            "/$RUNTIME_CONTROL_DIRECTORY/",
+            "/$RUNTIME_INPUT_DIRECTORY/",
+            "/${RUNTIME_TOOL_DIRECTORY.substringBefore('/')}/"
+        )
+        val existing = exclude.takeIf(File::isFile)?.readLines(Charsets.UTF_8).orEmpty()
+        val missing = entries.filterNot(existing::contains)
+        if (missing.isEmpty()) return
+        check(parent.mkdirs() || parent.isDirectory) {
+            "Git exclude storage is unavailable"
+        }
+        exclude.appendText(
+            buildString {
+                if (exclude.length() > 0L && !exclude.readText(Charsets.UTF_8).endsWith("\n")) append('\n')
+                missing.forEach { append(it).append('\n') }
+            },
+            Charsets.UTF_8
+        )
+    }
+
+    private fun writeGitCheckpoint(directory: File, target: File) {
+        val git = File(directory, ".git")
+        val headFile = File(git, "HEAD").takeIf(File::isFile) ?: return
+        val head = headFile.readText(Charsets.UTF_8).trim().take(MAX_GIT_REFERENCE_CHARS)
+        val reference = head.removePrefix("ref:").trim().takeIf { head.startsWith("ref:") }
+        val commit = when {
+            reference != null -> File(git, reference).takeIf(File::isFile)
+                ?.readText(Charsets.UTF_8)?.trim()
+                ?: packedReference(File(git, "packed-refs"), reference)
+            else -> head
+        }.orEmpty().take(MAX_GIT_OBJECT_ID_CHARS)
+        target.writeText(
+            JSONObject()
+                .put("format_version", 1)
+                .put("head", head)
+                .put("reference", reference.orEmpty())
+                .put("commit", commit)
+                .put("created_at_millis", System.currentTimeMillis())
+                .toString(),
+            Charsets.UTF_8
+        )
+    }
+
+    private fun packedReference(file: File, reference: String): String? = file
+        .takeIf(File::isFile)
+        ?.useLines(Charsets.UTF_8) { lines ->
+            lines.map(String::trim)
+                .filter { it.isNotEmpty() && !it.startsWith('#') && !it.startsWith('^') }
+                .map { it.split(Regex("\\s+"), limit = 2) }
+                .firstOrNull { it.size == 2 && it[1] == reference }
+                ?.firstOrNull()
+        }
+
     private fun directorySize(directory: File, limit: Long): Long {
         var total = 0L
         Files.walk(directory.toPath()).use { paths ->
@@ -1073,6 +1180,9 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val RUNTIME_INPUT_DIRECTORY = ".signalasi-inputs"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
+        private const val GIT_CHECKPOINT_MANIFEST = "git-checkpoint.json"
+        private const val MAX_GIT_REFERENCE_CHARS = 1_024
+        private const val MAX_GIT_OBJECT_ID_CHARS = 128
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val DOMAIN_PATTERN = Regex("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
         private val AUTO_DISCOVERED_BUILD_EXTENSIONS = setOf("apk", "aab", "zip")

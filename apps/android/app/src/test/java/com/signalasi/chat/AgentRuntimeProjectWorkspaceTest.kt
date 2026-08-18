@@ -56,6 +56,46 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun productionRuntimeUsesOneStableProjectWithoutCopyingTheRepository() {
+        val direct = AgentRuntimeWorkspaceManager(
+            runtimeRoot = runtimeRoot,
+            projectRoot = projectRoot,
+            directExecution = true
+        )
+        val project = File(projectRoot, "workspace-one").apply { mkdirs() }
+        File(project, ".git/info").mkdirs()
+        File(project, ".git/refs/heads/main").apply {
+            parentFile?.mkdirs()
+            writeText("0123456789abcdef0123456789abcdef01234567\n")
+        }
+        File(project, ".git/HEAD").writeText("ref: refs/heads/main\n")
+        File(project, "README.md").writeText("stable")
+
+        val prepared = direct.prepare(request("run-direct", "print('direct')"))
+
+        assertEquals(project.canonicalFile, prepared.directory.canonicalFile)
+        assertEquals("/workspace/workspace-one", prepared.guestPath)
+        assertEquals(0L, prepared.importedProjectBytes)
+        assertTrue(prepared.direct)
+        assertTrue(File(project, ".git/info/exclude").readText().contains("/.signalasi-runtime/"))
+        assertTrue(
+            File(prepared.metadataDirectory, "git-checkpoint.json").readText()
+                .contains("0123456789abcdef0123456789abcdef01234567")
+        )
+
+        File(prepared.directory, "generated.txt").writeText("kept")
+        val commit = direct.commitProject(prepared, 8L * 1024L * 1024L, "direct-checkpoint")
+        assertEquals("kept", File(project, "generated.txt").readText())
+        assertEquals(null, commit.checkpoint)
+
+        direct.markFinished(prepared, AgentRuntimeReceiptStatus.COMPLETED)
+        assertFalse(File(project, ".signalasi-runtime").exists())
+        assertFalse(File(project, ".signalasi-inputs").exists())
+        assertFalse(File(project, ".signalasi-tools").exists())
+        assertTrue(File(prepared.metadataDirectory, "status.json").isFile)
+    }
+
+    @Test
     fun runtimeDriverCannotOverwriteOrPolluteAProjectEntrypoint() {
         val project = File(projectRoot, "workspace-one").apply { mkdirs() }
         File(project, "main.py").writeText("print('project entrypoint')")
@@ -254,13 +294,14 @@ class AgentRuntimeProjectWorkspaceTest {
 
         assertEquals("candidate", File(project, "value.txt").readText())
         assertEquals("created", File(project, "new.txt").readText())
-        assertEquals("pre-run-commit", commit.checkpoint.checkpointId)
-        assertEquals(1, commit.checkpoint.fileCount)
+        val checkpoint = requireNotNull(commit.checkpoint)
+        assertEquals("pre-run-commit", checkpoint.checkpointId)
+        assertEquals(1, checkpoint.fileCount)
         assertTrue(commit.project.fileCount >= 2)
 
         manager.rollback(
             workspaceId = "workspace-one",
-            checkpointId = commit.checkpoint.checkpointId,
+            checkpointId = checkpoint.checkpointId,
             byteLimit = 8L * 1024L * 1024L
         )
         assertEquals("stable", File(project, "value.txt").readText())
