@@ -66,6 +66,37 @@ class AgentPhoneProjectLifecycleDeviceTest {
                 credentialProvider = credentialProvider
             )
         )
+        val registry = AgentPhoneNativeToolCatalog.defaultRegistry(
+            context = context,
+            screenProvider = {
+                ScreenContext(
+                    foregroundApp = context.packageName,
+                    pageTitle = "Phone project lifecycle test"
+                )
+            }
+        )
+        val bundledTools = invokeRuntime(
+            registry = registry,
+            workspaceId = workspaceId,
+            language = AgentRuntimeLanguage.SHELL,
+            source = """
+                set -u
+                missing=0
+                for tool in git ssh curl wget zip unzip tar; do
+                  if path="${'$'}(command -v "${'$'}tool" 2>/dev/null)"; then
+                    printf '%s=%s\n' "${'$'}tool" "${'$'}path"
+                  else
+                    printf '%s=missing\n' "${'$'}tool"
+                    missing=1
+                  fi
+                done
+                if [ "${'$'}missing" -eq 0 ]; then git --version; fi
+                exit "${'$'}missing"
+            """.trimIndent(),
+            artifacts = emptyList()
+        )
+        assertTrue("${bundledTools.message}: ${bundledTools.output}", bundledTools.isSuccess)
+        assertTrue(bundledTools.output["stdout"].toString().contains("git version"))
 
         val cloned = repository.clone(
             workspaceId = workspaceId,
@@ -79,15 +110,6 @@ class AgentPhoneProjectLifecycleDeviceTest {
         assertTrue(cloned.clean)
         repository.checkoutBranch(workspaceId, TEST_BRANCH, create = true)
 
-        val registry = AgentPhoneNativeToolCatalog.defaultRegistry(
-            context = context,
-            screenProvider = {
-                ScreenContext(
-                    foregroundApp = context.packageName,
-                    pageTitle = "Phone project lifecycle test"
-                )
-            }
-        )
         val successful = invokeRuntime(
             registry = registry,
             workspaceId = workspaceId,

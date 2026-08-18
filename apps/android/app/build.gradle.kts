@@ -6,7 +6,10 @@ plugins {
 }
 
 val runtimeJniRoot = rootProject.file("../../build/runtime/android-jni-libs")
-val runtimeAssetRoot = rootProject.file("../../build/runtime/android-assets")
+val runtimeAssetRoot = providers.gradleProperty("signalasi.runtimeAssetRoot")
+    .map(rootProject::file)
+    .orElse(rootProject.file("../../build/runtime/android-assets"))
+    .get()
 val qnnCompatJniRoot = layout.buildDirectory.dir("generated/qnn-compat-jni")
 val androidNdkVersion = "29.0.13113456"
 val androidNdkHostTag = when {
@@ -136,8 +139,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 539
-        versionName = "0.4.139"
+        versionCode = 540
+        versionName = "0.4.140"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
