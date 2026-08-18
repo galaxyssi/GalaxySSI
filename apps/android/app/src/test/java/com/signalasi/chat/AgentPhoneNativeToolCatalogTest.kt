@@ -94,6 +94,7 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
+            addAll(AgentLinuxSoftwareNativeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
         }
