@@ -16,6 +16,28 @@ internal data class AgentQemuLaunchPlan(
     val logFile: File
 )
 
+internal object AgentQemuMemoryPolicy {
+    fun resolve(totalRamBytes: Long, availableRamBytes: Long, profileMaximumMegabytes: Int): Int {
+        val totalTier = when {
+            totalRamBytes >= 8L * GIBIBYTE -> 1_536
+            totalRamBytes >= 6L * GIBIBYTE -> 1_024
+            totalRamBytes >= 4L * GIBIBYTE -> 768
+            else -> 512
+        }
+        val availableTier = when {
+            availableRamBytes >= 3L * GIBIBYTE -> 1_536
+            availableRamBytes >= 2L * GIBIBYTE -> 1_024
+            availableRamBytes >= 1L * GIBIBYTE -> 768
+            else -> 512
+        }
+        return minOf(totalTier, availableTier, profileMaximumMegabytes)
+            .coerceAtLeast(minOf(MINIMUM_BOOT_MEGABYTES, profileMaximumMegabytes))
+    }
+
+    private const val GIBIBYTE = 1024L * 1024L * 1024L
+    private const val MINIMUM_BOOT_MEGABYTES = 512
+}
+
 internal object AgentQemuLaunchPlanBuilder {
     fun build(
         spec: AgentRuntimeEngineLaunchSpec,
@@ -234,8 +256,7 @@ class AgentQemuRuntimeEngineController(
             sessionFile = sessionFile,
             configFile = configFile,
             logFile = logFile,
-            memoryMegabytes = runtimeMemoryMegabytes()
-                .coerceAtMost(deviceProfile.maxQemuMemoryMegabytes),
+            memoryMegabytes = runtimeMemoryMegabytes(deviceProfile.maxQemuMemoryMegabytes),
             cpuCount = Runtime.getRuntime().availableProcessors()
                 .coerceIn(1, deviceProfile.maxQemuCpuCount),
             userNetworkBackendAvailable = userNetworkBackendAvailable
@@ -299,9 +320,14 @@ class AgentQemuRuntimeEngineController(
             ?.any { file -> file.isFile && file.name.contains("slirp", ignoreCase = true) }
             ?: false
 
-    private fun runtimeMemoryMegabytes(): Int {
-        val memoryClass = appContext.getSystemService(ActivityManager::class.java)?.memoryClass ?: 2_048
-        return (memoryClass / 4).coerceIn(384, 1_536)
+    private fun runtimeMemoryMegabytes(profileMaximumMegabytes: Int): Int {
+        val memory = ActivityManager.MemoryInfo()
+        runCatching { appContext.getSystemService(ActivityManager::class.java)?.getMemoryInfo(memory) }
+        return AgentQemuMemoryPolicy.resolve(
+            totalRamBytes = memory.totalMem,
+            availableRamBytes = memory.availMem,
+            profileMaximumMegabytes = profileMaximumMegabytes
+        )
     }
 
     private fun monitor(child: Process) {

@@ -5,13 +5,13 @@ import { validateDefaultEntries } from './android-default-runtime.mjs';
 
 const entry = (packId, dependencies = []) => ({
   pack_id: packId,
-  version: packId === 'python-uv' ? '0.12.1' : '1.0.0',
+  version: packId === 'python-uv' ? '0.12.1' : '1.3.8',
   architecture: 'arm64-v8a',
   archive_sha256: 'a'.repeat(64),
   archive_size_bytes: 1_024,
   installed_size_bytes: 2_048,
   dependencies,
-  asset_path: `runtime/bootstrap/${packId}-1.0.0-arm64-v8a.sarpack`,
+  asset_path: `runtime/bootstrap/${packId}-${packId === 'python-uv' ? '0.12.1' : '1.3.8'}-arm64-v8a.sarpack`,
 });
 
 test('default Android runtime rejects the legacy Python wrapper-only pack', () => {
@@ -21,6 +21,16 @@ test('default Android runtime rejects the legacy Python wrapper-only pack', () =
       { ...entry('python-uv', ['linux-base']), version: '0.11.29' },
     ]),
     /python-uv must be 0\.12\.0 or newer/,
+  );
+});
+
+test('default Android runtime requires the self-contained Git Linux base', () => {
+  assert.throws(
+    () => validateDefaultEntries([
+      { ...entry('linux-base'), version: '1.3.6' },
+      entry('python-uv', ['linux-base']),
+    ]),
+    /linux-base must be 1\.3\.8 or newer/,
   );
 });
 

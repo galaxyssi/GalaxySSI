@@ -13,6 +13,26 @@ class AgentQemuRuntimeEngineTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `qemu memory policy uses device memory instead of the dalvik heap class`() {
+        assertEquals(
+            1_536,
+            AgentQemuMemoryPolicy.resolve(
+                totalRamBytes = 10_857_076L * 1024L,
+                availableRamBytes = 4_271_440L * 1024L,
+                profileMaximumMegabytes = 1_536
+            )
+        )
+        assertEquals(
+            512,
+            AgentQemuMemoryPolicy.resolve(
+                totalRamBytes = 3L * 1024L * 1024L * 1024L,
+                availableRamBytes = 700L * 1024L * 1024L,
+                profileMaximumMegabytes = 512
+            )
+        )
+    }
+
+    @Test
     fun `launch plan keeps credentials off the command line and exposes isolated guest networking`() {
         val root = temporaryFolder.newFolder("runtime plan")
         val spec = AgentRuntimeEngineLaunchSpec(
