@@ -4,6 +4,8 @@ SignalASI is a private superintelligence interface that turns phones, computers,
 
 The project combines a mobile-first command surface, Signal-style trusted pairing, encrypted agent messaging, voice interaction, and a desktop connector that makes local tools, cloud models, and autonomous agents reachable as secure contacts.
 
+On-device Agents can develop and verify projects within isolated local Linux workspaces.
+
 ## Repository Layout
 
 ```text
