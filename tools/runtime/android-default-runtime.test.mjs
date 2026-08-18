@@ -88,6 +88,8 @@ test('default Linux guest embeds a pinned persistent Debian userspace', () => {
   assert.match(guest, /PERSISTENT_USERSPACE_DIGEST = "[a-f0-9]{64}"/);
   assert.match(guest, /chroot/);
   assert.match(guest, /bind_persistent_userspace/);
+  assert.match(guest, /install_persistent_runtime_libraries/);
+  assert.match(guest, /libstdc\+\+\.so\.6/);
 });
 
 test('default Linux guest includes every persistent disk utility', () => {
@@ -102,6 +104,18 @@ test('default Linux guest includes every persistent disk utility', () => {
   for (const utility of ['blkid', 'e2fsck', 'mke2fs', 'resize2fs']) {
     assert.match(buildScript, new RegExp(`for binary in[\\s\\S]*${utility}`));
   }
+});
+
+test('default Linux build verifies shared libraries needed by language packs', () => {
+  const defconfig = readFileSync(new URL(
+    '../../apps/android/runtime/buildroot-external/configs/signalasi_aarch64_defconfig',
+    import.meta.url,
+  ), 'utf8');
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+
+  assert.match(defconfig, /^BR2_INSTALL_LIBSTDCPP=y$/m);
+  assert.match(buildScript, /libstdc\+\+\.so\.6/);
+  assert.match(buildScript, /libgcc_s\.so\.1/);
 });
 
 test('default Linux build preserves full logs without flooding CI output', () => {
