@@ -459,8 +459,13 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     executionMode: AgentTaskExecutionMode? = null
 ) {
     val submissionStartedAt = SystemClock.elapsedRealtime()
-    val supervisedProject = deterministicAction == null &&
-        AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext)
+    val selectedReasoningProvider = deterministicAction?.takeIf { action ->
+        action.kind == AgentActionKind.CALL_CONNECTOR &&
+            action.parameters["connector_id"] != UNAVAILABLE_REASONING_CONNECTOR_ID
+    }
+    val supervisedProject = selectedReasoningProvider != null ||
+        (deterministicAction == null &&
+            AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext))
     if (supervisedProject) {
         agentTranscriptStore.entriesForTurn(turnId)
             .filter { entry -> entry.dedupeKey.startsWith("agent-recovery:") }
@@ -512,15 +517,18 @@ internal fun MainActivity.executeConcurrentAgentGoal(
         )
         val runtime = MobileNativeAgent(
             this@executeConcurrentAgentGoal,
-            planner = deterministicAction?.let { selectedAction ->
-                object : AgentPlanner {
+            planner = when {
+                selectedReasoningProvider != null ->
+                    AgentPhoneReasoningProviderPlanner(selectedReasoningProvider)
+                deterministicAction != null -> object : AgentPlanner {
                     override fun plan(request: AgentRequest): AgentPlan =
-                        AgentPlanFactory.actions(request, listOf(selectedAction)).copy(
+                        AgentPlanFactory.actions(request, listOf(deterministicAction)).copy(
                             plannerProfile = "deterministic-native-route",
                             routeRationale = "An exact phone-native route was selected before model planning."
                         )
                 }
-            } ?: GuardedModelAgentPlanner(this@executeConcurrentAgentGoal),
+                else -> GuardedModelAgentPlanner(this@executeConcurrentAgentGoal)
+            },
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
             screenObservationOverride = deterministicAction?.let { selectedAction ->

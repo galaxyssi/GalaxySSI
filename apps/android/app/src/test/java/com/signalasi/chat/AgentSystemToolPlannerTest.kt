@@ -10,6 +10,103 @@ import org.junit.Test
 
 class AgentSystemToolPlannerTest {
     @Test
+    fun selectedCodexReasonsWhilePhoneLinuxExecutesTheRequestedCommand() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val runtime = nativeDescriptor(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "Execute in phone Linux",
+            AgentNativeToolRisk.MEDIUM
+        )
+        val codex = AgentCallableTarget(
+            id = "codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(
+                AgentCapability.CHAT,
+                AgentCapability.CODE,
+                AgentCapability.REASONING
+            )
+        )
+        val goal = "Run node --version and npm --version in phone Linux and report both."
+        val request = request(goal, screen, listOf(runtime), listOf(codex))
+        val directConnector = AgentAction(
+            id = "ask-codex",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask Codex",
+            parameters = mapOf(
+                "connector_id" to codex.id,
+                "prompt" to goal,
+                "manual_target_locked" to "true"
+            ),
+            requiresConfirmation = false
+        )
+
+        val plan = AgentPhoneReasoningProviderPlanner(directConnector).plan(request)
+        val supervisor = plan.actions.single()
+
+        assertEquals(PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE, plan.plannerProfile)
+        assertTrue(supervisor.isSupervisedProjectConnector())
+        assertEquals(codex.id, supervisor.parameters["connector_id"])
+        assertEquals("true", supervisor.parameters["manual_target_locked"])
+        assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
+        assertTrue(supervisor.parameters.getValue("prompt").contains(goal))
+        assertTrue(supervisor.parameters.getValue("prompt").contains(AgentOnDeviceRuntimeTools.EXECUTE))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("reasoning provider are independent"))
+    }
+
+    @Test
+    fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoDesktopExecution() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val request = request("hello", screen, emptyList())
+        val directConnector = AgentAction(
+            id = "ask-provider",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask Codex",
+            parameters = mapOf("connector_id" to "codex", "prompt" to "hello"),
+            requiresConfirmation = false
+        )
+
+        val supervisor = AgentPhoneReasoningProviderPlanner(directConnector)
+            .plan(request)
+            .actions
+            .single()
+
+        assertTrue(supervisor.isSupervisedProjectConnector())
+        assertTrue(supervisor.parameters.getValue("prompt").contains("Do not start Linux for pure conversation"))
+        assertFalse(supervisor.parameters.getValue("prompt").contains("\"prompt\":\"hello\""))
+    }
+
+    @Test
+    fun connectorActionsCanNeverBypassThePhoneAgentReasoningLoop() {
+        val connector = AgentAction(
+            id = "connector",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask Codex",
+            parameters = mapOf("connector_id" to "codex"),
+            requiresConfirmation = false
+        )
+        val native = connector.copy(
+            id = "native",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentOnDeviceRuntimeTools.STATUS,
+            parameters = mapOf("tool_id" to AgentOnDeviceRuntimeTools.STATUS)
+        )
+
+        assertFalse(connector.canBypassAgentReasoningLoop())
+        assertTrue(native.canBypassAgentReasoningLoop())
+    }
+
+    @Test
     fun normalizesCommonModelCompletionPayloadWithoutExposingControlJson() {
         val raw = """{"execution_location":"phone","summary":"Verified on the phone.","actions":[{"ref":"done","kind":"CALL_NATIVE_TOOL","target":"task-complete","depends_on":["write"],"use_outputs_from":["write"],"parameters":{"tool_id":"DRAFT_PLAN","arguments":{}}}]}"""
 
