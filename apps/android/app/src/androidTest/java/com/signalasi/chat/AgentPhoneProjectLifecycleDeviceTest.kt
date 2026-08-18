@@ -45,6 +45,8 @@ class AgentPhoneProjectLifecycleDeviceTest {
 
     @Test
     fun clonesEditsVerifiesRecoversArchivesCommitsAndPushesOnPhone() {
+        val bootstrap = AgentEmbeddedRuntimeBootstrap.ensureInstalled(context)
+        assertTrue("The APK must contain the default phone Linux runtime", bootstrap.bundled)
         val lifecycle = AgentOnDeviceRuntimeLifecycle.ensureRunning(context)
         assertEquals(lifecycle.reason, AgentRuntimeLifecyclePhase.READY, lifecycle.phase)
         val workspaceId = project.name
@@ -135,14 +137,17 @@ class AgentPhoneProjectLifecycleDeviceTest {
             authorEmail = "signalasi@hotmail.com"
         )
 
-        val bareRemote = File(fixtureRoot, "remote.git")
+        // The Guest only sees the project workspace mount. Keep the bare fixture inside that
+        // mount so this proves the same path semantics used by real phone-Linux Git pushes.
+        val bareRemote = File(project, ".signalasi-test-remote.git")
         Git.init().setBare(true).setDirectory(bareRemote).call().close()
+        File(project, ".git/info/exclude").appendText("\n.signalasi-test-remote.git/\n")
         FileRepositoryBuilder()
             .setGitDir(File(project, ".git"))
             .setWorkTree(project)
             .build()
             .use { gitRepository ->
-                gitRepository.config.setString("remote", "origin", "url", bareRemote.toURI().toString())
+                gitRepository.config.setString("remote", "origin", "url", ".signalasi-test-remote.git")
                 gitRepository.config.save()
             }
         repository.push(

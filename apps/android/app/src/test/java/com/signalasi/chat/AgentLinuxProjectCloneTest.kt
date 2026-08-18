@@ -37,10 +37,10 @@ class AgentLinuxProjectCloneTest {
             progress = { _, _, _ -> }
         )
 
-        assertEquals(AgentRuntimeLanguage.PYTHON, captured.language)
+        assertEquals(AgentRuntimeLanguage.SHELL, captured.language)
         assertTrue(captured.networkEnabled)
         assertTrue("github.com" in captured.allowedNetworkDomains)
-        val shellSource = decodedShellSource(captured.source)
+        val shellSource = captured.source
         assertTrue("git -c credential.helper= fetch --depth 1 origin" in shellSource)
         assertTrue("git checkout -q -B" in shellSource)
         assertTrue("if git rev-parse --git-dir" in shellSource)
@@ -201,12 +201,12 @@ class AgentLinuxProjectCloneTest {
             val runtimeTemp = File(workspace, ".tmp").apply { mkdirs() }
             val runtime = object : AgentProjectLinuxRuntime {
                 override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
-                    val sourceFile = File(root, "git-launcher.py").apply { writeText(request.source) }
-                    val processBuilder = ProcessBuilder("python", sourceFile.absolutePath)
+                    assertEquals(AgentRuntimeLanguage.SHELL, request.language)
+                    val sourceFile = File(root, "git-launcher.sh").apply { writeText(request.source) }
+                    val processBuilder = ProcessBuilder(requireNotNull(bash).absolutePath, sourceFile.absolutePath)
                         .directory(workspace)
                         .redirectErrorStream(false)
                     processBuilder.environment()["HOME"] = File(root, "git-home").apply { mkdirs() }.absolutePath
-                    processBuilder.environment()["SIGNALASI_BASE_GUEST_SHELL"] = requireNotNull(bash).absolutePath
                     val process = processBuilder.start()
                     val stdout = process.inputStream.bufferedReader().readText()
                     val stderr = process.errorStream.bufferedReader().readText()
@@ -373,10 +373,4 @@ class AgentLinuxProjectCloneTest {
         }
     }
 
-    private fun decodedShellSource(pythonSource: String): String {
-        val encoded = Regex("base64\\.b64decode\\(\"([^\"]+)\"\\)")
-            .find(pythonSource)?.groupValues?.get(1)
-            ?: error("Linux Git launcher payload is missing")
-        return String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8)
-    }
 }

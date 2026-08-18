@@ -406,8 +406,8 @@ internal class AgentLinuxProjectGitBackend(
         return try {
             runtime.execute(
                 AgentRuntimeExecutionRequest(
-                    language = AgentRuntimeLanguage.PYTHON,
-                    source = baseGuestLauncher(source),
+                    language = AgentRuntimeLanguage.SHELL,
+                    source = source,
                     arguments = emptyList(),
                     timeoutMillis = timeoutMillis,
                     networkEnabled = networkEnabled,
@@ -437,20 +437,6 @@ internal class AgentLinuxProjectGitBackend(
             heartbeat.cancel(true)
             heartbeatExecutor.shutdownNow()
         }
-    }
-
-    private fun baseGuestLauncher(shellSource: String): String {
-        val encoded = Base64.getEncoder().encodeToString(shellSource.toByteArray(Charsets.UTF_8))
-        return """
-        import base64
-        import os
-        import subprocess
-
-        shell = os.environ.get("SIGNALASI_BASE_GUEST_SHELL", "/bin/sh")
-        source = base64.b64decode("$encoded").decode("utf-8")
-        result = subprocess.run([shell, "-c", source], cwd=os.getcwd(), env=os.environ.copy())
-        raise SystemExit(result.returncode)
-        """.trimIndent()
     }
 
     private fun requireSuccess(response: AgentRuntimeExecutionResponse, prefix: String) {
