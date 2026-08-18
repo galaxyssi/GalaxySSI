@@ -1723,6 +1723,10 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         return snapshot()
     }
     val plan = currentPlan ?: return observeCurrentScreen()
+    val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, lastActionResult)
+    if (completedDispatch != null) {
+        return resumeCompletedDispatchObservation(plan, completedDispatch, requireNotNull(lastActionResult))
+    }
     if (plan.isSupervisedProjectPlan() && plan.hasInterruptedExecutionEvidence()) {
         val recovered = supervisedProjectRecoveryPlan(
             plan,
@@ -1785,6 +1789,68 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
     }
     return reconcileExecutionLoop(snapshot())
+}
+
+internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
+    plan: AgentPlan,
+    action: AgentAction,
+    result: AgentActionResult
+): AgentUiState {
+    executionLoop.snapshot
+        ?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }
+        ?.let { persistExecutionLoopEvent(executionLoop.resume("Observing the persisted tool result")) }
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.OBSERVE,
+            reason = "Observing the persisted tool result",
+            actionId = action.id
+        )
+    ) {
+        return reconcileExecutionLoop(snapshot())
+    }
+
+    phase = AgentPhase.VERIFYING
+    lastActionResult = result
+    val evidence = result.metadata["native_tool_output"]
+        .orEmpty()
+        .ifBlank { "durable_native_receipt:${result.metadata["invocation_id"].orEmpty()}" }
+    val observedPlan = plan
+        .addArtifactRichOutput(result.metadata["rich_output"].orEmpty())
+        .markAction(action.id, AgentActionStatus.COMPLETED, result)
+        .addVerification(
+            AgentVerificationResult(
+                actionId = action.id,
+                success = true,
+                observedApp = currentScreen.foregroundApp,
+                observedTitle = currentScreen.pageTitle,
+                visibleTextCount = currentScreen.visibleTexts.size,
+                clickableNodeCount = currentScreen.clickableNodeCount,
+                evidence = evidence
+            )
+        )
+    val continuedPlan = ensureSupervisedProjectContinuation(observedPlan, action, result)
+    currentPlan = continuedPlan
+    recordAudit(
+        AgentAuditEvent.SCREEN_VERIFIED,
+        "Recovered persisted native result; action=${action.id}; invocation=${result.metadata["invocation_id"].orEmpty()}"
+    )
+    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:COMPLETED:recovered")
+    saveTaskRecord()
+
+    val hasNextAction = continuedPlan.actions.any {
+        it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
+    }
+    phase = when {
+        continuedPlan.safetyReview.blocked -> AgentPhase.BLOCKED
+        hasNextAction && continuedPlan.safetyReview.requiresConfirmation -> AgentPhase.WAITING_CONFIRMATION
+        hasNextAction -> AgentPhase.PLANNING
+        else -> AgentPhase.COMPLETED
+    }
+    persistSession()
+    return if (hasNextAction && !continuedPlan.safetyReview.requiresConfirmation) {
+        reconcileExecutionLoop(executeFirstPendingAction())
+    } else {
+        reconcileExecutionLoop(snapshot())
+    }
 }
 
 internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {

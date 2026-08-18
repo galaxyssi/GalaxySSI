@@ -479,10 +479,15 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
         appContext.getString(R.string.agent_stale_connector_no_result)
     )
     logRestoredLifecycle(session, restoredSession, persistedTask)
-    val executionWasInterrupted = AgentSessionInterruptionPolicy.wasInterrupted(restoredSession)
+    val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
+        restoredSession.currentPlan,
+        restoredSession.lastActionResult
+    )
+    val executionWasInterrupted = AgentSessionInterruptionPolicy.wasInterrupted(restoredSession) &&
+        completedDispatch == null
     sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
     activeTaskExecutionMode = restoredSession.taskExecutionMode
-    phase = if (executionWasInterrupted) AgentPhase.PAUSED else restoredSession.phase
+    phase = if (executionWasInterrupted || completedDispatch != null) AgentPhase.PAUSED else restoredSession.phase
     currentGoal = restoredSession.currentGoal
     currentScreen = restoredSession.currentScreen
     if (!safetySettingsStore.load().screenObservationAllowed) {
@@ -515,9 +520,16 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
             "restored_plan_removed_trailing_drafts=${lifecycleNormalization.removedActions.joinToString(",", transform = AgentAction::id)}"
         )
     }
-    if (executionWasInterrupted) {
+    if (executionWasInterrupted || completedDispatch != null) {
         executionLoop.recoverInterrupted()
-        recordAudit(AgentAuditEvent.TASK_INTERRUPTED, "restored_to_safe_pause")
+        recordAudit(
+            AgentAuditEvent.TASK_INTERRUPTED,
+            if (completedDispatch != null) {
+                "restored_completed_dispatch_for_observation:${completedDispatch.id}"
+            } else {
+                "restored_to_safe_pause"
+            }
+        )
         persistSession()
     }
 }
