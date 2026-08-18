@@ -54,7 +54,7 @@ class AgentPhoneProjectLifecycleDeviceTest {
             projectRoot = requireNotNull(project.parentFile),
             credentialProvider = credentialProvider,
             repositoryPolicy = { true },
-            cloneBackend = AgentLinuxProjectCloneBackend(
+            gitBackend = AgentLinuxProjectCloneBackend(
                 runtime = object : AgentProjectLinuxRuntime {
                     override fun execute(request: AgentRuntimeExecutionRequest) = manager.execute(request)
 

@@ -42,7 +42,8 @@ class AgentMobileProjectToolsTest {
         repository = AgentMobileProjectRepository(
             projectRoot = projects,
             credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
-            repositoryPolicy = { true }
+            repositoryPolicy = { true },
+            gitBackend = TestJGitBackend(projects)
         )
     }
 
@@ -160,19 +161,7 @@ class AgentMobileProjectToolsTest {
             projectRoot = projects,
             credentialProvider = AgentProjectCredentialProvider { "" },
             repositoryPolicy = { true },
-            cloneBackend = AgentProjectCloneBackend { workspaceId, _, _, _, _, _, _ ->
-                calls += workspaceId
-                val workspace = File(projects, workspaceId)
-                Git.init().setDirectory(workspace).setInitialBranch("main").call().use { git ->
-                    File(workspace, "README.md").writeText("# Cloned fixture\n")
-                    git.add().addFilepattern("README.md").call()
-                    git.commit()
-                        .setMessage("Clone fixture")
-                        .setAuthor("SignalASI", "signalasi@hotmail.com")
-                        .setCommitter("SignalASI", "signalasi@hotmail.com")
-                        .call()
-                }
-            }
+            gitBackend = TestJGitBackend(projects) { workspaceId -> calls += workspaceId }
         )
         val managedWorkspace = File(projects, "managed-only").apply { mkdirs() }
         File(managedWorkspace, ".signalasi-tools/bin").mkdirs()
@@ -230,7 +219,8 @@ class AgentMobileProjectToolsTest {
             projectRoot = projects,
             credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
             repositoryPolicy = { true },
-            publicationGuard = guard
+            publicationGuard = guard,
+            gitBackend = TestJGitBackend(projects)
         )
         guardedRepository.clone(
             workspaceId = "verified-project",
@@ -316,6 +306,30 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun refusesRepositoryMutationWithoutPhoneLinuxGitBackend() {
+        val repositoryWithoutLinux = AgentMobileProjectRepository(
+            projectRoot = File(root, "projects-without-linux"),
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true }
+        )
+
+        val failure = runCatching {
+            repositoryWithoutLinux.clone(
+                workspaceId = "missing-linux-backend",
+                repositoryUrl = remote.toURI().toString(),
+                branch = "main",
+                depth = 1,
+                replaceExisting = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message.orEmpty().contains("Phone Linux Git backend is required"))
+        assertFalse(File(root, "projects-without-linux/missing-linux-backend/.git").exists())
+    }
+
+    @Test
     fun catalogDefinesBoundedProjectToolsAndPublicationRisk() {
         val definitions = AgentMobileProjectNativeTools.definitions(repository)
         assertEquals(AgentMobileProjectNativeTools.toolIds, definitions.map { it.descriptor.id }.toSet())
@@ -354,4 +368,92 @@ class AgentMobileProjectToolsTest {
         completedAtMillis = 1_100L
     )
 
+}
+
+private class TestJGitBackend(
+    private val projectRoot: File,
+    private val onClone: (String) -> Unit = {}
+) : AgentProjectGitBackend {
+    override fun clone(
+        workspaceId: String,
+        repositoryUrl: String,
+        branch: String,
+        depth: Int,
+        replaceExisting: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken,
+        progress: (String, String, Int?) -> Unit
+    ) {
+        onClone(workspaceId)
+        val workspace = File(projectRoot, workspaceId)
+        val staging = File(projectRoot, ".$workspaceId-test-clone").apply { deleteRecursively() }
+        try {
+            val command = Git.cloneRepository()
+                .setURI(repositoryUrl)
+                .setDirectory(staging)
+                .setDepth(depth)
+            if (branch.isNotBlank()) command.setBranch(branch)
+            command.call().close()
+            workspace.mkdirs()
+            if (replaceExisting) {
+                workspace.listFiles().orEmpty()
+                    .filterNot { it.name in RUNTIME_ENTRIES }
+                    .forEach(File::deleteRecursively)
+            }
+            staging.listFiles().orEmpty().forEach { source ->
+                source.copyRecursively(File(workspace, source.name), overwrite = true)
+            }
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            git.checkout().setName(branch).setCreateBranch(create).call()
+        }
+    }
+
+    override fun commit(workspaceId: String, message: String, authorName: String, authorEmail: String): String =
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            git.add().addFilepattern(".").call()
+            git.add().setUpdate(true).addFilepattern(".").call()
+            git.commit().setMessage(message).setAuthor(authorName, authorEmail)
+                .setCommitter(authorName, authorEmail).call().name
+        }
+
+    override fun pull(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): String = Git.open(File(projectRoot, workspaceId)).use { git ->
+        git.pull().setRemote(remote).setRemoteBranchName(branch).call()
+        git.repository.resolve("HEAD").name
+    }
+
+    override fun push(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
+        git.push().setRemote(remote).setForce(force).add(branch).call()
+            .flatMap { result -> result.remoteUpdates.map { update -> "${update.remoteName}: ${update.status}" } }
+    }
+
+    private companion object {
+        val RUNTIME_ENTRIES = setOf(
+            ".signalasi-tools",
+            ".signalasi-runtime",
+            ".signalasi-inputs",
+            ".tmp",
+            "request.json",
+            "status.json",
+            ".signalasi-checkpoint.json",
+            ".signalasi-stdout",
+            ".signalasi-stderr",
+            ".signalasi-main"
+        )
+    }
 }
