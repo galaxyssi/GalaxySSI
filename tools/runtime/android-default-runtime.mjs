@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -20,6 +21,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$/;
 const APK_LIBRARY_PATTERN = /^lib[A-Za-z0-9_+.-]+\.so$/;
 const MINIMUM_DEFAULT_RUNTIME_VERSIONS = new Map([
+  ['linux-base', [1, 3, 8]],
   ['python-uv', [0, 12, 0]],
 ]);
 
@@ -83,6 +85,13 @@ export async function verifyAndroidDefaultRuntime({ assetRoot, jniRoot }) {
     if (await sha256File(archive) !== entry.archive_sha256) {
       throw new Error(`Bundled runtime archive digest changed: ${entry.pack_id}`);
     }
+  }
+  const declaredArchives = new Set(index.packs.map((entry) => basename(entry.asset_path)));
+  const bundledArchives = readdirSync(join(assets, 'runtime', 'bootstrap'))
+    .filter((name) => name.endsWith('.sarpack'));
+  const undeclaredArchives = bundledArchives.filter((name) => !declaredArchives.has(name));
+  if (undeclaredArchives.length > 0) {
+    throw new Error(`Bundled runtime contains undeclared archives: ${undeclaredArchives.join(', ')}`);
   }
   const anchorsPath = join(assets, DEFAULT_RUNTIME_TRUST_ANCHORS);
   const anchors = JSON.parse(readFileSync(anchorsPath, 'utf8'));

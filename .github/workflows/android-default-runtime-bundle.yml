@@ -97,8 +97,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            build/runtime/release/linux-base-1.3.7-arm64-v8a.img
-            build/runtime/release/linux-base-1.3.7-arm64-v8a.img.config.json
+            build/runtime/release/linux-base-1.3.8-arm64-v8a.img
+            build/runtime/release/linux-base-1.3.8-arm64-v8a.img.config.json
             build/runtime/release/python-uv-0.12.1-arm64-v8a.img
             build/runtime/release/python-uv-0.12.1-arm64-v8a.img.config.json
           key: android-default-runtime-images-v3-${{ runner.os }}-${{ hashFiles('tools/runtime/build-linux-base.sh', 'tools/runtime/build-python-uv-image.sh', 'tools/runtime/runtime-download.sh', 'tools/runtime/runtime-image.mjs', 'tools/runtime/build-runtime-image.mjs', 'apps/android/runtime/buildroot-external/**', 'apps/android/runtime/guest/**') }}
@@ -106,13 +106,13 @@ jobs:
       - name: Inspect restored default runtime images
         id: default-runtime
         run: |
-          if [[ -s build/runtime/release/linux-base-1.3.7-arm64-v8a.img && \
-                -s build/runtime/release/linux-base-1.3.7-arm64-v8a.img.config.json && \
+          if [[ -s build/runtime/release/linux-base-1.3.8-arm64-v8a.img && \
+                -s build/runtime/release/linux-base-1.3.8-arm64-v8a.img.config.json && \
                 -s build/runtime/release/python-uv-0.12.1-arm64-v8a.img && \
                 -s build/runtime/release/python-uv-0.12.1-arm64-v8a.img.config.json ]]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            rm -f build/runtime/release/linux-base-1.3.7-arm64-v8a.img* \
+            rm -f build/runtime/release/linux-base-1.3.8-arm64-v8a.img* \
               build/runtime/release/python-uv-0.12.1-arm64-v8a.img*
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
@@ -121,15 +121,15 @@ jobs:
         if: steps.default-runtime.outputs.ready != 'true'
         run: |
           mkdir -p build/runtime/release
-          npm run runtime:build-linux-base -- "$PWD/build/runtime/release/linux-base-1.3.7-arm64-v8a.img"
+          npm run runtime:build-linux-base -- "$PWD/build/runtime/release/linux-base-1.3.8-arm64-v8a.img"
           npm run runtime:build-python-uv -- "$PWD/build/runtime/release/python-uv-0.12.1-arm64-v8a.img"
           node --input-type=module <<'NODE'
           import { statSync, writeFileSync } from 'node:fs';
-          const image = 'linux-base-1.3.7-arm64-v8a.img';
+          const image = 'linux-base-1.3.8-arm64-v8a.img';
           const path = `build/runtime/release/${image}`;
           writeFileSync(`${path}.config.json`, `${JSON.stringify({
             id: 'linux-base',
-            version: '1.3.7',
+            version: '1.3.8',
             architecture: 'arm64-v8a',
             image,
             image_file: image,
@@ -146,7 +146,7 @@ jobs:
       - name: Build signed default runtime packs
         run: |
           for config in \
-            build/runtime/release/linux-base-1.3.7-arm64-v8a.img.config.json \
+            build/runtime/release/linux-base-1.3.8-arm64-v8a.img.config.json \
             build/runtime/release/python-uv-0.12.1-arm64-v8a.img.config.json; do
             npm run runtime:build-pack -- \
               --config "$config" \
@@ -161,7 +161,7 @@ jobs:
             --asset-root build/runtime/android-assets \
             --jni-root build/runtime/android-jni-libs \
             --certificate build/runtime/signing/runtime-cert.pem \
-            --pack build/runtime/release/linux-base-1.3.7-arm64-v8a.sarpack \
+            --pack build/runtime/release/linux-base-1.3.8-arm64-v8a.sarpack \
             --pack build/runtime/release/python-uv-0.12.1-arm64-v8a.sarpack
           npm run runtime:verify-android-defaults -- \
             --asset-root build/runtime/android-assets \
@@ -177,7 +177,7 @@ jobs:
           compression-level: 0
           path: |
             build/runtime/android-assets/runtime/bootstrap
-            build/runtime/release/linux-base-1.3.7-arm64-v8a.sarpack
+            build/runtime/release/linux-base-1.3.8-arm64-v8a.sarpack
             build/runtime/release/python-uv-0.12.1-arm64-v8a.sarpack
 
 

@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -341,6 +342,7 @@ class GuestProtocolTest(unittest.TestCase):
             guest.mount_persistent_system(config)
 
         self.assertTrue(any(command[0] == "mke2fs" for command in commands))
+        self.assertTrue(any(command[0] == "e2fsck" for command in commands))
         self.assertTrue(any(command[:3] == ["mount", "-t", "ext4"] for command in commands))
 
     def test_shell_execution_enters_persistent_userspace(self):
@@ -376,6 +378,32 @@ class GuestProtocolTest(unittest.TestCase):
                     f"runtime:{name}".encode(),
                     (userspace / "usr" / "lib" / name).read_bytes(),
                 )
+
+    def test_persistent_userspace_exposes_host_development_tools_through_wrappers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            userspace = Path(directory) / "userspace"
+
+            def which(name, path=None):
+                self.assertIn(name, guest.PERSISTENT_HOST_TOOL_NAMES)
+                return f"/usr/bin/{name}"
+
+            def run(command, **kwargs):
+                self.assertEqual(["git", "--exec-path"], command)
+                return guest.subprocess.CompletedProcess(command, 0, "/usr/libexec/git-core\n", "")
+
+            with (
+                mock.patch.object(guest, "PERSISTENT_USERSPACE_ROOT", userspace),
+                mock.patch.object(guest.shutil, "which", side_effect=which),
+                mock.patch.object(guest.subprocess, "run", side_effect=run),
+            ):
+                guest.install_persistent_host_tool_wrappers()
+
+            for name in guest.PERSISTENT_HOST_TOOL_NAMES:
+                wrapper = (userspace / "usr" / "local" / "bin" / name).read_text()
+                self.assertIn(f"/run/signalasi-host/usr/bin/{name}", wrapper)
+                self.assertIn('"$@"', wrapper)
+                self.assertTrue(os.access(userspace / "usr" / "local" / "bin" / name, os.X_OK))
+            self.assertIn("GIT_EXEC_PATH=/run/signalasi-host/usr/libexec/git-core", wrapper)
 
     def test_non_shell_runtime_pack_execution_enters_persistent_userspace(self):
         command = ["/opt/signalasi/packs/python-uv/bin/python3", "main.py"]

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import stat
@@ -21,7 +22,7 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
 from signalasi_network_proxy import AllowlistedHttpProxy
@@ -44,6 +45,15 @@ PERSISTENT_USERSPACE_ARCHIVE = Path("/usr/share/signalasi/debian-13-slim-arm64-r
 PERSISTENT_USERSPACE_DIGEST = "1b7200988f192e72703c70486d494e2457935ac9b0f031ac09eb115b01a12d45"
 HOST_RUNTIME_LIBRARY_DIRECTORIES = (Path("/lib"), Path("/usr/lib"))
 PERSISTENT_RUNTIME_LIBRARY_NAMES = ("libstdc++.so.6", "libgcc_s.so.1")
+PERSISTENT_HOST_ROOT = PurePosixPath("/run/signalasi-host")
+PERSISTENT_HOST_TOOL_NAMES = ("git", "ssh", "curl", "wget")
+PERSISTENT_HOST_BINDINGS = (
+    Path("/usr"),
+    Path("/lib"),
+    Path("/bin"),
+    Path("/etc/ssl"),
+    Path("/etc/ssh"),
+)
 PACK_ROOT = Path("/opt/signalasi/packs")
 PACK_NAMESPACE_ROOT = PACK_ROOT.parent
 PACK_DESCRIPTOR_NAME = "signalasi-pack.json"
@@ -869,6 +879,9 @@ def mount_persistent_system(config: dict[str, Any]) -> None:
         )
     elif detected != "ext4":
         raise ValueError(f"Persistent Linux disk uses unsupported filesystem: {detected}")
+    repaired = subprocess.run(["e2fsck", "-p", str(device)], check=False)
+    if repaired.returncode not in {0, 1}:
+        raise RuntimeError("Persistent Linux disk check failed")
     mounted = subprocess.run(
         ["mount", "-t", "ext4", "-o", "rw,noatime", str(device), str(PERSISTENT_SYSTEM_ROOT)],
         stdout=subprocess.PIPE,
@@ -877,9 +890,6 @@ def mount_persistent_system(config: dict[str, Any]) -> None:
         check=False,
     )
     if mounted.returncode != 0:
-        repaired = subprocess.run(["e2fsck", "-p", str(device)], check=False)
-        if repaired.returncode not in {0, 1}:
-            raise RuntimeError("Persistent Linux disk check failed")
         subprocess.run(
             ["mount", "-t", "ext4", "-o", "rw,noatime", str(device), str(PERSISTENT_SYSTEM_ROOT)],
             check=True,
@@ -913,6 +923,7 @@ def prepare_persistent_userspace(config: dict[str, Any]) -> None:
         temporary_marker.replace(marker)
     install_persistent_runtime_libraries()
     bind_persistent_userspace()
+    install_persistent_host_tool_wrappers()
 
 
 def install_persistent_runtime_libraries() -> None:
@@ -950,12 +961,57 @@ def bind_persistent_userspace() -> None:
         (WORKSPACE_ROOT, PERSISTENT_USERSPACE_ROOT / "workspace"),
         (PACK_ROOT, PERSISTENT_USERSPACE_ROOT / "opt" / "signalasi" / "packs"),
         (Path("/root"), PERSISTENT_USERSPACE_ROOT / "root"),
+        *(
+            (source, PERSISTENT_USERSPACE_ROOT / PERSISTENT_HOST_ROOT.relative_to("/") / source.relative_to("/"))
+            for source in PERSISTENT_HOST_BINDINGS
+            if source.is_dir()
+        ),
     )
     for source, target in bindings:
         target.mkdir(parents=True, exist_ok=True)
         if os.path.ismount(target):
             continue
         subprocess.run(["mount", "--rbind", str(source), str(target)], check=True)
+        if source in PERSISTENT_HOST_BINDINGS:
+            subprocess.run(["mount", "-o", "remount,bind,ro", str(target)], check=True)
+
+
+def install_persistent_host_tool_wrappers() -> None:
+    wrapper_directory = PERSISTENT_USERSPACE_ROOT / "usr" / "local" / "bin"
+    wrapper_directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    host_search_path = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+    git_exec_path = subprocess.run(
+        ["git", "--exec-path"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if not git_exec_path.startswith("/"):
+        raise RuntimeError("Host Git execution path is invalid")
+    host_git_exec_path = PERSISTENT_HOST_ROOT / git_exec_path.removeprefix("/")
+    for name in PERSISTENT_HOST_TOOL_NAMES:
+        source_value = shutil.which(name, path=host_search_path)
+        if not source_value:
+            raise FileNotFoundError(f"Persistent Linux host tool is unavailable: {name}")
+        source = Path(source_value)
+        host_source = PERSISTENT_HOST_ROOT / source.relative_to("/")
+        extra_arguments = ""
+        if name == "ssh" and (Path("/etc/ssh") / "ssh_config").is_file():
+            host_config = PERSISTENT_HOST_ROOT / "etc" / "ssh" / "ssh_config"
+            extra_arguments = f" -F {shlex.quote(str(host_config))}"
+        wrapper = wrapper_directory / name
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            f"export LD_LIBRARY_PATH={shlex.quote(str(PERSISTENT_HOST_ROOT / 'lib'))}:"
+            f"{shlex.quote(str(PERSISTENT_HOST_ROOT / 'usr' / 'lib'))}\n"
+            f"export SSL_CERT_FILE={shlex.quote(str(PERSISTENT_HOST_ROOT / 'etc' / 'ssl' / 'certs' / 'ca-certificates.crt'))}\n"
+            f"export GIT_EXEC_PATH={shlex.quote(str(host_git_exec_path))}\n"
+            f"exec {shlex.quote(str(host_source))}{extra_arguments} "
+            '"$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
 
 
 def validate_mounted_pack(target: Path, pack: dict[str, Any]) -> None:
