@@ -112,17 +112,18 @@ class AgentPhoneProjectLifecycleDeviceTest {
             workspaceId = workspaceId,
             source = """
                 from pathlib import Path
-                Path('failed-candidate.txt').write_text('must not persist', encoding='utf-8')
-                raise RuntimeError('intentional lifecycle rollback')
+                Path('failed-candidate.txt').write_text('preserve for replan', encoding='utf-8')
+                raise RuntimeError('intentional lifecycle observation')
             """.trimIndent(),
             artifacts = emptyList()
         )
         assertEquals(AgentNativeToolResultStatus.FAILED, failed.status)
-        assertEquals("failed_candidate", failed.output["workspace_disposition"])
+        assertEquals("persisted_with_failure", failed.output["workspace_disposition"])
         assertEquals("", failed.output["checkpoint_id"])
         assertTrue((failed.output["artifacts"] as? Iterable<*>)?.none() == true)
-        assertFalse(File(project, "failed-candidate.txt").exists())
+        assertEquals("preserve for replan", File(project, "failed-candidate.txt").readText())
         assertEquals("verified=42\n", File(project, "verification.txt").readText())
+        File(project, "failed-candidate.txt").delete()
 
         val snapshot = repository.inspect(workspaceId)
         assertFalse(snapshot.clean)
