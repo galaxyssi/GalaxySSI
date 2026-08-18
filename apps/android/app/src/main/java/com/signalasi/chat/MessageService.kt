@@ -27,7 +27,6 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         private const val NOTIFICATION_ID = 1001
         private const val MESSAGE_NOTIFICATION_ID = 1002
         private const val AGENT_SCHEDULE_NOTIFICATION_ID = 1003
-        private const val RUNTIME_AUTOSTART_DELAY_MILLIS = 5_000L
         const val ACTION_REFRESH_LANGUAGE = "com.signalasi.chat.action.REFRESH_NOTIFICATION_LANGUAGE"
         const val ACTION_PROCESS_GLOBAL_AGENT = "com.signalasi.chat.action.PROCESS_GLOBAL_AGENT"
     }
@@ -48,15 +47,8 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         SignalASIMqttClient.addListener(this)
         SignalASIMqttClient.connect(this)
         registerNetworkRecoveryCallback()
-        thread(name = "signalasi-runtime-service-autostart") {
-            try {
-                Thread.sleep(RUNTIME_AUTOSTART_DELAY_MILLIS)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return@thread
-            }
+        thread(name = "signalasi-runtime-bootstrap") {
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }
-            runCatching { AgentOnDeviceRuntimeLifecycle.ensureRunning(this@MessageService) }
         }
     }
 
