@@ -307,6 +307,97 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun completeDocumentationDiffVerifiesDocumentationOnlyCommit() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        val guardedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = TestJGitBackend(projects)
+        )
+        guardedRepository.clone(
+            workspaceId = "documentation-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        guardedRepository.checkoutBranch("documentation-project", "docs/phone-agent", create = true)
+        File(projects, "documentation-project/README.md").appendText("\nPhone Agent documentation.\n")
+
+        guardedRepository.diff("documentation-project", 64 * 1024)
+        val commit = guardedRepository.commit(
+            "documentation-project",
+            "Document the phone Agent",
+            "SignalASI",
+            "signalasi@hotmail.com"
+        )
+
+        assertEquals("docs/phone-agent", commit.branch)
+        assertEquals(listOf("README.md"), commit.changedFiles)
+        assertTrue(tickets["documentation-project"]?.requestId.orEmpty().startsWith("documentation-diff:"))
+    }
+
+    @Test
+    fun documentationDiffCannotVerifySourceChanges() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        val guardedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            publicationGuard = guard,
+            gitBackend = TestJGitBackend(projects)
+        )
+        guardedRepository.clone(
+            workspaceId = "source-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        File(projects, "source-project/src/Main.kt").apply {
+            parentFile?.mkdirs()
+            writeText("fun main() = Unit\n")
+        }
+
+        guardedRepository.diff("source-project", 64 * 1024)
+
+        assertFalse(tickets.containsKey("source-project"))
+        assertTrue(runCatching {
+            guardedRepository.commit("source-project", "Add source", "SignalASI", "signalasi@hotmail.com")
+        }.isFailure)
+    }
+
+    @Test
     fun verificationReceiptDoesNotFailForPlainLinuxWorkspace() {
         val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
         val guard = AgentProjectPublicationPolicy(

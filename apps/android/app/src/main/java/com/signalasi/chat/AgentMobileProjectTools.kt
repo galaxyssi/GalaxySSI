@@ -175,7 +175,11 @@ internal class AgentMobileProjectRepository(
     fun diff(workspaceId: String, maxCharacters: Int): String =
         AgentWorkspaceScope.withLock(workspaceId) {
             require(maxCharacters in 1_000..MAX_DIFF_CHARACTERS) { "Diff output limit is invalid" }
-            requireLinuxGitBackend().diff(workspaceId, maxCharacters)
+            requireLinuxGitBackend().diff(workspaceId, maxCharacters).also { diff ->
+                if (diff.isNotBlank() && diff.length < maxCharacters) {
+                    runCatching { publicationGuard.recordDocumentationReview(workspaceId, diff) }
+                }
+            }
         }
 
     fun checkoutBranch(workspaceId: String, branch: String, create: Boolean): AgentProjectRepositorySnapshot =

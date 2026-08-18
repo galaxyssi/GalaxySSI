@@ -26,6 +26,7 @@ internal data class AgentProjectVerificationTicket(
 internal interface AgentProjectPublicationGuard {
     fun invalidate(workspaceId: String)
     fun recordVerification(receipt: AgentRuntimeExecutionReceipt)
+    fun recordDocumentationReview(workspaceId: String, diff: String)
     fun requireVerified(workspaceId: String)
     fun recordCommit(workspaceId: String, commit: String, branch: String)
     fun requirePushable(workspaceId: String, branch: String)
@@ -36,6 +37,7 @@ internal interface AgentProjectPublicationGuard {
         val ALLOW_ALL = object : AgentProjectPublicationGuard {
             override fun invalidate(workspaceId: String) = Unit
             override fun recordVerification(receipt: AgentRuntimeExecutionReceipt) = Unit
+            override fun recordDocumentationReview(workspaceId: String, diff: String) = Unit
             override fun requireVerified(workspaceId: String) = Unit
             override fun recordCommit(workspaceId: String, commit: String, branch: String) = Unit
             override fun requirePushable(workspaceId: String, branch: String) = Unit
@@ -82,6 +84,33 @@ internal class AgentProjectPublicationPolicy(
         ticketStore.write(ticket)
     }
 
+    override fun recordDocumentationReview(workspaceId: String, diff: String) {
+        require(diff.isNotBlank() && '\u0000' !in diff && "GIT binary patch" !in diff) {
+            "A complete text diff is required to verify documentation changes"
+        }
+        if (!AgentProjectStateDigester.isRepository(projectRoot, workspaceId)) {
+            ticketStore.remove(workspaceId)
+            return
+        }
+        val changedFiles = AgentProjectStateDigester.changedFiles(projectRoot, workspaceId)
+        require(changedFiles.isNotEmpty() && changedFiles.all(::isDocumentationPath)) {
+            "Documentation review can verify documentation-only changes"
+        }
+        val diffSha256 = MessageDigest.getInstance("SHA-256")
+            .digest(diff.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        ticketStore.write(
+            AgentProjectVerificationTicket(
+                workspaceId = workspaceId,
+                verificationKind = AgentRuntimeVerificationKind.LINT,
+                requestId = "documentation-diff:$diffSha256",
+                projectDigest = AgentProjectStateDigester.digest(projectRoot, workspaceId),
+                stdoutSha256 = diffSha256,
+                completedAtMillis = System.currentTimeMillis()
+            )
+        )
+    }
+
     override fun requireVerified(workspaceId: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Run a successful project test, build, lint, or package verification before committing")
@@ -116,6 +145,25 @@ internal class AgentProjectPublicationPolicy(
         check(state.clean && ticket.pushedCommit == state.headCommit && ticket.pushedBranch == head) {
             "The pull request branch is not the latest verified and pushed phone project commit"
         }
+    }
+
+    private fun isDocumentationPath(path: String): Boolean {
+        val normalized = path.replace('\\', '/').lowercase(Locale.ROOT)
+        val name = normalized.substringAfterLast('/')
+        return name in DOCUMENTATION_NAMES || DOCUMENTATION_EXTENSIONS.any(normalized::endsWith)
+    }
+
+    private companion object {
+        val DOCUMENTATION_NAMES = setOf(
+            "readme",
+            "license",
+            "notice",
+            "changelog",
+            "contributing",
+            "code_of_conduct",
+            "security"
+        )
+        val DOCUMENTATION_EXTENSIONS = setOf(".md", ".mdx", ".rst", ".adoc", ".txt")
     }
 }
 
@@ -221,6 +269,15 @@ internal object AgentProjectStateDigester {
             digest.digest().joinToString("") { "%02x".format(it) }
         }
     }
+
+    fun changedFiles(projectRoot: File, workspaceId: String): List<String> =
+        open(projectRoot, workspaceId).use { repository ->
+            Git(repository).use { git ->
+                val status = git.status().call()
+                (status.added + status.changed + status.removed + status.modified + status.missing +
+                    status.untracked + status.conflicting).distinct().sorted()
+            }
+        }
 
     fun isRepository(projectRoot: File, workspaceId: String): Boolean = runCatching {
         workspaceDirectory(projectRoot, workspaceId).resolve(".git").isDirectory
