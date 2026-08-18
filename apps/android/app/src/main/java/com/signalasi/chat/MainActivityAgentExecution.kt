@@ -459,13 +459,16 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     executionMode: AgentTaskExecutionMode? = null
 ) {
     val submissionStartedAt = SystemClock.elapsedRealtime()
+    val supervisedProject = AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+        goal = goal,
+        conversationContext = conversationContext,
+        selectedAction = deterministicAction
+    )
     val selectedReasoningProvider = deterministicAction?.takeIf { action ->
+        supervisedProject &&
         action.kind == AgentActionKind.CALL_CONNECTOR &&
             action.parameters["connector_id"] != UNAVAILABLE_REASONING_CONNECTOR_ID
     }
-    val supervisedProject = selectedReasoningProvider != null ||
-        (deterministicAction == null &&
-            AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext))
     if (supervisedProject) {
         agentTranscriptStore.entriesForTurn(turnId)
             .filter { entry -> entry.dedupeKey.startsWith("agent-recovery:") }
