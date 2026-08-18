@@ -86,7 +86,7 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
-    fun `remote repository is cloned before a model can inspect an empty workspace`() {
+    fun `empty workspace remains an observation for the model instead of a forced clone`() {
         val raw = """
             {"execution_location":"phone","summary":"Inspect the workspace first.","actions":[
               {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
@@ -95,80 +95,60 @@ class AgentSupervisedProjectPromptTest {
             ]}
         """.trimIndent()
 
-        val enforced = JSONObject(AgentSupervisedRepositoryPolicy.enforceBootstrap(
-            raw = raw,
-            goal = "Make a small change in https://github.com/signalasi/SignalASI on this phone",
-            history = emptyList()
-        ))
-        val action = enforced.getJSONArray("actions").getJSONObject(0)
-        val arguments = action.getJSONObject("parameters").getJSONObject("arguments")
-
-        assertEquals(1, enforced.getJSONArray("actions").length())
-        assertEquals(AgentMobileProjectNativeTools.CLONE, action.getJSONObject("parameters").getString("tool_id"))
-        assertEquals("https://github.com/signalasi/SignalASI", arguments.getString("repository_url"))
-        assertEquals("current", arguments.getString("workspace_id"))
-        assertTrue(enforced.getString("summary").contains("prepare Git"))
+        assertEquals(raw, AgentSupervisedProjectControlPayload.normalize(raw))
     }
 
     @Test
-    fun `verified clone lets the model choose the next project action`() {
-        val raw = """
-            {"execution_location":"phone","summary":"Inspect the cloned repository.","actions":[
-              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
-               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
-               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
-            ]}
-        """.trimIndent()
-        val clone = AgentAction(
-            id = "clone",
-            kind = AgentActionKind.CALL_NATIVE_TOOL,
-            target = AgentMobileProjectNativeTools.CLONE,
-            risk = AgentRisk.MEDIUM,
-            status = AgentActionStatus.COMPLETED,
-            description = "Clone repository",
-            parameters = mapOf("tool_id" to AgentMobileProjectNativeTools.CLONE)
+    fun `continuation prompt retains repository evidence from the conversation`() {
+        val base = request("继续")
+        val context = AgentConversationContext(
+            conversationId = "prompt-test",
+            summary = "",
+            turns = listOf(
+                AgentTranscriptEntry(
+                    id = "user-1",
+                    role = AgentTranscriptRole.USER,
+                    text = "开发 https://github.com/signalasi/SignalASI，测试并提交 PR",
+                    timestampMillis = 1L,
+                    conversationId = "prompt-test",
+                    turnId = "turn-1"
+                )
+            ),
+            privateMode = false
         )
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(base.copy(conversationContext = context))
 
-        assertEquals(
-            raw,
-            AgentSupervisedRepositoryPolicy.enforceBootstrap(
-                raw,
-                "Improve https://github.com/signalasi/SignalASI on this phone",
-                listOf(clone)
+        assertTrue(prompt.contains("Durable project context"))
+        assertTrue(prompt.contains("https://github.com/signalasi/SignalASI"))
+        assertTrue(prompt.contains("Use the current conversation workspace only"))
+        assertTrue(prompt.contains("A new conversation intentionally starts with an empty isolated workspace"))
+    }
+
+    @Test
+    fun `project tools are ordered ahead of generic runtime tools`() {
+        fun descriptor(id: String) = AgentNativeToolDescriptor(
+            id = id,
+            version = "1.0.0",
+            title = id,
+            description = id,
+            location = AgentNativeToolLocation.PHONE,
+            inputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+            outputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+            risk = AgentNativeToolRisk.LOW
+        )
+        val ordered = AgentSupervisedProjectToolInventory.ordered(
+            listOf(
+                descriptor("signalasi.runtime.execute"),
+                descriptor("signalasi.workspace.file.read"),
+                descriptor(AgentMobileProjectNativeTools.CLONE),
+                descriptor(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
             )
-        )
-    }
+        ).map(AgentNativeToolDescriptor::id)
 
-    @Test
-    fun `failed clone is retried instead of treating the repository as prepared`() {
-        val raw = """
-            {"execution_location":"phone","summary":"Inspect the repository.","actions":[
-              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
-               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
-               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
-            ]}
-        """.trimIndent()
-        val failedClone = AgentAction(
-            id = "clone",
-            kind = AgentActionKind.CALL_NATIVE_TOOL,
-            target = AgentMobileProjectNativeTools.CLONE,
-            risk = AgentRisk.MEDIUM,
-            status = AgentActionStatus.FAILED,
-            description = "Clone repository",
-            parameters = mapOf("tool_id" to AgentMobileProjectNativeTools.CLONE)
-        )
-
-        val enforced = JSONObject(AgentSupervisedRepositoryPolicy.enforceBootstrap(
-            raw,
-            "Improve https://github.com/signalasi/SignalASI on this phone",
-            listOf(failedClone)
-        ))
-
-        assertEquals(
-            AgentMobileProjectNativeTools.CLONE,
-            enforced.getJSONArray("actions").getJSONObject(0)
-                .getJSONObject("parameters").getString("tool_id")
-        )
+        assertEquals(AgentMobileProjectNativeTools.CLONE, ordered[0])
+        assertEquals(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST, ordered[1])
+        assertEquals("signalasi.workspace.file.read", ordered[2])
+        assertEquals("signalasi.runtime.execute", ordered[3])
     }
 
     @Test
@@ -183,8 +163,18 @@ class AgentSupervisedProjectPromptTest {
             ]}
         """.trimIndent()
         val ordinaryShellAction = rawGitAction.replace("git status --short", "./gradlew test")
+        val multilineGitAction = rawGitAction.replace(
+            "git status --short",
+            "set -eu\\ngit fetch origin main\\ngit status --short"
+        )
+        val timeoutGitAction = rawGitAction.replace(
+            "git status --short",
+            "set -eu\\ntimeout 30s git switch -c feature/test"
+        )
 
         assertTrue(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(rawGitAction))
+        assertTrue(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(multilineGitAction))
+        assertTrue(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(timeoutGitAction))
         assertFalse(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(ordinaryShellAction))
     }
 
