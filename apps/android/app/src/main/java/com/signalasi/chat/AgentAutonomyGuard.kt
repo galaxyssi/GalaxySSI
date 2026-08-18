@@ -19,13 +19,6 @@ object AgentAutonomyGuard {
     ): AgentAutonomyDecision {
         val history = plan.actionHistory + plan.actions
         val completedCalls = completedToolCalls(plan)
-        if (!plan.isSupervisedProjectPlan() && completedCalls >= settings.maxToolCalls) {
-            return AgentAutonomyDecision(
-                allowed = false,
-                reason = "Autonomous tool-call budget reached",
-                completedToolCalls = completedCalls
-            )
-        }
         val signature = action.autonomySignature()
         val repeatedCalls = history.count { candidate ->
             candidate.kind.isLoopSensitiveToolCall() &&

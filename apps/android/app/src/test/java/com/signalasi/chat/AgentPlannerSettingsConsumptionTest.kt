@@ -97,7 +97,7 @@ class AgentPlannerSettingsConsumptionTest {
     }
 
     @Test
-    fun maximumToolCallsStopsFurtherAutonomousActions() {
+    fun completedToolCallCountDoesNotStopForegroundAutonomousActions() {
         val completed = action("completed", AgentActionStatus.COMPLETED)
         val pending = action("pending", AgentActionStatus.PENDING_CONFIRMATION)
         val plan = AgentPlanFactory.actions(request(), listOf(pending)).copy(
@@ -110,7 +110,8 @@ class AgentPlannerSettingsConsumptionTest {
             settings = AgentModelPlannerSettings(maxToolCalls = 1)
         )
 
-        assertFalse(decision.allowed)
+        assertTrue(decision.allowed)
+        assertEquals(1, decision.completedToolCalls)
     }
 
     @Test
