@@ -111,3 +111,13 @@ object AgentFailureRecoveryPolicy {
         }
     }
 }
+
+internal object AgentFailureDetailPolicy {
+    fun visibleMessage(error: String, fallback: String): String = error
+        .trim()
+        .replace(Regex("[\\r\\n]{3,}"), "\n\n")
+        .take(MAX_VISIBLE_FAILURE_CHARACTERS)
+        .ifBlank { fallback.trim() }
+
+    private const val MAX_VISIBLE_FAILURE_CHARACTERS = 6_000
+}

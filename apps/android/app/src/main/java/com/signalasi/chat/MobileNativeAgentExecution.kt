@@ -1027,19 +1027,47 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         val supervisor = requireNotNull(completedAction)
         val supervisedPlan = acceptSupervisedProjectPlan(responsePlan, supervisor, response)
         if (supervisedPlan == null) {
+            val repairAttempts = supervisor.parameters["supervised_parse_attempt"]
+                ?.toIntOrNull()
+                ?.coerceAtLeast(0)
+                ?: 0
+            val failureMessage = "The supervising model returned an invalid executable project plan " +
+                "after $repairAttempts structured repair attempt(s)."
             val failure = completedResult.copy(
                 success = false,
-                message = "The supervising model did not return a valid executable project plan."
+                message = failureMessage,
+                metadata = completedResult.metadata + mapOf(
+                    "native_tool_output" to response.take(6_000),
+                    "failure_kind" to "invalid_supervised_project_plan",
+                    "structured_repair_attempts" to repairAttempts.toString()
+                )
             )
-            currentPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
+            val failedPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
+            val recoveredPlan = supervisedProjectRecoveryPlan(failedPlan, failureMessage)
+            currentPlan = recoveredPlan ?: failedPlan
             lastActionResult = failure
-            phase = AgentPhase.FAILED
             recordAudit(
                 AgentAuditEvent.ACTION_BLOCKED,
-                "supervised_project_plan_invalid; action=$actionId"
+                "supervised_project_plan_invalid; action=$actionId; " +
+                    "repair_attempts=$repairAttempts; recovery_scheduled=${recoveredPlan != null}"
             )
+            if (recoveredPlan != null) {
+                if (!advanceExecutionLoop(
+                        nextPhase = AgentExecutionLoopPhase.REPLAN,
+                        reason = failureMessage,
+                        actionId = actionId
+                    )
+                ) {
+                    saveTaskRecord(result = failure.message)
+                    return snapshot()
+                }
+                phase = AgentPhase.PLANNING
+                saveTaskRecord()
+                return executeFirstPendingAction()
+            }
+            phase = AgentPhase.FAILED
             saveTaskRecord(result = failure.message)
-            return snapshot()
+            return reconcileExecutionLoop(snapshot())
         }
         currentPlan = supervisedPlan
         lastActionResult = completedResult.copy(
