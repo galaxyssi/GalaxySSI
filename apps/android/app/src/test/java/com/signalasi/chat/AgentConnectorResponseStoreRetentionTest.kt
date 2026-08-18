@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentConnectorResponseStoreRetentionTest {
@@ -31,6 +33,15 @@ class AgentConnectorResponseStoreRetentionTest {
         )
 
         assertEquals(listOf(otherTurn), retained)
+    }
+
+    @Test
+    fun durableIdentityUsesSourceAndContact() {
+        val response = response(sourceId = 10L)
+
+        assertTrue(AgentConnectorResponseStore.matches(response, response.copy(content = "updated")))
+        assertFalse(AgentConnectorResponseStore.matches(response, response.copy(sourceMessageId = 11L)))
+        assertFalse(AgentConnectorResponseStore.matches(response, response.copy(contactId = "hermes")))
     }
 
     private fun response(
