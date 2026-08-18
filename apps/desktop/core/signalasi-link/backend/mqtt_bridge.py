@@ -2467,7 +2467,10 @@ def on_subscribe(mqttc, userdata, mid, reason_codes, properties=None):
 
 def on_publish(mqttc, userdata, mid, reason_code=None, properties=None):
     log.debug(f"MQTT broker publish ack mid={mid} rc={reason_code}")
-    transport_probe_state.observe_transport_activity(time.monotonic())
+    # PUBACK proves only that the outbound half reached the broker. The
+    # loopback health probe must remain pending until on_mqtt_message observes
+    # traffic on a subscribed topic; otherwise a dead inbound callback looks
+    # healthy forever because publishing the probe acknowledges itself.
     handled, logical_mid = _complete_fragment_publish(mqttc, int(mid))
     if handled:
         if logical_mid is None:
