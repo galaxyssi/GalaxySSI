@@ -533,6 +533,14 @@ class AgentExecutionContinuityTest {
                 result
             )
         )
+        assertTrue(
+            AgentInterruptedWorkspaceRecoveryPolicy.shouldResume(
+                AgentWorkspaceStatus.RUNNING,
+                AgentPhase.EXECUTING,
+                plan,
+                result
+            )
+        )
     }
 
     @Test

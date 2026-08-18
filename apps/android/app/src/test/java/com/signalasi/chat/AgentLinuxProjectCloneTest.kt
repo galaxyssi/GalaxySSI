@@ -43,6 +43,8 @@ class AgentLinuxProjectCloneTest {
         val shellSource = decodedShellSource(captured.source)
         assertTrue("git -c credential.helper= fetch --depth 1 origin" in shellSource)
         assertTrue("git checkout -q -B" in shellSource)
+        assertTrue("if [ -d .git ]" in shellSource)
+        assertTrue("preserve_worktree_changes" in shellSource)
         assertFalse("cp -a" in shellSource)
         assertFalse("apt-get" in shellSource)
         assertFalse("dpkg" in shellSource)
@@ -163,7 +165,7 @@ class AgentLinuxProjectCloneTest {
             val runtimeTemp = File(workspace, ".tmp").apply { mkdirs() }
             val runtime = object : AgentProjectLinuxRuntime {
                 override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
-                    val sourceFile = File(workspace, "git-launcher.py").apply { writeText(request.source) }
+                    val sourceFile = File(root, "git-launcher.py").apply { writeText(request.source) }
                     val processBuilder = ProcessBuilder("python", sourceFile.absolutePath)
                         .directory(workspace)
                         .redirectErrorStream(false)
@@ -200,6 +202,39 @@ class AgentLinuxProjectCloneTest {
             assertTrue(runtimeFiles.all(File::isFile))
             assertTrue(runtimeTemp.isDirectory)
             assertFalse(File(root, "git-home/.gitconfig").exists())
+
+            Git.open(source).use { git ->
+                File(source, "README.md").writeText("# Updated without copying\n")
+                git.add().addFilepattern("README.md").call()
+                git.commit()
+                    .setMessage("Update fixture")
+                    .setAuthor("SignalASI", "signalasi@hotmail.com")
+                    .setCommitter("SignalASI", "signalasi@hotmail.com")
+                    .call()
+                git.push().setRemote(remoteUrl).add("refs/heads/main:refs/heads/main").call()
+            }
+            backend.clone(
+                workspaceId = "smoke",
+                repositoryUrl = remoteUrl,
+                branch = "main",
+                depth = 1,
+                replaceExisting = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+            assertEquals("# Updated without copying", File(workspace, "README.md").readText().trim())
+
+            val localOnly = File(workspace, "local-only.txt").apply { writeText("preserve me") }
+            backend.clone(
+                workspaceId = "smoke",
+                repositoryUrl = remoteUrl,
+                branch = "main",
+                depth = 1,
+                replaceExisting = true,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+            assertEquals("preserve me", localOnly.readText())
 
             backend.checkoutBranch("smoke", "feature/linux-git", create = true)
             File(workspace, "result.txt").writeText("phone linux\n")
