@@ -81,6 +81,32 @@ internal fun interface AgentProjectCloneBackend {
     )
 }
 
+internal interface AgentProjectGitBackend : AgentProjectCloneBackend {
+    fun checkoutBranch(workspaceId: String, branch: String, create: Boolean)
+
+    fun commit(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String
+    ): String
+
+    fun pull(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): String
+
+    fun push(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String>
+}
+
 /** Host-mediated Git operations for one app-private Agent project workspace. */
 internal class AgentMobileProjectRepository(
     projectRoot: File,
@@ -190,6 +216,11 @@ internal class AgentMobileProjectRepository(
     fun checkoutBranch(workspaceId: String, branch: String, create: Boolean): AgentProjectRepositorySnapshot =
         AgentWorkspaceScope.withLock(workspaceId) {
             val cleanBranch = branch.trim().also(::validateRefName)
+            (cloneBackend as? AgentProjectGitBackend)?.let { backend ->
+                backend.checkoutBranch(workspaceId, cleanBranch, create)
+                publicationGuard.invalidate(workspaceId)
+                return@withLock open(workspaceId).use { snapshot(workspaceId, it) }
+            }
             openGit(workspaceId).use { git ->
                 git.checkout().setName(cleanBranch).setCreateBranch(create).call()
                 publicationGuard.invalidate(workspaceId)
@@ -209,6 +240,15 @@ internal class AgentMobileProjectRepository(
         val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
         require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
         publicationGuard.requireVerified(workspaceId)
+        (cloneBackend as? AgentProjectGitBackend)?.let { backend ->
+            val changed = openGit(workspaceId).use { changedFiles(it.status().call()) }
+            require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
+            val commit = backend.commit(workspaceId, cleanMessage, name, email)
+            val branch = open(workspaceId).use { it.branch.orEmpty() }
+            return@withLock AgentProjectCommitResult(commit, branch, changed).also { result ->
+                publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
+            }
+        }
         openGit(workspaceId).use { git ->
             val before = git.status().call()
             require(!before.isClean) { "The phone project has no changes to commit" }
@@ -234,6 +274,12 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPullResult = AgentWorkspaceScope.withLock(workspaceId) {
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
+        (cloneBackend as? AgentProjectGitBackend)?.let { backend ->
+            open(workspaceId).use { requireAllowedRemote(it, cleanRemote) }
+            val head = backend.pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
+            publicationGuard.invalidate(workspaceId)
+            return@withLock AgentProjectPullResult(true, "updated", head)
+        }
         openGit(workspaceId).use { git ->
             requireAllowedRemote(git.repository, cleanRemote)
             val command = git.pull()
@@ -263,6 +309,17 @@ internal class AgentMobileProjectRepository(
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         publicationGuard.requirePushable(workspaceId, cleanBranch)
+        (cloneBackend as? AgentProjectGitBackend)?.let { backend ->
+            open(workspaceId).use { requireAllowedRemote(it, cleanRemote) }
+            val updates = backend.push(workspaceId, cleanRemote, cleanBranch, force, cancellationToken)
+            return@withLock AgentProjectPushResult(cleanBranch, updates).also {
+                publicationGuard.recordPush(
+                    workspaceId,
+                    open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() },
+                    cleanBranch
+                )
+            }
+        }
         openGit(workspaceId).use { git ->
             requireAllowedRemote(git.repository, cleanRemote)
             val updates = git.push()
@@ -543,7 +600,7 @@ object AgentMobileProjectNativeTools {
             projectRoot = File(appContext.filesDir, "agent-native-workspaces"),
             credentialProvider = credentialProvider,
             publicationGuard = AgentEncryptedProjectPublicationGuard(appContext),
-            cloneBackend = AgentLinuxProjectCloneBackend(
+            cloneBackend = AgentLinuxProjectGitBackend(
                 runtime = object : AgentProjectLinuxRuntime {
                     override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse =
                         runtimeManager.execute(request)
@@ -666,7 +723,7 @@ object AgentMobileProjectNativeTools {
         definition(
             PULL,
             "Update the phone project from its remote",
-            "Fetches and integrates the selected remote branch using host-mediated Git with encrypted credentials.",
+            "Fetches and integrates the selected remote branch inside the phone Linux Guest with encrypted credentials.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
