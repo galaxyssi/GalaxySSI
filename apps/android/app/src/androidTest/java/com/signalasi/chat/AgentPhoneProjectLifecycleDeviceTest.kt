@@ -5,7 +5,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.UUID
 import java.util.zip.ZipFile
-import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -137,25 +136,36 @@ class AgentPhoneProjectLifecycleDeviceTest {
             authorEmail = "signalasi@hotmail.com"
         )
 
-        // The Guest only sees the project workspace mount. Keep the bare fixture inside that
-        // mount so this proves the same path semantics used by real phone-Linux Git pushes.
         val bareRemote = File(project, ".signalasi-test-remote.git")
-        Git.init().setBare(true).setDirectory(bareRemote).call().close()
         File(project, ".git/info/exclude").appendText("\n.signalasi-test-remote.git/\n")
-        FileRepositoryBuilder()
-            .setGitDir(File(project, ".git"))
-            .setWorkTree(project)
-            .build()
-            .use { gitRepository ->
-                gitRepository.config.setString("remote", "origin", "url", ".signalasi-test-remote.git")
-                gitRepository.config.save()
-            }
+        val remoteSetup = invokeRuntime(
+            registry = registry,
+            workspaceId = workspaceId,
+            language = AgentRuntimeLanguage.SHELL,
+            source = """
+                set -eu
+                remote="${'$'}PWD/.signalasi-test-remote.git"
+                git -c safe.directory="${'$'}PWD" init --bare "${'$'}remote"
+                git --git-dir="${'$'}remote" config receive.shallowUpdate true
+                git config --global --add safe.directory "${'$'}remote"
+                git -c safe.directory="${'$'}PWD" remote set-url origin "${'$'}remote"
+            """.trimIndent(),
+            artifacts = emptyList()
+        )
+        assertTrue(remoteSetup.message, remoteSetup.isSuccess)
         repository.push(
             workspaceId = workspaceId,
             remote = "origin",
             branch = TEST_BRANCH,
             force = false,
             cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+        invokeRuntime(
+            registry = registry,
+            workspaceId = workspaceId,
+            language = AgentRuntimeLanguage.SHELL,
+            source = "git config --global --unset-all safe.directory \"${'$'}PWD/.signalasi-test-remote.git\" || true",
+            artifacts = emptyList()
         )
         FileRepositoryBuilder().setGitDir(bareRemote).setBare().build().use { remote ->
             assertEquals(commit.commit, remote.resolve("refs/heads/$TEST_BRANCH")?.name)
@@ -165,6 +175,7 @@ class AgentPhoneProjectLifecycleDeviceTest {
     private fun invokeRuntime(
         registry: AgentNativeToolRegistry,
         workspaceId: String,
+        language: AgentRuntimeLanguage = AgentRuntimeLanguage.PYTHON,
         source: String,
         artifacts: List<String>
     ): AgentNativeToolResult {
@@ -172,7 +183,7 @@ class AgentPhoneProjectLifecycleDeviceTest {
         return registry.invoke(
             AgentOnDeviceRuntimeTools.EXECUTE,
             mapOf(
-                "language" to AgentRuntimeLanguage.PYTHON.wireValue,
+                "language" to language.wireValue,
                 "source" to source,
                 "arguments" to emptyList<String>(),
                 "timeout_ms" to 180_000L,

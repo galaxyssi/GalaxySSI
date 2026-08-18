@@ -446,7 +446,7 @@ class AgentOnDeviceRuntimeManager(
         )
         val normalizedRequest = request.copy(
             source = if (request.language == AgentRuntimeLanguage.SHELL) {
-                "export PATH=${shellSingleQuote(guestArchiveToolBin)}:\$PATH\n${request.source}"
+                AgentRuntimeShellBootstrap.wrap(request.source, guestArchiveToolBin)
             } else {
                 request.source
             },
