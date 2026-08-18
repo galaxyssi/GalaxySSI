@@ -408,6 +408,10 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
     handler.postDelayed(
         {
             agentRuntimeRecoveryExecutor.execute {
+                if (!AgentConnectorResponseStore.contains(applicationContext, response)) {
+                    handler.post { agentConnectorResponsesInFlight.remove(responseKey) }
+                    return@execute
+                }
                 val runtime = runtimeForConnectorResponse(
                     sourceMessageId = response.sourceMessageId,
                     contactId = response.contactId,
@@ -419,17 +423,27 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                 handler.post {
                     agentConnectorResponsesInFlight.remove(responseKey)
                     if (isFinishing || isDestroyed) return@post
+                    if (!AgentConnectorResponseStore.contains(
+                            this@deferSupervisedProjectControlResponse,
+                            response
+                        )
+                    ) return@post
                     when {
                         runtime != null -> consumeAgentConnectorResponse(response)
                         attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
                             deferSupervisedProjectControlResponse(response, attempt + 1)
                         else -> {
-                            AgentConnectorResponseStore.remove(this@deferSupervisedProjectControlResponse, response)
-                            Log.i(
-                                "SignalASIAgent",
-                                "Retired stale supervised control response after its originating run was unavailable " +
-                                    "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
-                            )
+                            if (AgentConnectorResponseStore.remove(
+                                    this@deferSupervisedProjectControlResponse,
+                                    response
+                                )
+                            ) {
+                                Log.i(
+                                    "SignalASIAgent",
+                                    "Retired stale supervised control response after its originating run was unavailable " +
+                                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                                )
+                            }
                         }
                     }
                 }

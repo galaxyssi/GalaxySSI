@@ -229,14 +229,17 @@ object AgentConnectorResponseStore {
     }
 
     @Synchronized
-    fun remove(context: Context, response: AgentConnectorResponse) {
-        save(
-            context,
-            pending(context).filterNot {
-                it.sourceMessageId == response.sourceMessageId && it.contactId == response.contactId
-            }
-        )
+    fun remove(context: Context, response: AgentConnectorResponse): Boolean {
+        val current = pending(context)
+        val retained = current.filterNot { matches(it, response) }
+        if (retained.size == current.size) return false
+        save(context, retained)
+        return true
     }
+
+    @Synchronized
+    fun contains(context: Context, response: AgentConnectorResponse): Boolean =
+        pending(context).any { matches(it, response) }
 
     @Synchronized
     fun removeHandled(
@@ -259,6 +262,10 @@ object AgentConnectorResponseStore {
                 candidate.contactId == handled.contactId
         }
     }
+
+    internal fun matches(candidate: AgentConnectorResponse, expected: AgentConnectorResponse): Boolean =
+        candidate.sourceMessageId == expected.sourceMessageId &&
+            candidate.contactId == expected.contactId
 
     @Synchronized
     fun removeTurn(context: Context, conversationId: String, turnId: String) {
