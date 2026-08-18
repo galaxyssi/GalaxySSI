@@ -110,5 +110,13 @@ for binary in blkid e2fsck mke2fs resize2fs; do
   fi
 done
 
+for library in libstdc++.so.6 libgcc_s.so.1; do
+  if ! find "$output_dir/target/lib" "$output_dir/target/usr/lib" \
+      -type f -o -type l 2>/dev/null | grep -E "/${library//./\\.}$" -q; then
+    echo "Required persistent userspace runtime library is missing: $library" >&2
+    exit 3
+  fi
+done
+
 install -m 0644 "$output_dir/images/Image" "$image_output"
 sha256sum "$image_output"

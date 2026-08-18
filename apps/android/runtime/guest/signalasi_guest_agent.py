@@ -42,6 +42,8 @@ PERSISTENT_SYSTEM_ROOT = Path("/var/lib/signalasi")
 PERSISTENT_USERSPACE_ROOT = PERSISTENT_SYSTEM_ROOT / "rootfs"
 PERSISTENT_USERSPACE_ARCHIVE = Path("/usr/share/signalasi/debian-13-slim-arm64-rootfs.tar.gz")
 PERSISTENT_USERSPACE_DIGEST = "1b7200988f192e72703c70486d494e2457935ac9b0f031ac09eb115b01a12d45"
+HOST_RUNTIME_LIBRARY_DIRECTORIES = (Path("/lib"), Path("/usr/lib"))
+PERSISTENT_RUNTIME_LIBRARY_NAMES = ("libstdc++.so.6", "libgcc_s.so.1")
 PACK_ROOT = Path("/opt/signalasi/packs")
 PACK_NAMESPACE_ROOT = PACK_ROOT.parent
 PACK_DESCRIPTOR_NAME = "signalasi-pack.json"
@@ -352,18 +354,16 @@ def execution_plan(
     allow_network_proxy: bool = False,
 ) -> list[str]:
     if full_access_enabled(config):
-        if command and command[0] in {"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh"}:
-            return [
-                "chroot",
-                str(PERSISTENT_USERSPACE_ROOT),
-                "/bin/sh",
-                "-c",
-                'cd "$1" && shift && exec "$@"',
-                "signalasi",
-                str(workspace),
-                *command,
-            ]
-        return command
+        return [
+            "chroot",
+            str(PERSISTENT_USERSPACE_ROOT),
+            "/bin/sh",
+            "-c",
+            'cd "$1" && shift && exec "$@"',
+            "signalasi",
+            str(workspace),
+            *command,
+        ]
     return launcher_plan(config, workspace, limits, command, allow_network_proxy)
 
 
@@ -911,7 +911,27 @@ def prepare_persistent_userspace(config: dict[str, Any]) -> None:
         temporary_marker = PERSISTENT_SYSTEM_ROOT / ".userspace-sha256.tmp"
         temporary_marker.write_text(PERSISTENT_USERSPACE_DIGEST + "\n", encoding="utf-8")
         temporary_marker.replace(marker)
+    install_persistent_runtime_libraries()
     bind_persistent_userspace()
+
+
+def install_persistent_runtime_libraries() -> None:
+    target_directory = PERSISTENT_USERSPACE_ROOT / "usr" / "lib"
+    target_directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    for name in PERSISTENT_RUNTIME_LIBRARY_NAMES:
+        source = next(
+            (directory / name for directory in HOST_RUNTIME_LIBRARY_DIRECTORIES if (directory / name).is_file()),
+            None,
+        )
+        if source is None:
+            raise FileNotFoundError(f"Persistent Linux runtime library is unavailable: {name}")
+        target = target_directory / name
+        if target.is_file() and sha256_file(target) == sha256_file(source):
+            continue
+        temporary = target_directory / f".{name}.tmp"
+        shutil.copyfile(source, temporary)
+        temporary.chmod(0o755)
+        temporary.replace(target)
 
 
 def bind_persistent_userspace() -> None:

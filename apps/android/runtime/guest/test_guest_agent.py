@@ -97,7 +97,7 @@ class GuestProtocolTest(unittest.TestCase):
             )
         self.assertEqual("proxy", plan[plan.index("--network-mode") + 1])
 
-    def test_full_access_execution_plan_runs_the_command_as_guest_root(self):
+    def test_full_access_execution_plan_runs_every_command_inside_persistent_userspace(self):
         command = ["/usr/bin/python3", "/workspace/project/main.py"]
         plan = guest.execution_plan(
             {"execution_mode": "full_access", "execution_principal": "root"},
@@ -106,11 +106,37 @@ class GuestProtocolTest(unittest.TestCase):
             command,
         )
 
-        self.assertIs(command, plan)
+        self.assertEqual(
+            [
+                "chroot",
+                str(guest.PERSISTENT_USERSPACE_ROOT),
+                "/bin/sh",
+                "-c",
+                'cd "$1" && shift && exec "$@"',
+                "signalasi",
+                str(Path("/workspace/project")),
+                *command,
+            ],
+            plan,
+        )
         self.assertTrue(guest.full_access_enabled({
             "execution_mode": "full_access",
             "execution_principal": "root",
         }))
+
+    def test_full_access_pack_binary_uses_the_same_persistent_userspace_as_shell(self):
+        command = ["/opt/signalasi/packs/node-js/bin/node", "--version"]
+
+        plan = guest.execution_plan(
+            {"execution_mode": "full_access", "execution_principal": "root"},
+            Path("/workspace/project"),
+            guest.ExecutionLimits.from_payload({"limits": {}}),
+            command,
+        )
+
+        self.assertEqual("chroot", plan[0])
+        self.assertEqual(str(guest.PERSISTENT_USERSPACE_ROOT), plan[1])
+        self.assertEqual(command, plan[-len(command):])
 
     def test_command_plan_resolves_executables_from_mounted_pack_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -330,7 +356,28 @@ class GuestProtocolTest(unittest.TestCase):
         self.assertIn(str(Path("/workspace/project")), plan)
         self.assertEqual(["/bin/bash", "main.sh"], plan[-2:])
 
-    def test_non_shell_runtime_pack_execution_remains_compatible(self):
+    def test_persistent_userspace_receives_shared_runtime_libraries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = root / "host-libs"
+            userspace = root / "userspace"
+            host.mkdir()
+            for name in guest.PERSISTENT_RUNTIME_LIBRARY_NAMES:
+                (host / name).write_bytes(f"runtime:{name}".encode())
+            with (
+                mock.patch.object(guest, "HOST_RUNTIME_LIBRARY_DIRECTORIES", (host,)),
+                mock.patch.object(guest, "PERSISTENT_USERSPACE_ROOT", userspace),
+            ):
+                guest.install_persistent_runtime_libraries()
+                guest.install_persistent_runtime_libraries()
+
+            for name in guest.PERSISTENT_RUNTIME_LIBRARY_NAMES:
+                self.assertEqual(
+                    f"runtime:{name}".encode(),
+                    (userspace / "usr" / "lib" / name).read_bytes(),
+                )
+
+    def test_non_shell_runtime_pack_execution_enters_persistent_userspace(self):
         command = ["/opt/signalasi/packs/python-uv/bin/python3", "main.py"]
         plan = guest.execution_plan(
             {"execution_mode": "full_access", "execution_principal": "root"},
@@ -339,7 +386,9 @@ class GuestProtocolTest(unittest.TestCase):
             command,
         )
 
-        self.assertEqual(command, plan)
+        self.assertEqual("chroot", plan[0])
+        self.assertEqual(str(guest.PERSISTENT_USERSPACE_ROOT), plan[1])
+        self.assertEqual(command, plan[-len(command):])
 
     def test_secret_environment_is_memory_only_and_strictly_bounded(self):
         environment = {"PATH": "/usr/bin"}
