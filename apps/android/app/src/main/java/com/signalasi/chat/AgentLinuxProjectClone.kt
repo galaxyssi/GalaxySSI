@@ -81,7 +81,7 @@ internal class AgentLinuxProjectGitBackend(
         requireSuccess(response, "Phone Linux could not commit the project")
         return response.stdout.lineSequence().map(String::trim)
             .lastOrNull { COMMIT_PATTERN.matches(it) }
-            ?: error("Phone Linux did not return the created commit")
+            .orEmpty()
     }
 
     override fun pull(
@@ -108,7 +108,7 @@ internal class AgentLinuxProjectGitBackend(
         requireSuccess(response, "Phone Linux could not update the project")
         return response.stdout.lineSequence().map(String::trim)
             .lastOrNull { COMMIT_PATTERN.matches(it) }
-            ?: error("Phone Linux did not return the updated commit")
+            .orEmpty()
     }
 
     override fun push(

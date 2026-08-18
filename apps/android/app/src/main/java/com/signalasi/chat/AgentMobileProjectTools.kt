@@ -154,7 +154,9 @@ internal class AgentMobileProjectRepository(
                 cancellationToken = cancellationToken,
                 progress = progress
             )
-            check(projectBytes(target) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
+            if (!repositoryAlreadyPresent) {
+                check(projectBytes(target) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
+            }
             publicationGuard.invalidate(workspaceId)
             progress("clone", "Phone Linux repository is ready", 100)
             open(workspaceId).use { snapshot(workspaceId, it) }
@@ -201,7 +203,11 @@ internal class AgentMobileProjectRepository(
         publicationGuard.requireVerified(workspaceId)
         val changed = openGit(workspaceId).use { changedFiles(it.status().call()) }
         require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
-        val commit = requireLinuxGitBackend().commit(workspaceId, cleanMessage, name, email)
+        val reportedCommit = requireLinuxGitBackend().commit(workspaceId, cleanMessage, name, email)
+        val commit = reportedCommit.ifBlank {
+            open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() }
+        }
+        require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
         val branch = open(workspaceId).use { it.branch.orEmpty() }
         AgentProjectCommitResult(commit, branch, changed).also { result ->
             publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
@@ -217,7 +223,11 @@ internal class AgentMobileProjectRepository(
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         open(workspaceId).use { requireAllowedRemote(it, cleanRemote) }
-        val head = requireLinuxGitBackend().pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
+        val reportedHead = requireLinuxGitBackend().pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
+        val head = reportedHead.ifBlank {
+            open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() }
+        }
+        require(OBJECT_ID_PATTERN.matches(head)) { "Phone Linux updated the project but HEAD is unreadable" }
         publicationGuard.invalidate(workspaceId)
         AgentProjectPullResult(true, "updated", head)
     }
@@ -399,6 +409,7 @@ internal class AgentMobileProjectRepository(
         private const val MAX_GITHUB_RESPONSE_CHARACTERS = 256 * 1024
         private const val DEFAULT_AUTHOR_NAME = "SignalASI"
         private const val DEFAULT_AUTHOR_EMAIL = "signalasi@hotmail.com"
+        private val OBJECT_ID_PATTERN = Regex("[0-9a-f]{40,64}")
 
         internal fun isTrustedRepositoryUrl(value: String): Boolean = runCatching {
             val uri = URI(normalizeRepositoryUrl(value))
@@ -483,7 +494,7 @@ object AgentMobileProjectNativeTools {
         definition(
             CLONE,
             "Prepare a repository in the phone project",
-            "Reuses and updates an existing phone Linux repository, or clones it once when absent. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
+            "Ensures the phone Linux repository is synchronized with the requested remote branch. It clones only when absent; otherwise it fetches and fast-forwards the same persistent workspace. Do not call pull immediately after this succeeds. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
             input = objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),

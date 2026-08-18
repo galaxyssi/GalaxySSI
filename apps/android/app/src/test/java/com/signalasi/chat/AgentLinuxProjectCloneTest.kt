@@ -122,6 +122,40 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun successfulLinuxGitMutationMayOmitCommitFromCapturedStdout() {
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest) = AgentRuntimeExecutionResponse(
+                exitCode = 0,
+                stdout = "",
+                stderr = "",
+                durationMillis = 20
+            )
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+        val backend = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+
+        assertEquals(
+            "",
+            backend.pull(
+                workspaceId = "phone-project",
+                remote = "origin",
+                branch = "main",
+                cancellationToken = AgentNativeToolCancellationToken.NONE
+            )
+        )
+        assertEquals(
+            "",
+            backend.commit(
+                workspaceId = "phone-project",
+                message = "Update project",
+                authorName = "SignalASI",
+                authorEmail = "signalasi@hotmail.com"
+            )
+        )
+    }
+
+    @Test
     fun generatedLinuxCloneScriptProducesAUsableRepository() {
         val bash = listOf(
             File("/bin/bash"),

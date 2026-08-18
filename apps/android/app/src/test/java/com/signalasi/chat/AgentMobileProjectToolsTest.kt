@@ -155,13 +155,51 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun commitAndPullUseThePersistentRepositoryHeadWhenLinuxOutputIsNotCaptured() {
+        repository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            gitBackend = TestJGitBackend(projects, omitCommitOutput = true)
+        )
+        repository.clone(
+            workspaceId = "quiet-linux-output",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        repository.pull(
+            workspaceId = "quiet-linux-output",
+            remote = "origin",
+            branch = "main",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        ).also { result ->
+            assertEquals(40, result.headCommit.length)
+        }
+
+        repository.checkoutBranch("quiet-linux-output", "feature/quiet-linux", create = true)
+        File(projects, "quiet-linux-output/result.txt").writeText("phone linux\n")
+        repository.commit(
+            workspaceId = "quiet-linux-output",
+            message = "Verify quiet Linux output",
+            authorName = "SignalASI",
+            authorEmail = "signalasi@hotmail.com"
+        ).also { result ->
+            assertEquals(40, result.commit.length)
+        }
+    }
+
+    @Test
     fun linuxCloneAllowsRuntimeManagedEntriesButRejectsProjectFiles() {
         val calls = mutableListOf<String>()
         val linuxRepository = AgentMobileProjectRepository(
             projectRoot = projects,
             credentialProvider = AgentProjectCredentialProvider { "" },
             repositoryPolicy = { true },
-            gitBackend = TestJGitBackend(projects) { workspaceId -> calls += workspaceId }
+            gitBackend = TestJGitBackend(projects, onClone = { workspaceId -> calls += workspaceId })
         )
         val managedWorkspace = File(projects, "managed-only").apply { mkdirs() }
         File(managedWorkspace, ".signalasi-tools/bin").mkdirs()
@@ -372,7 +410,8 @@ class AgentMobileProjectToolsTest {
 
 private class TestJGitBackend(
     private val projectRoot: File,
-    private val onClone: (String) -> Unit = {}
+    private val onClone: (String) -> Unit = {},
+    private val omitCommitOutput: Boolean = false
 ) : AgentProjectGitBackend {
     override fun clone(
         workspaceId: String,
@@ -413,22 +452,27 @@ private class TestJGitBackend(
         }
     }
 
-    override fun commit(workspaceId: String, message: String, authorName: String, authorEmail: String): String =
-        Git.open(File(projectRoot, workspaceId)).use { git ->
+    override fun commit(workspaceId: String, message: String, authorName: String, authorEmail: String): String {
+        val commit = Git.open(File(projectRoot, workspaceId)).use { git ->
             git.add().addFilepattern(".").call()
             git.add().setUpdate(true).addFilepattern(".").call()
             git.commit().setMessage(message).setAuthor(authorName, authorEmail)
                 .setCommitter(authorName, authorEmail).call().name
         }
+        return if (omitCommitOutput) "" else commit
+    }
 
     override fun pull(
         workspaceId: String,
         remote: String,
         branch: String,
         cancellationToken: AgentNativeToolCancellationToken
-    ): String = Git.open(File(projectRoot, workspaceId)).use { git ->
+    ): String {
+        val head = Git.open(File(projectRoot, workspaceId)).use { git ->
         git.pull().setRemote(remote).setRemoteBranchName(branch).call()
         git.repository.resolve("HEAD").name
+        }
+        return if (omitCommitOutput) "" else head
     }
 
     override fun push(
