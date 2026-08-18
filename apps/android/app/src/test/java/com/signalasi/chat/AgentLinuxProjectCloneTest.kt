@@ -3,6 +3,7 @@ package com.signalasi.chat
 import java.io.File
 import java.nio.file.Files
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,20 +37,22 @@ class AgentLinuxProjectCloneTest {
             progress = { _, _, _ -> }
         )
 
-        assertEquals(AgentRuntimeLanguage.SHELL, captured.language)
+        assertEquals(AgentRuntimeLanguage.PYTHON, captured.language)
         assertTrue(captured.networkEnabled)
         assertTrue("github.com" in captured.allowedNetworkDomains)
-        assertTrue("git -c credential.helper= fetch --depth 1 origin 'refs/heads/main'" in captured.source)
-        assertTrue("git checkout -q -B 'main' FETCH_HEAD" in captured.source)
-        assertFalse("cp -a" in captured.source)
-        assertTrue("apt-get -o DPkg::Lock::Timeout=300 install" in captured.source)
-        assertTrue("dpkg --configure -a" in captured.source)
-        assertEquals(2, Regex("if ! git_runtime_ready; then").findAll(captured.source).count())
-        assertTrue("ca-certificates.crt" in captured.source)
-        assertTrue("mkdir -p /root/.cache/tmp" in captured.source)
-        assertTrue("! -name '.signalasi-tools'" in captured.source)
-        assertTrue("! -name '.signalasi-inputs'" in captured.source)
-        assertTrue(".signalasi-runtime/git-askpass.sh" !in captured.source)
+        val shellSource = decodedShellSource(captured.source)
+        assertTrue("git -c credential.helper= fetch --depth 1 origin" in shellSource)
+        assertTrue("git checkout -q -B" in shellSource)
+        assertFalse("cp -a" in shellSource)
+        assertFalse("apt-get" in shellSource)
+        assertFalse("dpkg" in shellSource)
+        assertTrue("SignalASI linux-base does not contain Git" in shellSource)
+        assertTrue("git -c safe.directory=\"${'$'}PWD\"" in shellSource)
+        assertFalse("safe.directory '*'" in shellSource)
+        assertFalse("git config --global" in shellSource)
+        assertTrue("! -name '.signalasi-tools'" in shellSource)
+        assertTrue("! -name '.signalasi-inputs'" in shellSource)
+        assertTrue(".signalasi-runtime/git-askpass.sh" !in shellSource)
         assertFalse("private-token" in captured.source)
         assertEquals("private-token", captured.secretEnvironment["SIGNALASI_GITHUB_TOKEN"])
     }
@@ -160,10 +163,12 @@ class AgentLinuxProjectCloneTest {
             val runtimeTemp = File(workspace, ".tmp").apply { mkdirs() }
             val runtime = object : AgentProjectLinuxRuntime {
                 override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
-                    val processBuilder = ProcessBuilder(requireNotNull(bash).absolutePath, "-c", request.source)
+                    val sourceFile = File(workspace, "git-launcher.py").apply { writeText(request.source) }
+                    val processBuilder = ProcessBuilder("python", sourceFile.absolutePath)
                         .directory(workspace)
                         .redirectErrorStream(false)
                     processBuilder.environment()["HOME"] = File(root, "git-home").apply { mkdirs() }.absolutePath
+                    processBuilder.environment()["SIGNALASI_BASE_GUEST_SHELL"] = requireNotNull(bash).absolutePath
                     val process = processBuilder.start()
                     val stdout = process.inputStream.bufferedReader().readText()
                     val stderr = process.errorStream.bufferedReader().readText()
@@ -177,7 +182,8 @@ class AgentLinuxProjectCloneTest {
 
                 override fun rollback(workspaceId: String, checkpointId: String) = Unit
             }
-            AgentLinuxProjectCloneBackend(runtime, AgentProjectCredentialProvider { "" }).clone(
+            val backend = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            backend.clone(
                 workspaceId = "smoke",
                 repositoryUrl = remoteUrl,
                 branch = "main",
@@ -193,12 +199,38 @@ class AgentLinuxProjectCloneTest {
             assertFalse(File(workspace, ".signalasi-runtime/git-askpass.sh").exists())
             assertTrue(runtimeFiles.all(File::isFile))
             assertTrue(runtimeTemp.isDirectory)
-            val gitConfig = File(root, "git-home/.gitconfig").readText()
-            assertTrue(gitConfig.contains("[safe]"))
-            assertTrue(gitConfig.contains("directory = "))
-            assertFalse(gitConfig.contains("directory = *"))
+            assertFalse(File(root, "git-home/.gitconfig").exists())
+
+            backend.checkoutBranch("smoke", "feature/linux-git", create = true)
+            File(workspace, "result.txt").writeText("phone linux\n")
+            val commit = backend.commit(
+                workspaceId = "smoke",
+                message = "Verify Linux Git backend",
+                authorName = "SignalASI",
+                authorEmail = "signalasi@hotmail.com"
+            )
+            assertTrue(Regex("[0-9a-f]{40}").matches(commit))
+            val push = backend.push(
+                workspaceId = "smoke",
+                remote = "origin",
+                branch = "feature/linux-git",
+                force = false,
+                cancellationToken = AgentNativeToolCancellationToken.NONE
+            )
+            assertTrue(push.isNotEmpty())
+            FileRepositoryBuilder().setGitDir(remote).setBare().build().use { bare ->
+                val remoteCommit = bare.resolve("refs/heads/feature/linux-git")?.name
+                assertEquals("push=$push refs=${bare.refDatabase.getRefsByPrefix("refs/heads/")}", commit, remoteCommit)
+            }
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    private fun decodedShellSource(pythonSource: String): String {
+        val encoded = Regex("base64\\.b64decode\\(\"([^\"]+)\"\\)")
+            .find(pythonSource)?.groupValues?.get(1)
+            ?: error("Linux Git launcher payload is missing")
+        return String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8)
     }
 }

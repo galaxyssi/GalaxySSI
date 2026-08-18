@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import java.util.Base64
 import java.util.UUID
 
 internal interface AgentProjectLinuxRuntime {
@@ -7,11 +8,11 @@ internal interface AgentProjectLinuxRuntime {
     fun rollback(workspaceId: String, checkpointId: String)
 }
 
-/** Runs the authoritative repository clone inside the persistent phone Linux environment. */
-internal class AgentLinuxProjectCloneBackend(
+/** Runs authoritative Git mutations in the phone Linux Guest against one stable project workspace. */
+internal class AgentLinuxProjectGitBackend(
     private val runtime: AgentProjectLinuxRuntime,
     private val credentialProvider: AgentProjectCredentialProvider
-) : AgentProjectCloneBackend {
+) : AgentProjectGitBackend {
     override fun clone(
         workspaceId: String,
         repositoryUrl: String,
@@ -23,34 +24,16 @@ internal class AgentLinuxProjectCloneBackend(
     ) {
         progress("linux_git_prepare", "Preparing Git in the phone Linux runtime", 5)
         val token = credentialProvider.token().trim()
-        val request = AgentRuntimeExecutionRequest(
-            language = AgentRuntimeLanguage.SHELL,
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "clone",
             source = cloneScript(repositoryUrl, branch, depth),
-            arguments = emptyList(),
             timeoutMillis = CLONE_TIMEOUT_MILLIS,
             networkEnabled = true,
-            artifactPaths = emptyList(),
-            workspaceId = workspaceId,
-            requestId = "linux-clone-${UUID.randomUUID()}",
-            allowedNetworkDomains = GITHUB_NETWORK_DOMAINS,
-            resourceLimits = AgentRuntimeResourceLimits(
-                wallClockMillis = CLONE_TIMEOUT_MILLIS,
-                cpuMillis = CLONE_CPU_MILLIS,
-                memoryBytes = CLONE_MEMORY_BYTES,
-                diskBytes = CLONE_DISK_BYTES,
-                maxProcesses = 128,
-                maxOutputBytes = CLONE_OUTPUT_BYTES,
-                maxArtifactBytes = CLONE_OUTPUT_BYTES
-            ),
             cancellationToken = cancellationToken,
-            progressListener = { event ->
-                progress(event.stage.ifBlank { "linux_git" }, event.message, event.percent)
-            },
-            secretEnvironment = token.takeIf(String::isNotEmpty)
-                ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
-                .orEmpty()
+            token = token,
+            progress = progress
         )
-        val response = runtime.execute(request)
         if (response.exitCode != 0) {
             if (response.checkpointId.isNotBlank()) {
                 runCatching { runtime.rollback(workspaceId, response.checkpointId) }
@@ -58,6 +41,100 @@ internal class AgentLinuxProjectCloneBackend(
             throw IllegalStateException(cloneFailureMessage(response, repositoryUrl))
         }
         progress("linux_git_verify", "Verifying the cloned repository in phone Linux", 95)
+    }
+
+    override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
+        val mode = if (create) "-B " else ""
+        requireSuccess(
+            execute(
+                workspaceId,
+                "checkout",
+                gitScript("git checkout -q $mode${shellQuote(branch)}"),
+                DEFAULT_TIMEOUT_MILLIS
+            ),
+            "Phone Linux could not check out the project branch"
+        )
+    }
+
+    override fun commit(
+        workspaceId: String,
+        message: String,
+        authorName: String,
+        authorEmail: String
+    ): String {
+        val response = execute(
+            workspaceId,
+            "commit",
+            gitScript(
+                """
+                git config user.name ${shellQuote(authorName)}
+                git config user.email ${shellQuote(authorEmail)}
+                git add -A
+                git commit -q -m ${shellQuote(message)}
+                git rev-parse HEAD
+                """.trimIndent()
+            ),
+            DEFAULT_TIMEOUT_MILLIS
+        )
+        requireSuccess(response, "Phone Linux could not commit the project")
+        return response.stdout.lineSequence().map(String::trim)
+            .lastOrNull { COMMIT_PATTERN.matches(it) }
+            ?: error("Phone Linux did not return the created commit")
+    }
+
+    override fun pull(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): String {
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "pull",
+            source = authenticatedGitScript(
+                """
+                git fetch --prune ${shellQuote(remote)} ${shellQuote(branch)}
+                git merge --no-edit FETCH_HEAD
+                git rev-parse HEAD
+                """.trimIndent()
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim()
+        )
+        requireSuccess(response, "Phone Linux could not update the project")
+        return response.stdout.lineSequence().map(String::trim)
+            .lastOrNull { COMMIT_PATTERN.matches(it) }
+            ?: error("Phone Linux did not return the updated commit")
+    }
+
+    override fun push(
+        workspaceId: String,
+        remote: String,
+        branch: String,
+        force: Boolean,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> {
+        val forceFlag = if (force) "--force-with-lease" else ""
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "push",
+            source = authenticatedGitScript(
+                "git push --porcelain $forceFlag ${shellQuote(remote)} " +
+                    shellQuote("refs/heads/$branch:refs/heads/$branch")
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim()
+        )
+        requireSuccess(response, "Phone Linux could not publish the project branch")
+        return (response.stdout.lineSequence() + response.stderr.lineSequence())
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toList()
+            .takeLast(MAX_RESULT_LINES)
     }
 
     private fun cloneScript(repositoryUrl: String, branch: String, depth: Int): String {
@@ -72,19 +149,11 @@ internal class AgentLinuxProjectCloneBackend(
             control_dir='.signalasi-runtime'
             askpass="${'$'}control_dir/git-askpass.sh"
             mkdir -p "${'$'}control_dir"
-            if test -f /etc/debian_version; then mkdir -p /root/.cache/tmp; fi
-            git_runtime_ready() {
-              command -v git >/dev/null 2>&1 &&
-                { test ! -f /etc/debian_version || test -s /etc/ssl/certs/ca-certificates.crt; }
+            command -v git >/dev/null 2>&1 || {
+              printf '%s\n' 'SignalASI linux-base does not contain Git' >&2
+              exit 127
             }
-            if ! git_runtime_ready; then
-              printf '%s\n' '__SIGNALASI_STAGE__:install_git'
-              dpkg --configure -a || apt-get -o DPkg::Lock::Timeout=300 -f install -y
-              if ! git_runtime_ready; then
-                apt-get -o DPkg::Lock::Timeout=300 update
-                apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends git ca-certificates openssh-client
-              fi
-            fi
+            git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
             cat > "${'$'}askpass" <<'SIGNALASI_ASKPASS'
             #!/bin/sh
             case "${'$'}1" in
@@ -107,7 +176,6 @@ internal class AgentLinuxProjectCloneBackend(
               ! -name '.signalasi-stderr' \
               ! -name '.signalasi-main' \
               -exec rm -rf -- {} +
-            git config --global --add safe.directory "${'$'}PWD"
             git init -q .
             git remote add origin ${shellQuote(repositoryUrl)}
             printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
@@ -118,6 +186,95 @@ internal class AgentLinuxProjectCloneBackend(
             printf '%s\n' '__SIGNALASI_STAGE__:verify_repository'
             git status --short --branch
         """.trimIndent()
+    }
+
+    private fun gitScript(command: String): String = """
+        set -eu
+        export LC_ALL=C
+        export GIT_TERMINAL_PROMPT=0
+        command -v git >/dev/null 2>&1 || {
+          printf '%s\n' 'SignalASI linux-base does not contain Git' >&2
+          exit 127
+        }
+        git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
+        $command
+    """.trimIndent()
+
+    private fun authenticatedGitScript(command: String): String = gitScript("") + "\n" + """
+        control_dir='.signalasi-runtime'
+        askpass="${'$'}control_dir/git-askpass.sh"
+        mkdir -p "${'$'}control_dir"
+        cat > "${'$'}askpass" <<'SIGNALASI_ASKPASS'
+        #!/bin/sh
+        case "${'$'}1" in
+          *Username*) printf '%s\n' 'x-access-token' ;;
+          *) printf '%s\n' "${'$'}SIGNALASI_GITHUB_TOKEN" ;;
+        esac
+        SIGNALASI_ASKPASS
+        chmod 700 "${'$'}askpass"
+        export GIT_ASKPASS="${'$'}PWD/${'$'}askpass"
+        trap 'rm -f "${'$'}askpass"' EXIT
+        $command
+    """.trimIndent()
+
+    private fun execute(
+        workspaceId: String,
+        operation: String,
+        source: String,
+        timeoutMillis: Long,
+        networkEnabled: Boolean = false,
+        cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
+        token: String = "",
+        progress: (String, String, Int?) -> Unit = { _, _, _ -> }
+    ): AgentRuntimeExecutionResponse = runtime.execute(
+        AgentRuntimeExecutionRequest(
+            language = AgentRuntimeLanguage.PYTHON,
+            source = baseGuestLauncher(source),
+            arguments = emptyList(),
+            timeoutMillis = timeoutMillis,
+            networkEnabled = networkEnabled,
+            artifactPaths = emptyList(),
+            workspaceId = workspaceId,
+            requestId = "linux-git-$operation-${UUID.randomUUID()}",
+            allowedNetworkDomains = if (networkEnabled) GITHUB_NETWORK_DOMAINS else emptyList(),
+            resourceLimits = AgentRuntimeResourceLimits(
+                wallClockMillis = timeoutMillis,
+                cpuMillis = (timeoutMillis * 5L / 6L).coerceAtLeast(100L),
+                memoryBytes = CLONE_MEMORY_BYTES,
+                diskBytes = CLONE_DISK_BYTES,
+                maxProcesses = 128,
+                maxOutputBytes = CLONE_OUTPUT_BYTES,
+                maxArtifactBytes = CLONE_OUTPUT_BYTES
+            ),
+            cancellationToken = cancellationToken,
+            progressListener = { event ->
+                progress(event.stage.ifBlank { "linux_git" }, event.message, event.percent)
+            },
+            secretEnvironment = token.takeIf(String::isNotEmpty)
+                ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
+                .orEmpty()
+        )
+    )
+
+    private fun baseGuestLauncher(shellSource: String): String {
+        val encoded = Base64.getEncoder().encodeToString(shellSource.toByteArray(Charsets.UTF_8))
+        return """
+        import base64
+        import os
+        import subprocess
+
+        shell = os.environ.get("SIGNALASI_BASE_GUEST_SHELL", "/bin/sh")
+        source = base64.b64decode("$encoded").decode("utf-8")
+        result = subprocess.run([shell, "-c", source], cwd=os.getcwd(), env=os.environ.copy())
+        raise SystemExit(result.returncode)
+        """.trimIndent()
+    }
+
+    private fun requireSuccess(response: AgentRuntimeExecutionResponse, prefix: String) {
+        if (response.exitCode == 0) return
+        val detail = listOf(response.stderr, response.stdout).joinToString("\n").trim()
+            .takeLast(MAX_FAILURE_DETAIL_CHARS)
+        error("$prefix: ${detail.ifBlank { "exit code ${response.exitCode}" }}")
     }
 
     private fun cloneFailureMessage(response: AgentRuntimeExecutionResponse, repositoryUrl: String): String {
@@ -146,11 +303,13 @@ internal class AgentLinuxProjectCloneBackend(
     companion object {
         private const val GITHUB_TOKEN_ENVIRONMENT = "SIGNALASI_GITHUB_TOKEN"
         private const val CLONE_TIMEOUT_MILLIS = 30L * 60_000L
-        private const val CLONE_CPU_MILLIS = 25L * 60_000L
+        private const val DEFAULT_TIMEOUT_MILLIS = 5L * 60_000L
         private const val CLONE_MEMORY_BYTES = 1024L * 1024L * 1024L
         private const val CLONE_DISK_BYTES = 2L * 1024L * 1024L * 1024L
         private const val CLONE_OUTPUT_BYTES = 1024L * 1024L
         private const val MAX_FAILURE_DETAIL_CHARS = 4_000
+        private const val MAX_RESULT_LINES = 64
+        private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
         private val GITHUB_NETWORK_DOMAINS = listOf(
             "github.com",
             "api.github.com",
@@ -159,3 +318,5 @@ internal class AgentLinuxProjectCloneBackend(
         )
     }
 }
+
+internal typealias AgentLinuxProjectCloneBackend = AgentLinuxProjectGitBackend
