@@ -254,28 +254,19 @@ class AgentExecutionLoop private constructor(
         val key = failureFingerprint(failureClass, reason)
         val count = current.failureCounts.getOrDefault(key, 0) + 1
         val failures = current.failureCounts + (key to count)
-        val exhausted = count >= current.budget.maxSameFailureAttempts
-        val nextPhase = if (exhausted) {
-            AgentExecutionLoopPhase.FAILED
-        } else {
-            AgentExecutionLoopPhase.REPLAN
-        }
+        val nextPhase = AgentExecutionLoopPhase.REPLAN
         val accounted = accountActiveDuration(current, now)
         val usage = accounted.usage.copy(
-            iterations = accounted.usage.iterations + if (exhausted) 0 else 1,
-            replans = accounted.usage.replans + if (exhausted) 0 else 1,
-            activeSinceMillis = if (nextPhase.isActive) now else 0L
+            iterations = accounted.usage.iterations + 1,
+            replans = accounted.usage.replans + 1,
+            activeSinceMillis = now
         )
-        val budgetFailure = if (exhausted) {
-            "Same failure repeated $count times"
-        } else {
-            budgetFailure(
-                usage,
-                current.budget,
-                current.taskBudgetUsage.copy(elapsedMillis = usage.activeDurationMillis),
-                current.taskBudget
-            )
-        }
+        val budgetFailure = budgetFailure(
+            usage,
+            current.budget,
+            current.taskBudgetUsage.copy(elapsedMillis = usage.activeDurationMillis),
+            current.taskBudget
+        )
         val resolvedPhase = if (budgetFailure.isBlank()) nextPhase else AgentExecutionLoopPhase.FAILED
         val next = accounted.copy(
             phase = resolvedPhase,
@@ -298,7 +289,7 @@ class AgentExecutionLoop private constructor(
             phase = next.phase,
             reason = next.lastReason,
             snapshot = next,
-            retry = !exhausted
+            retry = resolvedPhase == AgentExecutionLoopPhase.REPLAN
         )
     }
 

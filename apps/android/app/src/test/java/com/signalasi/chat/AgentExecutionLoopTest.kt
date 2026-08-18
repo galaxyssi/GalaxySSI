@@ -263,23 +263,26 @@ class AgentExecutionLoopTest {
     }
 
     @Test
-    fun repeatedFailureReplansOnceThenStopsTheUnchangedPath() {
+    fun repeatedFailureRemainsAvailableForModelDrivenReplanning() {
         val loop = AgentExecutionLoop.create { 1_000L }
         loop.start(
             "task-failure",
-            AgentExecutionLoopBudget(maxSameFailureAttempts = 2)
+            AgentExecutionLoopBudget(
+                maxSameFailureAttempts = 2,
+                enforceCountLimits = false
+            )
         )
         loop.transition(AgentExecutionLoopPhase.ACT, actionId = "verify")
         loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "verify")
 
-        val first = loop.recordFailure("command", "python verify.py exited 1", "verify")
-        val second = loop.recordFailure("command", "python verify.py exited 2", "verify")
+        val failures = (1..10).map {
+            loop.recordFailure("command", "python verify.py exited $it", "verify")
+        }
 
-        assertEquals(AgentExecutionLoopPhase.REPLAN, first.phase)
-        assertTrue(first.retry)
-        assertEquals(AgentExecutionLoopPhase.FAILED, second.phase)
-        assertFalse(second.retry)
-        assertTrue(second.snapshot.budgetFailure.contains("repeated 2"))
+        assertTrue(failures.all { it.phase == AgentExecutionLoopPhase.REPLAN })
+        assertTrue(failures.all { it.retry })
+        assertTrue(failures.last().snapshot.budgetFailure.isBlank())
+        assertEquals(10, failures.last().snapshot.failureCounts.values.single())
     }
 
     @Test
