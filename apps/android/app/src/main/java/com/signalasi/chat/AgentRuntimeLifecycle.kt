@@ -28,6 +28,48 @@ data class AgentRuntimeLifecycleSnapshot(
     val nextAttemptAtMillis: Long = 0L
 )
 
+internal data class AgentRuntimeExecutionLease(
+    val generation: Long,
+    val lifecycle: AgentRuntimeLifecycleSnapshot
+)
+
+/**
+ * Serializes automatic guest recovery across conversations. A timeout may only
+ * quarantine the runtime generation in which that command started, so a late
+ * failure cannot stop a newer healthy guest.
+ */
+internal class AgentRuntimeRecoveryGate {
+    private val lock = ReentrantLock()
+    private var generation = 0L
+    private var quarantined = false
+
+    fun acquire(ensureReady: () -> AgentRuntimeLifecycleSnapshot): AgentRuntimeExecutionLease = lock.withLock {
+        val lifecycle = ensureReady()
+        if (lifecycle.phase == AgentRuntimeLifecyclePhase.READY) quarantined = false
+        AgentRuntimeExecutionLease(generation, lifecycle)
+    }
+
+    fun quarantine(lease: AgentRuntimeExecutionLease, stopRuntime: () -> Unit): Boolean = lock.withLock {
+        if (lease.generation != generation || quarantined) return false
+        quarantined = true
+        generation += 1L
+        stopRuntime()
+        true
+    }
+}
+
+internal object AgentOnDeviceRuntimeRecovery {
+    private val gate = AgentRuntimeRecoveryGate()
+
+    fun acquire(context: Context): AgentRuntimeExecutionLease = gate.acquire {
+        AgentOnDeviceRuntimeLifecycle.ensureRunning(context.applicationContext)
+    }
+
+    fun quarantine(context: Context, lease: AgentRuntimeExecutionLease): Boolean = gate.quarantine(lease) {
+        AgentOnDeviceRuntimeLifecycle.stop(context.applicationContext)
+    }
+}
+
 fun interface AgentRuntimeLifecycleClock {
     fun nowMillis(): Long
 

@@ -416,6 +416,10 @@ class AgentOnDeviceRuntimeManager(
         }) { "Runtime secret environment is invalid" }
         request.resourceLimits.validated()
         if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+        val runtimeLease = if (bridge == null) AgentOnDeviceRuntimeRecovery.acquire(appContext) else null
+        runtimeLease?.lifecycle?.takeUnless { it.phase == AgentRuntimeLifecyclePhase.READY }?.let { lifecycle ->
+            error(lifecycle.reason.ifBlank { "The on-device Linux runtime could not be started" })
+        }
         val current = status()
         current.readinessFailure(request.language)?.let { failure ->
             error(failure)
@@ -514,10 +518,18 @@ class AgentOnDeviceRuntimeManager(
             )
             response.copy(executionReceipt = receipt)
         } catch (error: Throwable) {
+            val runtimeWasReset = if (error is AgentNativeToolTimeoutException && runtimeLease != null) {
+                runCatching { AgentOnDeviceRuntimeRecovery.quarantine(appContext, runtimeLease) }
+                    .onFailure { recoveryError -> error.addSuppressed(recoveryError) }
+                    .getOrDefault(false)
+            } else {
+                false
+            }
             Log.e(
                 "SignalASIAgentRuntime",
                 "Runtime result finalization failed request=${normalizedRequest.requestId} " +
-                    "workspace=${normalizedRequest.workspaceId} exit_success=${committedCheckpoint != null}",
+                    "workspace=${normalizedRequest.workspaceId} exit_success=${committedCheckpoint != null} " +
+                    "runtime_reset=$runtimeWasReset",
                 error
             )
             if (normalizedRequest.source != request.source) {
@@ -1026,12 +1038,17 @@ object AgentOnDeviceRuntimeTools {
                                 error
                             )
                             val evidence = manager.receipt(request.requestId)?.toEvidenceMap()
+                            val timedOut = error is AgentNativeToolTimeoutException
                             AgentNativeToolExecutionResult(
                                 output = evidence?.let { mapOf("execution_receipt" to it) }.orEmpty(),
                                 error = AgentNativeToolError(
                                     code = "on_device_runtime_failed",
-                                    message = error.message ?: "On-device runtime failed",
-                                    retryable = false,
+                                    message = if (timedOut) {
+                                        "On-device Linux timed out and its guest was reset. Retry the action in the same workspace."
+                                    } else {
+                                        error.message ?: "On-device runtime failed"
+                                    },
+                                    retryable = timedOut,
                                     details = evidence.orEmpty()
                                 )
                             )
