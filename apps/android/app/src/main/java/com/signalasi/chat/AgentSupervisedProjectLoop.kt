@@ -311,6 +311,19 @@ internal object AgentSupervisedProjectRoutingPolicy {
     }
 }
 
+internal object AgentPhoneAgentLoopRoutingPolicy {
+    fun shouldUseSupervisedLoop(
+        goal: String,
+        conversationContext: AgentConversationContext,
+        selectedAction: AgentAction?
+    ): Boolean =
+        selectedAction?.isSupervisedProjectConnector() == true ||
+            AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
+                goal,
+                conversationContext
+            )
+}
+
 /**
  * Keeps a selected remote model or Agent in the reasoning role while Android
  * remains the owner of execution. Connector output is therefore an ActionPlan,
