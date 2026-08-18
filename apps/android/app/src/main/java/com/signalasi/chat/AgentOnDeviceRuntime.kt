@@ -416,6 +416,16 @@ class AgentOnDeviceRuntimeManager(
         }) { "Runtime secret environment is invalid" }
         request.resourceLimits.validated()
         if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+        return if (bridge == null) {
+            AgentRuntimePackMountState.withStableGuest(appContext, ::packStatuses) {
+                executeWithStableGuest(request)
+            }
+        } else {
+            executeWithStableGuest(request)
+        }
+    }
+
+    private fun executeWithStableGuest(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
         val runtimeLease = if (bridge == null) AgentOnDeviceRuntimeRecovery.acquire(appContext) else null
         runtimeLease?.lifecycle?.takeUnless { it.phase == AgentRuntimeLifecyclePhase.READY }?.let { lifecycle ->
             error(lifecycle.reason.ifBlank { "The on-device Linux runtime could not be started" })
