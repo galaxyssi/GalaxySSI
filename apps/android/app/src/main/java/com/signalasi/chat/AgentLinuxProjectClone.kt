@@ -45,6 +45,67 @@ internal class AgentLinuxProjectGitBackend(
         progress("linux_git_verify", "Verifying the repository in phone Linux", 95)
     }
 
+    override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot {
+        val response = execute(
+            workspaceId,
+            "inspect",
+            gitScript(
+                """
+                emit_value() {
+                  marker="${'$'}1"
+                  value="${'$'}2"
+                  encoded="${'$'}(printf '%s' "${'$'}value" | base64 | tr -d '\n')"
+                  printf '%s%s\n' "${'$'}marker" "${'$'}encoded"
+                }
+                emit_paths() {
+                  marker="${'$'}1"
+                  shift
+                  "${'$'}@" | while IFS= read -r path; do
+                    [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
+                  done
+                }
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}(git remote get-url origin 2>/dev/null || true)"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}(git rev-parse HEAD 2>/dev/null || true)"
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+                """.trimIndent()
+            ),
+            DEFAULT_TIMEOUT_MILLIS
+        )
+        requireSuccess(response, "Phone Linux could not inspect the project repository")
+        return parseSnapshot(workspaceId, response.stdout)
+    }
+
+    override fun diff(workspaceId: String, maxCharacters: Int): String {
+        val response = execute(
+            workspaceId,
+            "diff",
+            gitScript(
+                """
+                git diff --no-ext-diff --binary
+                git diff --cached --no-ext-diff --binary
+                """.trimIndent()
+            ),
+            DEFAULT_TIMEOUT_MILLIS
+        )
+        requireSuccess(response, "Phone Linux could not read the project diff")
+        return response.stdout.take(maxCharacters)
+    }
+
+    override fun remoteUrl(workspaceId: String, remote: String): String {
+        val response = execute(
+            workspaceId,
+            "remote",
+            gitScript("git remote get-url ${shellQuote(remote)}"),
+            DEFAULT_TIMEOUT_MILLIS
+        )
+        requireSuccess(response, "Phone Linux could not read the Git remote")
+        return response.stdout.lineSequence().map(String::trim).lastOrNull(String::isNotBlank).orEmpty()
+    }
+
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
         val mode = if (create) "-B " else ""
         requireSuccess(
@@ -137,6 +198,33 @@ internal class AgentLinuxProjectGitBackend(
             .filter(String::isNotBlank)
             .toList()
             .takeLast(MAX_RESULT_LINES)
+    }
+
+    private fun parseSnapshot(workspaceId: String, output: String): AgentProjectRepositorySnapshot {
+        fun values(marker: String): List<String> = output.lineSequence()
+            .filter { it.startsWith(marker) }
+            .map { encoded ->
+                val value = encoded.removePrefix(marker)
+                runCatching { String(Base64.getDecoder().decode(value), Charsets.UTF_8) }
+                    .getOrElse { error("Phone Linux returned invalid Git metadata") }
+            }
+            .toList()
+
+        val staged = values(STAGED_MARKER).distinct().sorted()
+        val modified = values(MODIFIED_MARKER).distinct().sorted()
+        val untracked = values(UNTRACKED_MARKER).distinct().sorted()
+        val conflicting = values(CONFLICT_MARKER).distinct().sorted()
+        return AgentProjectRepositorySnapshot(
+            workspaceId = workspaceId,
+            repositoryUrl = values(REMOTE_MARKER).lastOrNull().orEmpty(),
+            branch = values(BRANCH_MARKER).lastOrNull().orEmpty(),
+            headCommit = values(HEAD_MARKER).lastOrNull().orEmpty(),
+            clean = staged.isEmpty() && modified.isEmpty() && untracked.isEmpty() && conflicting.isEmpty(),
+            staged = staged,
+            modified = modified,
+            untracked = untracked,
+            conflicting = conflicting
+        )
     }
 
     private fun cloneScript(repositoryUrl: String, branch: String, depth: Int): String {
@@ -369,6 +457,13 @@ internal class AgentLinuxProjectGitBackend(
         private const val GIT_HEARTBEAT_MILLIS = 15_000L
         private const val MAX_FAILURE_DETAIL_CHARS = 4_000
         private const val MAX_RESULT_LINES = 64
+        private const val REMOTE_MARKER = "__SIGNALASI_REMOTE__:"
+        private const val BRANCH_MARKER = "__SIGNALASI_BRANCH__:"
+        private const val HEAD_MARKER = "__SIGNALASI_HEAD__:"
+        private const val STAGED_MARKER = "__SIGNALASI_STAGED__:"
+        private const val MODIFIED_MARKER = "__SIGNALASI_MODIFIED__:"
+        private const val UNTRACKED_MARKER = "__SIGNALASI_UNTRACKED__:"
+        private const val CONFLICT_MARKER = "__SIGNALASI_CONFLICT__:"
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
         private val GITHUB_NETWORK_DOMAINS = listOf(
             "github.com",

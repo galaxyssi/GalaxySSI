@@ -446,6 +446,34 @@ private class TestJGitBackend(
         }
     }
 
+    override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot =
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            val status = git.status().call()
+            AgentProjectRepositorySnapshot(
+                workspaceId = workspaceId,
+                repositoryUrl = git.repository.config.getString("remote", "origin", "url").orEmpty(),
+                branch = git.repository.branch.orEmpty(),
+                headCommit = git.repository.resolve("HEAD")?.name.orEmpty(),
+                clean = status.isClean,
+                staged = (status.added + status.changed + status.removed).sorted(),
+                modified = (status.modified + status.missing).sorted(),
+                untracked = status.untracked.sorted(),
+                conflicting = status.conflicting.sorted()
+            )
+        }
+
+    override fun diff(workspaceId: String, maxCharacters: Int): String =
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            val unstaged = git.diff().call().joinToString("\n") { it.toString() }
+            val staged = git.diff().setCached(true).call().joinToString("\n") { it.toString() }
+            "$unstaged\n$staged".take(maxCharacters)
+        }
+
+    override fun remoteUrl(workspaceId: String, remote: String): String =
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            git.repository.config.getString("remote", remote, "url").orEmpty()
+        }
+
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
         Git.open(File(projectRoot, workspaceId)).use { git ->
             git.checkout().setName(branch).setCreateBranch(create).call()

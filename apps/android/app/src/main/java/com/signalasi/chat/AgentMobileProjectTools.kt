@@ -1,7 +1,6 @@
 package com.signalasi.chat
 
 import android.content.Context
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
 import java.nio.file.Files
@@ -10,9 +9,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.lib.Repository
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.json.JSONObject
 
 internal data class AgentProjectRepositorySnapshot(
@@ -76,6 +72,12 @@ internal interface AgentProjectGitBackend {
         cancellationToken: AgentNativeToolCancellationToken,
         progress: (String, String, Int?) -> Unit
     )
+    fun inspect(workspaceId: String): AgentProjectRepositorySnapshot
+
+    fun diff(workspaceId: String, maxCharacters: Int): String
+
+    fun remoteUrl(workspaceId: String, remote: String): String
+
     fun checkoutBranch(workspaceId: String, branch: String, create: Boolean)
 
     fun commit(
@@ -101,7 +103,7 @@ internal interface AgentProjectGitBackend {
     ): List<String>
 }
 
-/** Host-mediated Git operations for one app-private Agent project workspace. */
+/** Phone Linux-backed Git operations for one persistent Agent project workspace. */
 internal class AgentMobileProjectRepository(
     projectRoot: File,
     private val credentialProvider: AgentProjectCredentialProvider,
@@ -159,7 +161,7 @@ internal class AgentMobileProjectRepository(
             }
             publicationGuard.invalidate(workspaceId)
             progress("clone", "Phone Linux repository is ready", 100)
-            open(workspaceId).use { snapshot(workspaceId, it) }
+            backend.inspect(workspaceId)
         } catch (error: Throwable) {
             throw projectFailure("Linux repository clone failed", error)
         }
@@ -167,18 +169,13 @@ internal class AgentMobileProjectRepository(
 
     fun inspect(workspaceId: String): AgentProjectRepositorySnapshot =
         AgentWorkspaceScope.withLock(workspaceId) {
-            open(workspaceId).use { repository -> snapshot(workspaceId, repository) }
+            requireLinuxGitBackend().inspect(workspaceId)
         }
 
     fun diff(workspaceId: String, maxCharacters: Int): String =
         AgentWorkspaceScope.withLock(workspaceId) {
             require(maxCharacters in 1_000..MAX_DIFF_CHARACTERS) { "Diff output limit is invalid" }
-            openGit(workspaceId).use { git ->
-                val output = ByteArrayOutputStream()
-                git.diff().setOutputStream(output).call()
-                git.diff().setCached(true).setOutputStream(output).call()
-                output.toString(Charsets.UTF_8.name()).take(maxCharacters)
-            }
+            requireLinuxGitBackend().diff(workspaceId, maxCharacters)
         }
 
     fun checkoutBranch(workspaceId: String, branch: String, create: Boolean): AgentProjectRepositorySnapshot =
@@ -186,7 +183,7 @@ internal class AgentMobileProjectRepository(
             val cleanBranch = branch.trim().also(::validateRefName)
             requireLinuxGitBackend().checkoutBranch(workspaceId, cleanBranch, create)
             publicationGuard.invalidate(workspaceId)
-            open(workspaceId).use { snapshot(workspaceId, it) }
+            requireLinuxGitBackend().inspect(workspaceId)
         }
 
     fun commit(
@@ -201,14 +198,14 @@ internal class AgentMobileProjectRepository(
         val email = authorEmail.trim().ifBlank { DEFAULT_AUTHOR_EMAIL }.take(254)
         require(EMAIL_PATTERN.matches(email)) { "Commit author email is invalid" }
         publicationGuard.requireVerified(workspaceId)
-        val changed = openGit(workspaceId).use { changedFiles(it.status().call()) }
+        val beforeCommit = requireLinuxGitBackend().inspect(workspaceId)
+        val changed = changedFiles(beforeCommit)
         require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
         val reportedCommit = requireLinuxGitBackend().commit(workspaceId, cleanMessage, name, email)
-        val commit = reportedCommit.ifBlank {
-            open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() }
-        }
+        val committedState = requireLinuxGitBackend().inspect(workspaceId)
+        val commit = reportedCommit.ifBlank { committedState.headCommit }
         require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
-        val branch = open(workspaceId).use { it.branch.orEmpty() }
+        val branch = committedState.branch
         AgentProjectCommitResult(commit, branch, changed).also { result ->
             publicationGuard.recordCommit(workspaceId, result.commit, result.branch)
         }
@@ -222,11 +219,9 @@ internal class AgentMobileProjectRepository(
     ): AgentProjectPullResult = AgentWorkspaceScope.withLock(workspaceId) {
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
-        open(workspaceId).use { requireAllowedRemote(it, cleanRemote) }
+        requireAllowedRemote(workspaceId, cleanRemote)
         val reportedHead = requireLinuxGitBackend().pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
-        val head = reportedHead.ifBlank {
-            open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() }
-        }
+        val head = reportedHead.ifBlank { requireLinuxGitBackend().inspect(workspaceId).headCommit }
         require(OBJECT_ID_PATTERN.matches(head)) { "Phone Linux updated the project but HEAD is unreadable" }
         publicationGuard.invalidate(workspaceId)
         AgentProjectPullResult(true, "updated", head)
@@ -243,12 +238,12 @@ internal class AgentMobileProjectRepository(
         val cleanRemote = validateRemoteName(remote)
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         publicationGuard.requirePushable(workspaceId, cleanBranch)
-        open(workspaceId).use { requireAllowedRemote(it, cleanRemote) }
+        requireAllowedRemote(workspaceId, cleanRemote)
         val updates = requireLinuxGitBackend().push(workspaceId, cleanRemote, cleanBranch, force, cancellationToken)
         AgentProjectPushResult(cleanBranch, updates).also {
             publicationGuard.recordPush(
                 workspaceId,
-                open(workspaceId).use { repository -> repository.resolve("HEAD")?.name.orEmpty() },
+                requireLinuxGitBackend().inspect(workspaceId).headCommit,
                 cleanBranch
             )
         }
@@ -268,7 +263,7 @@ internal class AgentMobileProjectRepository(
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
         val cleanHead = head.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         publicationGuard.requirePullRequestReady(workspaceId, cleanHead)
-        val repository = open(workspaceId).use(::githubCoordinates)
+        val repository = githubCoordinates(requireLinuxGitBackend().inspect(workspaceId).repositoryUrl)
         val payload = JSONObject()
             .put("title", cleanTitle)
             .put("body", body.take(MAX_PULL_REQUEST_BODY_CHARACTERS))
@@ -298,32 +293,6 @@ internal class AgentMobileProjectRepository(
         }
     }
 
-    private fun snapshot(workspaceId: String, repository: Repository): AgentProjectRepositorySnapshot {
-        Git(repository).use { git ->
-            val status = git.status().call()
-            return AgentProjectRepositorySnapshot(
-                workspaceId = workspaceId,
-                repositoryUrl = repository.config.getString("remote", "origin", "url").orEmpty(),
-                branch = repository.branch.orEmpty(),
-                headCommit = repository.resolve("HEAD")?.name.orEmpty(),
-                clean = status.isClean,
-                staged = (status.added + status.changed + status.removed).sorted(),
-                modified = (status.modified + status.missing).sorted(),
-                untracked = status.untracked.sorted(),
-                conflicting = status.conflicting.sorted()
-            )
-        }
-    }
-
-    private fun openGit(workspaceId: String): Git = Git(open(workspaceId))
-
-    private fun open(workspaceId: String): Repository {
-        val workspace = workspaceDirectory(workspaceId)
-        val gitDirectory = File(workspace, ".git")
-        require(gitDirectory.isDirectory) { "The phone workspace does not contain a Git repository" }
-        return FileRepositoryBuilder().setGitDir(gitDirectory).setWorkTree(workspace).build()
-    }
-
     private fun workspaceDirectory(workspaceId: String): File {
         require(WORKSPACE_ID_PATTERN.matches(workspaceId)) { "Phone project workspace id is invalid" }
         val candidate = File(root, workspaceId).canonicalFile
@@ -339,13 +308,13 @@ internal class AgentMobileProjectRepository(
         }
     }
 
-    private fun currentBranch(workspaceId: String): String = open(workspaceId).use { it.branch.orEmpty() }
+    private fun currentBranch(workspaceId: String): String = requireLinuxGitBackend().inspect(workspaceId).branch
 
     private fun requireLinuxGitBackend(): AgentProjectGitBackend = gitBackend
         ?: error("Phone Linux Git backend is required for repository operations")
 
-    private fun githubCoordinates(repository: Repository): Pair<String, String> {
-        val url = normalizeRepositoryUrl(repository.config.getString("remote", "origin", "url").orEmpty())
+    private fun githubCoordinates(repositoryUrl: String): Pair<String, String> {
+        val url = normalizeRepositoryUrl(repositoryUrl)
         val uri = URI(url)
         require(uri.host.equals("github.com", ignoreCase = true)) { "Pull requests require a GitHub origin" }
         val segments = uri.path.trim('/').removeSuffix(".git").split('/').filter(String::isNotBlank)
@@ -353,8 +322,8 @@ internal class AgentMobileProjectRepository(
         return segments[0] to segments[1]
     }
 
-    private fun requireAllowedRemote(repository: Repository, remote: String) {
-        val url = repository.config.getString("remote", remote, "url").orEmpty()
+    private fun requireAllowedRemote(workspaceId: String, remote: String) {
+        val url = requireLinuxGitBackend().remoteUrl(workspaceId, remote)
         require(url.isNotBlank() && repositoryPolicy(normalizeRepositoryUrl(url))) {
             "Git remote is missing or not allowed by the phone project policy"
         }
@@ -377,9 +346,8 @@ internal class AgentMobileProjectRepository(
         return total
     }
 
-    private fun changedFiles(status: org.eclipse.jgit.api.Status): List<String> = (
-        status.added + status.changed + status.removed + status.modified + status.missing +
-            status.untracked + status.conflicting
+    private fun changedFiles(snapshot: AgentProjectRepositorySnapshot): List<String> = (
+        snapshot.staged + snapshot.modified + snapshot.untracked + snapshot.conflicting
         ).distinct().sorted()
 
     companion object {

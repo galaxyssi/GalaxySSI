@@ -236,6 +236,21 @@ class AgentLinuxProjectCloneTest {
             assertTrue(runtimeFiles.all(File::isFile))
             assertTrue(runtimeTemp.isDirectory)
             assertFalse(File(root, "git-home/.gitconfig").exists())
+            backend.inspect("smoke").also { snapshot ->
+                assertEquals(remoteUrl, snapshot.repositoryUrl)
+                assertEquals("main", snapshot.branch)
+                assertTrue(snapshot.clean)
+                assertTrue(Regex("[0-9a-f]{40}").matches(snapshot.headCommit))
+            }
+            assertEquals(remoteUrl, backend.remoteUrl("smoke", "origin"))
+
+            File(workspace, "README.md").writeText("# Local Linux diff\n")
+            backend.inspect("smoke").also { snapshot ->
+                assertFalse(snapshot.clean)
+                assertEquals(listOf("README.md"), snapshot.modified)
+            }
+            assertTrue(backend.diff("smoke", 16 * 1024).contains("Local Linux diff"))
+            Git.open(workspace).use { git -> git.checkout().addPath("README.md").call() }
 
             Git.open(source).use { git ->
                 File(source, "README.md").writeText("# Updated without copying\n")
