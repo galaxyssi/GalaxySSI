@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONObject
@@ -71,6 +72,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Package installation alone is never completion evidence"))
         assertTrue(prompt.contains("direct network access for apt, Git, curl/wget"))
         assertTrue(prompt.contains("Never create, repair, or imitate .git metadata manually"))
+        assertTrue(prompt.contains("Never invoke Git through signalasi.runtime.execute"))
         assertTrue(prompt.contains("installs Git, CA certificates, and the SSH client"))
         assertTrue(prompt.contains("GitHub pull request URL"))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
@@ -135,6 +137,55 @@ class AgentSupervisedProjectPromptTest {
                 listOf(clone)
             )
         )
+    }
+
+    @Test
+    fun `failed clone is retried instead of treating the repository as prepared`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Inspect the repository.","actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+        val failedClone = AgentAction(
+            id = "clone",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentMobileProjectNativeTools.CLONE,
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.FAILED,
+            description = "Clone repository",
+            parameters = mapOf("tool_id" to AgentMobileProjectNativeTools.CLONE)
+        )
+
+        val enforced = JSONObject(AgentSupervisedRepositoryPolicy.enforceBootstrap(
+            raw,
+            "Improve https://github.com/signalasi/SignalASI on this phone",
+            listOf(failedClone)
+        ))
+
+        assertEquals(
+            AgentMobileProjectNativeTools.CLONE,
+            enforced.getJSONArray("actions").getJSONObject(0)
+                .getJSONObject("parameters").getString("tool_id")
+        )
+    }
+
+    @Test
+    fun `generic runtime cannot execute project Git commands`() {
+        val rawGitAction = """
+            {"execution_location":"phone","summary":"Inspect Git.","actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.runtime.execute",
+               "description":"Inspect repository","depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.runtime.execute","arguments":{
+                 "workspace_id":"current","language":"shell","source":"git status --short"
+               }}}
+            ]}
+        """.trimIndent()
+        val ordinaryShellAction = rawGitAction.replace("git status --short", "./gradlew test")
+
+        assertTrue(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(rawGitAction))
+        assertFalse(AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(ordinaryShellAction))
     }
 
     @Test
