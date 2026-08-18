@@ -85,6 +85,7 @@ internal object AgentPhoneDevelopmentPolicy {
     fun isPhoneDevelopmentTool(toolId: String): Boolean =
         toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
             toolId.startsWith(PHONE_PROJECT_TOOL_PREFIX) ||
+            toolId.startsWith(PHONE_RUNTIME_SOFTWARE_TOOL_PREFIX) ||
             toolId in PHONE_RUNTIME_TOOL_IDS
 
     fun planningPrompt(goal: String): String = buildString {
@@ -148,6 +149,7 @@ internal object AgentPhoneDevelopmentPolicy {
     private const val MAX_RUNTIME_SUMMARY_CHARACTERS = 8_000
     private const val PHONE_WORKSPACE_TOOL_PREFIX = "signalasi.workspace."
     private const val PHONE_PROJECT_TOOL_PREFIX = "signalasi.project."
+    private const val PHONE_RUNTIME_SOFTWARE_TOOL_PREFIX = "signalasi.runtime.software."
     private val PHONE_RUNTIME_TOOL_IDS = setOf(
         AgentOnDeviceRuntimeTools.STATUS,
         AgentOnDeviceRuntimeTools.WORKSPACE_STATUS,

@@ -1118,86 +1118,95 @@ object AgentOnDeviceRuntimeTools {
         ),
         executor = AgentNativeToolExecutor { invocation ->
             val requestedPack = invocation.input["pack_id"]?.toString().orEmpty()
-            if (requestedPack !in AgentOnDeviceRuntimeManager.REQUIRED_PACKS) {
-                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                    "invalid_runtime_pack", "Runtime pack is invalid"
-                )
-            }
-            readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
-                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.success(
-                    output,
-                    "Trusted runtime pack is already ready"
-                )
-            }
-            val catalogManager = AgentRuntimePackCatalogManager(context)
-            try {
-                invocation.reportProgress("catalog", "Refreshing the trusted runtime catalog")
-                catalogManager.refresh(cancellationToken = invocation.cancellationToken)
-                val entry = catalogManager.cachedCompatible().firstOrNull {
-                    it.packId == requestedPack && it.architecture == manager.architecture()
-                } ?: error("No compatible signed runtime pack is available for $requestedPack")
-                val plan = catalogManager.installationPlan(entry)
-                val installed = mutableListOf<Map<String, Any?>>()
-                plan.forEachIndexed { index, item ->
-                    if (invocation.cancellationToken.isCancellationRequested) {
-                        throw AgentNativeToolCancelledException()
-                    }
-                    val current = manager.packStatuses().first { it.id == item.packId }
-                    if (current.state == AgentRuntimePackState.READY && current.manifest?.version == item.version) {
-                        installed += mapOf(
-                            "pack_id" to item.packId,
-                            "version" to item.version,
-                            "state" to "already_ready"
-                        )
-                    } else {
-                        invocation.reportProgress(
-                            "download",
-                            "Downloading ${item.packId}",
-                            (index * 100) / plan.size.coerceAtLeast(1)
-                        )
-                        val result = catalogManager.downloadAndInstall(
-                            item,
-                            invocation.cancellationToken,
-                            onDownloadProgress = { progress ->
-                                val percent = if (progress.totalBytes > 0L) {
-                                    ((progress.downloadedBytes * 100L) / progress.totalBytes)
-                                        .toInt().coerceIn(0, 100)
-                                } else null
-                                invocation.reportProgress("download", "Downloading ${item.packId}", percent)
-                            },
-                            onInstallProgress = { progress ->
-                                invocation.reportProgress(
-                                    "install",
-                                    "Installing ${item.packId}: ${progress.stage.name.lowercase(Locale.ROOT)}"
-                                )
-                            }
-                        )
-                        installed += mapOf(
-                            "pack_id" to result.packId,
-                            "version" to result.version,
-                            "state" to result.state.wireValue,
-                            "installed_bytes" to result.installedBytes
-                        )
-                    }
-                }
-                AgentNativeToolExecutionResult.success(
-                    mapOf("requested_pack" to requestedPack, "installed" to installed),
-                    "Trusted runtime pack is ready"
-                )
-            } catch (error: AgentNativeToolCancelledException) {
-                throw error
-            } catch (error: Throwable) {
-                AgentNativeToolExecutionResult.failure(
-                    "runtime_pack_install_failed",
-                    error.message ?: "Runtime pack installation failed"
-                )
-            } finally {
-                catalogManager.close()
-            }
+            installRuntimePack(context, manager, invocation, requestedPack)
         },
         executorId = "signalasi.android_runtime_pack_manager",
         provenanceMetadata = mapOf("verification" to "signed_catalog_and_pack")
     )
+
+    internal fun installRuntimePack(
+        context: Context,
+        manager: AgentOnDeviceRuntimeManager,
+        invocation: AgentNativeToolInvocation,
+        requestedPack: String
+    ): AgentNativeToolExecutionResult {
+        if (requestedPack !in AgentOnDeviceRuntimeManager.REQUIRED_PACKS) {
+            return AgentNativeToolExecutionResult.failure(
+                "invalid_runtime_pack", "Runtime pack is invalid"
+            )
+        }
+        readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
+            return AgentNativeToolExecutionResult.success(
+                output,
+                "Trusted runtime pack is already ready"
+            )
+        }
+        val catalogManager = AgentRuntimePackCatalogManager(context)
+        return try {
+            invocation.reportProgress("catalog", "Refreshing the trusted runtime catalog")
+            catalogManager.refresh(cancellationToken = invocation.cancellationToken)
+            val entry = catalogManager.cachedCompatible().firstOrNull {
+                it.packId == requestedPack && it.architecture == manager.architecture()
+            } ?: error("No compatible signed runtime pack is available for $requestedPack")
+            val plan = catalogManager.installationPlan(entry)
+            val installed = mutableListOf<Map<String, Any?>>()
+            plan.forEachIndexed { index, item ->
+                if (invocation.cancellationToken.isCancellationRequested) {
+                    throw AgentNativeToolCancelledException()
+                }
+                val current = manager.packStatuses().first { it.id == item.packId }
+                if (current.state == AgentRuntimePackState.READY && current.manifest?.version == item.version) {
+                    installed += mapOf(
+                        "pack_id" to item.packId,
+                        "version" to item.version,
+                        "state" to "already_ready"
+                    )
+                } else {
+                    invocation.reportProgress(
+                        "download",
+                        "Downloading ${item.packId}",
+                        (index * 100) / plan.size.coerceAtLeast(1)
+                    )
+                    val result = catalogManager.downloadAndInstall(
+                        item,
+                        invocation.cancellationToken,
+                        onDownloadProgress = { progress ->
+                            val percent = if (progress.totalBytes > 0L) {
+                                ((progress.downloadedBytes * 100L) / progress.totalBytes)
+                                    .toInt().coerceIn(0, 100)
+                            } else null
+                            invocation.reportProgress("download", "Downloading ${item.packId}", percent)
+                        },
+                        onInstallProgress = { progress ->
+                            invocation.reportProgress(
+                                "install",
+                                "Installing ${item.packId}: ${progress.stage.name.lowercase(Locale.ROOT)}"
+                            )
+                        }
+                    )
+                    installed += mapOf(
+                        "pack_id" to result.packId,
+                        "version" to result.version,
+                        "state" to result.state.wireValue,
+                        "installed_bytes" to result.installedBytes
+                    )
+                }
+            }
+            AgentNativeToolExecutionResult.success(
+                mapOf("requested_pack" to requestedPack, "installed" to installed),
+                "Trusted runtime pack is ready"
+            )
+        } catch (error: AgentNativeToolCancelledException) {
+            throw error
+        } catch (error: Throwable) {
+            AgentNativeToolExecutionResult.failure(
+                "runtime_pack_install_failed",
+                error.message ?: "Runtime pack installation failed"
+            )
+        } finally {
+            catalogManager.close()
+        }
+    }
 
     internal fun readyRuntimePackInstallOutput(
         requestedPack: String,
