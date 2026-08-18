@@ -22,7 +22,7 @@ class AgentLinuxProjectCloneTest {
 
             override fun rollback(workspaceId: String, checkpointId: String) = Unit
         }
-        val backend = AgentLinuxProjectCloneBackend(
+        val backend = AgentLinuxProjectGitBackend(
             runtime = runtime,
             credentialProvider = AgentProjectCredentialProvider { "private-token" }
         )
@@ -71,7 +71,7 @@ class AgentLinuxProjectCloneTest {
         }
 
         val failure = runCatching {
-            AgentLinuxProjectCloneBackend(runtime, AgentProjectCredentialProvider { "" }).clone(
+            AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" }).clone(
                 workspaceId = "phone-project",
                 repositoryUrl = "https://github.com/signalasi/SignalASI.git",
                 branch = "main",
@@ -101,7 +101,7 @@ class AgentLinuxProjectCloneTest {
                 rollbacks += workspaceId to checkpointId
             }
         }
-        val backend = AgentLinuxProjectCloneBackend(runtime, AgentProjectCredentialProvider { "" })
+        val backend = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
 
         val failure = runCatching {
             backend.clone(

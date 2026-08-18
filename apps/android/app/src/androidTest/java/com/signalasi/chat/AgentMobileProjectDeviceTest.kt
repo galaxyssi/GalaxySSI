@@ -162,7 +162,7 @@ class AgentMobileProjectDeviceTest {
             projectRoot = projects,
             credentialProvider = AgentProjectCredentialProvider { "" },
             repositoryPolicy = { true },
-            cloneBackend = AgentLinuxProjectCloneBackend(
+            gitBackend = AgentLinuxProjectCloneBackend(
                 runtime = object : AgentProjectLinuxRuntime {
                     override fun execute(request: AgentRuntimeExecutionRequest) = manager.execute(request)
 
