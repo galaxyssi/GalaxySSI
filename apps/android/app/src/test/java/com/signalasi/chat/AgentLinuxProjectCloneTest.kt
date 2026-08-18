@@ -43,13 +43,15 @@ class AgentLinuxProjectCloneTest {
         val shellSource = decodedShellSource(captured.source)
         assertTrue("git -c credential.helper= fetch --depth 1 origin" in shellSource)
         assertTrue("git checkout -q -B" in shellSource)
-        assertTrue("if [ -d .git ]" in shellSource)
+        assertTrue("if git rev-parse --git-dir" in shellSource)
         assertTrue("preserve_worktree_changes" in shellSource)
         assertFalse("cp -a" in shellSource)
         assertFalse("apt-get" in shellSource)
         assertFalse("dpkg" in shellSource)
         assertTrue("SignalASI linux-base does not contain Git" in shellSource)
         assertTrue("git -c safe.directory=\"${'$'}PWD\"" in shellSource)
+        assertTrue("repair_partial_repository" in shellSource)
+        assertTrue("replace_existing=false" in shellSource)
         assertFalse("safe.directory '*'" in shellSource)
         assertFalse("git config --global" in shellSource)
         assertTrue("! -name '.signalasi-tools'" in shellSource)
@@ -219,6 +221,16 @@ class AgentLinuxProjectCloneTest {
                 override fun rollback(workspaceId: String, checkpointId: String) = Unit
             }
             val backend = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            backend.inspect("smoke").also { snapshot ->
+                assertEquals(AgentProjectRepositoryState.EMPTY, snapshot.state)
+                assertTrue(snapshot.clean)
+                assertTrue(snapshot.repositoryUrl.isBlank())
+            }
+            Git.init().setDirectory(workspace).call().close()
+            backend.inspect("smoke").also { snapshot ->
+                assertEquals(AgentProjectRepositoryState.PARTIAL, snapshot.state)
+                assertTrue(snapshot.repositoryUrl.isBlank())
+            }
             backend.clone(
                 workspaceId = "smoke",
                 repositoryUrl = remoteUrl,
@@ -237,6 +249,7 @@ class AgentLinuxProjectCloneTest {
             assertTrue(runtimeTemp.isDirectory)
             assertFalse(File(root, "git-home/.gitconfig").exists())
             backend.inspect("smoke").also { snapshot ->
+                assertEquals(AgentProjectRepositoryState.READY, snapshot.state)
                 assertEquals(remoteUrl, snapshot.repositoryUrl)
                 assertEquals("main", snapshot.branch)
                 assertTrue(snapshot.clean)
@@ -306,6 +319,55 @@ class AgentLinuxProjectCloneTest {
                 val remoteCommit = bare.resolve("refs/heads/feature/linux-git")?.name
                 assertEquals("push=$push refs=${bare.refDatabase.getRefsByPrefix("refs/heads/")}", commit, remoteCommit)
             }
+
+            val replacementSource = File(root, "replacement-source")
+            val replacementRemote = File(root, "replacement.git")
+            Git.init().setDirectory(replacementSource).setInitialBranch("main").call().use { git ->
+                File(replacementSource, "REPLACED.md").writeText("# Replacement repository\n")
+                git.add().addFilepattern(".").call()
+                git.commit()
+                    .setMessage("Create replacement fixture")
+                    .setAuthor("SignalASI", "signalasi@hotmail.com")
+                    .setCommitter("SignalASI", "signalasi@hotmail.com")
+                    .call()
+            }
+            Git.cloneRepository()
+                .setURI(replacementSource.toURI().toString())
+                .setDirectory(replacementRemote)
+                .setBare(true)
+                .call()
+                .close()
+            val replacementUrl = if (File.separatorChar == '\\') {
+                "file:///${replacementRemote.canonicalPath.replace('\\', '/')}"
+            } else {
+                replacementRemote.toURI().toString()
+            }
+            val rejected = runCatching {
+                backend.clone(
+                    workspaceId = "smoke",
+                    repositoryUrl = replacementUrl,
+                    branch = "main",
+                    depth = 1,
+                    replaceExisting = false,
+                    cancellationToken = AgentNativeToolCancellationToken.NONE,
+                    progress = { _, _, _ -> }
+                )
+            }.exceptionOrNull()
+            assertTrue(rejected?.message.orEmpty().contains("different repository"))
+            assertTrue(File(workspace, "README.md").isFile)
+
+            backend.clone(
+                workspaceId = "smoke",
+                repositoryUrl = replacementUrl,
+                branch = "main",
+                depth = 1,
+                replaceExisting = true,
+                cancellationToken = AgentNativeToolCancellationToken.NONE,
+                progress = { _, _, _ -> }
+            )
+            assertTrue(File(workspace, "REPLACED.md").isFile)
+            assertFalse(File(workspace, "README.md").exists())
+            assertEquals(replacementUrl, backend.inspect("smoke").repositoryUrl)
         } finally {
             root.deleteRecursively()
         }

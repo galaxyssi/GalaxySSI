@@ -29,7 +29,7 @@ internal class AgentLinuxProjectGitBackend(
         val response = execute(
             workspaceId = workspaceId,
             operation = "clone",
-            source = cloneScript(repositoryUrl, branch, depth),
+            source = cloneScript(repositoryUrl, branch, depth, replaceExisting),
             timeoutMillis = CLONE_TIMEOUT_MILLIS,
             networkEnabled = true,
             cancellationToken = cancellationToken,
@@ -64,9 +64,20 @@ internal class AgentLinuxProjectGitBackend(
                     [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
                   done
                 }
-                emit_value '__SIGNALASI_REMOTE__:' "${'$'}(git remote get-url origin 2>/dev/null || true)"
+                if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                  emit_value '__SIGNALASI_STATE__:' 'empty'
+                  exit 0
+                fi
+                remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
+                head="${'$'}(git rev-parse HEAD 2>/dev/null || true)"
+                if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
+                  emit_value '__SIGNALASI_STATE__:' 'ready'
+                else
+                  emit_value '__SIGNALASI_STATE__:' 'partial'
+                fi
+                emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
                 emit_value '__SIGNALASI_BRANCH__:' "${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-                emit_value '__SIGNALASI_HEAD__:' "${'$'}(git rev-parse HEAD 2>/dev/null || true)"
+                emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
                 emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
                 emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
                 emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
@@ -223,11 +234,19 @@ internal class AgentLinuxProjectGitBackend(
             staged = staged,
             modified = modified,
             untracked = untracked,
-            conflicting = conflicting
+            conflicting = conflicting,
+            state = values(STATE_MARKER).lastOrNull()
+                ?.let { value -> AgentProjectRepositoryState.entries.firstOrNull { it.wireValue == value } }
+                ?: AgentProjectRepositoryState.PARTIAL
         )
     }
 
-    private fun cloneScript(repositoryUrl: String, branch: String, depth: Int): String {
+    private fun cloneScript(
+        repositoryUrl: String,
+        branch: String,
+        depth: Int,
+        replaceExisting: Boolean
+    ): String {
         val localBranch = branch.trim().ifBlank { "main" }
         val remoteRef = branch.trim().takeIf(String::isNotBlank)
             ?.let { "refs/heads/$it" }
@@ -264,27 +283,8 @@ internal class AgentLinuxProjectGitBackend(
                   printf '%s\n' "${'$'}pattern" >> "${'$'}exclude_file"
               done
             }
-            printf '%s\n' '__SIGNALASI_STAGE__:prepare_repository'
-            if [ -d .git ]; then
-              configure_signalasi_excludes
-              current_origin="${'$'}(git config --get remote.origin.url || true)"
-              [ -n "${'$'}current_origin" ] || {
-                printf '%s\n' 'Existing phone workspace has no origin remote' >&2
-                exit 2
-              }
-              [ "${'$'}{current_origin%/}" = ${shellQuote(repositoryUrl.trim().removeSuffix("/"))} ] || {
-                printf '%s\n' 'Existing phone workspace belongs to a different repository' >&2
-                exit 2
-              }
-              printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
-              git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
-              if [ -z "${'$'}(git status --porcelain)" ]; then
-                printf '%s\n' '__SIGNALASI_STAGE__:fast_forward_repository'
-                git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
-              else
-                printf '%s\n' '__SIGNALASI_STAGE__:preserve_worktree_changes'
-              fi
-            else
+            replace_existing=${if (replaceExisting) "true" else "false"}
+            reset_project_workspace() {
               find . -mindepth 1 -maxdepth 1 \
                 ! -name "${'$'}control_dir" \
                 ! -name '.signalasi-tools' \
@@ -297,6 +297,42 @@ internal class AgentLinuxProjectGitBackend(
                 ! -name '.signalasi-stderr' \
                 ! -name '.signalasi-main' \
                 -exec rm -rf -- {} +
+            }
+            printf '%s\n' '__SIGNALASI_STAGE__:prepare_repository'
+            existing_checkout=false
+            if git rev-parse --git-dir >/dev/null 2>&1; then
+              configure_signalasi_excludes
+              current_origin="${'$'}(git config --get remote.origin.url || true)"
+              if [ -n "${'$'}current_origin" ] && \
+                 [ "${'$'}{current_origin%/}" = ${shellQuote(repositoryUrl.trim().removeSuffix("/"))} ]; then
+                existing_checkout=true
+              elif [ "${'$'}replace_existing" = true ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:replace_repository'
+                reset_project_workspace
+              elif [ -z "${'$'}current_origin" ] && \
+                   ! git rev-parse --verify HEAD >/dev/null 2>&1 && \
+                   [ -z "${'$'}(git status --porcelain --untracked-files=all)" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:repair_partial_repository'
+                rm -rf .git
+              elif [ -z "${'$'}current_origin" ]; then
+                printf '%s\n' 'Existing phone workspace has no origin remote' >&2
+                exit 2
+              else
+                printf '%s\n' 'Existing phone workspace belongs to a different repository' >&2
+                exit 2
+              fi
+            fi
+            if [ "${'$'}existing_checkout" = true ]; then
+              printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
+              git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
+              if [ -z "${'$'}(git status --porcelain)" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:fast_forward_repository'
+                git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+              else
+                printf '%s\n' '__SIGNALASI_STAGE__:preserve_worktree_changes'
+              fi
+            else
+              reset_project_workspace
               git init -q .
               configure_signalasi_excludes
               git remote add origin ${shellQuote(repositoryUrl)}
@@ -458,6 +494,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val MAX_FAILURE_DETAIL_CHARS = 4_000
         private const val MAX_RESULT_LINES = 64
         private const val REMOTE_MARKER = "__SIGNALASI_REMOTE__:"
+        private const val STATE_MARKER = "__SIGNALASI_STATE__:"
         private const val BRANCH_MARKER = "__SIGNALASI_BRANCH__:"
         private const val HEAD_MARKER = "__SIGNALASI_HEAD__:"
         private const val STAGED_MARKER = "__SIGNALASI_STAGED__:"
