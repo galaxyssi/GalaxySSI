@@ -811,6 +811,7 @@ internal fun MainActivity.syncAgentFailureRecoveryCard(
             else -> AgentRouteKind.UNKNOWN
         }
     )
+    val visibleFailure = AgentFailureDetailPolicy.visibleMessage(failure, noReply.message)
     val originalGoal = agentTurnGoals[turnId].orEmpty().ifBlank {
         agentTranscriptStore.entriesForTurn(turnId)
             .lastOrNull { it.role == AgentTranscriptRole.USER }
@@ -869,8 +870,8 @@ internal fun MainActivity.syncAgentFailureRecoveryCard(
                 id = "recovery-$taskId",
                 type = AgentRichBlockType.ACTIONS,
                 title = noReply.title,
-                text = noReply.message,
-                fallbackText = noReply.message,
+                text = visibleFailure,
+                fallbackText = visibleFailure,
                 actions = actions,
                 metadata = mapOf(
                     "task_id" to taskId,
@@ -882,7 +883,7 @@ internal fun MainActivity.syncAgentFailureRecoveryCard(
     )
     agentTranscriptStore.upsert(
         role = AgentTranscriptRole.ASSISTANT,
-        text = noReply.message,
+        text = visibleFailure,
         dedupeKey = agentFailureRecoveryDedupeKey(taskId),
         timestampMillis = envelope.optLong("updated_at", System.currentTimeMillis()),
         conversationId = conversationId,

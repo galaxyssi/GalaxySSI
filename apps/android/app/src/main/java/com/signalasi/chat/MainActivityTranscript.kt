@@ -557,24 +557,8 @@ internal fun MainActivity.syncAgentTranscript(state: AgentUiState, conversationI
         state.phase == AgentPhase.CANCELLED ||
         state.phase == AgentPhase.BLOCKED
     val rawResult = state.lastActionResult?.message.orEmpty()
-    val route = state.plan?.route
-    val terminalNoReply = if (state.phase == AgentPhase.FAILED && rawResult.isNotBlank()) {
-        agentNoReplyDisplay(
-            taskStatus = "failed",
-            error = rawResult,
-            currentStep = state.pendingAction?.description.orEmpty(),
-            agentId = route?.targetId.orEmpty()
-                .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() },
-            targetName = route?.targetTitle.orEmpty()
-                .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() },
-            routeKind = route?.kind ?: AgentRouteKind.UNKNOWN,
-            routeStatus = route?.status
-        )
-    } else {
-        null
-    }
     val result = CodexStyleResponsePolicy.sanitizeAssistantText(
-        terminalNoReply?.message ?: rawResult
+        rawResult
     )
     val settledConnectorResult = state.lastActionResult?.metadata?.get("awaiting_response") == "false"
     if (result.isNotBlank() && transcriptTurnId.isNotBlank() &&
