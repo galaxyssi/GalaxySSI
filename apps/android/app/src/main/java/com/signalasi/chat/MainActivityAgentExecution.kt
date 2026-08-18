@@ -540,10 +540,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     turnId,
                     executionMode
                 )
-                var approvals = 0
                 while (state.pendingAction != null &&
-                    state.phase != AgentPhase.WAITING_RESPONSE &&
-                    approvals++ < 32
+                    state.phase != AgentPhase.WAITING_RESPONSE
                 ) {
                     state = runtime.approveNextAction(highRiskConfirmed = true)
                 }
