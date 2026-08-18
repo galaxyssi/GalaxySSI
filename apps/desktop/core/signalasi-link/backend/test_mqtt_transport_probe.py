@@ -162,6 +162,16 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         queued.assert_called_once()
         self.assertEqual((False, 0.0, 1), self.state.stalled(120.0))
 
+    def test_broker_publish_ack_does_not_mask_dead_inbound_transport(self):
+        mqttc = _ProbeMqtt()
+        generation = self.state.connected(100.0)
+        self.assertTrue(self.state.begin("pending", 100.0))
+
+        with patch.object(mqtt_bridge.time, "monotonic", return_value=109.5):
+            mqtt_bridge.on_publish(mqttc, None, 42)
+
+        self.assertEqual((True, 10.0, generation), self.state.stalled(110.0))
+
     def test_rejected_probe_requests_transport_recovery(self):
         mqttc = _ProbeMqtt(rc=4)
         self.state.connected(100.0)
