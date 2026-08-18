@@ -49,8 +49,10 @@ internal class AgentLinuxProjectGitBackend(
         val response = execute(
             workspaceId,
             "inspect",
-            gitScript(
-                """
+            """
+                set -eu
+                export LC_ALL=C
+                export GIT_TERMINAL_PROMPT=0
                 emit_value() {
                   marker="${'$'}1"
                   value="${'$'}2"
@@ -64,6 +66,15 @@ internal class AgentLinuxProjectGitBackend(
                     [ -n "${'$'}path" ] && emit_value "${'$'}marker" "${'$'}path"
                   done
                 }
+                if [ ! -e .git ]; then
+                  emit_value '__SIGNALASI_STATE__:' 'empty'
+                  exit 0
+                fi
+                command -v git >/dev/null 2>&1 || {
+                  printf '%s\n' 'Git is not installed in the persistent phone Linux environment; clone the project to provision it' >&2
+                  exit 127
+                }
+                git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
                 if ! git rev-parse --git-dir >/dev/null 2>&1; then
                   emit_value '__SIGNALASI_STATE__:' 'empty'
                   exit 0
@@ -82,8 +93,7 @@ internal class AgentLinuxProjectGitBackend(
                 emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
                 emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
                 emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
-                """.trimIndent()
-            ),
+            """.trimIndent(),
             DEFAULT_TIMEOUT_MILLIS
         )
         requireSuccess(response, "Phone Linux could not inspect the project repository")
@@ -258,8 +268,17 @@ internal class AgentLinuxProjectGitBackend(
             control_dir='.signalasi-runtime'
             askpass="${'$'}control_dir/git-askpass.sh"
             mkdir -p "${'$'}control_dir"
+            if ! command -v git >/dev/null 2>&1; then
+              printf '%s\n' '__SIGNALASI_STAGE__:install_git'
+              if ! command -v apt-get >/dev/null 2>&1; then
+                printf '%s\n' 'Phone Linux has no Git and no supported package manager' >&2
+                exit 127
+              fi
+              apt-get update
+              apt-get install -y --no-install-recommends git openssh-client ca-certificates
+            fi
             command -v git >/dev/null 2>&1 || {
-              printf '%s\n' 'SignalASI linux-base does not contain Git' >&2
+              printf '%s\n' 'Git installation did not provide an executable command' >&2
               exit 127
             }
             git() { command git -c safe.directory="${'$'}PWD" "${'$'}@"; }
