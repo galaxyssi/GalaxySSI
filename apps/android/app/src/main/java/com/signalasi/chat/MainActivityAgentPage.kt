@@ -1658,7 +1658,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
         )
         agentRunIdsByTurn[turnId] = run.runId
         val backgroundDirectAction = selectedRouteAction?.takeIf { action ->
-            AgentConfirmationPolicy.tier(action) == AgentConfirmationTier.DIRECT &&
+            action.canBypassAgentReasoningLoop() &&
                 !AgentDirectExecutionPolicy.requiresUiThread(action)
         }
         backgroundDirectAction?.let { action ->
@@ -1724,8 +1724,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     taskExecutionMode
                 )
             }
-            deterministicAction != null &&
-                AgentConfirmationPolicy.tier(deterministicAction) == AgentConfirmationTier.DIRECT -> {
+            deterministicAction != null && deterministicAction.canBypassAgentReasoningLoop() -> {
                 Log.d(
                     "SignalASIAgent",
                     "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}"
@@ -1784,6 +1783,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
         }
     }
 }
+
+internal fun AgentAction.canBypassAgentReasoningLoop(): Boolean =
+    kind != AgentActionKind.CALL_CONNECTOR &&
+        AgentConfirmationPolicy.tier(this) == AgentConfirmationTier.DIRECT
 
 internal fun MainActivity.clearSupersededAgentFailureEntries(conversationId: String) {
     val staleEntries = agentTranscriptStore.list(conversationId).filter { entry ->

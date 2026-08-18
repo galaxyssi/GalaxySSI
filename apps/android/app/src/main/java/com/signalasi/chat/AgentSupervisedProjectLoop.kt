@@ -311,6 +311,44 @@ internal object AgentSupervisedProjectRoutingPolicy {
     }
 }
 
+/**
+ * Keeps a selected remote model or Agent in the reasoning role while Android
+ * remains the owner of execution. Connector output is therefore an ActionPlan,
+ * never an instruction for the connector host to mutate its own workspace.
+ */
+internal class AgentPhoneReasoningProviderPlanner(
+    private val provider: AgentAction
+) : AgentPlanner {
+    override fun plan(request: AgentRequest): AgentPlan {
+        require(provider.kind == AgentActionKind.CALL_CONNECTOR) {
+            "A phone reasoning provider must be a connector action"
+        }
+        val connector = provider.copy(
+            id = "supervise-phone-agent-${request.goal.hashCode().toUInt()}",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Reason about the next phone Agent step",
+            parameters = provider.parameters + mapOf(
+                "prompt" to AgentSupervisedProjectLoop.planningPrompt(request),
+                "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                INTERNAL_TASK_EXECUTION_MODE to AgentTaskExecutionMode.PLAN_ONLY.wireValue,
+                "supervised_iteration" to "0",
+                "depends_on" to "",
+                "use_outputs_from" to ""
+            ),
+            requiresConfirmation = false,
+            result = "",
+            evidence = ""
+        )
+        return AgentPlanFactory.singleAction(request, connector).copy(
+            selectedAgentOrModel = connector.target,
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+            routeRationale =
+                "The selected provider reasons about the request while Android executes validated phone tools."
+        )
+    }
+}
+
 internal object AgentSupervisedProjectContinuationPolicy {
     fun mergedGoal(
         latestRequest: String,
