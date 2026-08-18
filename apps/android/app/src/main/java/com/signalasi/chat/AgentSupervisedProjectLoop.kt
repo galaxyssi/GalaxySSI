@@ -152,7 +152,7 @@ internal object AgentSupervisedProjectLoop {
         append("depends_on and use_outputs_from may reference only actions returned in the same JSON batch. Prior verified ledger actions are already satisfied and must not be repeated as dependencies. ")
         append("Actions must be CALL_NATIVE_TOOL entries from the phone inventory below, except the single task-complete DRAFT_PLAN marker. ")
         append("Use workspace_id=current; SignalASI binds it to this conversation's isolated project. ")
-        append("Use signalasi.project.* for Git and GitHub; credentials are host-owned and must never appear in prompts, files, or commands. ")
+        append("Use signalasi.project.repository.* for every Git operation, including clone, inspect, diff, branch, fetch/pull, commit, and push. Never invoke Git through signalasi.runtime.execute. These repository tools run native Git in phone Linux; credentials are host-owned and must never appear in prompts, files, or commands. ")
         append("Honor an explicit execution-environment constraint from the user's goal. When the user requires phone Linux, the Linux guest must perform the requested mutation or verification through signalasi.runtime.execute. signalasi.workspace.* may stage or inspect files, but its Android-host receipt is not Linux execution evidence and must never be described as such. ")
         append("When the user provides a tar.gz under /sdcard/Download/SignalASI, use signalasi.project.archive.import; Android resolves that shared-storage alias into the isolated phone workspace. ")
         append("Use signalasi.project.gradle_cache.import for a staged Gradle modules-2 archive. /root and /workspace are phone Linux guest paths, never Desktop paths. ")
@@ -459,6 +459,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         goal = currentGoal,
         history = plan.historyForReplan()
     )
+    if (AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(normalizedResponse)) {
+        return supervisedFormatRepairPlan(plan, connector, request, response)
+    }
     val executionSite = AgentExecutionSiteDecisionCodec.parse(normalizedResponse, currentGoal)
         ?: return supervisedFormatRepairPlan(plan, connector, request, response)
     if (executionSite.site != AgentRequestedExecutionSite.PHONE) {

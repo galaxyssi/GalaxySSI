@@ -18,7 +18,7 @@ internal object AgentSupervisedRepositoryPolicy {
         val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return raw
         if (!json.optString("execution_location").equals("phone", ignoreCase = true)) return raw
         val actions = json.optJSONArray("actions") ?: return raw
-        if (hasCloneAttempt(history) || containsClone(actions)) return raw
+        if (hasSuccessfulClone(history) || containsClone(actions)) return raw
 
         json.put(
             "summary",
@@ -52,8 +52,23 @@ internal object AgentSupervisedRepositoryPolicy {
                 )
         )
 
-    private fun hasCloneAttempt(history: List<AgentAction>): Boolean = history.any { action ->
-        action.parameters["tool_id"] == AgentMobileProjectNativeTools.CLONE
+    fun violatesProjectGitBoundary(raw: String): Boolean {
+        val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return false
+        val actions = json.optJSONArray("actions") ?: return false
+        for (index in 0 until actions.length()) {
+            val action = actions.optJSONObject(index) ?: continue
+            val parameters = action.optJSONObject("parameters") ?: continue
+            if (parameters.optString("tool_id") != AgentOnDeviceRuntimeTools.EXECUTE) continue
+            val arguments = parameters.optJSONObject("arguments") ?: continue
+            val source = arguments.optString("source")
+            if (GIT_COMMAND.containsMatchIn(source)) return true
+        }
+        return false
+    }
+
+    private fun hasSuccessfulClone(history: List<AgentAction>): Boolean = history.any { action ->
+        action.status == AgentActionStatus.COMPLETED &&
+            action.parameters["tool_id"] == AgentMobileProjectNativeTools.CLONE
     }
 
     private fun containsClone(actions: JSONArray): Boolean {
@@ -69,5 +84,9 @@ internal object AgentSupervisedRepositoryPolicy {
     private val GITHUB_REPOSITORY = Regex(
         "https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?",
         RegexOption.IGNORE_CASE
+    )
+    private val GIT_COMMAND = Regex(
+        "(?:^|[;&|()]\\s*|\\b(?:if|then|do|while|exec|command|sudo|env)\\s+)git(?:\\s|$)",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
     )
 }
