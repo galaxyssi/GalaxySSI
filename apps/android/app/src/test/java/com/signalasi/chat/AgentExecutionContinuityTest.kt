@@ -500,6 +500,79 @@ class AgentExecutionContinuityTest {
         )
     }
 
+    @Test
+    fun successfulNativeDispatchIsRecoveredForObservationInsteadOfReplay() {
+        val running = AgentAction(
+            id = "clone-project",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "Phone workspace",
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.RUNNING,
+            description = "Clone the project",
+            parameters = mapOf("tool_id" to AgentMobileProjectNativeTools.CLONE),
+            requiresConfirmation = false
+        )
+        val plan = projectPlan(running)
+        val result = AgentActionResult(
+            actionId = running.id,
+            success = true,
+            message = "Repository cloned",
+            metadata = mapOf(
+                "native_tool_status" to AgentNativeToolResultStatus.SUCCEEDED.wireValue,
+                "invocation_id" to "invocation-1",
+                "native_tool_output" to "{\"branch\":\"main\"}"
+            )
+        )
+
+        assertEquals(running, AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, result))
+        assertTrue(
+            AgentInterruptedWorkspaceRecoveryPolicy.shouldResume(
+                AgentWorkspaceStatus.FAILED,
+                AgentPhase.PAUSED,
+                plan,
+                result
+            )
+        )
+    }
+
+    @Test
+    fun incompleteOrFailedNativeDispatchIsNeverAcceptedAsVerifiedRecovery() {
+        val running = AgentAction(
+            id = "write-project",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = "Phone workspace",
+            risk = AgentRisk.MEDIUM,
+            status = AgentActionStatus.RUNNING,
+            description = "Write a project file",
+            requiresConfirmation = false
+        )
+        val plan = projectPlan(running)
+        val missingReceipt = AgentActionResult(
+            actionId = running.id,
+            success = true,
+            message = "Write returned",
+            metadata = mapOf("native_tool_status" to AgentNativeToolResultStatus.SUCCEEDED.wireValue)
+        )
+        val failed = missingReceipt.copy(
+            success = false,
+            metadata = mapOf(
+                "native_tool_status" to AgentNativeToolResultStatus.FAILED.wireValue,
+                "invocation_id" to "invocation-2"
+            )
+        )
+
+        assertEquals(null, AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, missingReceipt))
+        assertEquals(null, AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, failed))
+        assertFalse(
+            AgentInterruptedWorkspaceRecoveryPolicy.shouldResume(
+                AgentWorkspaceStatus.FAILED,
+                AgentPhase.PAUSED,
+                plan,
+                failed
+            )
+        )
+    }
+
     private fun projectPlan(action: AgentAction) = AgentPlan(
         goal = "Improve SignalASI",
         screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),

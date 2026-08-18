@@ -153,7 +153,23 @@ object AgentInterruptedWorkspaceRecoveryPolicy {
         workspaceStatus !in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) &&
             phase == AgentPhase.PAUSED &&
             plan != null &&
-            lastActionResult?.actionId == "agent-interrupted"
+            (lastActionResult?.actionId == "agent-interrupted" ||
+                AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, lastActionResult) != null)
+}
+
+/**
+ * Detects the narrow process-death window after a native tool returned and its
+ * result was persisted, but before the Agent loop observed that result.
+ */
+object AgentInterruptedDispatchRecoveryPolicy {
+    fun completedAction(plan: AgentPlan?, result: AgentActionResult?): AgentAction? {
+        if (plan == null || result?.success != true || result.actionId.isBlank()) return null
+        if (result.metadata["native_tool_status"] != AgentNativeToolResultStatus.SUCCEEDED.wireValue) return null
+        if (result.metadata["invocation_id"].isNullOrBlank()) return null
+        return plan.actions.firstOrNull { action ->
+            action.id == result.actionId && action.status == AgentActionStatus.RUNNING
+        }
+    }
 }
 
 object AgentWorkspaceRestorePolicy {
