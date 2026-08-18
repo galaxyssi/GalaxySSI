@@ -129,7 +129,7 @@ class AgentExecutionLoopTest {
     }
 
     @Test
-    fun snapshotRoundTripPreservesRecoveryAndBudgetState() {
+    fun snapshotRoundTripRetiresLegacyCountLimits() {
         val loop = AgentExecutionLoop.create { 1_000L }
         loop.start("task-9", AgentExecutionLoopBudget(maxIterations = 5, maxRetries = 4))
         loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action-9", toolCall = true)
@@ -140,7 +140,7 @@ class AgentExecutionLoopTest {
         )
 
         assertNotNull(restored)
-        assertEquals(original, restored)
+        assertEquals(original.copy(budget = original.budget.copy(enforceCountLimits = false)), restored)
     }
 
     @Test
@@ -224,6 +224,30 @@ class AgentExecutionLoopTest {
 
         assertFalse(restored.budget.enforceCountLimits)
         assertEquals(AgentExecutionTaskKind.BUILD, restored.taskKind)
+    }
+
+    @Test
+    fun foregroundAgentSettingsDoNotEnforceFixedActionCounts() {
+        val budget = AgentModelPlannerSettings(
+            maxActions = 8,
+            maxReplans = 3,
+            maxToolCalls = 8,
+            maxLoopIterations = 8
+        ).executionLoopBudget(AgentExecutionProfile.forGoal("hello"))
+        val loop = AgentExecutionLoop.create { 3_000L }
+        loop.start("unbounded-foreground-task", budget)
+
+        repeat(20) { index ->
+            loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action-$index", toolCall = true)
+            loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "action-$index")
+            loop.transition(AgentExecutionLoopPhase.REPLAN, "Continue from new evidence")
+        }
+
+        val snapshot = requireNotNull(loop.snapshot)
+        assertEquals(AgentExecutionLoopPhase.REPLAN, snapshot.phase)
+        assertTrue(snapshot.usage.actions > 8)
+        assertTrue(snapshot.budgetFailure.isBlank())
+        assertFalse(snapshot.budget.enforceCountLimits)
     }
 
     @Test

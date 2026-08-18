@@ -587,10 +587,10 @@ object AgentExecutionLoopJsonCodec {
                 maxRetries = budget.getInt("max_retries"),
                 maxSameFailureAttempts = budget.optInt("max_same_failure_attempts", 2),
                 noProgressTimeoutMillis = budget.optLong("no_progress_timeout_ms", 180_000L),
-                enforceCountLimits = budget.optBoolean(
-                    "enforce_count_limits",
-                    taskKind !in CONTINUOUS_PROJECT_TASK_KINDS
-                )
+                // Older checkpoints may persist the retired action-count cap.
+                // Foreground Agent work now continues until completion, user
+                // cancellation, or a genuine repeated/no-progress failure.
+                enforceCountLimits = false
             ),
             usage = AgentExecutionLoopUsage(
                 iterations = usage.getInt("iterations"),
@@ -678,7 +678,7 @@ internal fun AgentModelPlannerSettings.executionLoopBudget(
             noProgressTimeoutSeconds * 1_000L,
             profile.noProgressTimeoutMillis
         ),
-        enforceCountLimits = !projectTask
+        enforceCountLimits = false
     )
 }
 
