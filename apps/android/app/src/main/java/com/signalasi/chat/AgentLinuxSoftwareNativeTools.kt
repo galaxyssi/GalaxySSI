@@ -100,7 +100,7 @@ object AgentLinuxSoftwareNativeTools {
                         invocation,
                         aptSearchScript(query, limit),
                         timeoutMillis = 120_000L,
-                        networkEnabled = false
+                        networkEnabled = true
                     ).let { response ->
                         if (response.exitCode == 0) parsePackageRecords(response.stdout).map { it.publicValue() }
                         else {
@@ -149,7 +149,7 @@ object AgentLinuxSoftwareNativeTools {
                     invocation,
                     packageInspectScript(softwareId),
                     timeoutMillis = 60_000L,
-                    networkEnabled = false
+                    networkEnabled = true
                 )
                 if (response.exitCode != 0) return@definition runtimeFailure("software_inspect_failed", response)
                 AgentNativeToolExecutionResult.success(
@@ -312,6 +312,7 @@ object AgentLinuxSoftwareNativeTools {
         set -eu
         export LC_ALL=C
         command -v apt-cache >/dev/null 2>&1 || { echo 'apt-cache is unavailable' >&2; exit 127; }
+        ${ensurePackageIndexScript()}
         apt-cache search --names-only -- ${shellSingleQuote(query)} | head -n $limit | while IFS= read -r line; do
           package=${'$'}{line%% - *}
           description=${'$'}{line#* - }
@@ -325,6 +326,8 @@ object AgentLinuxSoftwareNativeTools {
     private fun packageInspectScript(packageId: String): String = """
         set -eu
         export LC_ALL=C
+        command -v apt-cache >/dev/null 2>&1 || { echo 'apt-cache is unavailable' >&2; exit 127; }
+        ${ensurePackageIndexScript()}
         package=${shellSingleQuote(packageId)}
         version=${'$'}(apt-cache policy "${'$'}package" | sed -n 's/^  Candidate: //p' | head -n 1)
         installed=no
@@ -332,6 +335,13 @@ object AgentLinuxSoftwareNativeTools {
         [ -n "${'$'}installed_version" ] && installed=installed && version=${'$'}installed_version
         description=${'$'}(apt-cache show "${'$'}package" 2>/dev/null | sed -n 's/^Description-en: //p; s/^Description: //p' | head -n 1)
         printf '%s\t%s\t%s\t%s\n' "${'$'}package" "${'$'}version" "${'$'}installed" "${'$'}description"
+    """.trimIndent()
+
+    private fun ensurePackageIndexScript(): String = """
+        if ! find /var/lib/apt/lists -maxdepth 1 -type f -name '*_Packages' -print -quit 2>/dev/null | grep -q .; then
+          command -v apt-get >/dev/null 2>&1 || { echo 'apt-get is unavailable' >&2; exit 127; }
+          apt-get update >&2
+        fi
     """.trimIndent()
 
     private fun packageMutationScript(operation: String, packageId: String): String {
