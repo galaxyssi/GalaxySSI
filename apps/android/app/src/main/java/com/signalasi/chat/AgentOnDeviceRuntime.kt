@@ -1280,8 +1280,13 @@ object AgentOnDeviceRuntimeTools {
     )
 
     private fun executionAvailability(manager: AgentOnDeviceRuntimeManager): AgentNativeToolAvailability {
-        val status = manager.status()
-        return if (status.backendReady) AgentNativeToolAvailability.AVAILABLE else AgentNativeToolAvailability(
+        return executionAvailability(manager.status())
+    }
+
+    internal fun executionAvailability(status: AgentOnDeviceRuntimeStatus): AgentNativeToolAvailability {
+        return if (status.backend != AgentOnDeviceRuntimeBackend.NONE) {
+            AgentNativeToolAvailability.AVAILABLE
+        } else AgentNativeToolAvailability(
             AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
             status.reason,
             System.currentTimeMillis()
