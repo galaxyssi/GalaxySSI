@@ -475,13 +475,15 @@ class AgentOnDeviceRuntimeManager(
                 null
             }
             val durableProject = commit?.project
-            val durableStatus = if (durableProject == null) {
+            val durableStatus = if (durableProject == null && !prepared.direct) {
                 workspaceManager.workspaceStatus(normalizedRequest.workspaceId)
             } else {
                 null
             }
             val disposition = if (succeeded) {
                 AgentRuntimeWorkspaceDisposition.COMMITTED
+            } else if (prepared.direct) {
+                AgentRuntimeWorkspaceDisposition.PERSISTED_WITH_FAILURE
             } else {
                 AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
             }
@@ -545,6 +547,7 @@ class AgentOnDeviceRuntimeManager(
                 }
             }
             val disposition = when {
+                prepared.direct -> AgentRuntimeWorkspaceDisposition.PERSISTED_WITH_FAILURE
                 rollback == null -> AgentRuntimeWorkspaceDisposition.UNCHANGED
                 rollback.isSuccess -> AgentRuntimeWorkspaceDisposition.ROLLED_BACK
                 else -> {
@@ -600,7 +603,7 @@ class AgentOnDeviceRuntimeManager(
         val image = safeChild(File(packsRoot, "linux-base"), base.manifest.imageFile)
         check(image?.isFile == true) { "The linux-base runtime image is unavailable" }
         val runtimeRoot = File(appContext.filesDir, RUNTIME_DIRECTORY)
-        val workspaces = File(runtimeRoot, "workspaces")
+        val workspaces = File(appContext.filesDir, "agent-native-workspaces")
         check(runtimeRoot.mkdirs() || runtimeRoot.isDirectory) { "Runtime storage is unavailable" }
         check(workspaces.mkdirs() || workspaces.isDirectory) { "Runtime workspace storage is unavailable" }
         val systemDisk = AgentRuntimePersistentDisk.provision(runtimeRoot)
