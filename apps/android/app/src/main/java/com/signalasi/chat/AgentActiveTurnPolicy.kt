@@ -25,6 +25,17 @@ data class AgentActiveTurnDecision(
 }
 
 object AgentActiveTurnPolicy {
+    fun isRuntimeActive(
+        phase: AgentPhase,
+        loopPhase: AgentExecutionLoopPhase? = null,
+        persistedTaskPhase: AgentPhase? = null
+    ): Boolean {
+        if (phase !in ACTIVE_RUNTIME_PHASES) return false
+        if (loopPhase?.isTerminal == true) return false
+        if (persistedTaskPhase in TERMINAL_RUNTIME_PHASES) return false
+        return true
+    }
+
     fun continuesPriorTask(request: String): Boolean {
         val clean = normalize(request)
         if (clean.isBlank() || clean in INTERRUPT_COMMANDS) return false
@@ -130,6 +141,20 @@ object AgentActiveTurnPolicy {
 
     private val INDEPENDENT = AgentActiveTurnDecision(
         AgentActiveTurnDisposition.INDEPENDENT
+    )
+    private val ACTIVE_RUNTIME_PHASES = setOf(
+        AgentPhase.PLANNING,
+        AgentPhase.WAITING_CONFIRMATION,
+        AgentPhase.EXECUTING,
+        AgentPhase.VERIFYING,
+        AgentPhase.WAITING_RESPONSE,
+        AgentPhase.PAUSED
+    )
+    private val TERMINAL_RUNTIME_PHASES = setOf(
+        AgentPhase.CANCELLED,
+        AgentPhase.BLOCKED,
+        AgentPhase.COMPLETED,
+        AgentPhase.FAILED
     )
     private val ASCII_WORD = Regex("[a-z0-9_+-]+")
     private val ASCII_TOKEN = Regex("[a-z0-9][a-z0-9_+.-]{2,}")

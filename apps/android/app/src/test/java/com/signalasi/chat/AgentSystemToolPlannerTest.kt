@@ -650,7 +650,36 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun supervisedProjectUsesAProjectSizedButBoundedExecutionBudget() {
+    fun supervisedProjectRepairsAPlanWhosePendingReviewerCannotRun() {
+        val blockedDependency = AgentAction(
+            id = "missing-dependency-reviewer",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.BLOCKED,
+            description = "Review project evidence",
+            parameters = mapOf(
+                "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                "depends_on" to "missing-action"
+            ),
+            requiresConfirmation = false
+        )
+        val plan = AgentPlanFactory.actions(
+            request(
+                goal = "Continue the phone project",
+                screen = ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent"),
+                nativeTools = emptyList()
+            ),
+            listOf(blockedDependency)
+        ).copy(
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+        )
+
+        assertTrue(AgentSupervisedProjectLoop.needsRunnableReviewer(plan))
+    }
+
+    @Test
+    fun supervisedProjectUsesAContinuousProgressGuardedExecutionBudget() {
         val budget = AgentModelPlannerSettings(
             maxActions = 4,
             maxReplans = 2,
@@ -664,6 +693,7 @@ class AgentSystemToolPlannerTest {
         assertEquals(24, budget.maxActions)
         assertEquals(MAX_SUPERVISED_REPLANS, budget.maxReplans)
         assertEquals(24, budget.maxToolCalls)
+        assertFalse(budget.enforceCountLimits)
     }
 
     @Test

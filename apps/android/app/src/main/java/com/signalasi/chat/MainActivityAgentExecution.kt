@@ -462,6 +462,11 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     val supervisedProject = deterministicAction == null &&
         AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, conversationContext)
     if (supervisedProject) {
+        agentTranscriptStore.entriesForTurn(turnId)
+            .filter { entry -> entry.dedupeKey.startsWith("agent-recovery:") }
+            .forEach { entry ->
+                deleteAgentTranscriptByDedupeKey(conversationId, entry.dedupeKey)
+            }
         agentTranscriptStore.upsert(
             role = AgentTranscriptRole.PROCESS,
             text = getString(R.string.agent_loop_context_phone_project),
@@ -1352,6 +1357,29 @@ internal fun MainActivity.recordNativeToolLifecycleEvent(event: AgentNativeToolL
 
 private fun MainActivity.recordNativeToolLifecycleEventPersisted(event: AgentNativeToolLifecycleEvent) {
     recordNativeToolTranscript(event)
+    if (event.stage == AgentNativeToolLifecycleStage.STARTED &&
+        event.conversationId.isNotBlank() &&
+        event.turnId.isNotBlank()
+    ) {
+        runOnUiThread {
+            val removedWatchdog = deleteAgentTranscriptByDedupeKey(
+                event.conversationId,
+                "task-watchdog:${event.turnId}"
+            ) or deleteAgentTranscriptByDedupeKey(
+                event.conversationId,
+                "task-watchdog-timeout:${event.turnId}"
+            )
+            val removedRecovery = deleteAgentTranscriptByDedupeKey(
+                event.conversationId,
+                agentFailureRecoveryDedupeKey(event.turnId)
+            )
+            if ((removedWatchdog || removedRecovery) &&
+                event.conversationId == agentTranscriptStore.activeConversation().id
+            ) {
+                refreshAgentTranscriptWindow(event.conversationId)
+            }
+        }
+    }
     val runId = agentRunIdsByTurn[event.turnId] ?: return
     val run = agentRunRecorder.run(runId) ?: return
     if (event.turnId.isNotBlank()) {

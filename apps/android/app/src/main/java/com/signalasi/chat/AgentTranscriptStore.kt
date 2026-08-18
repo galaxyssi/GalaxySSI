@@ -19,6 +19,25 @@ object AgentTranscriptLifecyclePolicy {
         val result: String
     )
 
+    fun supersededFailureDedupeKeys(entries: List<AgentTranscriptEntry>): Set<String> {
+        val latestProcessByTask = entries.asSequence()
+            .filter { entry -> entry.role == AgentTranscriptRole.PROCESS && entry.taskId.isNotBlank() }
+            .groupBy(AgentTranscriptEntry::taskId)
+            .mapValues { (_, taskEntries) ->
+                taskEntries.maxOf(AgentTranscriptEntry::timestampMillis)
+            }
+        return entries.asSequence()
+            .filter { entry ->
+                entry.role == AgentTranscriptRole.ASSISTANT &&
+                    entry.taskId.isNotBlank() &&
+                    isRecoverableFailureDedupeKey(entry.dedupeKey) &&
+                    (latestProcessByTask[entry.taskId] ?: Long.MIN_VALUE) > entry.timestampMillis
+            }
+            .map(AgentTranscriptEntry::dedupeKey)
+            .filter(String::isNotBlank)
+            .toSet()
+    }
+
     fun staleConnectorRecoveries(
         entries: List<AgentTranscriptEntry>,
         tasks: List<AgentTaskRecord>,
@@ -70,6 +89,9 @@ object AgentTranscriptLifecyclePolicy {
             "create a safe local task plan" in normalized
     }
 
+    private fun isRecoverableFailureDedupeKey(value: String): Boolean =
+        value.startsWith("task-watchdog-timeout:") || value.startsWith("agent-recovery:")
+
     private const val STALE_CONNECTOR_MILLIS = 5L * 60L * 1_000L
 }
 
@@ -88,6 +110,12 @@ object AgentTranscriptPresentationPolicy {
         entry.taskId.isNotBlank() -> "task:${entry.conversationId}:${entry.taskId}"
         else -> "entry:${entry.id}"
     }
+
+    fun processNarrationIdentity(value: String): String = value
+        .trim()
+        .replace(PROCESS_NARRATION_PREFIX, "")
+        .replace(Regex("\\s+"), " ")
+        .lowercase()
 
     fun collapseProcessGroups(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
         val retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filterNot { entry ->
@@ -242,6 +270,10 @@ object AgentTranscriptPresentationPolicy {
         "task cancelled", "task canceled" -> ControlMessageKind.CANCELLED
         else -> null
     }
+
+    private val PROCESS_NARRATION_PREFIX = Regex(
+        "(?i)^(?:reason|reasoning|analysis|analyzing the request|推理|分析|正在分析请求)\\s*[·:：-]?\\s*"
+    )
 
     fun isUserRelevantProcessEntry(entry: AgentTranscriptEntry): Boolean {
         if (entry.role != AgentTranscriptRole.PROCESS) return false

@@ -76,6 +76,10 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE))
         assertTrue(prompt.contains("/root and /workspace are phone Linux guest paths"))
+        assertTrue(prompt.contains("working directory set to the current isolated phone project"))
+        assertTrue(prompt.contains("never cd to /workspace"))
+        assertTrue(prompt.contains("documentation-only change"))
+        assertTrue(prompt.contains("repository.diff inspection is sufficient verification"))
         assertTrue(AgentMobileProjectArchiveTools.toolIds.all(AgentPhoneNativeToolCatalog.defaultToolIds::contains))
     }
 

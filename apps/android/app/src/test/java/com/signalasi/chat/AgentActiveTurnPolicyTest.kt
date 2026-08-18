@@ -7,6 +7,38 @@ import org.junit.Test
 
 class AgentActiveTurnPolicyTest {
     @Test
+    fun `failed persisted task is not treated as an active turn`() {
+        assertFalse(
+            AgentActiveTurnPolicy.isRuntimeActive(
+                phase = AgentPhase.WAITING_RESPONSE,
+                loopPhase = AgentExecutionLoopPhase.WAITING_RESPONSE,
+                persistedTaskPhase = AgentPhase.FAILED
+            )
+        )
+    }
+
+    @Test
+    fun `terminal execution loop is not treated as an active turn`() {
+        assertFalse(
+            AgentActiveTurnPolicy.isRuntimeActive(
+                phase = AgentPhase.WAITING_RESPONSE,
+                loopPhase = AgentExecutionLoopPhase.FAILED
+            )
+        )
+    }
+
+    @Test
+    fun `waiting response remains active without terminal evidence`() {
+        assertTrue(
+            AgentActiveTurnPolicy.isRuntimeActive(
+                phase = AgentPhase.WAITING_RESPONSE,
+                loopPhase = AgentExecutionLoopPhase.WAITING_RESPONSE,
+                persistedTaskPhase = AgentPhase.WAITING_RESPONSE
+            )
+        )
+    }
+
+    @Test
     fun explicitContinuationsAreRecognizedWithoutChangingIndependentTasks() {
         assertTrue(AgentActiveTurnPolicy.continuesPriorTask("继续"))
         assertTrue(AgentActiveTurnPolicy.continuesPriorTask("Use the previous result and retry"))

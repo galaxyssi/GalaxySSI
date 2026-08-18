@@ -1203,7 +1203,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 }
         }
         .sortedBy(AgentTranscriptEntry::timestampMillis)
-        .distinctBy { it.text.trim() }
+        .distinctBy { AgentTranscriptPresentationPolicy.processNarrationIdentity(it.text) }
     val processSegments = AgentTranscriptPresentationPolicy.narrationSegments(
         processEntries.ifEmpty { listOf(entry) }
     )

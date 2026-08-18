@@ -97,6 +97,8 @@ internal class AgentLinuxProjectCloneBackend(
             printf '%s\n' '__SIGNALASI_STAGE__:prepare_repository'
             find . -mindepth 1 -maxdepth 1 \
               ! -name "${'$'}control_dir" \
+              ! -name '.signalasi-tools' \
+              ! -name '.signalasi-inputs' \
               ! -name '.tmp' \
               ! -name 'request.json' \
               ! -name 'status.json' \

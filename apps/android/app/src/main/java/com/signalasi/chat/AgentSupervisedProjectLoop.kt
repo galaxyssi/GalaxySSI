@@ -7,6 +7,12 @@ import java.util.Locale
 internal object AgentSupervisedProjectLoop {
     fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
 
+    fun needsRunnableReviewer(plan: AgentPlan): Boolean =
+        plan.nextRunnableAction() == null &&
+            plan.actions.none { action ->
+                action.status in setOf(AgentActionStatus.RUNNING, AgentActionStatus.WAITING_RESPONSE)
+            }
+
     fun visibleSummary(request: AgentRequest, english: String, chinese: String): String =
         if (request.goal.any(::isCjkCharacter)) chinese else english
 
@@ -88,11 +94,19 @@ internal object AgentSupervisedProjectLoop {
             evidence = ""
         )
         val candidate = AgentPlanFactory.actions(request, plan.actions + reviewer).copy(
+            planId = plan.planId,
+            executionMode = plan.executionMode,
             expectedResult = plan.expectedResult,
             rollbackStrategy = plan.rollbackStrategy,
             routeRationale = plan.routeRationale,
             selectedAgentOrModel = connector.target,
-            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+            revision = plan.revision,
+            replanCount = plan.replanCount,
+            actionHistory = plan.actionHistory,
+            checkpoints = plan.checkpoints,
+            verificationResults = plan.verificationResults,
+            artifactRichOutputJson = plan.artifactRichOutputJson
         )
         return candidate.copy(validation = AgentPlanValidator.validate(candidate))
     }
@@ -142,6 +156,7 @@ internal object AgentSupervisedProjectLoop {
         append("Honor an explicit execution-environment constraint from the user's goal. When the user requires phone Linux, the Linux guest must perform the requested mutation or verification through signalasi.runtime.execute. signalasi.workspace.* may stage or inspect files, but its Android-host receipt is not Linux execution evidence and must never be described as such. ")
         append("When the user provides a tar.gz under /sdcard/Download/SignalASI, use signalasi.project.archive.import; Android resolves that shared-storage alias into the isolated phone workspace. ")
         append("Use signalasi.project.gradle_cache.import for a staged Gradle modules-2 archive. /root and /workspace are phone Linux guest paths, never Desktop paths. ")
+        append("Every signalasi.runtime.execute command starts with its working directory set to the current isolated phone project. Use relative project paths or pwd; never cd to /workspace, scan /workspace or /root for the repository, or guess a run-specific guest path. ")
         append("When the user supplies a GitHub repository URL and the verified ledger has no clone, the first batch must contain only signalasi.project.repository.clone. Never create, repair, or imitate .git metadata manually. The clone tool installs Git, CA certificates, and the SSH client inside phone Linux when they are missing. ")
         append("Before modifying a cloned repository, create a dedicated feature branch. For a requested project change, completion requires verified tests, commit, push, and a GitHub pull request URL unless the user explicitly asks for local-only work. ")
         append("Use signalasi.workspace.* for bounded file inspection and edits, and signalasi.runtime.* for runtime status, signed pack installation, build, test, and artifact execution. ")
@@ -155,7 +170,7 @@ internal object AgentSupervisedProjectLoop {
         append("Set verification_kind to test, build, lint, or package only for a command that genuinely verifies the current project; a successful host receipt is required before commit. ")
         append("For the final successful build or export, pass every user-facing file or directory in artifact_paths; SignalASI packages directories and multiple paths as one verified ZIP. ")
         append("Do not require an artifact for repository clone, inspection, status, diff, branch, log, or audit tasks unless the user explicitly asks for a deliverable. ")
-        append("Do not commit or publish until relevant tests pass. Once verified, execute requested push and pull-request actions directly. ")
+        append("Do not commit or publish until relevant tests pass. For a documentation-only change, a clean bounded signalasi.project.repository.diff inspection is sufficient verification; do not start Linux or scan the filesystem solely to lint prose. Once verified, execute requested push and pull-request actions directly. ")
         append("Do not mention or request SignalASI approval in action descriptions. ")
         append("When the requested work is fully implemented and verified, return exactly one DRAFT_PLAN action with target task-complete and put the final verified summary in description. ")
         append("Never claim completion from an unverified command or from your own prior statement. ")
@@ -675,7 +690,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
     return reviewSupervisedProjectPlan(candidate)
 }
 
-private fun MobileNativeAgent.supervisedProjectRequest(
+internal fun MobileNativeAgent.supervisedProjectRequest(
     plan: AgentPlan,
     continuation: Boolean
 ): AgentRequest {

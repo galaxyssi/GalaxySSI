@@ -1027,14 +1027,6 @@ internal fun MainActivity.activeAgentTurnForConversation(
     conversationId: String,
     excludingTurnId: String
 ): ActiveAgentTurn? {
-    val activePhases = setOf(
-        AgentPhase.PLANNING,
-        AgentPhase.WAITING_CONFIRMATION,
-        AgentPhase.EXECUTING,
-        AgentPhase.VERIFYING,
-        AgentPhase.WAITING_RESPONSE,
-        AgentPhase.PAUSED
-    )
     return buildList {
         addAll(activeAgentTasks.values)
         addAll(provisionalAgentTasks)
@@ -1045,11 +1037,18 @@ internal fun MainActivity.activeAgentTurnForConversation(
             val runtimeConversationId = agentRuntimeConversationIds[runtime].orEmpty()
             val runtimeTurnId = agentRuntimeTurnIds[runtime].orEmpty()
             val state = runtime.snapshot()
+            val persistedTaskPhase = state.plan?.planId?.let { planId ->
+                state.recentTasks.firstOrNull { it.taskId == planId }?.phase
+            }
             if (
                 runtimeConversationId == conversationId &&
                 runtimeTurnId.isNotBlank() &&
                 runtimeTurnId != excludingTurnId &&
-                state.phase in activePhases
+                AgentActiveTurnPolicy.isRuntimeActive(
+                    phase = state.phase,
+                    loopPhase = state.executionLoop?.phase,
+                    persistedTaskPhase = persistedTaskPhase
+                )
             ) {
                 ActiveAgentTurn(runtime, runtimeTurnId, state)
             } else {
@@ -1443,6 +1442,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
             conversationContext = localConversationContext
         )?.let { resumedGoal ->
             executionGoal = resumedGoal
+            clearSupersededAgentFailureEntries(conversationId)
             Log.i(
                 "SignalASIAgent",
                 "restored supervised phone project context turn=${turnId.take(8)}"
@@ -1781,6 +1781,28 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 turnId,
                 executionMode = taskExecutionMode
             )
+        }
+    }
+}
+
+internal fun MainActivity.clearSupersededAgentFailureEntries(conversationId: String) {
+    val staleEntries = agentTranscriptStore.list(conversationId).filter { entry ->
+        entry.dedupeKey.startsWith("task-watchdog:") ||
+            entry.dedupeKey.startsWith("task-watchdog-timeout:") ||
+            entry.dedupeKey.startsWith("agent-recovery:")
+    }
+    if (staleEntries.isEmpty()) return
+    staleEntries.map(AgentTranscriptEntry::dedupeKey)
+        .distinct()
+        .forEach { dedupeKey ->
+            agentTranscriptStore.deleteByDedupeKey(conversationId, dedupeKey)
+        }
+    runOnUiThread {
+        if (agentTranscriptWindow.conversationId == conversationId) {
+            staleEntries.map(AgentTranscriptEntry::id).forEach(agentTranscriptWindow::remove)
+        }
+        if (conversationId == agentTranscriptStore.activeConversation().id) {
+            refreshAgentTranscriptWindow(conversationId)
         }
     }
 }
