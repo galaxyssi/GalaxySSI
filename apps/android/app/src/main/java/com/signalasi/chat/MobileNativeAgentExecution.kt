@@ -1740,6 +1740,18 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
+    val savedPlan = currentPlan
+    val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
+        savedPlan,
+        lastActionResult
+    )
+    if (completedDispatch != null && phase in setOf(AgentPhase.EXECUTING, AgentPhase.PAUSED)) {
+        return resumeCompletedDispatchObservation(
+            requireNotNull(savedPlan),
+            completedDispatch,
+            requireNotNull(lastActionResult)
+        )
+    }
     if (phase != AgentPhase.PAUSED) return snapshot()
     if (safetySettingsStore.load().executionPaused) {
         lastActionResult = AgentActionResult(
@@ -1750,11 +1762,7 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         recordAudit(AgentAuditEvent.ACTION_BLOCKED, "resume:execution_paused")
         return snapshot()
     }
-    val plan = currentPlan ?: return observeCurrentScreen()
-    val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, lastActionResult)
-    if (completedDispatch != null) {
-        return resumeCompletedDispatchObservation(plan, completedDispatch, requireNotNull(lastActionResult))
-    }
+    val plan = savedPlan ?: return observeCurrentScreen()
     if (plan.isSupervisedProjectPlan() && plan.hasInterruptedExecutionEvidence()) {
         val recovered = supervisedProjectRecoveryPlan(
             plan,

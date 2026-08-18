@@ -130,11 +130,20 @@ internal class AgentMobileProjectRepository(
             if (value.isNotBlank()) validateRefName(value)
         }
         val target = workspaceDirectory(workspaceId)
-        require(replaceExisting || !hasCloneBlockingContent(target)) {
+        val repositoryAlreadyPresent = File(target, ".git").isDirectory
+        require(repositoryAlreadyPresent || replaceExisting || !hasCloneBlockingContent(target)) {
             "The phone project workspace is not empty"
         }
         val backend = requireLinuxGitBackend()
-        progress("clone", "Cloning repository in the phone Linux runtime", 0)
+        progress(
+            "clone",
+            if (repositoryAlreadyPresent) {
+                "Updating the existing repository in the phone Linux runtime"
+            } else {
+                "Cloning repository in the phone Linux runtime"
+            },
+            0
+        )
         try {
             backend.clone(
                 workspaceId = workspaceId,
@@ -147,7 +156,7 @@ internal class AgentMobileProjectRepository(
             )
             check(projectBytes(target) <= MAX_PROJECT_BYTES) { "Cloned project exceeds the phone workspace quota" }
             publicationGuard.invalidate(workspaceId)
-            progress("clone", "Linux repository clone completed", 100)
+            progress("clone", "Phone Linux repository is ready", 100)
             open(workspaceId).use { snapshot(workspaceId, it) }
         } catch (error: Throwable) {
             throw projectFailure("Linux repository clone failed", error)
@@ -473,8 +482,8 @@ object AgentMobileProjectNativeTools {
     internal fun definitions(repository: AgentMobileProjectRepository): List<AgentNativeToolDefinition> = listOf(
         definition(
             CLONE,
-            "Clone a repository into the phone project",
-            "Clones one trusted GitHub repository directly inside the phone Linux runtime. Credentials are injected only into the built-in clone process and are never shown to the model or stored in the project.",
+            "Prepare a repository in the phone project",
+            "Reuses and updates an existing phone Linux repository, or clones it once when absent. Credentials are injected only into the built-in Linux Git process and are never shown to the model or stored in the project.",
             input = objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),

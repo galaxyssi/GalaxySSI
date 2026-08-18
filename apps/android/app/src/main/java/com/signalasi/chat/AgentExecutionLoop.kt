@@ -674,7 +674,9 @@ internal fun AgentModelPlannerSettings.executionLoopBudget(
 }
 
 internal fun AgentTaskContext.persistExecutionLoop(event: AgentExecutionLoopEvent) {
-    if (event.phase != AgentExecutionLoopPhase.CANCELLED) {
+    // Terminal state must remain durable even when the watchdog requested
+    // cancellation immediately before the result was checkpointed.
+    if (!event.phase.isTerminal) {
         cancellationSource.throwIfCancellationRequested()
     }
     appendEvent(

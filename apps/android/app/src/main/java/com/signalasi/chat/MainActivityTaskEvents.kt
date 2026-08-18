@@ -1600,16 +1600,24 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
                 cancelConnectorTimeouts(sourceMessageId)
                 activeAgentTasks.remove(sourceMessageId, runtime)
             }
-            val timeoutState = timedOutRuntime
-                ?.let { runtime ->
-                    runtime.forceTaskTimeout(
-                        noReply.message
-                    ).also {
-                        provisionalAgentTasks.remove(runtime)
-                        agentRuntimeConversationIds.remove(runtime)
-                        agentRuntimeTurnIds.remove(runtime)
-                    }
+            val timeoutState = timedOutRuntime?.let { runtime ->
+                runCatching {
+                    runtime.forceTaskTimeout(noReply.message)
+                }.onFailure { error ->
+                    Log.e(
+                        "SignalASIAgent",
+                        "Task timeout reconciliation failed without terminating the UI " +
+                            "workspace=${workspace.workspaceId.take(8)}",
+                        error
+                    )
+                }.getOrElse {
+                    runtime.snapshot()
+                }.also {
+                    provisionalAgentTasks.remove(runtime)
+                    agentRuntimeConversationIds.remove(runtime)
+                    agentRuntimeTurnIds.remove(runtime)
                 }
+            }
             agentTranscriptStore.append(
                 role = AgentTranscriptRole.ASSISTANT,
                 text = noReply.message,

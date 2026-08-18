@@ -337,7 +337,7 @@ internal fun MainActivity.bindAgentExecutionLoop(
         if (taskContext != null) {
             taskContext.persistExecutionLoop(event)
         } else {
-            if (event.phase != AgentExecutionLoopPhase.CANCELLED) {
+            if (!event.phase.isTerminal) {
                 supervisor?.cancellationSource(cleanTurnId)?.throwIfCancellationRequested()
             }
             runCatching {

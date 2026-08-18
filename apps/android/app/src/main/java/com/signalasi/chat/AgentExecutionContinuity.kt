@@ -149,12 +149,18 @@ object AgentInterruptedWorkspaceRecoveryPolicy {
         phase: AgentPhase,
         plan: AgentPlan?,
         lastActionResult: AgentActionResult?
-    ): Boolean =
-        workspaceStatus !in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) &&
-            phase == AgentPhase.PAUSED &&
-            plan != null &&
-            (lastActionResult?.actionId == "agent-interrupted" ||
-                AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, lastActionResult) != null)
+    ): Boolean {
+        if (workspaceStatus in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) ||
+            plan == null
+        ) {
+            return false
+        }
+        val interruptedBeforeResult = phase == AgentPhase.PAUSED &&
+            lastActionResult?.actionId == "agent-interrupted"
+        val completedBeforeObservation = phase in setOf(AgentPhase.EXECUTING, AgentPhase.PAUSED) &&
+            AgentInterruptedDispatchRecoveryPolicy.completedAction(plan, lastActionResult) != null
+        return interruptedBeforeResult || completedBeforeObservation
+    }
 }
 
 /**

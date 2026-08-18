@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -343,5 +345,73 @@ class AgentExecutionLoopTest {
         assertEquals(AgentExecutionLoopPhase.COMPLETED, restored?.phase)
         assertEquals(7L, restored?.revision)
         supervisor.shutdown()
+    }
+
+    @Test
+    fun terminalLoopStateIsPersistedAfterWatchdogCancellation() {
+        val store = InMemoryAgentWorkspaceStore(clock = { 2_000L })
+        val supervisor = AgentTaskSupervisor(store, clock = { 2_000L })
+        val workspace = store.upsert(
+            AgentWorkspace(
+                workspaceId = "workspace-timeout-race",
+                sessionId = "session-timeout-race",
+                conversationId = "conversation-timeout-race",
+                taskId = "task-timeout-race",
+                goal = "Keep terminal state durable"
+            )
+        )
+        val cancellation = AgentTaskCancellationSource(Job()) { false }
+        val context = AgentTaskContext(
+            workspaceKey = workspace.key,
+            lane = AgentTaskLane.READ_REASONING,
+            priority = AgentTaskPriority.NORMAL,
+            cancellationSource = cancellation,
+            supervisor = supervisor
+        )
+        val loop = AgentExecutionLoop.create { 2_000L }
+        loop.start(workspace.taskId, AgentExecutionLoopBudget())
+        cancellation.cancelExecution("watchdog timeout")
+
+        context.persistExecutionLoop(
+            loop.transition(AgentExecutionLoopPhase.FAILED, "Timed out")
+        )
+
+        val persisted = requireNotNull(store.find(workspace.workspaceId))
+        assertTrue(persisted.eventJournal.any { it.kind == "agent.loop.failed" })
+        assertEquals(
+            AgentExecutionLoopPhase.FAILED,
+            AgentExecutionLoopJsonCodec.decode(persisted.checkpoints.last().stateJson)?.phase
+        )
+        runBlocking { supervisor.shutdown() }
+    }
+
+    @Test
+    fun nonTerminalLoopStateStillHonorsWatchdogCancellation() {
+        val store = InMemoryAgentWorkspaceStore(clock = { 2_000L })
+        val supervisor = AgentTaskSupervisor(store, clock = { 2_000L })
+        val workspace = store.upsert(
+            AgentWorkspace(
+                workspaceId = "workspace-active-cancel",
+                sessionId = "session-active-cancel",
+                conversationId = "conversation-active-cancel",
+                taskId = "task-active-cancel"
+            )
+        )
+        val cancellation = AgentTaskCancellationSource(Job()) { false }
+        val context = AgentTaskContext(
+            workspace.key,
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.NORMAL,
+            cancellation,
+            supervisor
+        )
+        val event = AgentExecutionLoop.create { 2_000L }
+            .start(workspace.taskId, AgentExecutionLoopBudget())
+        cancellation.cancelExecution("watchdog timeout")
+
+        assertThrows(CancellationException::class.java) {
+            context.persistExecutionLoop(event)
+        }
+        runBlocking { supervisor.shutdown() }
     }
 }

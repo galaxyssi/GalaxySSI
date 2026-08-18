@@ -2,6 +2,8 @@ package com.signalasi.chat
 
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 internal interface AgentProjectLinuxRuntime {
     fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse
@@ -22,7 +24,7 @@ internal class AgentLinuxProjectGitBackend(
         cancellationToken: AgentNativeToolCancellationToken,
         progress: (String, String, Int?) -> Unit
     ) {
-        progress("linux_git_prepare", "Preparing Git in the phone Linux runtime", 5)
+        progress("linux_git_prepare", "Preparing the stable Git workspace in phone Linux", 5)
         val token = credentialProvider.token().trim()
         val response = execute(
             workspaceId = workspaceId,
@@ -40,7 +42,7 @@ internal class AgentLinuxProjectGitBackend(
             }
             throw IllegalStateException(cloneFailureMessage(response, repositoryUrl))
         }
-        progress("linux_git_verify", "Verifying the cloned repository in phone Linux", 95)
+        progress("linux_git_verify", "Verifying the repository in phone Linux", 95)
     }
 
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
@@ -163,25 +165,58 @@ internal class AgentLinuxProjectGitBackend(
             SIGNALASI_ASKPASS
             chmod 700 "${'$'}askpass"
             export GIT_ASKPASS="${'$'}PWD/${'$'}askpass"
+            configure_signalasi_excludes() {
+              exclude_file='.git/info/exclude'
+              mkdir -p '.git/info'
+              for pattern in \
+                '.signalasi-runtime/' '.signalasi-tools/' '.signalasi-inputs/' '.tmp/' \
+                'request.json' 'status.json' '.signalasi-checkpoint.json' \
+                '.signalasi-stdout' '.signalasi-stderr' '.signalasi-main'; do
+                grep -Fqx "${'$'}pattern" "${'$'}exclude_file" 2>/dev/null || \
+                  printf '%s\n' "${'$'}pattern" >> "${'$'}exclude_file"
+              done
+            }
             printf '%s\n' '__SIGNALASI_STAGE__:prepare_repository'
-            find . -mindepth 1 -maxdepth 1 \
-              ! -name "${'$'}control_dir" \
-              ! -name '.signalasi-tools' \
-              ! -name '.signalasi-inputs' \
-              ! -name '.tmp' \
-              ! -name 'request.json' \
-              ! -name 'status.json' \
-              ! -name '.signalasi-checkpoint.json' \
-              ! -name '.signalasi-stdout' \
-              ! -name '.signalasi-stderr' \
-              ! -name '.signalasi-main' \
-              -exec rm -rf -- {} +
-            git init -q .
-            git remote add origin ${shellQuote(repositoryUrl)}
-            printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
-            git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
-            printf '%s\n' '__SIGNALASI_STAGE__:checkout_repository'
-            git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+            if [ -d .git ]; then
+              configure_signalasi_excludes
+              current_origin="${'$'}(git config --get remote.origin.url || true)"
+              [ -n "${'$'}current_origin" ] || {
+                printf '%s\n' 'Existing phone workspace has no origin remote' >&2
+                exit 2
+              }
+              [ "${'$'}{current_origin%/}" = ${shellQuote(repositoryUrl.trim().removeSuffix("/"))} ] || {
+                printf '%s\n' 'Existing phone workspace belongs to a different repository' >&2
+                exit 2
+              }
+              printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
+              git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
+              if [ -z "${'$'}(git status --porcelain)" ]; then
+                printf '%s\n' '__SIGNALASI_STAGE__:fast_forward_repository'
+                git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+              else
+                printf '%s\n' '__SIGNALASI_STAGE__:preserve_worktree_changes'
+              fi
+            else
+              find . -mindepth 1 -maxdepth 1 \
+                ! -name "${'$'}control_dir" \
+                ! -name '.signalasi-tools' \
+                ! -name '.signalasi-inputs' \
+                ! -name '.tmp' \
+                ! -name 'request.json' \
+                ! -name 'status.json' \
+                ! -name '.signalasi-checkpoint.json' \
+                ! -name '.signalasi-stdout' \
+                ! -name '.signalasi-stderr' \
+                ! -name '.signalasi-main' \
+                -exec rm -rf -- {} +
+              git init -q .
+              configure_signalasi_excludes
+              git remote add origin ${shellQuote(repositoryUrl)}
+              printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
+              git -c credential.helper= fetch --depth $depth origin ${shellQuote(remoteRef)}
+              printf '%s\n' '__SIGNALASI_STAGE__:checkout_repository'
+              git checkout -q -B ${shellQuote(localBranch)} FETCH_HEAD
+            fi
             rm -f "${'$'}askpass"
             printf '%s\n' '__SIGNALASI_STAGE__:verify_repository'
             git status --short --branch
@@ -226,35 +261,59 @@ internal class AgentLinuxProjectGitBackend(
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         token: String = "",
         progress: (String, String, Int?) -> Unit = { _, _, _ -> }
-    ): AgentRuntimeExecutionResponse = runtime.execute(
-        AgentRuntimeExecutionRequest(
-            language = AgentRuntimeLanguage.PYTHON,
-            source = baseGuestLauncher(source),
-            arguments = emptyList(),
-            timeoutMillis = timeoutMillis,
-            networkEnabled = networkEnabled,
-            artifactPaths = emptyList(),
-            workspaceId = workspaceId,
-            requestId = "linux-git-$operation-${UUID.randomUUID()}",
-            allowedNetworkDomains = if (networkEnabled) GITHUB_NETWORK_DOMAINS else emptyList(),
-            resourceLimits = AgentRuntimeResourceLimits(
-                wallClockMillis = timeoutMillis,
-                cpuMillis = (timeoutMillis * 5L / 6L).coerceAtLeast(100L),
-                memoryBytes = CLONE_MEMORY_BYTES,
-                diskBytes = CLONE_DISK_BYTES,
-                maxProcesses = 128,
-                maxOutputBytes = CLONE_OUTPUT_BYTES,
-                maxArtifactBytes = CLONE_OUTPUT_BYTES
-            ),
-            cancellationToken = cancellationToken,
-            progressListener = { event ->
-                progress(event.stage.ifBlank { "linux_git" }, event.message, event.percent)
+    ): AgentRuntimeExecutionResponse {
+        val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "SignalASILinuxGitHeartbeat").apply { isDaemon = true }
+        }
+        val heartbeat = heartbeatExecutor.scheduleAtFixedRate(
+            {
+                runCatching {
+                    progress(
+                        "linux_git_$operation",
+                        "Phone Linux Git is still running",
+                        null
+                    )
+                }
             },
-            secretEnvironment = token.takeIf(String::isNotEmpty)
-                ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
-                .orEmpty()
+            GIT_HEARTBEAT_MILLIS,
+            GIT_HEARTBEAT_MILLIS,
+            TimeUnit.MILLISECONDS
         )
-    )
+        return try {
+            runtime.execute(
+                AgentRuntimeExecutionRequest(
+                    language = AgentRuntimeLanguage.PYTHON,
+                    source = baseGuestLauncher(source),
+                    arguments = emptyList(),
+                    timeoutMillis = timeoutMillis,
+                    networkEnabled = networkEnabled,
+                    artifactPaths = emptyList(),
+                    workspaceId = workspaceId,
+                    requestId = "linux-git-$operation-${UUID.randomUUID()}",
+                    allowedNetworkDomains = if (networkEnabled) GITHUB_NETWORK_DOMAINS else emptyList(),
+                    resourceLimits = AgentRuntimeResourceLimits(
+                        wallClockMillis = timeoutMillis,
+                        cpuMillis = (timeoutMillis * 5L / 6L).coerceAtLeast(100L),
+                        memoryBytes = CLONE_MEMORY_BYTES,
+                        diskBytes = CLONE_DISK_BYTES,
+                        maxProcesses = 128,
+                        maxOutputBytes = CLONE_OUTPUT_BYTES,
+                        maxArtifactBytes = CLONE_OUTPUT_BYTES
+                    ),
+                    cancellationToken = cancellationToken,
+                    progressListener = { event ->
+                        progress(event.stage.ifBlank { "linux_git" }, event.message, event.percent)
+                    },
+                    secretEnvironment = token.takeIf(String::isNotEmpty)
+                        ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
+                        .orEmpty()
+                )
+            )
+        } finally {
+            heartbeat.cancel(true)
+            heartbeatExecutor.shutdownNow()
+        }
+    }
 
     private fun baseGuestLauncher(shellSource: String): String {
         val encoded = Base64.getEncoder().encodeToString(shellSource.toByteArray(Charsets.UTF_8))
@@ -307,6 +366,7 @@ internal class AgentLinuxProjectGitBackend(
         private const val CLONE_MEMORY_BYTES = 1024L * 1024L * 1024L
         private const val CLONE_DISK_BYTES = 2L * 1024L * 1024L * 1024L
         private const val CLONE_OUTPUT_BYTES = 1024L * 1024L
+        private const val GIT_HEARTBEAT_MILLIS = 15_000L
         private const val MAX_FAILURE_DETAIL_CHARS = 4_000
         private const val MAX_RESULT_LINES = 64
         private val COMMIT_PATTERN = Regex("[0-9a-f]{40,64}")
