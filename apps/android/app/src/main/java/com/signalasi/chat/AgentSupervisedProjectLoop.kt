@@ -542,7 +542,6 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         .lastOrNull(AgentAction::isSupervisedProjectConnector)
         ?: return null
     val history = plan.historyForReplan()
-    if (!AgentSupervisedProjectRecoveryPolicy.canRecover(history, MAX_SUPERVISED_REPLANS)) return null
     val failedAction = history.lastOrNull { action ->
         action.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED)
     } ?: return null

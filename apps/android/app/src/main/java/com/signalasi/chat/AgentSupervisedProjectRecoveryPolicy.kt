@@ -1,12 +1,9 @@
 package com.signalasi.chat
 
 internal object AgentSupervisedProjectRecoveryPolicy {
-    fun canRecover(history: List<AgentAction>, maximumRecoveries: Int): Boolean =
-        recoveryCount(history) < maximumRecoveries
-
     /**
      * A verified phone-tool result starts a new recovery window. Older failures
-     * must not exhaust a long-running project's ability to choose a new strategy.
+     * remain useful diagnostics but never exhaust recovery for a foreground task.
      */
     fun recoveryCount(history: List<AgentAction>): Int = history
         .asReversed()

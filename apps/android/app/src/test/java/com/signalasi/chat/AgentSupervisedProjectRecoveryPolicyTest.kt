@@ -1,27 +1,18 @@
 package com.signalasi.chat
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectRecoveryPolicyTest {
     @Test
-    fun successfulObservationTurnsDoNotConsumeFailureRecoveryBudget() {
-        val history = (1..20).map { index -> connector("supervise-phone-project-$index") }
-
-        assertTrue(AgentSupervisedProjectRecoveryPolicy.canRecover(history, 3))
-    }
-
-    @Test
-    fun actualFailureRecoveryTurnsConsumeFailureRecoveryBudget() {
+    fun actualFailureRecoveryTurnsRemainDiagnosticOnly() {
         val history = listOf(
             connector("supervise-phone-project-1"),
             connector("supervise-phone-project-recovery-2-1"),
             connector("supervise-phone-project-recovery-4-2")
         )
 
-        assertFalse(AgentSupervisedProjectRecoveryPolicy.canRecover(history, 2))
+        assertEquals(2, AgentSupervisedProjectRecoveryPolicy.recoveryCount(history))
     }
 
     @Test
@@ -33,7 +24,6 @@ class AgentSupervisedProjectRecoveryPolicyTest {
             connector("supervise-phone-project-recovery-6-1")
         )
 
-        assertTrue(AgentSupervisedProjectRecoveryPolicy.canRecover(history, 2))
         assertEquals(1, AgentSupervisedProjectRecoveryPolicy.recoveryCount(history))
     }
 
