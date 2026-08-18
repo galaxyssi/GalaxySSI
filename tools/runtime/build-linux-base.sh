@@ -110,9 +110,16 @@ for binary in blkid e2fsck mke2fs resize2fs; do
   fi
 done
 
+for binary in git ssh curl wget zip unzip tar; do
+  if ! find "$output_dir/target" -type f -name "$binary" -perm /111 -print -quit | grep -q .; then
+    echo "Required phone development command is missing: $binary" >&2
+    exit 3
+  fi
+done
+
 for library in libstdc++.so.6 libgcc_s.so.1; do
-  if ! find "$output_dir/target/lib" "$output_dir/target/usr/lib" \
-      -type f -o -type l 2>/dev/null | grep -E "/${library//./\\.}$" -q; then
+  if ! find "$output_dir/target" \( -type f -o -type l \) \
+      -name "$library" -print -quit 2>/dev/null | grep -q .; then
     echo "Required persistent userspace runtime library is missing: $library" >&2
     exit 3
   fi

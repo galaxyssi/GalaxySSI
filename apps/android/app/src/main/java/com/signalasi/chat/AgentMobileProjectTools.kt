@@ -20,10 +20,13 @@ internal data class AgentProjectRepositorySnapshot(
     val staged: List<String>,
     val modified: List<String>,
     val untracked: List<String>,
-    val conflicting: List<String>
+    val conflicting: List<String>,
+    val state: AgentProjectRepositoryState = AgentProjectRepositoryState.READY
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "workspace_id" to workspaceId,
+        "repository_state" to state.wireValue,
+        "repository_present" to (state == AgentProjectRepositoryState.READY),
         "repository_url" to repositoryUrl,
         "branch" to branch,
         "head_commit" to headCommit,
@@ -33,6 +36,12 @@ internal data class AgentProjectRepositorySnapshot(
         "untracked" to untracked,
         "conflicting" to conflicting
     )
+}
+
+internal enum class AgentProjectRepositoryState(val wireValue: String) {
+    EMPTY("empty"),
+    PARTIAL("partial"),
+    READY("ready")
 }
 
 internal data class AgentProjectCommitResult(
@@ -496,7 +505,7 @@ object AgentMobileProjectNativeTools {
         definition(
             INSPECT,
             "Inspect the phone project repository",
-            "Returns the current branch, commit, remote, and bounded working-tree state for the conversation project.",
+            "Returns empty, partial, or ready repository state plus the current branch, commit, remote, and bounded working-tree changes. Empty and interrupted workspaces are valid observations so the model can choose clone, repair, or local project creation.",
             workspaceOnlySchema(),
             AgentNativeToolRisk.LOW,
             READ_CONSENT

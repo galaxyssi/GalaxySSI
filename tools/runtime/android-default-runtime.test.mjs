@@ -113,9 +113,18 @@ test('default Linux build verifies shared libraries needed by language packs', (
   ), 'utf8');
   const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
 
+  assert.match(defconfig, /^BR2_TOOLCHAIN_BUILDROOT_CXX=y$/m);
   assert.match(defconfig, /^BR2_INSTALL_LIBSTDCPP=y$/m);
   assert.match(buildScript, /libstdc\+\+\.so\.6/);
   assert.match(buildScript, /libgcc_s\.so\.1/);
+});
+
+test('default Linux build verifies phone development commands', () => {
+  const buildScript = readFileSync(new URL('./build-linux-base.sh', import.meta.url), 'utf8');
+
+  for (const command of ['git', 'ssh', 'curl', 'wget', 'zip', 'unzip', 'tar']) {
+    assert.match(buildScript, new RegExp(`for binary in[\\s\\S]*${command}`));
+  }
 });
 
 test('default Linux build preserves full logs without flooding CI output', () => {
