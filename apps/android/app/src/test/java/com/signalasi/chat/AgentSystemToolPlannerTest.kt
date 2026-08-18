@@ -59,7 +59,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoDesktopExecution() {
+    fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoPhoneExecution() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val request = request("hello", screen, emptyList())
         val directConnector = AgentAction(
@@ -73,14 +73,37 @@ class AgentSystemToolPlannerTest {
             requiresConfirmation = false
         )
 
-        val supervisor = AgentPhoneReasoningProviderPlanner(directConnector)
-            .plan(request)
-            .actions
-            .single()
+        assertFalse(
+            AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+                goal = request.goal,
+                conversationContext = request.conversationContext,
+                selectedAction = directConnector
+            )
+        )
+    }
 
-        assertTrue(supervisor.isSupervisedProjectConnector())
-        assertTrue(supervisor.parameters.getValue("prompt").contains("Do not start Linux for pure conversation"))
-        assertFalse(supervisor.parameters.getValue("prompt").contains("\"prompt\":\"hello\""))
+    @Test
+    fun selectedReasoningProviderUsesPhoneExecutionForExecutableGoal() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val request = request("Write a Python program and verify it on this phone", screen, emptyList())
+        val directConnector = AgentAction(
+            id = "ask-provider",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Codex",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask Codex",
+            parameters = mapOf("connector_id" to "codex", "prompt" to request.goal),
+            requiresConfirmation = false
+        )
+
+        assertTrue(
+            AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
+                goal = request.goal,
+                conversationContext = request.conversationContext,
+                selectedAction = directConnector
+            )
+        )
     }
 
     @Test
