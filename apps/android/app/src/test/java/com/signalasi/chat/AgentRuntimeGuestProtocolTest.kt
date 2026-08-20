@@ -171,6 +171,17 @@ class AgentRuntimeGuestProtocolTest {
     }
 
     @Test
+    fun nestedGuestResponseTimeoutIsRecognizedForRuntimeRecovery() {
+        val wrapped = IllegalStateException(
+            "Guest runtime response timed out",
+            SocketTimeoutException("Guest runtime read timed out")
+        )
+
+        assertTrue(wrapped.isGuestRuntimeResponseTimeout())
+        assertFalse(IllegalStateException("Guest command failed").isGuestRuntimeResponseTimeout())
+    }
+
+    @Test
     fun runtimeLimitsRejectUnsafeCombinations() {
         val failure = runCatching {
             AgentRuntimeResourceLimits(wallClockMillis = 1_000L, cpuMillis = 2_000L).validated()

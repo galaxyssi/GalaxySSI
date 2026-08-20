@@ -329,18 +329,38 @@ class AgentOnDeviceRuntimeManager(
     fun architecture(): String = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
 
     fun status(): AgentOnDeviceRuntimeStatus {
+        return buildStatus(probeGuest = true, verifyPackIntegrity = true)
+    }
+
+    /**
+     * A bounded status snapshot for planning and recovery. It never starts, connects to, or
+     * health-probes the guest, and it does not hash runtime images.
+     */
+    fun cachedStatus(): AgentOnDeviceRuntimeStatus {
+        return buildStatus(probeGuest = false, verifyPackIntegrity = false)
+    }
+
+    private fun buildStatus(
+        probeGuest: Boolean,
+        verifyPackIntegrity: Boolean
+    ): AgentOnDeviceRuntimeStatus {
         val engine = qemuEngineFile()
         val avf = appContext.packageManager.hasSystemFeature(AVF_FEATURE)
-        val base = packStatus("linux-base")
+        val statuses = REQUIRED_PACKS.map { id -> packStatus(id, verifyPackIntegrity) }
+        val base = statuses.first { it.id == "linux-base" }
         val engineReady = engine.isFile && engine.canExecute()
         val baseReady = base.state == AgentRuntimePackState.READY
         val backend = when {
             engineReady && baseReady -> AgentOnDeviceRuntimeBackend.QEMU_TCG
             else -> AgentOnDeviceRuntimeBackend.NONE
         }
-        val activeBridge = bridge ?: AgentOnDeviceRuntimeSupervisor.discover(appContext)
+        val activeBridge = bridge ?: if (probeGuest) {
+            AgentOnDeviceRuntimeSupervisor.discover(appContext)
+        } else {
+            AgentOnDeviceRuntimeBridgeRegistry.current()
+        }
         val bridgeHealth = activeBridge?.let { candidate ->
-            if (bridge == null) {
+            if (!probeGuest || bridge == null) {
                 AgentOnDeviceRuntimeSupervisor.cachedHealth(candidate)
             } else {
                 runCatching { candidate.health() }.getOrElse { error ->
@@ -353,6 +373,8 @@ class AgentOnDeviceRuntimeManager(
                 phase = AgentRuntimeLifecyclePhase.READY,
                 reason = "Guest runtime health handshake completed"
             )
+        } else if (!probeGuest) {
+            AgentOnDeviceRuntimeLifecycle.cached(appContext)
         } else {
             AgentOnDeviceRuntimeLifecycle.inspectAfterBridgeProbe(appContext, bridgeHealth)
         }
@@ -374,7 +396,7 @@ class AgentOnDeviceRuntimeManager(
             architecture = architecture(),
             enginePath = engine.absolutePath,
             avfAdvertised = avf,
-            packs = packStatuses(),
+            packs = statuses,
             lifecyclePhase = lifecycle.phase,
             lifecycleReason = lifecycle.reason,
             lifecycleFailures = lifecycle.consecutiveFailures,
@@ -669,7 +691,8 @@ class AgentOnDeviceRuntimeManager(
         directory: File,
         expectedId: String? = null,
         checkDependencies: Boolean = true,
-        forceIntegrityCheck: Boolean = false
+        forceIntegrityCheck: Boolean = false,
+        verifyIntegrity: Boolean = true
     ): AgentRuntimePackStatus {
         val manifestFile = File(directory, MANIFEST_FILE)
         val fallbackId = expectedId ?: directory.name
@@ -725,13 +748,16 @@ class AgentOnDeviceRuntimeManager(
         if (manifest.installedSizeBytes <= 0L || image.length() > manifest.installedSizeBytes + INSTALL_SIZE_TOLERANCE_BYTES) {
             return AgentRuntimePackStatus(manifest.id, AgentRuntimePackState.INVALID, "Runtime pack installed size is invalid", manifest)
         }
-        val actualHash = sha256(image, manifest.imageSha256, forceIntegrityCheck)
-        if (!actualHash.equals(manifest.imageSha256, ignoreCase = true)) {
-            return AgentRuntimePackStatus(manifest.id, AgentRuntimePackState.INVALID, "Runtime pack image integrity check failed", manifest)
+        if (verifyIntegrity) {
+            val actualHash = sha256(image, manifest.imageSha256, forceIntegrityCheck)
+            if (!actualHash.equals(manifest.imageSha256, ignoreCase = true)) {
+                return AgentRuntimePackStatus(manifest.id, AgentRuntimePackState.INVALID, "Runtime pack image integrity check failed", manifest)
+            }
         }
         if (checkDependencies) {
             val missingDependency = manifest.dependencies.firstOrNull { dependency ->
-                dependency != manifest.id && packStatusWithoutDependencies(dependency).state != AgentRuntimePackState.READY
+                dependency != manifest.id &&
+                    packStatusWithoutDependencies(dependency, verifyIntegrity).state != AgentRuntimePackState.READY
             }
             if (missingDependency != null) {
                 return AgentRuntimePackStatus(manifest.id, AgentRuntimePackState.INCOMPATIBLE, "Missing dependency: $missingDependency", manifest)
@@ -747,14 +773,26 @@ class AgentOnDeviceRuntimeManager(
         }.apply()
     }
 
-    private fun packStatus(id: String): AgentRuntimePackStatus = inspectPackDirectory(
+    private fun packStatus(
+        id: String,
+        verifyIntegrity: Boolean = true
+    ): AgentRuntimePackStatus = inspectPackDirectory(
         directory = File(packsRoot, id),
-        expectedId = id
+        expectedId = id,
+        verifyIntegrity = verifyIntegrity
     )
 
-    private fun packStatusWithoutDependencies(id: String): AgentRuntimePackStatus {
+    private fun packStatusWithoutDependencies(
+        id: String,
+        verifyIntegrity: Boolean = true
+    ): AgentRuntimePackStatus {
         val directory = File(packsRoot, id)
-        return inspectPackDirectory(directory, expectedId = id, checkDependencies = false)
+        return inspectPackDirectory(
+            directory,
+            expectedId = id,
+            checkDependencies = false,
+            verifyIntegrity = verifyIntegrity
+        )
     }
 
     internal fun decodeManifest(raw: String): AgentRuntimePackManifest {
@@ -941,7 +979,7 @@ object AgentOnDeviceRuntimeTools {
                     availability = AgentNativeToolAvailability.AVAILABLE
                 ),
                 executor = AgentNativeToolExecutor {
-                    val status = manager.status()
+                    val status = manager.cachedStatus()
                     AgentNativeToolExecutionResult.success(runtimeStatusOutput(status), "On-device runtime inspected")
                 },
                 executorId = "signalasi.android_runtime_broker"

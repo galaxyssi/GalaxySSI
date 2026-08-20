@@ -306,6 +306,10 @@ object AgentOnDeviceRuntimeLifecycle {
         knownBridgeReady = false
     )
 
+    /** Returns the last persisted in-process state without probing or starting the guest. */
+    internal fun cached(context: Context): AgentRuntimeLifecycleSnapshot =
+        machine(context.applicationContext).snapshot()
+
     internal fun inspectAfterBridgeProbe(
         context: Context,
         health: AgentRuntimeBridgeHealth?
