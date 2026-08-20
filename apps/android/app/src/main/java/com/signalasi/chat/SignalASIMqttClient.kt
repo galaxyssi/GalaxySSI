@@ -318,7 +318,7 @@ object SignalASIMqttClient {
 
         val mqtt = current ?: MqttAsyncClient(
             SERVER_URI,
-            stableClientId(),
+            SignalASIMqttClientIdentity.stableClientId(MQTT_TRANSPORT_EPOCH),
             MemoryPersistence()
         ).also {
             client = it
@@ -2401,11 +2401,6 @@ object SignalASIMqttClient {
             },
             800L
         )
-    }
-
-    private fun stableClientId(): String {
-        val identity = runCatching { SignalASICrypto.localIdentitySha256().take(16) }.getOrDefault("unknown")
-        return "signalasi-android-$MQTT_TRANSPORT_EPOCH-$identity"
     }
 
     private fun setConnected(value: Boolean): Boolean {
