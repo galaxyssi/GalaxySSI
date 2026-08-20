@@ -365,8 +365,10 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   @State private var catalogEntries: [AgentRuntimePackCatalogEntry] = []
   @State private var fileImporterPresented = false
   @State private var isInstalling = false
+  @State private var isUninstalling = false
   @State private var isRefreshingCatalog = false
   @State private var installingPackID: String?
+  @State private var uninstallCandidatePackID: String?
   @State private var installMessage = ""
   @State private var catalogMessage = ""
 
@@ -443,6 +445,25 @@ struct SignalASIRuntimeSoftwareCenterView: View {
     ) { result in
       handleImport(result)
     }
+    .confirmationDialog(
+      uninstallTitle,
+      isPresented: Binding(
+        get: { uninstallCandidatePackID != nil },
+        set: { if !$0 { uninstallCandidatePackID = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      Button(t("cc_runtime_software_uninstall_action", "Uninstall"), role: .destructive) {
+        guard let packId = uninstallCandidatePackID else { return }
+        uninstallCandidatePackID = nil
+        uninstall(packId: packId)
+      }
+      Button(t("signalasi.common.cancel", "Cancel"), role: .cancel) {
+        uninstallCandidatePackID = nil
+      }
+    } message: {
+      Text(uninstallMessage)
+    }
     .task {
       loadCachedCatalog()
     }
@@ -493,7 +514,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
           ? t("cc_runtime_catalog_refreshing", "Refreshing")
           : t("cc_runtime_catalog_refresh_badge", "Refresh")
       ) {
-        guard !isRefreshingCatalog && !isInstalling else { return }
+        guard !isRefreshingCatalog && !isInstalling && !isUninstalling else { return }
         refreshCatalog()
       }
       if catalogEntries.isEmpty && filteredPacks.isEmpty {
@@ -518,13 +539,16 @@ struct SignalASIRuntimeSoftwareCenterView: View {
       } else {
         if catalogEntries.isEmpty {
           ForEach(filteredPacks) { pack in
-            SignalASISecurityStatusRow(
+            SignalASISecurityActionRow(
               title: SignalASIOnDeviceRuntimeView.packTitle(pack.id, language: interfaceLanguage),
               subtitle: SignalASIOnDeviceRuntimeView.packSubtitle(pack, language: interfaceLanguage),
               systemImage: pack.id == "ffmpeg" ? "film" : "shippingbox",
               tint: SignalASIOnDeviceRuntimeView.packTint(pack),
               badge: SignalASIOnDeviceRuntimeView.packBadge(pack, language: interfaceLanguage)
-            )
+            ) {
+              guard pack.state == .ready && !isInstalling && !isUninstalling && !isRefreshingCatalog else { return }
+              uninstallCandidatePackID = pack.id
+            }
           }
         } else {
           ForEach(filteredCatalogEntries) { entry in
@@ -547,7 +571,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
           ? t("cc_runtime_import_installing", "Installing")
           : t("cc_runtime_import_action", "Choose file")
       ) {
-        guard !isInstalling else { return }
+        guard !isInstalling && !isUninstalling else { return }
         fileImporterPresented = true
       }
     }
@@ -564,6 +588,21 @@ struct SignalASIRuntimeSoftwareCenterView: View {
     }
   }
 
+  private var uninstallTitle: String {
+    let packId = uninstallCandidatePackID ?? ""
+    let title = SignalASIOnDeviceRuntimeView.packTitle(packId, language: interfaceLanguage)
+    return String(format: t("cc_runtime_software_uninstall_title", "Uninstall %@?"), title)
+  }
+
+  private var uninstallMessage: String {
+    let packId = uninstallCandidatePackID ?? ""
+    let title = SignalASIOnDeviceRuntimeView.packTitle(packId, language: interfaceLanguage)
+    return String(format: t(
+      "cc_runtime_software_uninstall_message",
+      "Remove %@ from this device? Dependent runtime packs must be removed first."
+    ), title)
+  }
+
   @ViewBuilder
   private func catalogEntryRow(_ entry: AgentRuntimePackCatalogEntry) -> some View {
     let installed = SignalASIOnDeviceRuntimeView.packStatus(entry.packId)
@@ -578,8 +617,12 @@ struct SignalASIRuntimeSoftwareCenterView: View {
         ? t("cc_status_ready", "Ready")
         : (installing ? t("cc_runtime_catalog_installing", "Installing") : t("cc_runtime_catalog_install", "Install"))
     ) {
-      guard !ready && !installing && !isInstalling && !isRefreshingCatalog else { return }
-      install(entry)
+      guard !installing && !isInstalling && !isUninstalling && !isRefreshingCatalog else { return }
+      if ready {
+        uninstallCandidatePackID = entry.packId
+      } else {
+        install(entry)
+      }
     }
   }
 
@@ -675,6 +718,39 @@ struct SignalASIRuntimeSoftwareCenterView: View {
         case .failure(let error):
           installMessage = error.localizedDescription.ifBlank(
             t("cc_runtime_catalog_install_failed", "Runtime pack installation failed")
+          )
+        }
+      }
+    }
+  }
+
+  private func uninstall(packId: String) {
+    guard !isInstalling && !isUninstalling else { return }
+    isUninstalling = true
+    installMessage = String(
+      format: t("cc_runtime_software_uninstalling", "Removing %@..."),
+      SignalASIOnDeviceRuntimeView.packTitle(packId, language: interfaceLanguage)
+    )
+    DispatchQueue.global(qos: .userInitiated).async {
+      let outcome: Result<Bool, Error>
+      do {
+        outcome = .success(try AgentIOSRuntimePackInstaller().uninstall(packId: packId))
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        isUninstalling = false
+        switch outcome {
+        case .success(let removed):
+          packs = SignalASIOnDeviceRuntimeView.packStatuses()
+            .filter { !["linux-base", "python-uv"].contains($0.id) }
+          let title = SignalASIOnDeviceRuntimeView.packTitle(packId, language: interfaceLanguage)
+          installMessage = removed
+            ? String(format: t("cc_runtime_software_uninstalled", "Removed %@"), title)
+            : String(format: t("cc_runtime_software_not_installed", "%@ is not installed"), title)
+        case .failure(let error):
+          installMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_software_uninstall_failed", "Runtime pack removal failed")
           )
         }
       }
