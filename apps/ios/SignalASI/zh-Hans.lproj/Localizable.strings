@@ -53,6 +53,13 @@
 "cc_runtime_receipt_section_integrity" = "完整性";
 "cc_runtime_receipt_input_hash" = "输入哈希";
 "cc_runtime_receipt_output_hash" = "输出哈希";
+"cc_runtime_software_uninstall_title" = "卸载 %@？";
+"cc_runtime_software_uninstall_message" = "要从本机移除 %@ 吗？依赖此运行时包的其他包需要先移除。";
+"cc_runtime_software_uninstall_action" = "卸载";
+"cc_runtime_software_uninstalling" = "正在移除 %@...";
+"cc_runtime_software_uninstalled" = "已移除 %@";
+"cc_runtime_software_not_installed" = "%@ 尚未安装";
+"cc_runtime_software_uninstall_failed" = "运行时包移除失败";
 "signalasi.common.back" = "返回";
 "signalasi.common.delete" = "删除";
 "signalasi.common.none" = "无";

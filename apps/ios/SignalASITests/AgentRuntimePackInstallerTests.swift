@@ -46,6 +46,11 @@ final class AgentRuntimePackInstallerTests: XCTestCase {
 
     let second = try installer.install(source: source)
     XCTAssertTrue(second.replacedExisting)
+    XCTAssertTrue(try installer.uninstall(packId: "linux-base"))
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: root.appendingPathComponent("packs/linux-base").path
+    ))
+    XCTAssertFalse(try installer.uninstall(packId: "linux-base"))
   }
 
   func testRuntimePackArchiveRejectsUnsafePaths() throws {
