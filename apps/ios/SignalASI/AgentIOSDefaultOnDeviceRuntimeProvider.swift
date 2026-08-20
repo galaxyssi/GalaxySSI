@@ -136,6 +136,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         "consecutive_failures": .int(0),
         "next_attempt_at_millis": .int(0)
       ]),
+      "linux_system": .object(linuxSystemOutput(packs)),
       "packs": .array(packs.map { .object(packOutput($0)) }),
       "languages": .array(AgentRuntimeLanguage.allCases.map {
         .object(languageOutput($0, packs: packs, backendReady: backendReady))
@@ -145,6 +146,19 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "execution_target": .string("ios"),
       "linux_base_recovery_baseline": .string(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion),
       "linux_base_recovery_required": .bool(linuxBaseRecoveryRequired)
+    ]
+  }
+
+  private func linuxSystemOutput(_ packs: [AgentRuntimePackStatus]) -> AgentMcpJSONObject {
+    let baseVersion = packs.first(where: { $0.id == "linux-base" })?.manifest?.version ?? ""
+    return [
+      "distribution": .string("iOS app-private runtime"),
+      "execution_principal": .string("app_sandbox"),
+      "persistent": .bool(true),
+      "package_managers": .array([]),
+      "package_manager_ready": .bool(false),
+      "base_version": .string(baseVersion),
+      "package_management": .string("signed_runtime_packs_only")
     ]
   }
 
