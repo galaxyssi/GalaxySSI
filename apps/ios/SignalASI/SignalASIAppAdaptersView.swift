@@ -193,6 +193,7 @@ struct SignalASIAppAdapterDetailView: View {
   @State private var fileImporterPresented = false
   @State private var smsRecipient = ""
   @State private var smsBody = ""
+  @State private var phoneNumber = ""
   var status: SignalASIAppAdapterStatus
 
   var body: some View {
@@ -257,6 +258,8 @@ struct SignalASIAppAdapterDetailView: View {
       SignalASISecuritySectionTitle(title: t("signalasi.section.actions", "Actions"))
       if status.definition.id == .sms {
         smsComposeAction
+      } else if status.definition.id == .phone {
+        phoneDialAction
       } else if status.definition.id == .files {
         SignalASISecurityPrimaryButton(
           title: t("signalasi.app_adapters.select_files", "Select Files"),
@@ -316,6 +319,31 @@ struct SignalASIAppAdapterDetailView: View {
           return
         }
         statusMessage = t("signalasi.app_adapters.sms_composer_opened", "Message composer opened for your review")
+      }
+    }
+  }
+
+  private var phoneDialAction: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      TextField(t("signalasi.app_adapters.phone_number", "Phone Number"), text: $phoneNumber)
+        .keyboardType(.phonePad)
+        .textContentType(.telephoneNumber)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled(true)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      SignalASISecurityPrimaryButton(
+        title: t("signalasi.app_adapters.open_dialer", "Open Dialer"),
+        systemImage: "phone",
+        tint: adapterTint(status.definition.tone)
+      ) {
+        guard AgentIOSNativeToolHandoffPresenter.openDialer(phoneNumber: phoneNumber) else {
+          statusMessage = t("signalasi.app_adapters.phone_invalid_number", "Enter a valid phone number")
+          return
+        }
+        statusMessage = t("signalasi.app_adapters.dialer_opened", "Dialer opened for your confirmation")
       }
     }
   }

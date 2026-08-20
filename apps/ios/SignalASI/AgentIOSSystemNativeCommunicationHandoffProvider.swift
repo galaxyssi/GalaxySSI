@@ -24,7 +24,7 @@ struct AgentIOSDefaultCommunicationHandoffProvider: AgentIOSCommunicationHandoff
     }
     return handoffResult(
       kind: "dial",
-      url: "tel:\(normalized)",
+      url: "tel:\(encodedPhoneNumber(normalized))",
       toolId: toolId,
       message: "Dialer handoff prepared for user confirmation.",
       nowMillis: nowMillis,
@@ -108,6 +108,12 @@ struct AgentIOSDefaultCommunicationHandoffProvider: AgentIOSCommunicationHandoff
       return nil
     }
     return normalized
+  }
+
+  private func encodedPhoneNumber(_ value: String) -> String {
+    value.addingPercentEncoding(
+      withAllowedCharacters: .decimalDigits.union(CharacterSet(charactersIn: "+*,"))
+    ) ?? value
   }
 
   private func canSendText() -> Bool {

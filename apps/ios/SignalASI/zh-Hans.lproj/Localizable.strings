@@ -708,6 +708,10 @@
 "signalasi.app_adapters.open_sms_composer" = "打开短信编辑器";
 "signalasi.app_adapters.sms_invalid_recipient" = "请输入有效的收件人电话号码";
 "signalasi.app_adapters.sms_composer_opened" = "短信编辑器已打开，请确认后发送";
+"signalasi.app_adapters.phone_number" = "电话号码";
+"signalasi.app_adapters.open_dialer" = "打开拨号器";
+"signalasi.app_adapters.phone_invalid_number" = "请输入有效的电话号码";
+"signalasi.app_adapters.dialer_opened" = "拨号器已打开，请确认后拨打";
 "signalasi.capability.accessibility_tree" = "无障碍界面树";
 "signalasi.capability.accessibility_gestures" = "无障碍手势";
 "signalasi.capability.screen_capture" = "屏幕捕获 OCR";
