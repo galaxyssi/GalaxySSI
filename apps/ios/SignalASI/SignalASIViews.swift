@@ -2343,6 +2343,9 @@ private extension AgentTaskBudget {
 struct HomeAssistantSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @State private var isCheckingConnection = false
+  @State private var connectionStatus = ""
+  @State private var connectionStatusIsFailure = false
 
   var body: some View {
     Form {
@@ -2380,6 +2383,24 @@ struct HomeAssistantSettingsView: View {
           Label(t("signalasi.device.home_assistant_not_configured", "Not configured"), systemImage: "exclamationmark.triangle")
             .foregroundColor(.secondary)
         }
+        if !connectionStatus.isEmpty {
+          Label(
+            connectionStatus,
+            systemImage: connectionStatusIsFailure ? "exclamationmark.triangle" : "checkmark.circle"
+          )
+          .foregroundColor(connectionStatusIsFailure ? .orange : .green)
+        }
+        Button {
+          checkConnection()
+        } label: {
+          Label(
+            isCheckingConnection
+              ? t("signalasi.device.home_assistant_checking", "Checking connection")
+              : t("signalasi.device.home_assistant_check_connection", "Check connection"),
+            systemImage: isCheckingConnection ? "arrow.triangle.2.circlepath" : "checkmark.shield"
+          )
+        }
+        .disabled(!store.homeAssistantSettings.credentialsConfigured || isCheckingConnection)
       }
     }
     .navigationTitle(t("signalasi.device.home_assistant", "Home Assistant"))
@@ -2398,6 +2419,30 @@ struct HomeAssistantSettingsView: View {
       get: { store.homeAssistantSettings[keyPath: keyPath] },
       set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
     )
+  }
+
+  private func checkConnection() {
+    guard !isCheckingConnection else { return }
+    let settings = store.homeAssistantSettings
+    guard settings.credentialsConfigured else { return }
+    isCheckingConnection = true
+    connectionStatus = t("signalasi.device.home_assistant_checking", "Checking connection")
+    connectionStatusIsFailure = false
+    let nowMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    DispatchQueue.global(qos: .userInitiated).async {
+      let provider = AgentIOSConfiguredHomeAssistantToolProvider(settingsProvider: { settings })
+      let result = provider.connectionStatus(nowMillis: nowMillis)
+      DispatchQueue.main.async {
+        isCheckingConnection = false
+        connectionStatus = result.isSuccess
+          ? t("signalasi.device.home_assistant_connected", "Home Assistant connected")
+          : result.message.ifBlank(t(
+            "signalasi.device.home_assistant_connection_failed",
+            "Home Assistant connection failed"
+          ))
+        connectionStatusIsFailure = !result.isSuccess
+      }
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

@@ -147,7 +147,7 @@ struct AgentIOSConfiguredHomeAssistantToolProvider: AgentIOSHomeAssistantToolPro
   }
 
   func connectionStatus(nowMillis: Int64) -> AgentNativeToolExecutionResult {
-    requestResult(nowMillis: nowMillis) { settings in
+    requestResult(nowMillis: nowMillis, requiresEnabled: false) { settings in
       _ = try transport.send(
         AgentIOSHomeAssistantHTTPRequest(method: .get, path: "/api/", body: [:]),
         settings: settings
@@ -305,13 +305,14 @@ struct AgentIOSConfiguredHomeAssistantToolProvider: AgentIOSHomeAssistantToolPro
 
   private func requestResult(
     nowMillis: Int64,
+    requiresEnabled: Bool = true,
     body: (HomeAssistantSettings) throws -> AgentNativeToolExecutionResult
   ) -> AgentNativeToolExecutionResult {
     let settings = settingsProvider().normalized
     if !settings.credentialsConfigured {
       return failure("home_assistant_not_configured", "Home Assistant local API is not configured", retryable: false)
     }
-    if !settings.enabled {
+    if requiresEnabled && !settings.enabled {
       return failure("home_assistant_disabled", "Home Assistant device control is disabled", retryable: false)
     }
     do {
