@@ -3805,6 +3805,7 @@
 "cc_runtime_software_no_results_subtitle" = "没有经过验证的软件包匹配“%@”";
 "cc_runtime_import_title" = "安装运行包";
 "cc_runtime_import_subtitle" = "导入由 SignalASI 签名的 .sarpack 安装包";
+"cc_runtime_install_in_progress" = "正在安装";
 "signalasi.data_backup.available" = "可用";
 "signalasi.backup.password_requirement" = "备份密码至少需要 %d 个字符。";
 "signalasi.permissions.secure_status" = "安全";
