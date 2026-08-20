@@ -68,6 +68,15 @@ internal object AgentOnDeviceRuntimeRecovery {
     fun quarantine(context: Context, lease: AgentRuntimeExecutionLease): Boolean = gate.quarantine(lease) {
         AgentOnDeviceRuntimeLifecycle.stop(context.applicationContext)
     }
+
+    fun rebuildPersistentSystem(
+        context: Context,
+        lease: AgentRuntimeExecutionLease,
+        runtimeRoot: File
+    ): Boolean = gate.quarantine(lease) {
+        AgentOnDeviceRuntimeLifecycle.stop(context.applicationContext)
+        AgentRuntimePersistentDisk.quarantine(runtimeRoot)
+    }
 }
 
 fun interface AgentRuntimeLifecycleClock {

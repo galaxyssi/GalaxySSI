@@ -426,7 +426,7 @@ class AgentOnDeviceRuntimeManager(
     }
 
     private fun executeWithStableGuest(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
-        val runtimeLease = if (bridge == null) AgentOnDeviceRuntimeRecovery.acquire(appContext) else null
+        var runtimeLease = if (bridge == null) AgentOnDeviceRuntimeRecovery.acquire(appContext) else null
         runtimeLease?.lifecycle?.takeUnless { it.phase == AgentRuntimeLifecyclePhase.READY }?.let { lifecycle ->
             error(lifecycle.reason.ifBlank { "The on-device Linux runtime could not be started" })
         }
@@ -434,7 +434,7 @@ class AgentOnDeviceRuntimeManager(
         current.readinessFailure(request.language)?.let { failure ->
             error(failure)
         }
-        val activeBridge = bridge ?: AgentOnDeviceRuntimeBridgeRegistry.current()
+        var activeBridge = bridge ?: AgentOnDeviceRuntimeBridgeRegistry.current()
             ?: AgentOnDeviceRuntimeSupervisor.discover(appContext)
             ?: error("The on-device guest bridge is not connected")
         val prepared = workspaceManager.prepare(request)
@@ -462,7 +462,28 @@ class AgentOnDeviceRuntimeManager(
         var committedCheckpoint: AgentRuntimeWorkspaceCheckpoint? = null
         return try {
             val bridgeStartedAt = SystemClock.elapsedRealtime()
-            val rawResponse = activeBridge.execute(normalizedRequest)
+            var rawResponse = activeBridge.execute(normalizedRequest)
+            if (runtimeLease != null && AgentPersistentRuntimeFailurePolicy.requiresSystemRebuild(rawResponse)) {
+                Log.w(
+                    "SignalASIAgentRuntime",
+                    "Persistent Linux userspace is damaged; rebuilding the system disk and retrying " +
+                        "request=${normalizedRequest.requestId} workspace=${normalizedRequest.workspaceId}"
+                )
+                val rebuilt = AgentOnDeviceRuntimeRecovery.rebuildPersistentSystem(
+                    appContext,
+                    requireNotNull(runtimeLease),
+                    runtimeRoot
+                )
+                check(rebuilt) { "The damaged Linux system disk could not be isolated" }
+                runtimeLease = AgentOnDeviceRuntimeRecovery.acquire(appContext)
+                check(runtimeLease.lifecycle.phase == AgentRuntimeLifecyclePhase.READY) {
+                    runtimeLease.lifecycle.reason.ifBlank { "The rebuilt Linux runtime could not be started" }
+                }
+                activeBridge = AgentOnDeviceRuntimeBridgeRegistry.current()
+                    ?: AgentOnDeviceRuntimeSupervisor.discover(appContext)
+                    ?: error("The rebuilt Linux guest bridge is not connected")
+                rawResponse = activeBridge.execute(normalizedRequest)
+            }
             Log.i(
                 "SignalASILatency",
                 "agent_runtime stage=bridge_completed request=${normalizedRequest.requestId.take(8)} " +
@@ -878,6 +899,15 @@ class AgentOnDeviceRuntimeManager(
         private val REQUEST_ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val SECRET_ENVIRONMENT_KEY = Regex("[A-Z_][A-Z0-9_]{0,63}")
         private val CAPABILITY_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+    }
+}
+
+internal object AgentPersistentRuntimeFailurePolicy {
+    fun requiresSystemRebuild(response: AgentRuntimeExecutionResponse): Boolean {
+        if (response.exitCode !in setOf(126, 127)) return false
+        val diagnostic = response.stderr.lowercase()
+        return "input/output error" in diagnostic &&
+            ("chroot" in diagnostic || "/bin/sh" in diagnostic || "rootfs" in diagnostic)
     }
 }
 
