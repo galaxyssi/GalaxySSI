@@ -1505,6 +1505,8 @@
 "signalasi.contact.payload" = "载荷";
 "signalasi.contact.copy_payload" = "复制载荷";
 "signalasi.contact.share_qr" = "分享二维码";
+"signalasi.contact.qr_unavailable" = "二维码不可用";
+"signalasi.contact.qr_unavailable_subtitle" = "需要已签名的身份卡后才能分享此二维码。";
 "signalasi.contact.agent_kind" = "Agent 类型";
 "signalasi.contact.desktop_id" = "Desktop ID";
 "signalasi.contact.device_id" = "设备 ID";
