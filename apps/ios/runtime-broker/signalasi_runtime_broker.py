@@ -32,6 +32,7 @@ MAX_FRAME_BYTES = 1_048_576
 MAX_CLOCK_SKEW_MILLIS = 5 * 60_000
 MAX_OUTPUT_BYTES = 256 * 1024
 MAX_SOURCE_BYTES = 256 * 1024
+MAX_SOFTWARE_SEARCH_CANDIDATES = 250
 WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 PACKAGE_ID = re.compile(r"^[a-z0-9][a-z0-9+.-]{0,127}$")
 SUPPORTED_LANGUAGES = {
@@ -292,7 +293,10 @@ class RuntimeBroker:
         if not isinstance(limit, int) or not 1 <= limit <= 50:
             raise BrokerFailure("runtime_software_input_invalid", "Software search limit is invalid")
         self.ensure_package_index()
-        command = ["/bin/sh", "-lc", f"apt-cache search --names-only -- {shlex.quote(query)} | head -n {limit}"]
+        command = [
+            "/bin/sh", "-lc",
+            f"apt-cache search --names-only -- {shlex.quote(query)} | head -n {MAX_SOFTWARE_SEARCH_CANDIDATES}",
+        ]
         completed = self.run_linux(command, self.config.workspace_root, 10 * 60_000)
         self.require_success(completed, "Linux package search failed")
         results = []
@@ -300,7 +304,38 @@ class RuntimeBroker:
             package, _, description = line.partition(" - ")
             if PACKAGE_ID.fullmatch(package):
                 results.append({"software_id": package, "source": "linux_package", "description": description, "installed": False})
-        return {"query": query, "results": results, "source_errors": [], "observed_at_epoch_ms": int(time.time() * 1000)}
+        return {
+            "query": query,
+            "results": self.rank_software_search_results(results, query, limit),
+            "source_errors": [],
+            "observed_at_epoch_ms": int(time.time() * 1000),
+        }
+
+    @staticmethod
+    def rank_software_search_results(
+        results: list[dict[str, Any]], query: str, limit: int
+    ) -> list[dict[str, Any]]:
+        normalized = query.strip().lower()
+        deduplicated: dict[str, dict[str, Any]] = {}
+        for result in results:
+            package = result.get("software_id")
+            if isinstance(package, str) and PACKAGE_ID.fullmatch(package):
+                deduplicated.setdefault(package, result)
+
+        def rank(result: dict[str, Any]) -> tuple[int, str]:
+            package = str(result["software_id"]).lower()
+            description = str(result.get("description", "")).lower()
+            if package == normalized:
+                return 0, package
+            if package.startswith(normalized):
+                return 1, package
+            if normalized in package:
+                return 2, package
+            if normalized in description:
+                return 3, package
+            return 4, package
+
+        return sorted(deduplicated.values(), key=rank)[:limit]
 
     def software_inspect(self, input_value: dict[str, Any]) -> dict[str, Any]:
         package = self.package_id(input_value.get("software_id"), "software id")
