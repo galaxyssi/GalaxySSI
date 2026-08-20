@@ -293,17 +293,7 @@ struct AddContactView: View {
           importScannedAgentContacts(cleaned, requests: [request])
           return
         }
-        let stored = store.addFriendRequest(request)
-        pendingPairing = nil
-        pendingFriendRequest = stored
-        pendingScannedRequests = [stored]
-        setImportStatus(requestReceivedStatus(stored), isError: false)
-        if request.type == "person" {
-          Task {
-            _ = await coordinator.requestPhoneContactPairing(qrText: cleaned)
-          }
-        }
-        notifyImportCompleted()
+        importScannedPhoneContact(request, qrText: cleaned)
       case .contacts(let requests):
         if requests.allSatisfy({ $0.type == "agent" }) {
           importScannedAgentContacts(cleaned, requests: requests)
@@ -367,6 +357,36 @@ struct AddContactView: View {
       pendingScannedRequests = stored
       setImportStatus(requestsReceivedStatus(stored), isError: false)
     }
+  }
+
+  private func importScannedPhoneContact(
+    _ request: SignalASIFriendRequest,
+    qrText: String
+  ) {
+    let stored = store.addFriendRequest(request)
+    guard store.approveFriendRequest(id: stored.id) else {
+      pendingPairing = nil
+      pendingFriendRequest = stored
+      pendingScannedRequests = [stored]
+      setImportStatus(requestReceivedStatus(stored), isError: false)
+      notifyImportCompleted()
+      return
+    }
+
+    pendingPairing = nil
+    pendingFriendRequest = nil
+    pendingScannedRequests = []
+    setImportStatus(
+      t("signalasi.friend_request.added_to_contacts", "Added to Contacts"),
+      isError: false
+    )
+    Task {
+      if stored.type == "person" {
+        _ = await coordinator.requestPhoneContactPairing(qrText: qrText)
+      }
+      await coordinator.recoverPhoneContactSessionIfNeeded(contactId: stored.signalASIId)
+    }
+    notifyImportCompleted()
   }
 
   private func importDesktopAgentQRCodeFallback(_ value: String, fallbackError: Error) {
