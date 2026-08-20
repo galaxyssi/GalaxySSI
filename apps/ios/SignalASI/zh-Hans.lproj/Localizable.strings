@@ -4305,3 +4305,10 @@
 "cc_runtime_broker_connected" = "运行时 Broker 已连接";
 "cc_runtime_broker_unavailable" = "本机 Linux 运行时服务尚未就绪";
 "cc_runtime_broker_checking" = "正在检查已配对的本机 Linux 运行时服务";
+"cc_conversation_hub_subtitle" = "会话、联系人、群组、二维码配对与云模型";
+"signalasi.agent_tasks.cancel_unavailable" = "此任务当前无法取消";
+"signalasi.agent_tasks.resume_failed" = "无法恢复已暂停的任务";
+"signalasi.agent_tasks.resume_unavailable" = "此任务当前无法恢复";
+"signalasi.capability.device_memory" = "设备内存";
+"signalasi.pairing.show_qr_subtitle" = "显示此设备身份，供其他 SignalASI 客户端添加";
+"signalasi.status.loading" = "正在检查";
