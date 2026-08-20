@@ -4008,7 +4008,7 @@
 "signalasi.agent.model_selection.connect_section" = "连接 Agent";
 "signalasi.agent.model_selection.scan_agent" = "扫描或粘贴 Agent 二维码";
 "signalasi.agent.model_selection.scan_agent_subtitle" = "通过兼容 Android 的二维码流程配对可信桌面 Agent 或本机模型";
-"signalasi.agent.header.routing.auto" = "自动 · %@";
+"signalasi.agent.header.routing.auto" = "Auto · %@";
 "signalasi.agent.header.routing.manual" = "手动 · %@";
 "voice_settings_section_agent_runs" = "Agent 运行";
 "signalasi.voice_agent_runs.title" = "语音 Agent 运行";

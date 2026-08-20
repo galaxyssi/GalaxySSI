@@ -40,7 +40,7 @@ struct SignalASIAgentHomeNavigationRoutesView: View {
       }
       .hidden()
       NavigationLink(
-        destination: SettingsView(),
+        destination: SignalASIControlCenterView(),
         isActive: $agentSettingsShortcutActive
       ) {
         EmptyView()

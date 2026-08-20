@@ -189,23 +189,30 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
   private func finish(send: Bool, status: String) {
     pendingSend = send
     stopTimer()
-    let fallbackTranscript = bestTranscript()
 
     if let deferredTranscript {
       completeDeferred(send: send, transcript: deferredTranscript, status: status)
+    } else if send {
+      // Do not cancel SFSpeechRecognizer immediately on release. It often publishes
+      // the final partial result just after the audio input is ended.
+      speech.stopForHoldToTalk { [weak self] finalTranscript in
+        guard let self else { return }
+        let cleanTranscript = self.bestTranscript().ifBlank(finalTranscript)
+        if !self.deliveredThisCapture {
+          if !self.deliver(cleanTranscript) {
+            if self.statusMessage != self.lastMessages.noSpeech {
+              self.onCaptureCancelled?()
+            }
+            self.statusMessage = self.lastMessages.noSpeech
+          }
+        }
+        self.resetIdle(keepStatus: true)
+      }
     } else {
       speech.stop()
-      let finalTranscript = bestTranscript().ifBlank(fallbackTranscript)
-      if send {
-        if !deliver(finalTranscript) {
-          onCaptureCancelled?()
-          statusMessage = lastMessages.noSpeech
-        }
-      } else {
-        onCaptureCancelled?()
-        if !status.isEmpty {
-          statusMessage = status
-        }
+      onCaptureCancelled?()
+      if !status.isEmpty {
+        statusMessage = status
       }
       resetIdle(keepStatus: true)
     }
