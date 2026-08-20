@@ -23,6 +23,7 @@ struct SignalASIConversationHubView: View {
   @State private var searchText = ""
   @State private var showingArchived = false
   @State private var addContactPresentation: SignalASIAddContactPresentation?
+  @State private var cloudModelOnboardingPresented = false
   @State private var hubRefreshToken = UUID()
   @State private var pendingFriendRequestsPresented = false
   private let showsBackButton: Bool
@@ -133,6 +134,16 @@ struct SignalASIConversationHubView: View {
           refreshAfterContactImport()
         }
       )
+    }
+    .sheet(isPresented: $cloudModelOnboardingPresented) {
+      NavigationView {
+        CloudModelProviderSelectionView { _ in
+          refreshAfterContactImport()
+          selectedTab = .contacts
+          cloudModelOnboardingPresented = false
+        }
+      }
+      .navigationViewStyle(.stack)
     }
     .sheet(isPresented: $pendingFriendRequestsPresented) {
       if store.pendingFriendRequests.count == 1,
@@ -468,19 +479,17 @@ struct SignalASIConversationHubView: View {
       ) {
         pendingFriendRequestsPresented = true
       }
-      NavigationLink(destination: CloudModelProviderSelectionView()) {
-        hubRowContent(
-          title: t("signalasi.conversation_hub.add_cloud_model", "Add Cloud Model"),
-          subtitle: t(
-            "signalasi.conversation_hub.add_cloud_model_subtitle",
-            "Configure a provider, model, and API key on this phone"
-          ),
-          systemImage: "cloud.fill",
-          tint: .blue,
-          trailing: ""
-        )
+      hubActionRow(
+        title: t("signalasi.conversation_hub.add_cloud_model", "Add Cloud Model"),
+        subtitle: t(
+          "signalasi.conversation_hub.add_cloud_model_subtitle",
+          "Configure a provider, model, and API key on this phone"
+        ),
+        systemImage: "cloud.fill",
+        tint: .blue
+      ) {
+        cloudModelOnboardingPresented = true
       }
-      .buttonStyle(.plain)
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
         subtitle: t("signalasi.conversation_hub.scan_add_subtitle", "Add an Agent, trusted contact, or device"),

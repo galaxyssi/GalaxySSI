@@ -3,6 +3,7 @@ import UIKit
 
 struct CloudModelProviderSelectionView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var onModelAdded: ((SignalASIContact) -> Void)? = nil
 
   private var providers: [String] {
     CloudModelPreset.androidParity.reduce(into: [String]()) { result, preset in
@@ -46,7 +47,7 @@ struct CloudModelProviderSelectionView: View {
                 tint: providerTint(provider),
                 badge: providerCount(provider)
               ) {
-                CloudModelPickerView(provider: provider)
+                CloudModelPickerView(provider: provider, onModelAdded: onModelAdded)
               }
             }
           }
@@ -102,6 +103,7 @@ struct CloudModelProviderSelectionView: View {
 struct CloudModelPickerView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   var provider: String
+  var onModelAdded: ((SignalASIContact) -> Void)? = nil
 
   private var presets: [CloudModelPreset] {
     CloudModelPreset.androidParity.filter { $0.provider == provider }
@@ -156,7 +158,7 @@ struct CloudModelPickerView: View {
                 tint: providerTint(provider),
                 badge: t("signalasi.common.select", "Select")
               ) {
-                CloudModelConfigurationView(preset: preset)
+                CloudModelConfigurationView(preset: preset, onModelAdded: onModelAdded)
               }
             }
           }
@@ -201,6 +203,7 @@ struct CloudModelConfigurationView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
   var preset: CloudModelPreset
+  var onModelAdded: ((SignalASIContact) -> Void)? = nil
   @State private var displayName: String
   @State private var modelId: String
   @State private var endpoint: String
@@ -209,8 +212,12 @@ struct CloudModelConfigurationView: View {
   @State private var createdContactId: String?
   @State private var chatPresented = false
 
-  init(preset: CloudModelPreset) {
+  init(
+    preset: CloudModelPreset,
+    onModelAdded: ((SignalASIContact) -> Void)? = nil
+  ) {
     self.preset = preset
+    self.onModelAdded = onModelAdded
     _displayName = State(initialValue: preset.name)
     _modelId = State(initialValue: preset.modelId)
     _endpoint = State(initialValue: preset.endpoint)
@@ -325,8 +332,12 @@ struct CloudModelConfigurationView: View {
         apiStyle: preset.apiStyle
       )
       createdContactId = contact.id
-      chatPresented = true
       errorText = ""
+      if let onModelAdded {
+        onModelAdded(contact)
+      } else {
+        chatPresented = true
+      }
     } catch {
       errorText = error.localizedDescription
     }
