@@ -191,6 +191,8 @@ struct SignalASIAppAdapterDetailView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var statusMessage = ""
   @State private var fileImporterPresented = false
+  @State private var smsRecipient = ""
+  @State private var smsBody = ""
   var status: SignalASIAppAdapterStatus
 
   var body: some View {
@@ -253,7 +255,9 @@ struct SignalASIAppAdapterDetailView: View {
   private var actionSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.section.actions", "Actions"))
-      if status.definition.id == .files {
+      if status.definition.id == .sms {
+        smsComposeAction
+      } else if status.definition.id == .files {
         SignalASISecurityPrimaryButton(
           title: t("signalasi.app_adapters.select_files", "Select Files"),
           systemImage: "folder.badge.plus",
@@ -277,6 +281,41 @@ struct SignalASIAppAdapterDetailView: View {
         ) {
           openSettings()
         }
+      }
+    }
+  }
+
+  private var smsComposeAction: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      TextField(t("signalasi.app_adapters.sms_recipient", "Recipient"), text: $smsRecipient)
+        .keyboardType(.phonePad)
+        .textContentType(.telephoneNumber)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled(true)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      TextEditor(text: $smsBody)
+        .font(.system(size: 15))
+        .frame(minHeight: 88, maxHeight: 120)
+        .padding(8)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel(t("signalasi.app_adapters.sms_body", "Message"))
+      SignalASISecurityPrimaryButton(
+        title: t("signalasi.app_adapters.open_sms_composer", "Open Message Composer"),
+        systemImage: "message",
+        tint: adapterTint(status.definition.tone)
+      ) {
+        guard AgentIOSNativeToolHandoffPresenter.openSMSCompose(
+          phoneNumber: smsRecipient,
+          body: smsBody
+        ) else {
+          statusMessage = t("signalasi.app_adapters.sms_invalid_recipient", "Enter a valid recipient phone number")
+          return
+        }
+        statusMessage = t("signalasi.app_adapters.sms_composer_opened", "Message composer opened for your review")
       }
     }
   }

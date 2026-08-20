@@ -703,6 +703,11 @@
 "signalasi.app_adapters.data_boundary_subtitle" = "适配器观察范围限定在已选择文件、已打开 URL、SignalASI 自有通知或显式屏幕捕获";
 "signalasi.app_adapters.handoff_opened" = "交接已打开";
 "signalasi.app_adapters.handoff_failed" = "无法打开交接";
+"signalasi.app_adapters.sms_recipient" = "收件人";
+"signalasi.app_adapters.sms_body" = "短信内容";
+"signalasi.app_adapters.open_sms_composer" = "打开短信编辑器";
+"signalasi.app_adapters.sms_invalid_recipient" = "请输入有效的收件人电话号码";
+"signalasi.app_adapters.sms_composer_opened" = "短信编辑器已打开，请确认后发送";
 "signalasi.capability.accessibility_tree" = "无障碍界面树";
 "signalasi.capability.accessibility_gestures" = "无障碍手势";
 "signalasi.capability.screen_capture" = "屏幕捕获 OCR";
