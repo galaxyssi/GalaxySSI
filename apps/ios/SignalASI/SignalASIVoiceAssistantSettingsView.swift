@@ -299,6 +299,8 @@ struct SignalASIVoiceAssistantSettingsView: View {
   private var asrProviderSummary: String {
     let model = VoiceWhisperModelCatalog.model(settings.asrModelId).displayName
     switch settings.asrProvider {
+    case .automatic:
+      return "\(t("voice_asr_provider_auto", "Automatic")) / \(model)"
     case .localWhisperCpp:
       return "\(t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")) / \(model)"
     }

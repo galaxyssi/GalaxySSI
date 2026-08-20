@@ -247,15 +247,13 @@ struct SignalASIVoiceASRProviderView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           SignalASISecurityHeroView(
-            title: t("voice_asr_local_title", "On-device whisper.cpp"),
-            subtitle: t(
-              "voice_asr_local_subtitle",
-              "Speech stays on this phone. Choose an installed model or download one from a trusted source."
-            ),
+            title: asrProviderTitle(settings.asrProvider),
+            subtitle: asrProviderSubtitle(settings.asrProvider),
             systemImage: "waveform.and.mic",
-            tint: SignalASIVoiceProviderFormatter.capabilityTint(capabilities[.whisperCpp]),
-            badge: SignalASIVoiceProviderFormatter.capabilityStatus(capabilities[.whisperCpp], language: interfaceLanguage)
+            tint: SignalASIVoiceProviderFormatter.capabilityTint(route.capability),
+            badge: SignalASIVoiceProviderFormatter.capabilityStatus(route.capability, language: interfaceLanguage)
           )
+          providerSection
           if advancedRecognitionVisible {
             recognitionSection
           }
@@ -279,6 +277,26 @@ struct SignalASIVoiceASRProviderView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+  }
+
+  private var providerSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("voice_asr_provider_section", "Provider"))
+      SignalASIVoiceProviderMenuRow(
+        title: t("voice_asr_provider", "ASR Provider"),
+        subtitle: t(
+          "voice_asr_provider_subtitle",
+          "Automatic uses the ready on-device engine, then iOS Speech when needed."
+        ),
+        systemImage: "arrow.triangle.branch",
+        tint: SignalASIVoiceProviderFormatter.capabilityTint(route.capability),
+        badge: asrProviderTitle(settings.asrProvider),
+        choices: asrProviderChoices,
+        selectedValue: settings.asrProvider.rawValue
+      ) { value in
+        store.updateVoiceSettings { $0.asrProvider = VoiceASRProvider.normalized(value) }
+      }
+    }
   }
 
   private var recognitionSection: some View {
@@ -468,6 +486,12 @@ struct SignalASIVoiceASRProviderView: View {
     }
   }
 
+  private var asrProviderChoices: [SignalASIVoiceProviderChoice] {
+    VoiceASRProvider.allCases.map {
+      SignalASIVoiceProviderChoice(value: $0.rawValue, title: asrProviderTitle($0))
+    }
+  }
+
   private var asrCapabilityIds: [VoiceProviderCapabilityId] {
     [.whisperCpp, .androidSystemASR, .androidOfflineASR, .cloudASR]
   }
@@ -511,6 +535,30 @@ struct SignalASIVoiceASRProviderView: View {
       return t("voice_asr_mode_local_private", "Local private")
     case .manual:
       return t("voice_asr_runtime_mode_manual", "Selected model")
+    }
+  }
+
+  private func asrProviderTitle(_ provider: VoiceASRProvider) -> String {
+    switch provider {
+    case .automatic:
+      return t("voice_asr_provider_auto", "Automatic")
+    case .localWhisperCpp:
+      return t("voice_asr_provider_local_whisper_prefix", "On-device whisper.cpp")
+    }
+  }
+
+  private func asrProviderSubtitle(_ provider: VoiceASRProvider) -> String {
+    switch provider {
+    case .automatic:
+      return t(
+        "voice_asr_provider_auto_subtitle",
+        "Use the ready on-device Whisper model, or iOS Speech while a local model is unavailable."
+      )
+    case .localWhisperCpp:
+      return t(
+        "voice_asr_local_subtitle",
+        "Speech stays on this phone. Choose an installed model or download one from a trusted source."
+      )
     }
   }
 

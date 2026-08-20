@@ -1815,7 +1815,10 @@ struct VoiceSettingsView: View {
             set: { value in store.updateVoiceSettings { $0.asrProvider = value } }
           )) {
             ForEach(VoiceASRProvider.allCases) { provider in
-              Text(t(provider.displayTitle, provider.displayTitle)).tag(provider)
+              Text(t(
+                provider == .automatic ? "voice_asr_provider_auto" : "voice_asr_provider_local_whisper_prefix",
+                provider.displayTitle
+              )).tag(provider)
             }
           }
           NavigationLink(destination: VoiceWhisperModelSettingsView()) {

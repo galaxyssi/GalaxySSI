@@ -19,7 +19,7 @@ struct VoiceASRProviderRoute: Equatable {
   var fallbackReason: VoiceProviderCapabilityReason?
 
   var usesFallback: Bool {
-    kind == .iosSpeechFallback
+    kind == .iosSpeechFallback && requestedProvider == .localWhisperCpp
   }
 }
 
@@ -30,7 +30,9 @@ enum VoiceASRProviderRoutingPolicy {
   ) -> VoiceASRProviderRoute {
     let normalized = settings.normalized
     let whisper = capabilities[.whisperCpp]
-    if normalized.asrProvider == .localWhisperCpp, whisper.ready {
+    let prefersLocalWhisper = normalized.asrProvider == .automatic ||
+      normalized.asrProvider == .localWhisperCpp
+    if prefersLocalWhisper, whisper.ready {
       return VoiceASRProviderRoute(
         kind: .localWhisper,
         capability: whisper,
@@ -47,7 +49,7 @@ enum VoiceASRProviderRoutingPolicy {
       channel: .androidSystemASR,
       provider: iosSpeechProvider(localeIdentifier: normalized.preferredLocaleIdentifier),
       requestedProvider: normalized.asrProvider,
-      fallbackReason: whisper.reason
+      fallbackReason: normalized.asrProvider == .localWhisperCpp ? whisper.reason : nil
     )
   }
 
@@ -130,7 +132,8 @@ enum VoiceASRProviderRoutingPolicy {
     localRuntimeEnabled: Bool,
     adaptivePartialEnabled: Bool
   ) -> Bool {
-    guard settings.normalized.asrProvider == .localWhisperCpp,
+    let provider = settings.normalized.asrProvider
+    guard (provider == .automatic || provider == .localWhisperCpp),
           pcmCaptureEnabled,
           localRuntimeEnabled,
           adaptivePartialEnabled else {

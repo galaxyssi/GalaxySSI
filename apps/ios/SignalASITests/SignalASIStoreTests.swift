@@ -452,6 +452,10 @@ final class SignalASIStoreTests: XCTestCase {
       VoiceSettings.self,
       from: Data(#"{"wake_provider":"bad","wake_model":"bad.onnx","asr_provider":"bad","tts_provider":"bad","microsoft_voice":" "}"#.utf8)
     )
+    let automatic = try JSONDecoder.signalASI.decode(
+      VoiceSettings.self,
+      from: Data(#"{"asr_provider":"auto"}"#.utf8)
+    )
     let encoded = try JSONEncoder.signalASI.encode(settings)
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
 
@@ -464,8 +468,10 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(settings.asrModelId, "base")
     XCTAssertEqual(fallback.wakeProvider, .androidASR)
     XCTAssertEqual(fallback.wakeModel, VoiceSettings.defaultWakeModel)
+    XCTAssertEqual(fallback.asrProvider, .automatic)
     XCTAssertEqual(fallback.ttsProvider, .system)
     XCTAssertEqual(fallback.microsoftVoice, VoiceSettings.defaultMicrosoftVoice)
+    XCTAssertEqual(automatic.asrProvider, .automatic)
     XCTAssertEqual(object["wake_provider"] as? String, "android_asr")
     XCTAssertEqual(object["asr_provider"] as? String, "local_whisper_cpp")
     XCTAssertEqual(object["asr_runtime_mode"] as? String, "ACCURATE")

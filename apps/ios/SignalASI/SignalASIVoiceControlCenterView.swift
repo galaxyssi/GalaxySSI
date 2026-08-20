@@ -17,7 +17,11 @@ struct SignalASIVoiceControlCenterView: View {
   }
 
   private var asrCapability: VoiceProviderCapability {
-    capabilities[.whisperCpp]
+    asrRoute.capability
+  }
+
+  private var asrRoute: VoiceASRProviderRoute {
+    VoiceASRProviderRoutingPolicy.route(settings: settings, capabilities: capabilities)
   }
 
   private var ttsCapability: VoiceProviderCapability {
@@ -125,12 +129,12 @@ struct SignalASIVoiceControlCenterView: View {
       SignalASISecuritySectionTitle(title: t("voice_section_asr", "ASR"))
       SignalASISecurityNavigationRow(
         title: t("voice_asr_provider", "ASR Provider"),
-        subtitle: VoiceWhisperModelCatalog.model(settings.asrModelId).displayName,
+        subtitle: asrRoute.provider,
         systemImage: "waveform",
         tint: capabilityTint(asrCapability),
         badge: capabilityLabel(asrCapability)
       ) {
-        VoiceWhisperModelSettingsView()
+        SignalASIVoiceASRProviderView()
       }
       SignalASISecurityNavigationRow(
         title: t("voice_tts_provider", "TTS Provider"),
