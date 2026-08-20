@@ -8,6 +8,7 @@ struct MyContactQRCodeView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var copiedMessage = ""
   @State private var qrText = ""
+  @State private var qrGenerationError = ""
   @State private var sharePresented = false
 
   var body: some View {
@@ -35,7 +36,7 @@ struct MyContactQRCodeView: View {
               .frame(width: 40, height: 40)
           }
           .buttonStyle(.plain)
-          .disabled(qrText.isEmpty || qrText == "{}")
+          .disabled(!hasShareableQRCode)
           .accessibilityLabel(Text(t("signalasi.contact.share_qr", "Share QR Code")))
         }
       )
@@ -84,9 +85,11 @@ struct MyContactQRCodeView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(Color.black.opacity(0.08), lineWidth: 1)
       )
-      Text(t("contact_scan_confirm_identity", "Both sides must confirm identity after scanning"))
+      Text(qrGenerationError.ifBlank(
+        t("contact_scan_confirm_identity", "Both sides must confirm identity after scanning")
+      ))
         .font(.system(size: 13))
-        .foregroundColor(.signalASITextSecondary)
+        .foregroundColor(qrGenerationError.isEmpty ? .signalASITextSecondary : .red)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -135,15 +138,28 @@ struct MyContactQRCodeView: View {
   private var payloadSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.contact.payload", "Payload"))
-      SignalASISecurityActionRow(
-        title: t("signalasi.contact.copy_payload", "Copy Payload"),
-        subtitle: qrText.ifBlank("{}"),
-        systemImage: "doc.on.doc",
-        tint: .purple,
-        badge: t("common_copy", "Copy"),
-        monospacedSubtitle: true
-      ) {
-        copy(qrText, message: t("signalasi.contact.my_qr_payload_copied", "QR payload copied"))
+      if hasShareableQRCode {
+        SignalASISecurityActionRow(
+          title: t("signalasi.contact.copy_payload", "Copy Payload"),
+          subtitle: qrText,
+          systemImage: "doc.on.doc",
+          tint: .purple,
+          badge: t("common_copy", "Copy"),
+          monospacedSubtitle: true
+        ) {
+          copy(qrText, message: t("signalasi.contact.my_qr_payload_copied", "QR payload copied"))
+        }
+      } else {
+        SignalASISecurityStatusRow(
+          title: t("signalasi.contact.qr_unavailable", "QR Code Unavailable"),
+          subtitle: qrGenerationError.ifBlank(t(
+            "signalasi.contact.qr_unavailable_subtitle",
+            "A signed identity card is required before this QR code can be shared."
+          )),
+          systemImage: "exclamationmark.triangle.fill",
+          tint: .orange,
+          badge: t("signalasi.status.unavailable", "Unavailable")
+        )
       }
     }
   }
@@ -162,9 +178,21 @@ struct MyContactQRCodeView: View {
   }
 
   private func refreshQRText() {
-    if qrText.isEmpty {
-      qrText = (try? coordinator.myContactQRText()) ?? "{}"
+    guard qrText.isEmpty else { return }
+    do {
+      qrText = try coordinator.myContactQRText()
+      qrGenerationError = ""
+    } catch {
+      qrText = ""
+      qrGenerationError = t(
+        "signalasi.contact.qr_unavailable_subtitle",
+        "A signed identity card is required before this QR code can be shared."
+      )
     }
+  }
+
+  private var hasShareableQRCode: Bool {
+    !qrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && qrText != "{}"
   }
 
   private var shareItems: [Any] {
