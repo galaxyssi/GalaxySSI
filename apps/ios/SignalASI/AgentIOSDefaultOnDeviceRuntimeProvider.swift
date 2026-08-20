@@ -122,6 +122,9 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult? {
     guard availability(operation: .execute).status == .available else { return nil }
+    if let readinessFailure = brokerReadinessFailure(invocation) {
+      return readinessFailure
+    }
     do {
       let output = try broker.invoke(
         operation: operation,
@@ -600,15 +603,17 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         deadlineEpochMillis: invocation.deadlineEpochMillis
       )
       output.merge(brokerOutput) { _, remote in remote }
-      if output["backend_ready"]?.boolValue == true {
-        _ = lifecycleStore.ready()
+      output["backend"] = output["backend"] ?? .string("ios_runtime_broker")
+      output["backend_ready"] = output["backend_ready"] ?? .bool(false)
+      output["reason"] = output["reason"] ?? .string("The local Linux runtime service is not ready.")
+      if let reason = AgentIOSRuntimeBrokerLinuxBaseline.unavailableReason(for: output) {
+        output["backend_ready"] = .bool(false)
+        output["reason"] = .string(reason)
+        _ = lifecycleStore.failed(reason: reason)
       } else {
-        _ = lifecycleStore.failed(reason: output["reason"]?.stringValue ?? "Runtime broker is not ready")
+        _ = lifecycleStore.ready()
       }
       output["lifecycle"] = .object(lifecycleOutput())
-      output["backend"] = output["backend"] ?? .string("ios_runtime_broker")
-      output["backend_ready"] = output["backend_ready"] ?? .bool(true)
-      output["reason"] = output["reason"] ?? .string("The local iOS runtime broker is ready")
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: "iOS on-device runtime broker inspected",
@@ -652,6 +657,9 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         code: "runtime_execute_requires_setup",
         message: availability.reason.ifBlank(runtimeSetupReason())
       )
+    }
+    if let readinessFailure = brokerReadinessFailure(invocation) {
+      return readinessFailure
     }
     do {
       let output = try broker.invoke(
@@ -705,6 +713,40 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         "requires_setup": .bool(true)
       ])
     )
+  }
+
+  private func brokerReadinessFailure(
+    _ invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult? {
+    do {
+      let status = try broker.invoke(
+        operation: .status,
+        input: [:],
+        context: invocation.context,
+        deadlineEpochMillis: invocation.deadlineEpochMillis
+      )
+      if let reason = AgentIOSRuntimeBrokerLinuxBaseline.unavailableReason(for: status) {
+        _ = lifecycleStore.failed(reason: reason)
+        let code = AgentIOSRuntimeBrokerLinuxBaseline.requiresVersionUpgrade(for: status)
+          ? "runtime_broker_linux_base_incompatible"
+          : "runtime_broker_not_ready"
+        return requiresSetup(code: code, message: reason)
+      }
+      _ = lifecycleStore.ready()
+      return nil
+    } catch let error as AgentIOSRuntimeBrokerError {
+      _ = lifecycleStore.failed(reason: error.localizedDescription)
+      return AgentNativeToolExecutionResult.failure(
+        code: error.code,
+        message: error.localizedDescription,
+        retryable: error.retryable,
+        details: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch {
+      let message = error.localizedDescription.ifBlank("The local Linux runtime service is not ready.")
+      _ = lifecycleStore.failed(reason: message)
+      return requiresSetup(code: "runtime_broker_not_ready", message: message)
+    }
   }
 
   private func workspaceFailure(

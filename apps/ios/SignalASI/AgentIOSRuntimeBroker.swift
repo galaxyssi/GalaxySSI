@@ -358,6 +358,37 @@ enum AgentIOSRuntimeBrokerHealth: Equatable {
   }
 }
 
+enum AgentIOSRuntimeBrokerLinuxBaseline {
+  static let requiredVersion = AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion
+
+  static func reportedVersion(in status: AgentMcpJSONObject) -> String? {
+    let nestedVersion = status["linux_system"]?.objectValue?["base_version"]?.stringValue
+    return [status["linux_base_version"]?.stringValue, nestedVersion]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty }
+  }
+
+  static func unavailableReason(for status: AgentMcpJSONObject) -> String? {
+    guard status["backend_ready"]?.boolValue == true else {
+      return status["reason"]?.stringValue?.nonEmpty
+        ?? "The local Linux runtime service is not ready."
+    }
+    guard let version = reportedVersion(in: status) else {
+      return "The local Linux runtime broker did not report its Linux base version."
+    }
+    guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(version) else {
+      return "Linux \(requiredVersion) or later is required (broker reports \(version))."
+    }
+    return nil
+  }
+
+  static func requiresVersionUpgrade(for status: AgentMcpJSONObject) -> Bool {
+    guard status["backend_ready"]?.boolValue == true else { return false }
+    guard let version = reportedVersion(in: status) else { return true }
+    return !AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(version)
+  }
+}
+
 enum AgentIOSRuntimeBrokerHealthChecker {
   static func check(
     broker: AgentIOSRuntimeBrokerProviding,
@@ -375,10 +406,10 @@ enum AgentIOSRuntimeBrokerHealthChecker {
         context: context,
         deadlineEpochMillis: deadlineEpochMillis
       )
-      let reason = output["reason"]?.stringValue?.nonEmpty ?? ""
-      return output["backend_ready"]?.boolValue == true
-        ? .ready(reason)
-        : .unavailable(reason.ifBlank("The local Linux runtime service is not ready."))
+      if let reason = AgentIOSRuntimeBrokerLinuxBaseline.unavailableReason(for: output) {
+        return .unavailable(reason)
+      }
+      return .ready(output["reason"]?.stringValue?.nonEmpty ?? "")
     } catch {
       return .unavailable(error.localizedDescription.ifBlank("The local Linux runtime service is not ready."))
     }

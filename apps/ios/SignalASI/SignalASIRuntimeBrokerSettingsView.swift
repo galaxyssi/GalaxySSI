@@ -222,10 +222,11 @@ struct SignalASIRuntimeBrokerSettingsView: View {
         isChecking = false
         switch outcome {
         case .success(let output):
-          let isReady = output["backend_ready"]?.boolValue == true
-          let message = output["reason"]?.stringValue?.nonEmpty ?? t(
-            isReady ? "cc_runtime_broker_connected" : "cc_runtime_broker_unavailable",
-            isReady ? "Runtime broker connected" : "The local Linux runtime service is not ready"
+          let unavailableReason = AgentIOSRuntimeBrokerLinuxBaseline.unavailableReason(for: output)
+          let isReady = unavailableReason == nil
+          let message = unavailableReason ?? output["reason"]?.stringValue?.nonEmpty ?? t(
+            "cc_runtime_broker_connected",
+            "Runtime broker connected"
           )
           if isReady {
             _ = lifecycleStore.ready()
