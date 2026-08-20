@@ -76,6 +76,42 @@ final class AgentIOSRuntimePackInstaller {
     }
   }
 
+  func status(packId: String) -> AgentRuntimePackStatus {
+    guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(packId) else {
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .invalid,
+        reason: "Runtime pack id is not supported"
+      )
+    }
+    let directory = packsRootURL.appendingPathComponent(packId, isDirectory: true)
+    guard fileManager.fileExists(atPath: directory.path) else {
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .notInstalled,
+        reason: "Runtime pack is not installed"
+      )
+    }
+    let decodedManifest = try? manifest(at: directory)
+    do {
+      let verifiedManifest = try validatePack(at: directory)
+      try validateInstalledDependencies(for: verifiedManifest)
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .ready,
+        reason: "",
+        manifest: verifiedManifest
+      )
+    } catch {
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .invalid,
+        reason: error.localizedDescription.ifBlank("Runtime pack integrity verification failed"),
+        manifest: decodedManifest
+      )
+    }
+  }
+
   private func installArchive(
     _ archive: URL,
     onProgress: (AgentRuntimePackInstallProgress) -> Void

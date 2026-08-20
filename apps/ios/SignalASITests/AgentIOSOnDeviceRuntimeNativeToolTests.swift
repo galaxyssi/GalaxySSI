@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import SignalASI
 
@@ -252,7 +253,8 @@ extension SignalASIStoreTests {
     let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
       runtimeRootURL: runtimeRoot,
       workspaceManager: workspaceManager,
-      nowMillis: { 55_000 }
+      nowMillis: { 55_000 },
+      signatureVerifier: { _ in true }
     )
     let definitions = AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider)
     let registry = try AgentNativeToolRegistry().registerExecutables(
@@ -322,18 +324,20 @@ extension SignalASIStoreTests {
   }
 
   private func installRuntimePackManifest(_ packId: String, under runtimeRoot: URL) throws {
+    let image = Data("\(packId)-runtime-image".utf8)
     let manifest = AgentRuntimePackManifest(
       id: packId,
-      version: "1.0.0",
+      version: packId == "linux-base" ? "1.3.9" : "1.0.0",
       architecture: AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? "arm64",
       imageFile: "\(packId).img",
-      imageSha256: String(repeating: "a", count: 64),
+      imageSha256: SHA256.hash(data: image).map { String(format: "%02x", $0) }.joined(),
       capabilities: Array(AgentRuntimePackCatalogPolicy.requiredPackCapabilities[packId] ?? []).sorted(),
       dependencies: [],
       installedSizeBytes: 4_096,
       license: "Apache-2.0",
       signatureKeyId: String(repeating: "b", count: 64),
-      signature: "test-signature"
+      signature: "test-signature",
+      archiveSizeBytes: 1
     )
     let packRoot = runtimeRoot
       .appendingPathComponent("packs", isDirectory: true)
@@ -341,6 +345,7 @@ extension SignalASIStoreTests {
     try FileManager.default.createDirectory(at: packRoot, withIntermediateDirectories: true)
     try JSONEncoder().encode(manifest)
       .write(to: packRoot.appendingPathComponent("manifest.json"), options: [.atomic])
+    try image.write(to: packRoot.appendingPathComponent(manifest.imageFile), options: [.atomic])
   }
 
 }
