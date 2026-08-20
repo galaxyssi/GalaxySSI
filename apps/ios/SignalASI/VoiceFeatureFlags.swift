@@ -8,6 +8,8 @@ let voiceWhisperAdaptivePartialV1Flag = "voice.whisper_adaptive_partial_v1"
 let voiceWhisperAutoBenchmarkV1Flag = "voice.whisper_auto_benchmark_v1"
 let voiceWhisperPolicyEngineV1Flag = "voice.whisper_policy_engine_v1"
 let voiceWhisperSecondPassV1Flag = "voice.whisper_second_pass_v1"
+let voiceOnlineRealtimeASRV1Flag = "voice.online_realtime_asr_v1"
+let voiceRemoteWhisperNodeV1Flag = "voice.remote_whisper_node_v1"
 
 enum VoiceFeatureFlags {
   static func isCoordinatorEnabled(
@@ -157,6 +159,48 @@ enum VoiceFeatureFlags {
     userDefaults.removeObject(forKey: voiceWhisperSecondPassV1Flag)
   }
 
+  static func isOnlineRealtimeASREnabled(
+    userDefaults: UserDefaults = .standard,
+    defaultEnabled: Bool = defaultAdvancedASREnabled
+  ) -> Bool {
+    guard userDefaults.object(forKey: voiceOnlineRealtimeASRV1Flag) != nil else {
+      return defaultEnabled
+    }
+    return userDefaults.bool(forKey: voiceOnlineRealtimeASRV1Flag)
+  }
+
+  static func setOnlineRealtimeASREnabled(
+    _ enabled: Bool,
+    userDefaults: UserDefaults = .standard
+  ) {
+    userDefaults.set(enabled, forKey: voiceOnlineRealtimeASRV1Flag)
+  }
+
+  static func resetOnlineRealtimeASREnabled(userDefaults: UserDefaults = .standard) {
+    userDefaults.removeObject(forKey: voiceOnlineRealtimeASRV1Flag)
+  }
+
+  static func isRemoteWhisperNodeEnabled(
+    userDefaults: UserDefaults = .standard,
+    defaultEnabled: Bool = defaultAdvancedASREnabled
+  ) -> Bool {
+    guard userDefaults.object(forKey: voiceRemoteWhisperNodeV1Flag) != nil else {
+      return defaultEnabled
+    }
+    return userDefaults.bool(forKey: voiceRemoteWhisperNodeV1Flag)
+  }
+
+  static func setRemoteWhisperNodeEnabled(
+    _ enabled: Bool,
+    userDefaults: UserDefaults = .standard
+  ) {
+    userDefaults.set(enabled, forKey: voiceRemoteWhisperNodeV1Flag)
+  }
+
+  static func resetRemoteWhisperNodeEnabled(userDefaults: UserDefaults = .standard) {
+    userDefaults.removeObject(forKey: voiceRemoteWhisperNodeV1Flag)
+  }
+
   #if DEBUG
   private static let defaultCoordinatorEnabled = true
   private static let defaultPcmCaptureEnabled = true
@@ -165,6 +209,7 @@ enum VoiceFeatureFlags {
   private static let defaultWhisperAutoBenchmarkEnabled = true
   private static let defaultWhisperPolicyEngineEnabled = true
   private static let defaultWhisperSecondPassEnabled = true
+  private static let defaultAdvancedASREnabled = true
   #else
   private static let defaultCoordinatorEnabled = false
   private static let defaultPcmCaptureEnabled = false
@@ -173,6 +218,7 @@ enum VoiceFeatureFlags {
   private static let defaultWhisperAutoBenchmarkEnabled = false
   private static let defaultWhisperPolicyEngineEnabled = false
   private static let defaultWhisperSecondPassEnabled = false
+  private static let defaultAdvancedASREnabled = false
   #endif
 }
 
