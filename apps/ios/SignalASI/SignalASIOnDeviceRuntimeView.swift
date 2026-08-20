@@ -281,35 +281,11 @@ struct SignalASIOnDeviceRuntimeView: View {
     runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
     fileManager: FileManager = .default
   ) -> AgentRuntimePackStatus {
-    let manifestURL = runtimeRootURL
-      .appendingPathComponent("packs", isDirectory: true)
-      .appendingPathComponent(packId, isDirectory: true)
-      .appendingPathComponent("manifest.json", isDirectory: false)
-    guard fileManager.fileExists(atPath: manifestURL.path) else {
-      return AgentRuntimePackStatus(id: packId, state: .notInstalled, reason: "Runtime pack is not installed")
-    }
-    do {
-      let manifest = try JSONDecoder().decode(AgentRuntimePackManifest.self, from: try Data(contentsOf: manifestURL))
-      guard manifest.id == packId else {
-        return AgentRuntimePackStatus(id: packId, state: .invalid, reason: "Runtime pack manifest id does not match", manifest: manifest)
-      }
-      guard AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.contains(manifest.architecture) else {
-        return AgentRuntimePackStatus(id: packId, state: .incompatible, reason: "Runtime pack architecture is not supported on this iOS device", manifest: manifest)
-      }
-      let missing = (AgentRuntimePackCatalogPolicy.requiredPackCapabilities[packId] ?? [])
-        .subtracting(Set(manifest.capabilities))
-      guard missing.isEmpty else {
-        return AgentRuntimePackStatus(
-          id: packId,
-          state: .invalid,
-          reason: "Runtime pack is missing capabilities: \(missing.sorted().joined(separator: ","))",
-          manifest: manifest
-        )
-      }
-      return AgentRuntimePackStatus(id: packId, state: .ready, reason: "", manifest: manifest)
-    } catch {
-      return AgentRuntimePackStatus(id: packId, state: .invalid, reason: error.localizedDescription.ifBlank("Runtime pack manifest could not be read"))
-    }
+    AgentIOSRuntimePackInstaller(
+      runtimeRootURL: runtimeRootURL,
+      fileManager: fileManager
+    )
+      .status(packId: packId)
   }
 
   static func packTitle(_ id: String, language: String) -> String {
