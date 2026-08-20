@@ -60,7 +60,7 @@ struct AgentIOSDefaultCommunicationHandoffProvider: AgentIOSCommunicationHandoff
         "direct_send_supported": .bool(false),
         "submitted_to_system": .bool(false),
         "can_send_text": .bool(canSendText()),
-        "handoff_transport": .string("sms_url")
+        "handoff_transport": .string("message_compose_controller_or_sms_url")
       ]
     )
   }
