@@ -1,6 +1,21 @@
 import CryptoKit
 import Foundation
 import Network
+import Security
+
+enum AgentIOSRuntimeBrokerPairingKey {
+  static let byteCount = 32
+
+  static func generate() throws -> String {
+    var bytes = [UInt8](repeating: 0, count: byteCount)
+    guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration(
+        "A secure pairing key could not be generated."
+      )
+    }
+    return Data(bytes).base64EncodedString()
+  }
+}
 
 struct AgentIOSRuntimeBrokerConfiguration: Codable, Equatable {
   static let defaultHost = "127.0.0.1"
