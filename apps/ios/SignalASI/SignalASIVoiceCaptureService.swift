@@ -111,6 +111,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       settings: normalized,
       validatedNetworkAvailable: false
     )
+    activateLocalWhisperPipelineIfReady(settings: normalized, capabilities: capabilities)
     let authorizationRequirement = VoiceASRProviderRoutingPolicy.authorizationRequirement(
       settings: normalized,
       capabilities: capabilities,
@@ -159,6 +160,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         settings: settings,
         validatedNetworkAvailable: false
       )
+      activateLocalWhisperPipelineIfReady(settings: settings, capabilities: capabilities)
       useLocalWhisper = VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
         settings: settings,
         capabilities: capabilities,
@@ -321,6 +323,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         }
       }
     }
+  }
+
+  private func activateLocalWhisperPipelineIfReady(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot
+  ) {
+    let provider = settings.normalized.asrProvider
+    guard provider == .automatic || provider == .localWhisperCpp else { return }
+    let localWhisper = capabilities[.whisperCpp]
+    guard localWhisper.state == .ready || localWhisper.state == .needsPermission else { return }
+    VoiceFeatureFlags.activateCoreLocalWhisperPipelineIfUnconfigured()
   }
 
   /// Ends the microphone input while allowing Apple's recognizer to deliver its final result.

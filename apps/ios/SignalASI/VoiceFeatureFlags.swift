@@ -96,6 +96,18 @@ enum VoiceFeatureFlags {
     userDefaults.removeObject(forKey: voiceWhisperAdaptivePartialV1Flag)
   }
 
+  /// A downloaded or selected on-device model is an explicit user opt-in to
+  /// local recognition. Keep an existing false value intact so operators can
+  /// still disable an individual part of the pipeline as a kill switch.
+  static func activateCoreLocalWhisperPipelineIfUnconfigured(
+    userDefaults: UserDefaults = .standard
+  ) {
+    enableIfUnconfigured(voiceCoordinatorFlag, userDefaults: userDefaults)
+    enableIfUnconfigured(voicePcmCaptureFlag, userDefaults: userDefaults)
+    enableIfUnconfigured(voiceLocalWhisperRuntimeV2Flag, userDefaults: userDefaults)
+    enableIfUnconfigured(voiceWhisperAdaptivePartialV1Flag, userDefaults: userDefaults)
+  }
+
   static func isWhisperAutoBenchmarkEnabled(
     userDefaults: UserDefaults = .standard,
     defaultEnabled: Bool = defaultWhisperAutoBenchmarkEnabled
@@ -220,6 +232,14 @@ enum VoiceFeatureFlags {
   private static let defaultWhisperSecondPassEnabled = false
   private static let defaultAdvancedASREnabled = false
   #endif
+
+  private static func enableIfUnconfigured(
+    _ key: String,
+    userDefaults: UserDefaults
+  ) {
+    guard userDefaults.object(forKey: key) == nil else { return }
+    userDefaults.set(true, forKey: key)
+  }
 }
 
 enum VoicePipelineFeature: String, Codable, CaseIterable, Identifiable {

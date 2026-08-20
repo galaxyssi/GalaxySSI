@@ -311,6 +311,20 @@ final class VoiceInteractionCoordinatorTests: XCTestCase {
     XCTAssertTrue(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: false))
   }
 
+  func testLocalWhisperActivationEnablesOnlyUnconfiguredCoreFlags() {
+    let suiteName = "signalasi-voice-local-whisper-activation-\(UUID().uuidString)"
+    let userDefaults = UserDefaults(suiteName: suiteName)!
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    VoiceFeatureFlags.setPcmCaptureEnabled(false, userDefaults: userDefaults)
+    VoiceFeatureFlags.activateCoreLocalWhisperPipelineIfUnconfigured(userDefaults: userDefaults)
+
+    XCTAssertTrue(VoiceFeatureFlags.isCoordinatorEnabled(userDefaults: userDefaults, defaultEnabled: false))
+    XCTAssertFalse(VoiceFeatureFlags.isPcmCaptureEnabled(userDefaults: userDefaults, defaultEnabled: true))
+    XCTAssertTrue(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: false))
+    XCTAssertTrue(VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(userDefaults: userDefaults, defaultEnabled: false))
+  }
+
   func testVoiceFeatureFlagPersistsWhisperSecondPassSetting() {
     let suiteName = "signalasi-voice-whisper-second-pass-flags-\(UUID().uuidString)"
     let userDefaults = UserDefaults(suiteName: suiteName)!
