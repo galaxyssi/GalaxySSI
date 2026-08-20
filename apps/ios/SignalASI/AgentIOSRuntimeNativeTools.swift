@@ -7,6 +7,11 @@ enum AgentIOSOnDeviceRuntimeToolOperation: String, Codable, CaseIterable, Identi
   case workspaceRollback = "workspace.rollback"
   case listPacks = "packs.list"
   case installPack = "packs.install"
+  case softwareCatalog = "software.catalog"
+  case softwareSearch = "software.search"
+  case softwareInspect = "software.inspect"
+  case softwareInstall = "software.install"
+  case softwareRemove = "software.remove"
   case execute
 
   var id: String { rawValue }
@@ -56,6 +61,11 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
   static let workspaceRollback = "signalasi.runtime.workspace.rollback"
   static let listPacks = "signalasi.runtime.packs.list"
   static let installPack = "signalasi.runtime.packs.install"
+  static let softwareCatalog = "signalasi.runtime.software.catalog"
+  static let softwareSearch = "signalasi.runtime.software.search"
+  static let softwareInspect = "signalasi.runtime.software.inspect"
+  static let softwareInstall = "signalasi.runtime.software.install"
+  static let softwareRemove = "signalasi.runtime.software.remove"
   static let execute = "signalasi.runtime.execute"
 
   static let brokerExecutorId = "signalasi.ios_runtime_broker"
@@ -67,12 +77,21 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
   static let noAdditionalConsent = "signalasi.consent.none"
 
   static let maxTimeoutMillis: Int64 = 30 * 60_000
+  static let maxSoftwareResults: Int64 = 50
+  static let softwareSourceAuto = "auto"
+  static let softwareSourceRuntimePack = "runtime_pack"
+  static let softwareSourceLinuxPackage = "linux_package"
   static let orderedToolIds = [
     status,
     workspaceStatus,
     workspaceRollback,
     listPacks,
     installPack,
+    softwareCatalog,
+    softwareSearch,
+    softwareInspect,
+    softwareInstall,
+    softwareRemove,
     execute
   ]
   static let toolIds: Set<String> = Set(orderedToolIds)
@@ -108,6 +127,16 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       return .listPacks
     case installPack:
       return .installPack
+    case softwareCatalog:
+      return .softwareCatalog
+    case softwareSearch:
+      return .softwareSearch
+    case softwareInspect:
+      return .softwareInspect
+    case softwareInstall:
+      return .softwareInstall
+    case softwareRemove:
+      return .softwareRemove
     case execute:
       return .execute
     default:
@@ -127,6 +156,16 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       return listPacks
     case .installPack:
       return installPack
+    case .softwareCatalog:
+      return softwareCatalog
+    case .softwareSearch:
+      return softwareSearch
+    case .softwareInspect:
+      return softwareInspect
+    case .softwareInstall:
+      return softwareInstall
+    case .softwareRemove:
+      return softwareRemove
     case .execute:
       return execute
     }
@@ -144,6 +183,16 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       return "List on-device runtime packs"
     case .installPack:
       return "Install a trusted on-device runtime pack"
+    case .softwareCatalog:
+      return "List compatible on-device software"
+    case .softwareSearch:
+      return "Search compatible on-device software"
+    case .softwareInspect:
+      return "Inspect compatible on-device software"
+    case .softwareInstall:
+      return "Install compatible on-device software"
+    case .softwareRemove:
+      return "Remove on-device Linux software"
     case .execute:
       return "Execute in the on-device Linux sandbox"
     }
@@ -197,6 +246,16 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       return "Lists iOS-local Linux, language, FFmpeg, and toolchain pack state."
     case .installPack:
       return "Downloads, verifies, and installs a signed Linux, language, or media runtime pack and its dependencies."
+    case .softwareCatalog:
+      return "Lists signed runtime packs and reports the iOS boundary for Linux package management."
+    case .softwareSearch:
+      return "Searches signed runtime packs by name, capability, and language alias."
+    case .softwareInspect:
+      return "Reports installation, compatibility, capability, and version details for one signed runtime pack."
+    case .softwareInstall:
+      return "Downloads, verifies, and installs a compatible signed runtime pack and its dependencies."
+    case .softwareRemove:
+      return "Reports the iOS boundary for unmanaged Linux package removal; signed runtime packs remain lifecycle-managed."
     case .execute:
       return "Runs bounded shell, language, build, test, or FFmpeg work in a persistent conversation project inside the iOS-local Linux runtime."
     }
@@ -204,18 +263,19 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 
   private static func risk(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolRisk {
     switch operation {
-    case .status, .workspaceStatus, .listPacks:
+    case .status, .workspaceStatus, .listPacks, .softwareCatalog, .softwareSearch, .softwareInspect:
       return .low
-    case .workspaceRollback, .installPack, .execute:
+    case .workspaceRollback, .installPack, .softwareInstall, .softwareRemove, .execute:
       return .medium
     }
   }
 
   private static func timeoutMillis(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> Int64 {
     switch operation {
-    case .installPack, .execute:
+    case .installPack, .softwareInstall, .execute:
       return maxTimeoutMillis
-    case .status, .workspaceStatus, .workspaceRollback, .listPacks:
+    case .status, .workspaceStatus, .workspaceRollback, .listPacks,
+         .softwareCatalog, .softwareSearch, .softwareInspect, .softwareRemove:
       return 30_000
     }
   }
@@ -224,9 +284,10 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     switch operation {
     case .workspaceStatus, .workspaceRollback:
       return workspaceExecutorId
-    case .installPack:
+    case .installPack, .softwareInstall:
       return packManagerExecutorId
-    case .status, .listPacks, .execute:
+    case .status, .listPacks, .softwareCatalog, .softwareSearch, .softwareInspect,
+         .softwareRemove, .execute:
       return brokerExecutorId
     }
   }
@@ -241,8 +302,11 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     if operation == .workspaceRollback {
       value["operation"] = "atomic_checkpoint_restore"
     }
-    if operation == .installPack {
+    if operation == .installPack || operation == .softwareInstall {
       value["verification"] = "signed_catalog_and_pack"
+    }
+    if [.softwareCatalog, .softwareSearch, .softwareInspect, .softwareInstall, .softwareRemove].contains(operation) {
+      value["software_sources"] = "runtime_pack,linux_package"
     }
     return value
   }
@@ -264,7 +328,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         )
       )
     }
-    if operation == .installPack {
+    if operation == .installPack || operation == .softwareInstall {
       requirements.append(
         AgentNativePermissionRequirement(
           id: packInstallPermission,
@@ -278,7 +342,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 
   private static func inputSchema(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentMcpJSONObject {
     switch operation {
-    case .status, .workspaceStatus, .listPacks:
+    case .status, .workspaceStatus, .listPacks, .softwareCatalog:
       return objectSchema()
     case .workspaceRollback:
       return objectSchema([
@@ -288,6 +352,17 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       return objectSchema([
         "pack_id": stringSchema(enumValues: requiredPacks)
       ], required: ["pack_id"])
+    case .softwareSearch:
+      return objectSchema([
+        "query": stringSchema(maxLength: 160),
+        "source": softwareSourceSchema(),
+        "limit": integerSchema(minimum: 1, maximum: maxSoftwareResults)
+      ], required: ["query"])
+    case .softwareInspect, .softwareInstall, .softwareRemove:
+      return objectSchema([
+        "software_id": stringSchema(maxLength: 128),
+        "source": softwareSourceSchema()
+      ], required: ["software_id"])
     case .execute:
       return objectSchema([
         "language": stringSchema(enumValues: AgentRuntimeLanguage.allCases.map(\.rawValue)),
@@ -335,6 +410,21 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         "requested_pack": stringSchema(enumValues: requiredPacks),
         "installed": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
       ], additionalProperties: true)
+    case .softwareCatalog:
+      return objectSchema([
+        "architecture": stringSchema(maxLength: 64),
+        "linux_ready": boolSchema(),
+        "sources": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 8),
+        "software": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
+      ], additionalProperties: true)
+    case .softwareSearch:
+      return objectSchema([
+        "query": stringSchema(maxLength: 160),
+        "results": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: maxSoftwareResults),
+        "source_errors": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 8)
+      ], additionalProperties: true)
+    case .softwareInspect, .softwareInstall, .softwareRemove:
+      return objectSchema(additionalProperties: true)
     case .execute:
       return objectSchema([
         "exit_code": integerSchema(minimum: -1),
@@ -387,6 +477,14 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 
   private static func boolSchema() -> AgentMcpJSONObject {
     ["type": .string("boolean")]
+  }
+
+  private static func softwareSourceSchema() -> AgentMcpJSONObject {
+    stringSchema(enumValues: [
+      softwareSourceAuto,
+      softwareSourceRuntimePack,
+      softwareSourceLinuxPackage
+    ])
   }
 
   private static func phoneDevelopmentManifestSchema() -> AgentMcpJSONObject {
@@ -518,6 +616,14 @@ struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
     case .installPack:
       output["requested_pack"] = output["requested_pack"] ?? invocation.input["pack_id"] ?? .string("")
       output["installed"] = output["installed"] ?? .array([])
+    case .softwareCatalog:
+      output["software"] = output["software"] ?? .array([])
+      output["sources"] = output["sources"] ?? .array([])
+    case .softwareSearch:
+      output["results"] = output["results"] ?? .array([])
+      output["source_errors"] = output["source_errors"] ?? .array([])
+    case .softwareInspect, .softwareInstall, .softwareRemove:
+      output["software_id"] = output["software_id"] ?? invocation.input["software_id"] ?? .string("")
     case .status:
       output["backend"] = output["backend"] ?? .string("ios_local")
     }

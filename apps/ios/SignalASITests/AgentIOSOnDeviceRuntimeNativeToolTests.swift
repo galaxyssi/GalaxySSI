@@ -69,6 +69,44 @@ extension SignalASIStoreTests {
             ],
             message: "Trusted runtime pack is ready"
           )
+        case .softwareCatalog:
+          return AgentNativeToolExecutionResult.success(
+            output: [
+              "architecture": .string("arm64"),
+              "linux_ready": .bool(false),
+              "sources": .array([.object(["id": .string("runtime_pack")])]),
+              "software": .array([softwareValue("linux-base", state: "ready")])
+            ],
+            message: "Compatible iOS runtime software listed"
+          )
+        case .softwareSearch:
+          return AgentNativeToolExecutionResult.success(
+            output: [
+              "query": input["query"] ?? .string("python"),
+              "results": .array([softwareValue("python-uv", state: "ready")]),
+              "source_errors": .array([])
+            ],
+            message: "Compatible iOS runtime software searched"
+          )
+        case .softwareInspect:
+          return AgentNativeToolExecutionResult.success(
+            output: softwareValue(input["software_id"]?.stringValue ?? "python-uv", state: "ready").objectValue ?? [:],
+            message: "Compatible iOS runtime software inspected"
+          )
+        case .softwareInstall:
+          return AgentNativeToolExecutionResult.success(
+            output: [
+              "software_id": input["software_id"] ?? .string("python-uv"),
+              "source": .string("runtime_pack"),
+              "installed": .array([.object(["pack_id": .string("python-uv"), "state": .string("ready")])])
+            ],
+            message: "Compatible iOS runtime software installed and verified"
+          )
+        case .softwareRemove:
+          return AgentNativeToolExecutionResult.failure(
+            code: "ios_linux_package_management_unavailable",
+            message: "Unmanaged Linux package removal is unavailable on iOS"
+          )
         case .execute:
           return AgentNativeToolExecutionResult.success(
             output: [
@@ -96,6 +134,18 @@ extension SignalASIStoreTests {
           "capabilities": .array([.string("shell.execute")]),
           "installed_size_bytes": .int(2_048),
           "license": .string("Apache-2.0")
+        ])
+      }
+
+      private func softwareValue(_ id: String, state: String) -> AgentMcpJSONValue {
+        .object([
+          "software_id": .string(id),
+          "source": .string("runtime_pack"),
+          "version": .string("1.0.0"),
+          "installed": .bool(state == "ready"),
+          "compatible": .bool(true),
+          "state": .string(state),
+          "capabilities": .array([.string("shell.execute")])
         ])
       }
     }
@@ -139,15 +189,28 @@ extension SignalASIStoreTests {
     let installDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.installPack })
     let executeDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute })
     let statusDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.status })
+    let softwareInstallDescriptor = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall })
     XCTAssertEqual(statusDescriptor.descriptor.risk, .low)
     XCTAssertEqual(installDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.packManagerExecutorId)
     XCTAssertEqual(installDescriptor.descriptor.timeoutMillis, 30 * 60_000)
+    XCTAssertEqual(softwareInstallDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.packManagerExecutorId)
     XCTAssertEqual(executeDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId)
     XCTAssertEqual(executeDescriptor.descriptor.risk, .medium)
     XCTAssertEqual(executeDescriptor.descriptor.timeoutMillis, 30 * 60_000)
 
     let status = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.status, input: [:], context: runtimeContext)
     let packs = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.listPacks, input: [:], context: runtimeContext)
+    let softwareCatalog = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareCatalog, input: [:], context: runtimeContext)
+    let softwareSearch = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSearch,
+      input: ["query": .string("python")],
+      context: runtimeContext
+    )
+    let softwareInspect = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInspect,
+      input: ["software_id": .string("python-uv")],
+      context: runtimeContext
+    )
     let workspace = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceStatus, input: [:], context: workspaceContext)
     let deniedInstall = registry.invoke(
       AgentIOSOnDeviceRuntimeNativeToolCatalog.installPack,
@@ -158,6 +221,21 @@ extension SignalASIStoreTests {
       AgentIOSOnDeviceRuntimeNativeToolCatalog.installPack,
       input: ["pack_id": .string("python-uv")],
       context: packContext
+    )
+    let deniedSoftwareInstall = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall,
+      input: ["software_id": .string("python-uv")],
+      context: runtimeContext
+    )
+    let softwareInstall = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall,
+      input: ["software_id": .string("python-uv")],
+      context: packContext
+    )
+    let softwareRemove = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareRemove,
+      input: ["software_id": .string("python-uv")],
+      context: runtimeContext
     )
     let rollback = registry.invoke(
       AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceRollback,
@@ -207,12 +285,24 @@ extension SignalASIStoreTests {
     } else {
       XCTFail("Expected runtime packs array")
     }
+    XCTAssertTrue(softwareCatalog.isSuccess)
+    XCTAssertEqual(softwareCatalog.output["linux_ready"], .bool(false))
+    XCTAssertTrue(softwareSearch.isSuccess)
+    XCTAssertEqual(softwareSearch.output["query"], .string("python"))
+    XCTAssertTrue(softwareInspect.isSuccess)
+    XCTAssertEqual(softwareInspect.output["software_id"], .string("python-uv"))
     XCTAssertTrue(workspace.isSuccess)
     XCTAssertEqual(workspace.output["workspace_id"], .string("runtime-workspace-1"))
     XCTAssertEqual(deniedInstall.status, .rejected)
     XCTAssertEqual(deniedInstall.error?.code, "missing_permissions")
     XCTAssertTrue(install.isSuccess)
     XCTAssertEqual(install.output["requested_pack"], .string("python-uv"))
+    XCTAssertEqual(deniedSoftwareInstall.status, .rejected)
+    XCTAssertEqual(deniedSoftwareInstall.error?.code, "missing_permissions")
+    XCTAssertTrue(softwareInstall.isSuccess)
+    XCTAssertEqual(softwareInstall.output["software_id"], .string("python-uv"))
+    XCTAssertEqual(softwareRemove.status, .failed)
+    XCTAssertEqual(softwareRemove.error?.code, "ios_linux_package_management_unavailable")
     XCTAssertTrue(rollback.isSuccess)
     XCTAssertEqual(rollback.output["workspace_disposition"], .string("rolled_back"))
     XCTAssertEqual(invalidExecute.status, .rejected)
@@ -222,7 +312,14 @@ extension SignalASIStoreTests {
     XCTAssertEqual(execute.output["workspace_disposition"], .string("preserved"))
     XCTAssertEqual(execute.output["artifacts"], .array([]))
     XCTAssertEqual(execute.metadata["network_default"], .string("disabled"))
-    XCTAssertEqual(provider.invokedOperations, [.status, .listPacks, .workspaceStatus, .installPack, .workspaceRollback, .execute])
+    XCTAssertEqual(
+      provider.invokedOperations,
+      [
+        .status, .listPacks, .softwareCatalog, .softwareSearch, .softwareInspect,
+        .workspaceStatus, .installPack, .softwareInstall, .softwareRemove,
+        .workspaceRollback, .execute
+      ]
+    )
     XCTAssertEqual(provider.capturedInputs.last?["language"], .string("python"))
     XCTAssertEqual(unavailable.status, .unavailable)
     XCTAssertEqual(unavailable.error?.code, "tool_unavailable")
@@ -274,8 +371,30 @@ extension SignalASIStoreTests {
 
     let statusDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.status })
     let executeDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute })
+    let softwareRemoveDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareRemove })
     let status = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.status, input: [:], context: runtimeContext)
     let packs = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.listPacks, input: [:], context: runtimeContext)
+    let softwareCatalog = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareCatalog, input: [:], context: runtimeContext)
+    let softwareSearch = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSearch,
+      input: ["query": .string("shell")],
+      context: runtimeContext
+    )
+    let softwareInspect = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInspect,
+      input: ["software_id": .string("linux-base")],
+      context: runtimeContext
+    )
+    let softwareRemove = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareRemove,
+      input: ["software_id": .string("linux-base")],
+      context: runtimeContext
+    )
+    let unavailableLinuxPackage = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInspect,
+      input: ["software_id": .string("git")],
+      context: runtimeContext
+    )
     let workspace = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceStatus, input: [:], context: workspaceContext)
     let execute = registry.invoke(
       AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
@@ -294,6 +413,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.implementationId, "signalasi.ios.default_runtime_status")
     XCTAssertEqual(statusDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(executeDefinition.descriptor.availability.status, .requiresSetup)
+    XCTAssertEqual(softwareRemoveDefinition.descriptor.availability.status, .unavailable)
     XCTAssertTrue(status.isSuccess)
     XCTAssertEqual(status.output["backend"], .string("none"))
     XCTAssertEqual(status.output["backend_ready"], .bool(false))
@@ -313,6 +433,20 @@ extension SignalASIStoreTests {
     XCTAssertEqual(shellLanguage["ready"], .bool(false))
     XCTAssertTrue(packs.isSuccess)
     XCTAssertEqual(try XCTUnwrap(packs.output["packs"]?.arrayValue).count, AgentRuntimePackCatalogPolicy.requiredPacks.count)
+    XCTAssertTrue(softwareCatalog.isSuccess)
+    XCTAssertEqual(softwareCatalog.output["linux_ready"], .bool(false))
+    XCTAssertTrue(softwareSearch.isSuccess)
+    XCTAssertEqual(softwareSearch.output["query"], .string("shell"))
+    XCTAssertEqual(
+      try XCTUnwrap(softwareSearch.output["results"]?.arrayValue?.first?.objectValue?["software_id"]),
+      .string("linux-base")
+    )
+    XCTAssertTrue(softwareInspect.isSuccess)
+    XCTAssertEqual(softwareInspect.output["software_id"], .string("linux-base"))
+    XCTAssertEqual(unavailableLinuxPackage.status, .failed)
+    XCTAssertEqual(unavailableLinuxPackage.error?.code, "ios_linux_package_management_unavailable")
+    XCTAssertEqual(softwareRemove.status, .unavailable)
+    XCTAssertEqual(softwareRemove.error?.code, "tool_unavailable")
     XCTAssertTrue(workspace.isSuccess)
     XCTAssertEqual(workspace.output["workspace_id"], .string("runtime-workspace-2"))
     XCTAssertEqual(try XCTUnwrap(workspace.output["checkpoints"]?.arrayValue).count, 1)
