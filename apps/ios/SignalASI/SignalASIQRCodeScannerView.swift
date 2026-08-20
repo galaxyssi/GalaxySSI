@@ -96,7 +96,11 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private let messages: QRScannerMessages
   private let session = AVCaptureSession()
   private let sessionQueue = DispatchQueue(label: "signalasi.qr-scanner.session")
-  private var configured = false
+  // AVCaptureSession configuration and run state must stay on one queue. Camera
+  // scans can otherwise race a SwiftUI sheet dismissal or photo-picker return.
+  private var sessionConfigured = false
+  private var sessionConfiguring = false
+  private var sessionShouldRun = false
   private var didFinish = false
   private var previewLayer: AVCaptureVideoPreviewLayer?
   private var photoButton: UIButton?
@@ -134,7 +138,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
-    guard configured, !didFinish else { return }
+    guard !didFinish else { return }
     startSession()
   }
 
@@ -170,7 +174,16 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   }
 
   private func configureSession() {
-    guard !configured else { return }
+    sessionQueue.async { [weak self] in
+      self?.configureSessionOnQueue()
+    }
+  }
+
+  private func configureSessionOnQueue() {
+    dispatchPrecondition(condition: .onQueue(sessionQueue))
+    guard !sessionConfigured, !sessionConfiguring else { return }
+    sessionConfiguring = true
+    defer { sessionConfiguring = false }
     guard let device = AVCaptureDevice.default(
       .builtInWideAngleCamera,
       for: .video,
@@ -178,26 +191,38 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     ) ?? AVCaptureDevice.default(for: .video),
           let input = try? AVCaptureDeviceInput(device: device),
           session.canAddInput(input) else {
-      reportScannerError(messages.cameraUnavailable)
+      reportScannerErrorOnMain(messages.cameraUnavailable)
       return
     }
+
+    session.beginConfiguration()
     configureCamera(device)
     session.addInput(input)
     let output = AVCaptureMetadataOutput()
     guard session.canAddOutput(output) else {
-      reportScannerError(messages.outputUnavailable)
+      session.commitConfiguration()
+      reportScannerErrorOnMain(messages.outputUnavailable)
       return
     }
     session.addOutput(output)
     output.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
     output.metadataObjectTypes = [.qr]
+    sessionConfigured = true
+    session.commitConfiguration()
+    DispatchQueue.main.async { [weak self] in
+      self?.installPreviewLayer()
+    }
+    startSessionOnQueue()
+  }
+
+  private func installPreviewLayer() {
+    guard previewLayer == nil, !didFinish else { return }
     let preview = AVCaptureVideoPreviewLayer(session: session)
     preview.videoGravity = .resizeAspectFill
-    view.layer.addSublayer(preview)
+    // Keep camera pixels behind the scanner actions installed as UIKit subviews.
+    view.layer.insertSublayer(preview, at: 0)
     previewLayer = preview
     updatePreviewLayout()
-    configured = true
-    startSession()
   }
 
   private func configureCamera(_ device: AVCaptureDevice) {
@@ -329,24 +354,37 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
   private func startSession() {
     sessionQueue.async { [weak self] in
       guard let self else { return }
-      if !self.session.isRunning {
-        self.session.startRunning()
-      }
+      self.sessionShouldRun = true
+      self.startSessionOnQueue()
     }
+  }
+
+  private func startSessionOnQueue() {
+    dispatchPrecondition(condition: .onQueue(sessionQueue))
+    guard sessionConfigured, sessionShouldRun, !session.isRunning else { return }
+    session.startRunning()
   }
 
   private func stopSession() {
     sessionQueue.async { [weak self] in
       guard let self else { return }
+      self.sessionShouldRun = false
       if self.session.isRunning {
         self.session.stopRunning()
       }
     }
   }
 
+  private func reportScannerErrorOnMain(_ message: String) {
+    DispatchQueue.main.async { [weak self] in
+      self?.reportScannerError(message)
+    }
+  }
+
   private func reportScannerError(_ message: String) {
     guard !didFinish else { return }
     didFinish = true
+    stopSession()
     onError(message)
     let label = UILabel()
     label.text = message
