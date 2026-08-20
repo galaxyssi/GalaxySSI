@@ -712,6 +712,15 @@
 "signalasi.app_adapters.open_dialer" = "打开拨号器";
 "signalasi.app_adapters.phone_invalid_number" = "请输入有效的电话号码";
 "signalasi.app_adapters.dialer_opened" = "拨号器已打开，请确认后拨打";
+"signalasi.app_adapters.browser_mode" = "浏览模式";
+"signalasi.app_adapters.browser_open_url" = "打开网址";
+"signalasi.app_adapters.browser_search" = "搜索网页";
+"signalasi.app_adapters.browser_url_placeholder" = "example.com 或 https://example.com";
+"signalasi.app_adapters.browser_search_placeholder" = "搜索网页";
+"signalasi.app_adapters.browser_open" = "打开浏览器";
+"signalasi.app_adapters.browser_search_action" = "在浏览器中搜索";
+"signalasi.app_adapters.browser_invalid_url" = "请输入有效的 HTTP 或 HTTPS 地址";
+"signalasi.app_adapters.browser_empty_search" = "请输入搜索内容";
 "signalasi.capability.accessibility_tree" = "无障碍界面树";
 "signalasi.capability.accessibility_gestures" = "无障碍手势";
 "signalasi.capability.screen_capture" = "屏幕捕获 OCR";
