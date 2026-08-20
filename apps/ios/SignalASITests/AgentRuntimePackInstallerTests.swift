@@ -73,6 +73,41 @@ final class AgentRuntimePackInstallerTests: XCTestCase {
     XCTAssertThrowsError(try AgentRuntimePackArchiveReader.inspect(archive))
   }
 
+  func testCachedRuntimePackStatusSkipsImageDigestUntilExecutionValidation() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("runtime-pack-cached-status-tests-\(UUID().uuidString)", isDirectory: true)
+    let packDirectory = root.appendingPathComponent("packs/linux-base", isDirectory: true)
+    try FileManager.default.createDirectory(at: packDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let image = Data("runtime-image".utf8)
+    let manifest = AgentRuntimePackManifest(
+      id: "linux-base",
+      version: "1.0.0",
+      architecture: AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? "x86_64",
+      imageFile: "linux-base.img",
+      imageSha256: String(repeating: "0", count: 64),
+      capabilities: ["shell.execute"],
+      dependencies: [],
+      installedSizeBytes: 1_024 * 1_024,
+      license: "Apache-2.0",
+      signatureKeyId: String(repeating: "0", count: 64),
+      signature: "test-signature",
+      archiveSizeBytes: 1
+    )
+    try JSONEncoder().encode(manifest).write(to: packDirectory.appendingPathComponent("manifest.json"))
+    try image.write(to: packDirectory.appendingPathComponent("linux-base.img"))
+
+    let installer = AgentIOSRuntimePackInstaller(
+      runtimeRootURL: root,
+      hostVersionCode: 1,
+      signatureVerifier: { _ in true }
+    )
+
+    XCTAssertEqual(installer.cachedStatus(packId: "linux-base").state, .ready)
+    XCTAssertEqual(installer.status(packId: "linux-base").state, .invalid)
+  }
+
   func testRuntimePackCatalogBuildsDependencyFirstInstallationPlan() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("runtime-catalog-tests-\(UUID().uuidString)", isDirectory: true)

@@ -77,6 +77,18 @@ final class AgentIOSRuntimePackInstaller {
   }
 
   func status(packId: String) -> AgentRuntimePackStatus {
+    packStatus(packId: packId, verifyImageIntegrity: true)
+  }
+
+  /// Returns a bounded installation snapshot without hashing the runtime image.
+  func cachedStatus(packId: String) -> AgentRuntimePackStatus {
+    packStatus(packId: packId, verifyImageIntegrity: false)
+  }
+
+  private func packStatus(
+    packId: String,
+    verifyImageIntegrity: Bool
+  ) -> AgentRuntimePackStatus {
     guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(packId) else {
       return AgentRuntimePackStatus(
         id: packId,
@@ -94,8 +106,14 @@ final class AgentIOSRuntimePackInstaller {
     }
     let decodedManifest = try? manifest(at: directory)
     do {
-      let verifiedManifest = try validatePack(at: directory)
-      try validateInstalledDependencies(for: verifiedManifest)
+      let verifiedManifest = try validatePack(
+        at: directory,
+        verifyImageIntegrity: verifyImageIntegrity
+      )
+      try validateInstalledDependencies(
+        for: verifiedManifest,
+        verifyImageIntegrity: verifyImageIntegrity
+      )
       return AgentRuntimePackStatus(
         id: packId,
         state: .ready,
@@ -194,7 +212,10 @@ final class AgentIOSRuntimePackInstaller {
     }
   }
 
-  private func validatePack(at directory: URL) throws -> AgentRuntimePackManifest {
+  private func validatePack(
+    at directory: URL,
+    verifyImageIntegrity: Bool = true
+  ) throws -> AgentRuntimePackManifest {
     let manifest = try self.manifest(at: directory)
     guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(manifest.id) else {
       throw AgentRuntimePackArchiveError("Runtime pack id is not supported")
@@ -235,18 +256,26 @@ final class AgentIOSRuntimePackInstaller {
           fileManager.fileExists(atPath: imageURL.path) else {
       throw AgentRuntimePackArchiveError("Runtime pack image is missing")
     }
-    let imageData = try Data(contentsOf: imageURL, options: [.mappedIfSafe])
-    let imageHash = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
-    guard imageHash.caseInsensitiveCompare(manifest.imageSha256) == .orderedSame else {
-      throw AgentRuntimePackArchiveError("Runtime pack image digest did not match")
+    if verifyImageIntegrity {
+      let imageData = try Data(contentsOf: imageURL, options: [.mappedIfSafe])
+      let imageHash = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
+      guard imageHash.caseInsensitiveCompare(manifest.imageSha256) == .orderedSame else {
+        throw AgentRuntimePackArchiveError("Runtime pack image digest did not match")
+      }
     }
     return manifest
   }
 
-  private func validateInstalledDependencies(for manifest: AgentRuntimePackManifest) throws {
+  private func validateInstalledDependencies(
+    for manifest: AgentRuntimePackManifest,
+    verifyImageIntegrity: Bool = true
+  ) throws {
     for dependency in manifest.dependencies {
       let dependencyURL = packsRootURL.appendingPathComponent(dependency, isDirectory: true)
-      let dependencyManifest = try validatePack(at: dependencyURL)
+      let dependencyManifest = try validatePack(
+        at: dependencyURL,
+        verifyImageIntegrity: verifyImageIntegrity
+      )
       guard dependencyManifest.id == dependency else {
         throw AgentRuntimePackArchiveError("Runtime pack dependency id does not match its directory")
       }
