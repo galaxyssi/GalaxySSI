@@ -55,10 +55,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     case .installPack, .softwareInstall:
       return .available
     case .softwareRemove:
-      return AgentNativeToolAvailability(
-        status: .unavailable,
-        reason: "iOS does not expose an unmanaged Linux package manager; signed runtime packs are lifecycle-managed"
-      )
+      return availability(operation: .execute)
     case .execute:
       let packs = packStatuses()
       guard let linuxBase = packs.first(where: { $0.id == "linux-base" }), linuxBase.state == .ready else {
@@ -95,27 +92,66 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     case .installPack:
       return installPack(input: input, invocation: invocation)
     case .softwareCatalog:
+      if let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
       return AgentNativeToolExecutionResult.success(
         output: softwareCatalogOutput(),
         message: "Compatible iOS runtime software listed",
         metadata: baseMetadata(["operation": .string("software_catalog")])
       )
     case .softwareSearch:
+      if softwareSource(input) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage,
+         let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
       return searchSoftware(input: input)
     case .softwareInspect:
+      if softwareSource(input, softwareId: softwareId(input)) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage,
+         let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
       return inspectSoftware(input: input)
     case .softwareInstall:
+      if softwareSource(input, softwareId: softwareId(input)) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage,
+         let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
       return installSoftware(input: input, invocation: invocation)
     case .softwareRemove:
-      return AgentNativeToolExecutionResult.failure(
-        code: "ios_linux_package_management_unavailable",
-        message: "iOS does not expose an unmanaged Linux package manager; signed runtime packs are lifecycle-managed",
-        details: baseMetadata([
-          "source": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage)
-        ])
-      )
+      guard softwareSource(input, softwareId: softwareId(input)) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage else {
+        return unavailableLinuxPackageManagement()
+      }
+      return brokerSoftware(operation: operation, input: input, invocation: invocation) ?? unavailableLinuxPackageManagement()
     case .execute:
       return executeWithBroker(input: input, invocation: invocation)
+    }
+  }
+
+  private func brokerSoftware(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult? {
+    guard availability(operation: .execute).status == .available else { return nil }
+    do {
+      let output = try broker.invoke(
+        operation: operation,
+        input: input,
+        context: invocation.context,
+        deadlineEpochMillis: invocation.deadlineEpochMillis
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: output["message"]?.stringValue?.nonEmpty ?? "iOS Linux software operation completed",
+        metadata: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch let error as AgentIOSRuntimeBrokerError {
+      return AgentNativeToolExecutionResult.failure(
+        code: error.code,
+        message: error.localizedDescription,
+        retryable: error.retryable,
+        details: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_broker_software_failed",
+        message: error.localizedDescription.ifBlank("The local iOS runtime broker failed"),
+        retryable: true,
+        details: baseMetadata(["broker": .string(broker.implementationId)])
+      )
     }
   }
 

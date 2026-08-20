@@ -12,6 +12,7 @@
   ],
   "workspace_root": "/var/mobile/Library/SignalASI/runtime-projects",
   "linux_base_version": "1.3.9",
+  "allow_package_network_refresh": false,
   "distribution": "SignalASI jailbreak Linux 1.3.9",
   "ready_command": [
     "/bin/sh",

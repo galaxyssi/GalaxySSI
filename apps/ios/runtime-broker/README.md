@@ -36,7 +36,7 @@ The app sends one TCP request per connection. A frame is a four-byte big-endian 
 
 Requests contain `protocol_version: 1`, `request_id`, `operation`, `input`, `context`, `timestamp_epoch_ms`, and `mac`. Clock skew is limited to five minutes; request ids are accepted once in the broker's bounded replay window. The current broker accepts `status` and `execute`. It bounds source and captured output to 256 KiB and execution time to 30 minutes.
 
-The first broker version accepts offline execution only. It rejects `network_enabled: true` rather than silently allowing the jailbroken Linux environment's network. A future broker may add Android-equivalent domain allowlisting and package-index refresh policy.
+The broker rejects `network_enabled: true` rather than silently allowing the jailbroken Linux environment's network. Linux package search and inspection refresh an empty APT index only when `allow_package_network_refresh` is explicitly set to `true` in the device-owned configuration; package installation and removal require the same switch.
 
 ## Security boundary
 
