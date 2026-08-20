@@ -174,14 +174,15 @@ final class AgentIOSQemuRuntimeController {
   }
 
   private func launchArguments(files: RuntimeFiles) -> [String] {
-    [
+    let device = AgentDeviceProfileDetector.detect()
+    return [
       "qemu-system-aarch64",
       "-name", "SignalASI Linux",
       "-machine", "virt,gic-version=3,highmem=off",
       "-accel", "tcg,thread=multi",
       "-cpu", "max",
-      "-smp", "2",
-      "-m", "768M",
+      "-smp", String(device.maxQemuCpuCount),
+      "-m", "\(device.maxQemuMemoryMegabytes)M",
       "-display", "none",
       "-nodefaults",
       "-no-user-config",
