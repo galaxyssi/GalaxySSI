@@ -9,6 +9,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   @State private var linuxBaseRecoveryMessage = ""
   @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
   @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
+  @State private var brokerHealth = SignalASIRuntimeBrokerHealth.unchecked
 
   private var packs: [AgentRuntimePackStatus] {
     Self.packStatuses()
@@ -23,7 +24,45 @@ struct SignalASIOnDeviceRuntimeView: View {
   }
 
   private var runtimeReady: Bool {
-    runtimeAvailability.status == .available
+    !linuxBaseNeedsRecovery && brokerHealth.isReady
+  }
+
+  private var runtimeStatusMessage: String {
+    brokerStatusMessage.ifBlank(runtimeAvailability.reason.ifBlank(t(
+      "cc_runtime_overview_subtitle",
+      "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
+    )))
+  }
+
+  private var brokerStatusMessage: String {
+    if case .checking = brokerHealth {
+      return t("cc_runtime_broker_checking", "Checking the paired local Linux runtime service")
+    }
+    return brokerHealth.message
+  }
+
+  private var brokerBadge: String {
+    switch brokerHealth {
+    case .ready:
+      return t("cc_status_ready", "Ready")
+    case .checking:
+      return t("signalasi.status.loading", "Checking")
+    case .unchecked:
+      return t("cc_status_not_configured", "Not configured")
+    case .unavailable:
+      return t("cc_status_unavailable", "Unavailable")
+    }
+  }
+
+  private var brokerTint: Color {
+    switch brokerHealth {
+    case .ready:
+      return .signalASIAccent
+    case .checking:
+      return .blue
+    case .unchecked, .unavailable:
+      return .orange
+    }
   }
 
   private var readyPackCount: Int {
@@ -77,13 +116,10 @@ struct SignalASIOnDeviceRuntimeView: View {
           SignalASISecurityHeroView(
             title: t(runtimeReady ? "cc_runtime_ready_title" : "cc_runtime_setup_title",
                      runtimeReady ? "iOS-local runtime is paired" : "On-device runtime needs setup"),
-            subtitle: runtimeAvailability.reason.ifBlank(t(
-              "cc_runtime_overview_subtitle",
-              "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
-            )),
+            subtitle: runtimeStatusMessage,
             systemImage: "terminal",
             tint: runtimeReady ? .signalASIAccent : .orange,
-            badge: runtimeReady ? t("Paired", "Paired") : t("cc_status_not_configured", "Not configured")
+            badge: runtimeReady ? t("cc_status_ready", "Ready") : brokerBadge
           )
           SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
           managementSection
@@ -103,6 +139,7 @@ struct SignalASIOnDeviceRuntimeView: View {
     }
     .onAppear {
       refreshRuntimeReceipts()
+      refreshBrokerHealth()
     }
   }
 
@@ -131,22 +168,20 @@ struct SignalASIOnDeviceRuntimeView: View {
       SignalASISecuritySectionTitle(title: t("cc_runtime_section_management", "Runtime Management"))
       SignalASISecurityStatusRow(
         title: t("cc_runtime_lifecycle_title", "Guest lifecycle"),
-        subtitle: runtimeAvailability.reason.ifBlank(t("cc_runtime_lifecycle_subtitle", "Start, health, restart backoff, and recovery state")),
+        subtitle: runtimeStatusMessage,
         systemImage: "link",
         tint: runtimeReady ? .signalASIAccent : .orange,
-        badge: runtimeReady ? t("Paired", "Paired") : t("cc_runtime_lifecycle_no_controller", "Not packaged")
+        badge: runtimeReady ? t("cc_status_ready", "Ready") : brokerBadge
       )
       SignalASISecurityNavigationRow(
         title: t("cc_runtime_broker_title", "Runtime Broker"),
-        subtitle: brokerAvailability.reason.ifBlank(t(
+        subtitle: brokerStatusMessage.ifBlank(brokerAvailability.reason.ifBlank(t(
           "cc_runtime_broker_connected",
           "Paired local Linux runtime service is ready"
-        )),
+        ))),
         systemImage: "link",
-        tint: brokerAvailability.status == .available ? .signalASIAccent : .orange,
-        badge: brokerAvailability.status == .available
-          ? t("Paired", "Paired")
-          : t("cc_status_not_configured", "Not configured")
+        tint: brokerTint,
+        badge: brokerBadge
       ) {
         SignalASIRuntimeBrokerSettingsView()
       }
@@ -234,8 +269,8 @@ struct SignalASIOnDeviceRuntimeView: View {
         badge: t("cc_status_ready", "Ready")
       )
       SignalASISecurityStatusRow(
-        title: t("cc_runtime_network_title", "Guest Network by Default"),
-        subtitle: t("cc_runtime_network_subtitle", "Off by default unless the current task receives scoped network authorization"),
+        title: t("cc_runtime_network_title", "Guest Network Policy"),
+        subtitle: t("cc_runtime_network_broker_subtitle", "The current local broker accepts offline execution only"),
         systemImage: "network",
         tint: .gray,
         badge: t("signalasi.status.off", "Off")
@@ -305,6 +340,47 @@ struct SignalASIOnDeviceRuntimeView: View {
       toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
       status: nil
     )
+  }
+
+  private func refreshBrokerHealth() {
+    guard brokerAvailability.status == .available else {
+      brokerHealth = .unchecked
+      return
+    }
+    brokerHealth = .checking
+    let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
+    DispatchQueue.global(qos: .userInitiated).async {
+      let outcome: Result<AgentMcpJSONObject, Error>
+      do {
+        outcome = .success(try AgentIOSRuntimeBrokerClient().invoke(
+          operation: .status,
+          input: [:],
+          context: AgentNativeToolInvocationContext(
+            invocationId: "runtime-dashboard-\(UUID().uuidString)"
+          ),
+          deadlineEpochMillis: deadline
+        ))
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        switch outcome {
+        case .success(let output):
+          let message = output["reason"]?.stringValue?.nonEmpty ?? ""
+          brokerHealth = output["backend_ready"]?.boolValue == true
+            ? .ready(message)
+            : .unavailable(message.ifBlank(t(
+              "cc_runtime_broker_unavailable",
+              "The local Linux runtime service is not ready"
+            )))
+        case .failure(let error):
+          brokerHealth = .unavailable(error.localizedDescription.ifBlank(t(
+            "cc_runtime_broker_unavailable",
+            "The local Linux runtime service is not ready"
+          )))
+        }
+      }
+    }
   }
 
   private func receiptTimestamp(_ receipt: AgentNativeToolAuditRecord) -> String {
@@ -445,6 +521,29 @@ struct SignalASIOnDeviceRuntimeView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private enum SignalASIRuntimeBrokerHealth: Equatable {
+  case unchecked
+  case checking
+  case ready(String)
+  case unavailable(String)
+
+  var isReady: Bool {
+    if case .ready = self { return true }
+    return false
+  }
+
+  var message: String {
+    switch self {
+    case .unchecked:
+      return ""
+    case .checking:
+      return ""
+    case .ready(let message), .unavailable(let message):
+      return message
+    }
   }
 }
 
