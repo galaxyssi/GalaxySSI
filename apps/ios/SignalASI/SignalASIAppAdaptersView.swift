@@ -188,12 +188,21 @@ struct SignalASIAppAdaptersView: View {
 }
 
 struct SignalASIAppAdapterDetailView: View {
+  private enum BrowserHandoffMode: String, CaseIterable, Identifiable {
+    case url
+    case search
+
+    var id: String { rawValue }
+  }
+
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var statusMessage = ""
   @State private var fileImporterPresented = false
   @State private var smsRecipient = ""
   @State private var smsBody = ""
   @State private var phoneNumber = ""
+  @State private var browserHandoffMode: BrowserHandoffMode = .url
+  @State private var browserInput = ""
   var status: SignalASIAppAdapterStatus
 
   var body: some View {
@@ -260,6 +269,8 @@ struct SignalASIAppAdapterDetailView: View {
         smsComposeAction
       } else if status.definition.id == .phone {
         phoneDialAction
+      } else if status.definition.id == .browser {
+        browserHandoffAction
       } else if status.definition.id == .files {
         SignalASISecurityPrimaryButton(
           title: t("signalasi.app_adapters.select_files", "Select Files"),
@@ -348,6 +359,52 @@ struct SignalASIAppAdapterDetailView: View {
     }
   }
 
+  private var browserHandoffAction: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Picker(
+        t("signalasi.app_adapters.browser_mode", "Browser Mode"),
+        selection: $browserHandoffMode
+      ) {
+        Text(t("signalasi.app_adapters.browser_open_url", "Open URL")).tag(BrowserHandoffMode.url)
+        Text(t("signalasi.app_adapters.browser_search", "Search Web")).tag(BrowserHandoffMode.search)
+      }
+      .pickerStyle(.segmented)
+      TextField(browserPlaceholder, text: $browserInput)
+        .keyboardType(browserHandoffMode == .url ? .URL : .webSearch)
+        .textContentType(browserHandoffMode == .url ? .URL : nil)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled(true)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      SignalASISecurityPrimaryButton(
+        title: browserActionTitle,
+        systemImage: browserHandoffMode == .url ? "safari" : "magnifyingglass",
+        tint: adapterTint(status.definition.tone)
+      ) {
+        openBrowserHandoff()
+      }
+    }
+  }
+
+  private var browserPlaceholder: String {
+    switch browserHandoffMode {
+    case .url:
+      return t("signalasi.app_adapters.browser_url_placeholder", "example.com or https://example.com")
+    case .search:
+      return t("signalasi.app_adapters.browser_search_placeholder", "Search the web")
+    }
+  }
+
+  private var browserActionTitle: String {
+    switch browserHandoffMode {
+    case .url:
+      return t("signalasi.app_adapters.browser_open", "Open Browser")
+    case .search:
+      return t("signalasi.app_adapters.browser_search_action", "Search in Browser")
+    }
+  }
   private var readinessSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.app_adapters.section_readiness", "Readiness"))
@@ -451,6 +508,47 @@ struct SignalASIAppAdapterDetailView: View {
   private func openSettings() {
     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
     open(url)
+  }
+
+  private func openBrowserHandoff() {
+    let url: URL?
+    switch browserHandoffMode {
+    case .url:
+      url = normalizedBrowserURL(browserInput)
+    case .search:
+      url = browserSearchURL(browserInput)
+    }
+    guard let url else {
+      statusMessage = browserHandoffMode == .url
+        ? t("signalasi.app_adapters.browser_invalid_url", "Enter a valid HTTP or HTTPS URL")
+        : t("signalasi.app_adapters.browser_empty_search", "Enter a search query")
+      return
+    }
+    open(url)
+  }
+
+  private func normalizedBrowserURL(_ rawValue: String) -> URL? {
+    let value = String(rawValue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_048))
+    guard !value.isEmpty else { return nil }
+    let candidate = value.lowercased().hasPrefix("http://") || value.lowercased().hasPrefix("https://")
+      ? value
+      : "https://\(value)"
+    guard let url = URL(string: candidate),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https"].contains(scheme),
+          let host = url.host,
+          !host.isEmpty else {
+      return nil
+    }
+    return url
+  }
+
+  private func browserSearchURL(_ rawValue: String) -> URL? {
+    let query = String(rawValue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(512))
+    guard !query.isEmpty else { return nil }
+    var components = URLComponents(string: "https://www.google.com/search")
+    components?.queryItems = [URLQueryItem(name: "q", value: query)]
+    return components?.url
   }
 
   private func capabilityDetail(_ id: AgentPhoneCapabilityId, fallback: String) -> String {
