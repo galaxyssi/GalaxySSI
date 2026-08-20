@@ -61,10 +61,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       return availability(operation: .execute)
     case .execute:
       let packs = packStatuses()
-      guard let linuxBase = packs.first(where: { $0.id == "linux-base" }), linuxBase.state == .ready else {
-        return AgentNativeToolAvailability(status: .requiresSetup, reason: runtimeSetupReason(packs))
-      }
-      guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "") else {
+      guard baseRuntimeIsReady(packs) else {
         return AgentNativeToolAvailability(status: .requiresSetup, reason: runtimeSetupReason(packs))
       }
       return broker.availability()
@@ -599,7 +596,25 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "") else {
       return "Recover the signed linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack before connecting the iOS runtime broker"
     }
+    guard let pythonUv = packs.first(where: { $0.id == "python-uv" }),
+          pythonUv.state == .ready,
+          AgentRuntimePackCatalogPolicy.requiredPackCapabilities["python-uv", default: []]
+            .isSubset(of: Set(pythonUv.manifest?.capabilities ?? [])) else {
+      return "Install the signed python-uv runtime pack before using the iOS Linux runtime"
+    }
     return broker.availability().reason.ifBlank("The local iOS runtime broker is ready")
+  }
+
+  private func baseRuntimeIsReady(_ packs: [AgentRuntimePackStatus]) -> Bool {
+    guard let linuxBase = packs.first(where: { $0.id == "linux-base" }),
+          linuxBase.state == .ready,
+          AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? ""),
+          let pythonUv = packs.first(where: { $0.id == "python-uv" }),
+          pythonUv.state == .ready else {
+      return false
+    }
+    let requiredCapabilities = AgentRuntimePackCatalogPolicy.requiredPackCapabilities["python-uv", default: []]
+    return requiredCapabilities.isSubset(of: Set(pythonUv.manifest?.capabilities ?? []))
   }
 
   private func inspectBroker(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
