@@ -567,6 +567,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
   @State private var isRefreshingCatalog = false
   @State private var installingPackID: String?
   @State private var uninstallCandidatePackID: String?
+  @State private var selectedCatalogEntry: AgentRuntimePackCatalogEntry?
   @State private var installMessage = ""
   @State private var catalogMessage = ""
 
@@ -661,6 +662,18 @@ struct SignalASIRuntimeSoftwareCenterView: View {
       }
     } message: {
       Text(uninstallMessage)
+    }
+    .sheet(item: $selectedCatalogEntry) { entry in
+      SignalASIRuntimePackDetailSheet(
+        entry: entry,
+        installed: SignalASIOnDeviceRuntimeView.packStatus(entry.packId),
+        onInstall: {
+          install(entry)
+        },
+        onUninstall: {
+          uninstallCandidatePackID = entry.packId
+        }
+      )
     }
     .task {
       loadCachedCatalog()
@@ -816,11 +829,7 @@ struct SignalASIRuntimeSoftwareCenterView: View {
         : (installing ? t("cc_runtime_catalog_installing", "Installing") : t("cc_runtime_catalog_install", "Install"))
     ) {
       guard !installing && !isInstalling && !isUninstalling && !isRefreshingCatalog else { return }
-      if ready {
-        uninstallCandidatePackID = entry.packId
-      } else {
-        install(entry)
-      }
+      selectedCatalogEntry = entry
     }
   }
 
@@ -994,6 +1003,139 @@ struct SignalASIRuntimeSoftwareCenterView: View {
         }
       }
     }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIRuntimePackDetailSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var entry: AgentRuntimePackCatalogEntry
+  var installed: AgentRuntimePackStatus
+  var onInstall: () -> Void
+  var onUninstall: () -> Void
+
+  private var isReady: Bool {
+    installed.state == .ready && installed.manifest?.version == entry.version
+  }
+
+  private var dependencies: String {
+    let values = entry.dependencies.map {
+      SignalASIOnDeviceRuntimeView.packTitle($0, language: interfaceLanguage)
+    }
+    return values.isEmpty ? t("cc_runtime_catalog_no_dependencies", "No dependencies") : values.joined(separator: ", ")
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_runtime_catalog_details_title", "Runtime pack details"),
+        leading: {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+        },
+        trailing: {
+          Color.clear.frame(width: 44, height: 44)
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: SignalASIOnDeviceRuntimeView.packTitle(entry.packId, language: interfaceLanguage),
+            subtitle: entry.releaseNotes.ifBlank(t("cc_runtime_catalog_no_release_notes", "No release notes")),
+            systemImage: entry.packId == "ffmpeg" ? "film" : "shippingbox",
+            tint: isReady ? .signalASIAccent : .blue,
+            badge: isReady ? t("cc_status_ready", "Ready") : t("cc_runtime_catalog_install", "Install")
+          )
+          SignalASISecuritySectionTitle(title: t("cc_runtime_catalog_details_section", "Package details"))
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_id", "Package ID"),
+            subtitle: entry.packId,
+            systemImage: "number",
+            tint: .blue,
+            badge: "",
+            monospacedSubtitle: true
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_version", "Version"),
+            subtitle: entry.version,
+            systemImage: "tag",
+            tint: .blue,
+            badge: ""
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_architecture", "Architecture"),
+            subtitle: entry.architecture,
+            systemImage: "cpu",
+            tint: .blue,
+            badge: ""
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_size", "Storage"),
+            subtitle: "\(SignalASIOnDeviceRuntimeView.formatBytes(entry.archiveSizeBytes)) / \(SignalASIOnDeviceRuntimeView.formatBytes(entry.installedSizeBytes))",
+            systemImage: "internaldrive",
+            tint: .blue,
+            badge: ""
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_license", "License"),
+            subtitle: entry.license,
+            systemImage: "doc.text",
+            tint: .blue,
+            badge: ""
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_catalog_detail_dependencies", "Dependencies"),
+            subtitle: dependencies,
+            systemImage: "arrow.triangle.branch",
+            tint: .blue,
+            badge: ""
+          )
+          SignalASISecurityPrimaryButton(
+            title: isReady
+              ? t("cc_runtime_catalog_reinstall", "Reinstall")
+              : t("cc_runtime_catalog_install", "Install"),
+            systemImage: isReady ? "arrow.clockwise" : "arrow.down.circle",
+            tint: .signalASIAccent
+          ) {
+            dismiss()
+            DispatchQueue.main.async {
+              onInstall()
+            }
+          }
+          if installed.state == .ready {
+            Button(role: .destructive) {
+              dismiss()
+              DispatchQueue.main.async {
+                onUninstall()
+              }
+            } label: {
+              Label(
+                t("cc_runtime_software_uninstall_action", "Uninstall"),
+                systemImage: "trash"
+              )
+              .font(.system(size: 16, weight: .semibold))
+              .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
