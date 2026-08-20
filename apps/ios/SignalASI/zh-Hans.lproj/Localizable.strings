@@ -3991,6 +3991,17 @@
 "cc_runtime_catalog_installing_progress" = "正在安装 %@：%@";
 "cc_runtime_catalog_install_success" = "已安装 %@（%d 个包）";
 "cc_runtime_catalog_install_failed" = "运行时包安装失败";
+"cc_runtime_catalog_details_title" = "运行时包详情";
+"cc_runtime_catalog_details_section" = "软件包详情";
+"cc_runtime_catalog_detail_id" = "软件包 ID";
+"cc_runtime_catalog_detail_version" = "版本";
+"cc_runtime_catalog_detail_architecture" = "架构";
+"cc_runtime_catalog_detail_size" = "存储";
+"cc_runtime_catalog_detail_license" = "许可";
+"cc_runtime_catalog_detail_dependencies" = "依赖项";
+"cc_runtime_catalog_no_dependencies" = "没有依赖项";
+"cc_runtime_catalog_no_release_notes" = "没有发行说明";
+"cc_runtime_catalog_reinstall" = "重新安装";
 "signalasi.agent.model_selection.title" = "选择模型或 Agent";
 "signalasi.agent.model_selection.hero_title" = "Agent 模型";
 "signalasi.agent.model_selection.badge" = "路由";
