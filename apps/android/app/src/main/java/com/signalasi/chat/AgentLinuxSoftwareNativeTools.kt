@@ -340,34 +340,40 @@ object AgentLinuxSoftwareNativeTools {
         command -v apt-cache >/dev/null 2>&1 || { echo 'apt-cache is unavailable' >&2; exit 127; }
         ${ensurePackageIndexScript()}
         query=${shellSingleQuote(query)}
+        limit=$limit
         exact=${'$'}(printf '%s' "${'$'}query" | tr '[:upper:]' '[:lower:]')
-        emit_package() {
-          package=${'$'}1
-          description=${'$'}2
-          version=${'$'}(apt-cache policy "${'$'}package" | sed -n 's/^  Candidate: //p' | head -n 1)
-          installed=no
-          dpkg-query -W -f='${'$'}{db:Status-Abbrev}' "${'$'}package" 2>/dev/null | grep -q '^ii ' && installed=installed || true
-          printf '%s\t%s\t%s\t%s\n' "${'$'}package" "${'$'}version" "${'$'}installed" "${'$'}description"
-        }
-        remaining=$limit
-        case "${'$'}exact" in
-          ''|*[!a-z0-9+.-]*) ;;
-          *)
-            if apt-cache show "${'$'}exact" >/dev/null 2>&1; then
-              description=${'$'}(apt-cache show "${'$'}exact" 2>/dev/null | sed -n 's/^Description-en: //p; s/^Description: //p' | head -n 1)
-              emit_package "${'$'}exact" "${'$'}description"
-              remaining=${'$'}((remaining - 1))
-            fi
-            ;;
-        esac
-        [ "${'$'}remaining" -gt 0 ] || exit 0
-        apt-cache search --names-only -- "${'$'}query" |
-          awk -F ' - ' -v exact="${'$'}exact" '${'$'}1 != exact { print }' |
-          head -n "${'$'}remaining" | while IFS= read -r line; do
+        temp_dir=${'$'}(mktemp -d)
+        trap 'rm -rf "${'$'}temp_dir"' EXIT HUP INT TERM
+        apt-cache search --names-only -- "${'$'}query" > "${'$'}temp_dir/search"
+        awk -F ' - ' -v exact="${'$'}exact" '${'$'}1 == exact { print; exit }' \
+          "${'$'}temp_dir/search" > "${'$'}temp_dir/selected"
+        selected=${'$'}(wc -l < "${'$'}temp_dir/selected")
+        remaining=${'$'}((limit - selected))
+        if [ "${'$'}remaining" -gt 0 ]; then
+          awk -F ' - ' -v exact="${'$'}exact" '${'$'}1 != exact { print }' \
+            "${'$'}temp_dir/search" | head -n "${'$'}remaining" >> "${'$'}temp_dir/selected"
+        fi
+        [ -s "${'$'}temp_dir/selected" ] || exit 0
+        cut -d ' ' -f 1 "${'$'}temp_dir/selected" > "${'$'}temp_dir/packages"
+        # Loading Debian metadata is expensive under QEMU. Query every candidate in one
+        # apt-cache process instead of reparsing the full index once per result.
+        xargs apt-cache policy < "${'$'}temp_dir/packages" |
+          awk '
+            /^[^ ][^:]*:$/ { package=substr(${'$'}0, 1, length(${'$'}0) - 1); next }
+            /^  Candidate: / { print package "\t" substr(${'$'}0, 14) }
+          ' > "${'$'}temp_dir/versions"
+        xargs dpkg-query -W -f='${'$'}{Package}\t${'$'}{db:Status-Abbrev}\n' -- \
+          < "${'$'}temp_dir/packages" 2>/dev/null > "${'$'}temp_dir/installed" || true
+        while IFS= read -r line; do
           package=${'$'}{line%% - *}
           description=${'$'}{line#* - }
-          emit_package "${'$'}package" "${'$'}description"
-        done
+          version=${'$'}(awk -F '\t' -v package="${'$'}package" '${'$'}1 == package { print ${'$'}2; exit }' \
+            "${'$'}temp_dir/versions")
+          installed=no
+          awk -F '\t' -v package="${'$'}package" '${'$'}1 == package && ${'$'}2 ~ /^ii / { found=1 } END { exit !found }' \
+            "${'$'}temp_dir/installed" && installed=installed || true
+          printf '%s\t%s\t%s\t%s\n' "${'$'}package" "${'$'}version" "${'$'}installed" "${'$'}description"
+        done < "${'$'}temp_dir/selected"
     """.trimIndent()
 
     private fun packageInspectScript(packageId: String): String = """
@@ -385,9 +391,15 @@ object AgentLinuxSoftwareNativeTools {
     """.trimIndent()
 
     private fun ensurePackageIndexScript(): String = """
-        if ! find /var/lib/apt/lists -maxdepth 1 -type f -name '*_Packages' -print -quit 2>/dev/null | grep -q .; then
+        if ! find /var/lib/apt/lists -maxdepth 1 -type f -name '*_Packages*' -print -quit 2>/dev/null | grep -q .; then
           command -v apt-get >/dev/null 2>&1 || { echo 'apt-get is unavailable' >&2; exit 127; }
-          apt-get update >&2
+          apt-get \
+            -o Acquire::Languages=none \
+            -o Acquire::Retries=1 \
+            -o Acquire::ForceIPv4=true \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update >&2
         fi
     """.trimIndent()
 
