@@ -117,6 +117,8 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     XCTAssertLessThan(softwareSearchIndex, workspaceIndex)
     XCTAssertLessThan(workspaceIndex, webIndex)
     XCTAssertTrue(runtimePrompt.contains("Use workspace_id=current"))
+    XCTAssertTrue(runtimePrompt.contains("choose a realistic task-aware timeout_ms"))
+    XCTAssertTrue(runtimePrompt.contains("runtime watchdog use progress"))
   }
 
   func testAgentModelPlanningPromptRequestUsesAndroidWireNames() throws {
