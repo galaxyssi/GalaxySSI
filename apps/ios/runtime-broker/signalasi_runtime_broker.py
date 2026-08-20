@@ -26,11 +26,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - unavailable on non-POSIX development hosts.
+    resource = None  # type: ignore[assignment]
+
 
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 1_048_576
 MAX_CLOCK_SKEW_MILLIS = 5 * 60_000
-MAX_OUTPUT_BYTES = 256 * 1024
+MAX_OUTPUT_BYTES = 512 * 1024
 MAX_SOURCE_BYTES = 256 * 1024
 MAX_SOFTWARE_SEARCH_CANDIDATES = 250
 WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -77,8 +82,8 @@ def is_valid_signature(envelope: dict[str, Any], key: bytes) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-def bounded(value: bytes) -> str:
-    return value[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+def bounded(value: bytes, maximum: int = MAX_OUTPUT_BYTES) -> str:
+    return value[:maximum].decode("utf-8", errors="replace")
 
 
 def semantic_version_at_least(value: str, baseline: str = "1.3.9") -> bool:
@@ -87,6 +92,83 @@ def semantic_version_at_least(value: str, baseline: str = "1.3.9") -> bool:
         return tuple(int(part) for part in match.groups()) if match else (0, 0, 0)
 
     return parts(value) >= parts(baseline)
+
+
+@dataclass(frozen=True)
+class RuntimeResourceLimits:
+    """Android-compatible limits applied to every untrusted Linux execution."""
+
+    wall_clock_ms: int = 60_000
+    cpu_ms: int = 45_000
+    memory_bytes: int = 512 * 1024 * 1024
+    disk_bytes: int = 512 * 1024 * 1024
+    max_processes: int = 64
+    max_output_bytes: int = MAX_OUTPUT_BYTES
+    max_artifact_bytes: int = 256 * 1024 * 1024
+
+    @classmethod
+    def from_input(cls, value: Any, timeout_ms: int) -> "RuntimeResourceLimits":
+        defaults = DEFAULT_EXECUTION_LIMITS.for_timeout(timeout_ms)
+        if value is None:
+            return defaults
+        if not isinstance(value, dict):
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime resource limits are invalid")
+
+        def integer(key: str, fallback: int) -> int:
+            candidate = value.get(key, fallback)
+            if isinstance(candidate, bool) or not isinstance(candidate, int):
+                raise BrokerFailure("runtime_resource_limits_invalid", "Runtime resource limits are invalid")
+            return candidate
+
+        limits = cls(
+            wall_clock_ms=integer("wall_clock_ms", defaults.wall_clock_ms),
+            cpu_ms=integer("cpu_ms", defaults.cpu_ms),
+            memory_bytes=integer("memory_bytes", defaults.memory_bytes),
+            disk_bytes=integer("disk_bytes", defaults.disk_bytes),
+            max_processes=integer("max_processes", defaults.max_processes),
+            max_output_bytes=integer("max_output_bytes", defaults.max_output_bytes),
+            max_artifact_bytes=integer("max_artifact_bytes", defaults.max_artifact_bytes),
+        )
+        if not 100 <= limits.wall_clock_ms <= 30 * 60_000:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime wall-clock limit is invalid")
+        if not 100 <= limits.cpu_ms <= limits.wall_clock_ms:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime CPU limit is invalid")
+        if not 32 * 1024 * 1024 <= limits.memory_bytes <= 4 * 1024 * 1024 * 1024:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime memory limit is invalid")
+        if not 8 * 1024 * 1024 <= limits.disk_bytes <= 8 * 1024 * 1024 * 1024:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime storage limit is invalid")
+        if not 1 <= limits.max_processes <= 512:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime process limit is invalid")
+        if not 1_024 <= limits.max_output_bytes <= MAX_OUTPUT_BYTES:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime output limit exceeds the iOS broker transport limit")
+        if not 1_024 <= limits.max_artifact_bytes <= 2 * 1024 * 1024 * 1024:
+            raise BrokerFailure("runtime_resource_limits_invalid", "Runtime artifact limit is invalid")
+        return limits
+
+    def for_timeout(self, timeout_ms: int) -> "RuntimeResourceLimits":
+        return RuntimeResourceLimits(
+            wall_clock_ms=timeout_ms,
+            cpu_ms=max(100, timeout_ms * 3 // 4),
+            memory_bytes=self.memory_bytes,
+            disk_bytes=self.disk_bytes,
+            max_processes=self.max_processes,
+            max_output_bytes=self.max_output_bytes,
+            max_artifact_bytes=self.max_artifact_bytes,
+        )
+
+    def public_value(self) -> dict[str, int]:
+        return {
+            "wall_clock_ms": self.wall_clock_ms,
+            "cpu_ms": self.cpu_ms,
+            "memory_bytes": self.memory_bytes,
+            "disk_bytes": self.disk_bytes,
+            "max_processes": self.max_processes,
+            "max_output_bytes": self.max_output_bytes,
+            "max_artifact_bytes": self.max_artifact_bytes,
+        }
+
+
+DEFAULT_EXECUTION_LIMITS = RuntimeResourceLimits()
 
 
 @dataclass(frozen=True)
@@ -205,10 +287,11 @@ class RuntimeBroker:
 
     def status(self) -> dict[str, Any]:
         ready, diagnostic = self.probe()
+        limits_ready = self.execution_limits_available()
         return {
             "backend": "ios_jailbreak_runtime_broker",
-            "backend_ready": ready,
-            "reason": "Local jailbreak Linux runtime is ready" if ready else diagnostic,
+            "backend_ready": ready and limits_ready,
+            "reason": self.status_reason(ready, diagnostic, limits_ready),
             "architecture": "arm64",
             "execution_target": "ios_jailbreak_linux",
             "linux_system": {
@@ -221,8 +304,21 @@ class RuntimeBroker:
                 "package_management": "Linux guest package manager",
             },
             "runtime_pack_compatibility": "Requires matching signed iOS packs; Android QEMU packs are not executable on iOS.",
+            "execution_limits": {
+                **DEFAULT_EXECUTION_LIMITS.public_value(),
+                "enforced": limits_ready,
+                "implementation": "posix_rlimit_and_workspace_quota",
+            },
             "observed_at_epoch_ms": int(time.time() * 1000),
         }
+
+    @staticmethod
+    def status_reason(ready: bool, diagnostic: str, limits_ready: bool) -> str:
+        if not ready:
+            return diagnostic
+        if not limits_ready:
+            return "Configured broker Python cannot enforce the required POSIX resource limits"
+        return "Local jailbreak Linux runtime is ready"
 
     def probe(self) -> tuple[bool, str]:
         try:
@@ -240,7 +336,7 @@ class RuntimeBroker:
         language = input_value.get("language")
         source = input_value.get("source", "")
         arguments = input_value.get("arguments", [])
-        timeout_ms = input_value.get("timeout_ms", 30_000)
+        timeout_ms = input_value.get("timeout_ms", DEFAULT_EXECUTION_LIMITS.wall_clock_ms)
         workspace_id = context.get("workspace_id")
         if language not in SUPPORTED_LANGUAGES or not isinstance(source, str) or not isinstance(arguments, list):
             raise BrokerFailure("runtime_execute_input_invalid", "Runtime execution input is invalid")
@@ -248,6 +344,11 @@ class RuntimeBroker:
             raise BrokerFailure(
                 "runtime_network_policy_unavailable",
                 "The jailbreak runtime broker currently accepts offline execution only",
+            )
+        if not self.execution_limits_available():
+            raise BrokerFailure(
+                "runtime_resource_limits_unavailable",
+                "Configured broker Python cannot enforce the required POSIX resource limits",
             )
         if len(source.encode("utf-8")) > MAX_SOURCE_BYTES or any(not isinstance(item, str) or len(item) > 8_192 for item in arguments):
             raise BrokerFailure("runtime_execute_input_invalid", "Runtime execution input exceeds limits")
@@ -259,14 +360,22 @@ class RuntimeBroker:
         if workspace.parent != self.config.workspace_root:
             raise BrokerFailure("runtime_workspace_invalid", "Runtime workspace escaped its root")
         workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
-        command = self.execution_command(language, source, arguments, workspace)
-        completed = self.run_linux(command, workspace, timeout_ms)
+        limits = RuntimeResourceLimits.from_input(input_value.get("resource_limits"), timeout_ms)
+        self.require_workspace_within_limit(workspace, limits.disk_bytes)
+        command = self.execution_command(language, source, arguments, workspace, limits)
+        completed = self.run_linux(command, workspace, limits.wall_clock_ms, constrained=True, limits=limits)
+        workspace_bytes = self.require_workspace_within_limit(workspace, limits.disk_bytes)
+        artifacts = self.artifacts(input_value.get("artifact_paths", []), workspace, limits.max_artifact_bytes)
+        output_limit = limits.max_output_bytes // 2
         return {
             "message": "iOS jailbreak Linux execution completed" if completed.returncode == 0 else "iOS jailbreak Linux execution failed",
             "exit_code": completed.returncode,
-            "stdout": bounded(completed.stdout),
-            "stderr": bounded(completed.stderr),
+            "stdout": bounded(completed.stdout, output_limit),
+            "stderr": bounded(completed.stderr, output_limit),
             "workspace_id": workspace_id,
+            "workspace_bytes": workspace_bytes,
+            "artifacts": artifacts,
+            "execution_limits": limits.public_value(),
             "backend": "ios_jailbreak_runtime_broker",
         }
 
@@ -376,7 +485,14 @@ class RuntimeBroker:
             raise BrokerFailure("runtime_software_input_invalid", f"{label} is invalid")
         return value
 
-    def execution_command(self, language: str, source: str, arguments: list[str], workspace: Path) -> list[str]:
+    def execution_command(
+        self,
+        language: str,
+        source: str,
+        arguments: list[str],
+        workspace: Path,
+        limits: RuntimeResourceLimits,
+    ) -> list[str]:
         names = {
             "shell": ("main.sh", ["/bin/sh", "main.sh"]),
             "python": ("main.py", ["python3", "main.py"]),
@@ -396,33 +512,106 @@ class RuntimeBroker:
         source_path = workspace / file_name
         source_path.write_text(source, encoding="utf-8")
         os.chmod(source_path, 0o600)
+        self.require_workspace_within_limit(workspace, limits.disk_bytes)
         if language in {"rust", "c", "cpp"}:
-            self.require_success(self.run_linux(command, workspace, 120_000), "Runtime compilation failed")
+            self.require_success(self.run_linux(command, workspace, 120_000, constrained=True, limits=limits), "Runtime compilation failed")
             return ["./.signalasi-main", *arguments]
         if language == "java":
-            self.require_success(self.run_linux(command, workspace, 120_000), "Runtime compilation failed")
+            self.require_success(self.run_linux(command, workspace, 120_000, constrained=True, limits=limits), "Runtime compilation failed")
             return ["java", "-cp", ".", "Main", *arguments]
         return [*command, *arguments]
 
-    def run_linux(self, command: list[str], workspace: Path, timeout_ms: int) -> subprocess.CompletedProcess[bytes]:
+    def run_linux(
+        self,
+        command: list[str],
+        workspace: Path,
+        timeout_ms: int,
+        constrained: bool = False,
+        limits: RuntimeResourceLimits | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         prefix = [part.replace("{workspace}", str(workspace)) for part in self.config.linux_command_prefix]
         if any("{" in part or "}" in part for part in prefix):
             raise BrokerFailure("invalid_broker_configuration", "Linux command prefix has an unsupported placeholder")
         try:
+            options: dict[str, Any] = {
+                "cwd": workspace,
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "timeout": timeout_ms / 1_000,
+                "check": False,
+                "env": {"PATH": "/usr/bin:/bin", "HOME": "/workspace", "LC_ALL": "C.UTF-8"},
+            }
+            if constrained:
+                options["preexec_fn"] = self.execution_preexec(limits or DEFAULT_EXECUTION_LIMITS.for_timeout(timeout_ms))
             return subprocess.run(
                 [*prefix, *command],
-                cwd=workspace,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=timeout_ms / 1_000,
-                check=False,
-                env={"PATH": "/usr/bin:/bin", "HOME": "/workspace", "LC_ALL": "C.UTF-8"},
+                **options,
             )
         except subprocess.TimeoutExpired as error:
             raise BrokerFailure("runtime_execution_timeout", "Linux execution timed out", retryable=True) from error
-        except OSError as error:
+        except (OSError, subprocess.SubprocessError) as error:
             raise BrokerFailure("runtime_backend_unavailable", "Configured Linux runtime could not start", retryable=True) from error
+
+    @staticmethod
+    def execution_limits_available() -> bool:
+        return (
+            os.name == "posix" and resource is not None and
+            all(hasattr(resource, name) for name in ("RLIMIT_CPU", "RLIMIT_AS", "RLIMIT_FSIZE", "RLIMIT_NPROC"))
+        )
+
+    def execution_preexec(self, limits: RuntimeResourceLimits) -> Any:
+        if not self.execution_limits_available():
+            raise BrokerFailure(
+                "runtime_resource_limits_unavailable",
+                "Configured broker Python cannot enforce the required POSIX resource limits",
+            )
+        assert resource is not None
+        limit_plan = (
+            (resource.RLIMIT_CPU, max(1, (limits.cpu_ms + 999) // 1_000)),
+            (resource.RLIMIT_AS, limits.memory_bytes),
+            (resource.RLIMIT_FSIZE, limits.disk_bytes),
+            (resource.RLIMIT_NPROC, limits.max_processes),
+        )
+
+        def apply_limits() -> None:
+            for limit, value in limit_plan:
+                resource.setrlimit(limit, (value, value))
+
+        return apply_limits
+
+    @staticmethod
+    def require_workspace_within_limit(workspace: Path, maximum: int) -> int:
+        total = 0
+        for candidate in workspace.rglob("*"):
+            if candidate.is_file():
+                total += candidate.stat().st_size
+                if total > maximum:
+                    raise BrokerFailure("runtime_workspace_limit_exceeded", "Runtime workspace exceeded its storage limit")
+        return total
+
+    @staticmethod
+    def artifacts(value: Any, workspace: Path, maximum: int) -> list[dict[str, Any]]:
+        if not isinstance(value, list) or len(value) > 32:
+            raise BrokerFailure("runtime_execute_input_invalid", "Runtime artifact paths are invalid")
+        results = []
+        total = 0
+        for relative in value:
+            if not isinstance(relative, str) or not relative or len(relative) > 1_024:
+                raise BrokerFailure("runtime_execute_input_invalid", "Runtime artifact path is invalid")
+            candidate = (workspace / relative).resolve()
+            try:
+                safe_relative = candidate.relative_to(workspace)
+            except ValueError as error:
+                raise BrokerFailure("runtime_execute_input_invalid", "Runtime artifact path escaped its workspace") from error
+            if not candidate.is_file():
+                continue
+            size = candidate.stat().st_size
+            total += size
+            if total > maximum:
+                raise BrokerFailure("runtime_artifact_limit_exceeded", "Runtime artifacts exceeded their storage limit")
+            results.append({"relative_path": str(safe_relative), "size_bytes": size})
+        return results
 
     @staticmethod
     def require_success(completed: subprocess.CompletedProcess[bytes], message: str) -> None:

@@ -372,6 +372,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         "network_enabled": boolSchema(),
         "allowed_network_domains": arraySchema(itemSchema: stringSchema(maxLength: 253), maxItems: 64),
         "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 32),
+        "resource_limits": runtimeResourceLimitsSchema(),
         "phone_development_manifest": phoneDevelopmentManifestSchema()
       ], required: ["language"])
     }
@@ -504,6 +505,18 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       "required_packs": arraySchema(itemSchema: stringSchema(maxLength: 64), maxItems: 8),
       "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 16)
     ], required: ["schema", "decision_summary", "language", "entry_file", "files"])
+  }
+
+  private static func runtimeResourceLimitsSchema() -> AgentMcpJSONObject {
+    objectSchema([
+      "wall_clock_ms": integerSchema(minimum: 100, maximum: maxTimeoutMillis),
+      "cpu_ms": integerSchema(minimum: 100, maximum: maxTimeoutMillis),
+      "memory_bytes": integerSchema(minimum: 32 * 1_024 * 1_024, maximum: 4 * 1_024 * 1_024 * 1_024),
+      "disk_bytes": integerSchema(minimum: 8 * 1_024 * 1_024, maximum: 8 * 1_024 * 1_024 * 1_024),
+      "max_processes": integerSchema(minimum: 1, maximum: 512),
+      "max_output_bytes": integerSchema(minimum: 1_024, maximum: 512 * 1_024),
+      "max_artifact_bytes": integerSchema(minimum: 1_024, maximum: 2 * 1_024 * 1_024 * 1_024)
+    ])
   }
 
   private static func arraySchema(itemSchema: AgentMcpJSONObject, maxItems: Int64) -> AgentMcpJSONObject {

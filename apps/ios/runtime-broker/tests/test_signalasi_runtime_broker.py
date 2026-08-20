@@ -52,7 +52,53 @@ class RuntimeBrokerProtocolTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertTrue(BROKER.is_valid_signature(response, self.key))
         self.assertEqual("ios_jailbreak_runtime_broker", response["result"]["backend"])
-        self.assertTrue(response["result"]["backend_ready"])
+        self.assertEqual(BROKER.RuntimeBroker.execution_limits_available(), response["result"]["backend_ready"])
+
+    def test_reports_android_compatible_execution_limits(self) -> None:
+        limits = self.runtime.status()["execution_limits"]
+
+        self.assertEqual(60_000, limits["wall_clock_ms"])
+        self.assertEqual(45_000, limits["cpu_ms"])
+        self.assertEqual(512 * 1024 * 1024, limits["memory_bytes"])
+        self.assertEqual(512 * 1024 * 1024, limits["disk_bytes"])
+        self.assertEqual(64, limits["max_processes"])
+        self.assertEqual(512 * 1024, limits["max_output_bytes"])
+        self.assertEqual(256 * 1024 * 1024, limits["max_artifact_bytes"])
+
+    def test_scales_cpu_limit_with_execution_timeout(self) -> None:
+        limits = BROKER.DEFAULT_EXECUTION_LIMITS.for_timeout(120_000)
+
+        self.assertEqual(120_000, limits.wall_clock_ms)
+        self.assertEqual(90_000, limits.cpu_ms)
+
+    def test_accepts_android_resource_limit_wire_names(self) -> None:
+        limits = BROKER.RuntimeResourceLimits.from_input({
+            "wall_clock_ms": 10_000,
+            "cpu_ms": 7_500,
+            "memory_bytes": 64 * 1024 * 1024,
+            "disk_bytes": 16 * 1024 * 1024,
+            "max_processes": 8,
+            "max_output_bytes": 64 * 1024,
+            "max_artifact_bytes": 8 * 1024 * 1024,
+        }, 60_000)
+
+        self.assertEqual(10_000, limits.wall_clock_ms)
+        self.assertEqual(7_500, limits.cpu_ms)
+        self.assertEqual(8, limits.max_processes)
+
+    def test_rejects_resource_limit_above_iOS_transport_budget(self) -> None:
+        with self.assertRaisesRegex(BROKER.BrokerFailure, "output limit"):
+            BROKER.RuntimeResourceLimits.from_input({"max_output_bytes": 513 * 1024}, 60_000)
+
+    def test_rejects_workspace_or_artifacts_that_exceed_limits(self) -> None:
+        workspace = self.config.workspace_root / "workspace-1"
+        workspace.mkdir(mode=0o700)
+        (workspace / "large.bin").write_bytes(b"x" * 3)
+
+        with self.assertRaisesRegex(BROKER.BrokerFailure, "workspace exceeded"):
+            self.runtime.require_workspace_within_limit(workspace, 2)
+        with self.assertRaisesRegex(BROKER.BrokerFailure, "artifacts exceeded"):
+            self.runtime.artifacts(["large.bin"], workspace, 2)
 
     def test_rejects_replayed_request(self) -> None:
         request = self.request()

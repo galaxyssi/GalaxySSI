@@ -197,6 +197,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(executeDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId)
     XCTAssertEqual(executeDescriptor.descriptor.risk, .medium)
     XCTAssertEqual(executeDescriptor.descriptor.timeoutMillis, 30 * 60_000)
+    let executeProperties = try XCTUnwrap(executeDescriptor.descriptor.inputSchema["properties"]?.objectValue)
+    let resourceLimits = try XCTUnwrap(executeProperties["resource_limits"]?.objectValue)
+    XCTAssertEqual(resourceLimits["type"], .string("object"))
+    let resourceLimitProperties = try XCTUnwrap(resourceLimits["properties"]?.objectValue)
+    XCTAssertEqual(resourceLimitProperties["max_processes"]?.objectValue?["maximum"], .int(512))
 
     let status = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.status, input: [:], context: runtimeContext)
     let packs = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.listPacks, input: [:], context: runtimeContext)
@@ -256,7 +261,16 @@ extension SignalASIStoreTests {
         "language": .string("python"),
         "source": .string("print('ok')"),
         "timeout_ms": .int(1_000),
-        "artifact_paths": .array([.string("out/result.txt")])
+        "artifact_paths": .array([.string("out/result.txt")]),
+        "resource_limits": .object([
+          "wall_clock_ms": .int(1_000),
+          "cpu_ms": .int(750),
+          "memory_bytes": .int(64 * 1_024 * 1_024),
+          "disk_bytes": .int(8 * 1_024 * 1_024),
+          "max_processes": .int(8),
+          "max_output_bytes": .int(64 * 1_024),
+          "max_artifact_bytes": .int(4 * 1_024 * 1_024)
+        ])
       ],
       context: workspaceContext
     )
@@ -312,6 +326,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(execute.output["workspace_disposition"], .string("preserved"))
     XCTAssertEqual(execute.output["artifacts"], .array([]))
     XCTAssertEqual(execute.metadata["network_default"], .string("disabled"))
+    XCTAssertEqual(provider.capturedInputs.last?["resource_limits"]?.objectValue?["max_processes"], .int(8))
     XCTAssertEqual(
       provider.invokedOperations,
       [
