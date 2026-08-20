@@ -1973,10 +1973,11 @@ final class SignalASIStoreTests: XCTestCase {
   }
 
   func embeddedRuntimeIndexJson() -> String {
+    let architecture = AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? "arm64"
     """
-    {"format_version":1,"architecture":"arm64-v8a","packs":[
-      {"pack_id":"linux-base","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/linux-base.sarpack","archive_sha256":"\(String(repeating: "A", count: 64))","archive_size_bytes":1024,"installed_size_bytes":2048,"dependencies":[]},
-      {"pack_id":"python-uv","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/python-uv.sarpack","archive_sha256":"\(String(repeating: "b", count: 64))","archive_size_bytes":2048,"installed_size_bytes":4096,"dependencies":["linux-base"]}
+    {"format_version":1,"architecture":"\(architecture)","packs":[
+      {"pack_id":"linux-base","version":"1.0.0","architecture":"\(architecture)","asset_path":"runtime/bootstrap/linux-base.sarpack","archive_sha256":"\(String(repeating: "A", count: 64))","archive_size_bytes":1024,"installed_size_bytes":2048,"dependencies":[]},
+      {"pack_id":"python-uv","version":"1.0.0","architecture":"\(architecture)","asset_path":"runtime/bootstrap/python-uv.sarpack","archive_sha256":"\(String(repeating: "b", count: 64))","archive_size_bytes":2048,"installed_size_bytes":4096,"dependencies":["linux-base"]}
     ]}
     """
   }

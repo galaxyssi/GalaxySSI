@@ -954,9 +954,11 @@ extension SignalASIStoreTests {
     )
   }
 
-  func testAgentRuntimeDistributionSourcesMatchAndroidAcceleratorPolicy() {
+  func testAgentRuntimeDistributionSourcesUseIOSCatalogAndChineseAccelerators() {
     let official = AgentRuntimeDistributionSources.githubCatalogURL
 
+    XCTAssertTrue(official.contains("/ios-runtime-v1/"))
+    XCTAssertFalse(official.contains("/android-runtime-"))
     XCTAssertEqual(AgentRuntimeDistributionSources.catalogCandidates(languageTag: "en-US"), [official])
 
     let chinese = AgentRuntimeDistributionSources.catalogCandidates(languageTag: "zh-CN")
@@ -972,13 +974,18 @@ extension SignalASIStoreTests {
     )
   }
 
+  func testIOSRuntimePolicyRejectsAndroidABI() {
+    XCTAssertFalse(AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.contains("arm64-v8a"))
+    XCTAssertFalse(AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.contains("x86"))
+  }
+
   func testAgentEmbeddedRuntimeBundleCodecRequiresDefaultBootstrapEnvironment() throws {
     let bundle = try AgentEmbeddedRuntimeBundleCodec.decode(embeddedRuntimeIndexJson())
     let encoded = try JSONEncoder().encode(bundle)
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
     let packs = try XCTUnwrap(object["packs"] as? [[String: Any]])
 
-    XCTAssertEqual(bundle.architecture, "arm64-v8a")
+    XCTAssertEqual(bundle.architecture, AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first)
     XCTAssertEqual(bundle.formatVersion, 1)
     XCTAssertEqual(bundle.packs.map(\.packId), ["linux-base", "python-uv"])
     XCTAssertEqual(bundle.packs.last?.dependencies, ["linux-base"])

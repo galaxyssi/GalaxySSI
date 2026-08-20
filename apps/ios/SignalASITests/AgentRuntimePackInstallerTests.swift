@@ -46,6 +46,19 @@ final class AgentRuntimePackInstallerTests: XCTestCase {
 
     let second = try installer.install(source: source)
     XCTAssertTrue(second.replacedExisting)
+
+    var androidManifest = manifest
+    androidManifest.architecture = "arm64-v8a"
+    let androidArchive = AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: [
+      AgentRuntimeProjectArchiveEntry(path: "manifest.json", data: try JSONEncoder().encode(androidManifest)),
+      AgentRuntimeProjectArchiveEntry(path: "linux-base.img", data: image)
+    ])
+    let androidSource = root.appendingPathComponent("android-linux-base.sarpack")
+    try androidArchive.write(to: androidSource)
+    XCTAssertThrowsError(try installer.install(source: androidSource)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("incompatible with this iOS device"))
+    }
+
     XCTAssertTrue(try installer.uninstall(packId: "linux-base"))
     XCTAssertFalse(FileManager.default.fileExists(
       atPath: root.appendingPathComponent("packs/linux-base").path
