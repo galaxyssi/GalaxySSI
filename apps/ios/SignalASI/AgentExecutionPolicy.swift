@@ -134,7 +134,7 @@ struct AgentExecutionProfile: Codable, Equatable {
       result += "A single deliverable remains in its native format; package a directory or multi-file project as ZIP. "
     }
     if verifyInstallation {
-      result += "Only report installation or launch after Android returns a verified execution receipt. "
+      result += "Only report installation or launch after the target runtime returns a verified execution receipt. "
     }
     result += "Do not report success without verification evidence."
     return result
