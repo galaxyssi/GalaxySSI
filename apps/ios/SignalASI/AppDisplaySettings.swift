@@ -31,7 +31,7 @@ enum AppTextScaleMode: String, Codable, CaseIterable, Identifiable {
     case .standard:
       return "Use the app's compact default text size."
     case .comfortable:
-      return "Use the Android default comfortable text size."
+      return "Use the app's default comfortable text size."
     case .large:
       return "Increase text for easier reading."
     case .extraLarge:

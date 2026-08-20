@@ -493,6 +493,10 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(extraLarge.textScale, .extraLarge)
     XCTAssertEqual(fallback.textScale, .comfortable)
     XCTAssertEqual(store.displaySettings.textScale, .comfortable)
+    XCTAssertEqual(
+      AppTextScaleMode.comfortable.detail,
+      "Use the app's default comfortable text size."
+    )
 
     store.updateDisplaySettings {
       $0.textScale = .large

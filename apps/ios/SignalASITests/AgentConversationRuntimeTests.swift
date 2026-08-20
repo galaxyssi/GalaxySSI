@@ -786,13 +786,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(install.targetPlatform, "android")
   }
 
-  func testAgentExecutionProfileContractAndWireNamesMatchAndroid() throws {
+  func testAgentExecutionProfileContractUsesTargetRuntimeVerification() throws {
     let profile = AgentExecutionProfile.forGoal("Install APK on the phone")
 
     XCTAssertTrue(profile.contract.contains("task=install"))
     XCTAssertTrue(profile.contract.contains("reasoning_effort=medium"))
     XCTAssertTrue(profile.contract.contains("A single deliverable remains in its native format"))
-    XCTAssertTrue(profile.contract.contains("Android returns a verified execution receipt"))
+    XCTAssertTrue(profile.contract.contains("target runtime returns a verified execution receipt"))
     XCTAssertTrue(profile.contract.contains("Do not report success without verification evidence."))
 
     let encoded = try JSONEncoder().encode(profile)
