@@ -3734,6 +3734,14 @@
 "cc_runtime_lifecycle_subtitle" = "启动、健康检查、退避重启与恢复状态";
 "cc_runtime_lifecycle_ready" = "已就绪";
 "cc_runtime_lifecycle_no_controller" = "未随应用提供";
+"cc_runtime_recovery_title" = "恢复 Linux 1.3.9";
+"cc_runtime_recovery_subtitle" = "验证并原子替换签名 Linux 基础环境，保留会话项目工作区";
+"cc_runtime_recovery_in_progress" = "恢复中";
+"cc_runtime_recovery_preparing" = "正在检查签名 Linux 运行环境目录...";
+"cc_runtime_recovery_downloading" = "正在下载 Linux 1.3.9（%d%%）...";
+"cc_runtime_recovery_installing" = "正在恢复 Linux 1.3.9：%@";
+"cc_runtime_recovery_success" = "Linux 1.3.9 已就绪（已验证 %d 个包）";
+"cc_runtime_recovery_failed" = "Linux 运行环境恢复失败";
 "cc_runtime_software_center_title" = "软件中心";
 "cc_runtime_software_center_subtitle" = "查找并自动安装经过验证的语言、浏览器和媒体工具";
 "cc_runtime_software_center_status" = "已安装 %d/%d";

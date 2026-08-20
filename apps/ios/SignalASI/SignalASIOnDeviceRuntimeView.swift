@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 struct SignalASIOnDeviceRuntimeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  @State private var isRecoveringLinuxBase = false
+  @State private var linuxBaseRecoveryMessage = ""
 
   private var packs: [AgentRuntimePackStatus] {
     Self.packStatuses()
@@ -28,6 +30,29 @@ struct SignalASIOnDeviceRuntimeView: View {
       let pack = packs.first { $0.id == language.requiredPack }
       return pack?.state == .ready && pack?.manifest?.capabilities.contains(language.requiredCapability) == true
     }.count
+  }
+
+  private var linuxBasePack: AgentRuntimePackStatus? {
+    packs.first { $0.id == "linux-base" }
+  }
+
+  private var linuxBaseNeedsRecovery: Bool {
+    guard let linuxBasePack,
+          linuxBasePack.state == .ready,
+          let version = linuxBasePack.manifest?.version else {
+      return true
+    }
+    return !AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(version)
+  }
+
+  private var linuxBaseRecoveryBadge: String {
+    if isRecoveringLinuxBase {
+      return t("cc_runtime_recovery_in_progress", "Recovering")
+    }
+    if linuxBaseNeedsRecovery {
+      return t("cc_runtime_catalog_repair", "Repair")
+    }
+    return linuxBasePack?.manifest?.version ?? AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion
   }
 
   var body: some View {
@@ -99,6 +124,18 @@ struct SignalASIOnDeviceRuntimeView: View {
         tint: runtimeReady ? .signalASIAccent : .orange,
         badge: runtimeReady ? t("cc_runtime_lifecycle_ready", "Ready") : t("cc_runtime_lifecycle_no_controller", "Not packaged")
       )
+      SignalASISecurityActionRow(
+        title: t("cc_runtime_recovery_title", "Recover Linux 1.3.9"),
+        subtitle: linuxBaseRecoveryMessage.ifBlank(t(
+          "cc_runtime_recovery_subtitle",
+          "Verify and atomically replace the signed Linux base; conversation project workspaces are retained"
+        )),
+        systemImage: "arrow.clockwise",
+        tint: linuxBaseNeedsRecovery ? .orange : .signalASIAccent,
+        badge: linuxBaseRecoveryBadge
+      ) {
+        recoverLinuxBase()
+      }
       SignalASISecurityNavigationRow(
         title: t("cc_runtime_software_center_title", "Software Center"),
         subtitle: t("cc_runtime_software_center_subtitle", "Find and install verified language, browser, and media tools"),
@@ -168,6 +205,54 @@ struct SignalASIOnDeviceRuntimeView: View {
 
   private var environmentPacks: [AgentRuntimePackStatus] {
     packs.filter { ["linux-base", "python-uv"].contains($0.id) }
+  }
+
+  private func recoverLinuxBase() {
+    guard !isRecoveringLinuxBase else { return }
+    isRecoveringLinuxBase = true
+    linuxBaseRecoveryMessage = t("cc_runtime_recovery_preparing", "Checking the signed Linux runtime catalog...")
+    DispatchQueue.global(qos: .userInitiated).async {
+      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
+      let outcome: Result<[AgentRuntimePackInstallResult], Error>
+      do {
+        outcome = .success(try manager.recoverLinuxBase(
+          onDownloadProgress: { progress in
+            guard progress.totalBytes > 0 else { return }
+            let percent = min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
+            DispatchQueue.main.async {
+              linuxBaseRecoveryMessage = String(
+                format: t("cc_runtime_recovery_downloading", "Downloading Linux 1.3.9 (%d%%)..."),
+                percent
+              )
+            }
+          },
+          onInstallProgress: { progress in
+            DispatchQueue.main.async {
+              linuxBaseRecoveryMessage = String(
+                format: t("cc_runtime_recovery_installing", "Recovering Linux 1.3.9: %@"),
+                progress.stage.rawValue.lowercased()
+              )
+            }
+          }
+        ))
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        isRecoveringLinuxBase = false
+        switch outcome {
+        case .success(let results):
+          linuxBaseRecoveryMessage = String(
+            format: t("cc_runtime_recovery_success", "Linux 1.3.9 is ready (%d package(s) verified)"),
+            results.count
+          )
+        case .failure(let error):
+          linuxBaseRecoveryMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_recovery_failed", "Linux runtime recovery failed")
+          )
+        }
+      }
+    }
   }
 
   private var softwarePacks: [AgentRuntimePackStatus] {

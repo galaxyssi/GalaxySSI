@@ -700,6 +700,8 @@ enum AgentRuntimeDistributionSources {
 }
 
 enum AgentRuntimePackCatalogPolicy {
+  static let linuxBaseRecoveryVersion = "1.3.9"
+
   static let requiredPacks = [
     "linux-base",
     "python-uv",
@@ -770,6 +772,10 @@ enum AgentRuntimePackCatalogPolicy {
         entry.minimumHostVersionCode <= hostVersionCode &&
         entry.guestApiVersion == guestApiVersion
     }
+  }
+
+  static func meetsLinuxBaseRecoveryBaseline(_ version: String) -> Bool {
+    AgentEmbeddedRuntimeBootstrap.compareVersions(version, linuxBaseRecoveryVersion) >= 0
   }
 
   static func validateReplacement(
