@@ -384,6 +384,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         "backend": stringSchema(maxLength: 64),
         "backend_ready": boolSchema(),
         "reason": stringSchema(maxLength: 2_048),
+        "linux_system": objectSchema(additionalProperties: true),
         "packs": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128),
         "languages": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
       ], additionalProperties: true)
