@@ -98,13 +98,13 @@ object AgentLinuxSoftwareNativeTools {
                     executeLinux(
                         manager,
                         invocation,
-                        aptSearchScript(query, MAX_PACKAGE_CANDIDATES),
+                        aptSearchScript(query, limit),
                         timeoutMillis = PACKAGE_SEARCH_TIMEOUT_MILLIS,
                         networkEnabled = true
                     ).let { response ->
                         if (response.exitCode == 0) {
                             rankPackageRecords(
-                                parsePackageRecords(response.stdout, MAX_PACKAGE_CANDIDATES),
+                                parsePackageRecords(response.stdout),
                                 query,
                                 limit
                             ).map { it.publicValue() }
@@ -240,10 +240,7 @@ object AgentLinuxSoftwareNativeTools {
         )
     }
 
-    internal fun parsePackageRecords(
-        raw: String,
-        maxResults: Int = MAX_RESULTS
-    ): List<AgentLinuxSoftwareRecord> = raw.lineSequence()
+    internal fun parsePackageRecords(raw: String): List<AgentLinuxSoftwareRecord> = raw.lineSequence()
         .map(String::trim)
         .filter(String::isNotBlank)
         .mapNotNull { line ->
@@ -258,7 +255,7 @@ object AgentLinuxSoftwareNativeTools {
             )
         }
         .distinctBy(AgentLinuxSoftwareRecord::id)
-        .take(maxResults.coerceIn(1, MAX_PACKAGE_CANDIDATES))
+        .take(MAX_RESULTS)
         .toList()
 
     internal fun rankPackageRecords(
@@ -342,13 +339,34 @@ object AgentLinuxSoftwareNativeTools {
         export LC_ALL=C
         command -v apt-cache >/dev/null 2>&1 || { echo 'apt-cache is unavailable' >&2; exit 127; }
         ${ensurePackageIndexScript()}
-        apt-cache search --names-only -- ${shellSingleQuote(query)} | head -n $limit | while IFS= read -r line; do
-          package=${'$'}{line%% - *}
-          description=${'$'}{line#* - }
+        query=${shellSingleQuote(query)}
+        exact=${'$'}(printf '%s' "${'$'}query" | tr '[:upper:]' '[:lower:]')
+        emit_package() {
+          package=${'$'}1
+          description=${'$'}2
           version=${'$'}(apt-cache policy "${'$'}package" | sed -n 's/^  Candidate: //p' | head -n 1)
           installed=no
           dpkg-query -W -f='${'$'}{db:Status-Abbrev}' "${'$'}package" 2>/dev/null | grep -q '^ii ' && installed=installed || true
           printf '%s\t%s\t%s\t%s\n' "${'$'}package" "${'$'}version" "${'$'}installed" "${'$'}description"
+        }
+        remaining=$limit
+        case "${'$'}exact" in
+          ''|*[!a-z0-9+.-]*) ;;
+          *)
+            if apt-cache show "${'$'}exact" >/dev/null 2>&1; then
+              description=${'$'}(apt-cache show "${'$'}exact" 2>/dev/null | sed -n 's/^Description-en: //p; s/^Description: //p' | head -n 1)
+              emit_package "${'$'}exact" "${'$'}description"
+              remaining=${'$'}((remaining - 1))
+            fi
+            ;;
+        esac
+        [ "${'$'}remaining" -gt 0 ] || exit 0
+        apt-cache search --names-only -- "${'$'}query" |
+          awk -F ' - ' -v exact="${'$'}exact" '${'$'}1 != exact { print }' |
+          head -n "${'$'}remaining" | while IFS= read -r line; do
+          package=${'$'}{line%% - *}
+          description=${'$'}{line#* - }
+          emit_package "${'$'}package" "${'$'}description"
         done
     """.trimIndent()
 
@@ -468,7 +486,6 @@ object AgentLinuxSoftwareNativeTools {
 
     private const val DEFAULT_RESULTS = 20
     private const val MAX_RESULTS = 50
-    private const val MAX_PACKAGE_CANDIDATES = 200
     internal const val PACKAGE_SEARCH_TIMEOUT_MILLIS = 10 * 60_000L
     private const val MAX_DESCRIPTION_CHARS = 500
     private const val MAX_DIAGNOSTIC_CHARS = 8_000
