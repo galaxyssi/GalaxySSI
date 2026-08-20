@@ -111,6 +111,19 @@ class RuntimeBrokerProtocolTests(unittest.TestCase):
             calls,
         )
 
+    def test_ranks_exact_package_before_related_candidates_and_honors_limit(self) -> None:
+        results = [
+            {"software_id": "libgit2-dev", "description": "Git library headers"},
+            {"software_id": "python-gitlab", "description": "GitLab API client"},
+            {"software_id": "git", "description": "fast distributed version control system"},
+            {"software_id": "git-lfs", "description": "Git extension for large files"},
+            {"software_id": "git", "description": "duplicate should be ignored"},
+        ]
+
+        ranked = self.runtime.rank_software_search_results(results, "Git", 3)
+
+        self.assertEqual(["git", "git-lfs", "libgit2-dev"], [row["software_id"] for row in ranked])
+
 
 if __name__ == "__main__":
     unittest.main()
