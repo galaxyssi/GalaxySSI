@@ -400,7 +400,8 @@ class AgentRuntimeGuestBridge(
                 }
                 val envelope = try {
                     pending.receive(remaining)
-                } catch (_: SocketTimeoutException) {
+                } catch (error: Throwable) {
+                    if (!error.isGuestRuntimeResponseTimeout()) throw error
                     runCatching { connection.send(request.requestId, AgentRuntimeGuestMessageType.CANCEL) }
                     throw AgentNativeToolTimeoutException()
                 }
@@ -700,6 +701,12 @@ class AgentRuntimeGuestBridge(
     )
 
 }
+
+internal fun Throwable.isGuestRuntimeResponseTimeout(): Boolean =
+    generateSequence(this as Throwable?) { it.cause }.any { error ->
+        error is SocketTimeoutException ||
+            error.message?.contains("Guest runtime response timed out", ignoreCase = true) == true
+    }
 
 class AgentRuntimeSessionKeyStore(context: Context) {
     private val appContext = context.applicationContext
