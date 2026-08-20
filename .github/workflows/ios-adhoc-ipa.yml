@@ -33,7 +33,9 @@ permissions:
 
 concurrency:
   group: ios-adhoc-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  # A Linux rootfs rebuild is expensive; queue newer IPA requests instead of
+  # repeatedly abandoning an in-progress full offline build.
+  cancel-in-progress: false
 
 env:
   IOS_CONFIGURATION: ${{ inputs.configuration || 'Release' }}
