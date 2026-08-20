@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 import socketserver
 import struct
 import subprocess
@@ -283,12 +284,15 @@ class RuntimeBroker:
         }
 
     def software_search(self, input_value: dict[str, Any]) -> dict[str, Any]:
-        query = self.package_id(input_value.get("query"), "software search query")
+        query = input_value.get("query")
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 160 or any(ord(char) < 32 for char in query):
+            raise BrokerFailure("runtime_software_input_invalid", "Software search query is invalid")
+        query = query.strip()
         limit = input_value.get("limit", 20)
         if not isinstance(limit, int) or not 1 <= limit <= 50:
             raise BrokerFailure("runtime_software_input_invalid", "Software search limit is invalid")
         self.ensure_package_index()
-        command = ["/bin/sh", "-lc", f"apt-cache search --names-only -- {query} | head -n {limit}"]
+        command = ["/bin/sh", "-lc", f"apt-cache search --names-only -- {shlex.quote(query)} | head -n {limit}"]
         completed = self.run_linux(command, self.config.workspace_root, 10 * 60_000)
         self.require_success(completed, "Linux package search failed")
         results = []
