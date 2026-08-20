@@ -1,6 +1,9 @@
 import Foundation
 import UIKit
 import UserNotifications
+#if canImport(MessageUI)
+import MessageUI
+#endif
 
 protocol AgentIOSNativeActionHandoffProviding {
   func open(_ url: URL) -> Bool
@@ -41,8 +44,33 @@ enum AgentIOSNativeToolHandoffPresenter {
   }
 
   private static func openIfNeeded(_ output: AgentMcpJSONObject) {
+    if let request = smsComposeRequest(in: .object(output)) {
+      presentSMSCompose(request)
+      return
+    }
     guard let rawURL = handoffURL(in: .object(output)) else { return }
     open(rawURL: rawURL)
+  }
+
+  private static func smsComposeRequest(in value: AgentMcpJSONValue) -> AgentIOSSMSComposeRequest? {
+    switch value {
+    case .object(let object):
+      guard object["requires_user_action"]?.boolValue == true,
+            object["handoff_kind"]?.stringValue == "sms_compose",
+            let phoneNumber = normalizedPhoneNumber(object["phone_number"]?.stringValue),
+            let fallbackURL = object["url"]?.stringValue else {
+        return object.values.lazy.compactMap(smsComposeRequest(in:)).first
+      }
+      return AgentIOSSMSComposeRequest(
+        phoneNumber: phoneNumber,
+        body: String((object["prefill_body"]?.stringValue ?? "").prefix(2_000)),
+        fallbackURL: fallbackURL
+      )
+    case .array(let values):
+      return values.lazy.compactMap(smsComposeRequest(in:)).first
+    case .string, .int, .double, .bool, .null:
+      return nil
+    }
   }
 
   private static func handoffURL(in value: AgentMcpJSONValue) -> String? {
@@ -84,7 +112,90 @@ enum AgentIOSNativeToolHandoffPresenter {
       DispatchQueue.main.async(execute: openBlock)
     }
   }
+
+  private static func presentSMSCompose(_ request: AgentIOSSMSComposeRequest) {
+    let present = {
+      #if canImport(MessageUI)
+      guard MFMessageComposeViewController.canSendText(),
+            let presenter = topViewController() else {
+        open(rawURL: request.fallbackURL)
+        return
+      }
+      guard AgentIOSMessageComposePresenter.shared.present(request, from: presenter) else {
+        open(rawURL: request.fallbackURL)
+        return
+      }
+      #else
+      open(rawURL: request.fallbackURL)
+      #endif
+    }
+    if Thread.isMainThread {
+      present()
+    } else {
+      DispatchQueue.main.async(execute: present)
+    }
+  }
+
+  private static func topViewController() -> UIViewController? {
+    let windows = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap(\.windows)
+    guard let root = windows.first(where: \.isKeyWindow)?.rootViewController
+      ?? windows.first?.rootViewController else {
+      return nil
+    }
+    var current = root
+    while let presented = current.presentedViewController, !presented.isBeingDismissed {
+      current = presented
+    }
+    return current
+  }
+
+  private static func normalizedPhoneNumber(_ value: String?) -> String? {
+    var normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    for removable in [" ", "-", "(", ")", "."] {
+      normalized = normalized.replacingOccurrences(of: removable, with: "")
+    }
+    guard !normalized.isEmpty,
+          normalized.count <= 64,
+          normalized.range(of: #"^[+0-9*#,;]+$"#, options: .regularExpression) != nil else {
+      return nil
+    }
+    return normalized
+  }
 }
+
+private struct AgentIOSSMSComposeRequest {
+  var phoneNumber: String
+  var body: String
+  var fallbackURL: String
+}
+
+#if canImport(MessageUI)
+private final class AgentIOSMessageComposePresenter: NSObject, MFMessageComposeViewControllerDelegate {
+  static let shared = AgentIOSMessageComposePresenter()
+  private weak var activeComposer: MFMessageComposeViewController?
+
+  func present(_ request: AgentIOSSMSComposeRequest, from presenter: UIViewController) -> Bool {
+    guard activeComposer == nil else { return false }
+    let composer = MFMessageComposeViewController()
+    composer.recipients = [request.phoneNumber]
+    composer.body = request.body
+    composer.messageComposeDelegate = self
+    activeComposer = composer
+    presenter.present(composer, animated: true)
+    return true
+  }
+
+  func messageComposeViewController(
+    _ controller: MFMessageComposeViewController,
+    didFinishWith result: MessageComposeResult
+  ) {
+    controller.dismiss(animated: true)
+    activeComposer = nil
+  }
+}
+#endif
 
 struct AgentIOSNativeActionExecutor: AgentActionExecutor {
   var handoffProvider: AgentIOSNativeActionHandoffProviding

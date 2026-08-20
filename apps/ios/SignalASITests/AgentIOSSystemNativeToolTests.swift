@@ -1765,6 +1765,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(sms.output["url"], .string("sms:+15551234567"))
     XCTAssertEqual(sms.output["prefill_body"], .string("hello"))
     XCTAssertEqual(sms.output["body_in_url"], .bool(false))
+    XCTAssertEqual(sms.output["handoff_transport"], .string("message_compose_controller_or_sms_url"))
     XCTAssertEqual(sms.output["requested_direct_send"], .bool(false))
     XCTAssertEqual(sms.output["direct_send_supported"], .bool(false))
     XCTAssertEqual(sms.output["submitted_to_system"], .bool(false))
