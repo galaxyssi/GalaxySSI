@@ -1,10 +1,12 @@
 import Foundation
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SignalASIOnDeviceRuntimeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  private let inAppRuntimeBroker = AgentIOSInAppQemuRuntimeBroker(
+    runtimeRootURL: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+  )
   @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
   @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
   @State private var brokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
@@ -18,7 +20,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   }
 
   private var brokerAvailability: AgentNativeToolAvailability {
-    AgentIOSRuntimeBrokerClient().availability()
+    inAppRuntimeBroker.availability()
   }
 
   private var runtimeReady: Bool {
@@ -28,7 +30,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   private var runtimeStatusMessage: String {
     runtimeAvailability.reason.ifBlank(brokerStatusMessage.ifBlank(t(
       "cc_runtime_overview_subtitle",
-      "Pair a local jailbreak Linux runtime broker to unlock isolated on-device execution"
+      "Run the embedded Debian runtime privately inside this iOS app"
     )))
   }
 
@@ -100,6 +102,7 @@ struct SignalASIOnDeviceRuntimeView: View {
           )
           SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
           managementSection
+          offlineBootstrapSection
           receiptSection
           securitySection
         }
@@ -149,23 +152,21 @@ struct SignalASIOnDeviceRuntimeView: View {
         tint: runtimeReady ? .signalASIAccent : .orange,
         badge: runtimeBadge
       )
-      SignalASISecurityNavigationRow(
-        title: t("cc_runtime_broker_title", "Runtime Broker"),
+      SignalASISecurityStatusRow(
+        title: t("cc_runtime_broker_title", "In-app Linux Runtime"),
         subtitle: brokerStatusMessage.ifBlank(brokerAvailability.reason.ifBlank(t(
           "cc_runtime_broker_connected",
-          "Paired local Linux runtime service is ready"
+          "The embedded Debian service is ready"
         ))),
         systemImage: "link",
         tint: brokerTint,
         badge: brokerBadge
-      ) {
-        SignalASIRuntimeBrokerSettingsView()
-      }
+      )
       SignalASISecurityStatusRow(
         title: t("cc_runtime_linux_requirement_title", "Linux runtime requirement"),
         subtitle: t(
           "cc_runtime_linux_requirement_subtitle",
-          "The paired broker verifies Linux 1.3.9 or later before it accepts execution"
+          "The embedded Debian runtime verifies Linux 1.3.9 or later before it accepts execution"
         ),
         systemImage: "checkmark.shield",
         tint: brokerTint,
@@ -199,6 +200,43 @@ struct SignalASIOnDeviceRuntimeView: View {
         }
       }
     }
+  }
+
+  private var offlineBootstrapSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SignalASISecuritySectionTitle(title: t("cc_runtime_section_offline", "Offline Runtime Bundle"))
+      if offlineRuntimeIncluded {
+        SignalASISecurityStatusRow(
+          title: t("cc_runtime_offline_export_title", "Embedded Linux 1.3.9 runtime"),
+          subtitle: t(
+            "cc_runtime_offline_export_subtitle",
+            "Includes the Debian baseline and no-JIT QEMU runtime for the iOS app sandbox"
+          ),
+          systemImage: "cpu",
+          tint: .signalASIAccent,
+          badge: t("cc_runtime_offline_included", "Included")
+        )
+      } else {
+        SignalASISecurityStatusRow(
+          title: t("cc_runtime_offline_missing_title", "Offline Linux bundle unavailable"),
+          subtitle: t(
+            "cc_runtime_offline_missing_subtitle",
+            "Install a full offline IPA to include the Linux 1.3.9 deployment payload"
+          ),
+          systemImage: "shippingbox",
+          tint: .orange,
+          badge: t("cc_status_unavailable", "Unavailable")
+        )
+      }
+    }
+  }
+
+  private var offlineRuntimeIncluded: Bool {
+    Bundle.main.url(
+      forResource: "linux-base-1.3.9-aarch64",
+      withExtension: "Image",
+      subdirectory: "runtime-bootstrap"
+    ) != nil
   }
 
   private var securitySection: some View {
@@ -242,7 +280,7 @@ struct SignalASIOnDeviceRuntimeView: View {
     let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
     DispatchQueue.global(qos: .userInitiated).async {
       let health = AgentIOSRuntimeBrokerHealthChecker.check(
-        broker: AgentIOSRuntimeBrokerClient(),
+        broker: inAppRuntimeBroker,
         deadlineEpochMillis: deadline,
         context: AgentNativeToolInvocationContext(
           invocationId: "runtime-dashboard-\(UUID().uuidString)"

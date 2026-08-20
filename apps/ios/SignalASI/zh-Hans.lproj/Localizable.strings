@@ -3787,8 +3787,8 @@
 "cc_runtime_ready_title" = "iOS 本机运行环境已就绪";
 "cc_runtime_setup_title" = "本机运行环境需要安装";
 "cc_runtime_overview_title" = "隔离执行环境";
-"cc_runtime_overview_subtitle" = "配对本机越狱 Linux Runtime Broker 后即可使用隔离的设备端执行";
-"cc_runtime_metric_ready" = "就绪 Broker";
+"cc_runtime_overview_subtitle" = "在 iOS App 沙盒内运行内置 Debian，进行隔离的设备端执行";
+"cc_runtime_metric_ready" = "就绪运行时";
 "cc_runtime_metric_total" = "最近运行";
 "cc_runtime_metric_languages" = "可选运行包";
 "cc_runtime_section_management" = "运行环境管理";
@@ -3817,7 +3817,7 @@
 "cc_runtime_catalog_refresh_title" = "运行包目录";
 "cc_runtime_catalog_refresh_subtitle" = "从 SignalASI 签名发布目录加载与本机兼容的运行包";
 "cc_runtime_linux_requirement_title" = "Linux 运行环境要求";
-"cc_runtime_linux_requirement_subtitle" = "已配对的 Broker 会在接受执行前验证 Linux 1.3.9 或更高版本";
+"cc_runtime_linux_requirement_subtitle" = "内置 Debian 运行时会在接受执行前验证 Linux 1.3.9 或更高版本";
 "cc_runtime_section_environment" = "基础运行环境";
 "cc_runtime_section_receipts" = "最近执行回执";
 "cc_runtime_receipt_empty_title" = "还没有运行环境执行记录";
@@ -4362,6 +4362,12 @@
 "cc_runtime_broker_connected" = "运行时 Broker 已连接";
 "cc_runtime_broker_unavailable" = "本机 Linux 运行时服务尚未就绪";
 "cc_runtime_broker_checking" = "正在检查已配对的本机 Linux 运行时服务";
+"cc_runtime_section_offline" = "离线运行时包";
+"cc_runtime_offline_export_title" = "内置 Linux 1.3.9 运行时";
+"cc_runtime_offline_export_subtitle" = "包含 Debian 基线和面向 iOS App 沙盒的无 JIT QEMU 运行时";
+"cc_runtime_offline_included" = "已包含";
+"cc_runtime_offline_missing_title" = "离线 Linux 包不可用";
+"cc_runtime_offline_missing_subtitle" = "请安装完整离线 IPA，以包含 Linux 1.3.9 部署载荷";
 "cc_conversation_hub_subtitle" = "会话、联系人、群组、二维码配对与云模型";
 "signalasi.agent_tasks.cancel_unavailable" = "此任务当前无法取消";
 "signalasi.agent_tasks.resume_failed" = "无法恢复已暂停的任务";

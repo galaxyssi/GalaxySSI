@@ -294,6 +294,8 @@
     A10000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift */; };
     A10000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift */; };
     A10000000000000000000737 /* voice in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000737 /* voice */; };
+    C90000000000000000000001 /* local-models in Resources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000002 /* local-models */; };
+    D10000000000000000000001 /* runtime-bootstrap in Resources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* runtime-bootstrap */; };
     A10000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift */; };
     A10000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */; };
     A10000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */; };
@@ -727,6 +729,7 @@
     A10000000000000000000901 /* AgentIOSWebIntelligenceCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */; };
     A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */; };
     A10000000000000000002201 /* AgentIOSRuntimeBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */; };
+    B90000000000000000000001 /* AgentIOSQemuRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000002 /* AgentIOSQemuRuntime.swift */; };
     A10000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */; };
     A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */; };
     A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */; };
@@ -1151,6 +1154,8 @@
     A20000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRunCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRunCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000737 /* voice */ = {isa = PBXFileReference; lastKnownFileType = folder; path = voice; sourceTree = "<group>"; };
+    C90000000000000000000002 /* local-models */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "local-models"; sourceTree = "<group>"; };
+    D20000000000000000000001 /* runtime-bootstrap */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "runtime-bootstrap"; sourceTree = "<group>"; };
     A20000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDefaults.swift; sourceTree = "<group>"; };
     A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDefaultsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDetailsPresenter.swift; sourceTree = "<group>"; };
@@ -1566,6 +1571,7 @@
     A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceCache.swift; sourceTree = "<group>"; };
     A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDefaultOnDeviceRuntimeProvider.swift; sourceTree = "<group>"; };
     A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimeBroker.swift; sourceTree = "<group>"; };
+    B90000000000000000000002 /* AgentIOSQemuRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSQemuRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRuntimeBrokerSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionStore.swift; sourceTree = "<group>"; };
@@ -1784,6 +1790,8 @@
         A20000000000000000000738 /* VoiceWhisperBenchmarkDefaults.swift */,
         A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */,
         A20000000000000000000737 /* voice */,
+        C90000000000000000000002 /* local-models */,
+        D20000000000000000000001 /* runtime-bootstrap */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000707 /* AgentDirectActionContext.swift */,
@@ -1820,6 +1828,7 @@
         A20000000000000000000901 /* AgentIOSWebIntelligenceCache.swift */,
         A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */,
         A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */,
+        B90000000000000000000002 /* AgentIOSQemuRuntime.swift */,
         A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */,
         A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */,
         A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */,
@@ -2697,7 +2706,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -3137,6 +3146,7 @@
         A10000000000000000000901 /* AgentIOSWebIntelligenceCache.swift in Sources */,
         A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */,
         A10000000000000000002201 /* AgentIOSRuntimeBroker.swift in Sources */,
+        B90000000000000000000001 /* AgentIOSQemuRuntime.swift in Sources */,
         A10000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift in Sources */,
         A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */,
         A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */,
