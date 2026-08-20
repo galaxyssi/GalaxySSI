@@ -4369,3 +4369,9 @@
 "signalasi.capability.device_memory" = "设备内存";
 "signalasi.pairing.show_qr_subtitle" = "显示此设备身份，供其他 SignalASI 客户端添加";
 "signalasi.status.loading" = "正在检查";
+"agent_empty_goal" = "请输入目标或添加附件。";
+"agent_marketplace_desktop_empty_subtitle" = "配对一台桌面设备，等待它的能力清单显示在这里。";
+"common_ok" = "确定";
+"self_model_subtitle" = "查看已完成任务归纳出的优势、限制与路由校准。";
+"self_model_hero_subtitle" = "模型保留在此 iPhone 上，只保留范围受限且经过内容最小化处理的证据。";
+"self_model_footer" = "任务文本会在学习前进行规范化处理。密钥、凭据和私密内容不会进入模型。";
