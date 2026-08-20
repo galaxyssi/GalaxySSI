@@ -87,6 +87,16 @@ final class VoiceASRProviderRoutingPolicyTests: XCTestCase {
         adaptivePartialEnabled: true
       )
     )
+    XCTAssertEqual(
+      VoiceASRProviderRoutingPolicy.authorizationRequirement(
+        settings: settings(locale: "zh-Hans"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      ),
+      .microphoneOnly
+    )
   }
 
   func testLocalWhisperWaitingForMicrophoneDoesNotRequestSpeechAuthorization() {
@@ -135,6 +145,16 @@ final class VoiceASRProviderRoutingPolicyTests: XCTestCase {
         localRuntimeEnabled: true,
         adaptivePartialEnabled: true
       )
+    )
+    XCTAssertEqual(
+      VoiceASRProviderRoutingPolicy.authorizationRequirement(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      ),
+      .microphoneAndSystemSpeech
     )
   }
 

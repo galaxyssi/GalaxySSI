@@ -30,6 +30,15 @@ struct SignalASIConversationComposer: View {
     )
   }
 
+  private var voicePermissionDeniedMessage: String {
+    switch VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: voiceSettings) {
+    case .microphoneOnly:
+      return t("signalasi.voice.microphone_permission_missing", "Microphone permission is missing.")
+    case .microphoneAndSystemSpeech:
+      return t("signalasi.voice.permission_missing", "Microphone or speech permission is missing.")
+    }
+  }
+
   var body: some View {
     VStack(spacing: 8) {
       if !attachments.isEmpty {
@@ -224,7 +233,7 @@ struct SignalASIConversationComposer: View {
           translation: value.translation,
           settings: voiceSettings,
           messages: SignalASIAgentHoldToTalkMessages(
-            permissionDenied: t("signalasi.voice.permission_missing", "Microphone permission is missing."),
+            permissionDenied: voicePermissionDeniedMessage,
             speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
             speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
             noSpeech: t("voice_no_speech", "No speech captured."),

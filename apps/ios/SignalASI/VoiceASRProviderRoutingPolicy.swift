@@ -5,6 +5,11 @@ enum VoiceASRProviderRouteKind: String, Codable, Equatable {
   case iosSpeechFallback = "IOS_SPEECH_FALLBACK"
 }
 
+enum VoiceASRAuthorizationRequirement: Equatable {
+  case microphoneOnly
+  case microphoneAndSystemSpeech
+}
+
 struct VoiceASRProviderRoute: Equatable {
   var kind: VoiceASRProviderRouteKind
   var capability: VoiceProviderCapability
@@ -75,6 +80,36 @@ enum VoiceASRProviderRoutingPolicy {
       return true
     }
     return false
+  }
+
+  static func authorizationRequirement(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    pcmCaptureEnabled: Bool,
+    localRuntimeEnabled: Bool,
+    adaptivePartialEnabled: Bool
+  ) -> VoiceASRAuthorizationRequirement {
+    requiresSystemSpeechAuthorization(
+      settings: settings,
+      capabilities: capabilities,
+      pcmCaptureEnabled: pcmCaptureEnabled,
+      localRuntimeEnabled: localRuntimeEnabled,
+      adaptivePartialEnabled: adaptivePartialEnabled
+    ) ? .microphoneAndSystemSpeech : .microphoneOnly
+  }
+
+  static func currentAuthorizationRequirement(settings: VoiceSettings) -> VoiceASRAuthorizationRequirement {
+    let normalized = settings.normalized
+    return authorizationRequirement(
+      settings: normalized,
+      capabilities: VoiceProviderCapabilityDetector.detect(
+        settings: normalized,
+        validatedNetworkAvailable: false
+      ),
+      pcmCaptureEnabled: VoiceFeatureFlags.isPcmCaptureEnabled(),
+      localRuntimeEnabled: VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(),
+      adaptivePartialEnabled: VoiceFeatureFlags.isWhisperAdaptivePartialEnabled()
+    )
   }
 
   static func shouldUseLocalWhisper(

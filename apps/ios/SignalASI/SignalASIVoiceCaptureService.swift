@@ -111,7 +111,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       settings: normalized,
       validatedNetworkAvailable: false
     )
-    let needsSystemSpeechAuthorization = VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+    let authorizationRequirement = VoiceASRProviderRoutingPolicy.authorizationRequirement(
       settings: normalized,
       capabilities: capabilities,
       pcmCaptureEnabled: VoiceFeatureFlags.isPcmCaptureEnabled(),
@@ -120,7 +120,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     )
     let micGranted = await AVAudioSession.sharedInstance().requestRecordPermission()
     guard micGranted else { return false }
-    guard needsSystemSpeechAuthorization else { return true }
+    guard authorizationRequirement == .microphoneAndSystemSpeech else { return true }
     recognizer = SFSpeechRecognizer(locale: Locale(identifier: normalized.preferredLocaleIdentifier))
     return await withCheckedContinuation { continuation in
       SFSpeechRecognizer.requestAuthorization { status in
