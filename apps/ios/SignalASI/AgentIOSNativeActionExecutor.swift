@@ -28,6 +28,17 @@ struct AgentIOSDefaultNativeActionHandoffProvider: AgentIOSNativeActionHandoffPr
 }
 
 enum AgentIOSNativeToolHandoffPresenter {
+  @discardableResult
+  static func openSMSCompose(phoneNumber: String, body: String) -> Bool {
+    guard let normalized = normalizedPhoneNumber(phoneNumber) else { return false }
+    presentSMSCompose(AgentIOSSMSComposeRequest(
+      phoneNumber: normalized,
+      body: String(body.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000)),
+      fallbackURL: "sms:\(normalized)"
+    ))
+    return true
+  }
+
   static func openIfNeeded(_ result: AgentActionResult) {
     guard result.success,
           let rawOutput = result.metadata["native_tool_output"],
@@ -63,7 +74,9 @@ enum AgentIOSNativeToolHandoffPresenter {
       }
       return AgentIOSSMSComposeRequest(
         phoneNumber: phoneNumber,
-        body: String((object["prefill_body"]?.stringValue ?? "").prefix(2_000)),
+        body: String((object["prefill_body"]?.stringValue ?? "")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .prefix(2_000)),
         fallbackURL: fallbackURL
       )
     case .array(let values):
