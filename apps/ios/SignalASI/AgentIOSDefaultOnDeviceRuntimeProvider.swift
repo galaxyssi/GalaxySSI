@@ -46,10 +46,16 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
 
   func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability {
     switch operation {
-    case .status, .workspaceStatus, .workspaceRollback, .listPacks:
+    case .status, .workspaceStatus, .workspaceRollback, .listPacks,
+         .softwareCatalog, .softwareSearch, .softwareInspect:
       return .available
-    case .installPack:
+    case .installPack, .softwareInstall:
       return .available
+    case .softwareRemove:
+      return AgentNativeToolAvailability(
+        status: .unavailable,
+        reason: "iOS does not expose an unmanaged Linux package manager; signed runtime packs are lifecycle-managed"
+      )
     case .execute:
       return AgentNativeToolAvailability(
         status: .requiresSetup,
@@ -85,6 +91,26 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       )
     case .installPack:
       return installPack(input: input, invocation: invocation)
+    case .softwareCatalog:
+      return AgentNativeToolExecutionResult.success(
+        output: softwareCatalogOutput(),
+        message: "Compatible iOS runtime software listed",
+        metadata: baseMetadata(["operation": .string("software_catalog")])
+      )
+    case .softwareSearch:
+      return searchSoftware(input: input)
+    case .softwareInspect:
+      return inspectSoftware(input: input)
+    case .softwareInstall:
+      return installSoftware(input: input, invocation: invocation)
+    case .softwareRemove:
+      return AgentNativeToolExecutionResult.failure(
+        code: "ios_linux_package_management_unavailable",
+        message: "iOS does not expose an unmanaged Linux package manager; signed runtime packs are lifecycle-managed",
+        details: baseMetadata([
+          "source": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage)
+        ])
+      )
     case .execute:
       return requiresSetup(
         code: "runtime_execute_requires_setup",
@@ -189,6 +215,214 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       )
     }
   }
+
+  private func softwareCatalogOutput() -> AgentMcpJSONObject {
+    let packs = packStatuses()
+    return [
+      "architecture": .string(hostArchitecture()),
+      "linux_ready": .bool(false),
+      "sources": .array([
+        .object([
+          "id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack),
+          "trusted": .bool(true),
+          "searchable": .bool(true),
+          "install_tool_id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall)
+        ]),
+        .object([
+          "id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage),
+          "trusted": .bool(false),
+          "searchable": .bool(false),
+          "reason": .string("Unmanaged Linux package management is unavailable on iOS")
+        ])
+      ]),
+      "software": .array(packs.map { .object(softwarePackOutput($0)) }),
+      "observed_at_epoch_ms": .int(max(0, nowMillis()))
+    ]
+  }
+
+  private func searchSoftware(input: AgentMcpJSONObject) -> AgentNativeToolExecutionResult {
+    let query = (input["query"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    guard !query.isEmpty else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_software_query",
+        message: "Software search query is required"
+      )
+    }
+    let source = requestedSoftwareSource(input)
+    guard source != AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage else {
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "query": .string(query),
+          "results": .array([]),
+          "source_errors": .array([
+            .object([
+              "source": .string(source),
+              "message": .string("Unmanaged Linux package search is unavailable on iOS")
+            ])
+          ])
+        ],
+        message: "Compatible iOS runtime software searched",
+        metadata: baseMetadata()
+      )
+    }
+    let limit = max(1, min(
+      Int(input["limit"]?.intValue ?? 10),
+      Int(AgentIOSOnDeviceRuntimeNativeToolCatalog.maxSoftwareResults)
+    ))
+    let results = packStatuses()
+      .filter { softwareMatches(query: query, pack: $0) }
+      .prefix(limit)
+      .map { AgentMcpJSONValue.object(softwarePackOutput($0)) }
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "query": .string(query),
+        "results": .array(Array(results)),
+        "source_errors": .array([]),
+        "observed_at_epoch_ms": .int(max(0, nowMillis()))
+      ],
+      message: "Compatible iOS runtime software searched",
+      metadata: baseMetadata()
+    )
+  }
+
+  private func inspectSoftware(input: AgentMcpJSONObject) -> AgentNativeToolExecutionResult {
+    guard let softwareId = softwareId(input) else {
+      return invalidRuntimeSoftware()
+    }
+    guard softwareSource(input, softwareId: softwareId) != AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage else {
+      return unavailableLinuxPackageManagement()
+    }
+    guard let pack = packStatuses().first(where: { $0.id == softwareId }) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "software_not_found",
+        message: "Managed runtime pack was not found"
+      )
+    }
+    return AgentNativeToolExecutionResult.success(
+      output: softwarePackOutput(pack),
+      message: "Compatible iOS runtime software inspected",
+      metadata: baseMetadata()
+    )
+  }
+
+  private func installSoftware(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    guard let softwareId = softwareId(input) else {
+      return invalidRuntimeSoftware()
+    }
+    guard softwareSource(input, softwareId: softwareId) != AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage else {
+      return unavailableLinuxPackageManagement()
+    }
+    guard AgentRuntimePackCatalogPolicy.requiredPacks.contains(softwareId) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "software_not_found",
+        message: "Managed runtime pack was not found"
+      )
+    }
+    var packInput = input
+    packInput["pack_id"] = .string(softwareId)
+    let result = installPack(input: packInput, invocation: invocation)
+    guard result.isSuccess else { return result }
+    var output = result.output
+    output["software_id"] = .string(softwareId)
+    output["source"] = .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack)
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "Compatible iOS runtime software installed and verified",
+      metadata: result.metadata
+    )
+  }
+
+  private func softwarePackOutput(_ pack: AgentRuntimePackStatus) -> AgentMcpJSONObject {
+    [
+      "software_id": .string(pack.id),
+      "source": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack),
+      "version": .string(pack.manifest?.version ?? ""),
+      "installed": .bool(pack.state == .ready),
+      "compatible": .bool(pack.state != .incompatible),
+      "state": .string(pack.state.rawValue),
+      "reason": .string(pack.reason),
+      "architecture": .string(pack.manifest?.architecture ?? hostArchitecture()),
+      "capabilities": .array((pack.manifest?.capabilities ?? []).sorted().map(AgentMcpJSONValue.string)),
+      "install_tool_id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstall)
+    ]
+  }
+
+  private func softwareMatches(query: String, pack: AgentRuntimePackStatus) -> Bool {
+    let terms = [pack.id] + softwareAliases[pack.id, default: []] + (pack.manifest?.capabilities ?? [])
+    return terms.contains { $0.localizedCaseInsensitiveContains(query) }
+  }
+
+  private func softwareId(_ input: AgentMcpJSONObject) -> String? {
+    let value = (input["software_id"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard value.range(
+      of: "^[a-z0-9][a-z0-9+.-]{0,127}$",
+      options: .regularExpression
+    ) != nil else {
+      return nil
+    }
+    return value
+  }
+
+  private func softwareSource(_ input: AgentMcpJSONObject, softwareId: String? = nil) -> String {
+    let source = requestedSoftwareSource(input)
+    switch source {
+    case AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage:
+      return source
+    case AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack:
+      return AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack
+    case AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceAuto, "":
+      let id = softwareId ?? self.softwareId(input)
+      return AgentRuntimePackCatalogPolicy.requiredPacks.contains(id ?? "")
+        ? AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack
+        : AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage
+    default:
+      return AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack
+    }
+  }
+
+  private func requestedSoftwareSource(_ input: AgentMcpJSONObject) -> String {
+    let source = (input["source"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    switch source {
+    case AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack,
+         AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage:
+      return source
+    default:
+      return AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceAuto
+    }
+  }
+
+  private func invalidRuntimeSoftware() -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: "software_not_found",
+      message: "A supported runtime software id is required"
+    )
+  }
+
+  private func unavailableLinuxPackageManagement() -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: "ios_linux_package_management_unavailable",
+      message: "iOS does not expose an unmanaged Linux package manager; use a signed runtime pack"
+    )
+  }
+
+  private let softwareAliases: [String: [String]] = [
+    "linux-base": ["linux", "shell", "debian", "git", "ssh", "curl", "wget", "zip"],
+    "python-uv": ["python", "uv", "pip"],
+    "node-js": ["node", "javascript", "typescript", "npm"],
+    "go": ["golang"],
+    "rust": ["cargo"],
+    "cpp": ["c", "c++", "clang"],
+    "java": ["jdk", "gradle"],
+    "browser-automation": ["browser", "playwright", "web"],
+    "ffmpeg": ["media", "ffprobe", "video", "audio"]
+  ]
 
   private func workspaceStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     do {
