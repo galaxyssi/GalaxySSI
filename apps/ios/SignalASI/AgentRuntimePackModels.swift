@@ -162,7 +162,10 @@ enum AgentEmbeddedRuntimeBundleCodec {
   private static let maxIndexBytes = 64 * 1_024
   private static let maxArchiveBytes: Int64 = 6 * 1_024 * 1_024 * 1_024
   private static let maxInstalledBytes: Int64 = 12 * 1_024 * 1_024 * 1_024
-  private static let defaultArchitecture = "arm64-v8a"
+  // iOS runtime archives use the host ABI, never Android's arm64-v8a ABI.
+  private static var defaultArchitecture: String {
+    AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? ""
+  }
   private static let defaultPacks = ["linux-base", "python-uv"]
   private static let versionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?$"#
   private static let sha256Pattern = #"^[0-9a-f]{64}$"#
@@ -660,7 +663,7 @@ struct AgentRuntimePackInstallResult: Codable, Equatable {
 
 enum AgentRuntimeDistributionSources {
   static let githubCatalogURL =
-    "https://github.com/signalasi/SignalASI/releases/download/android-runtime-v1/android-runtime-catalog-v1.json"
+    "https://github.com/signalasi/SignalASI/releases/download/ios-runtime-v1/ios-runtime-catalog-v1.json"
 
   static func catalogCandidates(languageTag: String) -> [String] {
     downloadCandidates(url: githubCatalogURL, languageTag: languageTag)
@@ -720,9 +723,9 @@ enum AgentRuntimePackCatalogPolicy {
 
   static var defaultSupportedArchitectures: [String] {
     #if arch(arm64)
-      return ["arm64", "arm64-v8a"]
+      return ["arm64"]
     #elseif arch(x86_64)
-      return ["x86_64", "x86"]
+      return ["x86_64"]
     #else
       return []
     #endif
