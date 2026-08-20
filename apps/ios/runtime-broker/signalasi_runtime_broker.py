@@ -255,6 +255,7 @@ class RuntimeBroker:
             "reason": self.status_reason(ready, diagnostic, limits_ready),
             "architecture": "arm64",
             "execution_target": "ios_jailbreak_linux",
+            "linux_base_version": self.config.linux_base_version,
             "linux_system": {
                 "distribution": self.config.distribution,
                 "execution_principal": "configured_jailbreak_linux_prefix",

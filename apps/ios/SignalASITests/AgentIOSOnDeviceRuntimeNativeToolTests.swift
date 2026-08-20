@@ -491,6 +491,65 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.availability(operation: .execute).status, .available)
   }
 
+  func testDefaultRuntimeProviderRejectsAnOutdatedLinuxBrokerBeforeExecution() throws {
+    struct OutdatedBroker: AgentIOSRuntimeBrokerProviding {
+      var implementationId: String { "outdated-runtime-broker" }
+
+      func availability() -> AgentNativeToolAvailability { .available }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64
+      ) throws -> AgentMcpJSONObject {
+        switch operation {
+        case .status:
+          return [
+            "backend_ready": .bool(true),
+            "linux_base_version": .string("1.3.8")
+          ]
+        default:
+          XCTFail("Outdated broker must not receive \(operation.rawValue)")
+          return [:]
+        }
+      }
+    }
+
+    let root = try temporaryDirectory("ios-default-runtime-outdated-broker")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
+      runtimeRootURL: root,
+      broker: OutdatedBroker(),
+      signatureVerifier: { _ in true }
+    )
+    let result = provider.invoke(
+      operation: .execute,
+      input: ["command": .string("echo should-not-run")],
+      invocation: AgentNativeToolInvocation(
+        descriptor: try AgentNativeToolDescriptor(
+          id: "ios.runtime.execute",
+          version: "1.0.0",
+          title: "Execute runtime command",
+          description: "Executes a Linux command through the paired runtime broker.",
+          location: .phone,
+          risk: .high
+        ),
+        input: [:],
+        context: AgentNativeToolInvocationContext(invocationId: "outdated-linux-broker"),
+        startedAtEpochMillis: 0,
+        deadlineEpochMillis: 100,
+        nowMillis: { 0 },
+        cancellationRequested: { false },
+        progressReporter: { _, _ in }
+      )
+    )
+
+    XCTAssertEqual(result.status, .failed)
+    XCTAssertEqual(result.error?.code, "runtime_broker_linux_base_incompatible")
+    XCTAssertEqual(result.error?.message, "Linux 1.3.9 or later is required (broker reports 1.3.8).")
+  }
+
   func testAgentIOSRuntimeBrokerClientSignsLoopbackStatusRequests() throws {
     final class StubTransport: AgentIOSRuntimeBrokerTransport {
       var capturedFrame = Data()
@@ -606,7 +665,11 @@ extension SignalASIStoreTests {
     let ready = AgentIOSRuntimeBrokerHealthChecker.check(
       broker: StubBroker(
         availabilityValue: .available,
-        result: .success(["backend_ready": .bool(true), "reason": .string("Guest ready")])
+        result: .success([
+          "backend_ready": .bool(true),
+          "reason": .string("Guest ready"),
+          "linux_base_version": .string("1.3.9")
+        ])
       ),
       deadlineEpochMillis: 100,
       context: context
@@ -615,6 +678,29 @@ extension SignalASIStoreTests {
     XCTAssertEqual(unconfigured, .notConfigured("Pair the broker"))
     XCTAssertEqual(unavailable, .unavailable("Guest stopped"))
     XCTAssertEqual(ready, .ready("Guest ready"))
+
+    let outdated = AgentIOSRuntimeBrokerHealthChecker.check(
+      broker: StubBroker(
+        availabilityValue: .available,
+        result: .success([
+          "backend_ready": .bool(true),
+          "linux_system": .object(["base_version": .string("1.3.8")])
+        ])
+      ),
+      deadlineEpochMillis: 100,
+      context: context
+    )
+    let missingVersion = AgentIOSRuntimeBrokerHealthChecker.check(
+      broker: StubBroker(
+        availabilityValue: .available,
+        result: .success(["backend_ready": .bool(true)])
+      ),
+      deadlineEpochMillis: 100,
+      context: context
+    )
+
+    XCTAssertEqual(outdated, .unavailable("Linux 1.3.9 or later is required (broker reports 1.3.8)."))
+    XCTAssertEqual(missingVersion, .unavailable("The local Linux runtime broker did not report its Linux base version."))
   }
 
   func testRuntimeBrokerLifecycleBacksOffThenRecovers() throws {
