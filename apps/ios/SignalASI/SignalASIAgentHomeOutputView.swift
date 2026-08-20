@@ -85,90 +85,14 @@ extension AgentHomeView {
           if let recoverableAgentTask = recoverableAgentTasksFromOtherSessions.first {
             recoverableAgentTaskBanner(recoverableAgentTask)
           }
-          if messages.isEmpty &&
-              !voiceTranscriptionPending &&
-              pendingConfirmationTask == nil &&
-              blockedAgentTask == nil &&
-              activeExecutionTask == nil &&
-              activeRemoteAgentTask == nil &&
-              activeVoiceAgentRuns.isEmpty &&
-              recoverableAgentTasksFromOtherSessions.isEmpty {
-            SignalASIAgentHomeEmptyStatePanel(
-              title: t("signalasi.agent.empty.title", "How can I help?"),
-              subtitle: t("signalasi.agent.empty.subtitle", "Enter a goal or hold to talk"),
-              runningTasks: activeAgentTasks.count,
-              callableTargets: availableCallableTargetCount,
-              nativeToolSummary: nativeToolSummary,
-              nativeTools: AgentPhoneNativeToolCatalog.descriptors(),
-              screenObservationAllowed: store.agentSafetySettings.screenObservationAllowed,
-              executionPaused: store.agentSafetySettings.executionPaused,
-              currentApp: agentScreenSnapshot.screen.foregroundApp
-                .ifBlank(agentScreenSnapshot.screen.pageTitle)
-                .ifBlank("SignalASI"),
-              memorySnapshot: store.agentMemorySnapshot(),
-              knowledgeStats: store.agentKnowledgeStats,
-              knowledgeHitCount: store.agentKnowledgeAccessAudit.count,
-              screen: agentScreenSnapshot.screen,
-              screenSections: agentScreenSnapshot.sections,
-              recentTaskCount: store.recentAgentTasks(limit: 200).count,
-              recentTasks: store.recentAgentTasks(limit: 3),
-              permissionMode: store.agentSafetySettings.permissionMode,
-              highRiskGuard: store.agentSafetySettings.highRiskGuard,
-              memoryCapture: store.agentSafetySettings.memoryCapture,
-              taskExecutionMode: store.agentSafetySettings.taskExecutionMode,
-              routeTitle: headerPresentation.modelLogoLabel,
-              routeSubtitle: hasManualSelection
-                ? t("signalasi.agent.route.manual", "Manual route")
-                : t("signalasi.agent.route.automatic", "Automatic route"),
-              routeStatus: manualRouteWarning == nil && automaticRouteWarning == nil
-                ? t("signalasi.status.ready", "Ready")
-                : t("signalasi.agent.model_selection.choose", "Choose"),
-              routeReady: manualRouteWarning == nil && automaticRouteWarning == nil,
-              t: t,
-              onNewSession: createAgentConversation,
-              onOpenSessions: {
-                recentTaskForDetails = nil
-                agentSessionsShortcutActive = true
-              },
-              onScan: {
-                scanShortcutActive = true
-              },
-              onTakePhoto: openCameraAttachmentPicker,
-              onAddFile: {
-                fileImporterPresented = true
-              },
-              onCyclePermissionMode: cycleAgentPermissionMode,
-              onToggleHighRiskGuard: {
-                store.updateAgentSafetySettings { $0.highRiskGuard.toggle() }
-              },
-              onToggleMemoryCapture: {
-                store.updateAgentSafetySettings { $0.memoryCapture.toggle() }
-              },
-              onCycleTaskExecutionMode: cycleAgentTaskExecutionMode,
-              onToggleExecutionPaused: {
-                store.updateAgentSafetySettings { $0.executionPaused.toggle() }
-              },
-              onOpenRecentTasks: {
-                recentTaskForDetails = nil
-                recentTasksShortcutActive = true
-              },
-              onOpenRecentTask: { task in
-                recentTaskForDetails = task
-                recentTasksShortcutActive = true
-              },
-              onTaskAction: handleHomeTaskAction,
-              onModelSelectionChanged: refreshAgentRouteState,
-              onOpenRouteSelection: {
-                agentModelSelectionShortcutActive = true
-              },
-              onScreenCommand: prefillAgentScreenCommand,
-              onRefreshScreenContext: refreshAgentScreenContext
-            )
-            AgentProcessCard(
-              activePhase: activeAgentPhase,
-              executionPaused: store.agentSafetySettings.executionPaused
-            )
-          } else {
+          if !messages.isEmpty ||
+              voiceTranscriptionPending ||
+              pendingConfirmationTask != nil ||
+              blockedAgentTask != nil ||
+              activeExecutionTask != nil ||
+              activeRemoteAgentTask != nil ||
+              !activeVoiceAgentRuns.isEmpty ||
+              !recoverableAgentTasksFromOtherSessions.isEmpty {
             SignalASIAgentExecutionOverviewView(
               activeRemoteAgentTask: activeRemoteAgentTask,
               activeExecutionTask: activeExecutionTask,

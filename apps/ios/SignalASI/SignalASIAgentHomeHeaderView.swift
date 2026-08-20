@@ -76,18 +76,22 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
   private var sessionNavigation: some View {
     VStack(alignment: .trailing, spacing: 2) {
       NavigationLink(destination: SignalASIConversationHubView()) {
-        Text(sessionTitle)
-          .font(.system(size: 14, weight: .bold))
-          .foregroundColor(.signalASIAgentSessionTitle)
-          .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
-          .truncationMode(.tail)
-          .multilineTextAlignment(.trailing)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+        HStack(spacing: 4) {
+          Text(sessionTitle)
+            .lineLimit(usesAccessibilityDynamicType ? 2 : 1)
+            .truncationMode(.tail)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+        }
+        .font(.system(size: 14, weight: .bold))
+        .foregroundColor(.signalASIAgentSessionTitle)
+        .multilineTextAlignment(.trailing)
+        .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .buttonStyle(.plain)
       NavigationLink(destination: modelSelectionDestination) {
         HStack(spacing: 3) {
-          Image(systemName: "chevron.down")
+          Image(systemName: "chevron.left")
             .font(.system(size: 8, weight: .bold))
           SignalASIAgentRouteLogo(label: modelLogoLabel, size: 16)
           Text(modelStatusLabel)

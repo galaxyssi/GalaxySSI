@@ -52,6 +52,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var pcmTapEndpointRequested = false
   private var liveWhisperActive = false
   private var latestAudioLevel: Float = 0
+  private var holdToTalkCompletion: ((String) -> Void)?
+  private var holdToTalkTimeoutTask: Task<Void, Never>?
 
   var currentAudioLevel: Float {
     audioLevelLock.lock()
@@ -249,14 +251,97 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           VoiceRuntimeHealthRegistry.success(self.currentRuntimeChannel)
         }
         if (error != nil || result?.isFinal == true), !self.liveWhisperActive {
-          Task { @MainActor in self.stop() }
+          if self.holdToTalkCompletion != nil {
+            let receivedFinal = result?.isFinal == true
+            Task { @MainActor in
+              self.completeHoldToTalkStop(receivedFinal: receivedFinal)
+            }
+          } else {
+            Task { @MainActor in self.stop() }
+          }
         }
       }
     }
   }
 
+  /// Ends the microphone input while allowing Apple's recognizer to deliver its final result.
+  /// Android's hold-to-talk flow sends on release, but cancelling the iOS task at that moment
+  /// discards the final partial transcript.
+  @MainActor
+  func stopForHoldToTalk(completion: @escaping (String) -> Void) {
+    guard isRecording else {
+      completion(currentIOSSpeechTranscript.ifBlank(transcript))
+      return
+    }
+    if liveWhisperActive {
+      let fallback = currentIOSSpeechTranscript.ifBlank(transcript)
+      stop()
+      completion(fallback)
+      return
+    }
+
+    holdToTalkCompletion = completion
+    holdToTalkTimeoutTask?.cancel()
+    holdToTalkTimeoutTask = nil
+    isRecording = false
+    audioEngine.stop()
+    audioEngine.inputNode.removeTap(onBus: 0)
+    request?.endAudio()
+
+    holdToTalkTimeoutTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 900_000_000)
+      guard !Task.isCancelled else { return }
+      await self?.completeHoldToTalkStop(receivedFinal: false)
+    }
+  }
+
+  @MainActor
+  private func completeHoldToTalkStop(receivedFinal: Bool) {
+    guard let completion = holdToTalkCompletion else { return }
+    holdToTalkCompletion = nil
+    holdToTalkTimeoutTask?.cancel()
+    holdToTalkTimeoutTask = nil
+
+    let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
+    let fallbackModelProfileId = currentRecognitionModelProfileId
+    let runtimeChannel = currentRuntimeChannel
+    if !receivedFinal {
+      emitCommands(
+        coordinatorBridge.finishStoppedCapture(
+          transcript: fallbackTranscript,
+          provider: iosSpeechProviderId,
+          modelProfileId: fallbackModelProfileId
+        )
+      )
+    }
+    task?.cancel()
+    task = nil
+    request = nil
+    currentRecognitionModelProfileId = ""
+    currentIOSSpeechTranscript = ""
+    stableTranscript = ""
+    unstableTranscript = ""
+    updateAudioLevel(0)
+    pcmTapPipeline = nil
+    pcmTapSpeechStarted = false
+    pcmTapSpeechEnded = false
+    pcmTapEndpointRequested = false
+    liveWhisperController.close()
+    liveWhisperActive = false
+    VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+
+    // Let a final coordinator command reach the hold-to-talk controller first.
+    Task { @MainActor in
+      await Task.yield()
+      completion(fallbackTranscript)
+    }
+  }
+
   @MainActor
   func stop() {
+    holdToTalkTimeoutTask?.cancel()
+    holdToTalkTimeoutTask = nil
+    holdToTalkCompletion = nil
     let wasRecording = isRecording
     let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
     let fallbackModelProfileId = currentRecognitionModelProfileId
