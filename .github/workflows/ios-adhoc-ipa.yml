@@ -186,11 +186,52 @@ jobs:
           find "$UTM_SE_FRAMEWORKS" -maxdepth 1 -type d -name '*.framework' -print | sort > "$BOOTSTRAP_DIR/utm-se-frameworks.txt"
 
       - name: Build SignalASI for iPhoneOS
+        env:
+          IOS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.IOS_SIGNING_CERTIFICATE_BASE64 }}
+          IOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.IOS_SIGNING_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
           DERIVED_DATA="$PWD/build/ios/DerivedData"
           rm -rf "$DERIVED_DATA"
           BUILD_SETTINGS=()
+          SIGNING_SETTINGS=(
+            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY=""
+            DEVELOPMENT_TEAM=""
+          )
+          if [[ -n "${IOS_SIGNING_CERTIFICATE_BASE64:-}" && -n "${IOS_PROVISIONING_PROFILE_BASE64:-}" && -n "${IOS_DEVELOPMENT_TEAM:-}" ]]; then
+            KEYCHAIN_PATH="$RUNNER_TEMP/signalasi-ios-signing.keychain-db"
+            KEYCHAIN_PASSWORD="${IOS_SIGNING_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+            CERTIFICATE_PATH="$RUNNER_TEMP/signalasi-ios-signing.p12"
+            PROFILE_PATH="$RUNNER_TEMP/signalasi-ios.mobileprovision"
+            echo "$IOS_SIGNING_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+            echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "${IOS_SIGNING_CERTIFICATE_PASSWORD:-}" -A -T /usr/bin/codesign
+            security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            PROFILE_UUID="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)"
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+            SIGNING_SETTINGS=(
+              CODE_SIGNING_ALLOWED=YES
+              CODE_SIGNING_REQUIRED=YES
+              CODE_SIGN_STYLE=Manual
+              DEVELOPMENT_TEAM="$IOS_DEVELOPMENT_TEAM"
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"
+              CODE_SIGN_IDENTITY="${IOS_SIGNING_IDENTITY:-Apple Development}"
+            )
+            echo "IOS_APP_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
+            echo "IOS_APP_SIGNING_IDENTITY=${IOS_SIGNING_IDENTITY:-Apple Development}" >> "$GITHUB_ENV"
+          else
+            echo "IOS_APP_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
+          fi
           if [[ "$IOS_OFFLINE_BUNDLE" == "true" ]]; then
             BUILD_SETTINGS+=('SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SIGNALASI_NATIVE_LLAMA SIGNALASI_NATIVE_WHISPER SIGNALASI_OFFLINE_BUNDLE')
           fi
@@ -202,10 +243,7 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
+            "${SIGNING_SETTINGS[@]}" \
             "${BUILD_SETTINGS[@]}" \
             build
 
@@ -244,7 +282,11 @@ jobs:
               done
           fi
 
-          /usr/bin/codesign --force --deep --sign - --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
+          if [[ "${IOS_APP_SIGNING_ENABLED:-false}" == "true" ]]; then
+            /usr/bin/codesign --force --deep --sign "$IOS_APP_SIGNING_IDENTITY" --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
+          else
+            /usr/bin/codesign --force --deep --sign - --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
+          fi
           /usr/bin/codesign --display --verbose=2 "$PAYLOAD_DIR/SignalASI.app" || true
 
           (
@@ -269,10 +311,7 @@ jobs:
           - $([[ "$IOS_OFFLINE_BUNDLE" == "true" ]] && echo "LFM2.5 350M local Agent model, Whisper Tiny and Small, UTM SE 4.7.5 no-JIT QEMU frameworks, and the SignalASI Linux 1.3.9 Debian baseline are embedded." || echo "Not embedded in this slim build.")
 
           Signing:
-          - Ad-hoc signed by GitHub Actions.
-          - No Apple provisioning profile is embedded.
-          - Intended for jailbroken, TrollStore-style, or other controlled test devices.
-          - It will not install on a normal locked iPhone without a valid Apple signing profile.
+          - $([[ "${IOS_APP_SIGNING_ENABLED:-false}" == "true" ]] && echo "Signed with the configured Apple certificate and provisioning profile for non-jailbroken iPhone installation." || echo "Ad-hoc signed test package; configure the iOS signing GitHub Secrets to install on a normal locked iPhone.")
           EOF
 
           DSYM_PATH="$PRODUCT_DIR/SignalASI.app.dSYM"
