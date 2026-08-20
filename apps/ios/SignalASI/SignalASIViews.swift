@@ -548,8 +548,9 @@ struct ConversationView: View {
           attachmentMenuPresented: $attachmentMenuPresented,
           textModeActive: $composerTextModeActive,
           deviceInputPolicy: deviceInputPolicy,
+          voiceSettings: store.voiceSettings,
           onSend: sendCurrentMessage,
-          onVoiceAttachment: sendVoiceRecording,
+          onVoiceTranscript: sendVoiceTranscript,
           t: t
         )
         .disabled(peerSendPending)
@@ -961,25 +962,11 @@ struct ConversationView: View {
     }
   }
 
-  private func sendVoiceRecording(_ attachment: SignalASIDraftAttachment, duration: TimeInterval) {
-    let totalSeconds = max(1, Int(duration.rounded()))
-    let durationLabel = String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
-    let title = t("signalasi.message.voice", "Voice message")
-    let retainedAttachments = attachments
-      .filter { $0.id != attachment.id }
-    let outgoingAttachments = [attachment] + retainedAttachments
-    attachments.removeAll()
-    attachmentError = ""
-    Task {
-      let sent = await coordinator.send(
-        "\(title) \(durationLabel)",
-        to: contact,
-        attachments: outgoingAttachments
-      )
-      guard !sent else { return }
-      attachments = retainedAttachments
-      attachmentError = coordinator.lastError
-    }
+  private func sendVoiceTranscript(_ value: String) {
+    let transcript = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !transcript.isEmpty else { return }
+    draft = transcript
+    sendCurrentMessage()
   }
 
   private func createAgentConversation() {
