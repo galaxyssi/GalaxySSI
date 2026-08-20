@@ -49,6 +49,9 @@ class AgentLinuxProjectCloneTest {
         assertFalse("dpkg" in shellSource)
         assertTrue("git -c safe.directory=\"${'$'}PWD\"" in shellSource)
         assertTrue("repair_partial_repository" in shellSource)
+        assertTrue("--separate-git-dir=\"${'$'}git_metadata_dir\"" in shellSource)
+        assertTrue("SIGNALASI_GIT_METADATA_ROOT:-/var/lib/signalasi/git" in shellSource)
+        assertTrue("git rev-parse --git-path info/exclude" in shellSource)
         assertTrue("replace_existing=false" in shellSource)
         assertTrue("__SIGNALASI_STAGE__:install_git" in shellSource)
         assertTrue("apt-get install -y --no-install-recommends git openssh-client ca-certificates" in shellSource)
@@ -207,6 +210,8 @@ class AgentLinuxProjectCloneTest {
                         .directory(workspace)
                         .redirectErrorStream(false)
                     processBuilder.environment()["HOME"] = File(root, "git-home").apply { mkdirs() }.absolutePath
+                    processBuilder.environment()["SIGNALASI_GIT_METADATA_ROOT"] =
+                        File(root, "linux-git-metadata").absolutePath
                     val process = processBuilder.start()
                     val stdout = process.inputStream.bufferedReader().readText()
                     val stderr = process.errorStream.bufferedReader().readText()
@@ -242,7 +247,9 @@ class AgentLinuxProjectCloneTest {
             )
 
             assertEquals("# Linux clone smoke test", File(workspace, "README.md").readText().trim())
-            assertTrue(File(workspace, ".git").isDirectory)
+            assertTrue(File(workspace, ".git").isFile)
+            assertTrue(File(root, "linux-git-metadata/workspace/objects").isDirectory)
+            assertFalse(File(workspace, ".git/objects").exists())
             assertFalse(File(workspace, ".signalasi-runtime/repository").exists())
             assertFalse(File(workspace, ".signalasi-runtime/git-askpass.sh").exists())
             assertTrue(runtimeFiles.all(File::isFile))
@@ -263,7 +270,12 @@ class AgentLinuxProjectCloneTest {
                 assertEquals(listOf("README.md"), snapshot.modified)
             }
             assertTrue(backend.diff("smoke", 16 * 1024).contains("Local Linux diff"))
-            Git.open(workspace).use { git -> git.checkout().addPath("README.md").call() }
+            val restore = ProcessBuilder(
+                requireNotNull(bash).absolutePath,
+                "-lc",
+                "git -c safe.directory=\"${'$'}PWD\" checkout -- README.md"
+            ).directory(workspace).start()
+            assertEquals(restore.errorStream.bufferedReader().readText(), 0, restore.waitFor())
 
             Git.open(source).use { git ->
                 File(source, "README.md").writeText("# Updated without copying\n")
