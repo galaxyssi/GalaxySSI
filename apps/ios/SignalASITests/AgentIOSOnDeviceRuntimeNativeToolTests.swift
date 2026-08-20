@@ -491,6 +491,59 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.availability(operation: .execute).status, .available)
   }
 
+  func testDefaultRuntimeProviderUsesCachedLifecycleForStatusWithoutBrokerProbe() throws {
+    final class ProbeCountingBroker: AgentIOSRuntimeBrokerProviding {
+      var implementationId: String { "probe-counting-runtime-broker" }
+      private(set) var invokedOperations: [AgentIOSOnDeviceRuntimeToolOperation] = []
+
+      func availability() -> AgentNativeToolAvailability { .available }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64
+      ) throws -> AgentMcpJSONObject {
+        invokedOperations.append(operation)
+        return ["backend_ready": .bool(true)]
+      }
+    }
+
+    let root = try temporaryDirectory("ios-runtime-cached-status")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "AgentIOSRuntimeCachedStatusTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let lifecycle = AgentIOSRuntimeBrokerLifecycleStore(defaults: defaults, nowMillis: { 90_000 })
+    _ = lifecycle.ready()
+    let broker = ProbeCountingBroker()
+    let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
+      runtimeRootURL: root,
+      nowMillis: { 91_000 },
+      broker: broker,
+      lifecycleStore: lifecycle,
+      signatureVerifier: { _ in true }
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.onDeviceRuntimeExecutableDefinitions(provider: provider)
+    )
+    let result = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.status,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "cached-runtime-status",
+        grantedPermissions: [AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission]
+      )
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["backend"], .string("ios_runtime_broker"))
+    XCTAssertEqual(result.output["backend_ready"], .bool(true))
+    XCTAssertEqual(result.output["status_source"], .string("cached_lifecycle"))
+    XCTAssertEqual(result.metadata["status_source"], .string("cached_lifecycle"))
+    XCTAssertTrue(broker.invokedOperations.isEmpty)
+  }
+
   func testDefaultRuntimeProviderRejectsAnOutdatedLinuxBrokerBeforeExecution() throws {
     struct OutdatedBroker: AgentIOSRuntimeBrokerProviding {
       var implementationId: String { "outdated-runtime-broker" }
