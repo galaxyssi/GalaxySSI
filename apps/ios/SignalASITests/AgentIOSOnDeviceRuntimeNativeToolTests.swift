@@ -464,6 +464,80 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try String(contentsOf: project.appendingPathComponent("README.md")), "stable")
   }
 
+  func testAgentIOSRuntimeBrokerClientSignsLoopbackStatusRequests() throws {
+    final class StubTransport: AgentIOSRuntimeBrokerTransport {
+      var capturedFrame = Data()
+      var capturedHost = ""
+      var capturedPort: UInt16 = 0
+      var response = Data()
+
+      func exchange(frame: Data, host: String, port: UInt16, timeoutMillis: Int64) throws -> Data {
+        capturedFrame = frame
+        capturedHost = host
+        capturedPort = port
+        return response
+      }
+    }
+
+    let suite = "AgentIOSRuntimeBrokerClientTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let configurationStore = AgentIOSRuntimeBrokerConfigurationStore(defaults: defaults)
+    try configurationStore.save(AgentIOSRuntimeBrokerConfiguration(
+      enabled: true,
+      host: AgentIOSRuntimeBrokerConfiguration.defaultHost,
+      port: AgentIOSRuntimeBrokerConfiguration.defaultPort
+    ))
+    let secretStore = InMemorySecretStore()
+    let key = Data(repeating: 7, count: 32)
+    try secretStore.setString(key.base64EncodedString(), account: AgentIOSRuntimeBrokerCredentials.sessionKeyAccount)
+    let transport = StubTransport()
+    let now: Int64 = 88_000
+    var response: AgentMcpJSONObject = [
+      "protocol_version": .int(AgentIOSRuntimeBrokerClient.protocolVersion),
+      "timestamp_epoch_ms": .int(now),
+      "ok": .bool(true),
+      "result": .object([
+        "backend": .string("ios_runtime_broker"),
+        "backend_ready": .bool(true)
+      ])
+    ]
+    let responseKey = SymmetricKey(data: key)
+    let responsePayload = Data(AgentMcpJSONCodec.stringify(response).utf8)
+    response["mac"] = .string(
+      Data(HMAC<SHA256>.authenticationCode(for: responsePayload, using: responseKey)).base64EncodedString()
+    )
+    transport.response = try JSONEncoder().encode(response)
+    let client = AgentIOSRuntimeBrokerClient(
+      configurationStore: configurationStore,
+      credentials: AgentIOSRuntimeBrokerCredentials(secretStore: secretStore),
+      transport: transport,
+      nowMillis: { now },
+      requestId: { "broker-request-1" }
+    )
+
+    let result = try client.invoke(
+      operation: .status,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "invoke-1",
+        conversationId: "conversation-1",
+        turnId: "turn-1"
+      ),
+      deadlineEpochMillis: now + 15_000
+    )
+
+    XCTAssertEqual(client.availability().status, .available)
+    XCTAssertEqual(result["backend"], .string("ios_runtime_broker"))
+    XCTAssertEqual(transport.capturedHost, AgentIOSRuntimeBrokerConfiguration.defaultHost)
+    XCTAssertEqual(transport.capturedPort, UInt16(AgentIOSRuntimeBrokerConfiguration.defaultPort))
+    let request = try JSONDecoder().decode(AgentMcpJSONObject.self, from: transport.capturedFrame)
+    XCTAssertEqual(request["operation"], .string(AgentIOSOnDeviceRuntimeToolOperation.status.rawValue))
+    XCTAssertEqual(request["request_id"], .string("broker-request-1"))
+    XCTAssertNotNil(request["mac"]?.stringValue)
+    XCTAssertEqual(request["context"]?.objectValue?["workspace_id"], .string("conversation-1"))
+  }
+
   private func installRuntimePackManifest(_ packId: String, under runtimeRoot: URL) throws {
     let image = Data("\(packId)-runtime-image".utf8)
     let manifest = AgentRuntimePackManifest(

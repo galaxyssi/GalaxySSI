@@ -9,6 +9,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   private let nowMillis: () -> Int64
   private let catalogManager: AgentIOSRuntimePackCatalogManager
   private let signatureVerifier: (AgentRuntimePackManifest) -> Bool
+  private let broker: AgentIOSRuntimeBrokerProviding
 
   var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? {
     workspaceManager
@@ -19,6 +20,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     workspaceManager: AgentRuntimeProjectWorkspaceManager? = nil,
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    broker: AgentIOSRuntimeBrokerProviding? = nil,
     signatureVerifier: @escaping (AgentRuntimePackManifest) -> Bool = { manifest in
       AgentIOSRuntimePackTrust.verify(manifest: manifest)
     }
@@ -36,6 +38,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       runtimeRootURL: runtimeRootURL,
       nowMillis: nowMillis
     )
+    self.broker = broker ?? AgentIOSRuntimeBrokerClient(nowMillis: nowMillis)
   }
 
   static func defaultRuntimeRootURL(
@@ -57,10 +60,14 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         reason: "iOS does not expose an unmanaged Linux package manager; signed runtime packs are lifecycle-managed"
       )
     case .execute:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: runtimeSetupReason(packStatuses())
-      )
+      let packs = packStatuses()
+      guard let linuxBase = packs.first(where: { $0.id == "linux-base" }), linuxBase.state == .ready else {
+        return AgentNativeToolAvailability(status: .requiresSetup, reason: runtimeSetupReason(packs))
+      }
+      guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "") else {
+        return AgentNativeToolAvailability(status: .requiresSetup, reason: runtimeSetupReason(packs))
+      }
+      return broker.availability()
     }
   }
 
@@ -71,11 +78,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   ) -> AgentNativeToolExecutionResult {
     switch operation {
     case .status:
-      return AgentNativeToolExecutionResult.success(
-        output: statusOutput(),
-        message: "iOS on-device runtime inspected",
-        metadata: baseMetadata()
-      )
+      return inspectBroker(invocation)
     case .workspaceStatus:
       return workspaceStatus(invocation)
     case .workspaceRollback:
@@ -112,21 +115,18 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         ])
       )
     case .execute:
-      return requiresSetup(
-        code: "runtime_execute_requires_setup",
-        message: runtimeSetupReason(packStatuses())
-      )
+      return executeWithBroker(input: input, invocation: invocation)
     }
   }
 
   private func statusOutput() -> AgentMcpJSONObject {
     let packs = packStatuses()
     let reason = runtimeSetupReason(packs)
-    let backendReady = false
+    let brokerConfigured = availability(operation: .execute).status == .available
     let linuxBaseRecoveryRequired = requiresLinuxBaseRecovery(packs)
     return [
-      "backend": .string("none"),
-      "backend_ready": .bool(backendReady),
+      "backend": .string(brokerConfigured ? "ios_runtime_broker" : "none"),
+      "backend_ready": .bool(false),
       "reason": .string(reason),
       "architecture": .string(hostArchitecture()),
       "avf_advertised": .bool(false),
@@ -139,7 +139,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "linux_system": .object(linuxSystemOutput(packs)),
       "packs": .array(packs.map { .object(packOutput($0)) }),
       "languages": .array(AgentRuntimeLanguage.allCases.map {
-        .object(languageOutput($0, packs: packs, backendReady: backendReady))
+        .object(languageOutput($0, packs: packs, backendReady: false))
       }),
       "observed_at_epoch_ms": .int(max(0, nowMillis())),
       "runtime_store": .string("app_private_application_support"),
@@ -548,12 +548,101 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
 
   private func runtimeSetupReason(_ packs: [AgentRuntimePackStatus]) -> String {
     guard let linuxBase = packs.first(where: { $0.id == "linux-base" }), linuxBase.state == .ready else {
-      return "Install the linux-base runtime pack and connect a signed iOS runtime broker"
+      return "Install the signed linux-base runtime pack before connecting the iOS runtime broker"
     }
     guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "") else {
-      return "Recover the signed linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack and connect a signed iOS runtime broker"
+      return "Recover the signed linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack before connecting the iOS runtime broker"
     }
-    return "Signed iOS runtime broker is not connected"
+    return broker.availability().reason.ifBlank("The local iOS runtime broker is ready")
+  }
+
+  private func inspectBroker(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    var output = statusOutput()
+    guard availability(operation: .execute).status == .available else {
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime inspected",
+        metadata: baseMetadata()
+      )
+    }
+    do {
+      let brokerOutput = try broker.invoke(
+        operation: .status,
+        input: [:],
+        context: invocation.context,
+        deadlineEpochMillis: invocation.deadlineEpochMillis
+      )
+      output.merge(brokerOutput) { _, remote in remote }
+      output["backend"] = output["backend"] ?? .string("ios_runtime_broker")
+      output["backend_ready"] = output["backend_ready"] ?? .bool(true)
+      output["reason"] = output["reason"] ?? .string("The local iOS runtime broker is ready")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime broker inspected",
+        metadata: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch let error as AgentIOSRuntimeBrokerError {
+      output["backend"] = .string("ios_runtime_broker")
+      output["backend_ready"] = .bool(false)
+      output["reason"] = .string(error.localizedDescription)
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime broker is unavailable",
+        metadata: baseMetadata([
+          "broker": .string(broker.implementationId),
+          "broker_error": .string(error.code)
+        ])
+      )
+    } catch {
+      output["backend"] = .string("ios_runtime_broker")
+      output["backend_ready"] = .bool(false)
+      output["reason"] = .string(error.localizedDescription)
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime broker is unavailable",
+        metadata: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    }
+  }
+
+  private func executeWithBroker(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let availability = availability(operation: .execute)
+    guard availability.status == .available else {
+      return requiresSetup(
+        code: "runtime_execute_requires_setup",
+        message: availability.reason.ifBlank(runtimeSetupReason(packStatuses()))
+      )
+    }
+    do {
+      let output = try broker.invoke(
+        operation: .execute,
+        input: input,
+        context: invocation.context,
+        deadlineEpochMillis: invocation.deadlineEpochMillis
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: output["message"]?.stringValue?.nonEmpty ?? "iOS on-device runtime execution completed",
+        metadata: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch let error as AgentIOSRuntimeBrokerError {
+      return AgentNativeToolExecutionResult.failure(
+        code: error.code,
+        message: error.localizedDescription,
+        retryable: error.retryable,
+        details: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_broker_execution_failed",
+        message: error.localizedDescription.ifBlank("The local iOS runtime broker failed"),
+        retryable: true,
+        details: baseMetadata(["broker": .string(broker.implementationId)])
+      )
+    }
   }
 
   private func requiresLinuxBaseRecovery(_ packs: [AgentRuntimePackStatus]) -> Bool {
