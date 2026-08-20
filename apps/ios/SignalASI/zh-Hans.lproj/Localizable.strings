@@ -451,6 +451,10 @@
 "signalasi.device.home_assistant_default_entity_subtitle" = "例如：light.living_room";
 "signalasi.device.home_assistant_configured" = "已配置";
 "signalasi.device.home_assistant_not_configured" = "未配置";
+"signalasi.device.home_assistant_check_connection" = "检查连接";
+"signalasi.device.home_assistant_checking" = "正在检查连接";
+"signalasi.device.home_assistant_connected" = "Home Assistant 已连接";
+"signalasi.device.home_assistant_connection_failed" = "Home Assistant 连接失败";
 "signalasi.device.home_assistant_enable" = "启用 Home Assistant";
 "signalasi.device.home_assistant_token" = "访问令牌";
 "signalasi.device.home_assistant_token_subtitle" = "仅保存在本机的长期访问令牌";
