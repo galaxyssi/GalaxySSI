@@ -99,7 +99,8 @@ jobs:
           LOCAL_MODELS_DIR="$PWD/apps/ios/SignalASI/local-models"
           BOOTSTRAP_DIR="$PWD/apps/ios/SignalASI/runtime-bootstrap"
           UTM_SE_IPA="$PWD/build/ios/utm/UTM-SE-4.7.5.ipa"
-          UTM_SE_FRAMEWORKS="$PWD/build/ios/utm/Payload/UTM.app/Frameworks"
+          UTM_SE_ARCHIVED_FRAMEWORKS="$PWD/build/ios/utm/Payload/UTM SE.app/Frameworks"
+          UTM_SE_FRAMEWORKS="$PWD/build/ios/utm/Frameworks"
           LINUX_IMAGE="$PWD/build/runtime/ios/linux-base-1.3.9-aarch64.Image"
 
           verify_file() {
@@ -182,8 +183,9 @@ jobs:
             verify_file "$UTM_SE_IPA.partial" 213878374 ccb8529b8b8781410ff481e4ffbdf0d1b47ce5d431031e782e4b6f9601cac06d "UTM SE 4.7.5"
             mv "$UTM_SE_IPA.partial" "$UTM_SE_IPA"
           fi
-          rm -rf "$PWD/build/ios/utm/Payload"
-          /usr/bin/unzip -q "$UTM_SE_IPA" 'Payload/UTM.app/Frameworks/*' -d "$PWD/build/ios/utm"
+          rm -rf "$PWD/build/ios/utm/Payload" "$UTM_SE_FRAMEWORKS"
+          /usr/bin/unzip -q "$UTM_SE_IPA" 'Payload/UTM SE.app/Frameworks/*' -d "$PWD/build/ios/utm"
+          /usr/bin/ditto "$UTM_SE_ARCHIVED_FRAMEWORKS" "$UTM_SE_FRAMEWORKS"
           test -d "$UTM_SE_FRAMEWORKS/qemu-aarch64-softmmu.framework"
           find "$UTM_SE_FRAMEWORKS" -maxdepth 1 -type d -name '*.framework' -print | sort > "$BOOTSTRAP_DIR/utm-se-frameworks.txt"
 
@@ -275,7 +277,7 @@ jobs:
           /usr/bin/ditto "$APP_PATH" "$PAYLOAD_DIR/SignalASI.app"
 
           if [[ "$IOS_OFFLINE_BUNDLE" == "true" ]]; then
-            UTM_FRAMEWORKS="$PWD/build/ios/utm/Payload/UTM.app/Frameworks"
+            UTM_FRAMEWORKS="$PWD/build/ios/utm/Frameworks"
             test -d "$UTM_FRAMEWORKS/qemu-aarch64-softmmu.framework"
             mkdir -p "$PAYLOAD_DIR/SignalASI.app/Frameworks"
             find "$UTM_FRAMEWORKS" -mindepth 1 -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -print0 |
