@@ -70,6 +70,15 @@ struct SignalASISmartSpacesView: View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_smart_spaces_title", "Smart Spaces"))
       SignalASISecurityNavigationRow(
+        title: t("signalasi.device.home_assistant", "Home Assistant"),
+        subtitle: homeAssistantSubtitle,
+        systemImage: "gearshape.2",
+        tint: homeAssistant.configured ? .signalASIAccent : .orange,
+        badge: homeAssistantBadge
+      ) {
+        HomeAssistantSettingsView()
+      }
+      SignalASISecurityNavigationRow(
         title: t("cc_home_entities_title", "Entities & Rooms"),
         subtitle: t("cc_home_entities_subtitle", "Browse lights, climate, media, sensors, and scenes"),
         systemImage: "square.grid.2x2",
