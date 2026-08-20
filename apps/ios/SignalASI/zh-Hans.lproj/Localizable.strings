@@ -721,6 +721,12 @@
 "signalasi.app_adapters.browser_search_action" = "在浏览器中搜索";
 "signalasi.app_adapters.browser_invalid_url" = "请输入有效的 HTTP 或 HTTPS 地址";
 "signalasi.app_adapters.browser_empty_search" = "请输入搜索内容";
+"signalasi.app_adapters.file_type" = "文件类型";
+"signalasi.app_adapters.file_type_all" = "文件";
+"signalasi.app_adapters.file_type_images" = "图片";
+"signalasi.app_adapters.file_type_pdf" = "PDF";
+"signalasi.app_adapters.select_images" = "选择图片";
+"signalasi.app_adapters.select_pdf" = "选择 PDF";
 "signalasi.capability.accessibility_tree" = "无障碍界面树";
 "signalasi.capability.accessibility_gestures" = "无障碍手势";
 "signalasi.capability.screen_capture" = "屏幕捕获 OCR";
