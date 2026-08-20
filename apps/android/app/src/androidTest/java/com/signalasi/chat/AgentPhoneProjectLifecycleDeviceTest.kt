@@ -96,7 +96,10 @@ class AgentPhoneProjectLifecycleDeviceTest {
             artifacts = emptyList()
         )
         assertTrue("${bundledTools.message}: ${bundledTools.output}", bundledTools.isSuccess)
-        assertTrue(bundledTools.output["stdout"].toString().contains("git version"))
+        assertTrue(
+            "Expected bundled Git version output in ${bundledTools.output}",
+            bundledTools.output["stdout"].toString().contains("git version")
+        )
 
         val cloned = repository.clone(
             workspaceId = workspaceId,

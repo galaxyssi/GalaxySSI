@@ -382,14 +382,26 @@ class GuestProtocolTest(unittest.TestCase):
     def test_persistent_userspace_exposes_host_development_tools_through_wrappers(self):
         with tempfile.TemporaryDirectory() as directory:
             userspace = Path(directory) / "userspace"
+            host = Path(directory) / "host"
+            host_bin = host / "usr" / "bin"
+            host_git_core = host / "usr" / "libexec" / "git-core"
+            host_bin.mkdir(parents=True)
+            host_git_core.mkdir(parents=True)
+            for name in guest.PERSISTENT_HOST_TOOL_NAMES:
+                executable = host_bin / name
+                executable.write_bytes(b"\x7fELF")
+                executable.chmod(0o755)
+            helper = host_git_core / "git-remote-https"
+            helper.write_bytes(b"\x7fELF")
+            helper.chmod(0o755)
 
             def which(name, path=None):
                 self.assertIn(name, guest.PERSISTENT_HOST_TOOL_NAMES)
-                return f"/usr/bin/{name}"
+                return str(host_bin / name)
 
             def run(command, **kwargs):
                 self.assertEqual(["git", "--exec-path"], command)
-                return guest.subprocess.CompletedProcess(command, 0, "/usr/libexec/git-core\n", "")
+                return guest.subprocess.CompletedProcess(command, 0, f"{host_git_core}\n", "")
 
             with (
                 mock.patch.object(guest, "PERSISTENT_USERSPACE_ROOT", userspace),
@@ -400,10 +412,16 @@ class GuestProtocolTest(unittest.TestCase):
 
             for name in guest.PERSISTENT_HOST_TOOL_NAMES:
                 wrapper = (userspace / "usr" / "local" / "bin" / name).read_text()
-                self.assertIn(f"/run/signalasi-host/usr/bin/{name}", wrapper)
+                self.assertIn("/run/signalasi-host/", wrapper)
+                self.assertIn("ld-linux-aarch64.so.1", wrapper)
                 self.assertIn('"$@"', wrapper)
                 self.assertTrue(os.access(userspace / "usr" / "local" / "bin" / name, os.X_OK))
-            self.assertIn("GIT_EXEC_PATH=/run/signalasi-host/usr/libexec/git-core", wrapper)
+            git_wrapper = (userspace / "usr" / "local" / "bin" / "git").read_text()
+            self.assertIn("GIT_EXEC_PATH=/usr/local/libexec/signalasi-git-core", git_wrapper)
+            self.assertIn("GIT_SSL_CAINFO=/run/signalasi-host/etc/ssl/certs/ca-certificates.crt", git_wrapper)
+            helper_wrapper = userspace / "usr" / "local" / "libexec" / "signalasi-git-core" / helper.name
+            self.assertTrue(os.access(helper_wrapper, os.X_OK))
+            self.assertIn("ld-linux-aarch64.so.1", helper_wrapper.read_text())
 
     def test_non_shell_runtime_pack_execution_enters_persistent_userspace(self):
         command = ["/opt/signalasi/packs/python-uv/bin/python3", "main.py"]

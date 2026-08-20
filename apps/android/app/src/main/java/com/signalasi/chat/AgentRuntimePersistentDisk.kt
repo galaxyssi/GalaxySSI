@@ -30,7 +30,21 @@ internal object AgentRuntimePersistentDisk {
         return disk
     }
 
+    @Synchronized
+    fun quarantine(runtimeRoot: File): File? {
+        val directory = File(runtimeRoot, DIRECTORY)
+        val disk = File(directory, FILE_NAME)
+        if (!disk.isFile) return null
+        val quarantine = File(directory, QUARANTINE_FILE_NAME)
+        if (quarantine.exists()) {
+            check(quarantine.delete()) { "The previous damaged Linux system disk cannot be removed" }
+        }
+        check(disk.renameTo(quarantine)) { "The damaged Linux system disk cannot be isolated" }
+        return quarantine
+    }
+
     private const val DIRECTORY = "system"
     private const val FILE_NAME = "signalasi-system.raw"
+    private const val QUARANTINE_FILE_NAME = "signalasi-system.damaged.raw"
     private const val PRIVATE_FILE_MODE = 384
 }

@@ -47,6 +47,12 @@ HOST_RUNTIME_LIBRARY_DIRECTORIES = (Path("/lib"), Path("/usr/lib"))
 PERSISTENT_RUNTIME_LIBRARY_NAMES = ("libstdc++.so.6", "libgcc_s.so.1")
 PERSISTENT_HOST_ROOT = PurePosixPath("/run/signalasi-host")
 PERSISTENT_HOST_TOOL_NAMES = ("git", "ssh", "curl", "wget")
+PERSISTENT_HOST_DYNAMIC_LOADER = PERSISTENT_HOST_ROOT / "lib" / "ld-linux-aarch64.so.1"
+PERSISTENT_HOST_LIBRARY_PATH = (
+    PERSISTENT_HOST_ROOT / "lib",
+    PERSISTENT_HOST_ROOT / "usr" / "lib",
+)
+PERSISTENT_GIT_EXEC_WRAPPER_ROOT = PurePosixPath("/usr/local/libexec/signalasi-git-core")
 PERSISTENT_HOST_BINDINGS = (
     Path("/usr"),
     Path("/lib"),
@@ -987,31 +993,77 @@ def install_persistent_host_tool_wrappers() -> None:
         text=True,
         check=True,
     ).stdout.strip()
-    if not git_exec_path.startswith("/"):
+    if not Path(git_exec_path).is_absolute():
         raise RuntimeError("Host Git execution path is invalid")
-    host_git_exec_path = PERSISTENT_HOST_ROOT / git_exec_path.removeprefix("/")
+    host_git_exec_directory = Path(git_exec_path)
+    git_wrapper_directory = PERSISTENT_USERSPACE_ROOT.joinpath(
+        *PERSISTENT_GIT_EXEC_WRAPPER_ROOT.relative_to("/").parts
+    )
+    git_wrapper_directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    for source in host_git_exec_directory.iterdir():
+        if not source.is_file() or not os.access(source, os.X_OK):
+            continue
+        write_persistent_host_wrapper(
+            git_wrapper_directory / source.name,
+            source,
+        )
+    if not any(git_wrapper_directory.iterdir()):
+        raise FileNotFoundError("Persistent Linux Git helpers are unavailable")
+
+    host_certificate_path = PERSISTENT_HOST_ROOT / "etc" / "ssl" / "certs" / "ca-certificates.crt"
+    git_environment = {
+        "GIT_EXEC_PATH": str(PERSISTENT_GIT_EXEC_WRAPPER_ROOT),
+        "GIT_TEMPLATE_DIR": str(PERSISTENT_HOST_ROOT / "usr" / "share" / "git-core" / "templates"),
+        "SSL_CERT_FILE": str(host_certificate_path),
+        "GIT_SSL_CAINFO": str(host_certificate_path),
+    }
     for name in PERSISTENT_HOST_TOOL_NAMES:
         source_value = shutil.which(name, path=host_search_path)
         if not source_value:
             raise FileNotFoundError(f"Persistent Linux host tool is unavailable: {name}")
         source = Path(source_value)
-        host_source = PERSISTENT_HOST_ROOT / source.relative_to("/")
-        extra_arguments = ""
+        arguments: list[str] = []
+        environment = git_environment if name == "git" else {"SSL_CERT_FILE": str(host_certificate_path)}
         if name == "ssh" and (Path("/etc/ssh") / "ssh_config").is_file():
             host_config = PERSISTENT_HOST_ROOT / "etc" / "ssh" / "ssh_config"
-            extra_arguments = f" -F {shlex.quote(str(host_config))}"
-        wrapper = wrapper_directory / name
-        wrapper.write_text(
-            "#!/bin/sh\n"
-            f"export LD_LIBRARY_PATH={shlex.quote(str(PERSISTENT_HOST_ROOT / 'lib'))}:"
-            f"{shlex.quote(str(PERSISTENT_HOST_ROOT / 'usr' / 'lib'))}\n"
-            f"export SSL_CERT_FILE={shlex.quote(str(PERSISTENT_HOST_ROOT / 'etc' / 'ssl' / 'certs' / 'ca-certificates.crt'))}\n"
-            f"export GIT_EXEC_PATH={shlex.quote(str(host_git_exec_path))}\n"
-            f"exec {shlex.quote(str(host_source))}{extra_arguments} "
-            '"$@"\n',
-            encoding="utf-8",
+            arguments = ["-F", str(host_config)]
+        write_persistent_host_wrapper(
+            wrapper_directory / name,
+            source,
+            environment=environment,
+            arguments=arguments,
         )
-        wrapper.chmod(0o755)
+
+
+def persistent_host_path(source: Path) -> PurePosixPath:
+    if not source.is_absolute() or ".." in source.parts:
+        raise ValueError("Persistent host tool path is invalid")
+    return PERSISTENT_HOST_ROOT.joinpath(*(part.strip("/\\") for part in source.parts[1:]))
+
+
+def write_persistent_host_wrapper(
+    target: Path,
+    source: Path,
+    environment: dict[str, str] | None = None,
+    arguments: list[str] | None = None,
+) -> None:
+    host_source = persistent_host_path(source)
+    library_path = ":".join(map(str, PERSISTENT_HOST_LIBRARY_PATH))
+    exports = "".join(
+        f"export {name}={shlex.quote(value)}\n"
+        for name, value in sorted((environment or {}).items())
+    )
+    fixed_arguments = "".join(f" {shlex.quote(value)}" for value in (arguments or []))
+    target.write_text(
+        "#!/bin/sh\n"
+        f"{exports}"
+        f"exec {shlex.quote(str(PERSISTENT_HOST_DYNAMIC_LOADER))} "
+        f"--library-path {shlex.quote(library_path)} "
+        f"{shlex.quote(str(host_source))}{fixed_arguments} "
+        '"$@"\n',
+        encoding="utf-8",
+    )
+    target.chmod(0o755)
 
 
 def validate_mounted_pack(target: Path, pack: dict[str, Any]) -> None:

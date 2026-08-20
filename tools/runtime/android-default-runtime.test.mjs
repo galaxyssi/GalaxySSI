@@ -5,13 +5,13 @@ import { validateDefaultEntries } from './android-default-runtime.mjs';
 
 const entry = (packId, dependencies = []) => ({
   pack_id: packId,
-  version: packId === 'python-uv' ? '0.12.1' : '1.3.8',
+  version: packId === 'python-uv' ? '0.12.1' : '1.3.9',
   architecture: 'arm64-v8a',
   archive_sha256: 'a'.repeat(64),
   archive_size_bytes: 1_024,
   installed_size_bytes: 2_048,
   dependencies,
-  asset_path: `runtime/bootstrap/${packId}-${packId === 'python-uv' ? '0.12.1' : '1.3.8'}-arm64-v8a.sarpack`,
+  asset_path: `runtime/bootstrap/${packId}-${packId === 'python-uv' ? '0.12.1' : '1.3.9'}-arm64-v8a.sarpack`,
 });
 
 test('default Android runtime rejects the legacy Python wrapper-only pack', () => {
