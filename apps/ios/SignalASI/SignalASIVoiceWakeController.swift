@@ -117,9 +117,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
     let captureSettings = settings
     Task { @MainActor [weak self] in
       guard let self = self else { return }
-      let granted = await speech.requestAuthorization(
-        localeIdentifier: captureSettings.preferredLocaleIdentifier
-      )
+      let granted = await speech.requestAuthorization(settings: captureSettings)
       guard generation == configurationGeneration, shouldListen else {
         isPreparing = false
         return
@@ -162,9 +160,7 @@ final class SignalASIVoiceWakeController: ObservableObject {
     let captureSettings = settings
     Task { @MainActor [weak self] in
       guard let self = self else { return }
-      let granted = await speech.requestAuthorization(
-        localeIdentifier: captureSettings.preferredLocaleIdentifier
-      )
+      let granted = await speech.requestAuthorization(settings: captureSettings)
       guard generation == configurationGeneration,
             wantsListening,
             manualCaptureActive else {

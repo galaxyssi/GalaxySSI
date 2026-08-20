@@ -6,6 +6,7 @@ import SwiftUI
 private enum SpeechCaptureServiceError: LocalizedError {
   case recognizerUnavailable
   case requestUnavailable
+  case localWhisperUnavailable
 
   var errorDescription: String? {
     switch self {
@@ -13,6 +14,8 @@ private enum SpeechCaptureServiceError: LocalizedError {
       return "Speech recognition is unavailable for this locale."
     case .requestUnavailable:
       return "Speech recognition could not start a capture request."
+    case .localWhisperUnavailable:
+      return "On-device Whisper is not ready. Download the selected model or use iOS Speech."
     }
   }
 }
@@ -44,6 +47,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
   private var currentRecognitionModelProfileId = ""
+  private var currentRecognitionProvider = iosSpeechProviderId
   private var currentIOSSpeechTranscript = ""
   private var currentRuntimeChannel = VoiceRuntimeChannel.androidSystemASR
   private var pcmTapPipeline: VoicePcmTapPipeline?
@@ -101,6 +105,30 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     return speechGranted && micGranted
   }
 
+  func requestAuthorization(settings: VoiceSettings) async -> Bool {
+    let normalized = settings.normalized
+    let capabilities = VoiceProviderCapabilityDetector.detect(
+      settings: normalized,
+      validatedNetworkAvailable: false
+    )
+    let needsSystemSpeechAuthorization = VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+      settings: normalized,
+      capabilities: capabilities,
+      pcmCaptureEnabled: VoiceFeatureFlags.isPcmCaptureEnabled(),
+      localRuntimeEnabled: VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(),
+      adaptivePartialEnabled: VoiceFeatureFlags.isWhisperAdaptivePartialEnabled()
+    )
+    let micGranted = await AVAudioSession.sharedInstance().requestRecordPermission()
+    guard micGranted else { return false }
+    guard needsSystemSpeechAuthorization else { return true }
+    recognizer = SFSpeechRecognizer(locale: Locale(identifier: normalized.preferredLocaleIdentifier))
+    return await withCheckedContinuation { continuation in
+      SFSpeechRecognizer.requestAuthorization { status in
+        continuation.resume(returning: status == .authorized)
+      }
+    }
+  }
+
   @MainActor
   func start(localeIdentifier: String) throws {
     try start(localeIdentifier: localeIdentifier, settings: nil, coordinatorConfig: nil)
@@ -125,32 +153,54 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     if let coordinatorConfig = coordinatorConfig {
       coordinatorBridge.begin(config: coordinatorConfig)
     }
-    recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
-    guard let recognizer = recognizer else {
-      let error = SpeechCaptureServiceError.recognizerUnavailable
-      if coordinatorConfig != nil {
-        coordinatorBridge.failCurrent(code: "ios_speech_recognizer_unavailable", detail: error.localizedDescription)
-      }
-      throw error
+    let useLocalWhisper: Bool
+    if let settings {
+      let capabilities = VoiceProviderCapabilityDetector.detect(
+        settings: settings,
+        validatedNetworkAvailable: false
+      )
+      useLocalWhisper = VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
+        settings: settings,
+        capabilities: capabilities,
+        pcmCaptureEnabled: VoiceFeatureFlags.isPcmCaptureEnabled(),
+        localRuntimeEnabled: VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(),
+        adaptivePartialEnabled: VoiceFeatureFlags.isWhisperAdaptivePartialEnabled()
+      )
+    } else {
+      useLocalWhisper = false
     }
     transcript = ""
     stableTranscript = ""
     unstableTranscript = ""
     currentIOSSpeechTranscript = ""
     updateAudioLevel(0)
-    currentRecognitionModelProfileId = localeIdentifier
-    request = SFSpeechAudioBufferRecognitionRequest()
-    guard let request = request else {
-      let error = SpeechCaptureServiceError.requestUnavailable
-      if coordinatorConfig != nil {
-        coordinatorBridge.failCurrent(code: "ios_speech_request_unavailable", detail: error.localizedDescription)
+    currentRecognitionModelProfileId = useLocalWhisper ? settings?.asrModelId ?? "" : localeIdentifier
+    currentRecognitionProvider = useLocalWhisper ? voiceLocalWhisperProviderId : iosSpeechProviderId
+    if useLocalWhisper {
+      recognizer = nil
+      request = nil
+    } else {
+      recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
+      guard recognizer != nil else {
+        let error = SpeechCaptureServiceError.recognizerUnavailable
+        if coordinatorConfig != nil {
+          coordinatorBridge.failCurrent(code: "ios_speech_recognizer_unavailable", detail: error.localizedDescription)
+        }
+        throw error
       }
-      throw error
+      request = SFSpeechAudioBufferRecognitionRequest()
+      guard let request = request else {
+        let error = SpeechCaptureServiceError.requestUnavailable
+        if coordinatorConfig != nil {
+          coordinatorBridge.failCurrent(code: "ios_speech_request_unavailable", detail: error.localizedDescription)
+        }
+        throw error
+      }
+      request.shouldReportPartialResults = true
     }
-    request.shouldReportPartialResults = true
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
-    let pcmCaptureEnabled = coordinatorConfig != nil && VoiceFeatureFlags.isPcmCaptureEnabled()
+    let pcmCaptureEnabled = coordinatorConfig != nil && (VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper)
     if pcmCaptureEnabled {
       pcmTapPipeline = VoicePcmTapPipeline(
         config: VoiceAudioSessionConfig(
@@ -168,8 +218,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     liveWhisperActive = false
     let voiceSessionId = coordinatorBridge.sessionId()
     if let settings = settings,
-       pcmCaptureEnabled,
-       settings.asrProvider == .localWhisperCpp,
+       useLocalWhisper,
        !voiceSessionId.isEmpty {
       liveWhisperActive = liveWhisperController.start(
         voiceSessionId: voiceSessionId,
@@ -178,12 +227,19 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         queue: liveWhisperScheduler.queueSnapshot()
       )
     }
+    if useLocalWhisper, !liveWhisperActive {
+      let error = SpeechCaptureServiceError.localWhisperUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_local_whisper_unavailable", detail: error.localizedDescription)
+      }
+      throw error
+    }
     input.removeTap(onBus: 0)
     input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-      request.append(buffer)
+      self?.request?.append(buffer)
       self?.processPcmTap(buffer)
     }
-    currentRuntimeChannel = settings?.asrProvider == .localWhisperCpp ? .localWhisperASR : .androidSystemASR
+    currentRuntimeChannel = liveWhisperActive ? .localWhisperASR : .androidSystemASR
     VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
     do {
       try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -192,6 +248,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       try audioEngine.start()
     } catch {
       VoiceRuntimeHealthRegistry.failure(currentRuntimeChannel, reason: error.localizedDescription)
+      liveWhisperController.close()
+      liveWhisperActive = false
       if coordinatorConfig != nil {
         coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
       }
@@ -204,6 +262,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         coordinatorBridge.speechStarted()
       }
     }
+    guard let recognizer = recognizer, let request = request else { return }
     task = recognizer.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
         guard let self = self else { return }
@@ -220,7 +279,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
               self.emitCommands(
                 self.coordinatorBridge.finishWithBestTranscript(
                   text,
-                  provider: iosSpeechProviderId,
+                  provider: self.currentRecognitionProvider,
                   modelProfileId: self.currentRecognitionModelProfileId
                 )
               )
@@ -229,7 +288,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             if !self.liveWhisperActive {
               let transition = self.coordinatorBridge.transcriptPartial(
                 text,
-                provider: iosSpeechProviderId,
+                provider: self.currentRecognitionProvider,
                 modelProfileId: self.currentRecognitionModelProfileId
               )
               self.stableTranscript = transition.current.stableText
@@ -305,12 +364,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
     let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
     let fallbackModelProfileId = currentRecognitionModelProfileId
+    let fallbackProvider = currentRecognitionProvider
     let runtimeChannel = currentRuntimeChannel
     if !receivedFinal {
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
           transcript: fallbackTranscript,
-          provider: iosSpeechProviderId,
+          provider: fallbackProvider,
           modelProfileId: fallbackModelProfileId
         )
       )
@@ -319,6 +379,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     task = nil
     request = nil
     currentRecognitionModelProfileId = ""
+    currentRecognitionProvider = iosSpeechProviderId
     currentIOSSpeechTranscript = ""
     stableTranscript = ""
     unstableTranscript = ""
@@ -353,6 +414,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let wasRecording = isRecording
     let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
     let fallbackModelProfileId = currentRecognitionModelProfileId
+    let fallbackProvider = currentRecognitionProvider
     let runtimeChannel = currentRuntimeChannel
     let liveFinalSnapshot = wasRecording && liveWhisperActive ? pcmTapPipeline?.snapshot() : nil
     let shouldRunLiveFinal = liveFinalSnapshot?.samples.isEmpty == false
@@ -361,7 +423,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
           transcript: fallbackTranscript,
-          provider: iosSpeechProviderId,
+          provider: fallbackProvider,
           modelProfileId: fallbackModelProfileId
         )
       )
@@ -375,6 +437,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     task = nil
     request = nil
     currentRecognitionModelProfileId = ""
+    currentRecognitionProvider = iosSpeechProviderId
     currentIOSSpeechTranscript = ""
     stableTranscript = ""
     unstableTranscript = ""
@@ -388,6 +451,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         snapshot: liveFinalSnapshot,
         fallbackTranscript: fallbackTranscript,
         fallbackModelProfileId: fallbackModelProfileId,
+        fallbackProvider: fallbackProvider,
         runtimeChannel: runtimeChannel
       )
     } else {
@@ -403,6 +467,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     snapshot: PcmSnapshot,
     fallbackTranscript: String,
     fallbackModelProfileId: String,
+    fallbackProvider: String,
     runtimeChannel: VoiceRuntimeChannel
   ) {
     let controller = liveWhisperController
@@ -441,7 +506,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           self.emitCommands(
             self.coordinatorBridge.finishStoppedCapture(
               transcript: fallbackTranscript,
-              provider: iosSpeechProviderId,
+              provider: fallbackProvider,
               modelProfileId: fallbackModelProfileId
             )
           )

@@ -1962,7 +1962,7 @@ struct VoiceSettingsView: View {
 
   private func startRecording() async {
     interruptActiveVoiceReply()
-    let granted = await speech.requestAuthorization(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
+    let granted = await speech.requestAuthorization(settings: store.voiceSettings)
     permissionStatus = granted ? "" : t("Microphone or speech permission is missing.", "Microphone or speech permission is missing.")
     guard granted else { return }
     do {

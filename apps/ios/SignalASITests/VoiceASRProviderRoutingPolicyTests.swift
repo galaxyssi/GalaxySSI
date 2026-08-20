@@ -60,6 +60,113 @@ final class VoiceASRProviderRoutingPolicyTests: XCTestCase {
     XCTAssertEqual(route.fallbackReason, .whisperRuntimeMissing)
   }
 
+  func testLocalWhisperRequestsOnlyMicrophoneWhenModelIsReady() {
+    let capabilities = VoiceProviderCapabilitySnapshot(
+      capabilities: [
+        capability(.whisperCpp, .ready, .ready),
+        capability(.androidSystemASR, .ready, .ready),
+      ],
+      checkedAtMillis: 1_000
+    )
+
+    XCTAssertFalse(
+      VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+        settings: settings(locale: "zh-Hans"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      )
+    )
+    XCTAssertTrue(
+      VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
+        settings: settings(locale: "zh-Hans"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      )
+    )
+  }
+
+  func testLocalWhisperWaitingForMicrophoneDoesNotRequestSpeechAuthorization() {
+    let capabilities = VoiceProviderCapabilitySnapshot(
+      capabilities: [
+        capability(.whisperCpp, .needsPermission, .microphonePermissionRequired),
+        capability(.androidSystemASR, .needsPermission, .microphonePermissionRequired),
+      ],
+      checkedAtMillis: 1_000
+    )
+
+    XCTAssertFalse(
+      VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      )
+    )
+  }
+
+  func testLocalWhisperFallsBackToSystemAuthorizationWhenModelIsMissing() {
+    let capabilities = VoiceProviderCapabilitySnapshot(
+      capabilities: [
+        capability(.whisperCpp, .needsDownload, .whisperModelMissing),
+        capability(.androidSystemASR, .ready, .ready),
+      ],
+      checkedAtMillis: 1_000
+    )
+
+    XCTAssertTrue(
+      VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      )
+    )
+    XCTAssertFalse(
+      VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: true,
+        adaptivePartialEnabled: true
+      )
+    )
+  }
+
+  func testDisabledLocalPipelineUsesSystemSpeechAuthorization() {
+    let capabilities = VoiceProviderCapabilitySnapshot(
+      capabilities: [
+        capability(.whisperCpp, .ready, .ready),
+        capability(.androidSystemASR, .ready, .ready),
+      ],
+      checkedAtMillis: 1_000
+    )
+
+    XCTAssertTrue(
+      VoiceASRProviderRoutingPolicy.requiresSystemSpeechAuthorization(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: false,
+        adaptivePartialEnabled: true
+      )
+    )
+    XCTAssertFalse(
+      VoiceASRProviderRoutingPolicy.shouldUseLocalWhisper(
+        settings: settings(locale: "en-US"),
+        capabilities: capabilities,
+        pcmCaptureEnabled: true,
+        localRuntimeEnabled: false,
+        adaptivePartialEnabled: true
+      )
+    )
+  }
+
   private func settings(locale: String) -> VoiceSettings {
     VoiceSettings(
       wakeListeningEnabled: false,

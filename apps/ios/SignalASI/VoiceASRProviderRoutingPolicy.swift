@@ -55,4 +55,53 @@ enum VoiceASRProviderRoutingPolicy {
     let locale = localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Locale.current.identifier)
     return "iOS Speech / \(locale)"
   }
+
+  /// A selected local model may only be waiting on microphone permission. In that
+  /// case, do not request Apple's speech-recognition permission as a prerequisite.
+  static func requiresSystemSpeechAuthorization(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    pcmCaptureEnabled: Bool,
+    localRuntimeEnabled: Bool,
+    adaptivePartialEnabled: Bool
+  ) -> Bool {
+    guard localCaptureCanBeAuthorized(
+      settings: settings,
+      capabilities: capabilities,
+      pcmCaptureEnabled: pcmCaptureEnabled,
+      localRuntimeEnabled: localRuntimeEnabled,
+      adaptivePartialEnabled: adaptivePartialEnabled
+    ) else {
+      return true
+    }
+    return false
+  }
+
+  static func shouldUseLocalWhisper(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    pcmCaptureEnabled: Bool,
+    localRuntimeEnabled: Bool,
+    adaptivePartialEnabled: Bool
+  ) -> Bool {
+    pcmCaptureEnabled && localRuntimeEnabled && adaptivePartialEnabled &&
+      route(settings: settings, capabilities: capabilities).kind == .localWhisper
+  }
+
+  private static func localCaptureCanBeAuthorized(
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot,
+    pcmCaptureEnabled: Bool,
+    localRuntimeEnabled: Bool,
+    adaptivePartialEnabled: Bool
+  ) -> Bool {
+    guard settings.normalized.asrProvider == .localWhisperCpp,
+          pcmCaptureEnabled,
+          localRuntimeEnabled,
+          adaptivePartialEnabled else {
+      return false
+    }
+    let localCapability = capabilities[.whisperCpp]
+    return localCapability.state == .ready || localCapability.state == .needsPermission
+  }
 }

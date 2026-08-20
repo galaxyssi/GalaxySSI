@@ -152,8 +152,7 @@ final class SignalASIAgentHoldToTalkController: ObservableObject {
       return
     }
 
-    let localeIdentifier = voiceSettings.preferredLocaleIdentifier
-    let granted = await speech.requestAuthorization(localeIdentifier: localeIdentifier)
+    let granted = await speech.requestAuthorization(settings: voiceSettings)
     guard isPending, !isRecording else { return }
     guard granted else {
       fail(lastMessages.permissionDenied)
