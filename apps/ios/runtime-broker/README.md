@@ -34,7 +34,9 @@ Use the jailbreak's service manager to keep this process alive. The service runs
 
 The app sends one TCP request per connection. A frame is a four-byte big-endian byte length followed by UTF-8 JSON, up to 1 MiB. Request and response JSON use recursively sorted keys and compact separators before HMAC-SHA256 over the object with `mac` omitted. `mac` is Base64 encoded.
 
-Requests contain `protocol_version: 1`, `request_id`, `operation`, `input`, `context`, `timestamp_epoch_ms`, and `mac`. Clock skew is limited to five minutes; request ids are accepted once in the broker's bounded replay window. The current broker accepts `status` and `execute`. It bounds source and captured output to 256 KiB and execution time to 30 minutes.
+Requests contain `protocol_version: 1`, `request_id`, `operation`, `input`, `context`, `timestamp_epoch_ms`, and `mac`. Clock skew is limited to five minutes; request ids are accepted once in the broker's bounded replay window. The broker accepts `status`, `execute`, and Linux package catalog, search, inspection, installation, and removal operations.
+
+Each `execute` call uses the same default limits as Android: 60 seconds wall clock, 45 seconds CPU, 512 MiB address space, 512 MiB workspace storage, 64 processes, 512 KiB returned output, and 256 MiB requested artifacts. The requested timeout may reduce or extend the wall-clock and CPU budget up to 30 minutes, preserving Android's three-quarter CPU-to-wall-clock ratio. The device Python must expose POSIX `RLIMIT_CPU`, `RLIMIT_AS`, `RLIMIT_FSIZE`, and `RLIMIT_NPROC`; otherwise the broker reports `backend_ready: false` and rejects execution rather than pretending isolation is active. Workspace and requested artifact sizes are verified before and after each execution.
 
 The broker rejects `network_enabled: true` rather than silently allowing the jailbroken Linux environment's network. Linux package search and inspection refresh an empty APT index only when `allow_package_network_refresh` is explicitly set to `true` in the device-owned configuration. Package installation and removal require the same switch and refresh metadata before every change.
 
