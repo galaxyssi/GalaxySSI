@@ -18,12 +18,25 @@ object AgentWorkspaceScope {
         workspaceId: String
     ): AgentNativeJsonObject {
         if (WORKSPACE_TOOL_PREFIXES.none(toolId::startsWith)) return input
-        return LinkedHashMap(input).apply { put("workspace_id", workspaceId) }
+        return LinkedHashMap(input).apply {
+            canonicalizeCommonModelArguments(toolId)
+            put("workspace_id", workspaceId)
+        }
     }
 
     fun <T> withLock(workspaceId: String, block: () -> T): T =
         locks.computeIfAbsent(workspaceId) { ReentrantLock() }.withLock(block)
 
     private val WORKSPACE_TOOL_PREFIXES = listOf("signalasi.workspace.", "signalasi.project.")
+    private val REPOSITORY_URL_ALIASES = listOf("url", "repo_url", "repository")
     private val locks = ConcurrentHashMap<String, ReentrantLock>()
+
+    private fun MutableMap<String, Any?>.canonicalizeCommonModelArguments(toolId: String) {
+        if (toolId != AgentMobileProjectNativeTools.CLONE || containsKey("repository_url")) return
+        val alias = REPOSITORY_URL_ALIASES.firstOrNull { key ->
+            this[key]?.toString()?.trim().orEmpty().isNotBlank()
+        } ?: return
+        put("repository_url", remove(alias))
+        REPOSITORY_URL_ALIASES.forEach(::remove)
+    }
 }

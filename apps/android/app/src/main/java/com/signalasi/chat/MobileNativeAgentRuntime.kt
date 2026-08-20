@@ -564,7 +564,7 @@ internal fun MobileNativeAgent.executeAction(
     ) {
         cancellationReason
     } else {
-        result.message.ifBlank { result.error?.message.orEmpty() }
+        result.message.ifBlank { result.modelVisibleError() }
     }
     val responseLanguage = action.parameters["response_language"].orEmpty()
     val zh = responseLanguage == "zh" || (responseLanguage.isBlank() && currentGoal.any { it in '\u3400'..'\u9fff' })
@@ -596,6 +596,25 @@ internal fun MobileNativeAgent.executeAction(
             "provenance" to result.provenance.executorId
         ) + richOutput.takeIf(String::isNotBlank)?.let { mapOf("rich_output" to it) }.orEmpty()
     )
+}
+
+private fun AgentNativeToolResult.modelVisibleError(): String {
+    val nativeError = error ?: return ""
+    val issues = (nativeError.details["issues"] as? Iterable<*>)
+        ?.mapNotNull { rawIssue ->
+            val issue = rawIssue as? Map<*, *> ?: return@mapNotNull null
+            val path = issue["path"]?.toString().orEmpty()
+            val code = issue["code"]?.toString().orEmpty()
+            val message = issue["message"]?.toString().orEmpty()
+            listOf(path, code, message).filter(String::isNotBlank).joinToString(" | ")
+                .takeIf(String::isNotBlank)
+        }
+        .orEmpty()
+        .take(8)
+    return buildString {
+        append(nativeError.message)
+        if (issues.isNotEmpty()) append(": ").append(issues.joinToString("; "))
+    }.take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
 }
 
 internal fun MobileNativeAgent.cancelActiveNativeTool(reason: String): Boolean = synchronized(this) {
