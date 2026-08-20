@@ -11,6 +11,7 @@ extension SignalASIStoreTests {
       "signalasi.workspace.file.read.text",
       "signalasi.workspace.file.read.bytes",
       "signalasi.workspace.file.write.text",
+      "signalasi.workspace.files.write.text.batch",
       "signalasi.workspace.file.create.text",
       "signalasi.workspace.file.append.text",
       "signalasi.workspace.file.write.bytes",

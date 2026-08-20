@@ -2,6 +2,84 @@ import XCTest
 @testable import SignalASI
 
 extension SignalASIStoreTests {
+  func testAgentWorkspaceNativeToolExecutorWritesTextBatchAtomically() throws {
+    let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 1_500 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "batch",
+      grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+      grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+    )
+
+    _ = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("batch")],
+      context: context
+    )
+    let batch = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceWriteTextBatch,
+      input: [
+        "workspace_id": .string("batch"),
+        "files": .array([
+          .object(["path": .string("project/README.md"), "text": .string("hello")]),
+          .object(["path": .string("project/Sources/main.swift"), "text": .string("print(\"Hi\")")])
+        ])
+      ],
+      context: context
+    )
+    let duplicate = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceWriteTextBatch,
+      input: [
+        "workspace_id": .string("batch"),
+        "files": .array([
+          .object(["path": .string("project/README.md"), "text": .string("changed")]),
+          .object(["path": .string("project/README.md"), "text": .string("duplicate")])
+        ])
+      ],
+      context: context
+    )
+    let parentConflict = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceWriteTextBatch,
+      input: [
+        "workspace_id": .string("batch"),
+        "files": .array([
+          .object(["path": .string("project/new.swift"), "text": .string("file")]),
+          .object(["path": .string("project/new.swift/child.txt"), "text": .string("child")])
+        ])
+      ],
+      context: context
+    )
+    let read = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: ["workspace_id": .string("batch"), "path": .string("project/README.md")],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "batch-read",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+      )
+    )
+    let rejectedFile = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: ["workspace_id": .string("batch"), "path": .string("project/new.swift")],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "batch-rejected-read",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+      )
+    )
+
+    XCTAssertTrue(batch.isSuccess)
+    XCTAssertEqual((batch.output["files"]?.arrayValue ?? []).count, 2)
+    XCTAssertEqual(batch.output["affected_entries"], .int(2))
+    XCTAssertEqual(batch.output["affected_bytes"], .int(16))
+    XCTAssertFalse(duplicate.isSuccess)
+    XCTAssertFalse(parentConflict.isSuccess)
+    XCTAssertEqual(read.output["text"], .string("hello"))
+    XCTAssertFalse(rejectedFile.isSuccess)
+  }
+
   func testAgentWorkspaceNativeToolExecutorRunsCoreFileWorkflowThroughRegistry() throws {
     let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 1_234 })
     let registry = try AgentNativeToolRegistry().registerExecutables(
