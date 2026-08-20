@@ -632,7 +632,8 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     guard let key = credentials.sessionKey() else { throw AgentIOSRuntimeBrokerError.pairingRequired }
     try controller.startIfNeeded(runtimeRootURL: runtimeRootURL, sessionKey: key)
     var lastError: Error?
-    for _ in 0..<20 {
+    // A no-JIT TCI guest can take several seconds to boot on a physical iPhone.
+    for _ in 0..<120 {
       do {
         let client = AgentIOSQemuGuestClient(
           socketPath: try controller.socketPath(runtimeRootURL: runtimeRootURL),

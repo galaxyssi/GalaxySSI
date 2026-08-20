@@ -599,27 +599,89 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     broker.availability().reason.ifBlank("The embedded iOS Linux runtime is unavailable.")
   }
 
-  private func inspectBroker(_: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+  private func inspectBroker(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     var output = statusOutput(cachedPackStatus: true)
-    let lifecycle = lifecycleStore.snapshot()
-    let brokerAvailable = availability(operation: .execute).status == .available
-    output["backend_ready"] = .bool(brokerAvailable && lifecycle.phase == "ready")
-    if brokerAvailable {
-      output["backend"] = .string(broker.implementationId)
+    let availability = availability(operation: .execute)
+    guard availability.status == .available else {
+      output["reason"] = .string(availability.reason.ifBlank(runtimeSetupReason()))
+      output["lifecycle"] = .object(lifecycleOutput())
+      output["status_source"] = .string("runtime_availability")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime availability inspected",
+        metadata: baseMetadata([
+          "broker": .string(broker.implementationId),
+          "status_source": .string("runtime_availability")
+        ])
+      )
     }
-    if lifecycle.reason.isEmpty == false {
-      output["reason"] = .string(lifecycle.reason)
+    do {
+      let guest = try broker.invoke(
+        operation: .status,
+        input: [:],
+        context: invocation.context,
+        deadlineEpochMillis: invocation.deadlineEpochMillis
+      )
+      if let reason = AgentIOSRuntimeBrokerLinuxBaseline.unavailableReason(for: guest) {
+        _ = lifecycleStore.failed(reason: reason)
+        output["reason"] = .string(reason)
+        output["lifecycle"] = .object(lifecycleOutput())
+        output["status_source"] = .string("guest_handshake")
+        return AgentNativeToolExecutionResult.success(
+          output: output,
+          message: "iOS on-device runtime reported an unavailable state",
+          metadata: baseMetadata([
+            "broker": .string(broker.implementationId),
+            "status_source": .string("guest_handshake")
+          ])
+        )
+      }
+      _ = lifecycleStore.ready()
+      output.merge(guest) { _, guestValue in guestValue }
+      let packs = cachedPackStatuses()
+      let backendReady = guest["backend_ready"]?.boolValue ?? false
+      output["packs"] = .array(packs.map { .object(packOutput($0)) })
+      output["languages"] = .array(AgentRuntimeLanguage.allCases.map {
+        .object(languageOutput($0, packs: packs, backendReady: backendReady))
+      })
+      output["lifecycle"] = .object(lifecycleOutput())
+      output["status_source"] = .string("guest_handshake")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime guest handshake completed",
+        metadata: baseMetadata([
+          "broker": .string(broker.implementationId),
+          "status_source": .string("guest_handshake")
+        ])
+      )
+    } catch let error as AgentIOSRuntimeBrokerError {
+      _ = lifecycleStore.failed(reason: error.localizedDescription)
+      output["reason"] = .string(error.localizedDescription)
+      output["lifecycle"] = .object(lifecycleOutput())
+      output["status_source"] = .string("guest_handshake")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime guest handshake is pending",
+        metadata: baseMetadata([
+          "broker": .string(broker.implementationId),
+          "status_source": .string("guest_handshake")
+        ])
+      )
+    } catch {
+      let reason = error.localizedDescription.ifBlank("The embedded Debian guest could not be inspected.")
+      _ = lifecycleStore.failed(reason: reason)
+      output["reason"] = .string(reason)
+      output["lifecycle"] = .object(lifecycleOutput())
+      output["status_source"] = .string("guest_handshake")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "iOS on-device runtime guest handshake is pending",
+        metadata: baseMetadata([
+          "broker": .string(broker.implementationId),
+          "status_source": .string("guest_handshake")
+        ])
+      )
     }
-    output["lifecycle"] = .object(lifecycleOutput())
-    output["status_source"] = .string("cached_lifecycle")
-    return AgentNativeToolExecutionResult.success(
-      output: output,
-      message: "iOS on-device runtime cached status inspected",
-      metadata: baseMetadata([
-        "broker": .string(broker.implementationId),
-        "status_source": .string("cached_lifecycle")
-      ])
-    )
   }
 
   private func executeWithBroker(
