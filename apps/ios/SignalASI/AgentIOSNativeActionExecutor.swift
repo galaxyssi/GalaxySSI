@@ -39,6 +39,16 @@ enum AgentIOSNativeToolHandoffPresenter {
     return true
   }
 
+  @discardableResult
+  static func openDialer(phoneNumber: String) -> Bool {
+    guard let normalized = normalizedPhoneNumber(phoneNumber) else { return false }
+    let encodedNumber = normalized.addingPercentEncoding(
+      withAllowedCharacters: .decimalDigits.union(CharacterSet(charactersIn: "+*,"))
+    ) ?? normalized
+    open(rawURL: "tel:\(encodedNumber)")
+    return true
+  }
+
   static func openIfNeeded(_ result: AgentActionResult) {
     guard result.success,
           let rawOutput = result.metadata["native_tool_output"],
