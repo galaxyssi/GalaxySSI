@@ -11,6 +11,7 @@ struct SignalASIRuntimeBrokerSettingsView: View {
 
   private let configurationStore = AgentIOSRuntimeBrokerConfigurationStore()
   private let credentials = AgentIOSRuntimeBrokerCredentials()
+  private let lifecycleStore = AgentIOSRuntimeBrokerLifecycleStore()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -193,10 +194,27 @@ struct SignalASIRuntimeBrokerSettingsView: View {
         isChecking = false
         switch outcome {
         case .success(let output):
-          statusMessage = output["reason"]?.stringValue?.nonEmpty ?? t("cc_runtime_broker_connected", "Runtime broker connected")
-          statusIsFailure = false
+          let isReady = output["backend_ready"]?.boolValue == true
+          let message = output["reason"]?.stringValue?.nonEmpty ?? t(
+            isReady ? "cc_runtime_broker_connected" : "cc_runtime_broker_unavailable",
+            isReady ? "Runtime broker connected" : "The local Linux runtime service is not ready"
+          )
+          if isReady {
+            _ = lifecycleStore.ready()
+            statusMessage = message
+            statusIsFailure = false
+          } else {
+            _ = lifecycleStore.failed(reason: message)
+            statusMessage = message
+            statusIsFailure = true
+          }
         case .failure(let error):
-          statusMessage = error.localizedDescription
+          let message = error.localizedDescription.ifBlank(t(
+            "cc_runtime_broker_unavailable",
+            "The local Linux runtime service is not ready"
+          ))
+          _ = lifecycleStore.failed(reason: message)
+          statusMessage = message
           statusIsFailure = true
         }
       }
