@@ -174,14 +174,15 @@ final class AgentIOSQemuRuntimeController {
   }
 
   private func launchArguments(files: RuntimeFiles) -> [String] {
-    [
+    let device = AgentDeviceProfileDetector.detect()
+    return [
       "qemu-system-aarch64",
       "-name", "SignalASI Linux",
       "-machine", "virt,gic-version=3,highmem=off",
       "-accel", "tcg,thread=multi",
       "-cpu", "max",
-      "-smp", "2",
-      "-m", "768M",
+      "-smp", String(device.maxQemuCpuCount),
+      "-m", "\(device.maxQemuMemoryMegabytes)M",
       "-display", "none",
       "-nodefaults",
       "-no-user-config",
@@ -312,11 +313,307 @@ final class AgentIOSUnixRuntimeBrokerTransport: AgentIOSRuntimeBrokerTransport {
   }
 }
 
+/// Implements the signed guest protocol shared with the Android QEMU runtime.
+private final class AgentIOSQemuGuestClient {
+  private static let protocolVersion: Int64 = 1
+  private static let maximumFrameBytes = 1_048_576
+
+  private let socketPath: String
+  private let sessionKey: Data
+  private let nowMillis: () -> Int64
+
+  init(socketPath: String, sessionKey: Data, nowMillis: @escaping () -> Int64 = {
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  }) {
+    self.socketPath = socketPath
+    self.sessionKey = sessionKey
+    self.nowMillis = nowMillis
+  }
+
+  func status(deadlineEpochMillis: Int64) throws -> AgentMcpJSONObject {
+    let connection = try openConnection()
+    defer { connection.cancel() }
+    let hello = try handshake(connection: connection, deadlineEpochMillis: deadlineEpochMillis)
+    let ready = hello["ready"]?.boolValue ?? false
+    let reason = hello["reason"]?.stringValue ?? ""
+    return [
+      "backend": .string("ios_app_sandbox_qemu_tci"),
+      "backend_ready": .bool(ready),
+      "reason": .string(reason),
+      "architecture": .string("arm64"),
+      "execution_target": .string("ios_qemu_debian"),
+      "linux_base_version": .string("1.3.9"),
+      "linux_system": .object([
+        "distribution": .string("Debian 13"),
+        "execution_principal": .string(hello["execution_principal"]?.stringValue ?? "root"),
+        "persistent": .bool(true),
+        "package_managers": .array([.string("apt")]),
+        "package_manager_ready": .bool(ready),
+        "base_version": .string("1.3.9"),
+        "package_management": .string("Linux guest package manager")
+      ]),
+      "capabilities": hello["capabilities"] ?? .array([]),
+      "observed_at_epoch_ms": .int(max(0, nowMillis()))
+    ]
+  }
+
+  func execute(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    workspacePath: String,
+    deadlineEpochMillis: Int64
+  ) throws -> AgentMcpJSONObject {
+    let connection = try openConnection()
+    defer { connection.cancel() }
+    let hello = try handshake(connection: connection, deadlineEpochMillis: deadlineEpochMillis)
+    guard hello["ready"]?.boolValue == true else {
+      throw AgentIOSRuntimeBrokerError.remote(
+        code: "runtime_guest_not_ready",
+        message: hello["reason"]?.stringValue?.ifBlank("The embedded Debian guest is not ready.") ?? "The embedded Debian guest is not ready.",
+        retryable: true
+      )
+    }
+    let requestId = "execute-\(UUID().uuidString)"
+    let payload = try executePayload(input: input, context: context, workspacePath: workspacePath)
+    try send(
+      envelope(requestId: requestId, type: "execute", sequence: 1, payload: payload),
+      through: connection,
+      timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 30 * 60_000)
+    )
+    var sequence: Int64 = 0
+    let deadline = timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 30 * 60_000)
+    while true {
+      let response = try receive(through: connection, timeout: deadline)
+      try verify(response)
+      guard response["request_id"]?.stringValue == requestId else { continue }
+      let currentSequence = response["sequence"]?.intValue ?? 0
+      guard currentSequence > sequence else { throw AgentIOSRuntimeBrokerError.malformedResponse }
+      sequence = currentSequence
+      let type = response["type"]?.stringValue ?? ""
+      let responsePayload = response["payload"]?.objectValue ?? [:]
+      switch type {
+      case "progress":
+        continue
+      case "result":
+        return responsePayload.merging([
+          "message": .string("iOS embedded Debian execution completed"),
+          "workspace_id": .string(workspaceId(context)),
+          "backend": .string("ios_app_sandbox_qemu_tci")
+        ]) { current, _ in current }
+      case "cancelled":
+        throw AgentIOSRuntimeBrokerError.remote(
+          code: "runtime_execution_cancelled",
+          message: "The embedded Debian execution was cancelled.",
+          retryable: true
+        )
+      case "error":
+        throw AgentIOSRuntimeBrokerError.remote(
+          code: "runtime_guest_execution_failed",
+          message: responsePayload["message"]?.stringValue?.ifBlank("The embedded Debian guest failed.") ?? "The embedded Debian guest failed.",
+          retryable: false
+        )
+      default:
+        throw AgentIOSRuntimeBrokerError.malformedResponse
+      }
+    }
+  }
+
+  private func handshake(connection: NWConnection, deadlineEpochMillis: Int64) throws -> AgentMcpJSONObject {
+    let requestId = "connect-\(UUID().uuidString)"
+    try send(
+      envelope(
+        requestId: requestId,
+        type: "hello",
+        sequence: 1,
+        payload: [
+          "host_api_version": .int(Self.protocolVersion),
+          "nonce": .string(UUID().uuidString)
+        ]
+      ),
+      through: connection,
+      timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 15_000)
+    )
+    let response = try receive(
+      through: connection,
+      timeout: timeout(deadlineEpochMillis: deadlineEpochMillis, maximum: 15_000)
+    )
+    try verify(response)
+    guard response["request_id"]?.stringValue == requestId,
+          response["type"]?.stringValue == "hello_ack",
+          response["sequence"]?.intValue == 1,
+          let payload = response["payload"]?.objectValue,
+          payload["guest_api_version"]?.intValue == Self.protocolVersion else {
+      throw AgentIOSRuntimeBrokerError.malformedResponse
+    }
+    return payload
+  }
+
+  private func executePayload(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    workspacePath: String
+  ) throws -> AgentMcpJSONObject {
+    guard let language = input["language"]?.stringValue,
+          supportedLanguages.contains(language) else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux execution request is invalid.")
+    }
+    let arguments = input["arguments"]?.arrayValue ?? []
+    guard arguments.allSatisfy({ $0.stringValue != nil }) else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux execution arguments are invalid.")
+    }
+    let timeoutMillis = input["timeout_ms"]?.intValue ?? 60_000
+    guard (100...(30 * 60_000)).contains(timeoutMillis) else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux execution timeout is invalid.")
+    }
+    let artifactPaths = input["artifact_paths"]?.arrayValue ?? []
+    let allowedDomains = input["allowed_network_domains"]?.arrayValue ?? []
+    return [
+      "language": .string(language),
+      "arguments": .array(arguments),
+      "workspace_id": .string(workspaceId(context)),
+      "workspace_path": .string(workspacePath),
+      "artifact_paths": .array(artifactPaths),
+      "network": .object([
+        "enabled": .bool(input["network_enabled"]?.boolValue ?? false),
+        "allowed_domains": .array(allowedDomains)
+      ]),
+      "limits": .object([
+        "wall_clock_ms": .int(timeoutMillis),
+        "cpu_ms": .int(min(timeoutMillis, 45_000)),
+        "memory_bytes": .int(512 * 1024 * 1024),
+        "disk_bytes": .int(512 * 1024 * 1024),
+        "max_processes": .int(64),
+        "max_output_bytes": .int(512 * 1024),
+        "max_artifact_bytes": .int(256 * 1024 * 1024)
+      ])
+    ]
+  }
+
+  private func envelope(
+    requestId: String,
+    type: String,
+    sequence: Int64,
+    payload: AgentMcpJSONObject
+  ) -> AgentMcpJSONObject {
+    var value: AgentMcpJSONObject = [
+      "protocol_version": .int(Self.protocolVersion),
+      "message_id": .string(UUID().uuidString),
+      "request_id": .string(requestId),
+      "type": .string(type),
+      "sequence": .int(sequence),
+      "timestamp_millis": .int(max(0, nowMillis())),
+      "payload": .object(payload)
+    ]
+    value["mac"] = .string(mac(for: value))
+    return value
+  }
+
+  private func verify(_ envelope: AgentMcpJSONObject) throws {
+    guard envelope["protocol_version"]?.intValue == Self.protocolVersion,
+          (envelope["message_id"]?.stringValue?.isEmpty == false),
+          (envelope["request_id"]?.stringValue?.isEmpty == false),
+          (envelope["type"]?.stringValue?.isEmpty == false),
+          (envelope["sequence"]?.intValue ?? 0) >= 1,
+          let timestamp = envelope["timestamp_millis"]?.intValue,
+          abs(timestamp - nowMillis()) <= 5 * 60_000,
+          let suppliedBase64 = envelope["mac"]?.stringValue,
+          let supplied = Data(base64Encoded: suppliedBase64) else {
+      throw AgentIOSRuntimeBrokerError.malformedResponse
+    }
+    guard constantTimeEquals(supplied, Data(base64Encoded: mac(for: envelope)) ?? Data()) else {
+      throw AgentIOSRuntimeBrokerError.authenticationFailed
+    }
+  }
+
+  private func mac(for envelope: AgentMcpJSONObject) -> String {
+    let values = [
+      String(envelope["protocol_version"]?.intValue ?? 0),
+      envelope["message_id"]?.stringValue ?? "",
+      envelope["request_id"]?.stringValue ?? "",
+      envelope["type"]?.stringValue ?? "",
+      String(envelope["sequence"]?.intValue ?? 0),
+      String(envelope["timestamp_millis"]?.intValue ?? 0),
+      AgentMcpJSONCodec.stringify(envelope["payload"]?.objectValue ?? [:])
+    ].joined(separator: "\n")
+    let key = SymmetricKey(data: sessionKey)
+    return Data(HMAC<SHA256>.authenticationCode(for: Data(values.utf8), using: key)).base64EncodedString()
+  }
+
+  private func openConnection() throws -> NWConnection {
+    let connection = NWConnection(to: .unix(path: socketPath), using: .tcp)
+    connection.start(queue: DispatchQueue(label: "com.signalasi.ios.qemu-guest", qos: .userInitiated))
+    return connection
+  }
+
+  private func send(_ envelope: AgentMcpJSONObject, through connection: NWConnection, timeout: DispatchTime) throws {
+    let frame = Data(AgentMcpJSONCodec.stringify(envelope).utf8)
+    guard (1...Self.maximumFrameBytes).contains(frame.count) else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux request is too large.")
+    }
+    let length = UInt32(frame.count).bigEndian
+    let data = withUnsafeBytes(of: length) { Data($0) } + frame
+    let signal = DispatchSemaphore(value: 0)
+    var failure: Error?
+    connection.send(content: data, completion: .contentProcessed { error in
+      failure = error
+      signal.signal()
+    })
+    guard signal.wait(timeout: timeout) == .success else { throw AgentIOSRuntimeBrokerError.timeout }
+    if let failure { throw AgentIOSRuntimeBrokerError.transport(failure.localizedDescription) }
+  }
+
+  private func receive(through connection: NWConnection, timeout: DispatchTime) throws -> AgentMcpJSONObject {
+    let header = try receive(exactly: 4, through: connection, timeout: timeout)
+    let length = header.reduce(0) { ($0 << 8) | Int($1) }
+    guard (1...Self.maximumFrameBytes).contains(length) else { throw AgentIOSRuntimeBrokerError.malformedResponse }
+    let frame = try receive(exactly: length, through: connection, timeout: timeout)
+    guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: frame) else {
+      throw AgentIOSRuntimeBrokerError.malformedResponse
+    }
+    return envelope
+  }
+
+  private func receive(exactly length: Int, through connection: NWConnection, timeout: DispatchTime) throws -> Data {
+    let signal = DispatchSemaphore(value: 0)
+    var received: Data?
+    var failure: NWError?
+    connection.receive(minimumIncompleteLength: length, maximumLength: length) { data, _, _, error in
+      received = data
+      failure = error
+      signal.signal()
+    }
+    guard signal.wait(timeout: timeout) == .success else { throw AgentIOSRuntimeBrokerError.timeout }
+    if let failure { throw AgentIOSRuntimeBrokerError.transport(failure.localizedDescription) }
+    guard let received, received.count == length else { throw AgentIOSRuntimeBrokerError.malformedResponse }
+    return received
+  }
+
+  private func timeout(deadlineEpochMillis: Int64, maximum: Int64) -> DispatchTime {
+    let remaining = deadlineEpochMillis > nowMillis() ? deadlineEpochMillis - nowMillis() : maximum
+    return .now() + .milliseconds(Int(min(maximum, max(250, remaining))))
+  }
+
+  private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
+    let raw = [context.attributes["workspace_id"], context.turnId, context.conversationId, context.invocationId]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? "default"
+    return raw
+  }
+
+  private let supportedLanguages: Set<String> = [
+    "shell", "python", "uv", "javascript", "typescript", "go", "rust", "c", "cpp", "java", "browser", "ffmpeg", "ffprobe"
+  ]
+
+  private func constantTimeEquals(_ left: Data, _ right: Data) -> Bool {
+    guard left.count == right.count else { return false }
+    return zip(left, right).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+  }
+}
+
 struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
   var implementationId: String = "signalasi.ios.qemu_tci.debian_v1"
   var runtimeRootURL: URL
   var controller: AgentIOSQemuRuntimeController = .shared
-  var configurationStore: AgentIOSRuntimeBrokerConfigurationStore = AgentIOSRuntimeBrokerConfigurationStore()
   var credentials: AgentIOSRuntimeBrokerCredentials = AgentIOSRuntimeBrokerCredentials()
 
   func availability() -> AgentNativeToolAvailability {
@@ -329,32 +626,72 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     context: AgentNativeToolInvocationContext,
     deadlineEpochMillis: Int64
   ) throws -> AgentMcpJSONObject {
-    var configuration = configurationStore.load()
-    if !configuration.enabled {
-      configuration.enabled = true
-      try configurationStore.save(configuration)
-    }
     if credentials.sessionKey() == nil {
       try credentials.storeSessionKey(base64Encoded: AgentIOSRuntimeBrokerPairingKey.generate())
     }
     guard let key = credentials.sessionKey() else { throw AgentIOSRuntimeBrokerError.pairingRequired }
     try controller.startIfNeeded(runtimeRootURL: runtimeRootURL, sessionKey: key)
-    let client = AgentIOSRuntimeBrokerClient(
-      configurationStore: configurationStore,
-      credentials: credentials,
-      transport: AgentIOSUnixRuntimeBrokerTransport(socketPath: {
-        try controller.socketPath(runtimeRootURL: runtimeRootURL)
-      })
-    )
     var lastError: Error?
     for _ in 0..<20 {
       do {
-        return try client.invoke(operation: operation, input: input, context: context, deadlineEpochMillis: deadlineEpochMillis)
+        let client = AgentIOSQemuGuestClient(
+          socketPath: try controller.socketPath(runtimeRootURL: runtimeRootURL),
+          sessionKey: key
+        )
+        switch operation {
+        case .status:
+          return try client.status(deadlineEpochMillis: deadlineEpochMillis)
+        case .execute:
+          return try client.execute(
+            input: input,
+            context: context,
+            workspacePath: try prepareWorkspace(input: input, context: context),
+            deadlineEpochMillis: deadlineEpochMillis
+          )
+        default:
+          throw AgentIOSRuntimeBrokerError.remote(
+            code: "runtime_operation_not_supported",
+            message: "The embedded Debian guest currently supports runtime status and execution.",
+            retryable: false
+          )
+        }
       } catch {
         lastError = error
         Thread.sleep(forTimeInterval: 0.25)
       }
     }
     throw lastError ?? AgentIOSRuntimeBrokerError.timeout
+  }
+
+  private func prepareWorkspace(
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) throws -> String {
+    let workspaceId = [context.attributes["workspace_id"], context.turnId, context.conversationId, context.invocationId]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? "default"
+    guard workspaceId.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", options: .regularExpression) != nil,
+          let language = input["language"]?.stringValue,
+          let fileName = sourceFileName(language: language),
+          let source = input["source"]?.stringValue,
+          source.utf8.count <= 512 * 1_024 else {
+      throw AgentIOSRuntimeBrokerError.invalidConfiguration("The iOS Linux workspace request is invalid.")
+    }
+    let workspace = runtimeRootURL
+      .appendingPathComponent("projects", isDirectory: true)
+      .appendingPathComponent(workspaceId, isDirectory: true)
+    let control = workspace.appendingPathComponent(".signalasi-runtime", isDirectory: true)
+    try FileManager.default.createDirectory(at: control, withIntermediateDirectories: true)
+    try Data(source.utf8).write(to: control.appendingPathComponent(fileName), options: [.atomic])
+    return "/workspace/\(workspaceId)"
+  }
+
+  private func sourceFileName(language: String) -> String? {
+    [
+      "shell": "main.sh", "python": "main.py", "uv": "main.py", "javascript": "main.js",
+      "typescript": "main.ts", "go": "main.go", "rust": "main.rs", "c": "main.c",
+      "cpp": "main.cpp", "java": "Main.java", "browser": "main.browser.js",
+      "ffmpeg": "main.sh", "ffprobe": "main.sh"
+    ][language]
   }
 }
