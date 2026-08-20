@@ -98,11 +98,17 @@ object AgentLinuxSoftwareNativeTools {
                     executeLinux(
                         manager,
                         invocation,
-                        aptSearchScript(query, limit),
+                        aptSearchScript(query, MAX_PACKAGE_CANDIDATES),
                         timeoutMillis = PACKAGE_SEARCH_TIMEOUT_MILLIS,
                         networkEnabled = true
                     ).let { response ->
-                        if (response.exitCode == 0) parsePackageRecords(response.stdout).map { it.publicValue() }
+                        if (response.exitCode == 0) {
+                            rankPackageRecords(
+                                parsePackageRecords(response.stdout, MAX_PACKAGE_CANDIDATES),
+                                query,
+                                limit
+                            ).map { it.publicValue() }
+                        }
                         else {
                             packageSearchError = response.stderr.trim()
                                 .ifBlank { "Linux package search exited with ${response.exitCode}" }
@@ -234,7 +240,10 @@ object AgentLinuxSoftwareNativeTools {
         )
     }
 
-    internal fun parsePackageRecords(raw: String): List<AgentLinuxSoftwareRecord> = raw.lineSequence()
+    internal fun parsePackageRecords(
+        raw: String,
+        maxResults: Int = MAX_RESULTS
+    ): List<AgentLinuxSoftwareRecord> = raw.lineSequence()
         .map(String::trim)
         .filter(String::isNotBlank)
         .mapNotNull { line ->
@@ -249,8 +258,28 @@ object AgentLinuxSoftwareNativeTools {
             )
         }
         .distinctBy(AgentLinuxSoftwareRecord::id)
-        .take(MAX_RESULTS)
+        .take(maxResults.coerceIn(1, MAX_PACKAGE_CANDIDATES))
         .toList()
+
+    internal fun rankPackageRecords(
+        records: List<AgentLinuxSoftwareRecord>,
+        query: String,
+        limit: Int
+    ): List<AgentLinuxSoftwareRecord> {
+        val normalized = query.trim().lowercase(Locale.ROOT)
+        return records.sortedWith(
+            compareBy<AgentLinuxSoftwareRecord> { record ->
+                val id = record.id.lowercase(Locale.ROOT)
+                when {
+                    id == normalized -> 0
+                    id.startsWith(normalized) -> 1
+                    normalized in id -> 2
+                    normalized in record.description.lowercase(Locale.ROOT) -> 3
+                    else -> 4
+                }
+            }.thenBy { it.id }
+        ).take(limit.coerceIn(1, MAX_RESULTS))
+    }
 
     private fun managedPackValues(
         statuses: List<AgentRuntimePackStatus>,
@@ -439,6 +468,7 @@ object AgentLinuxSoftwareNativeTools {
 
     private const val DEFAULT_RESULTS = 20
     private const val MAX_RESULTS = 50
+    private const val MAX_PACKAGE_CANDIDATES = 200
     internal const val PACKAGE_SEARCH_TIMEOUT_MILLIS = 10 * 60_000L
     private const val MAX_DESCRIPTION_CHARS = 500
     private const val MAX_DIAGNOSTIC_CHARS = 8_000

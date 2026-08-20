@@ -31,4 +31,19 @@ class AgentLinuxSoftwareNativeToolsTest {
     fun allowsAColdPackageIndexRefreshToFinish() {
         assertEquals(10 * 60_000L, AgentLinuxSoftwareNativeTools.PACKAGE_SEARCH_TIMEOUT_MILLIS)
     }
+
+    @Test
+    fun ranksAnExactPackageAheadOfSubstringMatches() {
+        val ranked = AgentLinuxSoftwareNativeTools.rankPackageRecords(
+            listOf(
+                AgentLinuxSoftwareRecord("libjs-jquery", "1", false, "jQuery"),
+                AgentLinuxSoftwareRecord("gojq", "2", false, "Go jq"),
+                AgentLinuxSoftwareRecord("jq", "3", false, "JSON processor")
+            ),
+            query = "jq",
+            limit = 2
+        )
+
+        assertEquals(listOf("jq", "gojq"), ranked.map(AgentLinuxSoftwareRecord::id))
+    }
 }
