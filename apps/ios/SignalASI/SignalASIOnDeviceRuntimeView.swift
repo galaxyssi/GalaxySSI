@@ -7,6 +7,8 @@ struct SignalASIOnDeviceRuntimeView: View {
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   @State private var isRecoveringLinuxBase = false
   @State private var linuxBaseRecoveryMessage = ""
+  @State private var isInstallingPythonUv = false
+  @State private var pythonUvInstallationMessage = ""
   @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
   @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
   @State private var brokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
@@ -24,11 +26,11 @@ struct SignalASIOnDeviceRuntimeView: View {
   }
 
   private var runtimeReady: Bool {
-    !linuxBaseNeedsRecovery && brokerHealth.isReady
+    runtimeAvailability.status == .available && brokerHealth.isReady
   }
 
   private var runtimeStatusMessage: String {
-    brokerStatusMessage.ifBlank(runtimeAvailability.reason.ifBlank(t(
+    runtimeAvailability.reason.ifBlank(brokerStatusMessage.ifBlank(t(
       "cc_runtime_overview_subtitle",
       "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
     )))
@@ -52,6 +54,16 @@ struct SignalASIOnDeviceRuntimeView: View {
     case .unavailable:
       return t("cc_status_unavailable", "Unavailable")
     }
+  }
+
+  private var runtimeBadge: String {
+    if runtimeReady {
+      return t("cc_status_ready", "Ready")
+    }
+    if case .checking = brokerHealth {
+      return t("signalasi.status.loading", "Checking")
+    }
+    return t("status_needs_setup", "Needs Setup")
   }
 
   private var brokerTint: Color {
@@ -100,6 +112,26 @@ struct SignalASIOnDeviceRuntimeView: View {
     return linuxBasePack?.manifest?.version ?? AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion
   }
 
+  private var pythonUvPack: AgentRuntimePackStatus? {
+    packs.first { $0.id == "python-uv" }
+  }
+
+  private var pythonUvNeedsInstall: Bool {
+    guard let pythonUvPack, pythonUvPack.state == .ready else { return true }
+    let requiredCapabilities = AgentRuntimePackCatalogPolicy.requiredPackCapabilities["python-uv", default: []]
+    return !requiredCapabilities.isSubset(of: Set(pythonUvPack.manifest?.capabilities ?? []))
+  }
+
+  private var pythonUvBadge: String {
+    if isInstallingPythonUv {
+      return t("cc_runtime_install_in_progress", "Installing")
+    }
+    if pythonUvNeedsInstall {
+      return t("status_needs_setup", "Needs Setup")
+    }
+    return pythonUvPack?.manifest?.version ?? t("cc_status_ready", "Ready")
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -119,7 +151,7 @@ struct SignalASIOnDeviceRuntimeView: View {
             subtitle: runtimeStatusMessage,
             systemImage: "terminal",
             tint: runtimeReady ? .signalASIAccent : .orange,
-            badge: runtimeReady ? t("cc_status_ready", "Ready") : brokerBadge
+            badge: runtimeBadge
           )
           SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
           managementSection
@@ -171,7 +203,7 @@ struct SignalASIOnDeviceRuntimeView: View {
         subtitle: runtimeStatusMessage,
         systemImage: "link",
         tint: runtimeReady ? .signalASIAccent : .orange,
-        badge: runtimeReady ? t("cc_status_ready", "Ready") : brokerBadge
+        badge: runtimeBadge
       )
       SignalASISecurityNavigationRow(
         title: t("cc_runtime_broker_title", "Runtime Broker"),
@@ -196,6 +228,18 @@ struct SignalASIOnDeviceRuntimeView: View {
         badge: linuxBaseRecoveryBadge
       ) {
         recoverLinuxBase()
+      }
+      SignalASISecurityActionRow(
+        title: t("cc_runtime_python_install_title", "Install Python and uv"),
+        subtitle: pythonUvInstallationMessage.ifBlank(t(
+          "cc_runtime_python_install_subtitle",
+          "Required by the Android-compatible base runtime before Agent code can execute"
+        )),
+        systemImage: "chevron.left.forwardslash.chevron.right",
+        tint: pythonUvNeedsInstall ? .orange : .signalASIAccent,
+        badge: pythonUvBadge
+      ) {
+        installPythonUv()
       }
       SignalASISecurityNavigationRow(
         title: t("cc_runtime_software_center_title", "Software Center"),
@@ -283,7 +327,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   }
 
   private func recoverLinuxBase() {
-    guard !isRecoveringLinuxBase else { return }
+    guard !isRecoveringLinuxBase, !isInstallingPythonUv else { return }
     isRecoveringLinuxBase = true
     linuxBaseRecoveryMessage = t("cc_runtime_recovery_preparing", "Checking the signed Linux runtime catalog...")
     DispatchQueue.global(qos: .userInitiated).async {
@@ -324,6 +368,59 @@ struct SignalASIOnDeviceRuntimeView: View {
         case .failure(let error):
           linuxBaseRecoveryMessage = error.localizedDescription.ifBlank(
             t("cc_runtime_recovery_failed", "Linux runtime recovery failed")
+          )
+        }
+      }
+    }
+  }
+
+  private func installPythonUv() {
+    guard !isInstallingPythonUv, !isRecoveringLinuxBase else { return }
+    isInstallingPythonUv = true
+    pythonUvInstallationMessage = t(
+      "cc_runtime_python_install_preparing",
+      "Checking the signed Python and uv runtime pack..."
+    )
+    DispatchQueue.global(qos: .userInitiated).async {
+      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
+      let outcome: Result<[AgentRuntimePackInstallResult], Error>
+      do {
+        outcome = .success(try manager.install(
+          packId: "python-uv",
+          onDownloadProgress: { progress in
+            guard progress.totalBytes > 0 else { return }
+            let percent = min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
+            DispatchQueue.main.async {
+              pythonUvInstallationMessage = String(
+                format: t("cc_runtime_python_install_downloading", "Downloading Python and uv (%d%%)..."),
+                percent
+              )
+            }
+          },
+          onInstallProgress: { progress in
+            DispatchQueue.main.async {
+              pythonUvInstallationMessage = String(
+                format: t("cc_runtime_python_install_installing", "Installing Python and uv: %@"),
+                progress.stage.rawValue.lowercased()
+              )
+            }
+          }
+        ))
+      } catch {
+        outcome = .failure(error)
+      }
+      DispatchQueue.main.async {
+        isInstallingPythonUv = false
+        switch outcome {
+        case .success(let results):
+          let version = results.last { $0.packId == "python-uv" }?.version ?? ""
+          pythonUvInstallationMessage = String(
+            format: t("cc_runtime_python_install_success", "Python and uv %@ are ready"),
+            version.ifBlank(t("cc_status_ready", "Ready"))
+          )
+        case .failure(let error):
+          pythonUvInstallationMessage = error.localizedDescription.ifBlank(
+            t("cc_runtime_python_install_failed", "Python and uv installation failed")
           )
         }
       }

@@ -464,6 +464,40 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try String(contentsOf: project.appendingPathComponent("README.md")), "stable")
   }
 
+  func testDefaultRuntimeProviderRequiresPythonUvAlongsideLinuxBase() throws {
+    struct ReadyBroker: AgentIOSRuntimeBrokerProviding {
+      var implementationId: String { "ready-runtime-broker" }
+
+      func availability() -> AgentNativeToolAvailability { .available }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64
+      ) throws -> AgentMcpJSONObject {
+        ["backend_ready": .bool(true)]
+      }
+    }
+
+    let root = try temporaryDirectory("ios-default-runtime-base-readiness")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try installRuntimePackManifest("linux-base", under: root)
+    let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
+      runtimeRootURL: root,
+      broker: ReadyBroker(),
+      signatureVerifier: { _ in true }
+    )
+
+    let missingPython = provider.availability(operation: .execute)
+    XCTAssertEqual(missingPython.status, .requiresSetup)
+    XCTAssertTrue(missingPython.reason.localizedCaseInsensitiveContains("python-uv"))
+
+    try installRuntimePackManifest("python-uv", under: root)
+
+    XCTAssertEqual(provider.availability(operation: .execute).status, .available)
+  }
+
   func testAgentIOSRuntimeBrokerClientSignsLoopbackStatusRequests() throws {
     final class StubTransport: AgentIOSRuntimeBrokerTransport {
       var capturedFrame = Data()
