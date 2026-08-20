@@ -18,6 +18,10 @@ struct SignalASIOnDeviceRuntimeView: View {
     runtimeProvider.availability(operation: .execute)
   }
 
+  private var brokerAvailability: AgentNativeToolAvailability {
+    AgentIOSRuntimeBrokerClient().availability()
+  }
+
   private var runtimeReady: Bool {
     runtimeAvailability.status == .available
   }
@@ -72,14 +76,14 @@ struct SignalASIOnDeviceRuntimeView: View {
         VStack(alignment: .leading, spacing: 12) {
           SignalASISecurityHeroView(
             title: t(runtimeReady ? "cc_runtime_ready_title" : "cc_runtime_setup_title",
-                     runtimeReady ? "iOS-local runtime is ready" : "On-device runtime needs setup"),
+                     runtimeReady ? "iOS-local runtime is paired" : "On-device runtime needs setup"),
             subtitle: runtimeAvailability.reason.ifBlank(t(
               "cc_runtime_overview_subtitle",
               "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
             )),
             systemImage: "terminal",
             tint: runtimeReady ? .signalASIAccent : .orange,
-            badge: runtimeReady ? t("cc_status_ready", "Ready") : t("cc_status_not_configured", "Not configured")
+            badge: runtimeReady ? t("Paired", "Paired") : t("cc_status_not_configured", "Not configured")
           )
           SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
           managementSection
@@ -130,8 +134,22 @@ struct SignalASIOnDeviceRuntimeView: View {
         subtitle: runtimeAvailability.reason.ifBlank(t("cc_runtime_lifecycle_subtitle", "Start, health, restart backoff, and recovery state")),
         systemImage: "link",
         tint: runtimeReady ? .signalASIAccent : .orange,
-        badge: runtimeReady ? t("cc_runtime_lifecycle_ready", "Ready") : t("cc_runtime_lifecycle_no_controller", "Not packaged")
+        badge: runtimeReady ? t("Paired", "Paired") : t("cc_runtime_lifecycle_no_controller", "Not packaged")
       )
+      SignalASISecurityNavigationRow(
+        title: t("cc_runtime_broker_title", "Runtime Broker"),
+        subtitle: brokerAvailability.reason.ifBlank(t(
+          "cc_runtime_broker_connected",
+          "Paired local Linux runtime service is ready"
+        )),
+        systemImage: "link",
+        tint: brokerAvailability.status == .available ? .signalASIAccent : .orange,
+        badge: brokerAvailability.status == .available
+          ? t("Paired", "Paired")
+          : t("cc_status_not_configured", "Not configured")
+      ) {
+        SignalASIRuntimeBrokerSettingsView()
+      }
       SignalASISecurityActionRow(
         title: t("cc_runtime_recovery_title", "Recover Linux 1.3.9"),
         subtitle: linuxBaseRecoveryMessage.ifBlank(t(
