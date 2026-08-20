@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SignalASIRuntimeBrokerSettingsView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
@@ -108,6 +109,18 @@ struct SignalASIRuntimeBrokerSettingsView: View {
           .autocorrectionDisabled(true)
       }
       SignalASISecurityActionRow(
+        title: t("cc_runtime_broker_generate_key", "Generate pairing key"),
+        subtitle: t(
+          "cc_runtime_broker_generate_key_subtitle",
+          "Create and copy a new 256-bit key, then save it after configuring the broker"
+        ),
+        systemImage: "key.badge.plus",
+        tint: .purple,
+        badge: "256-bit"
+      ) {
+        generatePairingKey()
+      }
+      SignalASISecurityActionRow(
         title: t("cc_runtime_broker_clear_key", "Remove pairing key"),
         subtitle: t("cc_runtime_broker_clear_key_subtitle", "Disable this app's access to the local runtime service"),
         systemImage: "key.slash",
@@ -145,6 +158,21 @@ struct SignalASIRuntimeBrokerSettingsView: View {
     let configuration = configurationStore.load()
     enabled = configuration.enabled
     port = String(configuration.port)
+  }
+
+  private func generatePairingKey() {
+    do {
+      pairingKey = try AgentIOSRuntimeBrokerPairingKey.generate()
+      UIPasteboard.general.string = pairingKey
+      statusMessage = t(
+        "cc_runtime_broker_key_generated",
+        "New pairing key generated and copied. Save to store it in the iOS Keychain."
+      )
+      statusIsFailure = false
+    } catch {
+      statusMessage = error.localizedDescription
+      statusIsFailure = true
+    }
   }
 
   private func save() {

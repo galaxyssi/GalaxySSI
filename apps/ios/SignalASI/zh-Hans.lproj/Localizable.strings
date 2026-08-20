@@ -4344,6 +4344,9 @@
 "cc_runtime_broker_pairing" = "配对";
 "cc_runtime_broker_key" = "配对密钥";
 "cc_runtime_broker_key_subtitle" = "Base64 密钥仅保存在 iOS 钥匙串中";
+"cc_runtime_broker_generate_key" = "生成配对密钥";
+"cc_runtime_broker_generate_key_subtitle" = "生成并复制新的 256 位密钥，配置 Broker 后再保存";
+"cc_runtime_broker_key_generated" = "已生成并复制新的配对密钥，请保存以写入 iOS 钥匙串。";
 "cc_runtime_broker_clear_key" = "移除配对密钥";
 "cc_runtime_broker_clear_key_subtitle" = "禁止此 App 访问本机运行时服务";
 "cc_runtime_broker_key_removed" = "配对密钥已移除";
