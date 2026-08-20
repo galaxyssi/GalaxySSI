@@ -6,6 +6,7 @@ struct SignalASIControlCenterView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var disclosureRecords: [AgentDataDisclosureRecord] = []
+  @State private var runtimeBrokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
 
   private let disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
@@ -45,6 +46,7 @@ struct SignalASIControlCenterView: View {
     .navigationBarHidden(true)
     .onAppear {
       disclosureRecords = disclosureStore.list(limit: 250)
+      refreshRuntimeBrokerHealth()
     }
   }
 
@@ -213,7 +215,7 @@ struct SignalASIControlCenterView: View {
           ),
           systemImage: "terminal",
           tint: runtimeReady ? .signalASIAccent : .orange,
-          badge: runtimeReady ? t("cc_status_ready", "Ready") : t("status_needs_setup", "Needs Setup")
+          badge: runtimeBadge
         ) {
           SignalASIOnDeviceRuntimeView()
         }
@@ -487,7 +489,15 @@ struct SignalASIControlCenterView: View {
   }
 
   private var runtimeReady: Bool {
-    runtimeProvider.availability(operation: .execute).status == .available
+    runtimeProvider.availability(operation: .execute).status == .available && runtimeBrokerHealth.isReady
+  }
+
+  private var runtimeBadge: String {
+    if runtimeReady { return t("cc_status_ready", "Ready") }
+    if case .checking = runtimeBrokerHealth {
+      return t("signalasi.status.loading", "Checking")
+    }
+    return t("status_needs_setup", "Needs Setup")
   }
 
   private var runningTaskCount: Int {
@@ -704,7 +714,29 @@ struct SignalASIControlCenterView: View {
       content()
     }
     .background(Color.signalASISurface)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  private func refreshRuntimeBrokerHealth() {
+    let availability = AgentIOSRuntimeBrokerClient().availability()
+    guard availability.status == .available else {
+      runtimeBrokerHealth = .notConfigured(availability.reason)
+      return
+    }
+    runtimeBrokerHealth = .checking
+    let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
+    DispatchQueue.global(qos: .userInitiated).async {
+      let health = AgentIOSRuntimeBrokerHealthChecker.check(
+        broker: AgentIOSRuntimeBrokerClient(),
+        deadlineEpochMillis: deadline,
+        context: AgentNativeToolInvocationContext(
+          invocationId: "control-center-runtime-\(UUID().uuidString)"
+        )
+      )
+      DispatchQueue.main.async {
+        runtimeBrokerHealth = health
+      }
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

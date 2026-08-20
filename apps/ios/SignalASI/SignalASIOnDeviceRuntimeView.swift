@@ -9,7 +9,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   @State private var linuxBaseRecoveryMessage = ""
   @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
   @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
-  @State private var brokerHealth = SignalASIRuntimeBrokerHealth.unchecked
+  @State private var brokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
 
   private var packs: [AgentRuntimePackStatus] {
     Self.packStatuses()
@@ -47,7 +47,7 @@ struct SignalASIOnDeviceRuntimeView: View {
       return t("cc_status_ready", "Ready")
     case .checking:
       return t("signalasi.status.loading", "Checking")
-    case .unchecked:
+    case .unchecked, .notConfigured:
       return t("cc_status_not_configured", "Not configured")
     case .unavailable:
       return t("cc_status_unavailable", "Unavailable")
@@ -60,7 +60,7 @@ struct SignalASIOnDeviceRuntimeView: View {
       return .signalASIAccent
     case .checking:
       return .blue
-    case .unchecked, .unavailable:
+    case .unchecked, .notConfigured, .unavailable:
       return .orange
     }
   }
@@ -344,41 +344,21 @@ struct SignalASIOnDeviceRuntimeView: View {
 
   private func refreshBrokerHealth() {
     guard brokerAvailability.status == .available else {
-      brokerHealth = .unchecked
+      brokerHealth = .notConfigured(brokerAvailability.reason)
       return
     }
     brokerHealth = .checking
     let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
     DispatchQueue.global(qos: .userInitiated).async {
-      let outcome: Result<AgentMcpJSONObject, Error>
-      do {
-        outcome = .success(try AgentIOSRuntimeBrokerClient().invoke(
-          operation: .status,
-          input: [:],
-          context: AgentNativeToolInvocationContext(
-            invocationId: "runtime-dashboard-\(UUID().uuidString)"
-          ),
-          deadlineEpochMillis: deadline
-        ))
-      } catch {
-        outcome = .failure(error)
-      }
+      let health = AgentIOSRuntimeBrokerHealthChecker.check(
+        broker: AgentIOSRuntimeBrokerClient(),
+        deadlineEpochMillis: deadline,
+        context: AgentNativeToolInvocationContext(
+          invocationId: "runtime-dashboard-\(UUID().uuidString)"
+        )
+      )
       DispatchQueue.main.async {
-        switch outcome {
-        case .success(let output):
-          let message = output["reason"]?.stringValue?.nonEmpty ?? ""
-          brokerHealth = output["backend_ready"]?.boolValue == true
-            ? .ready(message)
-            : .unavailable(message.ifBlank(t(
-              "cc_runtime_broker_unavailable",
-              "The local Linux runtime service is not ready"
-            )))
-        case .failure(let error):
-          brokerHealth = .unavailable(error.localizedDescription.ifBlank(t(
-            "cc_runtime_broker_unavailable",
-            "The local Linux runtime service is not ready"
-          )))
-        }
+        brokerHealth = health
       }
     }
   }
@@ -521,29 +501,6 @@ struct SignalASIOnDeviceRuntimeView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private enum SignalASIRuntimeBrokerHealth: Equatable {
-  case unchecked
-  case checking
-  case ready(String)
-  case unavailable(String)
-
-  var isReady: Bool {
-    if case .ready = self { return true }
-    return false
-  }
-
-  var message: String {
-    switch self {
-    case .unchecked:
-      return ""
-    case .checking:
-      return ""
-    case .ready(let message), .unavailable(let message):
-      return message
-    }
   }
 }
 

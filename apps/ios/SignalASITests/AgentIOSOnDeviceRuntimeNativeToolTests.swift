@@ -538,6 +538,58 @@ extension SignalASIStoreTests {
     XCTAssertEqual(request["context"]?.objectValue?["workspace_id"], .string("conversation-1"))
   }
 
+  func testRuntimeBrokerHealthRequiresAReadyStatusHandshake() throws {
+    struct StubBroker: AgentIOSRuntimeBrokerProviding {
+      let availabilityValue: AgentNativeToolAvailability
+      let result: Result<AgentMcpJSONObject, Error>
+
+      var implementationId: String { "stub-runtime-broker" }
+
+      func availability() -> AgentNativeToolAvailability {
+        availabilityValue
+      }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        context: AgentNativeToolInvocationContext,
+        deadlineEpochMillis: Int64
+      ) throws -> AgentMcpJSONObject {
+        try result.get()
+      }
+    }
+
+    let context = AgentNativeToolInvocationContext(invocationId: "runtime-health")
+    let unconfigured = AgentIOSRuntimeBrokerHealthChecker.check(
+      broker: StubBroker(
+        availabilityValue: AgentNativeToolAvailability(status: .requiresSetup, reason: "Pair the broker"),
+        result: .success(["backend_ready": .bool(true)])
+      ),
+      deadlineEpochMillis: 100,
+      context: context
+    )
+    let unavailable = AgentIOSRuntimeBrokerHealthChecker.check(
+      broker: StubBroker(
+        availabilityValue: .available,
+        result: .success(["backend_ready": .bool(false), "reason": .string("Guest stopped")])
+      ),
+      deadlineEpochMillis: 100,
+      context: context
+    )
+    let ready = AgentIOSRuntimeBrokerHealthChecker.check(
+      broker: StubBroker(
+        availabilityValue: .available,
+        result: .success(["backend_ready": .bool(true), "reason": .string("Guest ready")])
+      ),
+      deadlineEpochMillis: 100,
+      context: context
+    )
+
+    XCTAssertEqual(unconfigured, .notConfigured("Pair the broker"))
+    XCTAssertEqual(unavailable, .unavailable("Guest stopped"))
+    XCTAssertEqual(ready, .ready("Guest ready"))
+  }
+
   func testRuntimeBrokerLifecycleBacksOffThenRecovers() throws {
     let suite = "AgentIOSRuntimeBrokerLifecycleTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
