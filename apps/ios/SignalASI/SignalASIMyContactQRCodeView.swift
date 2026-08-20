@@ -8,6 +8,7 @@ struct MyContactQRCodeView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var copiedMessage = ""
   @State private var qrText = ""
+  @State private var sharePresented = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -25,7 +26,17 @@ struct MyContactQRCodeView: View {
           .buttonStyle(.plain)
         },
         trailing: {
-          Color.clear
+          Button {
+            sharePresented = true
+          } label: {
+            Image(systemName: "square.and.arrow.up")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.signalASIAccent)
+              .frame(width: 40, height: 40)
+          }
+          .buttonStyle(.plain)
+          .disabled(qrText.isEmpty || qrText == "{}")
+          .accessibilityLabel(Text(t("signalasi.contact.share_qr", "Share QR Code")))
         }
       )
       ScrollView {
@@ -46,6 +57,9 @@ struct MyContactQRCodeView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .onAppear(perform: refreshQRText)
+    .sheet(isPresented: $sharePresented) {
+      SignalASIContactQRShareSheet(items: shareItems)
+    }
   }
 
   private var qrCard: some View {
@@ -153,6 +167,14 @@ struct MyContactQRCodeView: View {
     }
   }
 
+  private var shareItems: [Any] {
+    var items: [Any] = [qrText]
+    if let image = SignalASIQRCodeImageRenderer.image(from: qrText) {
+      items.insert(image, at: 0)
+    }
+    return items
+  }
+
   private func copy(_ value: String, message: String) {
     guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     UIPasteboard.general.string = value
@@ -172,6 +194,16 @@ struct MyContactQRCodeView: View {
   private func t(_ key: String, _ fallback: String) -> String {
     SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
   }
+}
+
+private struct SignalASIContactQRShareSheet: UIViewControllerRepresentable {
+  let items: [Any]
+
+  func makeUIViewController(context: Context) -> UIActivityViewController {
+    UIActivityViewController(activityItems: items, applicationActivities: nil)
+  }
+
+  func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct MyContactQRHeroView: View {

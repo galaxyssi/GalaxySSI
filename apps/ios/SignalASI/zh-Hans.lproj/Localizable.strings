@@ -1504,6 +1504,7 @@
 "signalasi.contact.messaging" = "消息通道";
 "signalasi.contact.payload" = "载荷";
 "signalasi.contact.copy_payload" = "复制载荷";
+"signalasi.contact.share_qr" = "分享二维码";
 "signalasi.contact.agent_kind" = "Agent 类型";
 "signalasi.contact.desktop_id" = "Desktop ID";
 "signalasi.contact.device_id" = "设备 ID";
