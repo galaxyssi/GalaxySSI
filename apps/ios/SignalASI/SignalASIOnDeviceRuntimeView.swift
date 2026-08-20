@@ -7,6 +7,8 @@ struct SignalASIOnDeviceRuntimeView: View {
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   @State private var isRecoveringLinuxBase = false
   @State private var linuxBaseRecoveryMessage = ""
+  @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
+  @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
 
   private var packs: [AgentRuntimePackStatus] {
     Self.packStatuses()
@@ -92,6 +94,12 @@ struct SignalASIOnDeviceRuntimeView: View {
     }
     .background(Color.signalASIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .sheet(item: $selectedRuntimeReceipt) { receipt in
+      SignalASIRuntimeReceiptDetailSheet(receipt: receipt)
+    }
+    .onAppear {
+      refreshRuntimeReceipts()
+    }
   }
 
   private var runtimeMetrics: [SignalASIRuntimeMetric] {
@@ -173,13 +181,27 @@ struct SignalASIOnDeviceRuntimeView: View {
   private var receiptSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("cc_runtime_section_receipts", "Recent Execution Receipts"))
-      SignalASISecurityStatusRow(
-        title: t("cc_runtime_receipt_empty_title", "No runtime executions yet"),
-        subtitle: t("cc_runtime_receipt_empty_subtitle", "Verified execution receipts appear here after local runtime tasks run"),
-        systemImage: "clock.arrow.circlepath",
-        tint: .gray,
-        badge: ""
-      )
+      if runtimeReceipts.isEmpty {
+        SignalASISecurityStatusRow(
+          title: t("cc_runtime_receipt_empty_title", "No runtime executions yet"),
+          subtitle: t("cc_runtime_receipt_empty_subtitle", "Verified execution receipts appear here after local runtime tasks run"),
+          systemImage: "clock.arrow.circlepath",
+          tint: .gray,
+          badge: ""
+        )
+      } else {
+        ForEach(runtimeReceipts) { receipt in
+          SignalASISecurityActionRow(
+            title: receiptTimestamp(receipt),
+            subtitle: receiptSummary(receipt),
+            systemImage: receiptSystemImage(receipt),
+            tint: receiptTint(receipt),
+            badge: receipt.status.rawValue
+          ) {
+            selectedRuntimeReceipt = receipt
+          }
+        }
+      }
     }
   }
 
@@ -252,6 +274,57 @@ struct SignalASIOnDeviceRuntimeView: View {
           )
         }
       }
+    }
+  }
+
+  private func refreshRuntimeReceipts() {
+    let paths = AgentNativeToolDefaultStorePaths(
+      rootURL: AgentNativeToolDefaultStorePaths.applicationSupportRootURL()
+    )
+    let store = FileAgentNativeToolAuditStore(fileURL: paths.auditFileURL)
+    runtimeReceipts = store.list(
+      limit: 12,
+      toolId: AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+      status: nil
+    )
+  }
+
+  private func receiptTimestamp(_ receipt: AgentNativeToolAuditRecord) -> String {
+    SignalASISecurityFormatter.time(
+      Date(timeIntervalSince1970: Double(receipt.finishedAtEpochMillis) / 1_000),
+      unknown: t("signalasi.status.unknown", "Unknown"),
+      language: interfaceLanguage
+    )
+  }
+
+  private func receiptSummary(_ receipt: AgentNativeToolAuditRecord) -> String {
+    let identifier = String(receipt.invocationId.prefix(16))
+    return "\(receipt.durationMillis) ms / \(identifier)"
+  }
+
+  private func receiptSystemImage(_ receipt: AgentNativeToolAuditRecord) -> String {
+    switch receipt.status {
+    case .succeeded:
+      return "checkmark.seal"
+    case .failed, .verificationFailed, .timedOut:
+      return "exclamationmark.triangle"
+    case .rejected, .unavailable:
+      return "exclamationmark.circle"
+    case .cancelled:
+      return "xmark.circle"
+    }
+  }
+
+  private func receiptTint(_ receipt: AgentNativeToolAuditRecord) -> Color {
+    switch receipt.status {
+    case .succeeded:
+      return .signalASIAccent
+    case .failed, .verificationFailed, .timedOut:
+      return .red
+    case .rejected, .unavailable:
+      return .orange
+    case .cancelled:
+      return .gray
     }
   }
 
@@ -350,6 +423,131 @@ struct SignalASIOnDeviceRuntimeView: View {
       index += 1
     }
     return index == 0 ? "\(Int(value)) \(units[index])" : String(format: "%.1f %@", value, units[index])
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    SignalASILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+private struct SignalASIRuntimeReceiptDetailSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
+  var receipt: AgentNativeToolAuditRecord
+
+  var body: some View {
+    VStack(spacing: 0) {
+      SignalASITopBar(
+        title: t("cc_runtime_receipt_detail_title", "Runtime receipt"),
+        leading: {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+        },
+        trailing: {
+          Color.clear.frame(width: 44, height: 44)
+        }
+      )
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          SignalASISecurityHeroView(
+            title: t("cc_runtime_receipt_execution_title", "Local runtime execution"),
+            subtitle: t(
+              "cc_runtime_receipt_execution_subtitle",
+              "A locally persisted native-tool receipt without source or workspace content"
+            ),
+            systemImage: systemImage,
+            tint: tint,
+            badge: receipt.status.rawValue
+          )
+          SignalASISecuritySectionTitle(title: t("cc_runtime_receipt_section_execution", "Execution"))
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_receipt_request_id", "Request ID"),
+            subtitle: receipt.invocationId,
+            systemImage: "number",
+            tint: .blue,
+            badge: "",
+            monospacedSubtitle: true
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_receipt_timing", "Timing"),
+            subtitle: timingSummary,
+            systemImage: "clock",
+            tint: tint,
+            badge: ""
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_receipt_result", "Result"),
+            subtitle: receipt.errorCode.ifBlank(t("cc_runtime_receipt_result_success", "Completed without a runtime error")),
+            systemImage: systemImage,
+            tint: tint,
+            badge: receipt.status.rawValue
+          )
+          SignalASISecuritySectionTitle(title: t("cc_runtime_receipt_section_integrity", "Integrity"))
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_receipt_input_hash", "Input hash"),
+            subtitle: receipt.inputSha256.ifBlank(t("signalasi.status.unknown", "Unknown")),
+            systemImage: "lock.doc",
+            tint: .signalASIAccent,
+            badge: "",
+            monospacedSubtitle: true
+          )
+          SignalASISecurityStatusRow(
+            title: t("cc_runtime_receipt_output_hash", "Output hash"),
+            subtitle: receipt.outputSha256.ifBlank(t("signalasi.status.unknown", "Unknown")),
+            systemImage: "checkmark.shield",
+            tint: .signalASIAccent,
+            badge: "",
+            monospacedSubtitle: true
+          )
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+      }
+    }
+    .background(Color.signalASIPageBackground.ignoresSafeArea())
+  }
+
+  private var timingSummary: String {
+    let completed = SignalASISecurityFormatter.time(
+      Date(timeIntervalSince1970: Double(receipt.finishedAtEpochMillis) / 1_000),
+      unknown: t("signalasi.status.unknown", "Unknown"),
+      language: interfaceLanguage
+    )
+    return "\(completed) / \(receipt.durationMillis) ms"
+  }
+
+  private var systemImage: String {
+    switch receipt.status {
+    case .succeeded:
+      return "checkmark.seal"
+    case .failed, .verificationFailed, .timedOut:
+      return "exclamationmark.triangle"
+    case .rejected, .unavailable:
+      return "exclamationmark.circle"
+    case .cancelled:
+      return "xmark.circle"
+    }
+  }
+
+  private var tint: Color {
+    switch receipt.status {
+    case .succeeded:
+      return .signalASIAccent
+    case .failed, .verificationFailed, .timedOut:
+      return .red
+    case .rejected, .unavailable:
+      return .orange
+    case .cancelled:
+      return .gray
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

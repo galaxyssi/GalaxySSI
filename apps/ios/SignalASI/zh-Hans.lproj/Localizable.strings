@@ -42,6 +42,17 @@
 "signalasi.skill_marketplace.missing_native" = "%d 个原生工具不可用";
 "signalasi.skill_marketplace.missing_mcp" = "%d 个 MCP 服务需要设置";
 "signalasi.common.cancel" = "取消";
+"cc_runtime_receipt_detail_title" = "运行时回执";
+"cc_runtime_receipt_execution_title" = "本机运行时执行";
+"cc_runtime_receipt_execution_subtitle" = "已持久化的原生工具回执，不包含源码或工作区内容";
+"cc_runtime_receipt_section_execution" = "执行";
+"cc_runtime_receipt_request_id" = "请求 ID";
+"cc_runtime_receipt_timing" = "时间";
+"cc_runtime_receipt_result" = "结果";
+"cc_runtime_receipt_result_success" = "已完成，运行时未报告错误";
+"cc_runtime_receipt_section_integrity" = "完整性";
+"cc_runtime_receipt_input_hash" = "输入哈希";
+"cc_runtime_receipt_output_hash" = "输出哈希";
 "cc_runtime_software_uninstall_title" = "卸载 %@？";
 "cc_runtime_software_uninstall_message" = "要从本机移除 %@ 吗？依赖此运行时包的其他包需要先移除。";
 "cc_runtime_software_uninstall_action" = "卸载";
