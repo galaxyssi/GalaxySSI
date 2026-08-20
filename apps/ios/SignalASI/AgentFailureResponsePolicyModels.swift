@@ -172,6 +172,18 @@ enum AgentFailureRecoveryPolicy {
   }
 }
 
+enum AgentFailureDetailPolicy {
+  static func visibleMessage(error: String, fallback: String) -> String {
+    let normalized = error
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "[\\r\\n]{3,}", with: "\n\n", options: .regularExpression)
+    return String(normalized.prefix(maximumVisibleCharacters))
+      .ifBlank(fallback.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static let maximumVisibleCharacters = 6_000
+}
+
 struct AgentFailureRecoveryAdvertisedAction: Codable, Equatable, Identifiable {
   var id: String { action.rawValue }
   var action: AgentFailureRecoveryAction
@@ -253,7 +265,7 @@ enum AgentFailureRecoveryRichContent {
     )
     guard !actions.isEmpty else { return nil }
     let recommended = recommendedAction(status: status, failure: failure, advertisedActions: advertisedActions)
-    let body = message.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(failure)
+    let body = AgentFailureDetailPolicy.visibleMessage(error: failure, fallback: message)
     return AgentRichBlock(
       id: "recovery-\(String(cleanTaskId.prefix(96)))",
       type: .actions,
