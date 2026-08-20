@@ -321,6 +321,55 @@ protocol AgentIOSRuntimeBrokerProviding {
   ) throws -> AgentMcpJSONObject
 }
 
+enum AgentIOSRuntimeBrokerHealth: Equatable {
+  case unchecked
+  case checking
+  case notConfigured(String)
+  case ready(String)
+  case unavailable(String)
+
+  var isReady: Bool {
+    if case .ready = self { return true }
+    return false
+  }
+
+  var message: String {
+    switch self {
+    case .unchecked, .checking:
+      return ""
+    case .notConfigured(let message), .ready(let message), .unavailable(let message):
+      return message
+    }
+  }
+}
+
+enum AgentIOSRuntimeBrokerHealthChecker {
+  static func check(
+    broker: AgentIOSRuntimeBrokerProviding,
+    deadlineEpochMillis: Int64,
+    context: AgentNativeToolInvocationContext
+  ) -> AgentIOSRuntimeBrokerHealth {
+    let availability = broker.availability()
+    guard availability.status == .available else {
+      return .notConfigured(availability.reason)
+    }
+    do {
+      let output = try broker.invoke(
+        operation: .status,
+        input: [:],
+        context: context,
+        deadlineEpochMillis: deadlineEpochMillis
+      )
+      let reason = output["reason"]?.stringValue?.nonEmpty ?? ""
+      return output["backend_ready"]?.boolValue == true
+        ? .ready(reason)
+        : .unavailable(reason.ifBlank("The local Linux runtime service is not ready."))
+    } catch {
+      return .unavailable(error.localizedDescription.ifBlank("The local Linux runtime service is not ready."))
+    }
+  }
+}
+
 struct AgentIOSRuntimeBrokerClient: AgentIOSRuntimeBrokerProviding {
   static let protocolVersion: Int64 = 1
   static let maximumFrameBytes = 1_048_576
