@@ -69,6 +69,7 @@ final class LocalModelRuntimeStorage {
   }
 
   func inspect(_ profile: LocalModelRuntimeProfile) -> LocalModelStorageSnapshot {
+    try? materializeBundledModelIfNeeded(profile)
     let file = finalFileURL(for: profile)
     let metadata = readMetadata(for: profile)
     guard let metadata else {
@@ -133,6 +134,53 @@ final class LocalModelRuntimeStorage {
       throw LocalModelRuntimeStorageError.sha256Mismatch
     }
     return file
+  }
+
+  private func materializeBundledModelIfNeeded(_ profile: LocalModelRuntimeProfile) throws {
+    #if SIGNALASI_OFFLINE_BUNDLE
+      let fileName = profile.fileName as NSString
+      let extensionName = fileName.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard profile.id == LocalModelRuntimeProfiles.LFM_2_5_350M_Q8_0.id,
+            inspectExisting(profile).installed == false,
+            let resource = Bundle.main.url(
+              forResource: fileName.deletingPathExtension,
+              withExtension: extensionName.isEmpty ? nil : extensionName,
+              subdirectory: "local-models"
+            ) else {
+        return
+      }
+      let values = try resource.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+      guard values.isRegularFile == true,
+            Int64(values.fileSize ?? 0) == profile.expectedModelFileBytes,
+            try Self.sha256(fileURL: resource) == profile.sha256.lowercased() else {
+        throw LocalModelRuntimeStorageError.sha256Mismatch
+      }
+      let staged = stagingFileURL(for: profile)
+      try fileManager.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try? fileManager.removeItem(at: staged)
+      try fileManager.copyItem(at: resource, to: staged)
+      _ = try installVerifiedFile(
+        staged,
+        profile: profile,
+        downloadURL: URL(string: "bundle://signalasi/local-models/\(profile.fileName)")!
+      )
+    #endif
+  }
+
+  private func inspectExisting(_ profile: LocalModelRuntimeProfile) -> LocalModelStorageSnapshot {
+    let file = finalFileURL(for: profile)
+    let metadata = readMetadata(for: profile)
+    guard let metadata else {
+      return LocalModelStorageSnapshot(installed: false, fileURL: fileIfPresent(file), metadata: nil, detail: "Installed model metadata is missing")
+    }
+    guard metadata.matches(profile),
+          let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
+          values.isRegularFile == true,
+          Int64(values.fileSize ?? 0) == profile.expectedModelFileBytes,
+          Int64(((values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1_000).rounded()) == metadata.fileModifiedAtEpochMillis else {
+      return LocalModelStorageSnapshot(installed: false, fileURL: fileIfPresent(file), metadata: metadata, detail: "Installed model metadata is invalid")
+    }
+    return LocalModelStorageSnapshot(installed: true, fileURL: file, metadata: metadata, detail: "")
   }
 
   func delete(_ profile: LocalModelRuntimeProfile) throws {

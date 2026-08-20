@@ -40,7 +40,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       runtimeRootURL: runtimeRootURL,
       nowMillis: nowMillis
     )
-    self.broker = broker ?? AgentIOSRuntimeBrokerClient(nowMillis: nowMillis)
+    self.broker = broker ?? AgentIOSInAppQemuRuntimeBroker(runtimeRootURL: runtimeRootURL)
     self.lifecycleStore = lifecycleStore
   }
 
@@ -159,7 +159,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     let reason = runtimeSetupReason()
     let brokerConfigured = availability(operation: .execute).status == .available
     return [
-      "backend": .string(brokerConfigured ? "ios_runtime_broker" : "none"),
+      "backend": .string(brokerConfigured ? broker.implementationId : "none"),
       "backend_ready": .bool(false),
       "reason": .string(reason),
       "architecture": .string(hostArchitecture()),
@@ -192,8 +192,8 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
 
   private func linuxSystemOutput() -> AgentMcpJSONObject {
     return [
-      "distribution": .string("paired jailbreak Linux runtime"),
-      "execution_principal": .string("configured_jailbreak_linux_prefix"),
+      "distribution": .string("SignalASI Debian 13 in-app runtime"),
+      "execution_principal": .string("app_sandbox_qemu_tci"),
       "persistent": .bool(true),
       "package_managers": .array([]),
       "package_manager_ready": .bool(false),
@@ -596,7 +596,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   }
 
   private func runtimeSetupReason() -> String {
-    broker.availability().reason.ifBlank("Enable and pair the local iOS runtime broker.")
+    broker.availability().reason.ifBlank("The embedded iOS Linux runtime is unavailable.")
   }
 
   private func inspectBroker(_: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -605,7 +605,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     let brokerAvailable = availability(operation: .execute).status == .available
     output["backend_ready"] = .bool(brokerAvailable && lifecycle.phase == "ready")
     if brokerAvailable {
-      output["backend"] = .string("ios_runtime_broker")
+      output["backend"] = .string(broker.implementationId)
     }
     if lifecycle.reason.isEmpty == false {
       output["reason"] = .string(lifecycle.reason)
@@ -745,7 +745,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     [
       "implementation": .string(implementationId),
       "platform": .string("ios"),
-      "sandbox": .string("paired_ios_jailbreak_runtime_broker"),
+      "sandbox": .string("ios_app_sandbox_qemu_tci"),
       "network_default": .string("disabled")
     ].merging(extra) { _, new in new }
   }

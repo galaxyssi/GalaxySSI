@@ -568,10 +568,7 @@ final class VoiceWhisperModelManager {
   }
 
   private func bundledResourceURL(for model: VoiceWhisperModelProfile) -> URL? {
-    bundle.url(
-      forResource: model.fileName.deletingPathExtensionForWhisperManager,
-      withExtension: model.fileName.nonBlankPathExtensionForWhisperManager
-    )
+    VoiceWhisperModelCatalog.bundledResourceURL(for: model, bundle: bundle)
   }
 
   private func ensureVerifiedBundleFile(

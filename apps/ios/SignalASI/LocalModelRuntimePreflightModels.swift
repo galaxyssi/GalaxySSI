@@ -944,6 +944,12 @@ enum LocalModelRuntimePreflight {
 
 enum LocalModelRuntimeSettings {
   static func selectedProfile(defaults: UserDefaults = .standard) -> LocalModelRuntimeProfile {
+    if defaults.string(forKey: keyProfile) == nil {
+      let bundled = LocalModelRuntimeProfiles.LFM_2_5_350M_Q8_0
+      if LocalModelRuntimeStorage().inspect(bundled).installed {
+        return bundled
+      }
+    }
     let candidate = LocalModelRuntimeCatalog.find(
       defaults.string(forKey: keyProfile) ?? LocalModelRuntimeProfiles.GEMMA_3_4B_Q4.id,
       defaults: defaults

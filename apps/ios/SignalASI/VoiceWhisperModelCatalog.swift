@@ -214,6 +214,13 @@ enum VoiceWhisperModelCatalog {
   static let catalogVersion = "2026.08.13"
   static let mirrorRoot = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main"
   private static let mib: Int64 = 1_048_576
+  private static let fullOfflineBundle: Bool = {
+    #if SIGNALASI_OFFLINE_BUNDLE
+      return true
+    #else
+      return false
+    #endif
+  }()
 
   static let models: [VoiceWhisperModelProfile] = [
     profile(
@@ -291,7 +298,8 @@ enum VoiceWhisperModelCatalog {
       ram: 1_340 * mib,
       reserve: 768 * mib,
       partialMillis: 2_200,
-      windowMillis: 12_000
+      windowMillis: 12_000,
+      bundled: fullOfflineBundle
     ),
     profile(
       id: "small_q5_1",
@@ -607,16 +615,23 @@ enum VoiceWhisperModelCatalog {
     modelsDirectory: URL = defaultModelsDirectory()
   ) -> Bool {
     guard model.supportsIOSRuntime else { return false }
-    let bundled = bundle.url(
-      forResource: model.fileName.deletingPathExtension,
-      withExtension: model.fileName.nonBlankPathExtension
-    ) != nil
+    let bundled = bundledResourceURL(for: model, bundle: bundle) != nil
     let downloaded = downloadedFileBytes(
       for: model,
       fileManager: fileManager,
       modelsDirectory: modelsDirectory
     )
     return isAvailable(model, bundledResourceExists: bundled, downloadedFileBytes: downloaded)
+  }
+
+  static func bundledResourceURL(
+    for model: VoiceWhisperModelProfile,
+    bundle: Bundle = .main
+  ) -> URL? {
+    let name = model.fileName.deletingPathExtension
+    let extensionName = model.fileName.nonBlankPathExtension
+    return bundle.url(forResource: name, withExtension: extensionName, subdirectory: "voice/models") ??
+      bundle.url(forResource: name, withExtension: extensionName)
   }
 
   private static func downloadedFileBytes(
