@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 import socketserver
 import struct
 import subprocess
@@ -32,6 +33,7 @@ MAX_CLOCK_SKEW_MILLIS = 5 * 60_000
 MAX_OUTPUT_BYTES = 256 * 1024
 MAX_SOURCE_BYTES = 256 * 1024
 WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+PACKAGE_ID = re.compile(r"^[a-z0-9][a-z0-9+.-]{0,127}$")
 SUPPORTED_LANGUAGES = {
     "shell", "python", "uv", "javascript", "typescript", "go", "rust",
     "c", "cpp", "java", "browser", "ffmpeg", "ffprobe",
@@ -94,6 +96,7 @@ class BrokerConfig:
     linux_base_version: str
     distribution: str
     ready_command: tuple[str, ...]
+    allow_package_network_refresh: bool
 
     @classmethod
     def load(cls, path: Path) -> "BrokerConfig":
@@ -105,6 +108,7 @@ class BrokerConfig:
             version = str(raw["linux_base_version"])
             distribution = str(raw.get("distribution", "jailbreak Linux runtime"))
             ready_command = tuple(raw.get("ready_command", ["/bin/sh", "-lc", "test -x /bin/sh"]))
+            allow_package_network_refresh = bool(raw.get("allow_package_network_refresh", False))
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as error:
             raise BrokerFailure("invalid_broker_configuration", "Runtime broker configuration is invalid") from error
         if len(session_key) < 32:
@@ -114,7 +118,7 @@ class BrokerConfig:
         if not semantic_version_at_least(version):
             raise BrokerFailure("linux_base_outdated", "Linux base version must be 1.3.9 or newer")
         workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        return cls(session_key, prefix, workspace_root, version, distribution, ready_command)
+        return cls(session_key, prefix, workspace_root, version, distribution, ready_command, allow_package_network_refresh)
 
 
 class ReplayWindow:
@@ -146,6 +150,14 @@ class RuntimeBroker:
                 result = self.status()
             elif operation == "execute":
                 result = self.execute(envelope.get("input", {}), envelope.get("context", {}))
+            elif operation == "software.catalog":
+                result = self.software_catalog()
+            elif operation == "software.search":
+                result = self.software_search(envelope["input"])
+            elif operation == "software.inspect":
+                result = self.software_inspect(envelope["input"])
+            elif operation in {"software.install", "software.remove"}:
+                result = self.software_mutate(operation, envelope["input"])
             else:
                 raise BrokerFailure("unsupported_runtime_operation", "The iOS runtime broker does not support this operation")
             return self.response(ok=True, result=result)
@@ -256,6 +268,72 @@ class RuntimeBroker:
             "workspace_id": workspace_id,
             "backend": "ios_jailbreak_runtime_broker",
         }
+
+    def software_catalog(self) -> dict[str, Any]:
+        ready, diagnostic = self.probe()
+        if not ready:
+            raise BrokerFailure("runtime_backend_unavailable", diagnostic, retryable=True)
+        return {
+            "linux_ready": True,
+            "sources": [{
+                "id": "linux_package", "trusted": False, "searchable": True,
+                "install_tool_id": "signalasi.runtime.software.install",
+                "network_refresh_allowed": self.config.allow_package_network_refresh,
+            }],
+            "observed_at_epoch_ms": int(time.time() * 1000),
+        }
+
+    def software_search(self, input_value: dict[str, Any]) -> dict[str, Any]:
+        query = input_value.get("query")
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 160 or any(ord(char) < 32 for char in query):
+            raise BrokerFailure("runtime_software_input_invalid", "Software search query is invalid")
+        query = query.strip()
+        limit = input_value.get("limit", 20)
+        if not isinstance(limit, int) or not 1 <= limit <= 50:
+            raise BrokerFailure("runtime_software_input_invalid", "Software search limit is invalid")
+        self.ensure_package_index()
+        command = ["/bin/sh", "-lc", f"apt-cache search --names-only -- {shlex.quote(query)} | head -n {limit}"]
+        completed = self.run_linux(command, self.config.workspace_root, 10 * 60_000)
+        self.require_success(completed, "Linux package search failed")
+        results = []
+        for line in bounded(completed.stdout).splitlines():
+            package, _, description = line.partition(" - ")
+            if PACKAGE_ID.fullmatch(package):
+                results.append({"software_id": package, "source": "linux_package", "description": description, "installed": False})
+        return {"query": query, "results": results, "source_errors": [], "observed_at_epoch_ms": int(time.time() * 1000)}
+
+    def software_inspect(self, input_value: dict[str, Any]) -> dict[str, Any]:
+        package = self.package_id(input_value.get("software_id"), "software id")
+        self.ensure_package_index()
+        script = f"apt-cache policy {package}; dpkg-query -W -f='installed=%{{Status}}\\nversion=%{{Version}}\\n' {package} 2>/dev/null || true"
+        completed = self.run_linux(["/bin/sh", "-lc", script], self.config.workspace_root, 10 * 60_000)
+        self.require_success(completed, "Linux package inspection failed")
+        output = bounded(completed.stdout)
+        return {"software_id": package, "source": "linux_package", "details": output, "installed": "install ok installed" in output}
+
+    def software_mutate(self, operation: str, input_value: dict[str, Any]) -> dict[str, Any]:
+        package = self.package_id(input_value.get("software_id"), "software id")
+        if not self.config.allow_package_network_refresh:
+            raise BrokerFailure("runtime_package_network_not_authorized", "Allow package network refresh in the local broker configuration first")
+        verb = "install" if operation == "software.install" else "remove"
+        completed = self.run_linux(["apt-get", "-y", verb, package], self.config.workspace_root, 30 * 60_000)
+        self.require_success(completed, f"Linux package {verb} failed")
+        return {"software_id": package, "source": "linux_package", "operation": verb, "installed": verb == "install", "stdout": bounded(completed.stdout)}
+
+    def ensure_package_index(self) -> None:
+        check = self.run_linux(["/bin/sh", "-lc", "find /var/lib/apt/lists -maxdepth 1 -type f -name '*_Packages' -print -quit | grep -q ."], self.config.workspace_root, 15_000)
+        if check.returncode == 0:
+            return
+        if not self.config.allow_package_network_refresh:
+            raise BrokerFailure("runtime_package_index_missing", "Linux package index is missing and network refresh is not authorized", retryable=True)
+        refreshed = self.run_linux(["apt-get", "update"], self.config.workspace_root, 10 * 60_000)
+        self.require_success(refreshed, "Linux package index refresh failed")
+
+    @staticmethod
+    def package_id(value: Any, label: str) -> str:
+        if not isinstance(value, str) or not PACKAGE_ID.fullmatch(value):
+            raise BrokerFailure("runtime_software_input_invalid", f"{label} is invalid")
+        return value
 
     def execution_command(self, language: str, source: str, arguments: list[str], workspace: Path) -> list[str]:
         names = {

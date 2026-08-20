@@ -27,6 +27,7 @@ class RuntimeBrokerProtocolTests(unittest.TestCase):
             linux_base_version="1.3.9",
             distribution="test Linux",
             ready_command=("/bin/sh", "-lc", "true"),
+            allow_package_network_refresh=False,
         )
         self.config.workspace_root.mkdir(mode=0o700)
         self.runtime = BROKER.RuntimeBroker(self.config)
