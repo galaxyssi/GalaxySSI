@@ -52,6 +52,7 @@ extension AgentHomeView {
   }
 
   func createAgentConversation() {
+    coordinator.endLocalAgentSession(sessionId: store.activeAgentConversationId)
     _ = store.createAgentSession(title: t("signalasi.agent_session.new", "New session"))
     resetAgentSessionPresentation()
   }

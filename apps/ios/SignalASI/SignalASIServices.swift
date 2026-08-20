@@ -2769,6 +2769,7 @@ final class MessageCoordinator: ObservableObject {
           ].contains(task.phase) else {
       return false
     }
+    PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     if task.pendingAction != nil || !task.pendingActions.isEmpty {
       cancelLocalNativeAction(taskId: taskId, emitReply: emitReply)
       return store.agentTask(id: taskId)?.phase == .cancelled
@@ -2805,6 +2806,20 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  @discardableResult
+  func endLocalAgentSession(sessionId: String) -> Int {
+    let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanSessionId.isEmpty else { return 0 }
+
+    localConfirmationConsentStore.clear(sessionId: cleanSessionId)
+    return store.agentTasks(forSession: cleanSessionId, limit: 500)
+      .reduce(into: 0) { cancelledCount, task in
+        if cancelLocalAgentTask(taskId: task.taskId, emitReply: false) {
+          cancelledCount += 1
+        }
+      }
+  }
+
   func cancelLocalNativeAction(taskId: String, emitReply: Bool = true) {
     guard var task = store.agentTask(id: taskId),
           [
@@ -2818,6 +2833,7 @@ final class MessageCoordinator: ObservableObject {
           task.pendingAction != nil || !task.pendingActions.isEmpty else {
       return
     }
+    PhoneExecutionAuthority.requestCancellation(taskId: task.taskId)
     let action = task.pendingAction
     task.phase = .cancelled
     task.blocked = false
