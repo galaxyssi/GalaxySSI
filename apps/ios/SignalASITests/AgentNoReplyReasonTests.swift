@@ -164,4 +164,24 @@ final class AgentNoReplyReasonTests: XCTestCase {
     XCTAssertFalse(display.title.isEmpty)
     XCTAssertFalse(display.message.isEmpty)
   }
+
+  func testRecoveryCardShowsBoundedExactFailureInsteadOfGenericFallback() throws {
+    let block = try XCTUnwrap(AgentFailureRecoveryRichContent.recoveryBlock(
+      taskId: "task-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      agentId: "cloud-model",
+      originalGoal: "Inspect the runtime",
+      failure: "Runtime broker rejected the package\n\n\n\nLinux package index is missing",
+      status: "failed",
+      title: "Agent task needs recovery",
+      message: "The Agent did not complete the task."
+    ))
+
+    XCTAssertEqual(
+      block.text,
+      "Runtime broker rejected the package\n\nLinux package index is missing"
+    )
+    XCTAssertEqual(block.fallbackText, block.text)
+  }
 }
