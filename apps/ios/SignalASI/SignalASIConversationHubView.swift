@@ -132,6 +132,11 @@ struct SignalASIConversationHubView: View {
           // Keep the Add flow visible so a scanned friend request or pairing
           // can be reviewed and approved before the user leaves this route.
           refreshAfterContactImport()
+        },
+        onCloudModelAdded: { _ in
+          refreshAfterContactImport()
+          addContactPresentation = nil
+          selectedTab = .contacts
         }
       )
     }

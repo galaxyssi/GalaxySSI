@@ -32,15 +32,18 @@ struct AddContactView: View {
   private let autoOpenScanner: Bool
   private let onAgentAdded: (([String]) -> Void)?
   private let onImportCompleted: (() -> Void)?
+  private let onCloudModelAdded: ((SignalASIContact) -> Void)?
 
   init(
     autoOpenScanner: Bool = false,
     onAgentAdded: (([String]) -> Void)? = nil,
-    onImportCompleted: (() -> Void)? = nil
+    onImportCompleted: (() -> Void)? = nil,
+    onCloudModelAdded: ((SignalASIContact) -> Void)? = nil
   ) {
     self.autoOpenScanner = autoOpenScanner
     self.onAgentAdded = onAgentAdded
     self.onImportCompleted = onImportCompleted
+    self.onCloudModelAdded = onCloudModelAdded
   }
 
   private var pendingScannedAgentRequests: [SignalASIFriendRequest] {
@@ -95,7 +98,14 @@ struct AddContactView: View {
               tint: .signalASIInsightText,
               badge: t("signalasi.add_contact.title", "Add")
             ) {
-              CloudModelProviderSelectionView()
+              if let onCloudModelAdded {
+                CloudModelProviderSelectionView { contact in
+                  notifyImportCompleted()
+                  onCloudModelAdded(contact)
+                }
+              } else {
+                CloudModelProviderSelectionView()
+              }
             }
             AddContactActionRow(
               title: t("signalasi.add_contact.my_qr_title", "My QR Code"),
