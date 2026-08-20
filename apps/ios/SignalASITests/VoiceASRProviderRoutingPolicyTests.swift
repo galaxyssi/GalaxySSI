@@ -22,6 +22,41 @@ final class VoiceASRProviderRoutingPolicyTests: XCTestCase {
     XCTAssertNil(route.fallbackReason)
   }
 
+  func testAutomaticRouteUsesReadyLocalWhisper() {
+    let route = VoiceASRProviderRoutingPolicy.route(
+      settings: settings(locale: "en-US", provider: .automatic),
+      capabilities: VoiceProviderCapabilitySnapshot(
+        capabilities: [
+          capability(.whisperCpp, .ready, .ready, metadata: ["model_name": "Tiny"]),
+          capability(.androidSystemASR, .ready, .ready),
+        ],
+        checkedAtMillis: 1_000
+      )
+    )
+
+    XCTAssertEqual(route.kind, .localWhisper)
+    XCTAssertEqual(route.provider, "Local Whisper / Tiny")
+    XCTAssertFalse(route.usesFallback)
+  }
+
+  func testAutomaticRouteUsesIOSSpeechWithoutMarkingItAsFallback() {
+    let route = VoiceASRProviderRoutingPolicy.route(
+      settings: settings(locale: "zh-Hans", provider: .automatic),
+      capabilities: VoiceProviderCapabilitySnapshot(
+        capabilities: [
+          capability(.whisperCpp, .needsDownload, .whisperModelMissing),
+          capability(.androidSystemASR, .ready, .ready),
+        ],
+        checkedAtMillis: 1_000
+      )
+    )
+
+    XCTAssertEqual(route.kind, .iosSpeechFallback)
+    XCTAssertEqual(route.provider, "iOS Speech / zh-Hans")
+    XCTAssertFalse(route.usesFallback)
+    XCTAssertNil(route.fallbackReason)
+  }
+
   func testFallsBackToIOSSpeechWhenWhisperNeedsDownload() {
     let route = VoiceASRProviderRoutingPolicy.route(
       settings: settings(locale: "zh-Hans"),
@@ -187,14 +222,17 @@ final class VoiceASRProviderRoutingPolicyTests: XCTestCase {
     )
   }
 
-  private func settings(locale: String) -> VoiceSettings {
+  private func settings(
+    locale: String,
+    provider: VoiceASRProvider = .localWhisperCpp
+  ) -> VoiceSettings {
     VoiceSettings(
       wakeListeningEnabled: false,
       speechRecognitionEnabled: true,
       textToSpeechEnabled: true,
       autoSendTranscripts: false,
       preferredLocaleIdentifier: locale,
-      asrProvider: .localWhisperCpp
+      asrProvider: provider
     )
   }
 

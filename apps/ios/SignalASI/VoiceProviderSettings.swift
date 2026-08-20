@@ -24,11 +24,12 @@ enum VoiceWakeProvider: String, Codable, CaseIterable, Identifiable {
 }
 
 enum VoiceASRProvider: String, Codable, CaseIterable, Identifiable {
+  case automatic = "auto"
   case localWhisperCpp = "local_whisper_cpp"
 
   var id: String { rawValue }
 
-  static let defaultValue: VoiceASRProvider = .localWhisperCpp
+  static let defaultValue: VoiceASRProvider = .automatic
 
   static func normalized(_ value: String?) -> VoiceASRProvider {
     let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
@@ -37,6 +38,8 @@ enum VoiceASRProvider: String, Codable, CaseIterable, Identifiable {
 
   var displayTitle: String {
     switch self {
+    case .automatic:
+      return "Automatic"
     case .localWhisperCpp:
       return "On-device whisper.cpp"
     }

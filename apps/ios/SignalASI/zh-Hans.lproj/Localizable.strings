@@ -3439,6 +3439,10 @@
 "signalasi.voice.speech_recognition" = "语音识别";
 "signalasi.voice.speech_recognition_subtitle" = "将语音输入转换为文本";
 "voice_asr_provider" = "ASR 提供方";
+"voice_asr_provider_section" = "提供方";
+"voice_asr_provider_auto" = "自动";
+"voice_asr_provider_subtitle" = "自动优先使用已就绪的本机引擎，必要时切换到 iOS 系统语音";
+"voice_asr_provider_auto_subtitle" = "优先使用已就绪的本机 Whisper 模型；本机模型不可用时使用 iOS 系统语音。";
 "voice_asr_provider_local_whisper_prefix" = "本机 whisper.cpp";
 "voice_asr_language" = "ASR 语言";
 "signalasi.voice.asr_language_subtitle" = "语音识别请求使用的语言";
