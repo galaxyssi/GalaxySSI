@@ -538,6 +538,31 @@ extension SignalASIStoreTests {
     XCTAssertEqual(request["context"]?.objectValue?["workspace_id"], .string("conversation-1"))
   }
 
+  func testRuntimeBrokerLifecycleBacksOffThenRecovers() throws {
+    let suite = "AgentIOSRuntimeBrokerLifecycleTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var now: Int64 = 10_000
+    let store = AgentIOSRuntimeBrokerLifecycleStore(defaults: defaults, nowMillis: { now })
+
+    let firstFailure = store.failed(reason: "Broker unavailable")
+    XCTAssertEqual(firstFailure.phase, "backing_off")
+    XCTAssertEqual(firstFailure.consecutiveFailures, 1)
+    XCTAssertEqual(firstFailure.nextAttemptAtMillis, 11_000)
+
+    now = 11_000
+    let secondFailure = store.failed(reason: "Broker unavailable")
+    XCTAssertEqual(secondFailure.consecutiveFailures, 2)
+    XCTAssertEqual(secondFailure.nextAttemptAtMillis, 13_000)
+
+    now = 14_000
+    let ready = store.ready()
+    XCTAssertEqual(ready.phase, "ready")
+    XCTAssertEqual(ready.consecutiveFailures, 0)
+    XCTAssertEqual(ready.lastReadyAtMillis, 14_000)
+    XCTAssertEqual(store.snapshot(), ready)
+  }
+
   private func installRuntimePackManifest(_ packId: String, under runtimeRoot: URL) throws {
     let image = Data("\(packId)-runtime-image".utf8)
     let manifest = AgentRuntimePackManifest(

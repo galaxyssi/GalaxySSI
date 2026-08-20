@@ -55,6 +55,85 @@ final class AgentIOSRuntimeBrokerConfigurationStore {
   }
 }
 
+struct AgentIOSRuntimeBrokerLifecycleSnapshot: Codable, Equatable {
+  var phase: String
+  var reason: String
+  var consecutiveFailures: Int
+  var lastTransitionAtMillis: Int64
+  var lastReadyAtMillis: Int64
+  var nextAttemptAtMillis: Int64
+}
+
+final class AgentIOSRuntimeBrokerLifecycleStore {
+  static let storageKey = "signalasi.ios_runtime_broker.lifecycle.v1"
+  private let defaults: UserDefaults
+  private let nowMillis: () -> Int64
+  private let lock = NSLock()
+
+  init(
+    defaults: UserDefaults = .standard,
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+  ) {
+    self.defaults = defaults
+    self.nowMillis = nowMillis
+  }
+
+  func snapshot() -> AgentIOSRuntimeBrokerLifecycleSnapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let data = defaults.data(forKey: Self.storageKey),
+          let value = try? JSONDecoder().decode(AgentIOSRuntimeBrokerLifecycleSnapshot.self, from: data) else {
+      return AgentIOSRuntimeBrokerLifecycleSnapshot(
+        phase: "stopped", reason: "Runtime broker has not been checked", consecutiveFailures: 0,
+        lastTransitionAtMillis: 0, lastReadyAtMillis: 0, nextAttemptAtMillis: 0
+      )
+    }
+    return value
+  }
+
+  @discardableResult
+  func ready() -> AgentIOSRuntimeBrokerLifecycleSnapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = max(0, nowMillis())
+    let value = AgentIOSRuntimeBrokerLifecycleSnapshot(
+      phase: "ready", reason: "Local runtime broker health handshake completed", consecutiveFailures: 0,
+      lastTransitionAtMillis: now, lastReadyAtMillis: now, nextAttemptAtMillis: 0
+    )
+    save(value)
+    return value
+  }
+
+  @discardableResult
+  func failed(reason: String) -> AgentIOSRuntimeBrokerLifecycleSnapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    let previous = snapshotUnlocked()
+    let failures = min(1_000, previous.consecutiveFailures + 1)
+    let delay = min(Int64(60_000), Int64(1_000) << min(6, failures - 1))
+    let now = max(0, nowMillis())
+    let value = AgentIOSRuntimeBrokerLifecycleSnapshot(
+      phase: "backing_off", reason: reason, consecutiveFailures: failures,
+      lastTransitionAtMillis: now, lastReadyAtMillis: previous.lastReadyAtMillis,
+      nextAttemptAtMillis: now + delay
+    )
+    save(value)
+    return value
+  }
+
+  private func snapshotUnlocked() -> AgentIOSRuntimeBrokerLifecycleSnapshot {
+    guard let data = defaults.data(forKey: Self.storageKey),
+          let value = try? JSONDecoder().decode(AgentIOSRuntimeBrokerLifecycleSnapshot.self, from: data) else {
+      return AgentIOSRuntimeBrokerLifecycleSnapshot(phase: "stopped", reason: "", consecutiveFailures: 0, lastTransitionAtMillis: 0, lastReadyAtMillis: 0, nextAttemptAtMillis: 0)
+    }
+    return value
+  }
+
+  private func save(_ value: AgentIOSRuntimeBrokerLifecycleSnapshot) {
+    defaults.set(try? JSONEncoder().encode(value), forKey: Self.storageKey)
+  }
+}
+
 struct AgentIOSRuntimeBrokerCredentials {
   static let sessionKeyAccount = "signalasi.ios_runtime_broker.session_key.v1"
 
