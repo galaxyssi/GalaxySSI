@@ -416,6 +416,10 @@ struct PairingView: View {
           Task { await submitPairing(value, pairing: pairing) }
         }
       case .contact(let request):
+        if request.type == "agent" {
+          importScannedAgentContacts(value, requests: [request])
+          return
+        }
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
         if store.approveFriendRequest(id: stored.id) {
@@ -433,6 +437,10 @@ struct PairingView: View {
           )
         }
       case .contacts(let requests):
+        if requests.allSatisfy({ $0.type == "agent" }) {
+          importScannedAgentContacts(value, requests: requests)
+          return
+        }
         let stored = requests.map { store.addFriendRequest($0) }
         pendingPairing = nil
         errorText = String(
@@ -444,6 +452,35 @@ struct PairingView: View {
       pendingPairing = nil
       errorText = error.localizedDescription
       pairingNoticeIsError = true
+    }
+  }
+
+  private func importScannedAgentContacts(
+    _ value: String,
+    requests: [SignalASIFriendRequest]
+  ) {
+    do {
+      let importedCount = try store.importDesktopAgentQRCodeAsContacts(value)
+      guard importedCount > 0 else {
+        throw SignalASIError.invalidPayload("No Agent contacts were found in the QR code.")
+      }
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
+      pendingPairing = nil
+      pairingNoticeIsError = false
+      errorText = importedCount == 1
+        ? t("signalasi.pairing.agent_request_added", "Agent added to Contacts.")
+        : String(
+          format: t("signalasi.pairing.agent_requests_added", "%d Agents added to Contacts."),
+          importedCount
+        )
+    } catch {
+      let stored = requests.map { store.addFriendRequest($0) }
+      pendingPairing = nil
+      pairingNoticeIsError = false
+      errorText = String(
+        format: t("signalasi.pairing.agent_requests_received", "%d Agent requests received."),
+        stored.count
+      )
     }
   }
 
