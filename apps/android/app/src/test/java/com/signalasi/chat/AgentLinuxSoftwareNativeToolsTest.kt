@@ -26,4 +26,9 @@ class AgentLinuxSoftwareNativeToolsTest {
             assertTrue(AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(toolId))
         }
     }
+
+    @Test
+    fun allowsAColdPackageIndexRefreshToFinish() {
+        assertEquals(10 * 60_000L, AgentLinuxSoftwareNativeTools.PACKAGE_SEARCH_TIMEOUT_MILLIS)
+    }
 }

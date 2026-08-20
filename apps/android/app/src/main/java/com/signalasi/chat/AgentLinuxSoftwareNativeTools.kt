@@ -83,7 +83,7 @@ object AgentLinuxSoftwareNativeTools {
                     required = setOf("query"),
                     additionalProperties = false
                 ),
-                timeoutMillis = 120_000L
+                timeoutMillis = PACKAGE_SEARCH_TIMEOUT_MILLIS
             ) { invocation ->
                 val query = invocation.input["query"]?.toString().orEmpty().trim()
                 val source = invocation.input["source"]?.toString().orEmpty().ifBlank { SOURCE_AUTO }
@@ -99,7 +99,7 @@ object AgentLinuxSoftwareNativeTools {
                         manager,
                         invocation,
                         aptSearchScript(query, limit),
-                        timeoutMillis = 120_000L,
+                        timeoutMillis = PACKAGE_SEARCH_TIMEOUT_MILLIS,
                         networkEnabled = true
                     ).let { response ->
                         if (response.exitCode == 0) parsePackageRecords(response.stdout).map { it.publicValue() }
@@ -439,6 +439,7 @@ object AgentLinuxSoftwareNativeTools {
 
     private const val DEFAULT_RESULTS = 20
     private const val MAX_RESULTS = 50
+    internal const val PACKAGE_SEARCH_TIMEOUT_MILLIS = 10 * 60_000L
     private const val MAX_DESCRIPTION_CHARS = 500
     private const val MAX_DIAGNOSTIC_CHARS = 8_000
     private val PACKAGE_ID = Regex("[a-z0-9][a-z0-9+.-]{0,127}")
