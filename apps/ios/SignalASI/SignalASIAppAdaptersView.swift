@@ -220,6 +220,8 @@ struct SignalASIAppAdapterDetailView: View {
   @State private var smsRecipient = ""
   @State private var smsBody = ""
   @State private var phoneNumber = ""
+  @State private var wechatContact = ""
+  @State private var wechatDraft = ""
   @State private var browserHandoffMode: BrowserHandoffMode = .url
   @State private var browserInput = ""
   @State private var fileHandoffMode: FileHandoffMode = .files
@@ -285,7 +287,9 @@ struct SignalASIAppAdapterDetailView: View {
   private var actionSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SignalASISecuritySectionTitle(title: t("signalasi.section.actions", "Actions"))
-      if status.definition.id == .sms {
+      if status.definition.id == .wechat {
+        wechatDraftAction
+      } else if status.definition.id == .sms {
         smsComposeAction
       } else if status.definition.id == .phone {
         phoneDialAction
@@ -309,6 +313,33 @@ struct SignalASIAppAdapterDetailView: View {
         ) {
           openSettings()
         }
+      }
+    }
+  }
+
+  private var wechatDraftAction: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      TextField(t("signalasi.app_adapters.wechat_recipient", "WeChat Contact"), text: $wechatContact)
+        .textContentType(.name)
+        .textInputAutocapitalization(.words)
+        .autocorrectionDisabled(true)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      TextEditor(text: $wechatDraft)
+        .font(.system(size: 15))
+        .frame(minHeight: 88, maxHeight: 120)
+        .padding(8)
+        .background(Color.signalASISurface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel(t("signalasi.app_adapters.wechat_message", "Message"))
+      SignalASISecurityPrimaryButton(
+        title: t("signalasi.app_adapters.open_wechat_draft", "Copy Draft and Open WeChat"),
+        systemImage: "doc.on.clipboard",
+        tint: adapterTint(status.definition.tone)
+      ) {
+        openWeChatDraft()
       }
     }
   }
@@ -565,6 +596,37 @@ struct SignalASIAppAdapterDetailView: View {
   private func openSettings() {
     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
     open(url)
+  }
+
+  private func openWeChatDraft() {
+    let contact = String(wechatContact.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+    guard !contact.isEmpty else {
+      statusMessage = t("signalasi.app_adapters.wechat_invalid_recipient", "Enter a WeChat contact")
+      return
+    }
+    let draft = String(wechatDraft.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000))
+    guard !draft.isEmpty else {
+      statusMessage = t("signalasi.app_adapters.wechat_invalid_draft", "Enter a message draft")
+      return
+    }
+    UIPasteboard.general.string = draft
+    guard let url = status.launchURL else {
+      statusMessage = t("signalasi.app_adapters.wechat_draft_copied", "Draft copied. Select the contact in WeChat and paste to send.")
+      return
+    }
+    UIApplication.shared.open(url, options: [:]) { success in
+      DispatchQueue.main.async {
+        statusMessage = success
+          ? String(
+            format: t(
+              "signalasi.app_adapters.wechat_draft_opened",
+              "Draft copied for %@. Choose the contact in WeChat and paste to send."
+            ),
+            contact
+          )
+          : t("signalasi.app_adapters.wechat_draft_copied", "Draft copied. Select the contact in WeChat and paste to send.")
+      }
+    }
   }
 
   private func openBrowserHandoff() {

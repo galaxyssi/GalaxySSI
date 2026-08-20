@@ -727,6 +727,13 @@
 "signalasi.app_adapters.file_type_pdf" = "PDF";
 "signalasi.app_adapters.select_images" = "选择图片";
 "signalasi.app_adapters.select_pdf" = "选择 PDF";
+"signalasi.app_adapters.wechat_recipient" = "微信联系人";
+"signalasi.app_adapters.wechat_message" = "消息内容";
+"signalasi.app_adapters.open_wechat_draft" = "复制草稿并打开微信";
+"signalasi.app_adapters.wechat_invalid_recipient" = "请输入微信联系人";
+"signalasi.app_adapters.wechat_invalid_draft" = "请输入消息内容";
+"signalasi.app_adapters.wechat_draft_copied" = "草稿已复制，请在微信中选择联系人后粘贴发送";
+"signalasi.app_adapters.wechat_draft_opened" = "已为 %@ 复制草稿并打开微信，请选择联系人后粘贴发送";
 "signalasi.capability.accessibility_tree" = "无障碍界面树";
 "signalasi.capability.accessibility_gestures" = "无障碍手势";
 "signalasi.capability.screen_capture" = "屏幕捕获 OCR";
