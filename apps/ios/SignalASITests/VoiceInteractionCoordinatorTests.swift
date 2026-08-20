@@ -325,6 +325,27 @@ final class VoiceInteractionCoordinatorTests: XCTestCase {
     XCTAssertFalse(VoiceFeatureFlags.isWhisperSecondPassEnabled(userDefaults: userDefaults, defaultEnabled: false))
   }
 
+  func testVoiceFeatureFlagsPersistAdvancedASRSettings() {
+    let suiteName = "signalasi-voice-advanced-asr-flags-\(UUID().uuidString)"
+    let userDefaults = UserDefaults(suiteName: suiteName)!
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    XCTAssertTrue(VoiceFeatureFlags.isOnlineRealtimeASREnabled(userDefaults: userDefaults, defaultEnabled: true))
+    XCTAssertFalse(VoiceFeatureFlags.isRemoteWhisperNodeEnabled(userDefaults: userDefaults, defaultEnabled: false))
+
+    VoiceFeatureFlags.setOnlineRealtimeASREnabled(false, userDefaults: userDefaults)
+    VoiceFeatureFlags.setRemoteWhisperNodeEnabled(true, userDefaults: userDefaults)
+
+    XCTAssertFalse(VoiceFeatureFlags.isOnlineRealtimeASREnabled(userDefaults: userDefaults, defaultEnabled: true))
+    XCTAssertTrue(VoiceFeatureFlags.isRemoteWhisperNodeEnabled(userDefaults: userDefaults, defaultEnabled: false))
+
+    VoiceFeatureFlags.resetOnlineRealtimeASREnabled(userDefaults: userDefaults)
+    VoiceFeatureFlags.resetRemoteWhisperNodeEnabled(userDefaults: userDefaults)
+
+    XCTAssertFalse(VoiceFeatureFlags.isOnlineRealtimeASREnabled(userDefaults: userDefaults, defaultEnabled: false))
+    XCTAssertTrue(VoiceFeatureFlags.isRemoteWhisperNodeEnabled(userDefaults: userDefaults, defaultEnabled: true))
+  }
+
 }
 
 private enum ObserverFailure: Error {

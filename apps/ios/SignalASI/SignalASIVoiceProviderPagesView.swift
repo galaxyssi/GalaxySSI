@@ -227,6 +227,15 @@ struct SignalASIVoiceASRProviderView: View {
   private var route: VoiceASRProviderRoute {
     VoiceASRProviderRoutingPolicy.route(settings: capabilitySettings, capabilities: capabilities)
   }
+  private var onlineRealtimeASREnabled: Bool {
+    VoiceFeatureFlags.isOnlineRealtimeASREnabled()
+  }
+  private var remoteWhisperNodeEnabled: Bool {
+    VoiceFeatureFlags.isRemoteWhisperNodeEnabled()
+  }
+  private var advancedRecognitionVisible: Bool {
+    onlineRealtimeASREnabled || remoteWhisperNodeEnabled
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -247,11 +256,19 @@ struct SignalASIVoiceASRProviderView: View {
             tint: SignalASIVoiceProviderFormatter.capabilityTint(capabilities[.whisperCpp]),
             badge: SignalASIVoiceProviderFormatter.capabilityStatus(capabilities[.whisperCpp], language: interfaceLanguage)
           )
-          recognitionSection
-          onlinePrivacySection
-          remoteNodeSection
+          if advancedRecognitionVisible {
+            recognitionSection
+          }
+          if onlineRealtimeASREnabled {
+            onlinePrivacySection
+          }
+          if remoteWhisperNodeEnabled {
+            remoteNodeSection
+          }
           deviceCapabilitySection
-          runtimePolicySection
+          if VoiceFeatureFlags.isWhisperPolicyEngineEnabled() {
+            runtimePolicySection
+          }
           modelSection
           recheckSection
         }
