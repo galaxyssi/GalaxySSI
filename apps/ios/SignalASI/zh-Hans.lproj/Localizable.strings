@@ -3773,6 +3773,7 @@
 "cc_runtime_isolation_title" = "任务工作区隔离";
 "cc_runtime_isolation_subtitle" = "每个任务都有 CPU、内存、存储、时间、输出和产物限制";
 "cc_runtime_network_title" = "客体网络默认策略";
+"cc_runtime_network_broker_subtitle" = "当前本机 Broker 仅接受离线执行";
 "cc_runtime_network_subtitle" = "默认关闭，仅在当前任务获得范围明确的网络授权后开启";
 "cc_runtime_pack_subtitle" = "签名的模块化运行包";
 "cc_runtime_pack_linux" = "Linux 基础环境";
@@ -4302,3 +4303,5 @@
 "cc_runtime_broker_invalid_port" = "请输入有效的 Broker 端口";
 "cc_runtime_broker_saved" = "运行时 Broker 设置已保存";
 "cc_runtime_broker_connected" = "运行时 Broker 已连接";
+"cc_runtime_broker_unavailable" = "本机 Linux 运行时服务尚未就绪";
+"cc_runtime_broker_checking" = "正在检查已配对的本机 Linux 运行时服务";
