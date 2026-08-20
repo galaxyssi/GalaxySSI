@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import importlib.util
 import sys
 import tempfile
@@ -88,6 +89,27 @@ class RuntimeBrokerProtocolTests(unittest.TestCase):
 
         self.assertFalse(response["ok"])
         self.assertEqual("runtime_network_policy_unavailable", response["error"]["code"])
+
+    def test_refreshes_package_metadata_before_installing(self) -> None:
+        self.runtime.config = dataclasses.replace(self.config, allow_package_network_refresh=True)
+        calls: list[list[str]] = []
+
+        def run_linux(command: list[str], workspace: Path, timeout_ms: int):
+            calls.append(command)
+            return BROKER.subprocess.CompletedProcess(command, 0, b"installed", b"")
+
+        self.runtime.run_linux = run_linux
+
+        result = self.runtime.software_mutate("software.install", {"software_id": "git"})
+
+        self.assertEqual("install", result["operation"])
+        self.assertEqual(
+            [
+                ["apt-get", "update"],
+                ["apt-get", "-y", "--no-install-recommends", "install", "git"],
+            ],
+            calls,
+        )
 
 
 if __name__ == "__main__":
