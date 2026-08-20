@@ -265,6 +265,35 @@ final class AgentIOSRuntimePackCatalogManager {
     )
   }
 
+  func recoverLinuxBase(
+    checkpoint: @escaping () throws -> Void = {},
+    onDownloadProgress: @escaping (AgentIOSRuntimePackDownloadProgress) -> Void = { _ in },
+    onInstallProgress: @escaping (AgentRuntimePackInstallProgress) -> Void = { _ in }
+  ) throws -> [AgentRuntimePackInstallResult] {
+    let catalog = try refresh(checkpoint: checkpoint)
+    let candidates = AgentRuntimePackCatalogPolicy.compatibleEntries(
+      in: catalog,
+      hostVersionCode: hostVersionCode
+    )
+      .filter {
+        $0.packId == "linux-base" &&
+          AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline($0.version)
+      }
+    guard let latest = candidates.max(by: {
+      AgentEmbeddedRuntimeBootstrap.compareVersions($0.version, $1.version) < 0
+    }) else {
+      throw AgentRuntimePackArchiveError(
+        "No compatible linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack is available"
+      )
+    }
+    return try downloadAndInstall(
+      entry: latest,
+      checkpoint: checkpoint,
+      onDownloadProgress: onDownloadProgress,
+      onInstallProgress: onInstallProgress
+    )
+  }
+
   func clearCache() {
     store.clear()
   }

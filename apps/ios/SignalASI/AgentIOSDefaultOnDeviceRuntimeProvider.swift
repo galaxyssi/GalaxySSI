@@ -92,6 +92,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     let packs = packStatuses()
     let reason = runtimeSetupReason(packs)
     let backendReady = false
+    let linuxBaseRecoveryRequired = requiresLinuxBaseRecovery(packs)
     return [
       "backend": .string("none"),
       "backend_ready": .bool(backendReady),
@@ -110,7 +111,9 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       }),
       "observed_at_epoch_ms": .int(max(0, nowMillis())),
       "runtime_store": .string("app_private_application_support"),
-      "execution_target": .string("ios")
+      "execution_target": .string("ios"),
+      "linux_base_recovery_baseline": .string(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion),
+      "linux_base_recovery_required": .bool(linuxBaseRecoveryRequired)
     ]
   }
 
@@ -311,7 +314,12 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "architecture": .string(pack.manifest?.architecture ?? ""),
       "capabilities": .array((pack.manifest?.capabilities ?? []).sorted().map(AgentMcpJSONValue.string)),
       "installed_size_bytes": .int(pack.manifest?.installedSizeBytes ?? 0),
-      "license": .string(pack.manifest?.license ?? "")
+      "license": .string(pack.manifest?.license ?? ""),
+      "recovery_required": .bool(
+        pack.id == "linux-base" &&
+          (pack.state != .ready ||
+            !AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(pack.manifest?.version ?? ""))
+      )
     ]
   }
 
@@ -333,11 +341,21 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   }
 
   private func runtimeSetupReason(_ packs: [AgentRuntimePackStatus]) -> String {
-    let linuxBaseReady = packs.first { $0.id == "linux-base" }?.state == .ready
-    if linuxBaseReady {
-      return "Signed iOS runtime broker is not connected"
+    guard let linuxBase = packs.first(where: { $0.id == "linux-base" }), linuxBase.state == .ready else {
+      return "Install the linux-base runtime pack and connect a signed iOS runtime broker"
     }
-    return "Install the linux-base runtime pack and connect a signed iOS runtime broker"
+    guard AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "") else {
+      return "Recover the signed linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack and connect a signed iOS runtime broker"
+    }
+    return "Signed iOS runtime broker is not connected"
+  }
+
+  private func requiresLinuxBaseRecovery(_ packs: [AgentRuntimePackStatus]) -> Bool {
+    guard let linuxBase = packs.first(where: { $0.id == "linux-base" }),
+          linuxBase.state == .ready else {
+      return true
+    }
+    return !AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.manifest?.version ?? "")
   }
 
   private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
