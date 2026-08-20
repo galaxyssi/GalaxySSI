@@ -89,6 +89,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .buttonStyle(.plain)
+      .accessibilityIdentifier("ios.agent.header.sessions")
       NavigationLink(destination: modelSelectionDestination) {
         HStack(spacing: 3) {
           Image(systemName: "chevron.left")
@@ -105,6 +106,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .buttonStyle(.plain)
+      .accessibilityIdentifier("ios.agent.header.model-selection")
     }
   }
 
@@ -117,6 +119,7 @@ struct SignalASIAgentHomeHeaderView<ModelSelectionDestination: View>: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(Text(settingsNavigationLabel))
+    .accessibilityIdentifier("ios.agent.header.settings")
   }
 
   private var headerHeight: CGFloat {

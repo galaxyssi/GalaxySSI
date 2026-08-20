@@ -475,7 +475,10 @@ struct AgentHomeView: View {
       modelSelectionDestination: SignalASIAgentModelSelectionView {
         modelSelection = AgentModelSelectionSettings.selection(for: store.activeAgentConversationId)
       },
-      onOpenSettings: { openMainTab(.settings) },
+      onOpenSettings: {
+        actionTrayPresented = false
+        agentSettingsShortcutActive = true
+      },
       onOpenVoice: { openMainTab(.voice) }
     )
   }
