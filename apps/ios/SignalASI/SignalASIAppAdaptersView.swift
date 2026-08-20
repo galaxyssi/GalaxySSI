@@ -195,6 +195,25 @@ struct SignalASIAppAdapterDetailView: View {
     var id: String { rawValue }
   }
 
+  private enum FileHandoffMode: String, CaseIterable, Identifiable {
+    case files
+    case images
+    case pdf
+
+    var id: String { rawValue }
+
+    var contentTypes: [UTType] {
+      switch self {
+      case .files:
+        return [.item]
+      case .images:
+        return [.image]
+      case .pdf:
+        return [.pdf]
+      }
+    }
+  }
+
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @State private var statusMessage = ""
   @State private var fileImporterPresented = false
@@ -203,6 +222,7 @@ struct SignalASIAppAdapterDetailView: View {
   @State private var phoneNumber = ""
   @State private var browserHandoffMode: BrowserHandoffMode = .url
   @State private var browserInput = ""
+  @State private var fileHandoffMode: FileHandoffMode = .files
   var status: SignalASIAppAdapterStatus
 
   var body: some View {
@@ -247,7 +267,7 @@ struct SignalASIAppAdapterDetailView: View {
     .navigationBarHidden(true)
     .fileImporter(
       isPresented: $fileImporterPresented,
-      allowedContentTypes: [.item],
+      allowedContentTypes: fileHandoffMode.contentTypes,
       allowsMultipleSelection: true
     ) { result in
       switch result {
@@ -272,13 +292,7 @@ struct SignalASIAppAdapterDetailView: View {
       } else if status.definition.id == .browser {
         browserHandoffAction
       } else if status.definition.id == .files {
-        SignalASISecurityPrimaryButton(
-          title: t("signalasi.app_adapters.select_files", "Select Files"),
-          systemImage: "folder.badge.plus",
-          tint: adapterTint(status.definition.tone)
-        ) {
-          fileImporterPresented = true
-        }
+        filePickerAction
       } else if let url = status.launchURL, status.availability != .unavailable {
         SignalASISecurityPrimaryButton(
           title: t("signalasi.app_adapters.open_handoff", "Open Handoff"),
@@ -388,6 +402,27 @@ struct SignalASIAppAdapterDetailView: View {
     }
   }
 
+  private var filePickerAction: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Picker(
+        t("signalasi.app_adapters.file_type", "File Type"),
+        selection: $fileHandoffMode
+      ) {
+        Text(t("signalasi.app_adapters.file_type_all", "Files")).tag(FileHandoffMode.files)
+        Text(t("signalasi.app_adapters.file_type_images", "Images")).tag(FileHandoffMode.images)
+        Text(t("signalasi.app_adapters.file_type_pdf", "PDF")).tag(FileHandoffMode.pdf)
+      }
+      .pickerStyle(.segmented)
+      SignalASISecurityPrimaryButton(
+        title: filePickerTitle,
+        systemImage: filePickerIcon,
+        tint: adapterTint(status.definition.tone)
+      ) {
+        fileImporterPresented = true
+      }
+    }
+  }
+
   private var browserPlaceholder: String {
     switch browserHandoffMode {
     case .url:
@@ -403,6 +438,28 @@ struct SignalASIAppAdapterDetailView: View {
       return t("signalasi.app_adapters.browser_open", "Open Browser")
     case .search:
       return t("signalasi.app_adapters.browser_search_action", "Search in Browser")
+    }
+  }
+
+  private var filePickerTitle: String {
+    switch fileHandoffMode {
+    case .files:
+      return t("signalasi.app_adapters.select_files", "Select Files")
+    case .images:
+      return t("signalasi.app_adapters.select_images", "Select Images")
+    case .pdf:
+      return t("signalasi.app_adapters.select_pdf", "Select PDF")
+    }
+  }
+
+  private var filePickerIcon: String {
+    switch fileHandoffMode {
+    case .files:
+      return "folder.badge.plus"
+    case .images:
+      return "photo.badge.plus"
+    case .pdf:
+      return "doc.badge.plus"
     }
   }
   private var readinessSection: some View {
