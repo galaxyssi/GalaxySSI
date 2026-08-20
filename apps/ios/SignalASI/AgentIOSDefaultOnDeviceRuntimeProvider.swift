@@ -10,6 +10,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   private let catalogManager: AgentIOSRuntimePackCatalogManager
   private let signatureVerifier: (AgentRuntimePackManifest) -> Bool
   private let broker: AgentIOSRuntimeBrokerProviding
+  private let lifecycleStore: AgentIOSRuntimeBrokerLifecycleStore
 
   var runtimeWorkspaceManager: AgentRuntimeProjectWorkspaceManager? {
     workspaceManager
@@ -21,6 +22,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
     broker: AgentIOSRuntimeBrokerProviding? = nil,
+    lifecycleStore: AgentIOSRuntimeBrokerLifecycleStore = AgentIOSRuntimeBrokerLifecycleStore(),
     signatureVerifier: @escaping (AgentRuntimePackManifest) -> Bool = { manifest in
       AgentIOSRuntimePackTrust.verify(manifest: manifest)
     }
@@ -39,6 +41,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       nowMillis: nowMillis
     )
     self.broker = broker ?? AgentIOSRuntimeBrokerClient(nowMillis: nowMillis)
+    self.lifecycleStore = lifecycleStore
   }
 
   static func defaultRuntimeRootURL(
@@ -130,12 +133,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "reason": .string(reason),
       "architecture": .string(hostArchitecture()),
       "avf_advertised": .bool(false),
-      "lifecycle": .object([
-        "phase": .string("requires_setup"),
-        "reason": .string(reason),
-        "consecutive_failures": .int(0),
-        "next_attempt_at_millis": .int(0)
-      ]),
+      "lifecycle": .object(lifecycleOutput()),
       "linux_system": .object(linuxSystemOutput(packs)),
       "packs": .array(packs.map { .object(packOutput($0)) }),
       "languages": .array(AgentRuntimeLanguage.allCases.map {
@@ -146,6 +144,18 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       "execution_target": .string("ios"),
       "linux_base_recovery_baseline": .string(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion),
       "linux_base_recovery_required": .bool(linuxBaseRecoveryRequired)
+    ]
+  }
+
+  private func lifecycleOutput() -> AgentMcpJSONObject {
+    let state = lifecycleStore.snapshot()
+    return [
+      "phase": .string(state.phase),
+      "reason": .string(state.reason),
+      "consecutive_failures": .int(Int64(state.consecutiveFailures)),
+      "last_transition_at_millis": .int(state.lastTransitionAtMillis),
+      "last_ready_at_millis": .int(state.lastReadyAtMillis),
+      "next_attempt_at_millis": .int(state.nextAttemptAtMillis)
     ]
   }
 
@@ -573,6 +583,12 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         deadlineEpochMillis: invocation.deadlineEpochMillis
       )
       output.merge(brokerOutput) { _, remote in remote }
+      if output["backend_ready"]?.boolValue == true {
+        _ = lifecycleStore.ready()
+      } else {
+        _ = lifecycleStore.failed(reason: output["reason"]?.stringValue ?? "Runtime broker is not ready")
+      }
+      output["lifecycle"] = .object(lifecycleOutput())
       output["backend"] = output["backend"] ?? .string("ios_runtime_broker")
       output["backend_ready"] = output["backend_ready"] ?? .bool(true)
       output["reason"] = output["reason"] ?? .string("The local iOS runtime broker is ready")
@@ -582,9 +598,11 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         metadata: baseMetadata(["broker": .string(broker.implementationId)])
       )
     } catch let error as AgentIOSRuntimeBrokerError {
+      _ = lifecycleStore.failed(reason: error.localizedDescription)
       output["backend"] = .string("ios_runtime_broker")
       output["backend_ready"] = .bool(false)
       output["reason"] = .string(error.localizedDescription)
+      output["lifecycle"] = .object(lifecycleOutput())
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: "iOS on-device runtime broker is unavailable",
@@ -594,9 +612,11 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
         ])
       )
     } catch {
+      _ = lifecycleStore.failed(reason: error.localizedDescription)
       output["backend"] = .string("ios_runtime_broker")
       output["backend_ready"] = .bool(false)
       output["reason"] = .string(error.localizedDescription)
+      output["lifecycle"] = .object(lifecycleOutput())
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: "iOS on-device runtime broker is unavailable",
