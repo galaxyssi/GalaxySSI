@@ -468,6 +468,19 @@ struct SignalASIConversationHubView: View {
       ) {
         pendingFriendRequestsPresented = true
       }
+      NavigationLink(destination: CloudModelProviderSelectionView()) {
+        hubRowContent(
+          title: t("signalasi.conversation_hub.add_cloud_model", "Add Cloud Model"),
+          subtitle: t(
+            "signalasi.conversation_hub.add_cloud_model_subtitle",
+            "Configure a provider, model, and API key on this phone"
+          ),
+          systemImage: "cloud.fill",
+          tint: .blue,
+          trailing: ""
+        )
+      }
+      .buttonStyle(.plain)
       hubActionRow(
         title: t("signalasi.conversation_hub.scan_add", "Scan to add"),
         subtitle: t("signalasi.conversation_hub.scan_add_subtitle", "Add an Agent, trusted contact, or device"),
