@@ -43,8 +43,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
+
+      - name: Restore pinned bundled Whisper model
+        shell: bash
+        run: |
+          set -euo pipefail
+          model="apps/android/app/src/main/assets/ggml-tiny.bin"
+          expected="be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+          if [[ ! -f "$model" ]] || ! printf '%s  %s\n' "$expected" "$model" | sha256sum --check --status; then
+            temporary="${model}.download"
+            rm -f "$temporary"
+            for source in \
+              "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" \
+              "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"; do
+              if curl --fail --location --retry 3 --connect-timeout 20 \
+                --output "$temporary" "$source"; then
+                break
+              fi
+            done
+            printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check
+            mv "$temporary" "$model"
+          fi
 
       - uses: actions/setup-node@v4
         with:
