@@ -316,7 +316,13 @@ class RuntimeBroker:
         if not self.config.allow_package_network_refresh:
             raise BrokerFailure("runtime_package_network_not_authorized", "Allow package network refresh in the local broker configuration first")
         verb = "install" if operation == "software.install" else "remove"
-        completed = self.run_linux(["apt-get", "-y", verb, package], self.config.workspace_root, 30 * 60_000)
+        refreshed = self.run_linux(["apt-get", "update"], self.config.workspace_root, 10 * 60_000)
+        self.require_success(refreshed, "Linux package index refresh failed")
+        completed = self.run_linux(
+            ["apt-get", "-y", "--no-install-recommends", verb, package],
+            self.config.workspace_root,
+            30 * 60_000,
+        )
         self.require_success(completed, f"Linux package {verb} failed")
         return {"software_id": package, "source": "linux_package", "operation": verb, "installed": verb == "install", "stdout": bounded(completed.stdout)}
 

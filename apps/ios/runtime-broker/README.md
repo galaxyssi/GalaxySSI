@@ -26,7 +26,7 @@ chmod 600 signalasi-runtime-broker.json
   --port 39761
 ```
 
-6. In the iOS app, recover signed `linux-base` `1.3.9` or newer, enable Runtime broker, enter port `39761` and the pairing key, then run **Check connection**.
+6. In the iOS app, recover signed `linux-base` `1.3.9` or newer, enable Runtime broker, enter port `39761` and the pairing key, then run **Check connection**. Set `allow_package_network_refresh` to `true` only when the broker should refresh APT metadata and install or remove Linux packages; package changes refresh the index before modifying a package.
 
 Use the jailbreak's service manager to keep this process alive. The service runs under the account that owns the configured rootfs and workspace directory; it does not elevate permissions or accept network clients.
 
@@ -36,7 +36,7 @@ The app sends one TCP request per connection. A frame is a four-byte big-endian 
 
 Requests contain `protocol_version: 1`, `request_id`, `operation`, `input`, `context`, `timestamp_epoch_ms`, and `mac`. Clock skew is limited to five minutes; request ids are accepted once in the broker's bounded replay window. The current broker accepts `status` and `execute`. It bounds source and captured output to 256 KiB and execution time to 30 minutes.
 
-The broker rejects `network_enabled: true` rather than silently allowing the jailbroken Linux environment's network. Linux package search and inspection refresh an empty APT index only when `allow_package_network_refresh` is explicitly set to `true` in the device-owned configuration; package installation and removal require the same switch.
+The broker rejects `network_enabled: true` rather than silently allowing the jailbroken Linux environment's network. Linux package search and inspection refresh an empty APT index only when `allow_package_network_refresh` is explicitly set to `true` in the device-owned configuration. Package installation and removal require the same switch and refresh metadata before every change.
 
 ## Security boundary
 
