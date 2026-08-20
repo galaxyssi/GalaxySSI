@@ -82,6 +82,10 @@ final class AgentModelPlanningPromptTests: XCTestCase {
 
   func testAgentModelPlanningPromptFiltersAndSortsRuntimeToolsByEligibility() throws {
     let runtime = try nativeToolDescriptor(id: AgentIOSOnDeviceRuntimeNativeToolCatalog.status, title: "Runtime status")
+    let softwareSearch = try nativeToolDescriptor(
+      id: AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSearch,
+      title: "Search runtime software"
+    )
     let workspace = try nativeToolDescriptor(id: AgentPhoneNativeToolCatalog.workspaceReadText, title: "Read workspace file")
     let web = try nativeToolDescriptor(id: AgentIOSWebIntelligenceNativeToolCatalog.search, title: "Search web")
     let blocked = try nativeToolDescriptor(
@@ -91,23 +95,26 @@ final class AgentModelPlanningPromptTests: XCTestCase {
     )
 
     let ordinaryPrompt = AgentModelPlanningPrompt.build(
-      request: promptRequest(nativeTools: [web, workspace, runtime, blocked], allowsPhoneRuntimeTools: false),
+      request: promptRequest(nativeTools: [web, workspace, runtime, softwareSearch, blocked], allowsPhoneRuntimeTools: false),
       settings: AgentModelPlannerSettings()
     )
     XCTAssertFalse(ordinaryPrompt.contains(AgentIOSOnDeviceRuntimeNativeToolCatalog.status))
+    XCTAssertFalse(ordinaryPrompt.contains(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSearch))
     XCTAssertFalse(ordinaryPrompt.contains(AgentPhoneNativeToolCatalog.workspaceReadText))
     XCTAssertFalse(ordinaryPrompt.contains("signalasi.local.blocked"))
     XCTAssertTrue(ordinaryPrompt.contains(AgentIOSWebIntelligenceNativeToolCatalog.search))
 
     let runtimePrompt = AgentModelPlanningPrompt.build(
-      request: promptRequest(nativeTools: [web, workspace, runtime], allowsPhoneRuntimeTools: true),
+      request: promptRequest(nativeTools: [web, workspace, runtime, softwareSearch], allowsPhoneRuntimeTools: true),
       settings: AgentModelPlannerSettings()
     )
     let runtimeIndex = try XCTUnwrap(runtimePrompt.range(of: AgentIOSOnDeviceRuntimeNativeToolCatalog.status)?.lowerBound)
+    let softwareSearchIndex = try XCTUnwrap(runtimePrompt.range(of: AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSearch)?.lowerBound)
     let workspaceIndex = try XCTUnwrap(runtimePrompt.range(of: AgentPhoneNativeToolCatalog.workspaceReadText)?.lowerBound)
     let webIndex = try XCTUnwrap(runtimePrompt.range(of: AgentIOSWebIntelligenceNativeToolCatalog.search)?.lowerBound)
 
     XCTAssertLessThan(runtimeIndex, workspaceIndex)
+    XCTAssertLessThan(softwareSearchIndex, workspaceIndex)
     XCTAssertLessThan(workspaceIndex, webIndex)
     XCTAssertTrue(runtimePrompt.contains("Use workspace_id=current"))
   }
