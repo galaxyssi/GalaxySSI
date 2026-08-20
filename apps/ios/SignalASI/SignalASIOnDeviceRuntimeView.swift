@@ -5,10 +5,6 @@ import UniformTypeIdentifiers
 struct SignalASIOnDeviceRuntimeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
-  @State private var isRecoveringLinuxBase = false
-  @State private var linuxBaseRecoveryMessage = ""
-  @State private var isInstallingPythonUv = false
-  @State private var pythonUvInstallationMessage = ""
   @State private var runtimeReceipts: [AgentNativeToolAuditRecord] = []
   @State private var selectedRuntimeReceipt: AgentNativeToolAuditRecord?
   @State private var brokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
@@ -32,7 +28,7 @@ struct SignalASIOnDeviceRuntimeView: View {
   private var runtimeStatusMessage: String {
     runtimeAvailability.reason.ifBlank(brokerStatusMessage.ifBlank(t(
       "cc_runtime_overview_subtitle",
-      "Signed packs and an isolated guest provide language and media tools without inheriting app permissions"
+      "Pair a local jailbreak Linux runtime broker to unlock isolated on-device execution"
     )))
   }
 
@@ -81,57 +77,6 @@ struct SignalASIOnDeviceRuntimeView: View {
     packs.filter { $0.state == .ready }.count
   }
 
-  private var readyLanguageCount: Int {
-    guard runtimeReady else { return 0 }
-    return AgentRuntimeLanguage.allCases.filter { language in
-      let pack = packs.first { $0.id == language.requiredPack }
-      return pack?.state == .ready && pack?.manifest?.capabilities.contains(language.requiredCapability) == true
-    }.count
-  }
-
-  private var linuxBasePack: AgentRuntimePackStatus? {
-    packs.first { $0.id == "linux-base" }
-  }
-
-  private var linuxBaseNeedsRecovery: Bool {
-    guard let linuxBasePack,
-          linuxBasePack.state == .ready,
-          let version = linuxBasePack.manifest?.version else {
-      return true
-    }
-    return !AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(version)
-  }
-
-  private var linuxBaseRecoveryBadge: String {
-    if isRecoveringLinuxBase {
-      return t("cc_runtime_recovery_in_progress", "Recovering")
-    }
-    if linuxBaseNeedsRecovery {
-      return t("cc_runtime_catalog_repair", "Repair")
-    }
-    return linuxBasePack?.manifest?.version ?? AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion
-  }
-
-  private var pythonUvPack: AgentRuntimePackStatus? {
-    packs.first { $0.id == "python-uv" }
-  }
-
-  private var pythonUvNeedsInstall: Bool {
-    guard let pythonUvPack, pythonUvPack.state == .ready else { return true }
-    let requiredCapabilities = AgentRuntimePackCatalogPolicy.requiredPackCapabilities["python-uv", default: []]
-    return !requiredCapabilities.isSubset(of: Set(pythonUvPack.manifest?.capabilities ?? []))
-  }
-
-  private var pythonUvBadge: String {
-    if isInstallingPythonUv {
-      return t("cc_runtime_install_in_progress", "Installing")
-    }
-    if pythonUvNeedsInstall {
-      return t("status_needs_setup", "Needs Setup")
-    }
-    return pythonUvPack?.manifest?.version ?? t("cc_status_ready", "Ready")
-  }
-
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
@@ -155,7 +100,6 @@ struct SignalASIOnDeviceRuntimeView: View {
           )
           SignalASIRuntimeMetricStrip(metrics: runtimeMetrics)
           managementSection
-          environmentSection
           receiptSection
           securitySection
         }
@@ -178,19 +122,19 @@ struct SignalASIOnDeviceRuntimeView: View {
   private var runtimeMetrics: [SignalASIRuntimeMetric] {
     [
       SignalASIRuntimeMetric(
-        value: "\(readyPackCount)",
-        label: t("cc_runtime_metric_ready", "Ready packs"),
-        tint: readyPackCount == packs.count ? .signalASIAccent : .orange
+        value: runtimeReady ? "1" : "0",
+        label: t("cc_runtime_metric_ready", "Ready broker"),
+        tint: runtimeReady ? .signalASIAccent : .orange
       ),
       SignalASIRuntimeMetric(
-        value: "\(packs.count)",
-        label: t("cc_runtime_metric_total", "Total packs"),
+        value: "\(runtimeReceipts.count)",
+        label: t("cc_runtime_metric_total", "Recent runs"),
         tint: .blue
       ),
       SignalASIRuntimeMetric(
-        value: "\(readyLanguageCount)",
-        label: t("cc_runtime_metric_languages", "Languages"),
-        tint: runtimeReady ? .signalASIAccent : .gray
+        value: "\(readyPackCount)",
+        label: t("cc_runtime_metric_languages", "Optional packs"),
+        tint: readyPackCount > 0 ? .signalASIAccent : .gray
       )
     ]
   }
@@ -217,61 +161,16 @@ struct SignalASIOnDeviceRuntimeView: View {
       ) {
         SignalASIRuntimeBrokerSettingsView()
       }
-      SignalASISecurityActionRow(
-        title: t("cc_runtime_recovery_title", "Recover Linux 1.3.9"),
-        subtitle: linuxBaseRecoveryMessage.ifBlank(t(
-          "cc_runtime_recovery_subtitle",
-          "Verify and atomically replace the signed Linux base; conversation project workspaces are retained"
-        )),
-        systemImage: "arrow.clockwise",
-        tint: linuxBaseNeedsRecovery ? .orange : .signalASIAccent,
-        badge: linuxBaseRecoveryBadge
-      ) {
-        recoverLinuxBase()
-      }
-      SignalASISecurityActionRow(
-        title: t("cc_runtime_python_install_title", "Install Python and uv"),
-        subtitle: pythonUvInstallationMessage.ifBlank(t(
-          "cc_runtime_python_install_subtitle",
-          "Required by the Android-compatible base runtime before Agent code can execute"
-        )),
-        systemImage: "chevron.left.forwardslash.chevron.right",
-        tint: pythonUvNeedsInstall ? .orange : .signalASIAccent,
-        badge: pythonUvBadge
-      ) {
-        installPythonUv()
-      }
-      SignalASISecurityNavigationRow(
-        title: t("cc_runtime_software_center_title", "Software Center"),
-        subtitle: t("cc_runtime_software_center_subtitle", "Find and install verified language, browser, and media tools"),
-        systemImage: "shippingbox",
-        tint: softwareReadyCount == softwarePackCount ? .signalASIAccent : .blue,
-        badge: String(format: t("cc_runtime_software_center_status", "Installed %d/%d"), softwareReadyCount, softwarePackCount)
-      ) {
-        SignalASIRuntimeSoftwareCenterView()
-      }
       SignalASISecurityStatusRow(
-        title: t("cc_runtime_catalog_refresh_title", "Runtime catalog"),
-        subtitle: t("cc_runtime_catalog_refresh_subtitle", "Load compatible packs from the signed SignalASI release catalog"),
-        systemImage: "checklist",
-        tint: .blue,
-        badge: "\(packs.count)"
+        title: t("cc_runtime_linux_requirement_title", "Linux runtime requirement"),
+        subtitle: t(
+          "cc_runtime_linux_requirement_subtitle",
+          "The paired broker verifies Linux 1.3.9 or later before it accepts execution"
+        ),
+        systemImage: "checkmark.shield",
+        tint: brokerTint,
+        badge: "1.3.9+"
       )
-    }
-  }
-
-  private var environmentSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_runtime_section_environment", "Base Runtime"))
-      ForEach(environmentPacks) { pack in
-        SignalASISecurityStatusRow(
-          title: Self.packTitle(pack.id, language: interfaceLanguage),
-          subtitle: Self.packSubtitle(pack, language: interfaceLanguage),
-          systemImage: "terminal",
-          tint: Self.packTint(pack),
-          badge: Self.packBadge(pack, language: interfaceLanguage)
-        )
-      }
     }
   }
 
@@ -319,111 +218,6 @@ struct SignalASIOnDeviceRuntimeView: View {
         tint: .gray,
         badge: t("signalasi.status.off", "Off")
       )
-    }
-  }
-
-  private var environmentPacks: [AgentRuntimePackStatus] {
-    packs.filter { ["linux-base", "python-uv"].contains($0.id) }
-  }
-
-  private func recoverLinuxBase() {
-    guard !isRecoveringLinuxBase, !isInstallingPythonUv else { return }
-    isRecoveringLinuxBase = true
-    linuxBaseRecoveryMessage = t("cc_runtime_recovery_preparing", "Checking the signed Linux runtime catalog...")
-    DispatchQueue.global(qos: .userInitiated).async {
-      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
-      let outcome: Result<[AgentRuntimePackInstallResult], Error>
-      do {
-        outcome = .success(try manager.recoverLinuxBase(
-          onDownloadProgress: { progress in
-            guard progress.totalBytes > 0 else { return }
-            let percent = min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
-            DispatchQueue.main.async {
-              linuxBaseRecoveryMessage = String(
-                format: t("cc_runtime_recovery_downloading", "Downloading Linux 1.3.9 (%d%%)..."),
-                percent
-              )
-            }
-          },
-          onInstallProgress: { progress in
-            DispatchQueue.main.async {
-              linuxBaseRecoveryMessage = String(
-                format: t("cc_runtime_recovery_installing", "Recovering Linux 1.3.9: %@"),
-                progress.stage.rawValue.lowercased()
-              )
-            }
-          }
-        ))
-      } catch {
-        outcome = .failure(error)
-      }
-      DispatchQueue.main.async {
-        isRecoveringLinuxBase = false
-        switch outcome {
-        case .success(let results):
-          linuxBaseRecoveryMessage = String(
-            format: t("cc_runtime_recovery_success", "Linux 1.3.9 is ready (%d package(s) verified)"),
-            results.count
-          )
-        case .failure(let error):
-          linuxBaseRecoveryMessage = error.localizedDescription.ifBlank(
-            t("cc_runtime_recovery_failed", "Linux runtime recovery failed")
-          )
-        }
-      }
-    }
-  }
-
-  private func installPythonUv() {
-    guard !isInstallingPythonUv, !isRecoveringLinuxBase else { return }
-    isInstallingPythonUv = true
-    pythonUvInstallationMessage = t(
-      "cc_runtime_python_install_preparing",
-      "Checking the signed Python and uv runtime pack..."
-    )
-    DispatchQueue.global(qos: .userInitiated).async {
-      let manager = AgentIOSRuntimePackCatalogManager(languageTag: interfaceLanguage)
-      let outcome: Result<[AgentRuntimePackInstallResult], Error>
-      do {
-        outcome = .success(try manager.install(
-          packId: "python-uv",
-          onDownloadProgress: { progress in
-            guard progress.totalBytes > 0 else { return }
-            let percent = min(100, max(0, Int(progress.downloadedBytes * 100 / progress.totalBytes)))
-            DispatchQueue.main.async {
-              pythonUvInstallationMessage = String(
-                format: t("cc_runtime_python_install_downloading", "Downloading Python and uv (%d%%)..."),
-                percent
-              )
-            }
-          },
-          onInstallProgress: { progress in
-            DispatchQueue.main.async {
-              pythonUvInstallationMessage = String(
-                format: t("cc_runtime_python_install_installing", "Installing Python and uv: %@"),
-                progress.stage.rawValue.lowercased()
-              )
-            }
-          }
-        ))
-      } catch {
-        outcome = .failure(error)
-      }
-      DispatchQueue.main.async {
-        isInstallingPythonUv = false
-        switch outcome {
-        case .success(let results):
-          let version = results.last { $0.packId == "python-uv" }?.version ?? ""
-          pythonUvInstallationMessage = String(
-            format: t("cc_runtime_python_install_success", "Python and uv %@ are ready"),
-            version.ifBlank(t("cc_status_ready", "Ready"))
-          )
-        case .failure(let error):
-          pythonUvInstallationMessage = error.localizedDescription.ifBlank(
-            t("cc_runtime_python_install_failed", "Python and uv installation failed")
-          )
-        }
-      }
     }
   }
 
@@ -497,18 +291,6 @@ struct SignalASIOnDeviceRuntimeView: View {
     case .cancelled:
       return .gray
     }
-  }
-
-  private var softwarePacks: [AgentRuntimePackStatus] {
-    packs.filter { !["linux-base", "python-uv"].contains($0.id) }
-  }
-
-  private var softwarePackCount: Int {
-    softwarePacks.count
-  }
-
-  private var softwareReadyCount: Int {
-    softwarePacks.filter { $0.state == .ready }.count
   }
 
   static func packStatuses(

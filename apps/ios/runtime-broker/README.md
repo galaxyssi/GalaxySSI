@@ -8,7 +8,7 @@ It is deliberately not a Darwin-shell fallback. The configuration must contain a
 
 The Android `android-runtime-v1` release catalog supplies signed `.sarpack` metadata and archives. Android executes those images through an Android/Termux-built QEMU engine and a guest broker. That engine is not an iOS executable, so this service does not attempt to launch an Android QEMU pack on iOS.
 
-The iOS app still verifies its signed pack catalog and requires `linux-base` `1.3.9` or newer before it enables execution. The jailbroken device must separately provide an arm64 Linux rootfs and a Linux launcher compatible with the example command prefix. The broker only reports `backend_ready: true` after that launcher passes the configured health command.
+The jailbroken device must provide an arm64 Linux rootfs and a Linux launcher compatible with the example command prefix. The broker validates its configured Linux baseline (`1.3.9` or newer) and only reports `backend_ready: true` after that launcher passes the configured health command.
 
 ## Deploy on a jailbroken device
 
@@ -26,7 +26,7 @@ chmod 600 signalasi-runtime-broker.json
   --port 39761
 ```
 
-6. In the iOS app, recover signed `linux-base` `1.3.9` or newer, enable Runtime broker, enter port `39761` and the pairing key, then run **Check connection**. Set `allow_package_network_refresh` to `true` only when the broker should refresh APT metadata and install or remove Linux packages; package changes refresh the index before modifying a package.
+6. In the iOS app, enable Runtime broker, enter port `39761` and the pairing key, then run **Check connection**. The broker rejects a Linux environment below `1.3.9`. Set `allow_package_network_refresh` to `true` only when the broker should refresh APT metadata and install or remove Linux packages; package changes refresh the index before modifying a package.
 
 Use the jailbreak's service manager to keep this process alive. The service runs under the account that owns the configured rootfs and workspace directory; it does not elevate permissions or accept network clients.
 
