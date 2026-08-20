@@ -276,7 +276,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     retryCount: Int = 0
   ) -> AgentActionResult {
     let output = String(AgentMcpJSONCodec.stringify(result.output).prefix(maxOutputCharacters))
-    let nativeMessage = clean(result.message).nilIfEmpty ?? clean(result.error?.message ?? "")
+    let nativeMessage = modelVisibleMessage(result)
     return AgentActionResult(
       actionId: action.id,
       success: result.isSuccess,
@@ -296,6 +296,32 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
         "provenance": result.provenance.executorId
       ]
     )
+  }
+
+  private static func modelVisibleMessage(_ result: AgentNativeToolResult) -> String {
+    let base = clean(result.message).nilIfEmpty ?? clean(result.error?.message ?? "")
+    guard !result.isSuccess, let error = result.error else { return base }
+
+    var seen = Set<String>()
+    let issues = ["issues", "validation_issues"]
+      .flatMap { error.details[$0]?.arrayValue ?? [] }
+      .compactMap { value -> String? in
+        guard let issue = value.objectValue else { return nil }
+        let summary = [
+          clean(issue["path"]?.stringValue ?? ""),
+          clean(issue["code"]?.stringValue ?? ""),
+          clean(issue["message"]?.stringValue ?? "")
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " | ")
+        return summary.isEmpty || !seen.insert(summary).inserted ? nil : summary
+      }
+      .prefix(maxVisibleIssues)
+
+    guard !issues.isEmpty else { return base }
+    let suffix = issues.joined(separator: "; ")
+    let message = base.isEmpty ? suffix : "\(base): \(suffix)"
+    return String(message.prefix(maxOutputCharacters))
   }
 
   private static func failure(
@@ -326,6 +352,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   private static let workspaceIdKey = "_signalasi_workspace_id"
   private static let workspaceToolPrefix = "signalasi.workspace."
   private static let maxOutputCharacters = 8_000
+  private static let maxVisibleIssues = 8
 
   private enum InputParseResult {
     case success(AgentMcpJSONObject)

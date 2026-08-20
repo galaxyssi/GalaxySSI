@@ -850,6 +850,55 @@ extension SignalASIStoreTests {
     XCTAssertEqual(delegate.callCount, 0)
   }
 
+  func testAgentNativeToolActionExecutorIncludesStructuredValidationIssuesInFailure() throws {
+    let descriptor = try nativeToolDescriptor("signalasi.test.validation")
+    let registry = try AgentNativeToolRegistry().registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+      executor: { _ in
+        .failure(
+          code: "invalid_input",
+          message: "Native tool rejected the input",
+          details: [
+            "validation_issues": .array([
+              .object([
+                "path": .string("repository_url"),
+                "code": .string("invalid_format"),
+                "message": .string("Use an HTTPS repository URL")
+              ]),
+              .object([
+                "path": .string("model_id"),
+                "code": .string("required"),
+                "message": .string("Select a model")
+              ])
+            ])
+          ]
+        )
+      }
+    ))
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "unexpected delegate")
+    }
+    let action = AgentAction(
+      id: "validation-issues",
+      kind: .callNativeTool,
+      target: "Local",
+      risk: .low,
+      status: .running,
+      description: "Validate native input",
+      parameters: ["tool_id": descriptor.id, "input_json": "{}"]
+    )
+
+    let result = AgentNativeToolActionExecutor(registry: registry, delegate: delegate)
+      .execute(action: action, screen: AgentScreenContext(foregroundApp: "SignalASI"))
+
+    XCTAssertFalse(result.success)
+    XCTAssertEqual(
+      result.message,
+      "Native tool rejected the input: repository_url | invalid_format | Use an HTTPS repository URL; model_id | required | Select a model"
+    )
+    XCTAssertEqual(delegate.callCount, 0)
+  }
+
   func testAgentNativeToolResultModelsUseAndroidWireNames() throws {
     let descriptor = try nativeToolDescriptor(
       "signalasi.test.result",
