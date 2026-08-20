@@ -418,10 +418,20 @@ struct PairingView: View {
       case .contact(let request):
         let stored = store.addFriendRequest(request)
         pendingPairing = nil
-        errorText = String(
-          format: t("signalasi.friend_request.added", "Friend request added for %@."),
-          stored.name
-        )
+        if store.approveFriendRequest(id: stored.id) {
+          errorText = t("signalasi.friend_request.added_to_contacts", "Added to Contacts")
+          if stored.type == "person" {
+            Task {
+              _ = await coordinator.requestPhoneContactPairing(qrText: value)
+              await coordinator.recoverPhoneContactSessionIfNeeded(contactId: stored.signalASIId)
+            }
+          }
+        } else {
+          errorText = String(
+            format: t("signalasi.friend_request.added", "Friend request added for %@."),
+            stored.name
+          )
+        }
       case .contacts(let requests):
         let stored = requests.map { store.addFriendRequest($0) }
         pendingPairing = nil
