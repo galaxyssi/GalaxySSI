@@ -3366,6 +3366,8 @@
 "voice_status_low_power" = "低功耗监听中";
 "signalasi.voice.preparing_title" = "准备语音输入";
 "signalasi.voice.preparing_subtitle" = "正在请求麦克风和语音识别权限。";
+"signalasi.voice.preparing_microphone_subtitle" = "正在请求麦克风权限以使用本地 Whisper。";
+"signalasi.voice.microphone_permission_missing" = "缺少麦克风权限。";
 "signalasi.voice.processing_transcribing" = "正在识别语音";
 "signalasi.voice.processing_transcribing_detail" = "正在完成本地转写。";
 "signalasi.voice.processing_routing" = "正在路由语音任务";

@@ -57,6 +57,34 @@ struct SignalASIAgentComposerView: View {
     store.globalProactiveInboxNewCount()
   }
 
+  private var voiceAuthorizationRequirement: VoiceASRAuthorizationRequirement {
+    VoiceASRProviderRoutingPolicy.currentAuthorizationRequirement(settings: voiceSettings)
+  }
+
+  private var voicePreparingSubtitle: String {
+    switch voiceAuthorizationRequirement {
+    case .microphoneOnly:
+      return t(
+        "signalasi.voice.preparing_microphone_subtitle",
+        "Requesting microphone access for on-device Whisper."
+      )
+    case .microphoneAndSystemSpeech:
+      return t(
+        "signalasi.voice.preparing_subtitle",
+        "Requesting microphone and speech recognition access."
+      )
+    }
+  }
+
+  private var voicePermissionDeniedMessage: String {
+    switch voiceAuthorizationRequirement {
+    case .microphoneOnly:
+      return t("signalasi.voice.microphone_permission_missing", "Microphone permission is missing.")
+    case .microphoneAndSystemSpeech:
+      return t("signalasi.voice.permission_missing", "Microphone or speech permission is missing.")
+    }
+  }
+
   var body: some View {
     VStack(spacing: 8) {
       if newGlobalInsightCount > 0 {
@@ -146,10 +174,7 @@ struct SignalASIAgentComposerView: View {
   private var voicePreparingSurface: some View {
     AgentVoiceProcessingIndicator(
       title: t("signalasi.voice.preparing_title", "Preparing voice input"),
-      subtitle: t(
-        "signalasi.voice.preparing_subtitle",
-        "Requesting microphone and speech recognition access."
-      )
+      subtitle: voicePreparingSubtitle
     )
     .padding(.horizontal, 12)
     .frame(maxWidth: .infinity, minHeight: 72)
@@ -297,7 +322,7 @@ struct SignalASIAgentComposerView: View {
 
   private var holdToTalkMessages: SignalASIAgentHoldToTalkMessages {
     SignalASIAgentHoldToTalkMessages(
-      permissionDenied: t("signalasi.voice.permission_missing", "Microphone or speech permission is missing."),
+      permissionDenied: voicePermissionDeniedMessage,
       speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
       speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
       noSpeech: t("voice_no_speech", "No speech captured."),
