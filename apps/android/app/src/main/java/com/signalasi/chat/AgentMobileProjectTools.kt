@@ -141,7 +141,7 @@ internal class AgentMobileProjectRepository(
             if (value.isNotBlank()) validateRefName(value)
         }
         val target = workspaceDirectory(workspaceId)
-        val repositoryAlreadyPresent = File(target, ".git").isDirectory
+        val repositoryAlreadyPresent = File(target, ".git").exists()
         require(repositoryAlreadyPresent || replaceExisting || !hasCloneBlockingContent(target)) {
             "The phone project workspace is not empty"
         }

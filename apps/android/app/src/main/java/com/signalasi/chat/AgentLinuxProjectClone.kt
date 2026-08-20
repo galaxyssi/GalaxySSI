@@ -267,6 +267,15 @@ internal class AgentLinuxProjectGitBackend(
             export GIT_TERMINAL_PROMPT=0
             control_dir='.signalasi-runtime'
             askpass="${'$'}control_dir/git-askpass.sh"
+            git_metadata_root="${'$'}{SIGNALASI_GIT_METADATA_ROOT:-/var/lib/signalasi/git}"
+            workspace_key="${'$'}(basename "${'$'}PWD")"
+            case "${'$'}workspace_key" in
+              *[!A-Za-z0-9._-]*|'')
+                printf '%s\n' 'Phone Linux workspace name is invalid' >&2
+                exit 2
+                ;;
+            esac
+            git_metadata_dir="${'$'}git_metadata_root/${'$'}workspace_key"
             mkdir -p "${'$'}control_dir"
             if ! command -v git >/dev/null 2>&1; then
               printf '%s\n' '__SIGNALASI_STAGE__:install_git'
@@ -292,8 +301,8 @@ internal class AgentLinuxProjectGitBackend(
             chmod 700 "${'$'}askpass"
             export GIT_ASKPASS="${'$'}PWD/${'$'}askpass"
             configure_signalasi_excludes() {
-              exclude_file='.git/info/exclude'
-              mkdir -p '.git/info'
+              exclude_file="${'$'}(git rev-parse --git-path info/exclude)"
+              mkdir -p "${'$'}(dirname "${'$'}exclude_file")"
               for pattern in \
                 '.signalasi-runtime/' '.signalasi-tools/' '.signalasi-inputs/' '.tmp/' \
                 'request.json' 'status.json' '.signalasi-checkpoint.json' \
@@ -328,11 +337,13 @@ internal class AgentLinuxProjectGitBackend(
               elif [ "${'$'}replace_existing" = true ]; then
                 printf '%s\n' '__SIGNALASI_STAGE__:replace_repository'
                 reset_project_workspace
+                rm -rf -- "${'$'}git_metadata_dir"
               elif [ -z "${'$'}current_origin" ] && \
                    ! git rev-parse --verify HEAD >/dev/null 2>&1 && \
                    [ -z "${'$'}(git status --porcelain --untracked-files=all)" ]; then
                 printf '%s\n' '__SIGNALASI_STAGE__:repair_partial_repository'
                 rm -rf .git
+                rm -rf -- "${'$'}git_metadata_dir"
               elif [ -z "${'$'}current_origin" ]; then
                 printf '%s\n' 'Existing phone workspace has no origin remote' >&2
                 exit 2
@@ -352,7 +363,9 @@ internal class AgentLinuxProjectGitBackend(
               fi
             else
               reset_project_workspace
-              git init -q .
+              rm -rf -- "${'$'}git_metadata_dir"
+              mkdir -p "${'$'}git_metadata_root"
+              git init -q --separate-git-dir="${'$'}git_metadata_dir" .
               configure_signalasi_excludes
               git remote add origin ${shellQuote(repositoryUrl)}
               printf '%s\n' '__SIGNALASI_STAGE__:fetch_repository'
