@@ -9,11 +9,12 @@ struct SignalASIConversationComposer: View {
   @Binding var textModeActive: Bool
 
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
+  var voiceSettings: VoiceSettings
   var onSend: () -> Void
-  var onVoiceAttachment: (SignalASIDraftAttachment, TimeInterval) -> Void
+  var onVoiceTranscript: (String) -> Void
   var t: (String, String) -> String
 
-  @StateObject private var voiceRecorder = SignalASIChatVoiceRecorder()
+  @StateObject private var holdToTalk = SignalASIAgentHoldToTalkController()
   @FocusState private var inputFocused: Bool
 
   private var canSend: Bool {
@@ -42,13 +43,13 @@ struct SignalASIConversationComposer: View {
           .foregroundColor(.red)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if !voiceRecorder.statusMessage.isEmpty {
-        Text(voiceRecorder.statusMessage)
+      if !holdToTalk.statusMessage.isEmpty {
+        Text(holdToTalk.statusMessage)
           .font(.caption)
           .foregroundColor(.signalASITextSecondary)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if voiceRecorder.isPending || voiceRecorder.isRecording {
+      if holdToTalk.isPending || holdToTalk.isRecording {
         voiceCaptureSurface
       } else {
         inputRow
@@ -60,7 +61,7 @@ struct SignalASIConversationComposer: View {
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
     ) { _ in
-      guard inputFocused, !voiceRecorder.isPending, !voiceRecorder.isRecording else { return }
+      guard inputFocused, !holdToTalk.isPending, !holdToTalk.isRecording else { return }
       inputFocused = false
       textModeActive = false
     }
@@ -68,15 +69,15 @@ struct SignalASIConversationComposer: View {
       if textModeActive != focused {
         textModeActive = focused
       }
-      guard focused, !voiceRecorder.isRecording else { return }
-      voiceRecorder.cancelFromView()
+      guard focused, !holdToTalk.isRecording else { return }
+      holdToTalk.cancelFromView()
     }
     .onChange(of: textModeActive) { active in
       if inputFocused != active {
         inputFocused = active
       }
     }
-    .onDisappear { voiceRecorder.cancelFromView() }
+    .onDisappear { holdToTalk.cancelFromView() }
   }
 
   private var inputRow: some View {
@@ -154,9 +155,9 @@ struct SignalASIConversationComposer: View {
   private var voiceCaptureSurface: some View {
     VStack(spacing: 12) {
       Spacer(minLength: 0)
-      Text(voiceRecorder.isPending
+      Text(holdToTalk.isPending
         ? t("signalasi.voice.preparing_title", "Preparing voice input")
-        : voiceRecorder.cancelPending
+        : holdToTalk.cancelPending
           ? t("voice_release_to_cancel", "Release to cancel")
           : t("agent_voice_recording_hint", "Release to send / Swipe up to cancel"))
         .font(.system(size: 14, weight: .semibold))
@@ -164,14 +165,14 @@ struct SignalASIConversationComposer: View {
         .multilineTextAlignment(.center)
         .lineLimit(1)
         .minimumScaleFactor(0.78)
-      if voiceRecorder.isRecording {
-        let stableTranscript = voiceRecorder.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let unstableTranscript = voiceRecorder.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+      if holdToTalk.isRecording {
+        let stableTranscript = holdToTalk.stableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unstableTranscript = holdToTalk.unstableTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         if stableTranscript.isEmpty && unstableTranscript.isEmpty {
           SignalASIChatVoiceWaveform(
-            phase: voiceRecorder.waveformPhase,
-            amplitude: voiceRecorder.waveformAmplitude,
-            cancelPending: voiceRecorder.cancelPending,
+            phase: holdToTalk.waveformPhase,
+            amplitude: holdToTalk.waveformAmplitude,
+            cancelPending: holdToTalk.cancelPending,
             color: .white
           )
           .frame(height: 38)
@@ -179,13 +180,13 @@ struct SignalASIConversationComposer: View {
           SignalASIChatVoiceTranscript(
             stableText: stableTranscript,
             unstableText: unstableTranscript,
-            cancelPending: voiceRecorder.cancelPending
+            cancelPending: holdToTalk.cancelPending
           )
           .frame(maxWidth: .infinity, minHeight: 38)
         }
-        Text(voiceRecorder.elapsedLabel)
+        Text(holdToTalk.elapsedLabel)
           .font(.system(size: 12, weight: .semibold))
-          .foregroundColor(voiceRecorder.cancelPending ? .red : .white)
+          .foregroundColor(holdToTalk.cancelPending ? .red : .white)
       }
     }
     .padding(.horizontal, 24)
@@ -218,22 +219,27 @@ struct SignalASIConversationComposer: View {
   private var holdToTalkGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
-        guard !textModeActive || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
-        voiceRecorder.dragChanged(
+        guard !textModeActive || holdToTalk.isPending || holdToTalk.isRecording else { return }
+        holdToTalk.dragChanged(
           translation: value.translation,
-          messages: SignalASIChatVoiceRecorderMessages(
+          settings: voiceSettings,
+          messages: SignalASIAgentHoldToTalkMessages(
             permissionDenied: t("signalasi.voice.permission_missing", "Microphone permission is missing."),
-            recordingFailed: t("signalasi.voice.recording_failed", "Could not start voice recording."),
+            speechDisabled: t("signalasi.voice.speech_disabled", "Speech recognition is turned off."),
+            speechUnavailable: t("signalasi.voice.speech_unavailable", "Speech recognition could not start."),
+            noSpeech: t("voice_no_speech", "No speech captured."),
             tooShort: t("voice_too_short", "Hold a little longer."),
             cancelled: t("voice_cancelled", "Voice cancelled.")
           ),
-          onFinish: onVoiceAttachment
+          onStart: {},
+          onFinish: onVoiceTranscript,
+          onCancel: {}
         )
       }
       .onEnded { value in
-        guard !textModeActive || voiceRecorder.isPending || voiceRecorder.isRecording else { return }
-        let wasCapturingVoice = voiceRecorder.isPending || voiceRecorder.isRecording
-        voiceRecorder.dragEnded(translation: value.translation)
+        guard !textModeActive || holdToTalk.isPending || holdToTalk.isRecording else { return }
+        let wasCapturingVoice = holdToTalk.isPending || holdToTalk.isRecording
+        holdToTalk.dragEnded(translation: value.translation)
         if !wasCapturingVoice {
           inputFocused = true
         }
