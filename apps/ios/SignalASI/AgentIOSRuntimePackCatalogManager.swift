@@ -194,6 +194,7 @@ final class AgentIOSRuntimePackCatalogManager {
       verifiedCatalog = try refresh(checkpoint: checkpoint)
     }
     let plan = try installationPlan(for: entry, catalog: verifiedCatalog)
+    try requireCurrentLinuxBaseBaseline(in: plan)
     var results: [AgentRuntimePackInstallResult] = []
     for item in plan {
       try checkpoint()
@@ -275,16 +276,14 @@ final class AgentIOSRuntimePackCatalogManager {
       in: catalog,
       hostVersionCode: hostVersionCode
     )
-      .filter {
-        $0.packId == "linux-base" &&
-          AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline($0.version)
-      }
-    guard let latest = candidates.max(by: {
+      .filter { $0.packId == "linux-base" }
+    let eligible = candidates.filter {
+      AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline($0.version)
+    }
+    guard let latest = eligible.max(by: {
       AgentEmbeddedRuntimeBootstrap.compareVersions($0.version, $1.version) < 0
     }) else {
-      throw AgentRuntimePackArchiveError(
-        "No compatible linux-base \(AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion) runtime pack is available"
-      )
+      throw missingLinuxBaseRecoveryPackError(candidates)
     }
     return try downloadAndInstall(
       entry: latest,
@@ -296,6 +295,33 @@ final class AgentIOSRuntimePackCatalogManager {
 
   func clearCache() {
     store.clear()
+  }
+
+  private func requireCurrentLinuxBaseBaseline(
+    in plan: [AgentRuntimePackCatalogEntry]
+  ) throws {
+    guard let linuxBase = plan.first(where: { $0.packId == "linux-base" }),
+          AgentRuntimePackCatalogPolicy.meetsLinuxBaseRecoveryBaseline(linuxBase.version) else {
+      let candidates = plan.filter { $0.packId == "linux-base" }
+      throw missingLinuxBaseRecoveryPackError(candidates)
+    }
+  }
+
+  private func missingLinuxBaseRecoveryPackError(
+    _ candidates: [AgentRuntimePackCatalogEntry]
+  ) -> AgentRuntimePackArchiveError {
+    let latestAdvertised = candidates.max { left, right in
+      AgentEmbeddedRuntimeBootstrap.compareVersions(left.version, right.version) < 0
+    }?.version
+    let required = AgentRuntimePackCatalogPolicy.linuxBaseRecoveryVersion
+    if let latestAdvertised {
+      return AgentRuntimePackArchiveError(
+        "The configured signed runtime catalog advertises linux-base \(latestAdvertised), but Linux \(required) or newer is required. Publish the matching iOS runtime pack before installation."
+      )
+    }
+    return AgentRuntimePackArchiveError(
+      "The configured signed runtime catalog does not publish a compatible linux-base \(required) or newer iOS runtime pack."
+    )
   }
 
   private func fetchCatalog(

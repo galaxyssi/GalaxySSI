@@ -233,7 +233,7 @@ struct SignalASIOnDeviceRuntimeView: View {
         title: t("cc_runtime_python_install_title", "Install Python and uv"),
         subtitle: pythonUvInstallationMessage.ifBlank(t(
           "cc_runtime_python_install_subtitle",
-          "Required by the Android-compatible base runtime before Agent code can execute"
+          "Required by the paired local runtime before Agent code can execute"
         )),
         systemImage: "chevron.left.forwardslash.chevron.right",
         tint: pythonUvNeedsInstall ? .orange : .signalASIAccent,
@@ -366,7 +366,7 @@ struct SignalASIOnDeviceRuntimeView: View {
             results.count
           )
         case .failure(let error):
-          linuxBaseRecoveryMessage = error.localizedDescription.ifBlank(
+          linuxBaseRecoveryMessage = runtimeInstallErrorMessage(error).ifBlank(
             t("cc_runtime_recovery_failed", "Linux runtime recovery failed")
           )
         }
@@ -419,12 +419,24 @@ struct SignalASIOnDeviceRuntimeView: View {
             version.ifBlank(t("cc_status_ready", "Ready"))
           )
         case .failure(let error):
-          pythonUvInstallationMessage = error.localizedDescription.ifBlank(
+          pythonUvInstallationMessage = runtimeInstallErrorMessage(error).ifBlank(
             t("cc_runtime_python_install_failed", "Python and uv installation failed")
           )
         }
       }
     }
+  }
+
+  private func runtimeInstallErrorMessage(_ error: Error) -> String {
+    let message = error.localizedDescription
+    guard interfaceLanguage.lowercased().hasPrefix("zh"),
+          message.localizedCaseInsensitiveContains("ios runtime pack") else {
+      return message
+    }
+    return t(
+      "cc_runtime_ios_pack_unpublished",
+      "当前签名目录尚未发布适用于 iOS 的 Linux 1.3.9 运行环境包，无法安装。"
+    )
   }
 
   private func refreshRuntimeReceipts() {

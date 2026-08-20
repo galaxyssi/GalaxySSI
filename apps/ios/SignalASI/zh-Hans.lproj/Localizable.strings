@@ -3763,7 +3763,8 @@
 "cc_runtime_recovery_success" = "Linux 1.3.9 已就绪（已验证 %d 个包）";
 "cc_runtime_recovery_failed" = "Linux 运行环境恢复失败";
 "cc_runtime_python_install_title" = "安装 Python 与 uv";
-"cc_runtime_python_install_subtitle" = "Agent 代码执行前，Android 兼容基础运行环境需要此组件";
+"cc_runtime_python_install_subtitle" = "Agent 代码执行前，已配对的本地运行环境需要此组件";
+"cc_runtime_ios_pack_unpublished" = "当前签名目录尚未发布适用于 iOS 的 Linux 1.3.9 运行环境包，无法安装。";
 "cc_runtime_python_install_preparing" = "正在检查已签名的 Python 与 uv 运行环境包...";
 "cc_runtime_python_install_downloading" = "正在下载 Python 与 uv（%d%%）...";
 "cc_runtime_python_install_installing" = "正在安装 Python 与 uv：%@";
