@@ -15,7 +15,7 @@ struct SignalASIControlCenterView: View {
   var body: some View {
     VStack(spacing: 0) {
       SignalASITopBar(
-        title: t("settings_my_signalasi", "My SignalASI"),
+        title: t("settings_control_center_title", "My Agent"),
         leading: {
           SignalASIBackButton()
         },
@@ -25,8 +25,7 @@ struct SignalASIControlCenterView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          hero
-          metrics
+          overviewCard
           identitySection
           connectedDevicesSection
           modelsRuntimeSection
@@ -49,397 +48,363 @@ struct SignalASIControlCenterView: View {
 
   private var identitySection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_my_identity", "My Identity"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_profile_title", "My SignalASI"),
-        subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
-        systemImage: "person.crop.circle",
-        tint: securityTint,
-        badge: securityBadge
-      ) {
-        SignalASIProfileIdentityView()
-      }
-    }
-  }
-
-  private var hero: some View {
-    HStack(alignment: .center, spacing: 12) {
-      SignalASILogoView(size: 58, cornerRadius: 10)
-      VStack(alignment: .leading, spacing: 5) {
-        HStack(spacing: 8) {
-          Text(t("settings_my_signalasi", "My SignalASI"))
-            .font(.system(size: 22, weight: .bold))
-            .foregroundColor(.signalASITextPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.78)
-          Text(agentCoreBadge)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(agentCoreTint)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, 7)
-            .frame(minHeight: 22)
-            .background(agentCoreTint.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          Text(privacyBadge)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(privacyTint)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, 7)
-            .frame(minHeight: 22)
-            .background(privacyTint.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      controlCenterSectionTitle(t("cc_section_my_identity", "My Identity"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_profile_title", "My SignalASI"),
+          subtitle: t("cc_profile_subtitle_ios", "Identity protected by the iOS security boundary"),
+          systemImage: "person.crop.circle",
+          tint: securityTint,
+          badge: securityBadge
+        ) {
+          SignalASIProfileIdentityView()
         }
-        Text(t("cc_product_subtitle", "Agent operating system - This device online"))
-          .font(.system(size: 14))
-          .foregroundColor(.signalASITextSecondary)
-          .fixedSize(horizontal: false, vertical: true)
-        Text(
-          String(
-            format: t("cc_trusted_devices_badge", "%d trusted devices"),
-            trustedDeviceCount
-          )
-        )
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundColor(.blue)
-          .lineLimit(1)
-          .minimumScaleFactor(0.78)
-          .padding(.horizontal, 7)
-          .frame(minHeight: 22)
-          .background(Color.blue.opacity(0.12))
-          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
-      Spacer(minLength: 0)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.vertical, 4)
   }
 
-  private var metrics: some View {
-    LazyVGrid(
-      columns: [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
-      ],
-      spacing: 8
-    ) {
-      SignalASIControlCenterMetricCard(
-        title: t("cc_metric_resources", "Intelligence resources"),
-        value: "\(intelligenceResourceCount)",
-        systemImage: "cpu",
-        tint: .signalASIAccent
-      )
-      SignalASIControlCenterMetricCard(
-        title: t("cc_metric_today_tasks", "Recent tasks"),
-        value: "\(recentTaskCount)",
-        systemImage: "clock",
-        tint: .orange
-      )
-      SignalASIControlCenterMetricCard(
-        title: t("cc_metric_security", "Security"),
-        value: securityBadge,
-        systemImage: "checkmark.shield",
-        tint: securityTint
-      )
+  private var overviewCard: some View {
+    NavigationLink(destination: SignalASIProfileIdentityView()) {
+      VStack(alignment: .leading, spacing: 16) {
+        HStack(alignment: .center, spacing: 14) {
+          SignalASILogoView(size: 72, cornerRadius: 12)
+          VStack(alignment: .leading, spacing: 5) {
+            Text(t("settings_my_signalasi", "My SignalASI"))
+              .font(.system(size: 22, weight: .bold))
+              .foregroundColor(.signalASITextPrimary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.72)
+            Text(t("cc_product_subtitle", "Agent operating system - This device online"))
+              .font(.system(size: 14))
+              .foregroundColor(.signalASITextSecondary)
+              .lineLimit(2)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          Spacer(minLength: 4)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.signalASITextSecondary)
+        }
+        HStack(spacing: 8) {
+          overviewBadge(agentCoreBadge, tint: agentCoreTint)
+          overviewBadge(
+            String(format: t("cc_trusted_devices_badge", "%d trusted devices"), trustedDeviceCount),
+            tint: .blue
+          )
+          overviewBadge(privacyBadge, tint: privacyTint)
+        }
+        Divider()
+          .overlay(Color.signalASISeparator)
+        HStack(spacing: 0) {
+          overviewMetric(
+            value: "\(intelligenceResourceCount)",
+            title: t("cc_metric_resources", "Intelligence resources")
+          )
+          Divider()
+            .frame(height: 48)
+            .overlay(Color.signalASISeparator)
+          overviewMetric(
+            value: "\(recentTaskCount)",
+            title: t("cc_metric_today_tasks", "Recent tasks")
+          )
+          Divider()
+            .frame(height: 48)
+            .overlay(Color.signalASISeparator)
+          overviewMetric(
+            value: securityBadge,
+            title: t("cc_metric_security", "Security")
+          )
+        }
+      }
+      .padding(20)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.signalASISurface)
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("ios.control-center.overview")
   }
 
   private var connectedDevicesSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_connected_devices", "Connected devices"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_nodes_title", "Agents, Models & Nodes"),
-        subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
-        systemImage: "network",
-        tint: intelligenceResourceCount > 0 ? .signalASIAccent : .orange,
-        badge: "\(intelligenceResourceCount)"
-      ) {
-        SignalASIAgentsModelsNodesView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_phone_title", "Phone Capabilities"),
-        subtitle: String(
-          format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
-          nativeToolSummary.available,
-          nativeToolSummary.needingAttention
-        ),
-        systemImage: "iphone",
-        tint: nativeToolSummary.available > 0 ? .signalASIAccent : .orange,
-        badge: "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
-      ) {
-        SignalASIPhoneCapabilitiesView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_spaces_title", "Smart Spaces"),
-        subtitle: t("cc_spaces_subtitle", "Home Assistant and custom devices"),
-        systemImage: "homekit",
-        tint: homeAssistantTint,
-        badge: homeAssistantBadge
-      ) {
-        SignalASISmartSpacesView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("desktop_control_title", "Control Computer"),
-        subtitle: t(
-          "desktop_control_home_subtitle",
-          "View the computer screen and send approved mouse or keyboard actions from this phone"
-        ),
-        systemImage: "desktopcomputer",
-        tint: desktopControlTint,
-        badge: desktopControlBadge
-      ) {
-        SignalASIDesktopControlView()
+      controlCenterSectionTitle(t("cc_section_connected_devices", "Connected devices"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_nodes_title", "Agents, Models & Nodes"),
+          subtitle: t("cc_nodes_subtitle", "Desktop agents, local models, cloud APIs, and devices"),
+          systemImage: "network",
+          tint: intelligenceResourceCount > 0 ? .signalASIAccent : .orange,
+          badge: "\(intelligenceResourceCount)"
+        ) {
+          SignalASIAgentsModelsNodesView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_phone_title", "Phone Capabilities"),
+          subtitle: String(
+            format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
+            nativeToolSummary.available,
+            nativeToolSummary.needingAttention
+          ),
+          systemImage: "iphone",
+          tint: nativeToolSummary.available > 0 ? .signalASIAccent : .orange,
+          badge: "\(nativeToolSummary.available)/\(nativeToolSummary.total)"
+        ) {
+          SignalASIPhoneCapabilitiesView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_spaces_title", "Smart Spaces"),
+          subtitle: t("cc_spaces_subtitle", "Home Assistant and custom devices"),
+          systemImage: "homekit",
+          tint: homeAssistantTint,
+          badge: homeAssistantBadge
+        ) {
+          SignalASISmartSpacesView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("desktop_control_title", "Control Computer"),
+          subtitle: t(
+            "desktop_control_home_subtitle",
+            "View the computer screen and send approved mouse or keyboard actions from this phone"
+          ),
+          systemImage: "desktopcomputer",
+          tint: desktopControlTint,
+          badge: desktopControlBadge
+        ) {
+          SignalASIDesktopControlView()
+        }
       }
     }
   }
 
   private var modelsRuntimeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_models_runtime", "Models & runtime"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_nodes_local_model_title", "Local Model Runtime"),
-        subtitle: t(
-          "cc_nodes_local_model_subtitle",
-          "On-device model lab, routing plans, and local inference settings"
-        ),
-        systemImage: "memorychip",
-        tint: localModelReady ? .signalASIAccent : .blue,
-        badge: localModelReady
-          ? t("signalasi.local_model.download_ready", "Ready")
-          : t("status_needs_setup", "Needs Setup")
-      ) {
-        SignalASILocalModelLabView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_resource_routing_title", "Models & Resource Routing"),
-        subtitle: modelPlannerSummary,
-        systemImage: "slider.horizontal.3",
-        tint: .blue,
-        badge: resourcesBadge
-      ) {
-        SignalASIResourceRoutingView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_runtime_title", "On-device Linux Runtime"),
-        subtitle: t(
-          "cc_runtime_subtitle",
-          "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"
-        ),
-        systemImage: "terminal",
-        tint: runtimeReady ? .signalASIAccent : .orange,
-        badge: runtimeReady ? t("cc_status_ready", "Ready") : t("status_needs_setup", "Needs Setup")
-      ) {
-        SignalASIOnDeviceRuntimeView()
+      controlCenterSectionTitle(t("cc_section_models_runtime", "Models & runtime"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_nodes_local_model_title", "Local Model Runtime"),
+          subtitle: t(
+            "cc_nodes_local_model_subtitle",
+            "On-device model lab, routing plans, and local inference settings"
+          ),
+          systemImage: "memorychip",
+          tint: localModelReady ? .signalASIAccent : .blue,
+          badge: localModelReady
+            ? t("signalasi.local_model.download_ready", "Ready")
+            : t("status_needs_setup", "Needs Setup")
+        ) {
+          SignalASILocalModelLabView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_resource_routing_title", "Models & Resource Routing"),
+          subtitle: modelPlannerSummary,
+          systemImage: "slider.horizontal.3",
+          tint: .blue,
+          badge: resourcesBadge
+        ) {
+          SignalASIResourceRoutingView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_runtime_title", "On-device Linux Runtime"),
+          subtitle: t(
+            "cc_runtime_subtitle",
+            "Python, uv, Node.js, Go, Rust, C/C++, Java, browser automation, and FFmpeg"
+          ),
+          systemImage: "terminal",
+          tint: runtimeReady ? .signalASIAccent : .orange,
+          badge: runtimeReady ? t("cc_status_ready", "Ready") : t("status_needs_setup", "Needs Setup")
+        ) {
+          SignalASIOnDeviceRuntimeView()
+        }
       }
     }
   }
 
   private var voiceInteractionSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_voice_interaction", "Voice & interaction"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_voice_title", "Voice & Interaction"),
-        subtitle: t("cc_voice_subtitle", "Wake word, ASR, TTS, and task routing"),
-        systemImage: "waveform",
-        tint: store.voiceSettings.wakeListeningEnabled ? .signalASIAccent : .blue,
-        badge: store.voiceSettings.wakeListeningEnabled ? t("status_enabled", "Enabled") : t("common_off", "Off")
-      ) {
-        SignalASIVoiceControlCenterView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_apps_title", "Apps & Tools"),
-        subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
-        systemImage: "square.grid.2x2",
-        tint: .blue,
-        badge: "\(SignalASIAppAdapterCatalog.adapterCount)"
-      ) {
-        SignalASIAppToolsView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_app_services_title", "Messages - Contacts - Discover"),
-        subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
-        systemImage: "rectangle.grid.2x2",
-        tint: .blue,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIControlCenterAppServicesView()
+      controlCenterSectionTitle(t("cc_section_voice_interaction", "Voice & interaction"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_voice_title", "Voice & Interaction"),
+          subtitle: t("cc_voice_subtitle", "Wake word, ASR, TTS, and task routing"),
+          systemImage: "waveform",
+          tint: store.voiceSettings.wakeListeningEnabled ? .signalASIAccent : .blue,
+          badge: store.voiceSettings.wakeListeningEnabled ? t("status_enabled", "Enabled") : t("common_off", "Off")
+        ) {
+          SignalASIVoiceControlCenterView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_apps_title", "Apps & Tools"),
+          subtitle: t("cc_apps_subtitle", "Messaging, calendar, browser, files, and adapters"),
+          systemImage: "square.grid.2x2",
+          tint: .blue,
+          badge: "\(SignalASIAppAdapterCatalog.adapterCount)"
+        ) {
+          SignalASIAppToolsView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_app_services_title", "Messages - Contacts - Discover"),
+          subtitle: t("cc_app_services_subtitle", "App modules, media, contacts, providers, and notifications"),
+          systemImage: "rectangle.grid.2x2",
+          tint: .blue,
+          badge: t("common_view", "View")
+        ) {
+          SignalASIControlCenterAppServicesView()
+        }
       }
     }
   }
 
   private var memoryKnowledgeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_memory_knowledge", "Memory & knowledge"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_memory_title", "Memory & Personalization"),
-        subtitle: String(
-          format: t("cc_memory_subtitle", "%d long-term memories - user controlled"),
-          memorySnapshot.activeCount
-        ),
-        systemImage: "archivebox",
-        tint: store.agentSafetySettings.memoryCapture ? .signalASIAccent : .orange,
-        badge: store.agentSafetySettings.memoryCapture ? t("status_enabled", "Enabled") : t("common_off", "Off")
-      ) {
-        SignalASIMemoryControlCenterView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_knowledge_title", "Knowledge Base"),
-        subtitle: String(
-          format: t("cc_knowledge_subtitle", "%d sources - traceable citations"),
-          store.agentKnowledgeStats.sourceCount
-        ),
-        systemImage: "book.closed",
-        tint: .orange,
-        badge: "\(store.agentKnowledgeStats.itemCount)"
-      ) {
-        SignalASIAgentKnowledgeView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_learning_title", "Learning & Skill Evolution"),
-        subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
-        systemImage: "sparkles.rectangle.stack",
-        tint: learningPendingCount > 0 ? .purple : .signalASIAccent,
-        badge: "\(learningPendingCount)"
-      ) {
-        SignalASILearningSkillEvolutionView()
+      controlCenterSectionTitle(t("cc_section_memory_knowledge", "Memory & knowledge"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_memory_title", "Memory & Personalization"),
+          subtitle: String(
+            format: t("cc_memory_subtitle", "%d long-term memories - user controlled"),
+            memorySnapshot.activeCount
+          ),
+          systemImage: "archivebox",
+          tint: store.agentSafetySettings.memoryCapture ? .signalASIAccent : .orange,
+          badge: store.agentSafetySettings.memoryCapture ? t("status_enabled", "Enabled") : t("common_off", "Off")
+        ) {
+          SignalASIMemoryControlCenterView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_knowledge_title", "Knowledge Base"),
+          subtitle: String(
+            format: t("cc_knowledge_subtitle", "%d sources - traceable citations"),
+            store.agentKnowledgeStats.sourceCount
+          ),
+          systemImage: "book.closed",
+          tint: .orange,
+          badge: "\(store.agentKnowledgeStats.itemCount)"
+        ) {
+          SignalASIAgentKnowledgeView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_learning_title", "Learning & Skill Evolution"),
+          subtitle: t("cc_learning_subtitle", "Learn from successful tasks; generated content requires review"),
+          systemImage: "sparkles.rectangle.stack",
+          tint: learningPendingCount > 0 ? .purple : .signalASIAccent,
+          badge: "\(learningPendingCount)"
+        ) {
+          SignalASILearningSkillEvolutionView()
+        }
       }
     }
   }
 
   private var skillsTasksSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_skills_tasks", "Skills & tasks"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_agent_core_title", "Agent Core"),
-        subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
-        systemImage: "cpu",
-        tint: agentCoreTint,
-        badge: agentCoreBadge
-      ) {
-        SignalASIAgentCoreView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_execution_policy_title", "Execution Policy"),
-        subtitle: executionPolicySummary,
-        systemImage: "checkmark.shield",
-        tint: executionPolicyTint,
-        badge: t(
-          store.agentSafetySettings.taskExecutionMode.displayTitle,
-          store.agentSafetySettings.taskExecutionMode.displayTitle
-        )
-      ) {
-        SignalASIExecutionPolicyView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_tasks_title", "Task Center"),
-        subtitle: t("cc_tasks_subtitle", "Running, waiting, blocked, and completed work"),
-        systemImage: "list.bullet.rectangle",
-        tint: runningTaskCount > 0 ? .orange : .signalASITextSecondary,
-        badge: "\(recentTaskCount)"
-      ) {
-        SignalASIAgentRecentTasksView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("agent_capability_library_title", "Capability Library"),
-        subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
-        systemImage: "shippingbox.and.arrow.down",
-        tint: .signalASIAccent,
-        badge: "\(capabilityLibraryInstalledCount)"
-      ) {
-        SignalASICapabilityLibraryView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_mcp_title", "MCP"),
-        subtitle: t("cc_mcp_subtitle", "External tools, services, and device connectors"),
-        systemImage: "shippingbox",
-        tint: .blue,
-        badge: mcpRouteBadge
-      ) {
-        SignalASICapabilityLibraryView(initialKind: .mcp)
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_evolution_title", "Self evolution"),
-        subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
-        systemImage: "arrow.triangle.2.circlepath",
-        tint: selfEvolutionTint,
-        badge: selfEvolutionBadge
-      ) {
-        SignalASISelfEvolutionControlView()
+      controlCenterSectionTitle(t("cc_section_skills_tasks", "Skills & tasks"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_agent_core_title", "Agent Core"),
+          subtitle: t("cc_agent_core_subtitle", "Planning, tool use, replanning, and recovery"),
+          systemImage: "cpu",
+          tint: agentCoreTint,
+          badge: agentCoreBadge
+        ) {
+          SignalASIAgentCoreView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_tasks_title", "Task Center"),
+          subtitle: t("cc_tasks_subtitle", "Running, waiting, blocked, and completed work"),
+          systemImage: "list.bullet.rectangle",
+          tint: runningTaskCount > 0 ? .orange : .signalASITextSecondary,
+          badge: "\(recentTaskCount)"
+        ) {
+          SignalASIAgentRecentTasksView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("agent_capability_library_title", "Capability Library"),
+          subtitle: t("agent_capability_library_subtitle", "Manage phone tools, MCP connections, and reusable automation from one place"),
+          systemImage: "shippingbox.and.arrow.down",
+          tint: .signalASIAccent,
+          badge: "\(capabilityLibraryInstalledCount)"
+        ) {
+          SignalASICapabilityLibraryView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_evolution_title", "Self evolution"),
+          subtitle: t("cc_evolution_subtitle", "Improve SignalASI in isolated candidates with builds, tests, and rollback"),
+          systemImage: "arrow.triangle.2.circlepath",
+          tint: selfEvolutionTint,
+          badge: selfEvolutionBadge
+        ) {
+          SignalASISelfEvolutionControlView()
+        }
       }
     }
-  }
-
-  private var mcpRouteBadge: String {
-    let count = SignalASIMcpControlStores.makeRegistry().list().count
-    return count > 0 ? String(count) : t("status_needs_setup", "Needs Setup")
   }
 
   private var securityDataSection: some View {
     let needsAttention = systemStatusNeedsAttention
     return VStack(alignment: .leading, spacing: 8) {
-      SignalASISecuritySectionTitle(title: t("cc_section_security_data", "Security & data"))
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_system_status_title", "System Status"),
-        subtitle: needsAttention
-          ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
-          : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
-        systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
-        tint: needsAttention ? .orange : .signalASIAccent,
-        badge: needsAttention
-          ? t("cc_status_degraded", "Degraded")
-          : t("cc_status_normal", "Normal")
-      ) {
-        SignalASISystemStatusView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_security_title", "Security & Trust"),
-        subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
-        systemImage: "checkmark.shield",
-        tint: securityTint,
-        badge: securityBadge
-      ) {
-        SignalASISecurityCenterView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
-        subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
-        systemImage: "lock.doc",
-        tint: disclosureSummary.blocked > 0 ? .orange : .blue,
-        badge: String(
-          format: t("cc_privacy_destination_count", "%d destinations"),
-          disclosureSummary.destinations
-        )
-      ) {
-        SignalASIPrivacyControlCenterView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_audit_title", "Permissions & Audit"),
-        subtitle: t("cc_audit_subtitle_ios", "Confirmation policy, iOS permissions, and operation history"),
-        systemImage: "fingerprint",
-        tint: .purple,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIPermissionsAuditView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_data_title", "Data & Backup"),
-        subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
-        systemImage: "externaldrive",
-        tint: .purple,
-        badge: t("signalasi.data_backup.available", "Available")
-      ) {
-        SignalASIDataBackupView()
-      }
-      SignalASIControlCenterNavigationRow(
-        title: t("cc_general_title", "General & About"),
-        subtitle: t("cc_general_subtitle", "Language, notifications, diagnostics, version, and reset"),
-        systemImage: "gearshape",
-        tint: .signalASITextSecondary,
-        badge: t("common_view", "View")
-      ) {
-        SignalASIControlCenterGeneralView()
+      controlCenterSectionTitle(t("cc_section_security_data", "Security & data"))
+      controlCenterGroup {
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_system_status_title", "System Status"),
+          subtitle: needsAttention
+            ? t("cc_services_need_attention_subtitle", "Unavailable resources are excluded from automatic routing")
+            : t("cc_all_services_normal_subtitle", "Local execution, routing, messaging, and security are available"),
+          systemImage: needsAttention ? "exclamationmark.triangle" : "checkmark.shield",
+          tint: needsAttention ? .orange : .signalASIAccent,
+          badge: needsAttention
+            ? t("cc_status_degraded", "Degraded")
+            : t("cc_status_normal", "Normal")
+        ) {
+          SignalASISystemStatusView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_security_title", "Security & Trust"),
+          subtitle: t("cc_security_subtitle", "Identity, encryption, trusted devices, and contacts"),
+          systemImage: "checkmark.shield",
+          tint: securityTint,
+          badge: securityBadge
+        ) {
+          SignalASISecurityCenterView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_privacy_dashboard_title", "Privacy Dashboard"),
+          subtitle: t("cc_privacy_dashboard_subtitle", "Review which data leaves this phone and who processes it"),
+          systemImage: "lock.doc",
+          tint: disclosureSummary.blocked > 0 ? .orange : .blue,
+          badge: String(
+            format: t("cc_privacy_destination_count", "%d destinations"),
+            disclosureSummary.destinations
+          )
+        ) {
+          SignalASIPrivacyControlCenterView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_audit_title", "Permissions & Audit"),
+          subtitle: t("cc_audit_subtitle_ios", "Confirmation policy, iOS permissions, and operation history"),
+          systemImage: "fingerprint",
+          tint: .purple,
+          badge: t("common_view", "View")
+        ) {
+          SignalASIPermissionsAuditView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_data_title", "Data & Backup"),
+          subtitle: t("cc_data_subtitle", "Encrypted export, restore, storage, and cache"),
+          systemImage: "externaldrive",
+          tint: .purple,
+          badge: t("signalasi.data_backup.available", "Available")
+        ) {
+          SignalASIDataBackupView()
+        }
+        SignalASIControlCenterNavigationRow(
+          title: t("cc_general_title", "General & About"),
+          subtitle: t("cc_general_subtitle", "Language, notifications, diagnostics, version, and reset"),
+          systemImage: "gearshape",
+          tint: .signalASITextSecondary,
+          badge: t("common_view", "View")
+        ) {
+          SignalASIControlCenterGeneralView()
+        }
       }
     }
   }
@@ -658,20 +623,50 @@ struct SignalASIControlCenterView: View {
     store.agentSafetySettings.executionPaused ? .orange : .signalASIAccent
   }
 
-  private var executionPolicySummary: String {
-    let executionMode = t(
-      store.agentSafetySettings.taskExecutionMode.displayTitle,
-      store.agentSafetySettings.taskExecutionMode.displayTitle
-    )
-    let permissionMode = t(
-      store.agentSafetySettings.permissionMode.displayTitle,
-      store.agentSafetySettings.permissionMode.displayTitle
-    )
-    return "\(t("cc_task_execution_mode_title", "Task execution")): \(executionMode) / \(t("on_device_agent_permission_mode", "Execution Mode")): \(permissionMode)"
+  private func overviewBadge(_ title: String, tint: Color) -> some View {
+    Text(title)
+      .font(.system(size: 12, weight: .medium))
+      .foregroundColor(tint)
+      .lineLimit(1)
+      .minimumScaleFactor(0.72)
+      .padding(.horizontal, 10)
+      .frame(minHeight: 30)
+      .background(tint.opacity(0.11))
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
-  private var executionPolicyTint: Color {
-    store.agentSafetySettings.highRiskGuard ? .signalASIAccent : .orange
+  private func overviewMetric(value: String, title: String) -> some View {
+    VStack(spacing: 4) {
+      Text(value)
+        .font(.system(size: 19, weight: .bold))
+        .foregroundColor(.signalASITextPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.65)
+      Text(title)
+        .font(.system(size: 11))
+        .foregroundColor(.signalASITextSecondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+    }
+    .frame(maxWidth: .infinity)
+  }
+
+  private func controlCenterSectionTitle(_ title: String) -> some View {
+    Text(title)
+      .font(.system(size: 17, weight: .bold))
+      .foregroundColor(.signalASITextSecondary)
+      .padding(.horizontal, 4)
+      .padding(.top, 8)
+  }
+
+  private func controlCenterGroup<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(spacing: 0) {
+      content()
+    }
+    .background(Color.signalASISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -888,39 +883,6 @@ struct SignalASIControlCenterGeneralView: View {
   }
 }
 
-private struct SignalASIControlCenterMetricCard: View {
-  var title: String
-  var value: String
-  var systemImage: String
-  var tint: Color
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      HStack(spacing: 6) {
-        Image(systemName: systemImage)
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundColor(tint)
-        Spacer(minLength: 0)
-      }
-      Text(value)
-        .font(.system(size: 18, weight: .bold))
-        .foregroundColor(.signalASITextPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.72)
-      Text(title)
-        .font(.system(size: 11, weight: .medium))
-        .foregroundColor(.signalASITextSecondary)
-        .lineLimit(2)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 10)
-    .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
-    .background(Color.signalASISurface)
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-  }
-}
-
 private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
   var title: String
   var subtitle: String
@@ -951,27 +913,19 @@ private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
         ZStack {
           RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(tint.opacity(0.16))
-          if let assetImageName {
-            Image(assetImageName)
-              .resizable()
-              .scaledToFit()
-              .frame(width: 29, height: 29)
-              .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-          } else {
-            Image(systemName: systemImage)
-              .font(.system(size: 18, weight: .semibold))
-              .foregroundColor(tint)
-          }
+          Image(systemName: systemImage)
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundColor(tint)
         }
         .frame(width: 42, height: 42)
         VStack(alignment: .leading, spacing: 3) {
           Text(title)
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 17, weight: .medium))
             .foregroundColor(.signalASITextPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.82)
           Text(subtitle)
-            .font(.system(size: 12))
+            .font(.system(size: 13))
             .foregroundColor(.signalASITextSecondary)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -979,14 +933,10 @@ private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
         Spacer(minLength: 8)
         if !badge.isEmpty {
           Text(badge)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 13, weight: .medium))
             .foregroundColor(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
-            .padding(.horizontal, 8)
-            .frame(minHeight: 28)
-            .background(tint.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         Image(systemName: "chevron.right")
           .font(.system(size: 13, weight: .semibold))
@@ -997,34 +947,14 @@ private struct SignalASIControlCenterNavigationRow<Destination: View>: View {
       .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
       .background(Color.signalASISurface)
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .overlay(alignment: .bottom) {
+        Rectangle()
+          .fill(Color.signalASISeparator)
+          .frame(height: 0.5)
+          .padding(.leading, 66)
+      }
     }
     .buttonStyle(.plain)
   }
 
-  private var assetImageName: String? {
-    switch systemImage {
-    case "person.crop.circle":
-      return "DiscoverProfile"
-    case "network", "cpu", "slider.horizontal.3":
-      return "DiscoverAiAgent"
-    case "iphone", "homekit", "desktopcomputer":
-      return "DiscoverDevice"
-    case "memorychip", "terminal":
-      return "DiscoverLab"
-    case "waveform":
-      return "DiscoverSignalASI"
-    case "square.grid.2x2", "rectangle.grid.2x2":
-      return "DiscoverGroup"
-    case "archivebox", "book.closed":
-      return "DiscoverAiAgent"
-    case "sparkles.rectangle.stack", "list.bullet.rectangle", "arrow.triangle.2.circlepath":
-      return "DiscoverAutomation"
-    case "checkmark.shield", "lock.doc", "fingerprint", "exclamationmark.triangle":
-      return "DiscoverSecurity"
-    case "externaldrive", "gearshape", "info.circle":
-      return "DiscoverSignalASI"
-    default:
-      return nil
-    }
-  }
 }
