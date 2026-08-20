@@ -131,12 +131,15 @@ internal class AgentRuntimeLifecycleStateMachine(
     }
 
     @Synchronized
-    fun ready(controllerId: String): AgentRuntimeLifecycleSnapshot {
+    fun ready(
+        controllerId: String,
+        reason: String = "Guest runtime health handshake completed"
+    ): AgentRuntimeLifecycleSnapshot {
         val now = clock.nowMillis()
         current = AgentRuntimeLifecycleSnapshot(
             phase = AgentRuntimeLifecyclePhase.READY,
             controllerId = controllerId,
-            reason = "Guest runtime health handshake completed",
+            reason = reason,
             consecutiveFailures = 0,
             lastTransitionAtMillis = now,
             lastReadyAtMillis = now,
@@ -378,58 +381,81 @@ object AgentOnDeviceRuntimeLifecycle {
             persist(appContext, starting)
             if (starting.phase == AgentRuntimeLifecyclePhase.BACKING_OFF) return@withLock starting
 
-            AgentOnDeviceRuntimeSupervisor.reset()
-            files.socketFile.delete()
-            val spec = AgentRuntimeEngineLaunchSpec(
-                engineFile = files.engineFile,
-                baseImageFile = files.baseImageFile,
-                systemDiskFile = files.systemDiskFile,
-                socketFile = files.socketFile,
-                packsDirectory = files.packsDirectory,
-                workspacesDirectory = files.workspacesDirectory,
-                architecture = files.architecture,
-                packAttachments = files.packAttachments,
-                sessionKey = AgentRuntimeSessionKeyStore(appContext).getOrCreate()
-            )
-            val launch = runCatching {
-                if (!controller.isRunning()) controller.start(spec)
+            val bootStore = AgentRuntimePackBootStore(appContext)
+            val desired = files.packAttachments
+            val primary = launchAndAwait(appContext, controller, files, desired, generation)
+            if (primary == LaunchOutcome.READY) {
+                bootStore.recordHealthy(desired)
+                return@withLock persist(appContext, state.ready(controller.controllerId))
             }
-            spec.clearSecrets()
+            if (primary == LaunchOutcome.INTERRUPTED) return@withLock machine(appContext).snapshot()
+
+            val fallback = AgentRuntimePackBootPolicy.fallbackAttachments(desired, bootStore.lastHealthyVersions())
+            if (fallback != desired) {
+                val fallbackOutcome = launchAndAwait(appContext, controller, files, fallback, generation)
+                if (fallbackOutcome == LaunchOutcome.READY) {
+                    val excluded = desired.filterNot { candidate ->
+                        fallback.any { it.packId == candidate.packId && it.version == candidate.version }
+                    }
+                    bootStore.quarantine(excluded)
+                    bootStore.recordHealthy(fallback)
+                    val names = excluded.joinToString { it.packId }
+                    return@withLock persist(
+                        appContext,
+                        state.ready(controller.controllerId, "Guest recovered after disabling runtime pack: $names")
+                    )
+                }
+                if (fallbackOutcome == LaunchOutcome.INTERRUPTED) return@withLock machine(appContext).snapshot()
+            }
+            persist(appContext, state.failed(controller.controllerId, "Guest health handshake timed out"))
+        }
+    }
+
+    private fun launchAndAwait(
+        context: Context,
+        controller: AgentRuntimeEngineController,
+        files: AgentRuntimeBootstrapFiles,
+        attachments: List<AgentRuntimePackAttachment>,
+        generation: Long
+    ): LaunchOutcome {
+        runCatching(controller::stop)
+        AgentOnDeviceRuntimeSupervisor.reset()
+        files.socketFile.delete()
+        val spec = AgentRuntimeEngineLaunchSpec(
+            engineFile = files.engineFile,
+            baseImageFile = files.baseImageFile,
+            systemDiskFile = files.systemDiskFile,
+            socketFile = files.socketFile,
+            packsDirectory = files.packsDirectory,
+            workspacesDirectory = files.workspacesDirectory,
+            architecture = files.architecture,
+            packAttachments = attachments,
+            sessionKey = AgentRuntimeSessionKeyStore(context).getOrCreate()
+        )
+        val launch = runCatching { controller.start(spec) }
+        spec.clearSecrets()
+        if (launch.isFailure) return LaunchOutcome.FAILED
+        val deadline = System.currentTimeMillis() + STARTUP_TIMEOUT_MILLIS
+        while (System.currentTimeMillis() < deadline) {
             if (operationGeneration.get() != generation) {
                 runCatching(controller::stop)
-                return@withLock machine(appContext).snapshot()
+                return LaunchOutcome.INTERRUPTED
             }
-            if (launch.isFailure) {
+            val bridge = AgentOnDeviceRuntimeSupervisor.discover(context)
+            if (bridge != null && runCatching { bridge.health().ready }.getOrDefault(false)) {
+                return LaunchOutcome.READY
+            }
+            try {
+                Thread.sleep(HEALTH_POLL_MILLIS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
                 runCatching(controller::stop)
-                return@withLock persist(
-                    appContext,
-                    state.failed(controller.controllerId, launch.exceptionOrNull()?.message ?: "Runtime engine failed to start")
-                )
+                return LaunchOutcome.INTERRUPTED
             }
-
-            val deadline = System.currentTimeMillis() + STARTUP_TIMEOUT_MILLIS
-            while (System.currentTimeMillis() < deadline) {
-                if (operationGeneration.get() != generation) return@withLock machine(appContext).snapshot()
-                val bridge = AgentOnDeviceRuntimeSupervisor.discover(appContext)
-                if (bridge != null && runCatching { bridge.health().ready }.getOrDefault(false)) {
-                    return@withLock persist(appContext, state.ready(controller.controllerId))
-                }
-                try {
-                    Thread.sleep(HEALTH_POLL_MILLIS)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    runCatching(controller::stop)
-                    return@withLock persist(appContext, state.failed(controller.controllerId, "Runtime startup was interrupted"))
-                }
-            }
-            if (operationGeneration.get() != generation) return@withLock machine(appContext).snapshot()
-            runCatching(controller::stop)
-            AgentOnDeviceRuntimeSupervisor.reset()
-            persist(
-                appContext,
-                state.failed(controller.controllerId, "Guest health handshake timed out")
-            )
         }
+        runCatching(controller::stop)
+        AgentOnDeviceRuntimeSupervisor.reset()
+        return LaunchOutcome.FAILED
     }
 
     fun ensureRunning(context: Context, maxAttempts: Int = DEFAULT_AUTO_ATTEMPTS): AgentRuntimeLifecycleSnapshot {
@@ -494,8 +520,10 @@ object AgentOnDeviceRuntimeLifecycle {
     private fun store(context: Context): AgentRuntimeLifecycleStore = stateStore
         ?: AgentRuntimeLifecycleStore(context.applicationContext).also { stateStore = it }
 
-    // First boot formats the sparse system disk and extracts the persistent userspace.
-    private const val STARTUP_TIMEOUT_MILLIS = 3 * 60_000L
+    private enum class LaunchOutcome { READY, FAILED, INTERRUPTED }
+
+    // Leave enough time for a known-good pack fallback before a command-level timeout fires.
+    private const val STARTUP_TIMEOUT_MILLIS = 60_000L
     private const val HEALTH_POLL_MILLIS = 200L
     private const val DEFAULT_AUTO_ATTEMPTS = 3
     private const val MAX_AUTO_ATTEMPTS = 8

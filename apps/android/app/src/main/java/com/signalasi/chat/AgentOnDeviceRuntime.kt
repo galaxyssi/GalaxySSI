@@ -660,10 +660,15 @@ class AgentOnDeviceRuntimeManager(
         check(runtimeRoot.mkdirs() || runtimeRoot.isDirectory) { "Runtime storage is unavailable" }
         check(workspaces.mkdirs() || workspaces.isDirectory) { "Runtime workspace storage is unavailable" }
         val systemDisk = AgentRuntimePersistentDisk.provision(runtimeRoot)
+        val bootStore = AgentRuntimePackBootStore(appContext)
         val packAttachments = REQUIRED_PACKS.asSequence()
             .filterNot { it == "linux-base" }
             .map(::packStatus)
             .filter { it.state == AgentRuntimePackState.READY && it.manifest != null }
+            .filterNot { status ->
+                val manifest = requireNotNull(status.manifest)
+                bootStore.isQuarantined(manifest.id, manifest.version)
+            }
             .map { status ->
                 val manifest = requireNotNull(status.manifest)
                 val image = requireNotNull(safeChild(File(packsRoot, manifest.id), manifest.imageFile))
@@ -776,11 +781,23 @@ class AgentOnDeviceRuntimeManager(
     private fun packStatus(
         id: String,
         verifyIntegrity: Boolean = true
-    ): AgentRuntimePackStatus = inspectPackDirectory(
-        directory = File(packsRoot, id),
-        expectedId = id,
-        verifyIntegrity = verifyIntegrity
-    )
+    ): AgentRuntimePackStatus {
+        val status = inspectPackDirectory(
+            directory = File(packsRoot, id),
+            expectedId = id,
+            verifyIntegrity = verifyIntegrity
+        )
+        val manifest = status.manifest
+        return if (
+            status.state == AgentRuntimePackState.READY && manifest != null &&
+            AgentRuntimePackBootStore(appContext).isQuarantined(manifest.id, manifest.version)
+        ) {
+            status.copy(
+                state = AgentRuntimePackState.INCOMPATIBLE,
+                reason = "Disabled after preventing the phone Linux guest from starting"
+            )
+        } else status
+    }
 
     private fun packStatusWithoutDependencies(
         id: String,
