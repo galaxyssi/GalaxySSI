@@ -2,6 +2,9 @@ import CryptoKit
 import Foundation
 
 final class AgentWorkspaceNativeToolExecutor {
+  private static let maxBatchFiles = 64
+  private static let maxBatchWriteBytes: Int64 = 1_024 * 1_024
+
   private struct Entry: Equatable {
     var type: AgentWorkspaceEntryType
     var data: Data
@@ -13,6 +16,11 @@ final class AgentWorkspaceNativeToolExecutor {
     var directory: Bool
     var data: Data
     var modifiedAtMillis: Int64
+  }
+
+  private struct TextBatchFile: Equatable {
+    var path: String
+    var data: Data
   }
 
   private struct ZipArchiveEntry: Equatable {
@@ -107,6 +115,12 @@ final class AgentWorkspaceNativeToolExecutor {
         kind: .write,
         overwrite: true,
         createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceWriteTextBatch:
+      return writeTextBatch(
+        workspaceId,
+        files: textBatchFiles(input, "files"),
+        overwrite: bool(input, "overwrite", true)
       )
     case AgentPhoneNativeToolCatalog.workspaceCreateText:
       return writeData(
@@ -375,6 +389,87 @@ final class AgentWorkspaceNativeToolExecutor {
       affectedBytes: Int64(data.count),
       metadata: metadata(workspaceId: cleanWorkspaceId, path: normalized)
     ))
+  }
+
+  private func writeTextBatch(
+    _ workspaceId: String,
+    files: [TextBatchFile]?,
+    overwrite: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let files, !files.isEmpty, files.count <= Self.maxBatchFiles else {
+      return failure(.limitExceeded, "write_text_batch", workspaceId, "Batch must contain between 1 and \(Self.maxBatchFiles) files")
+    }
+    guard Set(files.map(\.path)).count == files.count else {
+      return failure(.invalidPath, "write_text_batch", workspaceId, "Batch contains duplicate file paths")
+    }
+
+    var totalBytes: Int64 = 0
+    for file in files {
+      guard Int64(file.data.count) <= policy.maxWriteBytes,
+            let updatedTotal = checkedAdd(totalBytes, Int64(file.data.count)),
+            updatedTotal <= Self.maxBatchWriteBytes else {
+        return failure(.limitExceeded, "write_text_batch", file.path, "Batch exceeds the \(Self.maxBatchWriteBytes) byte write limit")
+      }
+      totalBytes = updatedTotal
+    }
+
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "write_text_batch") else {
+      return failure(.invalidWorkspace, "write_text_batch", workspaceId, "Workspace ID is invalid")
+    }
+
+    var prepared: [TextBatchFile] = []
+    for file in files {
+      guard let normalized = normalizedPath(file.path, operation: "write_text_batch", allowRoot: false) else {
+        return failure(.pathEscape, "write_text_batch", file.path, "Workspace path escaped the workspace")
+      }
+      guard !prepared.contains(where: { $0.path == normalized }) else {
+        return failure(.invalidPath, "write_text_batch", normalized, "Batch contains duplicate file paths")
+      }
+      if let existing = workspace[normalized] {
+        guard existing.type == .file else {
+          return failure(.notAFile, "write_text_batch", normalized, "Workspace entry is not a file")
+        }
+        guard overwrite else {
+          return failure(.alreadyExists, "write_text_batch", normalized, "Workspace file already exists")
+        }
+      }
+      prepared.append(TextBatchFile(path: normalized, data: file.data))
+    }
+    let batchPaths = Set(prepared.map(\.path))
+    for file in prepared {
+      var ancestor = parentPath(file.path)
+      while !ancestor.isEmpty {
+        guard !batchPaths.contains(ancestor) else {
+          return failure(.notADirectory, "write_text_batch", ancestor, "Batch path conflicts with a descendant file")
+        }
+        ancestor = parentPath(ancestor)
+      }
+    }
+
+    // Work on a copy first so a rejected entry cannot leave a partial project behind.
+    for file in prepared {
+      guard ensureParent(&workspace, path: file.path, createParents: true) else {
+        return failure(.notFound, "write_text_batch", parentPath(file.path), "Parent directory does not exist")
+      }
+      workspace[file.path] = Entry(type: .file, data: file.data, modifiedAtMillis: nowMillis())
+    }
+    saveWorkspace(workspace, id: cleanWorkspaceId)
+
+    let mutations = prepared.map { file in
+      AgentMcpJSONValue.object(mutationObject(
+        kind: .write,
+        path: file.path,
+        affectedEntries: 1,
+        affectedBytes: Int64(file.data.count),
+        metadata: metadata(workspaceId: cleanWorkspaceId, path: file.path)
+      ))
+    }
+    return .success([
+      "files": .array(mutations),
+      "affected_entries": .int(Int64(prepared.count)),
+      "affected_bytes": .int(totalBytes)
+    ])
   }
 
   private func appendData(
@@ -1361,6 +1456,19 @@ final class AgentWorkspaceNativeToolExecutor {
 
   private func stringList(_ input: AgentMcpJSONObject, _ key: String) -> [String] {
     input[key]?.arrayValue?.compactMap(\.strictStringValue) ?? []
+  }
+
+  private func textBatchFiles(_ input: AgentMcpJSONObject, _ key: String) -> [TextBatchFile]? {
+    guard let values = input[key]?.arrayValue else { return nil }
+    let files = values.compactMap { value -> TextBatchFile? in
+      guard let object = value.objectValue,
+            let path = object["path"]?.strictStringValue,
+            let text = object["text"]?.strictStringValue else {
+        return nil
+      }
+      return TextBatchFile(path: path, data: Data(text.utf8))
+    }
+    return files.count == values.count ? files : nil
   }
 
   private func string(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: String? = nil) -> String {

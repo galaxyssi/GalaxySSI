@@ -8,6 +8,7 @@ enum AgentPhoneNativeToolCatalog {
   static let workspaceReadText = "signalasi.workspace.file.read.text"
   static let workspaceReadBytes = "signalasi.workspace.file.read.bytes"
   static let workspaceWriteText = "signalasi.workspace.file.write.text"
+  static let workspaceWriteTextBatch = "signalasi.workspace.files.write.text.batch"
   static let workspaceCreateText = "signalasi.workspace.file.create.text"
   static let workspaceAppendText = "signalasi.workspace.file.append.text"
   static let workspaceWriteBytes = "signalasi.workspace.file.write.bytes"
@@ -501,6 +502,7 @@ enum AgentPhoneNativeToolCatalog {
       workspaceDefinition(workspaceReadText, "Read workspace text file", .low, workspaceReadConsent, .idempotent),
       workspaceDefinition(workspaceReadBytes, "Read workspace binary file", .low, workspaceReadConsent, .idempotent),
       workspaceDefinition(workspaceWriteText, "Write workspace text file", .medium, workspaceWriteConsent, .idempotent),
+      workspaceDefinition(workspaceWriteTextBatch, "Write a complete text project batch", .medium, workspaceWriteConsent, .idempotent),
       workspaceDefinition(workspaceCreateText, "Create workspace text file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
       workspaceDefinition(workspaceAppendText, "Append workspace text file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
       workspaceDefinition(workspaceWriteBytes, "Write workspace binary file", .medium, workspaceWriteConsent, .idempotent),
@@ -795,6 +797,18 @@ enum AgentPhoneNativeToolCatalog {
       properties["overwrite"] = .object(boolSchema())
       return objectSchema(properties: properties, required: ["workspace_id", "archive_path", "destination_path"])
     }
+    if id == workspaceWriteTextBatch {
+      properties["files"] = .object(arraySchema(
+        items: objectSchema(properties: [
+          "path": .object(stringSchema(minLength: 1, maxLength: 1_024)),
+          "text": .object(stringSchema(maxLength: 1_048_576))
+        ], required: ["path", "text"]),
+        minItems: 1,
+        maxItems: 64
+      ))
+      properties["overwrite"] = .object(boolSchema())
+      return objectSchema(properties: properties, required: ["workspace_id", "files"])
+    }
     if id != workspaceInitialize {
       properties["path"] = .object(stringSchema(maxLength: 1_024))
       required.append("path")
@@ -869,6 +883,9 @@ enum AgentPhoneNativeToolCatalog {
     if id == workspaceZipExtract {
       return zipExtractionSchema()
     }
+    if id == workspaceWriteTextBatch {
+      return batchMutationSchema()
+    }
     return mutationSchema()
   }
 
@@ -890,6 +907,14 @@ enum AgentPhoneNativeToolCatalog {
       "affected_bytes": .object(integerSchema(minimum: 0)),
       "metadata": .object(workspaceMetadataSchema())
     ], required: ["kind", "path", "source_path", "affected_entries", "affected_bytes"])
+  }
+
+  private static func batchMutationSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "files": .object(arraySchema(items: mutationSchema(), minItems: 1, maxItems: 64)),
+      "affected_entries": .object(integerSchema(minimum: 1)),
+      "affected_bytes": .object(integerSchema(minimum: 0))
+    ], required: ["files", "affected_entries", "affected_bytes"])
   }
 
   private static func directoryListingSchema() -> AgentMcpJSONObject {
@@ -1111,6 +1136,7 @@ enum AgentPhoneNativeToolCatalog {
     workspaceReadText,
     workspaceReadBytes,
     workspaceWriteText,
+    workspaceWriteTextBatch,
     workspaceCreateText,
     workspaceAppendText,
     workspaceWriteBytes,
