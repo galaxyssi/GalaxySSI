@@ -176,6 +176,21 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun repositoryCloneCanonicalizesCommonModelUrlAliasesBeforeValidation() {
+        listOf("url", "repo_url", "repository").forEach { alias ->
+            val bound = AgentWorkspaceScope.bindToolInput(
+                AgentMobileProjectNativeTools.CLONE,
+                mapOf(alias to "https://github.com/signalasi/SignalASI", "workspace_id" to "attacker"),
+                "conversation-project"
+            )
+
+            assertEquals("conversation-project", bound["workspace_id"])
+            assertEquals("https://github.com/signalasi/SignalASI", bound["repository_url"])
+            assertFalse(bound.containsKey(alias))
+        }
+    }
+
+    @Test
     fun packagesMultipleFilesAndDirectoriesAsOneProjectArchive() {
         val request = request(
             requestId = "run-project",
