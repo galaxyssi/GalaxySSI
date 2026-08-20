@@ -413,19 +413,19 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.implementationId, "signalasi.ios.default_runtime_status")
     XCTAssertEqual(statusDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(executeDefinition.descriptor.availability.status, .requiresSetup)
-    XCTAssertEqual(softwareRemoveDefinition.descriptor.availability.status, .unavailable)
+    XCTAssertEqual(softwareRemoveDefinition.descriptor.availability.status, .requiresSetup)
     XCTAssertTrue(status.isSuccess)
     XCTAssertEqual(status.output["backend"], .string("none"))
     XCTAssertEqual(status.output["backend_ready"], .bool(false))
     XCTAssertEqual(status.output["observed_at_epoch_ms"], .int(55_000))
     XCTAssertEqual(status.metadata["implementation"], .string("signalasi.ios.default_runtime_status"))
     let linuxSystem = try XCTUnwrap(status.output["linux_system"]?.objectValue)
-    XCTAssertEqual(linuxSystem["distribution"], .string("iOS app-private runtime"))
-    XCTAssertEqual(linuxSystem["execution_principal"], .string("app_sandbox"))
+    XCTAssertEqual(linuxSystem["distribution"], .string("paired jailbreak Linux runtime"))
+    XCTAssertEqual(linuxSystem["execution_principal"], .string("configured_jailbreak_linux_prefix"))
     XCTAssertEqual(linuxSystem["persistent"], .bool(true))
     XCTAssertEqual(linuxSystem["package_manager_ready"], .bool(false))
-    XCTAssertEqual(linuxSystem["base_version"], .string("1.3.9"))
-    XCTAssertEqual(linuxSystem["package_management"], .string("signed_runtime_packs_only"))
+    XCTAssertEqual(linuxSystem["base_version"], .string(""))
+    XCTAssertEqual(linuxSystem["package_management"], .string("runtime_broker_managed"))
     let statusPacks = try XCTUnwrap(status.output["packs"]?.arrayValue?.compactMap(\.objectValue))
     let linuxBase = try XCTUnwrap(statusPacks.first { $0["id"] == .string("linux-base") })
     let python = try XCTUnwrap(statusPacks.first { $0["id"] == .string("python-uv") })
@@ -464,7 +464,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try String(contentsOf: project.appendingPathComponent("README.md")), "stable")
   }
 
-  func testDefaultRuntimeProviderRequiresPythonUvAlongsideLinuxBase() throws {
+  func testDefaultRuntimeProviderUsesPairedBrokerWithoutSyntheticPacks() throws {
     struct ReadyBroker: AgentIOSRuntimeBrokerProviding {
       var implementationId: String { "ready-runtime-broker" }
 
@@ -482,18 +482,11 @@ extension SignalASIStoreTests {
 
     let root = try temporaryDirectory("ios-default-runtime-base-readiness")
     defer { try? FileManager.default.removeItem(at: root) }
-    try installRuntimePackManifest("linux-base", under: root)
     let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
       runtimeRootURL: root,
       broker: ReadyBroker(),
       signatureVerifier: { _ in true }
     )
-
-    let missingPython = provider.availability(operation: .execute)
-    XCTAssertEqual(missingPython.status, .requiresSetup)
-    XCTAssertTrue(missingPython.reason.localizedCaseInsensitiveContains("python-uv"))
-
-    try installRuntimePackManifest("python-uv", under: root)
 
     XCTAssertEqual(provider.availability(operation: .execute).status, .available)
   }
