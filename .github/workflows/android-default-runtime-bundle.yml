@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
 
       - uses: actions/setup-node@v4
