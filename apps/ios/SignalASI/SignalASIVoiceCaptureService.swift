@@ -274,9 +274,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       return
     }
     if liveWhisperActive {
-      let fallback = currentIOSSpeechTranscript.ifBlank(transcript)
-      stop()
-      completion(fallback)
+      // Local Whisper finishes asynchronously from the retained PCM snapshot. Do not
+      // report an empty result on release while that final decode is still in flight.
+      holdToTalkCompletion = completion
+      stop(preservingHoldToTalkCompletion: true)
       return
     }
 
@@ -339,9 +340,16 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   func stop() {
+    stop(preservingHoldToTalkCompletion: false)
+  }
+
+  @MainActor
+  private func stop(preservingHoldToTalkCompletion: Bool) {
     holdToTalkTimeoutTask?.cancel()
     holdToTalkTimeoutTask = nil
-    holdToTalkCompletion = nil
+    if !preservingHoldToTalkCompletion {
+      holdToTalkCompletion = nil
+    }
     let wasRecording = isRecording
     let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
     let fallbackModelProfileId = currentRecognitionModelProfileId
@@ -412,6 +420,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           self.liveWhisperActive = false
           VoiceRuntimeHealthRegistry.success(runtimeChannel)
           VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+          self.completeLiveWhisperHoldToTalkStop(with: text.ifBlank(fallbackTranscript))
         }
       } catch {
         await MainActor.run {
@@ -437,8 +446,21 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
             )
           )
           VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+          self.completeLiveWhisperHoldToTalkStop(with: fallbackTranscript)
         }
       }
+    }
+  }
+
+  @MainActor
+  private func completeLiveWhisperHoldToTalkStop(with transcript: String) {
+    guard let completion = holdToTalkCompletion else { return }
+    holdToTalkCompletion = nil
+    Task { @MainActor in
+      // The final coordinator event is scheduled on the main queue. Yield once so it
+      // can update the live transcript before the composer decides whether to submit.
+      await Task.yield()
+      completion(transcript)
     }
   }
 
