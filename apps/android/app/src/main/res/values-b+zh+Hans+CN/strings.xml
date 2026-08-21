@@ -1307,6 +1307,7 @@
     <string name="agent_no_reply_unavailable_message">%1$s 尚未启动或未完成配置。请启动、完成设置或切换智能体。</string>
     <string name="agent_no_reply_timeout_title">暂时没有收到回复</string>
     <string name="agent_no_reply_timeout_message">%1$s 未在预期时间内返回结果。可以重试、切换智能体或查看诊断。</string>
+    <string name="agent_task_liveness_assessment">任务暂时没有上报进展，大模型正在根据最新证据判断下一步。</string>
     <string name="agent_no_reply_unknown_title">没有得到有效结果</string>
     <string name="agent_no_reply_unknown_message">任务未能获得经过验证的结果。可以重试或查看诊断中的具体失败步骤。</string>
     <string name="agent_task_center_actions">任务操作</string>

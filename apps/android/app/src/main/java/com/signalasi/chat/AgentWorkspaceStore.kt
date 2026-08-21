@@ -133,6 +133,7 @@ object AgentWorkspaceLimits {
     const val MAX_TOOL_CALLS = 50
     const val MAX_CHECKPOINTS = 10
     const val MAX_ARTIFACTS = 50
+    const val MAX_RECOVERY_CANDIDATES = 8
     const val MAX_SERIALIZED_CHARS = 4 * 1024 * 1024
 
     internal const val MAX_IDENTIFIER_CHARS = 160
@@ -225,7 +226,7 @@ interface AgentWorkspaceStore {
 
     fun delete(workspaceId: String, expectedRevision: Long? = null): Boolean
     fun clear()
-    fun recoverable(): List<AgentWorkspace>
+    fun recoverable(limit: Int = Int.MAX_VALUE): List<AgentWorkspace>
 }
 
 abstract class AbstractAgentWorkspaceStore(
@@ -390,10 +391,11 @@ abstract class AbstractAgentWorkspaceStore(
     }
 
     @Synchronized
-    open override fun recoverable(): List<AgentWorkspace> =
+    open override fun recoverable(limit: Int): List<AgentWorkspace> =
         load()
             .filter { !it.status.isTerminal && !it.cancellationRequested }
             .sortedWith(NEWEST_FIRST)
+            .take(limit.coerceAtLeast(0))
 
     private fun load(): List<AgentWorkspace> =
         AgentWorkspaceBounds.boundWorkspaces(readPersisted())
@@ -610,9 +612,11 @@ class EncryptedAgentWorkspaceStore(
         saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
     }
 
-    override fun recoverable(): List<AgentWorkspace> = synchronized(state) {
+    override fun recoverable(limit: Int): List<AgentWorkspace> = synchronized(state) {
         ensureIndexes()
-        state.recoverableIds.mapNotNull(::loadWorkspace)
+        state.recoverableIds.asReversed()
+            .take(limit.coerceAtLeast(0))
+            .mapNotNull(::loadWorkspace)
             .filter(::isRecoverable)
             .sortedWith(NEWEST_FIRST)
     }
@@ -644,8 +648,14 @@ class EncryptedAgentWorkspaceStore(
         }
         val recoverable = isRecoverable(normalized)
         val recoverableChanged = if (recoverable) {
-            if (normalized.workspaceId in state.recoverableIds) false
-            else state.recoverableIds.add(normalized.workspaceId)
+            val previousIndex = state.recoverableIds.indexOf(normalized.workspaceId)
+            if (previousIndex >= 0 && previousIndex == state.recoverableIds.lastIndex) {
+                false
+            } else {
+                if (previousIndex >= 0) state.recoverableIds.removeAt(previousIndex)
+                state.recoverableIds.add(normalized.workspaceId)
+                true
+            }
         } else {
             state.recoverableIds.remove(normalized.workspaceId)
         }

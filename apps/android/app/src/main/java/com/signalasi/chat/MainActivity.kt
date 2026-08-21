@@ -635,6 +635,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var latestAgentScreenContext: ScreenContext? = null
     internal var lastRenderedAgentState: AgentUiState? = null
     @Volatile internal var initialAgentHydrationPending = true
+    internal val initialAgentHydrationReady = java.util.concurrent.CountDownLatch(1)
     internal var initialAgentHydrationScheduled = false
     internal var completedInitialResume = false
     internal var agentTranscriptPageLoading = false
@@ -1102,6 +1103,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
             voiceInteractionCoordinator.removeObserver(voiceCoordinatorObserverId)
             voiceCoordinatorObserverId = ""
@@ -1195,13 +1197,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AppForegroundTracker.onActivityForeground(this)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
-        agentRoutingExecutor.execute {
-            val conversationId = runCatching { agentTranscriptStore.activeConversation().id }
-                .getOrDefault("")
-            if (conversationId.isNotBlank()) {
-                runCatching { agentTranscriptStore.context(conversationId) }
-            }
-        }
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
         if (isHighAccuracyQnnSelected() || highAccuracyAsrControllerDelegate.isInitialized()) {

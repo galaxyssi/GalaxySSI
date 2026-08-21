@@ -21,16 +21,25 @@ internal data class AgentProjectRepositorySnapshot(
     val modified: List<String>,
     val untracked: List<String>,
     val conflicting: List<String>,
+    val workingTreeInspected: Boolean = true,
     val state: AgentProjectRepositoryState = AgentProjectRepositoryState.READY
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "workspace_id" to workspaceId,
         "repository_state" to state.wireValue,
-        "repository_present" to (state == AgentProjectRepositoryState.READY),
+        "repository_present" to (state != AgentProjectRepositoryState.EMPTY),
+        "repository_ready" to (state == AgentProjectRepositoryState.READY),
+        "head_present" to headCommit.isNotBlank(),
+        "recovery_required" to (state == AgentProjectRepositoryState.PARTIAL),
+        "recovery_hint" to if (state == AgentProjectRepositoryState.PARTIAL) {
+            "Repository metadata exists but HEAD is not usable. Do not clone or repeat inspection. " +
+                "Fetch the remote refs, then check out a branch from the intended remote base ref."
+        } else "",
         "repository_url" to repositoryUrl,
         "branch" to branch,
         "head_commit" to headCommit,
-        "clean" to clean,
+        "working_tree_inspected" to workingTreeInspected,
+        "clean" to clean.takeIf { workingTreeInspected },
         "staged" to staged,
         "modified" to modified,
         "untracked" to untracked,
@@ -83,11 +92,32 @@ internal interface AgentProjectGitBackend {
     )
     fun inspect(workspaceId: String): AgentProjectRepositorySnapshot
 
+    fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot = inspect(workspaceId)
+
     fun diff(workspaceId: String, maxCharacters: Int): String
+
+    fun diffRefs(
+        workspaceId: String,
+        baseRef: String,
+        headRef: String,
+        maxCharacters: Int
+    ): String = diff(workspaceId, maxCharacters)
+
+    fun log(workspaceId: String, ref: String, maxEntries: Int, maxCharacters: Int): String = ""
 
     fun remoteUrl(workspaceId: String, remote: String): String
 
     fun checkoutBranch(workspaceId: String, branch: String, create: Boolean)
+
+    fun checkoutBranchAt(workspaceId: String, branch: String, create: Boolean, baseRef: String) =
+        checkoutBranch(workspaceId, branch, create)
+
+    fun fetch(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> = emptyList()
 
     fun commit(
         workspaceId: String,
@@ -176,28 +206,88 @@ internal class AgentMobileProjectRepository(
         }
     }
 
-    fun inspect(workspaceId: String): AgentProjectRepositorySnapshot =
+    fun inspect(workspaceId: String, includeWorkingTree: Boolean = true): AgentProjectRepositorySnapshot =
         AgentWorkspaceScope.withLock(workspaceId) {
-            requireLinuxGitBackend().inspect(workspaceId)
+            if (includeWorkingTree) {
+                requireLinuxGitBackend().inspect(workspaceId)
+            } else {
+                requireLinuxGitBackend().inspectMetadata(workspaceId)
+            }
         }
 
-    fun diff(workspaceId: String, maxCharacters: Int): String =
+    fun diff(
+        workspaceId: String,
+        maxCharacters: Int,
+        baseRef: String = "",
+        headRef: String = ""
+    ): String =
         AgentWorkspaceScope.withLock(workspaceId) {
             require(maxCharacters in 1_000..MAX_DIFF_CHARACTERS) { "Diff output limit is invalid" }
-            requireLinuxGitBackend().diff(workspaceId, maxCharacters).also { diff ->
+            val cleanBase = baseRef.trim()
+            val cleanHead = headRef.trim()
+            require(cleanBase.isNotBlank() || cleanHead.isBlank()) { "A Git diff head ref requires a base ref" }
+            if (cleanBase.isNotBlank()) validateRefName(cleanBase)
+            if (cleanHead.isNotBlank()) validateRefName(cleanHead)
+            val diff = if (cleanBase.isBlank()) {
+                requireLinuxGitBackend().diff(workspaceId, maxCharacters)
+            } else {
+                requireLinuxGitBackend().diffRefs(
+                    workspaceId,
+                    cleanBase,
+                    cleanHead.ifBlank { "HEAD" },
+                    maxCharacters
+                )
+            }
+            diff.also {
                 if (diff.isNotBlank() && diff.length < maxCharacters) {
                     runCatching { publicationGuard.recordDocumentationReview(workspaceId, diff) }
                 }
             }
         }
 
-    fun checkoutBranch(workspaceId: String, branch: String, create: Boolean): AgentProjectRepositorySnapshot =
+    fun log(
+        workspaceId: String,
+        ref: String,
+        maxEntries: Int,
+        maxCharacters: Int
+    ): String = AgentWorkspaceScope.withLock(workspaceId) {
+        require(maxEntries in 1..MAX_LOG_ENTRIES) { "Git log entry limit is invalid" }
+        require(maxCharacters in 1_000..MAX_LOG_CHARACTERS) { "Git log output limit is invalid" }
+        val cleanRef = ref.trim().ifBlank { "HEAD" }.also(::validateRefName)
+        requireLinuxGitBackend().log(workspaceId, cleanRef, maxEntries, maxCharacters)
+    }
+
+    fun checkoutBranch(
+        workspaceId: String,
+        branch: String,
+        create: Boolean,
+        baseRef: String = ""
+    ): AgentProjectRepositorySnapshot =
         AgentWorkspaceScope.withLock(workspaceId) {
             val cleanBranch = branch.trim().also(::validateRefName)
-            requireLinuxGitBackend().checkoutBranch(workspaceId, cleanBranch, create)
+            val cleanBase = baseRef.trim()
+            if (cleanBase.isNotBlank()) {
+                require(create) { "A base ref can only be used when creating or resetting a branch" }
+                validateRefName(cleanBase)
+            }
+            requireLinuxGitBackend().checkoutBranchAt(workspaceId, cleanBranch, create, cleanBase)
             publicationGuard.invalidate(workspaceId)
             requireLinuxGitBackend().inspect(workspaceId)
         }
+
+    fun fetch(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> = AgentWorkspaceScope.withLock(workspaceId) {
+        require(credentialProvider.token().isNotBlank()) { "Configure a GitHub token before fetching a phone project" }
+        val cleanRemote = validateRemoteName(remote)
+        val cleanRef = ref.trim()
+        if (cleanRef.isNotBlank()) validateRefName(cleanRef)
+        requireAllowedRemote(workspaceId, cleanRemote)
+        requireLinuxGitBackend().fetch(workspaceId, cleanRemote, cleanRef, cancellationToken)
+    }
 
     fun commit(
         workspaceId: String,
@@ -384,6 +474,8 @@ internal class AgentMobileProjectRepository(
         private const val MAX_PROJECT_BYTES = 2L * 1024L * 1024L * 1024L
         private const val MAX_PROJECT_FILES = 200_000
         private const val MAX_DIFF_CHARACTERS = 256 * 1024
+        private const val MAX_LOG_CHARACTERS = 256 * 1024
+        private const val MAX_LOG_ENTRIES = 200
         private const val MAX_COMMIT_MESSAGE_CHARACTERS = 4_000
         private const val MAX_PULL_REQUEST_TITLE_CHARACTERS = 256
         private const val MAX_PULL_REQUEST_BODY_CHARACTERS = 32 * 1024
@@ -424,6 +516,8 @@ object AgentMobileProjectNativeTools {
     const val CLONE = "signalasi.project.repository.clone"
     const val INSPECT = "signalasi.project.repository.inspect"
     const val DIFF = "signalasi.project.repository.diff"
+    const val LOG = "signalasi.project.repository.log"
+    const val FETCH = "signalasi.project.repository.fetch"
     const val CHECKOUT_BRANCH = "signalasi.project.repository.branch.checkout"
     const val COMMIT = "signalasi.project.repository.commit"
     const val PULL = "signalasi.project.repository.pull"
@@ -438,6 +532,8 @@ object AgentMobileProjectNativeTools {
         CLONE,
         INSPECT,
         DIFF,
+        LOG,
+        FETCH,
         CHECKOUT_BRANCH,
         COMMIT,
         PULL,
@@ -505,18 +601,33 @@ object AgentMobileProjectNativeTools {
         definition(
             INSPECT,
             "Inspect the phone project repository",
-            "Returns empty, partial, or ready repository state plus the current branch, commit, remote, and bounded working-tree changes. Empty and interrupted workspaces are valid observations so the model can choose clone, repair, or local project creation.",
-            workspaceOnlySchema(),
-            AgentNativeToolRisk.LOW,
-            READ_CONSENT
-        ) { invocation -> guarded("project_inspect_failed") { repository.inspect(invocation.string("workspace_id")).publicValue() } },
-        definition(
-            DIFF,
-            "Read the phone project diff",
-            "Returns a bounded staged and unstaged Git diff so the supervising model can review edits before building or committing.",
+            "Returns empty, partial, or ready repository state plus the current branch, commit, and remote. Set working_tree=true only when the next decision genuinely requires a full staged, modified, untracked, and conflict scan; metadata-only inspection is the fast default for large phone projects.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
+                    "working_tree" to AgentNativeJsonSchema.boolean()
+                ),
+                setOf("workspace_id")
+            ),
+            AgentNativeToolRisk.LOW,
+            READ_CONSENT
+        ) { invocation ->
+            guarded("project_inspect_failed") {
+                repository.inspect(
+                    workspaceId = invocation.string("workspace_id"),
+                    includeWorkingTree = invocation.boolean("working_tree", false)
+                ).publicValue()
+            }
+        },
+        definition(
+            DIFF,
+            "Read the phone project diff",
+            "Returns a bounded staged and unstaged Git diff, or compares base_ref...head_ref when base_ref is supplied, so the supervising model can review edits or branch changes.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "base_ref" to refSchema(),
+                    "head_ref" to refSchema(),
                     "max_characters" to AgentNativeJsonSchema.integer(1_000, 256 * 1024L)
                 ),
                 setOf("workspace_id")
@@ -525,7 +636,68 @@ object AgentMobileProjectNativeTools {
             READ_CONSENT
         ) { invocation ->
             guarded("project_diff_failed") {
-                mapOf("diff" to repository.diff(invocation.string("workspace_id"), invocation.integer("max_characters", 64 * 1024)))
+                mapOf(
+                    "diff" to repository.diff(
+                        workspaceId = invocation.string("workspace_id"),
+                        maxCharacters = invocation.integer("max_characters", 64 * 1024),
+                        baseRef = invocation.string("base_ref"),
+                        headRef = invocation.string("head_ref")
+                    )
+                )
+            }
+        },
+        definition(
+            LOG,
+            "Read recent phone project commits",
+            "Returns a bounded machine-readable Git log for the requested ref so the supervising model can understand recent repository history without inventing shell Git commands.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "ref" to refSchema(),
+                    "max_entries" to AgentNativeJsonSchema.integer(1, 200),
+                    "max_characters" to AgentNativeJsonSchema.integer(1_000, 256 * 1024L)
+                ),
+                setOf("workspace_id")
+            ),
+            AgentNativeToolRisk.LOW,
+            READ_CONSENT
+        ) { invocation ->
+            guarded("project_log_failed") {
+                mapOf(
+                    "log" to repository.log(
+                        workspaceId = invocation.string("workspace_id"),
+                        ref = invocation.string("ref"),
+                        maxEntries = invocation.integer("max_entries", 20),
+                        maxCharacters = invocation.integer("max_characters", 64 * 1024)
+                    )
+                )
+            }
+        },
+        definition(
+            FETCH,
+            "Fetch phone project remote refs",
+            "Fetches remote Git refs in phone Linux without merging them into the current branch. Use pull only when the current branch should be updated.",
+            objectSchema(
+                mapOf(
+                    "workspace_id" to workspaceIdSchema(),
+                    "remote" to AgentNativeJsonSchema.string(maxLength = 160),
+                    "ref" to refSchema()
+                ),
+                setOf("workspace_id")
+            ),
+            AgentNativeToolRisk.MEDIUM,
+            WRITE_CONSENT,
+            timeoutMillis = 30 * 60_000L
+        ) { invocation ->
+            guarded("project_fetch_failed") {
+                mapOf(
+                    "remote_refs" to repository.fetch(
+                        workspaceId = invocation.string("workspace_id"),
+                        remote = invocation.string("remote").ifBlank { "origin" },
+                        ref = invocation.string("ref"),
+                        cancellationToken = invocation.cancellationToken
+                    )
+                )
             }
         },
         definition(
@@ -536,6 +708,7 @@ object AgentMobileProjectNativeTools {
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
                     "branch" to refSchema(),
+                    "base_ref" to refSchema(),
                     "create" to AgentNativeJsonSchema.boolean()
                 ),
                 setOf("workspace_id", "branch")
@@ -547,7 +720,8 @@ object AgentMobileProjectNativeTools {
                 repository.checkoutBranch(
                     invocation.string("workspace_id"),
                     invocation.string("branch"),
-                    invocation.boolean("create", true)
+                    invocation.boolean("create", true),
+                    invocation.string("base_ref")
                 ).publicValue()
             }
         },

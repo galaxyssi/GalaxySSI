@@ -50,6 +50,7 @@ object AgentTaskEventKinds {
     const val PROGRESS = "task.progress"
     const val STALLED = "task.stalled"
     const val TIMED_OUT = "task.timed_out"
+    const val LIVENESS_ASSESSMENT_REQUESTED = "task.liveness_assessment_requested"
     const val LATE_RESPONSE = "task.late_response"
     const val RECOVERED_INTERRUPTED = "task.recovered_interrupted"
 }
@@ -286,7 +287,11 @@ class AgentTaskSupervisor(
             when (decision.state) {
                 AgentTaskLivenessState.HEALTHY -> null
                 AgentTaskLivenessState.STALLED -> markStalled(workspace, decision, observedAt)
-                AgentTaskLivenessState.TIMED_OUT -> timeOut(workspace, decision, observedAt)
+                AgentTaskLivenessState.TIMED_OUT -> requestLivenessAssessment(
+                    workspace,
+                    decision,
+                    observedAt
+                )
             }
         }
     }
@@ -504,7 +509,8 @@ class AgentTaskSupervisor(
         val updated = synchronized(storeMutationLock) {
             mutateWorkspaceLocked(workspaceId) { current ->
                 if (current.status.isTerminal || current.cancellationRequested) return@mutateWorkspaceLocked current
-                recovered = livenessPolicy.hasUnresolvedStall(current)
+                recovered = livenessPolicy.hasUnresolvedStall(current) ||
+                    livenessPolicy.hasPendingAssessment(current)
                 val previous = current.eventJournal.lastOrNull()
                 val sameRecentEvent = !recovered && previous?.kind == eventKind &&
                     previous.message == cleanMessage &&
@@ -559,7 +565,7 @@ class AgentTaskSupervisor(
         return signal
     }
 
-    private fun timeOut(
+    private fun requestLivenessAssessment(
         workspace: AgentWorkspace,
         decision: AgentTaskLivenessDecision,
         observedAt: Long
@@ -567,25 +573,26 @@ class AgentTaskSupervisor(
         var changed = false
         val updated = synchronized(storeMutationLock) {
             mutateWorkspaceLocked(workspace.workspaceId) { current ->
-                if (current.status.isTerminal || current.cancellationRequested) current else {
+                if (current.status.isTerminal || current.cancellationRequested ||
+                    livenessPolicy.hasPendingAssessment(current)
+                ) current else {
                     changed = true
-                    transitionCandidate(
+                    appendEventCandidate(
                         current = current,
-                        status = AgentWorkspaceStatus.FAILED,
-                        eventKind = AgentTaskEventKinds.TIMED_OUT,
+                        kind = AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED,
                         message = decision.reason,
                         payloadJson = AgentNativeJsonCodec.stringify(mapOf(
                             "idle_ms" to decision.idleMillis,
-                            "lifetime_ms" to decision.lifetimeMillis
+                            "lifetime_ms" to decision.lifetimeMillis,
+                            "decision_owner" to "model"
                         ))
-                    ).copy(errorMessage = decision.reason)
+                    )
                 }
             }
         }
         if (!changed) return null
-        activeByWorkspace[workspace.workspaceId]?.cancellationSource?.cancelExecution(decision.reason)
         val signal = AgentTaskLivenessSignal(
-            AgentTaskLivenessSignalKind.TIMED_OUT,
+            AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED,
             updated,
             decision.reason,
             observedAt

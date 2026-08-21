@@ -113,9 +113,20 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             )
         ) return null
         val selected = manualSelectedConnectorAction(request)
+        val routing = if (selected == null) context?.let { appContext ->
+            AgentResourceRouter(appContext).route(
+                goal = request.goal,
+                targets = request.targets,
+                tools = request.runtimeContext.systemTools,
+                nativeTools = request.runtimeContext.nativeTools
+            )
+        } else null
+        val routedSelection = if (selected == null) {
+            AgentConnectorRouteSelector.select(request.targets, routing)
+        } else null
         val target = selected?.parameters?.get("connector_id")?.let { connectorId ->
             request.targets.firstOrNull { it.id == connectorId }
-        } ?: request.targets
+        } ?: routedSelection?.target ?: request.targets
             .asSequence()
             .filter { target ->
                 target.kind != AgentConnectorKind.DEVICE &&
@@ -138,7 +149,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         val base = selected ?: connectorAction(
             request = request,
             connectorId = target.id,
-            description = "Plan the next phone project step"
+            description = "Plan the next phone project step",
+            routing = routedSelection?.decision
         )
         return listOf(
             base.copy(

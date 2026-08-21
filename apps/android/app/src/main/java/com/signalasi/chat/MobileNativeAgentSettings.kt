@@ -210,6 +210,74 @@ internal fun MobileNativeAgent.replanFromCurrentState(
     return reviewed
 }
 
+@Synchronized
+internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiState {
+    if (phase in setOf(
+            AgentPhase.COMPLETED,
+            AgentPhase.FAILED,
+            AgentPhase.CANCELLED,
+            AgentPhase.BLOCKED
+        )
+    ) return snapshot()
+    val plan = currentPlan ?: return snapshot()
+    val actionId = lastActionResult?.actionId
+        ?.takeIf(String::isNotBlank)
+        ?: plan.actions.lastOrNull { action ->
+            action.status in setOf(AgentActionStatus.RUNNING, AgentActionStatus.WAITING_RESPONSE)
+        }?.id
+        ?: plan.actions.lastOrNull()?.id
+        ?: "agent-liveness-assessment"
+    val assessmentReason = buildString {
+        append("The task stopped reporting progress. Inspect the latest verified evidence and decide whether to ")
+        append("continue, retry with corrected arguments, choose another available tool or resource, or finish with ")
+        append("the specific unrecoverable cause. Watchdog evidence: ")
+        append(reason.trim().ifBlank { "no_progress_observed" })
+    }
+    val evidence = AgentActionResult(
+        actionId = actionId,
+        success = false,
+        message = assessmentReason,
+        metadata = lastActionResult?.metadata.orEmpty() + mapOf(
+            "failure_kind" to "liveness_assessment_required",
+            "watchdog_reason" to reason,
+            "terminal_failure" to "false"
+        )
+    )
+    val observedPlan = if (plan.actions.any { it.id == actionId }) {
+        plan.markAction(actionId, AgentActionStatus.FAILED, evidence)
+    } else {
+        plan.copy(actionHistory = plan.actionHistory)
+    }
+    lastActionResult = evidence
+    val replanned = replanFromCurrentState(
+        plan = observedPlan,
+        reason = assessmentReason,
+        force = true
+    ) ?: run {
+        recordAudit(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "liveness_assessment_waiting_for_model:reason=${reason.take(120)}"
+        )
+        phase = AgentPhase.WAITING_RESPONSE
+        saveTaskRecord()
+        return reconcileExecutionLoop(snapshot())
+    }
+    currentPlan = replanned
+    phase = AgentPhase.PLANNING
+    recordAudit(
+        AgentAuditEvent.PLAN_REPLANNED,
+        "liveness_assessment_by_model:revision=${replanned.revision}; reason=${reason.take(120)}"
+    )
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.REPLAN,
+            reason = assessmentReason,
+            actionId = replanned.actions.firstOrNull()?.id.orEmpty()
+        )
+    ) return reconcileExecutionLoop(snapshot())
+    saveTaskRecord()
+    return reconcileExecutionLoop(executeFirstPendingAction())
+}
+
 internal fun MobileNativeAgent.safetySettings(): AgentSafetySettings = safetySettingsStore.load()
 
 internal fun MobileNativeAgent.preferenceMode(): AgentPreferenceMode = activePreferenceMode

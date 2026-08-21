@@ -1194,7 +1194,15 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     val hasProcessDetails = processSegments.isNotEmpty()
     val startedAt = processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis
     val completedAt = agentProcessCompletionTimestamp(entry, turnEntries)
-    val completed = completedAt != null
+    val execution = agentExecutionPresentation(
+        entry = entry,
+        processEntries = processEntries,
+        startedAtMillis = startedAt,
+        completedAtMillis = completedAt
+    )
+    val displayCompletedAt = completedAt
+        ?: execution.completedAtMillis.takeIf { it > 0L }
+    val completed = displayCompletedAt != null
     val expanded = hasProcessDetails &&
         AgentTranscriptPresentationPolicy.processExpanded(
             completed = completed,
@@ -1214,12 +1222,6 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     } else {
         null
     }
-    val execution = agentExecutionPresentation(
-        entry = entry,
-        processEntries = processEntries,
-        startedAtMillis = startedAt,
-        completedAtMillis = completedAt
-    )
     val canCancel = execution.cancellable && (
         AgentExecutionLoopTimelineAction.CANCEL in timelineActions ||
             voiceAgentRun?.cancellable == true
@@ -1305,7 +1307,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                     val ticker = object : Runnable {
                         override fun run() {
                             val elapsedMillis = (
-                                (completedAt ?: System.currentTimeMillis()) - startedAt
+                                (displayCompletedAt ?: System.currentTimeMillis()) - startedAt
                             ).coerceAtLeast(0L)
                             statusView.text = buildString {
                                 append(agentExecutionRuntimeText(execution))
@@ -1324,7 +1326,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                                 append(" \u00b7 ")
                                 append(agentTraceDuration(elapsedMillis))
                             }
-                            if (completedAt == null && statusView.isAttachedToWindow) {
+                            if (displayCompletedAt == null && statusView.isAttachedToWindow) {
                                 statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
                             }
                         }

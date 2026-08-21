@@ -149,6 +149,27 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         self.assertEqual([b"first", b"second"], processed)
 
+    def test_route_worker_survives_one_failed_message(self) -> None:
+        second_processed = threading.Event()
+        processed: list[bytes] = []
+
+        def process(_mqttc, _userdata, message) -> None:
+            processed.append(message.payload)
+            if message.payload == b"first":
+                raise RuntimeError("transient inbound failure")
+            second_processed.set()
+
+        with (
+            patch.object(mqtt_bridge, "parse_topic", return_value=("server-route", "one-route", "up")),
+            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
+            patch.object(mqtt_bridge, "_process_message", side_effect=process),
+        ):
+            mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"first"))
+            mqtt_bridge.on_mqtt_message(object(), None, FakeMessage("same", b"second"))
+            self.assertTrue(second_processed.wait(1))
+
+        self.assertEqual([b"first", b"second"], processed)
+
     def test_publish_ack_that_wins_the_tracking_race_is_persisted(self) -> None:
         with patch.object(mqtt_bridge, "mark_outbound_published") as mark_published:
             mqtt_bridge.track_outbound_publish(AlreadyPublishedInfo(), "route", "message")

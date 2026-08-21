@@ -46,6 +46,27 @@ internal class AgentLinuxProjectGitBackend(
     }
 
     override fun inspect(workspaceId: String): AgentProjectRepositorySnapshot {
+        return inspect(workspaceId, includeWorkingTree = true)
+    }
+
+    override fun inspectMetadata(workspaceId: String): AgentProjectRepositorySnapshot {
+        return inspect(workspaceId, includeWorkingTree = false)
+    }
+
+    private fun inspect(
+        workspaceId: String,
+        includeWorkingTree: Boolean
+    ): AgentProjectRepositorySnapshot {
+        val workingTreeInspection = if (includeWorkingTree) {
+            """
+                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
+                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
+                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
+                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+            """.trimIndent()
+        } else {
+            ""
+        }
         val response = execute(
             workspaceId,
             "inspect",
@@ -80,24 +101,29 @@ internal class AgentLinuxProjectGitBackend(
                   exit 0
                 fi
                 remote="${'$'}(git remote get-url origin 2>/dev/null || true)"
-                head="${'$'}(git rev-parse HEAD 2>/dev/null || true)"
+                head="${'$'}(git rev-parse --verify HEAD 2>/dev/null || true)"
+                branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                if [ -z "${'$'}branch" ]; then
+                  git_dir="${'$'}(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+                  if [ -n "${'$'}git_dir" ] && [ -f "${'$'}git_dir/HEAD" ]; then
+                    branch="${'$'}(sed -n 's#^ref: refs/heads/##p' "${'$'}git_dir/HEAD")"
+                  fi
+                fi
                 if [ -n "${'$'}remote" ] && [ -n "${'$'}head" ]; then
                   emit_value '__SIGNALASI_STATE__:' 'ready'
                 else
                   emit_value '__SIGNALASI_STATE__:' 'partial'
                 fi
                 emit_value '__SIGNALASI_REMOTE__:' "${'$'}remote"
-                emit_value '__SIGNALASI_BRANCH__:' "${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+                emit_value '__SIGNALASI_BRANCH__:' "${'$'}branch"
                 emit_value '__SIGNALASI_HEAD__:' "${'$'}head"
-                emit_paths '__SIGNALASI_STAGED__:' git diff --cached --name-only --no-renames
-                emit_paths '__SIGNALASI_MODIFIED__:' git diff --name-only --no-renames
-                emit_paths '__SIGNALASI_UNTRACKED__:' git ls-files --others --exclude-standard
-                emit_paths '__SIGNALASI_CONFLICT__:' git diff --name-only --diff-filter=U --no-renames
+                $workingTreeInspection
             """.trimIndent(),
-            DEFAULT_TIMEOUT_MILLIS
+            DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
         )
         requireSuccess(response, "Phone Linux could not inspect the project repository")
-        return parseSnapshot(workspaceId, response.stdout)
+        return parseSnapshot(workspaceId, response.stdout, includeWorkingTree)
     }
 
     override fun diff(workspaceId: String, maxCharacters: Int): String {
@@ -110,9 +136,44 @@ internal class AgentLinuxProjectGitBackend(
                 git diff --cached --no-ext-diff --binary
                 """.trimIndent()
             ),
-            DEFAULT_TIMEOUT_MILLIS
+            DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
         )
         requireSuccess(response, "Phone Linux could not read the project diff")
+        return response.stdout.take(maxCharacters)
+    }
+
+    override fun diffRefs(
+        workspaceId: String,
+        baseRef: String,
+        headRef: String,
+        maxCharacters: Int
+    ): String {
+        val response = execute(
+            workspaceId,
+            "diff_refs",
+            gitScript(
+                "git diff --no-ext-diff --binary ${shellQuote("$baseRef...$headRef")} --"
+            ),
+            DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
+        )
+        requireSuccess(response, "Phone Linux could not compare project refs")
+        return response.stdout.take(maxCharacters)
+    }
+
+    override fun log(workspaceId: String, ref: String, maxEntries: Int, maxCharacters: Int): String {
+        val response = execute(
+            workspaceId,
+            "log",
+            gitScript(
+                "git log --date=iso-strict --pretty=format:'%H%x09%an%x09%ad%x09%s' " +
+                    "-n $maxEntries ${shellQuote(ref)} --"
+            ),
+            DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
+        )
+        requireSuccess(response, "Phone Linux could not read recent project commits")
         return response.stdout.take(maxCharacters)
     }
 
@@ -121,23 +182,74 @@ internal class AgentLinuxProjectGitBackend(
             workspaceId,
             "remote",
             gitScript("git remote get-url ${shellQuote(remote)}"),
-            DEFAULT_TIMEOUT_MILLIS
+            DEFAULT_TIMEOUT_MILLIS,
+            workspaceMutationExpected = false
         )
         requireSuccess(response, "Phone Linux could not read the Git remote")
         return response.stdout.lineSequence().map(String::trim).lastOrNull(String::isNotBlank).orEmpty()
     }
 
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
+        checkoutBranchAt(workspaceId, branch, create, "")
+    }
+
+    override fun checkoutBranchAt(workspaceId: String, branch: String, create: Boolean, baseRef: String) {
         val mode = if (create) "-B " else ""
+        val base = baseRef.takeIf(String::isNotBlank)?.let { " ${shellQuote(it)}" }.orEmpty()
         requireSuccess(
             execute(
                 workspaceId,
                 "checkout",
-                gitScript("git checkout -q $mode${shellQuote(branch)}"),
+                // checkout -B can repair an unborn or broken symbolic HEAD directly.
+                // reset cannot: it aborts while trying to update the missing branch ref.
+                gitMutationScript("git checkout -q $mode${shellQuote(branch)}$base"),
                 DEFAULT_TIMEOUT_MILLIS
             ),
             "Phone Linux could not check out the project branch"
         )
+    }
+
+    override fun fetch(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> {
+        var verifiedTrackingRef = ""
+        val fetchCommand = if (ref.isBlank()) {
+            "git fetch --prune ${shellQuote(remote)}"
+        } else {
+            val sourceRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
+            val trackingRef = sourceRef.removePrefix("refs/heads/")
+                .takeIf { sourceRef.startsWith("refs/heads/") }
+                ?.let { branch -> "refs/remotes/$remote/$branch" }
+            verifiedTrackingRef = trackingRef.orEmpty()
+            val refspec = trackingRef?.let { destination -> "+$sourceRef:$destination" } ?: sourceRef
+            "git fetch --prune ${shellQuote(remote)} ${shellQuote(refspec)}"
+        }
+        val response = execute(
+            workspaceId = workspaceId,
+            operation = "fetch",
+            source = authenticatedGitScript(
+                "$fetchCommand\n" +
+                    "git rev-parse --verify FETCH_HEAD 2>/dev/null | sed 's/^/FETCH_HEAD:/' || true\n" +
+                    "git for-each-ref --format='%(refname:short)' ${shellQuote("refs/remotes/$remote/")}"
+            ),
+            timeoutMillis = CLONE_TIMEOUT_MILLIS,
+            networkEnabled = true,
+            cancellationToken = cancellationToken,
+            token = credentialProvider.token().trim()
+        )
+        requireSuccess(response, "Phone Linux could not fetch project refs")
+        return buildList {
+            addAll(response.stdout.lineSequence().map(String::trim).filter(String::isNotBlank))
+            if (verifiedTrackingRef.isNotBlank() && none { value ->
+                    value == verifiedTrackingRef || value == verifiedTrackingRef.removePrefix("refs/remotes/")
+                }
+            ) {
+                add(verifiedTrackingRef)
+            }
+        }.distinct().takeLast(MAX_RESULT_LINES)
     }
 
     override fun commit(
@@ -221,7 +333,11 @@ internal class AgentLinuxProjectGitBackend(
             .takeLast(MAX_RESULT_LINES)
     }
 
-    private fun parseSnapshot(workspaceId: String, output: String): AgentProjectRepositorySnapshot {
+    private fun parseSnapshot(
+        workspaceId: String,
+        output: String,
+        workingTreeInspected: Boolean
+    ): AgentProjectRepositorySnapshot {
         fun values(marker: String): List<String> = output.lineSequence()
             .filter { it.startsWith(marker) }
             .map { encoded ->
@@ -245,6 +361,7 @@ internal class AgentLinuxProjectGitBackend(
             modified = modified,
             untracked = untracked,
             conflicting = conflicting,
+            workingTreeInspected = workingTreeInspected,
             state = values(STATE_MARKER).lastOrNull()
                 ?.let { value -> AgentProjectRepositoryState.entries.firstOrNull { it.wireValue == value } }
                 ?: AgentProjectRepositoryState.PARTIAL
@@ -391,6 +508,23 @@ internal class AgentLinuxProjectGitBackend(
         $command
     """.trimIndent()
 
+    /**
+     * AgentWorkspaceScope serializes every repository action for a workspace. If
+     * index.lock is still present when the next action starts, the process that
+     * owned it has already ended or was interrupted and the lock is stale.
+     */
+    private fun gitMutationScript(command: String): String = gitScript(
+        """
+            git_dir="${'$'}(git rev-parse --git-dir)"
+            index_lock="${'$'}git_dir/index.lock"
+            if [ -f "${'$'}index_lock" ]; then
+              printf '%s\n' '__SIGNALASI_STAGE__:remove_stale_git_lock'
+              rm -f -- "${'$'}index_lock"
+            fi
+            $command
+        """.trimIndent()
+    )
+
     private fun authenticatedGitScript(command: String): String = gitScript("") + "\n" + """
         control_dir='.signalasi-runtime'
         askpass="${'$'}control_dir/git-askpass.sh"
@@ -416,6 +550,7 @@ internal class AgentLinuxProjectGitBackend(
         networkEnabled: Boolean = false,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         token: String = "",
+        workspaceMutationExpected: Boolean = true,
         progress: (String, String, Int?) -> Unit = { _, _, _ -> }
     ): AgentRuntimeExecutionResponse {
         val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -462,7 +597,8 @@ internal class AgentLinuxProjectGitBackend(
                     },
                     secretEnvironment = token.takeIf(String::isNotEmpty)
                         ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
-                        .orEmpty()
+                        .orEmpty(),
+                    workspaceMutationExpected = workspaceMutationExpected
                 )
             )
         } finally {

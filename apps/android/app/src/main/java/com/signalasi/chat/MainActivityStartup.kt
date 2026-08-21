@@ -231,20 +231,19 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
         thread(name = "signalasi-agent-initial-hydration") {
             val hydrationStartedAt = SystemClock.elapsedRealtime()
             val outcome = runCatching {
-                val materializedRichEntries = agentTranscriptStore.materializeInlineRichContent()
-                if (materializedRichEntries > 0) {
-                    Log.i(
-                        "SignalASIStartup",
-                        "Materialized inline rich entries=$materializedRichEntries"
-                    )
-                }
                 val initialConversation = agentTranscriptStore.activeConversation()
-                var initialEntries = agentTranscriptStore.list(initialConversation.id)
+                var initialEntries = agentTranscriptStore.page(
+                    conversationId = initialConversation.id,
+                    pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
+                ).entries
                 AgentTranscriptLifecyclePolicy.supersededFailureDedupeKeys(initialEntries)
                     .forEach { dedupeKey ->
                         agentTranscriptStore.deleteByDedupeKey(initialConversation.id, dedupeKey)
                     }
-                initialEntries = agentTranscriptStore.list(initialConversation.id)
+                initialEntries = agentTranscriptStore.page(
+                    conversationId = initialConversation.id,
+                    pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
+                ).entries
                 val state = restoreRecoverableAgentRuntime(
                     conversationId = initialConversation.id,
                     transcriptEntries = initialEntries
@@ -331,8 +330,9 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                     )
                 }.onFailure { error ->
                     Log.w("SignalASIStartup", "Initial Agent hydration failed", error)
-            }
+                }
                 initialAgentHydrationPending = false
+                initialAgentHydrationReady.countDown()
                 consumePendingAgentConnectorResponsesAsync()
                 scheduleAgentSkillBootstrap()
             }
@@ -347,7 +347,7 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
     val resolvedConversationId = agentTranscriptStore.resolveMergedConversationId(conversationId)
         ?: conversationId
     val workspaceStore = EncryptedAgentWorkspaceStore(this)
-    val allWorkspaces = workspaceStore.list()
+    val allWorkspaces = workspaceStore.recoverable(AgentWorkspaceLimits.MAX_RECOVERY_CANDIDATES)
     val activeSupervisorTaskIds = AgentTaskRuntime.supervisor(this).activeTaskIds()
     val hasActiveSupervisorTaskInConversation = allWorkspaces.any { workspace ->
         workspace.workspaceId in activeSupervisorTaskIds &&
@@ -378,7 +378,10 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
         )
         return null
     }
-    val workspaces = allWorkspaces.filter { candidate ->
+    val latestConversationTurnId = transcriptEntries.asReversed().firstOrNull { entry ->
+        entry.role == AgentTranscriptRole.USER && entry.turnId.isNotBlank()
+    }?.turnId.orEmpty()
+    val workspaces = AgentWorkspaceRestoreCandidatePolicy.ordered(allWorkspaces.filter { candidate ->
         val candidateConversationId = agentTranscriptStore
             .resolveMergedConversationId(candidate.conversationId)
             ?: candidate.conversationId
@@ -394,7 +397,7 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                 AgentWorkspaceStatus.BLOCKED,
                 AgentWorkspaceStatus.FAILED
             )
-    }
+    }, preferredWorkspaceId = latestConversationTurnId)
     fun recoveryStillOwnsForeground(candidateWorkspaceId: String): Boolean {
         val currentConversationId = runCatching { agentTranscriptStore.activeConversation().id }
             .getOrDefault("")
@@ -438,12 +441,18 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
         if (AgentTaskTerminalReplyPolicy.hasTerminalReply(candidateEntries, workspace.taskId)) {
             return@forEach
         }
+        val candidateStartedAt = SystemClock.elapsedRealtime()
         val runtime = MobileNativeAgent(
             this,
             sessionStore = SharedPreferencesAgentSessionStore(this, "task:${workspace.workspaceId}"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
         )
         var state = runtime.snapshot()
+        Log.i(
+            "SignalASIAgentLifecycle",
+            "hydrated workspace=${workspace.workspaceId.take(8)} status=${workspace.status.name} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - candidateStartedAt}"
+        )
         val interruptedRecovery = AgentInterruptedWorkspaceRecoveryPolicy.shouldResume(
             workspace.status,
             state.phase,

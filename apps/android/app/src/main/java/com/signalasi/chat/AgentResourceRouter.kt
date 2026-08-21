@@ -370,7 +370,7 @@ class AgentResourceHealthStore(context: Context) {
         val samples = max(1, successes + failures)
         val average = if (current.averageLatencyMs <= 0) latencyMs else
             ((current.averageLatencyMs * (samples - 1)) + latencyMs) / samples
-        val backoffMultiplier = if (consecutive < 3) 0L else 1L shl (consecutive - 3).coerceIn(0, 4)
+        val backoffMultiplier = if (consecutive < 5) 0L else 1L shl (consecutive - 5).coerceIn(0, 4)
         val circuitUntil = if (backoffMultiplier > 0) {
             System.currentTimeMillis() + (60_000L * backoffMultiplier).coerceAtMost(15L * 60_000L)
         } else 0L
@@ -391,6 +391,23 @@ class AgentResourceHealthStore(context: Context) {
         persist(id, current, current.copy(
             consecutiveFailures = 0,
             circuitOpenUntil = 0L,
+            lastUpdatedAt = now
+        ), now)
+    }
+
+    fun recordPermanentFailure(id: String, latencyMs: Long) {
+        val current = snapshot(id)
+        val failures = current.failures + 1
+        val samples = max(1, current.successes + failures)
+        val average = if (current.averageLatencyMs <= 0) latencyMs else
+            ((current.averageLatencyMs * (samples - 1)) + latencyMs) / samples
+        val now = System.currentTimeMillis()
+        persist(id, current, AgentResourceHealth(
+            successes = current.successes,
+            failures = failures,
+            consecutiveFailures = current.consecutiveFailures + 1,
+            averageLatencyMs = average,
+            circuitOpenUntil = now + PERMANENT_FAILURE_COOLDOWN_MILLIS,
             lastUpdatedAt = now
         ), now)
     }
@@ -451,6 +468,10 @@ class AgentResourceHealthStore(context: Context) {
             circuitOpenUntil = json.optLong("circuit_open_until"),
             lastUpdatedAt = json.optLong("last_updated_at")
         )
+    }
+
+    private companion object {
+        const val PERMANENT_FAILURE_COOLDOWN_MILLIS = 24L * 60L * 60L * 1000L
     }
 }
 

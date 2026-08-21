@@ -338,7 +338,7 @@ class AgentTaskSupervisorTest {
     }
 
     @Test
-    fun watchdogWarnsThenTerminatesAStalledTaskExactlyOnce() {
+    fun watchdogWarnsThenRequestsOneModelAssessmentWithoutTerminatingTask() {
         var now = 1_000L
         val store = InMemoryAgentWorkspaceStore(clock = { now })
         store.upsert(workspace("stalled", status = AgentWorkspaceStatus.RUNNING))
@@ -359,15 +359,30 @@ class AgentTaskSupervisorTest {
 
         now = 1_021L
         assertEquals(
-            listOf(AgentTaskLivenessSignalKind.TIMED_OUT),
+            listOf(AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED),
             supervisor.sweepLiveness().map(AgentTaskLivenessSignal::kind)
         )
-        val failed = requireNotNull(store.find("workspace-stalled"))
-        assertEquals(AgentWorkspaceStatus.FAILED, failed.status)
-        assertTrue(failed.eventJournal.any { it.kind == AgentTaskEventKinds.TIMED_OUT })
+        val awaitingAssessment = requireNotNull(store.find("workspace-stalled"))
+        assertEquals(AgentWorkspaceStatus.RUNNING, awaitingAssessment.status)
+        assertTrue(awaitingAssessment.eventJournal.any {
+            it.kind == AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED
+        })
         assertTrue(supervisor.sweepLiveness().isEmpty())
         assertEquals(
-            listOf(AgentTaskLivenessSignalKind.STALLED, AgentTaskLivenessSignalKind.TIMED_OUT),
+            listOf(
+                AgentTaskLivenessSignalKind.STALLED,
+                AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED
+            ),
+            signals.map(AgentTaskLivenessSignal::kind)
+        )
+        now = 1_022L
+        supervisor.progress("workspace-stalled", "model.assessing", "Model selected recovery")
+        assertEquals(
+            listOf(
+                AgentTaskLivenessSignalKind.STALLED,
+                AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED,
+                AgentTaskLivenessSignalKind.RECOVERED
+            ),
             signals.map(AgentTaskLivenessSignal::kind)
         )
         supervisor.close()

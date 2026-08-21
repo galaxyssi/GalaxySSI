@@ -102,4 +102,24 @@ class AgentTaskIdentityPolicyTest {
             )
         )
     }
+
+    @Test
+    fun persistedDeliveryRestoresCanonicalIdentityAfterProcessRestart() {
+        val identity = AgentTaskIdentityPolicy.canonicalConnectorResponseIdentity(
+            pendingDelivery = AgentPendingDelivery(
+                sourceMessageId = 3308L,
+                conversationId = "conversation-a",
+                turnId = "cfca1de7-original-turn",
+                taskId = "task-a",
+                contactId = "codex"
+            ),
+            conversationId = "conversation-a",
+            taskId = "task-a",
+            turnId = "message:3308"
+        )
+
+        assertEquals("conversation-a", identity.conversationId)
+        assertEquals("task-a", identity.taskId)
+        assertEquals("cfca1de7-original-turn", identity.turnId)
+    }
 }

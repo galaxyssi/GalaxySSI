@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import java.io.File
 import java.nio.file.Files
+import java.util.Base64
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.junit.Assert.assertEquals
@@ -11,6 +12,35 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class AgentLinuxProjectCloneTest {
+    @Test
+    fun metadataInspectionDoesNotScanTheLargePhoneWorkingTree() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        val metadata = listOf(
+            "__SIGNALASI_STATE__:cmVhZHk=",
+            "__SIGNALASI_REMOTE__:aHR0cHM6Ly9naXRodWIuY29tL3NpZ25hbGFzaS9TaWduYWxBU0k=",
+            "__SIGNALASI_BRANCH__:ZmVhdHVyZS90ZXN0",
+            "__SIGNALASI_HEAD__:${"a".repeat(40).toByteArray().let(Base64.getEncoder()::encodeToString)}"
+        ).joinToString("\n")
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                captured = request
+                return AgentRuntimeExecutionResponse(0, metadata, "", 5)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val snapshot = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" })
+            .inspectMetadata("phone-project")
+
+        assertFalse(snapshot.workingTreeInspected)
+        assertEquals("feature/test", snapshot.branch)
+        assertFalse(captured.workspaceMutationExpected)
+        assertFalse(captured.source.contains("git diff --name-only"))
+        assertFalse(captured.source.contains("git ls-files --others"))
+        assertEquals(null, snapshot.publicValue()["clean"])
+    }
+
     @Test
     fun clonesInsidePhoneLinuxAndKeepsTheCredentialOutOfSource() {
         lateinit var captured: AgentRuntimeExecutionRequest
@@ -161,6 +191,65 @@ class AgentLinuxProjectCloneTest {
     }
 
     @Test
+    fun fetchPublishesFetchHeadAsAStableBaseReference() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                captured = request
+                return AgentRuntimeExecutionResponse(
+                    exitCode = 0,
+                    stdout = "FETCH_HEAD:${"a".repeat(40)}\n",
+                    stderr = "",
+                    durationMillis = 20
+                )
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        val refs = AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" }).fetch(
+            workspaceId = "phone-project",
+            remote = "origin",
+            ref = "main",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(
+            listOf("FETCH_HEAD:${"a".repeat(40)}", "refs/remotes/origin/main"),
+            refs
+        )
+        assertTrue(captured.source.contains("git rev-parse --verify FETCH_HEAD"))
+        assertTrue(captured.source.contains("sed 's/^/FETCH_HEAD:/'"))
+        assertTrue(captured.source.contains("+refs/heads/main:refs/remotes/origin/main"))
+        assertTrue(captured.workspaceMutationExpected)
+    }
+
+    @Test
+    fun branchCheckoutEstablishesHeadForAPartialRepository() {
+        lateinit var captured: AgentRuntimeExecutionRequest
+        val runtime = object : AgentProjectLinuxRuntime {
+            override fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
+                captured = request
+                return AgentRuntimeExecutionResponse(0, "", "", 5)
+            }
+
+            override fun rollback(workspaceId: String, checkpointId: String) = Unit
+        }
+
+        AgentLinuxProjectGitBackend(runtime, AgentProjectCredentialProvider { "" }).checkoutBranchAt(
+            workspaceId = "phone-project",
+            branch = "feature/context",
+            create = true,
+            baseRef = "refs/remotes/origin/main"
+        )
+
+        assertFalse(captured.source.contains("git reset"))
+        assertTrue(captured.source.contains("__SIGNALASI_STAGE__:remove_stale_git_lock"))
+        assertTrue(captured.source.contains("rm -f -- \"${'$'}index_lock\""))
+        assertTrue(captured.source.contains("git checkout -q -B 'feature/context' 'refs/remotes/origin/main'"))
+    }
+
+    @Test
     fun generatedLinuxCloneScriptProducesAUsableRepository() {
         val bash = listOf(
             File("/bin/bash"),
@@ -262,6 +351,24 @@ class AgentLinuxProjectCloneTest {
                 assertTrue(snapshot.clean)
                 assertTrue(Regex("[0-9a-f]{40}").matches(snapshot.headCommit))
             }
+            val detachToUnborn = ProcessBuilder(
+                requireNotNull(bash).absolutePath,
+                "-lc",
+                "git -c safe.directory=\"${'$'}PWD\" symbolic-ref HEAD refs/heads/feature/unborn"
+            ).directory(workspace).start()
+            assertEquals(detachToUnborn.errorStream.bufferedReader().readText(), 0, detachToUnborn.waitFor())
+            backend.inspectMetadata("smoke").also { snapshot ->
+                assertEquals(AgentProjectRepositoryState.PARTIAL, snapshot.state)
+                assertEquals("feature/unborn", snapshot.branch)
+                assertTrue(snapshot.headCommit.isBlank())
+                assertFalse(snapshot.workingTreeInspected)
+            }
+            val restoreMain = ProcessBuilder(
+                requireNotNull(bash).absolutePath,
+                "-lc",
+                "git -c safe.directory=\"${'$'}PWD\" symbolic-ref HEAD refs/heads/main"
+            ).directory(workspace).start()
+            assertEquals(restoreMain.errorStream.bufferedReader().readText(), 0, restoreMain.waitFor())
             assertEquals(remoteUrl, backend.remoteUrl("smoke", "origin"))
 
             File(workspace, "README.md").writeText("# Local Linux diff\n")

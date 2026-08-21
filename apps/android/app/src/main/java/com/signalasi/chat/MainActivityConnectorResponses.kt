@@ -575,8 +575,23 @@ internal fun MainActivity.resumeAgentConnectorResponse(
     responseKey: String,
     attempt: Int = 0
 ) {
-    val turnId = agentRuntimeTurnIds[runtime].orEmpty().ifBlank { response.turnId }
-    val conversationId = connectorConversationId(response.conversationId, runtime, turnId)
+    val durableDelivery = AgentPendingDeliveryStore.find(
+        this,
+        response.sourceMessageId,
+        response.contactId
+    )
+    val responseIdentity = AgentTaskIdentityPolicy.canonicalConnectorResponseIdentity(
+        pendingDelivery = durableDelivery,
+        conversationId = response.conversationId,
+        taskId = response.taskId,
+        turnId = response.turnId
+    )
+    val turnId = agentRuntimeTurnIds[runtime].orEmpty().ifBlank { responseIdentity.turnId }
+    val conversationId = connectorConversationId(
+        responseIdentity.conversationId,
+        runtime,
+        turnId
+    )
     if (conversationId == null) {
         Log.w(
             "SignalASIAgent",
@@ -592,11 +607,6 @@ internal fun MainActivity.resumeAgentConnectorResponse(
         consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
         return
     }
-    val durableDelivery = AgentPendingDeliveryStore.find(
-        this,
-        response.sourceMessageId,
-        response.contactId
-    )
     val expectedSourceMessageId = AgentPendingDeliveryStore.recoverySuccessorForResponse(
         this,
         response.sourceMessageId,
@@ -653,9 +663,9 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         content = response.content,
                         success = response.success,
                         richOutputJson = response.richOutputJson,
-                        conversationId = response.conversationId,
-                        turnId = response.turnId,
-                        taskId = response.taskId,
+                        conversationId = responseIdentity.conversationId,
+                        turnId = responseIdentity.turnId,
+                        taskId = responseIdentity.taskId,
                         inputTokens = response.inputTokens,
                         outputTokens = response.outputTokens,
                         costMicros = response.costMicros,
@@ -811,6 +821,7 @@ internal fun MainActivity.recordSupervisedModelOutput(
     conversationId: String,
     turnId: String
 ) {
+    clearSupersededAgentFailureEntries(conversationId)
     val snapshot = runtime.snapshot()
     val pendingActionId = snapshot.lastActionResult?.actionId.orEmpty()
     val pendingAction = snapshot.plan?.actions?.firstOrNull { action ->
@@ -936,6 +947,17 @@ internal fun MainActivity.runtimeForConnectorResponse(
     allowTransportOnly: Boolean = false,
     restorePersisted: Boolean = Looper.myLooper() != Looper.getMainLooper()
 ): MobileNativeAgent? {
+    val pendingDelivery = AgentPendingDeliveryStore.find(
+        this,
+        sourceMessageId,
+        contactId
+    )
+    val responseIdentity = AgentTaskIdentityPolicy.canonicalConnectorResponseIdentity(
+        pendingDelivery = pendingDelivery,
+        conversationId = conversationId,
+        taskId = taskId,
+        turnId = turnId
+    )
     fun MobileNativeAgent.accepts(): Boolean =
         if (allowTransportOnly) {
             canAcceptConnectorTransport(sourceMessageId, contactId)
@@ -943,20 +965,29 @@ internal fun MainActivity.runtimeForConnectorResponse(
             canAcceptConnectorResponse(
                 sourceMessageId,
                 contactId,
-                conversationId,
-                turnId,
-                taskId
+                responseIdentity.conversationId,
+                responseIdentity.turnId,
+                responseIdentity.taskId
             )
         }
     fun MobileNativeAgent.acceptsRecoveryPredecessor(): Boolean {
-        if (allowTransportOnly || conversationId.isBlank() || turnId.isBlank()) return false
+        if (allowTransportOnly ||
+            responseIdentity.conversationId.isBlank() ||
+            responseIdentity.turnId.isBlank()
+        ) return false
         val successor = AgentPendingDeliveryStore.recoverySuccessorForResponse(
             this@runtimeForConnectorResponse,
             sourceMessageId,
-            conversationId,
-            turnId
+            responseIdentity.conversationId,
+            responseIdentity.turnId
         ) ?: return false
-        return canAcceptConnectorResponse(successor, contactId, conversationId, turnId, taskId)
+        return canAcceptConnectorResponse(
+            successor,
+            contactId,
+            responseIdentity.conversationId,
+            responseIdentity.turnId,
+            responseIdentity.taskId
+        )
     }
     activeAgentTasks[sourceMessageId]
         ?.takeIf { it.accepts() || it.acceptsRecoveryPredecessor() }
@@ -979,7 +1010,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
         it.accepts() || it.acceptsRecoveryPredecessor()
     }?.let { return it }
     if (!restorePersisted || Looper.myLooper() == Looper.getMainLooper()) return null
-    val cleanTurnId = turnId.trim()
+    val cleanTurnId = responseIdentity.turnId
     if (cleanTurnId.isNotBlank()) {
         val restored = MobileNativeAgent(
             this,
@@ -989,7 +1020,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
         if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = cleanTurnId
-            connectorConversationId(conversationId, restored, cleanTurnId)?.let {
+            connectorConversationId(responseIdentity.conversationId, restored, cleanTurnId)?.let {
                 agentRuntimeConversationIds[restored] = it
             }
             return restored
@@ -1010,7 +1041,7 @@ internal fun MainActivity.runtimeForConnectorResponse(
         if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = storedTurnId
-            connectorConversationId(conversationId, restored, storedTurnId)?.let {
+            connectorConversationId(responseIdentity.conversationId, restored, storedTurnId)?.let {
                 agentRuntimeConversationIds[restored] = it
             }
             Log.i(

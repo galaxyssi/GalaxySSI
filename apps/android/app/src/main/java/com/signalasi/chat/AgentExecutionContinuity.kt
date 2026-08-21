@@ -201,6 +201,30 @@ object AgentWorkspaceRestorePolicy {
     }
 }
 
+object AgentWorkspaceRestoreCandidatePolicy {
+    fun ordered(
+        candidates: List<AgentWorkspace>,
+        preferredWorkspaceId: String = ""
+    ): List<AgentWorkspace> = candidates.sortedWith(
+        compareBy<AgentWorkspace> {
+            if (preferredWorkspaceId.isNotBlank() && it.workspaceId == preferredWorkspaceId) 0 else 1
+        }
+            .thenBy { priority(it.status) }
+            .thenByDescending { it.updatedAtMillis }
+            .thenByDescending { it.revision }
+    )
+
+    private fun priority(status: AgentWorkspaceStatus): Int = when (status) {
+        AgentWorkspaceStatus.WAITING_RESPONSE -> 0
+        AgentWorkspaceStatus.FAILED -> 1
+        AgentWorkspaceStatus.WAITING_CONFIRMATION -> 2
+        AgentWorkspaceStatus.RUNNING -> 3
+        AgentWorkspaceStatus.PAUSED -> 4
+        AgentWorkspaceStatus.BLOCKED -> 5
+        else -> 6
+    }
+}
+
 object AgentConnectorDeliveryRecoveryPolicy {
     fun shouldResume(
         workspaceStatus: AgentWorkspaceStatus,
@@ -224,7 +248,13 @@ object AgentWorkspaceRestoreArbitrationPolicy {
     fun shouldScanPersistedWorkspaces(
         hasLiveRuntimeInConversation: Boolean,
         hasActiveSupervisorTaskInConversation: Boolean
-    ): Boolean = !hasLiveRuntimeInConversation && !hasActiveSupervisorTaskInConversation
+    ): Boolean {
+        // A live in-memory runtime already owns the foreground task. A durable
+        // supervisor record is different: it is the state that must be scanned
+        // and restored after process death. Candidate-level arbitration below
+        // rejects a genuinely competing supervisor workspace.
+        return !hasLiveRuntimeInConversation
+    }
 
     fun belongsToActiveConversation(
         candidateConversationId: String,
@@ -329,6 +359,33 @@ object AgentPendingHandoffRecoveryPolicy {
         if (status.isBlank() && metadata["transport_accepted_at"].orEmpty().isBlank()) return true
         if (acceptedAt <= 0L) return true
         return nowMillis - acceptedAt >= staleAfterMillis.coerceAtLeast(1L)
+    }
+}
+
+data class AgentTimelineRuntimeResolution(
+    val phase: AgentPhase,
+    val completedAtMillis: Long
+)
+
+object AgentTimelineOrphanPolicy {
+    const val RUNTIME_BIND_GRACE_MILLIS = 30_000L
+
+    fun resolve(
+        hasRuntime: Boolean,
+        startedAtMillis: Long,
+        completedAtMillis: Long?,
+        nowMillis: Long = System.currentTimeMillis()
+    ): AgentTimelineRuntimeResolution {
+        completedAtMillis?.let {
+            return AgentTimelineRuntimeResolution(AgentPhase.COMPLETED, it)
+        }
+        if (hasRuntime || nowMillis - startedAtMillis < RUNTIME_BIND_GRACE_MILLIS) {
+            return AgentTimelineRuntimeResolution(AgentPhase.EXECUTING, 0L)
+        }
+        return AgentTimelineRuntimeResolution(
+            phase = AgentPhase.FAILED,
+            completedAtMillis = startedAtMillis + RUNTIME_BIND_GRACE_MILLIS
+        )
     }
 }
 

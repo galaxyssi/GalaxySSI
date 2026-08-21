@@ -6617,7 +6617,16 @@ def _inbound_route_worker(route_key: str, route_queue: queue.Queue) -> None:
             return
         mqttc, message = item
         try:
-            _process_message(mqttc, None, message)
+            try:
+                _process_message(mqttc, None, message)
+            except Exception:
+                # One malformed or transiently failing envelope must not kill
+                # the route worker and strand every later phone message in an
+                # otherwise healthy-looking queue.
+                log.exception(
+                    "MQTT route message processing failed; continuing route=%s",
+                    route_key,
+                )
         finally:
             route_queue.task_done()
 

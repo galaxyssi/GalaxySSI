@@ -16,7 +16,7 @@ data class AgentTaskLivenessDecision(
 enum class AgentTaskLivenessSignalKind {
     STALLED,
     RECOVERED,
-    TIMED_OUT
+    ASSESSMENT_REQUIRED
 }
 
 data class AgentTaskLivenessSignal(
@@ -133,6 +133,17 @@ data class AgentTaskLivenessPolicy(
         }
     }
 
+    fun hasPendingAssessment(workspace: AgentWorkspace): Boolean {
+        val assessmentSequence = workspace.eventJournal
+            .asReversed()
+            .firstOrNull { it.kind == AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED }
+            ?.sequence
+            ?: return false
+        return workspace.eventJournal.none { event ->
+            event.sequence > assessmentSequence && event.kind !in SUPERVISOR_OBSERVATION_EVENTS
+        }
+    }
+
     fun meaningfulActivityAt(workspace: AgentWorkspace): Long {
         val eventAt = workspace.eventJournal
             .asSequence()
@@ -175,7 +186,8 @@ data class AgentTaskLivenessPolicy(
         )
         val SUPERVISOR_OBSERVATION_EVENTS = setOf(
             AgentTaskEventKinds.STALLED,
-            AgentTaskEventKinds.TIMED_OUT
+            AgentTaskEventKinds.TIMED_OUT,
+            AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED
         )
     }
 }
