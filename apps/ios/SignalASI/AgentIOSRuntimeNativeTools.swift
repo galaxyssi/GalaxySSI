@@ -247,15 +247,15 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     case .installPack:
       return "Downloads, verifies, and installs a signed Linux, language, or media runtime pack and its dependencies."
     case .softwareCatalog:
-      return "Lists signed runtime packs and reports the iOS boundary for Linux package management."
+      return "Lists signed runtime packs and the persistent APT package source inside the embedded Debian guest."
     case .softwareSearch:
-      return "Searches signed runtime packs by name, capability, and language alias."
+      return "Searches signed runtime packs and embedded Debian package metadata by name, capability, and language alias."
     case .softwareInspect:
-      return "Reports installation, compatibility, capability, and version details for one signed runtime pack."
+      return "Reports installation, compatibility, capability, and version details for one runtime pack or Debian package."
     case .softwareInstall:
       return "Downloads, verifies, and installs a compatible signed runtime pack and its dependencies."
     case .softwareRemove:
-      return "Reports the iOS boundary for unmanaged Linux package removal; signed runtime packs remain lifecycle-managed."
+      return "Removes one non-managed Debian package from the persistent embedded Linux system; signed runtime packs remain lifecycle-managed."
     case .execute:
       return "Runs bounded shell, language, build, test, or FFmpeg work in a persistent conversation project inside the iOS-local Linux runtime."
     }

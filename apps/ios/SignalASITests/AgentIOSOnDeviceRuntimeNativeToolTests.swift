@@ -781,6 +781,40 @@ extension SignalASIStoreTests {
     XCTAssertEqual(store.snapshot(), ready)
   }
 
+  func testEmbeddedDebianSoftwareScriptsAndRecordsMirrorAndroidPackageContract() throws {
+    let searchInput = try AgentIOSQemuLinuxSoftware.executionInput(
+      operation: .softwareSearch,
+      input: ["query": .string("git's client"), "limit": .int(99)]
+    )
+    let searchScript = try XCTUnwrap(searchInput["source"]?.stringValue)
+    XCTAssertTrue(searchScript.contains("apt-cache search --names-only"))
+    XCTAssertTrue(searchScript.contains("head -n 50"))
+    XCTAssertTrue(searchScript.contains("'git'\"'\"'s client'"))
+    XCTAssertEqual(searchInput["network_enabled"], .bool(true))
+
+    let searchResult = try AgentIOSQemuLinuxSoftware.result(
+      operation: .softwareSearch,
+      input: ["query": .string("git")],
+      guestResult: [
+        "exit_code": .int(0),
+        "stdout": .string("git\\t1:2.47.1-1\\tinstalled\\tfast, scalable revision control system\\ninvalid id\\t1\\tinstalled\\tignored"),
+        "stderr": .string("")
+      ]
+    )
+    let records = try XCTUnwrap(searchResult["results"]?.arrayValue)
+    XCTAssertEqual(records.count, 1)
+    XCTAssertEqual(records.first?.objectValue?["software_id"], .string("git"))
+    XCTAssertEqual(records.first?.objectValue?["source"], .string("linux_package"))
+    XCTAssertEqual(records.first?.objectValue?["installed"], .bool(true))
+
+    XCTAssertThrowsError(
+      try AgentIOSQemuLinuxSoftware.executionInput(
+        operation: .softwareInstall,
+        input: ["software_id": .string("git; rm -rf /")]
+      )
+    )
+  }
+
   private func installRuntimePackManifest(_ packId: String, under runtimeRoot: URL) throws {
     let image = Data("\(packId)-runtime-image".utf8)
     let manifest = AgentRuntimePackManifest(
