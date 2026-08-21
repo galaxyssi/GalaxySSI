@@ -730,6 +730,7 @@
     A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */; };
     A10000000000000000002201 /* AgentIOSRuntimeBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */; };
     B90000000000000000000001 /* AgentIOSQemuRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000002 /* AgentIOSQemuRuntime.swift */; };
+    B90000000000000000000003 /* AgentIOSQemuLinuxSoftware.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000004 /* AgentIOSQemuLinuxSoftware.swift */; };
     A10000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */; };
     A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */; };
     A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */; };
@@ -1572,6 +1573,7 @@
     A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDefaultOnDeviceRuntimeProvider.swift; sourceTree = "<group>"; };
     A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimeBroker.swift; sourceTree = "<group>"; };
     B90000000000000000000002 /* AgentIOSQemuRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSQemuRuntime.swift; sourceTree = "<group>"; };
+    B90000000000000000000004 /* AgentIOSQemuLinuxSoftware.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSQemuLinuxSoftware.swift; sourceTree = "<group>"; };
     A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIRuntimeBrokerSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionStore.swift; sourceTree = "<group>"; };
@@ -1829,6 +1831,7 @@
         A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */,
         A20000000000000000002201 /* AgentIOSRuntimeBroker.swift */,
         B90000000000000000000002 /* AgentIOSQemuRuntime.swift */,
+        B90000000000000000000004 /* AgentIOSQemuLinuxSoftware.swift */,
         A20000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift */,
         A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */,
         A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */,
@@ -3147,6 +3150,7 @@
         A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */,
         A10000000000000000002201 /* AgentIOSRuntimeBroker.swift in Sources */,
         B90000000000000000000001 /* AgentIOSQemuRuntime.swift in Sources */,
+        B90000000000000000000003 /* AgentIOSQemuLinuxSoftware.swift in Sources */,
         A10000000000000000002202 /* SignalASIRuntimeBrokerSettingsView.swift in Sources */,
         A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */,
         A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */,

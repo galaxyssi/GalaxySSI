@@ -88,15 +88,23 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
     case .installPack:
       return installPack(input: input, invocation: invocation)
     case .softwareCatalog:
-      if let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
+      if let result = brokerSoftware(operation: operation, input: input, invocation: invocation) {
+        return result.isSuccess ? mergedSoftwareCatalog(result) : result
+      }
       return AgentNativeToolExecutionResult.success(
         output: softwareCatalogOutput(),
         message: "Compatible iOS runtime software listed",
         metadata: baseMetadata(["operation": .string("software_catalog")])
       )
     case .softwareSearch:
-      if softwareSource(input) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage,
-         let result = brokerSoftware(operation: operation, input: input, invocation: invocation) { return result }
+      let requestedSource = requestedSoftwareSource(input)
+      if requestedSource != AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceRuntimePack,
+         let result = brokerSoftware(operation: operation, input: input, invocation: invocation) {
+        if requestedSource == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage || !result.isSuccess {
+          return result
+        }
+        return mergedSoftwareSearch(local: searchSoftware(input: input), linux: result, input: input)
+      }
       return searchSoftware(input: input)
     case .softwareInspect:
       if softwareSource(input, softwareId: softwareId(input)) == AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage,
@@ -286,7 +294,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
           "id": .string(AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareSourceLinuxPackage),
           "trusted": .bool(false),
           "searchable": .bool(false),
-          "reason": .string("Unmanaged Linux package management is unavailable on iOS")
+          "reason": .string("Start the embedded Debian guest to use its persistent APT package source")
         ])
       ]),
       "software": .array(packs.map { .object(softwarePackOutput($0)) }),
@@ -313,7 +321,7 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
           "source_errors": .array([
             .object([
               "source": .string(source),
-              "message": .string("Unmanaged Linux package search is unavailable on iOS")
+              "message": .string("Start the embedded Debian guest to search its APT package source")
             ])
           ])
         ],
@@ -462,7 +470,43 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
   private func unavailableLinuxPackageManagement() -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.failure(
       code: "ios_linux_package_management_unavailable",
-      message: "iOS does not expose an unmanaged Linux package manager; use a signed runtime pack"
+      message: "The embedded Debian guest is not ready for package management"
+    )
+  }
+
+  private func mergedSoftwareCatalog(_ linux: AgentNativeToolExecutionResult) -> AgentNativeToolExecutionResult {
+    var output = softwareCatalogOutput()
+    output["architecture"] = linux.output["architecture"] ?? output["architecture"] ?? .string(hostArchitecture())
+    output["linux_ready"] = linux.output["linux_ready"] ?? .bool(true)
+    let packSources = output["sources"]?.arrayValue ?? []
+    let linuxSources = linux.output["sources"]?.arrayValue ?? []
+    output["sources"] = .array(packSources + linuxSources)
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "Compatible iOS runtime and embedded Debian software listed",
+      metadata: baseMetadata(["broker": .string(broker.implementationId)])
+    )
+  }
+
+  private func mergedSoftwareSearch(
+    local: AgentNativeToolExecutionResult,
+    linux: AgentNativeToolExecutionResult,
+    input: AgentMcpJSONObject
+  ) -> AgentNativeToolExecutionResult {
+    let limit = max(1, min(
+      Int(input["limit"]?.intValue ?? 10),
+      Int(AgentIOSOnDeviceRuntimeNativeToolCatalog.maxSoftwareResults)
+    ))
+    let localResults = local.output["results"]?.arrayValue ?? []
+    let linuxResults = linux.output["results"]?.arrayValue ?? []
+    var output = linux.output
+    output["results"] = .array(Array((localResults + linuxResults).prefix(limit)))
+    output["source_errors"] = linux.output["source_errors"] ?? .array([])
+    output["observed_at_epoch_ms"] = .int(max(0, nowMillis()))
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: "Compatible iOS runtime and embedded Debian software searched",
+      metadata: baseMetadata(["broker": .string(broker.implementationId)])
     )
   }
 

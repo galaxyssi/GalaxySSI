@@ -650,6 +650,19 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
             workspacePath: try prepareWorkspace(input: input, context: context),
             deadlineEpochMillis: deadlineEpochMillis
           )
+        case .softwareCatalog, .softwareSearch, .softwareInspect, .softwareInstall, .softwareRemove:
+          let executionInput = try AgentIOSQemuLinuxSoftware.executionInput(operation: operation, input: input)
+          let result = try client.execute(
+            input: executionInput,
+            context: context,
+            workspacePath: try prepareWorkspace(input: executionInput, context: context),
+            deadlineEpochMillis: deadlineEpochMillis
+          )
+          return try AgentIOSQemuLinuxSoftware.result(
+            operation: operation,
+            input: input,
+            guestResult: result
+          )
         default:
           throw AgentIOSRuntimeBrokerError.remote(
             code: "runtime_operation_not_supported",
@@ -657,9 +670,12 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
             retryable: false
           )
         }
-      } catch {
+      } catch let error as AgentIOSRuntimeBrokerError {
+        guard shouldRetryGuestStartup(error) else { throw error }
         lastError = error
         Thread.sleep(forTimeInterval: 0.25)
+      } catch {
+        throw error
       }
     }
     throw lastError ?? AgentIOSRuntimeBrokerError.timeout
@@ -695,5 +711,16 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
       "cpp": "main.cpp", "java": "Main.java", "browser": "main.browser.js",
       "ffmpeg": "main.sh", "ffprobe": "main.sh"
     ][language]
+  }
+
+  private func shouldRetryGuestStartup(_ error: AgentIOSRuntimeBrokerError) -> Bool {
+    switch error {
+    case .timeout, .transport:
+      return true
+    case .remote(let code, _, _):
+      return code == "runtime_guest_not_ready"
+    default:
+      return false
+    }
   }
 }
