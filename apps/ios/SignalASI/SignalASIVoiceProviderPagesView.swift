@@ -199,6 +199,7 @@ enum SignalASIVoiceProviderFormatter {
 struct SignalASIVoiceASRProviderView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var refreshGeneration = 0
 
   private var settings: VoiceSettings { store.voiceSettings.normalized }
@@ -386,10 +387,10 @@ struct SignalASIVoiceASRProviderView: View {
         title: t("voice_asr_remote_node_title", "Execution device"),
         subtitle: remoteNodeDetail,
         systemImage: "display",
-        tint: remoteDesktopLinks.isEmpty ? .orange : .signalASIAccent,
-        badge: remoteDesktopLinks.isEmpty
+        tint: verifiedRemoteWhisperNodes.isEmpty ? .orange : .signalASIAccent,
+        badge: verifiedRemoteWhisperNodes.isEmpty
           ? t("voice_provider_unavailable", "Unavailable")
-          : String(remoteDesktopLinks.count)
+          : String(verifiedRemoteWhisperNodes.count)
       )
     }
   }
@@ -496,13 +497,16 @@ struct SignalASIVoiceASRProviderView: View {
     [.whisperCpp, .androidSystemASR, .androidOfflineASR, .cloudASR]
   }
 
-  private var remoteDesktopLinks: [ServerLink] {
-    store.serverLinks.filter { $0.paired && $0.fullDesktopExecutor }
+  private var remoteNodeDetail: String {
+    guard let node = verifiedRemoteWhisperNodes.first else {
+      return t("voice_asr_remote_node_unavailable", "No verified Whisper node is online")
+    }
+    return "\(node.desktopName) · \(node.activeProfile.modelName)"
   }
 
-  private var remoteNodeDetail: String {
-    remoteDesktopLinks.first?.desktopName.ifBlank(t("voice_asr_remote_node_unavailable", "No verified Whisper node is online"))
-      ?? t("voice_asr_remote_node_unavailable", "No verified Whisper node is online")
+  private var verifiedRemoteWhisperNodes: [VoiceRemoteWhisperNodeCapability] {
+    _ = refreshGeneration
+    return coordinator.verifiedRemoteWhisperNodes
   }
 
   private var networkDetail: String {
