@@ -294,7 +294,8 @@ struct SignalASIOnDeviceRuntimeView: View {
       return
     }
     brokerHealth = .checking
-    let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
+    let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+      + AgentIOSInAppQemuRuntimeBroker.coldBootHealthTimeoutMillis
     DispatchQueue.global(qos: .userInitiated).async {
       let health = AgentIOSRuntimeBrokerHealthChecker.check(
         broker: inAppRuntimeBroker,
