@@ -169,7 +169,8 @@ extension SignalASIStoreTests {
     let packContext = AgentNativeToolInvocationContext(
       grantedPermissions: [
         AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
-        AgentIOSOnDeviceRuntimeNativeToolCatalog.packInstallPermission
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.packInstallPermission,
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstallPermission
       ]
     )
 
@@ -193,7 +194,14 @@ extension SignalASIStoreTests {
     XCTAssertEqual(statusDescriptor.descriptor.risk, .low)
     XCTAssertEqual(installDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.packManagerExecutorId)
     XCTAssertEqual(installDescriptor.descriptor.timeoutMillis, 30 * 60_000)
-    XCTAssertEqual(softwareInstallDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.packManagerExecutorId)
+    XCTAssertEqual(softwareInstallDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId)
+    XCTAssertEqual(
+      softwareInstallDescriptor.descriptor.requiredPermissions.map(\.id),
+      [
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.softwareInstallPermission
+      ]
+    )
     XCTAssertEqual(executeDescriptor.executorId, AgentIOSOnDeviceRuntimeNativeToolCatalog.brokerExecutorId)
     XCTAssertEqual(executeDescriptor.descriptor.risk, .medium)
     XCTAssertEqual(executeDescriptor.descriptor.timeoutMillis, 30 * 60_000)
