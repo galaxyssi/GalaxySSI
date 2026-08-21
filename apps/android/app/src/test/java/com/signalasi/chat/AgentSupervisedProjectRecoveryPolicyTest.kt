@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectRecoveryPolicyTest {
@@ -25,6 +27,21 @@ class AgentSupervisedProjectRecoveryPolicyTest {
         )
 
         assertEquals(1, AgentSupervisedProjectRecoveryPolicy.recoveryCount(history))
+    }
+
+    @Test
+    fun structuredEvidenceDistinguishesUnknownOutcomeFromFailure() {
+        val unknown = verifiedPhoneTool("stalled").copy(
+            status = AgentActionStatus.FAILED,
+            evidence = """{"outcome_state":"unknown","watchdog_reason":"no_progress"}"""
+        )
+        val failed = verifiedPhoneTool("failed").copy(
+            status = AgentActionStatus.FAILED,
+            evidence = """{"outcome_state":"failed"}"""
+        )
+
+        assertTrue(AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(unknown))
+        assertFalse(AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failed))
     }
 
     private fun connector(id: String) = AgentAction(

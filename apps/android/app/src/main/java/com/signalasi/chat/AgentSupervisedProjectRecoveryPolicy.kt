@@ -1,6 +1,11 @@
 package com.signalasi.chat
 
+import org.json.JSONObject
+
 internal object AgentSupervisedProjectRecoveryPolicy {
+    const val OUTCOME_STATE_METADATA = "outcome_state"
+    const val UNKNOWN_OUTCOME = "unknown"
+
     /**
      * A verified phone-tool result starts a new recovery window. Older failures
      * remain useful diagnostics but never exhaust recovery for a foreground task.
@@ -12,6 +17,10 @@ internal object AgentSupervisedProjectRecoveryPolicy {
             action.isSupervisedProjectConnector() &&
                 action.id.startsWith(RECOVERY_ACTION_PREFIX)
         }
+
+    fun hasUnknownOutcome(action: AgentAction): Boolean =
+        runCatching { JSONObject(action.evidence).optString(OUTCOME_STATE_METADATA) }
+            .getOrDefault("") == UNKNOWN_OUTCOME
 
     private fun AgentAction.isVerifiedPhoneToolProgress(): Boolean =
         kind == AgentActionKind.CALL_NATIVE_TOOL &&
