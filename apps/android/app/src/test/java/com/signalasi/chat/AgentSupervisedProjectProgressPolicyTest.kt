@@ -359,6 +359,58 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `does not treat a phone linux gradle build as a source mutation`() {
+        val history = listOf(
+            toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch"),
+            toolAction(
+                AgentOnDeviceRuntimeTools.EXECUTE,
+                "build",
+                shell("./gradlew test", verificationKind = "test")
+            )
+        )
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(history).orEmpty()
+
+        assertTrue(block.contains("source_mutation=false"))
+    }
+
+    @Test
+    fun `does not treat a phone linux package install as a source mutation`() {
+        val history = listOf(
+            toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch"),
+            toolAction(
+                AgentOnDeviceRuntimeTools.EXECUTE,
+                "install",
+                shell("apt-get install -y unzip")
+            )
+        )
+
+        val violation = AgentSupervisedProjectProgressPolicy.violation(
+            toolAction(AgentMobileProjectNativeTools.COMMIT, "commit")
+                .copy(status = AgentActionStatus.PENDING_CONFIRMATION),
+            history
+        )
+
+        assertTrue(violation.orEmpty().contains("no verified source or documentation mutation"))
+    }
+
+    @Test
+    fun `treats a phone linux file write as a source mutation`() {
+        val history = listOf(
+            toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch"),
+            toolAction(
+                AgentOnDeviceRuntimeTools.EXECUTE,
+                "edit",
+                shell("python -c \"from pathlib import Path; Path('README.md').write_text('updated')\"")
+            )
+        )
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(history).orEmpty()
+
+        assertTrue(block.contains("source_mutation=true"))
+    }
+
+    @Test
     fun `rejects prolonged read only discovery after branch checkout`() {
         val branch = toolAction(
             AgentMobileProjectNativeTools.CHECKOUT_BRANCH,
@@ -422,8 +474,15 @@ class AgentSupervisedProjectProgressPolicyTest {
         assertNull(AgentSupervisedProjectProgressPolicy.violation(edit, history))
     }
 
-    private fun shell(source: String): String =
-        JSONObject(mapOf("workspace_id" to "current", "language" to "shell", "source" to source)).toString()
+    private fun shell(source: String, verificationKind: String = ""): String =
+        JSONObject(
+            mapOf(
+                "workspace_id" to "current",
+                "language" to "shell",
+                "source" to source,
+                "verification_kind" to verificationKind
+            )
+        ).toString()
 
     private fun partialInspect(): AgentAction = toolAction(
         AgentMobileProjectNativeTools.INSPECT,

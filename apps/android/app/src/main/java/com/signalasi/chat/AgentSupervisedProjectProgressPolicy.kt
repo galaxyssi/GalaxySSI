@@ -332,7 +332,7 @@ internal object AgentSupervisedProjectProgressPolicy {
             return false
         }
         val source = inputObject().optString("source").trim().lowercase()
-        return source.isNotBlank() && MUTATING_SHELL_MARKERS.any(source::contains)
+        return source.isNotBlank() && SOURCE_MUTATING_SHELL_MARKERS.any(source::contains)
     }
 
     private fun isDiscoveryAction(action: AgentAction): Boolean {
@@ -431,6 +431,11 @@ internal object AgentSupervisedProjectProgressPolicy {
         ">", "tee ", "sed -i", "perl -i", "rm ", "mv ", "cp ", "mkdir ", "touch ",
         "git checkout", "git switch", "git add", "git commit", "git push", "apt ", "apt-get ",
         "npm install", "pnpm install", "yarn install", "gradle", "gradlew",
+        ".write_text(", ".write_bytes(", "writefilesync(", "appendfilesync(",
+        "renamesync(", "unlinksync("
+    )
+    private val SOURCE_MUTATING_SHELL_MARKERS = listOf(
+        ">", "tee ", "sed -i", "perl -i", "rm ", "mv ", "cp ", "mkdir ", "touch ",
         ".write_text(", ".write_bytes(", "writefilesync(", "appendfilesync(",
         "renamesync(", "unlinksync("
     )
