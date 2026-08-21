@@ -767,6 +767,36 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("LATEST_FAILED_PHONE_TOOL_EVIDENCE"))
     }
 
+    @Test
+    fun `large progress repair keeps rejection reason and response after tool inventory compaction`() {
+        val tools = largeProjectToolCatalog()
+        val base = request("Continue the phone project without repeating verified work")
+        val expanded = base.copy(
+            runtimeContext = base.runtimeContext.copy(
+                nativeTools = tools,
+                capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY
+            ),
+            conversationContext = AgentConversationContext(
+                conversationId = "large-progress-repair",
+                summary = "Historical project context ".repeat(600),
+                turns = emptyList(),
+                privateMode = false
+            )
+        )
+
+        val prompt = AgentSupervisedProjectLoop.progressRepairPrompt(
+            request = expanded,
+            response = "LATEST_REJECTED_MODEL_ACTION_RESPONSE",
+            violation = "LATEST_PROGRESS_VIOLATION_REASON"
+        )
+
+        val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
+        assertTrue(prompt.length <= 24_000)
+        assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
+        assertTrue(prompt.contains("LATEST_PROGRESS_VIOLATION_REASON"))
+        assertTrue(prompt.contains("LATEST_REJECTED_MODEL_ACTION_RESPONSE"))
+    }
+
     private fun largeProjectToolCatalog(): List<AgentNativeToolDescriptor> = (1..64).map { index ->
         AgentNativeToolDescriptor(
             id = "signalasi.project.test.tool.${index.toString().padStart(2, '0')}",
