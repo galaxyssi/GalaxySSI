@@ -252,10 +252,13 @@ struct SignalASIOnDeviceRuntimeView: View {
       )
       SignalASISecurityStatusRow(
         title: t("cc_runtime_network_title", "Guest Network Policy"),
-        subtitle: t("cc_runtime_network_broker_subtitle", "The current local broker accepts offline execution only"),
+        subtitle: t(
+          "cc_runtime_network_broker_subtitle",
+          "The embedded Debian guest uses host-mediated networking when a task explicitly enables it"
+        ),
         systemImage: "network",
-        tint: .gray,
-        badge: t("signalasi.status.off", "Off")
+        tint: .blue,
+        badge: t("cc_runtime_network_host_mediated", "Host mediated")
       )
     }
   }
