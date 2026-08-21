@@ -5,6 +5,22 @@ import org.json.JSONObject
 
 /** Keeps model-directed project work moving from verified evidence instead of replaying stale steps. */
 internal object AgentSupervisedProjectProgressPolicy {
+    fun durableMilestoneKey(action: AgentAction): String? {
+        if (action.status != AgentActionStatus.COMPLETED) return null
+        val toolId = action.toolId()
+        if (toolId in AgentMobileProjectNativeTools.toolIds) return "repository:$toolId"
+        if (toolId in sourceMutationTools) return "source-mutation"
+        if (toolId != AgentOnDeviceRuntimeTools.EXECUTE) return null
+
+        val verificationKind = action.inputObject().optString("verification_kind").trim()
+        return when {
+            verificationKind.isNotBlank() && verificationKind != "none" ->
+                "runtime-verification:$verificationKind"
+            action.isVerifiedRuntimeMutation() -> "source-mutation"
+            else -> "runtime-observation"
+        }
+    }
+
     fun canonicalize(action: AgentAction, history: List<AgentAction>): AgentAction {
         if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) return action
         val completed = history.filter { it.status == AgentActionStatus.COMPLETED }
