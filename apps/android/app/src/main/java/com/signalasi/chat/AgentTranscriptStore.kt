@@ -425,8 +425,10 @@ private fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> 
         listOf(artifact.kind, artifact.name, artifact.mimeType).joinToString("\u001f").lowercase()
     }.take(MAX_CONTEXT_ARTIFACTS_PER_ENTRY)
 
-private fun AgentTranscriptEntry.contextText(): String {
-    val artifacts = contextArtifacts()
+private fun AgentTranscriptEntry.contextText(
+    maximumArtifacts: Int = MAX_CONTEXT_ARTIFACTS_PER_ENTRY
+): String {
+    val artifacts = contextArtifacts().take(maximumArtifacts.coerceAtLeast(0))
     if (artifacts.isEmpty()) return text
     val names = artifacts.joinToString(", ") { artifact ->
         buildString {
@@ -445,6 +447,10 @@ private val CONTEXT_ARTIFACT_TYPES = setOf(
 )
 private const val MAX_CONTEXT_ARTIFACTS_PER_ENTRY = 10
 private const val MAX_CONTEXT_ARTIFACTS = 10
+private const val MINIMUM_STANDARD_TRANSPORT_TOKENS = 2_048
+private const val MINIMUM_COMPACT_TRANSPORT_TOKENS = 128
+private const val MAX_COMPACT_TRANSPORT_TURNS = 2
+private const val MAX_COMPACT_ARTIFACTS_PER_ENTRY = 3
 
 data class AgentConversationContext(
     val conversationId: String,
@@ -491,7 +497,12 @@ data class AgentConversationContext(
     }.trim()
 
     fun asTransportBlock(maximumTokens: Int = 10_000): String {
-        val safeMaximum = maximumTokens.coerceAtLeast(2_048)
+        if (maximumTokens < MINIMUM_STANDARD_TRANSPORT_TOKENS) {
+            return encodeCompactTransportBlock(
+                maximumTokens.coerceAtLeast(MINIMUM_COMPACT_TRANSPORT_TOKENS)
+            )
+        }
+        val safeMaximum = maximumTokens.coerceAtLeast(MINIMUM_STANDARD_TRANSPORT_TOKENS)
         val sourceItems = turns.map { entry ->
             ConversationContextItem(
                 id = entry.id,
@@ -556,10 +567,65 @@ data class AgentConversationContext(
         return encodeTransportBlock(fallbackSummary, fallbackItems, entriesById)
     }
 
+    private fun encodeCompactTransportBlock(maximumTokens: Int): String {
+        val compactEntries = turns.takeLast(MAX_COMPACT_TRANSPORT_TURNS)
+        val entriesById = compactEntries.associateBy(AgentTranscriptEntry::id)
+        var summaryTokens = (maximumTokens / 7).coerceAtLeast(24)
+        var contentTokens = (
+            (maximumTokens - summaryTokens - COMPACT_TRANSPORT_OVERHEAD_TOKENS) /
+                compactEntries.size.coerceAtLeast(1)
+            ).coerceAtLeast(32)
+        var maximumArtifacts = MAX_COMPACT_ARTIFACTS_PER_ENTRY
+        var encoded = ""
+        repeat(MAX_COMPACT_TRANSPORT_PASSES) {
+            val compactSummary = ConversationContextCompactor.fitTextToTokenBudget(
+                summary,
+                maximumTokens = summaryTokens,
+                preserveTail = false
+            )
+            val compactItems = compactEntries.map { entry ->
+                ConversationContextItem(
+                    id = entry.id,
+                    role = if (entry.role == AgentTranscriptRole.USER) {
+                        ConversationContextRole.USER
+                    } else {
+                        ConversationContextRole.ASSISTANT
+                    },
+                    content = ConversationContextCompactor.fitTextToTokenBudget(
+                        entry.contextText(maximumArtifacts),
+                        maximumTokens = contentTokens
+                    ),
+                    groupId = entry.turnId.ifBlank { "entry:${entry.id}" }
+                )
+            }
+            encoded = encodeTransportBlock(
+                compiledSummary = compactSummary,
+                compiledItems = compactItems,
+                entriesById = entriesById,
+                includeAttachmentIndex = false,
+                maximumArtifactsPerEntry = maximumArtifacts
+            )
+            val actualTokens = ConversationContextCompactor.estimateTokens(encoded)
+            if (actualTokens <= maximumTokens) return encoded
+            val scale = (maximumTokens.toDouble() / actualTokens.toDouble() * 0.86)
+                .coerceIn(0.35, 0.90)
+            val reducedSummary = (summaryTokens * scale).toInt().coerceAtLeast(8)
+            val reducedContent = (contentTokens * scale).toInt().coerceAtLeast(16)
+            if (reducedSummary == summaryTokens && reducedContent == contentTokens) {
+                maximumArtifacts = (maximumArtifacts - 1).coerceAtLeast(0)
+            }
+            summaryTokens = reducedSummary
+            contentTokens = reducedContent
+        }
+        return encoded
+    }
+
     private fun encodeTransportBlock(
         compiledSummary: String,
         compiledItems: List<ConversationContextItem>,
-        entriesById: Map<String, AgentTranscriptEntry>
+        entriesById: Map<String, AgentTranscriptEntry>,
+        includeAttachmentIndex: Boolean = true,
+        maximumArtifactsPerEntry: Int = MAX_CONTEXT_ARTIFACTS_PER_ENTRY
     ): String {
         val payload = JSONObject()
             .put("version", 1)
@@ -579,23 +645,32 @@ data class AgentConversationContext(
                             )
                             .put("content", item.content)
                             .put("attachments", JSONArray().apply {
-                                entry.contextArtifacts().forEach { artifact ->
+                                entry.contextArtifacts().take(maximumArtifactsPerEntry).forEach { artifact ->
                                     put(artifact.toJson())
                                 }
                             })
                     )
                 }
             })
-            .put("attachment_index", JSONArray().apply {
-                attachmentIndex().forEach { (entry, artifact) ->
-                    put(artifact.toJson(entry.id, entry.turnId))
+            .apply {
+                if (includeAttachmentIndex) {
+                    put("attachment_index", JSONArray().apply {
+                        attachmentIndex().forEach { (entry, artifact) ->
+                            put(artifact.toJson(entry.id, entry.turnId))
+                        }
+                    })
                 }
-            })
+            }
         return buildString {
             append(AgentTranscriptStore.SIGNALASI_CONTEXT_TRANSPORT_HEADER).append('\n')
             append(payload.toString()).append('\n')
             append(AgentTranscriptStore.SIGNALASI_CONTEXT_TRANSPORT_FOOTER)
         }
+    }
+
+    private companion object {
+        const val COMPACT_TRANSPORT_OVERHEAD_TOKENS = 72
+        const val MAX_COMPACT_TRANSPORT_PASSES = 8
     }
 }
 
