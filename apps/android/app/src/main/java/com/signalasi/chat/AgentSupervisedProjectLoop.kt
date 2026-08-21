@@ -630,6 +630,9 @@ internal object AgentSupervisedProjectControlPayload {
             }
             val toolId = parameters?.optString("tool_id")?.trim().orEmpty()
             if (toolId.isBlank()) continue
+            if (parameters != null) {
+                changed = normalizeNativeArguments(parameters) || changed
+            }
             if (action.optString("kind").isBlank()) {
                 action.put("kind", AgentActionKind.CALL_NATIVE_TOOL.name)
                 changed = true
@@ -640,6 +643,29 @@ internal object AgentSupervisedProjectControlPayload {
             }
         }
         return changed
+    }
+
+    private fun normalizeNativeArguments(parameters: JSONObject): Boolean {
+        val rawArguments = parameters.opt("arguments")
+        if (rawArguments is JSONObject) return false
+        if (rawArguments is String) {
+            val parsed = runCatching { JSONObject(rawArguments.trim()) }.getOrNull()
+            if (parsed != null) {
+                parameters.put("arguments", parsed)
+                return true
+            }
+            return false
+        }
+        if (rawArguments != null && rawArguments != JSONObject.NULL) return false
+
+        val flattenedKeys = parameters.keys().asSequence()
+            .filterNot { key -> key == "tool_id" || key == "arguments" }
+            .toList()
+        if (flattenedKeys.isEmpty()) return false
+        val arguments = JSONObject()
+        flattenedKeys.forEach { key -> arguments.put(key, parameters.remove(key)) }
+        parameters.put("arguments", arguments)
+        return true
     }
 
     fun structuralDiagnostic(raw: String): String {

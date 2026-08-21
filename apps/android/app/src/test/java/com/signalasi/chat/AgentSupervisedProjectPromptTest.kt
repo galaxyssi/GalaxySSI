@@ -132,6 +132,56 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `moves flattened native tool parameters into arguments locally`() {
+        val raw = """
+            {"execution_location":"phone","actions":[
+              {"ref":"read","parameters":{"tool_id":"signalasi.workspace.file.read.text",
+               "workspace_id":"current","path":"README.md"}}
+            ]}
+        """.trimIndent()
+
+        val action = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+            .getJSONArray("actions")
+            .getJSONObject(0)
+        val parameters = action.getJSONObject("parameters")
+        val arguments = parameters.getJSONObject("arguments")
+
+        assertEquals("signalasi.workspace.file.read.text", parameters.getString("tool_id"))
+        assertEquals("current", arguments.getString("workspace_id"))
+        assertEquals("README.md", arguments.getString("path"))
+        assertFalse(parameters.has("workspace_id"))
+        assertFalse(parameters.has("path"))
+    }
+
+    @Test
+    fun `decodes native tool arguments encoded as a json object string`() {
+        val raw = JSONObject()
+            .put("execution_location", "phone")
+            .put(
+                "actions",
+                org.json.JSONArray().put(
+                    JSONObject()
+                        .put("ref", "inspect")
+                        .put(
+                            "parameters",
+                            JSONObject()
+                                .put("tool_id", "signalasi.project.repository.inspect")
+                                .put("arguments", "{\"workspace_id\":\"current\"}")
+                        )
+                )
+            )
+            .toString()
+
+        val arguments = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+            .getJSONArray("actions")
+            .getJSONObject(0)
+            .getJSONObject("parameters")
+            .getJSONObject("arguments")
+
+        assertEquals("current", arguments.getString("workspace_id"))
+    }
+
+    @Test
     fun `canonicalizes repository status and branch name dialect aliases`() {
         val status = """
             {"execution_location":"phone","actions":[
