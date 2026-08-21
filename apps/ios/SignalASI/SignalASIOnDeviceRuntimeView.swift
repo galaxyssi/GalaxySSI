@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SignalASIOnDeviceRuntimeView: View {
   @Environment(\.signalASIInterfaceLanguage) private var interfaceLanguage
