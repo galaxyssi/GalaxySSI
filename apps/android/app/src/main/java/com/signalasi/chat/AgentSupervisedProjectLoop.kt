@@ -582,8 +582,11 @@ internal object AgentSupervisedProjectControlPayload {
 
     fun normalize(raw: String, completedHistory: List<AgentAction> = emptyList()): String {
         val json = AgentExecutionSiteDecisionCodec.extractJsonObject(raw) ?: return raw
-        val actions = json.optJSONArray("actions") ?: return raw
-        var changed = AgentSupervisedProjectToolCanonicalizer.normalize(actions)
+        val actionEnvelope = normalizeActionEnvelope(json) ?: return raw
+        val actions = actionEnvelope.first
+        var changed = actionEnvelope.second
+        changed = normalizeNativeToolShape(actions) || changed
+        changed = AgentSupervisedProjectToolCanonicalizer.normalize(actions) || changed
         changed = removeSatisfiedHistoryReferences(actions, completedHistory) || changed
         if (actions.length() == 1) {
             val action = actions.optJSONObject(0) ?: return raw
@@ -607,6 +610,44 @@ internal object AgentSupervisedProjectControlPayload {
             }
         }
         return if (changed) json.toString() else raw
+    }
+
+    private fun normalizeActionEnvelope(json: JSONObject): Pair<JSONArray, Boolean>? {
+        json.optJSONArray("actions")?.let { return it to false }
+        val single = json.optJSONObject("actions") ?: json.optJSONObject("action") ?: return null
+        val actions = JSONArray().put(single)
+        json.put("actions", actions)
+        json.remove("action")
+        return actions to true
+    }
+
+    private fun normalizeNativeToolShape(actions: JSONArray): Boolean {
+        var changed = false
+        for (index in 0 until actions.length()) {
+            val action = actions.optJSONObject(index) ?: continue
+            var parameters = action.optJSONObject("parameters")
+            val directToolId = action.optString("tool_id").trim()
+            if (parameters == null && directToolId.isNotBlank()) {
+                parameters = JSONObject()
+                    .put("tool_id", directToolId)
+                    .put("arguments", action.optJSONObject("arguments") ?: JSONObject())
+                action.put("parameters", parameters)
+                action.remove("tool_id")
+                action.remove("arguments")
+                changed = true
+            }
+            val toolId = parameters?.optString("tool_id")?.trim().orEmpty()
+            if (toolId.isBlank()) continue
+            if (action.optString("kind").isBlank()) {
+                action.put("kind", AgentActionKind.CALL_NATIVE_TOOL.name)
+                changed = true
+            }
+            if (action.optString("target").isBlank()) {
+                action.put("target", toolId)
+                changed = true
+            }
+        }
+        return changed
     }
 
     fun structuralDiagnostic(raw: String): String {

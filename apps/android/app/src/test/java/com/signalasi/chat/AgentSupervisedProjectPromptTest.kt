@@ -57,6 +57,43 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `wraps an unambiguous single action object locally`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Inspect the repository.","actions":
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            }
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+        val actions = normalized.getJSONArray("actions")
+
+        assertEquals(1, actions.length())
+        assertEquals("inspect", actions.getJSONObject(0).getString("ref"))
+    }
+
+    @Test
+    fun `lifts direct native tool fields into the strict action schema locally`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Inspect the repository.","action":
+              {"ref":"inspect","tool_id":"signalasi.project.repository.inspect",
+               "arguments":{"workspace_id":"current"}}
+            }
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+        val action = normalized.getJSONArray("actions").getJSONObject(0)
+        val parameters = action.getJSONObject("parameters")
+
+        assertEquals(AgentActionKind.CALL_NATIVE_TOOL.name, action.getString("kind"))
+        assertEquals("signalasi.project.repository.inspect", action.getString("target"))
+        assertEquals("signalasi.project.repository.inspect", parameters.getString("tool_id"))
+        assertEquals("current", parameters.getJSONObject("arguments").getString("workspace_id"))
+        assertFalse(action.has("tool_id"))
+        assertFalse(action.has("arguments"))
+    }
+
+    @Test
     fun `canonicalizes repository status and branch name dialect aliases`() {
         val status = """
             {"execution_location":"phone","actions":[
