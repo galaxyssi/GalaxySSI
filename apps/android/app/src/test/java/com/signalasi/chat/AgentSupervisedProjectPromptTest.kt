@@ -869,6 +869,51 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `supervised project context keeps earlier constraints beyond four recent turns`() {
+        val conversationId = "project-history"
+        val originalConstraint = "EARLY_PROJECT_CONSTRAINT_KEEP_ANDROID_EXECUTION"
+        val turns = buildList {
+            add(
+                AgentTranscriptEntry(
+                    id = "initial-user",
+                    role = AgentTranscriptRole.USER,
+                    text = originalConstraint,
+                    timestampMillis = 1L,
+                    conversationId = conversationId,
+                    turnId = "turn-1"
+                )
+            )
+            (2..8).forEach { index ->
+                add(
+                    AgentTranscriptEntry(
+                        id = "assistant-$index",
+                        role = AgentTranscriptRole.ASSISTANT,
+                        text = "Verified project observation $index",
+                        timestampMillis = index.toLong(),
+                        conversationId = conversationId,
+                        turnId = "turn-$index"
+                    )
+                )
+            }
+        }
+
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(
+            request("Continue from the verified project state").copy(
+                conversationContext = AgentConversationContext(
+                    conversationId = conversationId,
+                    summary = "",
+                    turns = turns,
+                    privateMode = false
+                )
+            )
+        )
+
+        assertTrue(prompt.contains(originalConstraint))
+        assertTrue(prompt.contains("Verified project observation 8"))
+        assertTrue(prompt.length <= 24_000)
+    }
+
+    @Test
     fun `large continuation keeps every executable phone tool and newest evidence`() {
         val tools = largeProjectToolCatalog()
         val history = (1..20).map { index ->
