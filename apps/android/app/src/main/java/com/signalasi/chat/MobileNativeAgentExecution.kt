@@ -1156,29 +1156,26 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     var responsePlan = plan.markAction(actionId, responseStatus, completedResult)
     if (effectiveSuccess && supervisedProjectResponse) {
         val supervisor = requireNotNull(completedAction)
-        val supervisedPlan = acceptSupervisedProjectPlan(responsePlan, supervisor, response)
-        val semanticallyExecutable = AgentSupervisedProjectLoop.isExecutableResponsePlan(supervisedPlan)
+        val decision = acceptSupervisedProjectPlan(responsePlan, supervisor, response)
         recordConnectorResponseHealth(
             pendingResult = pendingResult,
             contactId = contactId,
             resourceStartedAt = resourceStartedAt,
-            success = semanticallyExecutable,
-            force = !semanticallyExecutable
+            success = decision.semanticallyExecutable,
+            force = !decision.semanticallyExecutable
         )
-        if (supervisedPlan == null) {
-            val repairAttempts = supervisor.parameters["supervised_parse_attempt"]
-                ?.toIntOrNull()
-                ?.coerceAtLeast(0)
-                ?: 0
-            val failureMessage = "The supervising model returned an invalid executable project plan " +
-                "after $repairAttempts structured repair attempt(s)."
+        if (decision.disposition == AgentSupervisedProjectPlanDisposition.REJECTED || decision.plan == null) {
+            val failureMessage = decision.failureMessage.ifBlank {
+                "The supervising model response could not be converted into a recoverable phone project step."
+            }
             val failure = completedResult.copy(
                 success = false,
                 message = failureMessage,
                 metadata = completedResult.metadata + mapOf(
                     "native_tool_output" to response.take(6_000),
-                    "failure_kind" to "invalid_supervised_project_plan",
-                    "structured_repair_attempts" to repairAttempts.toString()
+                    "failure_kind" to decision.failureKind.ifBlank { "supervised_project_plan_rejected" },
+                    "structured_repair_attempts" to decision.repairAttempts.toString(),
+                    "supervised_plan_disposition" to decision.disposition.name.lowercase(Locale.ROOT)
                 )
             )
             val failedPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
@@ -1187,8 +1184,9 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             lastActionResult = failure
             recordAudit(
                 AgentAuditEvent.ACTION_BLOCKED,
-                "supervised_project_plan_invalid; action=$actionId; " +
-                    "repair_attempts=$repairAttempts; recovery_scheduled=${recoveredPlan != null}"
+                "supervised_project_plan_rejected; action=$actionId; " +
+                    "failure_kind=${decision.failureKind}; repair_attempts=${decision.repairAttempts}; " +
+                    "recovery_scheduled=${recoveredPlan != null}"
             )
             if (recoveredPlan != null) {
                 if (!advanceExecutionLoop(
@@ -1208,6 +1206,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             saveTaskRecord(result = failure.message)
             return reconcileExecutionLoop(snapshot())
         }
+        val supervisedPlan = requireNotNull(decision.plan)
         currentPlan = supervisedPlan
         lastActionResult = completedResult.copy(
             message = "The next verified project step is ready.",
