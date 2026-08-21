@@ -224,8 +224,23 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-private const val MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES = 3
-private const val SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS = 500L
+internal object AgentSupervisedControlResponseRetryPolicy {
+    fun delayMillis(attempt: Int): Long {
+        val exponent = attempt.coerceIn(0, MAX_EXPONENT)
+        return (INITIAL_DELAY_MILLIS shl exponent).coerceAtMost(MAX_DELAY_MILLIS)
+    }
+
+    fun nextAttempt(attempt: Int): Int = when {
+        attempt < 0 -> 1
+        attempt >= MAX_TRACKED_ATTEMPT -> MAX_TRACKED_ATTEMPT
+        else -> attempt + 1
+    }
+
+    private const val INITIAL_DELAY_MILLIS = 500L
+    private const val MAX_DELAY_MILLIS = 30_000L
+    private const val MAX_EXPONENT = 6
+    private const val MAX_TRACKED_ATTEMPT = 30
+}
 
 internal fun MainActivity.publishAgentConnectorResponse(envelope: JSONObject?, message: ChatMessage): Boolean {
     val payload = envelope ?: return false
@@ -430,26 +445,24 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                     ) return@post
                     when {
                         runtime != null -> consumeAgentConnectorResponse(response)
-                        attempt < MAX_SUPERVISED_CONTROL_RESPONSE_RETRIES ->
-                            deferSupervisedProjectControlResponse(response, attempt + 1)
                         else -> {
-                            if (AgentConnectorResponseStore.remove(
-                                    this@deferSupervisedProjectControlResponse,
-                                    response
-                                )
-                            ) {
+                            if (attempt == 0 || attempt % 10 == 0) {
                                 Log.i(
                                     "SignalASIAgent",
-                                    "Retired stale supervised control response after its originating run was unavailable " +
-                                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)}"
+                                    "Keeping supervised control response while its originating run is restored " +
+                                        "source=${response.sourceMessageId} turn=${response.turnId.take(8)} attempt=$attempt"
                                 )
                             }
+                            deferSupervisedProjectControlResponse(
+                                response,
+                                AgentSupervisedControlResponseRetryPolicy.nextAttempt(attempt)
+                            )
                         }
                     }
                 }
             }
         },
-        SUPERVISED_CONTROL_RESPONSE_RETRY_MILLIS
+        AgentSupervisedControlResponseRetryPolicy.delayMillis(attempt)
     )
 }
 
