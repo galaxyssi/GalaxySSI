@@ -12,6 +12,9 @@ struct SignalASIControlCenterView: View {
     fileURL: AgentDataDisclosureStorePaths.ledgerURL()
   )
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
+  private let inAppRuntimeBroker = AgentIOSInAppQemuRuntimeBroker(
+    runtimeRootURL: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+  )
   private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
   private let globalAgentDeliberationStore = GlobalAgentDeliberationStore()
   private let globalAgentLongHorizonStore = GlobalLongHorizonGoalStore()
@@ -718,7 +721,7 @@ struct SignalASIControlCenterView: View {
   }
 
   private func refreshRuntimeBrokerHealth() {
-    let availability = AgentIOSRuntimeBrokerClient().availability()
+    let availability = inAppRuntimeBroker.availability()
     guard availability.status == .available else {
       runtimeBrokerHealth = .notConfigured(availability.reason)
       return
@@ -727,7 +730,7 @@ struct SignalASIControlCenterView: View {
     let deadline = Int64((Date().timeIntervalSince1970 * 1_000).rounded()) + 15_000
     DispatchQueue.global(qos: .userInitiated).async {
       let health = AgentIOSRuntimeBrokerHealthChecker.check(
-        broker: AgentIOSRuntimeBrokerClient(),
+        broker: inAppRuntimeBroker,
         deadlineEpochMillis: deadline,
         context: AgentNativeToolInvocationContext(
           invocationId: "control-center-runtime-\(UUID().uuidString)"
