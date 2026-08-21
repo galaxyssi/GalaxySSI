@@ -525,7 +525,7 @@ class AgentSupervisedProjectPromptTest {
 
     @Test
     fun `large continuation keeps every executable phone tool and newest evidence`() {
-        val tools = (1..48).map { index ->
+        val tools = (1..64).map { index ->
             AgentNativeToolDescriptor(
                 id = "signalasi.project.test.tool.${index.toString().padStart(2, '0')}",
                 version = "1.0.0",
