@@ -88,14 +88,22 @@ struct SignalASIOnDeviceRuntimeView: View {
           SignalASIBackButton()
         },
         trailing: {
-          Color.clear
+          Button(action: refreshBrokerHealth) {
+            Image(systemName: isBrokerChecking ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+              .font(.system(size: 17, weight: .semibold))
+              .foregroundColor(.signalASITextPrimary)
+              .frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+          .disabled(isBrokerChecking)
+          .accessibilityLabel(Text(t("cc_runtime_refresh_status", "Refresh runtime status")))
         }
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           SignalASISecurityHeroView(
             title: t(runtimeReady ? "cc_runtime_ready_title" : "cc_runtime_setup_title",
-                     runtimeReady ? "iOS-local runtime is paired" : "On-device runtime needs setup"),
+                     runtimeReady ? "Embedded Debian runtime is ready" : "On-device runtime needs setup"),
             subtitle: runtimeStatusMessage,
             systemImage: "terminal",
             tint: runtimeReady ? .signalASIAccent : .orange,
@@ -141,6 +149,11 @@ struct SignalASIOnDeviceRuntimeView: View {
         tint: readyPackCount > 0 ? .signalASIAccent : .gray
       )
     ]
+  }
+
+  private var isBrokerChecking: Bool {
+    if case .checking = brokerHealth { return true }
+    return false
   }
 
   private var managementSection: some View {

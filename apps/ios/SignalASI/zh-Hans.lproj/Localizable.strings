@@ -3786,6 +3786,7 @@
 "cc_runtime_subtitle" = "Python、uv、Node.js、Go、Rust、C/C++、Java、浏览器自动化与 FFmpeg";
 "cc_runtime_ready_title" = "iOS 本机运行环境已就绪";
 "cc_runtime_setup_title" = "本机运行环境需要安装";
+"cc_runtime_refresh_status" = "刷新运行环境状态";
 "cc_runtime_overview_title" = "隔离执行环境";
 "cc_runtime_overview_subtitle" = "在 iOS App 沙盒内运行内置 Debian，进行隔离的设备端执行";
 "cc_runtime_metric_ready" = "就绪运行时";
