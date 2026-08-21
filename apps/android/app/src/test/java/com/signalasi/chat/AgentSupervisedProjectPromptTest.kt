@@ -190,6 +190,30 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `continuation uses a smaller equivalent contract without dropping phone boundaries`() {
+        val request = request("Improve SignalASI on this phone and submit a pull request")
+        val planning = AgentSupervisedProjectLoop.planningPrompt(request)
+        val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
+
+        assertTrue(continuation.length < planning.length - 2_000)
+        assertTrue(continuation.contains("execution_location is always phone"))
+        assertTrue(continuation.contains("exactly one next evidence-producing CALL_NATIVE_TOOL"))
+        assertTrue(continuation.contains("Set completes_goal=true only if"))
+        assertTrue(continuation.contains("signalasi.project.repository.* for all Git operations"))
+        assertTrue(continuation.contains("never run Git through signalasi.runtime.execute"))
+        assertTrue(continuation.contains("only a successful signalasi.runtime.execute receipt proves"))
+        assertTrue(continuation.contains("feature branch, tests, commit, push, and pull-request URL"))
+        assertTrue(continuation.contains("Available phone tools"))
+        assertTrue(request.runtimeContext.nativeTools
+            .filter { descriptor ->
+                request.runtimeContext.isNativeToolExecutable(descriptor.id) &&
+                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id)
+            }
+            .map(AgentNativeToolDescriptor::id)
+            .all(continuation::contains))
+    }
+
+    @Test
     fun `stalled action remains unknown until the model verifies its outcome`() {
         val action = AgentAction(
             id = "build",
