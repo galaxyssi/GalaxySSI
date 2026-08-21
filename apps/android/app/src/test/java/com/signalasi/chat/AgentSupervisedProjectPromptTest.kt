@@ -674,27 +674,7 @@ class AgentSupervisedProjectPromptTest {
 
     @Test
     fun `large continuation keeps every executable phone tool and newest evidence`() {
-        val tools = (1..64).map { index ->
-            AgentNativeToolDescriptor(
-                id = "signalasi.project.test.tool.${index.toString().padStart(2, '0')}",
-                version = "1.0.0",
-                title = "Project tool $index",
-                description = "A deliberately verbose project tool description ".repeat(20),
-                location = AgentNativeToolLocation.PHONE,
-                inputSchema = AgentNativeJsonSchema.objectSchema(
-                    properties = mapOf(
-                        "workspace_id" to AgentNativeJsonSchema.string(description = "Workspace identifier".repeat(20)),
-                        "path" to AgentNativeJsonSchema.string(description = "Project relative path".repeat(20)),
-                        "mode" to AgentNativeJsonSchema.string(enumValues = listOf("inspect", "modify", "verify")),
-                        "recursive" to AgentNativeJsonSchema.boolean()
-                    ),
-                    required = setOf("workspace_id", "path"),
-                    additionalProperties = false
-                ),
-                outputSchema = AgentNativeJsonSchema.objectSchema(),
-                risk = AgentNativeToolRisk.LOW
-            )
-        }
+        val tools = largeProjectToolCatalog()
         val history = (1..20).map { index ->
             AgentAction(
                 id = "history-$index",
@@ -743,6 +723,70 @@ class AgentSupervisedProjectPromptTest {
         assertFalse(prompt.contains("deliberately verbose project tool description"))
         assertTrue(prompt.contains("workspace_id!:string"))
         assertTrue(prompt.contains("mode:string(inspect|modify|verify)"))
+    }
+
+    @Test
+    fun `large recovery keeps latest failure reason and evidence after tool inventory compaction`() {
+        val tools = largeProjectToolCatalog()
+        val failed = AgentAction(
+            id = "failed-build",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = tools.first().id,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.FAILED,
+            description = "Build the Android project",
+            result = "build output " + "detail ".repeat(900),
+            evidence = "LATEST_FAILED_PHONE_TOOL_EVIDENCE",
+            requiresConfirmation = false
+        )
+        val base = request("Fix the phone project and verify it")
+        val expanded = base.copy(
+            runtimeContext = base.runtimeContext.copy(
+                nativeTools = tools,
+                capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY
+            ),
+            conversationContext = AgentConversationContext(
+                conversationId = "large-recovery",
+                summary = "Historical project context ".repeat(600),
+                turns = emptyList(),
+                privateMode = false
+            ),
+            executionHistory = listOf(failed)
+        )
+
+        val prompt = AgentSupervisedProjectLoop.recoveryPrompt(
+            expanded,
+            failed,
+            "LATEST_FAILURE_REASON_FROM_WATCHDOG"
+        )
+
+        val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
+        assertTrue(prompt.length <= 24_000)
+        assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
+        assertTrue(prompt.contains("LATEST_FAILURE_REASON_FROM_WATCHDOG"))
+        assertTrue(prompt.contains("LATEST_FAILED_PHONE_TOOL_EVIDENCE"))
+    }
+
+    private fun largeProjectToolCatalog(): List<AgentNativeToolDescriptor> = (1..64).map { index ->
+        AgentNativeToolDescriptor(
+            id = "signalasi.project.test.tool.${index.toString().padStart(2, '0')}",
+            version = "1.0.0",
+            title = "Project tool $index",
+            description = "A deliberately verbose project tool description ".repeat(20),
+            location = AgentNativeToolLocation.PHONE,
+            inputSchema = AgentNativeJsonSchema.objectSchema(
+                properties = mapOf(
+                    "workspace_id" to AgentNativeJsonSchema.string(description = "Workspace identifier".repeat(20)),
+                    "path" to AgentNativeJsonSchema.string(description = "Project relative path".repeat(20)),
+                    "mode" to AgentNativeJsonSchema.string(enumValues = listOf("inspect", "modify", "verify")),
+                    "recursive" to AgentNativeJsonSchema.boolean()
+                ),
+                required = setOf("workspace_id", "path"),
+                additionalProperties = false
+            ),
+            outputSchema = AgentNativeJsonSchema.objectSchema(),
+            risk = AgentNativeToolRisk.LOW
+        )
     }
 
     private fun request(goal: String): AgentRequest {
