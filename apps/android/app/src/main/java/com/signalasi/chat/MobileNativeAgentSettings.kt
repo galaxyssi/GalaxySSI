@@ -228,11 +228,15 @@ internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiS
         ?: plan.actions.lastOrNull()?.id
         ?: "agent-liveness-assessment"
     val assessmentReason = buildString {
-        append("The task stopped reporting progress. Inspect the latest verified evidence and decide whether to ")
+        append("The task stopped reporting progress, so the current action outcome is unknown. Inspect the latest verified evidence and decide whether to ")
         append("continue, retry with corrected arguments, choose another available tool or resource, or finish with ")
         append("the specific unrecoverable cause. Watchdog evidence: ")
         append(reason.trim().ifBlank { "no_progress_observed" })
     }
+    val livenessEvidence = JSONObject()
+        .put(AgentSupervisedProjectRecoveryPolicy.OUTCOME_STATE_METADATA, AgentSupervisedProjectRecoveryPolicy.UNKNOWN_OUTCOME)
+        .put("watchdog_reason", reason.trim().ifBlank { "no_progress_observed" })
+        .put("action_id", actionId)
     val evidence = AgentActionResult(
         actionId = actionId,
         success = false,
@@ -240,6 +244,10 @@ internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiS
         metadata = lastActionResult?.metadata.orEmpty() + mapOf(
             "failure_kind" to "liveness_assessment_required",
             "watchdog_reason" to reason,
+            AgentSupervisedProjectRecoveryPolicy.OUTCOME_STATE_METADATA to
+                AgentSupervisedProjectRecoveryPolicy.UNKNOWN_OUTCOME,
+            "observed_failure" to "false",
+            "native_tool_output" to livenessEvidence.toString(),
             "terminal_failure" to "false"
         )
     )

@@ -51,10 +51,17 @@ internal object AgentSupervisedProjectLoop {
 
     fun recoveryPrompt(request: AgentRequest, failedAction: AgentAction, reason: String): String = buildString {
         append(buildPrompt(request, evidenceExpected = true))
-        append("\nThe last phone action failed. Diagnose the observed evidence before choosing a different next step. ")
-        append("Do not repeat the same action with unchanged arguments. Failure reason: ")
+        val unknownOutcome = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failedAction)
+        if (unknownOutcome) {
+            append("\nThe last phone action stopped reporting progress, but its outcome is unknown rather than proven failed. ")
+            append("Inspect durable receipts, repository state, artifacts, or process state before deciding whether to continue, verify, or retry. ")
+            append("Do not repeat a mutation blindly. Watchdog observation: ")
+        } else {
+            append("\nThe last phone action failed. Diagnose the observed evidence before choosing a different next step. ")
+            append("Do not repeat the same action with unchanged arguments. Failure reason: ")
+        }
         append(reason.trim().replace(Regex("\\s+"), " ").take(MAX_FAILURE_CHARACTERS))
-        append("\nFailed action: ")
+        append(if (unknownOutcome) "\nAction with unknown outcome: " else "\nFailed action: ")
         append(failedAction.kind.name).append(" | ")
             .append(failedAction.description.replace(Regex("\\s+"), " ").take(300))
         AgentPlannerObservation.from(failedAction, MAX_FAILURE_EVIDENCE_CHARACTERS)?.let { observation ->
@@ -853,15 +860,16 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val nextIteration = connector.parameters["supervised_iteration"]
         ?.toIntOrNull()?.plus(1)?.coerceAtLeast(1) ?: (plan.replanCount + 1)
     val interrupted = failedAction.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
+    val unknownOutcome = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failedAction)
     val reviewer = connector.copy(
         id = "supervise-phone-project-recovery-${plan.revision + 1}-$nextIteration",
         target = selectedTarget?.title ?: connector.target,
         risk = AgentRisk.LOW,
         status = AgentActionStatus.PENDING_CONFIRMATION,
-        description = if (interrupted) {
-            "Inspect the saved phone project and resume from verified evidence"
-        } else {
-            "Review failed phone project evidence and choose a different step"
+        description = when {
+            interrupted -> "Inspect the saved phone project and resume from verified evidence"
+            unknownOutcome -> "Inspect the phone action with an unknown outcome and choose the next step"
+            else -> "Review failed phone project evidence and choose a different step"
         },
         parameters = connector.parameters + mapOf(
             "prompt" to if (interrupted) {
@@ -902,15 +910,15 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         artifactRichOutputJson = plan.artifactRichOutputJson,
         routeRationale = AgentSupervisedProjectLoop.visibleSummary(
             request = request,
-            english = if (interrupted) {
-                "The supervising model will inspect the durable phone project before continuing."
-            } else {
-                "The supervising model will diagnose the latest failed phone action."
+            english = when {
+                interrupted -> "The supervising model will inspect the durable phone project before continuing."
+                unknownOutcome -> "The supervising model will verify the phone action's current state before deciding the next step."
+                else -> "The supervising model will diagnose the latest failed phone action."
             },
-            chinese = if (interrupted) {
-                "\u4e0a\u6b21\u6267\u884c\u610f\u5916\u4e2d\u65ad\uff0c\u5c06\u5148\u68c0\u67e5\u624b\u673a\u9879\u76ee\u7684\u6301\u4e45\u5316\u72b6\u6001\u548c\u8bc1\u636e\uff0c\u518d\u5b89\u5168\u7ee7\u7eed\u3002"
-            } else {
-                "\u624b\u673a\u4e0a\u7684\u4e0a\u4e00\u6b65\u6267\u884c\u5931\u8d25\uff0c\u5c06\u5148\u5206\u6790\u5931\u8d25\u8bc1\u636e\uff0c\u518d\u9009\u62e9\u4e0d\u540c\u7684\u540e\u7eed\u64cd\u4f5c\u3002"
+            chinese = when {
+                interrupted -> "\u4e0a\u6b21\u6267\u884c\u610f\u5916\u4e2d\u65ad\uff0c\u5c06\u5148\u68c0\u67e5\u624b\u673a\u9879\u76ee\u7684\u6301\u4e45\u5316\u72b6\u6001\u548c\u8bc1\u636e\uff0c\u518d\u5b89\u5168\u7ee7\u7eed\u3002"
+                unknownOutcome -> "\u624b\u673a\u52a8\u4f5c\u6682\u65f6\u6ca1\u6709\u4e0a\u62a5\u8fdb\u5c55\uff0c\u5c06\u5148\u9a8c\u8bc1\u5176\u5f53\u524d\u72b6\u6001\uff0c\u518d\u7531\u5927\u6a21\u578b\u51b3\u5b9a\u4e0b\u4e00\u6b65\u3002"
+                else -> "\u624b\u673a\u4e0a\u7684\u4e0a\u4e00\u6b65\u6267\u884c\u5931\u8d25\uff0c\u5c06\u5148\u5206\u6790\u5931\u8d25\u8bc1\u636e\uff0c\u518d\u9009\u62e9\u4e0d\u540c\u7684\u540e\u7eed\u64cd\u4f5c\u3002"
             }
         )
     )

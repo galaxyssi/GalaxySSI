@@ -190,6 +190,32 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `stalled action remains unknown until the model verifies its outcome`() {
+        val action = AgentAction(
+            id = "build",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentOnDeviceRuntimeTools.EXECUTE,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.FAILED,
+            description = "Build the phone project",
+            result = "The task stopped reporting progress",
+            evidence = """{"outcome_state":"unknown","watchdog_reason":"running_progress_timeout"}""",
+            requiresConfirmation = false
+        )
+
+        val prompt = AgentSupervisedProjectLoop.recoveryPrompt(
+            request = request("Continue the Android project on this phone"),
+            failedAction = action,
+            reason = "running_progress_timeout"
+        )
+
+        assertTrue(prompt.contains("outcome is unknown rather than proven failed"))
+        assertTrue(prompt.contains("Inspect durable receipts, repository state, artifacts, or process state"))
+        assertTrue(prompt.contains("Action with unknown outcome"))
+        assertFalse(prompt.contains("The last phone action failed"))
+    }
+
+    @Test
     fun `auto model continuation receives recent sanitized phone tool observations`() {
         val failed = AgentAction(
             id = "clone",
