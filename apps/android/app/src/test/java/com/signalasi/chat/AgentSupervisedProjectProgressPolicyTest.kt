@@ -95,6 +95,19 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `prompt lifecycle keeps older branch state outside the visible ledger window`() {
+        val branch = toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch")
+        val laterInspections = (1..12).map { index ->
+            toolAction(AgentMobileProjectNativeTools.INSPECT, "inspect-$index")
+        }
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(listOf(branch) + laterInspections).orEmpty()
+
+        assertTrue(block.contains("dedicated_branch=true"))
+        assertTrue(block.contains("source_mutation=false"))
+    }
+
+    @Test
     fun `successful fetch publishes the canonical partial repository recovery base`() {
         val block = AgentSupervisedProjectProgressPolicy.promptBlock(
             listOf(

@@ -170,19 +170,6 @@ internal object AgentSupervisedProjectLoop {
                 )
             ).append('\n')
         }
-        if (request.executionHistory.isNotEmpty()) {
-            append("Prior verified action and observation ledger. This is SignalASI-owned context and remains valid when Auto changes reasoning providers:\n")
-            request.executionHistory
-                .filterNot(AgentAction::isSupervisedProjectConnector)
-                .takeLast(MAX_HISTORY_ACTIONS)
-                .forEach { action ->
-                append("- ").append(action.kind.name).append(" | ").append(action.status.name)
-                    .append(" | ").append(action.description.replace(Regex("\\s+"), " ").take(180)).append('\n')
-                AgentPlannerObservation.from(action, MAX_LEDGER_OBSERVATION_CHARACTERS)?.let { observation ->
-                    append("  observation: ").append(observation).append('\n')
-                }
-            }
-        }
         AgentSupervisedProjectProgressPolicy.promptBlock(request.executionHistory)?.let { progress ->
             append(progress).append('\n')
         }
@@ -285,14 +272,12 @@ internal object AgentSupervisedProjectLoop {
     private const val MAX_CONVERSATION_SUMMARY_CHARACTERS = 600
     private const val MAX_CONVERSATION_TURN_CHARACTERS = 1_200
     private const val MAX_CONVERSATION_TURNS = 4
-    private const val MAX_HISTORY_ACTIONS = 6
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
     private const val MINIMUM_BASE_PROMPT_CHARACTERS = 12_000
     private const val MAX_FAILURE_CHARACTERS = 1_000
     private const val MAX_FAILURE_EVIDENCE_CHARACTERS = 6_000
-    private const val MAX_LEDGER_OBSERVATION_CHARACTERS = 240
 
     private fun AgentConversationContext.forSupervisedProjectPrompt(): AgentConversationContext = copy(
         summary = summary.take(MAX_CONVERSATION_SUMMARY_CHARACTERS),

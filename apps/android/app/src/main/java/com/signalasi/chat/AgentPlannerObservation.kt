@@ -14,20 +14,32 @@ internal object AgentPlannerObservation {
 
     private fun sanitize(values: List<String>, maximumCharacters: Int): String? {
         val useful = values.asSequence()
-            .map(String::trim)
+            .map(::normalize)
             .filter(String::isNotBlank)
             .filterNot { value -> value in setOf("executor_success", "executor_failure") }
             .distinct()
             .toList()
         if (useful.isEmpty()) return null
-        return useful.joinToString("\n")
+        val limit = maximumCharacters.coerceAtLeast(1)
+        if (useful.size == 1) return useful.single().take(limit)
+
+        val separatorCharacters = useful.lastIndex.coerceAtMost(limit)
+        val contentBudget = (limit - separatorCharacters).coerceAtLeast(1)
+        val baseBudget = contentBudget / useful.size
+        var remainder = contentBudget % useful.size
+        return useful.map { value ->
+            val budget = baseBudget + if (remainder-- > 0) 1 else 0
+            value.take(budget)
+        }.joinToString("\n")
+            .take(limit)
+            .takeIf(String::isNotBlank)
+    }
+
+    private fun normalize(value: String): String = value.trim()
             .replace(BEARER_SECRET, "Bearer [redacted]")
             .replace(SECRET_ASSIGNMENT, "$1=[redacted]")
             .replace(WHITESPACE, " ")
             .trim()
-            .take(maximumCharacters.coerceAtLeast(1))
-            .takeIf(String::isNotBlank)
-    }
 
     private val BEARER_SECRET = Regex(
         "(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{8,}"
