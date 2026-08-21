@@ -612,6 +612,10 @@ private final class AgentIOSQemuGuestClient {
 }
 
 struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
+  // TCI has no JIT on non-jailbroken iOS, so a cold Debian boot needs a longer health window.
+  static let coldBootHealthTimeoutMillis: Int64 = 45_000
+  private static let guestStartupAttempts = 180
+
   var implementationId: String = "signalasi.ios.qemu_tci.debian_v1"
   var runtimeRootURL: URL
   var controller: AgentIOSQemuRuntimeController = .shared
@@ -633,8 +637,8 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     guard let key = credentials.sessionKey() else { throw AgentIOSRuntimeBrokerError.pairingRequired }
     try controller.startIfNeeded(runtimeRootURL: runtimeRootURL, sessionKey: key)
     var lastError: Error?
-    // A no-JIT TCI guest can take several seconds to boot on a physical iPhone.
-    for _ in 0..<120 {
+    // A no-JIT TCI guest can take up to 45 seconds to boot on a physical iPhone.
+    for _ in 0..<Self.guestStartupAttempts {
       do {
         let client = AgentIOSQemuGuestClient(
           socketPath: try controller.socketPath(runtimeRootURL: runtimeRootURL),
