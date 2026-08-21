@@ -440,6 +440,8 @@
     A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000648 /* VoiceProviderSettings.swift */; };
     A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */; };
     A10000000000000000002090 /* VoiceRemoteWhisperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002090 /* VoiceRemoteWhisperProtocol.swift */; };
+    A10000000000000000002091 /* VoiceRemoteWhisperNodeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002091 /* VoiceRemoteWhisperNodeRegistry.swift */; };
+    A10000000000000000002092 /* VoiceRemoteWhisperNodeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002092 /* VoiceRemoteWhisperNodeClient.swift */; };
     A10000000000000000000656 /* VoiceWhisperModelVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */; };
     A10000000000000000000657 /* VoiceWhisperModelStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000657 /* VoiceWhisperModelStorage.swift */; };
     A10000000000000000000659 /* VoiceWhisperModelDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000659 /* VoiceWhisperModelDownloadPolicy.swift */; };
@@ -1436,6 +1438,8 @@
     A20000000000000000000648 /* VoiceProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000002090 /* VoiceRemoteWhisperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRemoteWhisperProtocol.swift; sourceTree = "<group>"; };
+    A20000000000000000002091 /* VoiceRemoteWhisperNodeRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRemoteWhisperNodeRegistry.swift; sourceTree = "<group>"; };
+    A20000000000000000002092 /* VoiceRemoteWhisperNodeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRemoteWhisperNodeClient.swift; sourceTree = "<group>"; };
     A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelVerifier.swift; sourceTree = "<group>"; };
     A20000000000000000000657 /* VoiceWhisperModelStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelStorage.swift; sourceTree = "<group>"; };
     A20000000000000000000659 /* VoiceWhisperModelDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelDownloadPolicy.swift; sourceTree = "<group>"; };
@@ -2049,6 +2053,8 @@
         A20000000000000000000648 /* VoiceProviderSettings.swift */,
         A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */,
         A20000000000000000002090 /* VoiceRemoteWhisperProtocol.swift */,
+        A20000000000000000002091 /* VoiceRemoteWhisperNodeRegistry.swift */,
+        A20000000000000000002092 /* VoiceRemoteWhisperNodeClient.swift */,
         A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */,
         A20000000000000000000657 /* VoiceWhisperModelStorage.swift */,
         A20000000000000000000659 /* VoiceWhisperModelDownloadPolicy.swift */,
@@ -2999,6 +3005,8 @@
         A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */,
         A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */,
         A10000000000000000002090 /* VoiceRemoteWhisperProtocol.swift in Sources */,
+        A10000000000000000002091 /* VoiceRemoteWhisperNodeRegistry.swift in Sources */,
+        A10000000000000000002092 /* VoiceRemoteWhisperNodeClient.swift in Sources */,
         A10000000000000000000656 /* VoiceWhisperModelVerifier.swift in Sources */,
         A10000000000000000000657 /* VoiceWhisperModelStorage.swift in Sources */,
         A10000000000000000000659 /* VoiceWhisperModelDownloadPolicy.swift in Sources */,
