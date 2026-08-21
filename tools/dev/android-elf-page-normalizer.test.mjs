@@ -21,6 +21,7 @@ function syntheticElf({ alignments = [0x1000, 0x1000, 0x1000] } = {}) {
   buffer.write("\x7fELF", 0, "binary");
   buffer[4] = 2;
   buffer[5] = 1;
+  buffer[6] = 1;
   buffer.writeUInt16LE(3, 16);
   buffer.writeUInt16LE(183, 18);
   buffer.writeUInt32LE(1, 20);
@@ -50,7 +51,7 @@ function syntheticElf({ alignments = [0x1000, 0x1000, 0x1000] } = {}) {
   return buffer;
 }
 
-test("normalizes every 4 KB AArch64 load segment to 16 KB", () => {
+test("normalizes all 4 KB AArch64 load segments to 16 KB", () => {
   const source = syntheticElf();
   const result = normalizeAndroidElfPageSize(source);
   assert.equal(result.changed, true);
@@ -68,7 +69,7 @@ test("leaves an already compatible ELF byte-identical", () => {
   assert.equal(result.buffer, source);
 });
 
-test("ignores non-AArch64 ELF input", () => {
+test("leaves non-AArch64 ELF input byte-identical", () => {
   const source = syntheticElf();
   source.writeUInt16LE(62, 18);
   const result = normalizeAndroidElfPageSize(source);

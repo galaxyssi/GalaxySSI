@@ -13,6 +13,7 @@ const ELF_DATA_LITTLE_ENDIAN = 1;
 const ELF_MACHINE_AARCH64 = 183;
 const PROGRAM_HEADER_LOAD = 1;
 const SECTION_HEADER_NOBITS = 8;
+const ELF64_HEADER_SIZE = 64;
 
 function checkedNumber(value, label) {
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -22,12 +23,15 @@ function checkedNumber(value, label) {
 }
 
 function readElf64(buffer) {
-  if (buffer.length < 64 || buffer.toString("ascii", 0, 4) !== "\x7fELF") {
+  if (buffer.length < ELF64_HEADER_SIZE || buffer.toString("ascii", 0, 4) !== "\x7fELF") {
     throw new Error("input is not an ELF file");
   }
   if (buffer[4] !== ELF_CLASS_64 || buffer[5] !== ELF_DATA_LITTLE_ENDIAN) return null;
   if (buffer.readUInt16LE(18) !== ELF_MACHINE_AARCH64) {
     return null;
+  }
+  if (buffer[6] !== 1 || buffer.readUInt32LE(20) !== 1) {
+    throw new Error("input uses an unsupported ELF version");
   }
 
   const programHeaderOffset = checkedNumber(buffer.readBigUInt64LE(32), "program header offset");
