@@ -8,6 +8,99 @@ import org.json.JSONObject
 
 class AgentSupervisedProjectPromptTest {
     @Test
+    fun `supervised repair keeps the current provider below its rotation threshold`() {
+        val connector = supervisedConnector(
+            connectorId = "codex",
+            fallbackIds = "cloud-models,hermes"
+        )
+
+        val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+            connector = connector,
+            targets = supervisedTargets(),
+            attempt = 1,
+            rotateAfter = 2
+        )
+
+        assertFalse(route.rotated)
+        assertEquals(1, route.attempt)
+        assertEquals("codex", route.connector.parameters["connector_id"])
+    }
+
+    @Test
+    fun `supervised repair rotates to the next configured provider and resets its attempts`() {
+        val connector = supervisedConnector(
+            connectorId = "codex",
+            fallbackIds = "cloud-models,hermes"
+        )
+
+        val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+            connector = connector,
+            targets = supervisedTargets(),
+            attempt = 2,
+            rotateAfter = 2
+        )
+
+        assertTrue(route.rotated)
+        assertEquals(0, route.attempt)
+        assertEquals("cloud-models", route.connector.parameters["connector_id"])
+        assertEquals("Cloud Models", route.connector.target)
+        assertEquals("model", route.connector.parameters["connector_kind"])
+        assertEquals("cloud-model-api", route.connector.parameters["connector_adapter_type"])
+        assertEquals("cloud-provider", route.connector.parameters["connector_failure_domain"])
+        assertEquals("hermes,codex", route.connector.parameters["routing_fallback_ids"])
+        assertEquals("0", route.connector.parameters["supervised_parse_attempt"])
+        assertEquals("0", route.connector.parameters["supervised_progress_attempt"])
+        assertEquals("0", route.connector.parameters["supervised_completion_attempt"])
+        assertEquals("codex", route.connector.parameters["supervised_previous_connector_id"])
+        assertEquals("1", route.connector.parameters["supervised_provider_rotation_count"])
+    }
+
+    @Test
+    fun `manual provider selection never rotates during supervised repair`() {
+        val connector = supervisedConnector(
+            connectorId = "codex",
+            fallbackIds = "cloud-models,hermes",
+            manuallyLocked = true
+        )
+
+        val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+            connector = connector,
+            targets = supervisedTargets(),
+            attempt = 8,
+            rotateAfter = 2
+        )
+
+        assertFalse(route.rotated)
+        assertEquals(8, route.attempt)
+        assertEquals("codex", route.connector.parameters["connector_id"])
+    }
+
+    @Test
+    fun `supervised repair continues on the current provider when no fallback is callable`() {
+        val connector = supervisedConnector(
+            connectorId = "codex",
+            fallbackIds = "offline-provider"
+        )
+
+        val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+            connector = connector,
+            targets = supervisedTargets() + AgentCallableTarget(
+                id = "offline-provider",
+                title = "Offline Provider",
+                kind = AgentConnectorKind.MODEL,
+                status = AgentConnectorStatus.NEEDS_SETUP,
+                capabilities = listOf(AgentCapability.CHAT)
+            ),
+            attempt = 5,
+            rotateAfter = 2
+        )
+
+        assertFalse(route.rotated)
+        assertEquals(5, route.attempt)
+        assertEquals("codex", route.connector.parameters["connector_id"])
+    }
+
+    @Test
     fun `canonicalizes unambiguous project tool dialect aliases`() {
         val raw = """
             {
@@ -868,6 +961,58 @@ class AgentSupervisedProjectPromptTest {
             risk = AgentNativeToolRisk.LOW
         )
     }
+
+    private fun supervisedConnector(
+        connectorId: String,
+        fallbackIds: String,
+        manuallyLocked: Boolean = false
+    ): AgentAction = AgentAction(
+        id = "supervised-connector",
+        kind = AgentActionKind.CALL_CONNECTOR,
+        target = "Codex",
+        risk = AgentRisk.LOW,
+        status = AgentActionStatus.WAITING_RESPONSE,
+        description = "Supervise phone project",
+        parameters = mapOf(
+            "connector_id" to connectorId,
+            "connector_kind" to "agent",
+            "connector_adapter_type" to "stale-adapter",
+            "connector_failure_domain" to "stale-domain",
+            "routing_fallback_ids" to fallbackIds,
+            "manual_target_locked" to manuallyLocked.toString()
+        ),
+        requiresConfirmation = false
+    )
+
+    private fun supervisedTargets(): List<AgentCallableTarget> = listOf(
+        AgentCallableTarget(
+            id = "codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.CODE),
+            failureDomain = "desktop-codex",
+            adapterType = "codex-app-server-or-cli"
+        ),
+        AgentCallableTarget(
+            id = "cloud-models",
+            title = "Cloud Models",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING),
+            failureDomain = "cloud-provider",
+            adapterType = "cloud-model-api"
+        ),
+        AgentCallableTarget(
+            id = "hermes",
+            title = "Hermes",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.DISCONNECTED,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.RESEARCH),
+            failureDomain = "desktop-hermes",
+            adapterType = "hermes-cli"
+        )
+    )
 
     private fun request(goal: String): AgentRequest {
         val screen = ScreenContext(
