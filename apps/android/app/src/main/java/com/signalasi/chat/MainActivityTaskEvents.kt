@@ -1552,15 +1552,8 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
     }
     when (signal.kind) {
         AgentTaskLivenessSignalKind.STALLED -> {
-            agentTranscriptStore.upsert(
-                role = AgentTranscriptRole.PROCESS,
-                text = getString(R.string.agent_task_watchdog_stalled),
-                dedupeKey = dedupeKey,
-                timestampMillis = signal.observedAtMillis,
-                conversationId = conversationId,
-                turnId = workspace.taskId,
-                taskId = workspace.taskId
-            )
+            // A warning threshold is only a supervisor signal. Do not present a guessed
+            // diagnosis until the model has assessed the latest durable evidence.
             consumePendingAgentConnectorResponsesAsync()
             if (workspace.status == AgentWorkspaceStatus.WAITING_RESPONSE &&
                 workspace.agentId.isNotBlank() && workspace.agentId != "signalasi-mobile"
@@ -1570,71 +1563,53 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
         }
         AgentTaskLivenessSignalKind.RECOVERED -> {
             deleteAgentTranscriptByDedupeKey(conversationId, dedupeKey)
-        }
-        AgentTaskLivenessSignalKind.TIMED_OUT -> {
-            deleteAgentTranscriptByDedupeKey(conversationId, dedupeKey)
-            val timedOutRuntimes = activeAgentTasks.entries
-                .filter { (_, runtime) ->
-                    agentRuntimeTurnIds[runtime] == workspace.workspaceId
-                }
-            val timedOutRuntime = timedOutRuntimes
-                .map { it.value }
-                .distinct()
-                .lastOrNull()
-            val timedOutSnapshot = timedOutRuntime?.snapshot()
-            val timedOutRoute = timedOutSnapshot?.plan?.route
-            val noReply = agentNoReplyDisplay(
-                taskStatus = "timed_out",
-                error = signal.reason,
-                currentStep = timedOutSnapshot?.pendingAction?.description.orEmpty(),
-                agentId = workspace.agentId.ifBlank {
-                    timedOutRoute?.targetId.orEmpty()
-                },
-                targetName = timedOutRoute?.targetTitle.orEmpty()
-                    .ifBlank { timedOutSnapshot?.plan?.selectedAgentOrModel.orEmpty() }
-                    .ifBlank { workspace.agentId },
-                routeKind = timedOutRoute?.kind ?: AgentRouteKind.UNKNOWN,
-                routeStatus = timedOutRoute?.status
+            deleteAgentTranscriptByDedupeKey(
+                conversationId,
+                "task-liveness-assessment:${workspace.taskId}"
             )
-            timedOutRuntimes.forEach { (sourceMessageId, runtime) ->
-                cancelConnectorTimeouts(sourceMessageId)
-                activeAgentTasks.remove(sourceMessageId, runtime)
-            }
-            val timeoutState = timedOutRuntime?.let { runtime ->
-                runCatching {
-                    runtime.forceTaskTimeout(noReply.message)
-                }.onFailure { error ->
-                    Log.e(
-                        "SignalASIAgent",
-                        "Task timeout reconciliation failed without terminating the UI " +
-                            "workspace=${workspace.workspaceId.take(8)}",
-                        error
-                    )
-                }.getOrElse {
-                    runtime.snapshot()
-                }.also {
-                    provisionalAgentTasks.remove(runtime)
-                    agentRuntimeConversationIds.remove(runtime)
-                    agentRuntimeTurnIds.remove(runtime)
-                }
-            }
-            agentTranscriptStore.append(
-                role = AgentTranscriptRole.ASSISTANT,
-                text = noReply.message,
-                dedupeKey = "task-watchdog-timeout:${workspace.taskId}",
+            clearSupersededAgentFailureEntries(conversationId)
+        }
+        AgentTaskLivenessSignalKind.ASSESSMENT_REQUIRED -> {
+            deleteAgentTranscriptByDedupeKey(conversationId, dedupeKey)
+            agentTranscriptStore.upsert(
+                role = AgentTranscriptRole.PROCESS,
+                text = getString(R.string.agent_task_liveness_assessment),
+                dedupeKey = "task-liveness-assessment:${workspace.taskId}",
+                timestampMillis = signal.observedAtMillis,
                 conversationId = conversationId,
                 turnId = workspace.taskId,
                 taskId = workspace.taskId
             )
-            if (timeoutState != null &&
-                conversationId == agentTranscriptStore.activeConversation().id
-            ) {
-                renderAgentState(
-                    timeoutState,
-                    conversationId = conversationId,
-                    turnId = workspace.workspaceId,
-                    syncTranscript = false
-                )
+            val runtime = agentRuntimeForWorkspace(workspace.workspaceId)
+            if (runtime == null) {
+                requestRecoverableAgentRunReconciliation("liveness_assessment")
+            } else {
+                thread(name = "signalasi-agent-liveness-assessment") {
+                    val assessedState = runCatching {
+                        runtime.assessLivenessWithModel(signal.reason)
+                    }.onFailure { error ->
+                        Log.e(
+                            "SignalASIAgent",
+                            "Model liveness assessment failed; durable task remains recoverable " +
+                                "workspace=${workspace.workspaceId.take(8)}",
+                            error
+                        )
+                        requestRecoverableAgentRunReconciliation("liveness_assessment_failed")
+                    }.getOrNull() ?: return@thread
+                    runOnUiThread {
+                        deleteAgentTranscriptByDedupeKey(
+                            conversationId,
+                            "task-liveness-assessment:${workspace.taskId}"
+                        )
+                        renderAgentState(
+                            assessedState,
+                            conversationId = conversationId,
+                            turnId = workspace.workspaceId,
+                            syncTranscript = false
+                        )
+                        refreshAgentTranscriptWindow(conversationId)
+                    }
+                }
             }
         }
     }

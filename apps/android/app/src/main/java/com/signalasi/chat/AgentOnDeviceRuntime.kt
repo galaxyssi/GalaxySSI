@@ -267,7 +267,8 @@ data class AgentRuntimeExecutionRequest(
     val progressListener: (AgentRuntimeProgress) -> Unit = {},
     val guestWorkspacePath: String = "",
     val secretEnvironment: Map<String, String> = emptyMap(),
-    val hostInputFiles: List<AgentRuntimeHostInput> = emptyList()
+    val hostInputFiles: List<AgentRuntimeHostInput> = emptyList(),
+    val workspaceMutationExpected: Boolean = true
 )
 
 /** A host-owned file staged read-only in spirit into one isolated guest run. */
@@ -518,7 +519,7 @@ class AgentOnDeviceRuntimeManager(
             } else {
                 emptyList()
             }
-            val commit = if (succeeded) {
+            val commit = if (succeeded && normalizedRequest.workspaceMutationExpected) {
                 workspaceManager.commitProject(
                     prepared = prepared,
                     byteLimit = normalizedRequest.resourceLimits.diskBytes,
@@ -534,7 +535,11 @@ class AgentOnDeviceRuntimeManager(
                 null
             }
             val disposition = if (succeeded) {
-                AgentRuntimeWorkspaceDisposition.COMMITTED
+                if (normalizedRequest.workspaceMutationExpected) {
+                    AgentRuntimeWorkspaceDisposition.COMMITTED
+                } else {
+                    AgentRuntimeWorkspaceDisposition.UNCHANGED
+                }
             } else if (prepared.direct) {
                 AgentRuntimeWorkspaceDisposition.PERSISTED_WITH_FAILURE
             } else {
@@ -549,6 +554,12 @@ class AgentOnDeviceRuntimeManager(
                 workspaceDisposition = disposition
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
+            runCatching {
+                workspaceManager.markFinished(
+                    prepared,
+                    if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
+                )
+            }
             if (receipt != null && receipt.verificationKind != AgentRuntimeVerificationKind.NONE && response.exitCode == 0) {
                 runCatching { publicationGuard.recordVerification(receipt) }
                     .onFailure { error ->
@@ -559,12 +570,6 @@ class AgentOnDeviceRuntimeManager(
                             error
                         )
                     }
-            }
-            runCatching {
-                workspaceManager.markFinished(
-                    prepared,
-                    if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
-                )
             }
             Log.i(
                 "SignalASILatency",

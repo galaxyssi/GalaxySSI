@@ -62,6 +62,26 @@ class AgentTaskLivenessPolicyTest {
     }
 
     @Test
+    fun modelAssessmentRemainsPendingUntilRealProgressArrives() {
+        val awaitingAssessment = workspace(
+            status = AgentWorkspaceStatus.RUNNING,
+            events = listOf(
+                event(1L, AgentTaskEventKinds.RUNNING, 1_000L),
+                event(2L, AgentTaskEventKinds.STALLED, 1_100L),
+                event(3L, AgentTaskEventKinds.LIVENESS_ASSESSMENT_REQUESTED, 1_200L)
+            )
+        )
+        val recovered = awaitingAssessment.copy(
+            eventSequence = 4L,
+            eventJournal = awaitingAssessment.eventJournal +
+                event(4L, AgentTaskEventKinds.PROGRESS, 1_210L)
+        )
+
+        assertTrue(policy.hasPendingAssessment(awaitingAssessment))
+        assertFalse(policy.hasPendingAssessment(recovered))
+    }
+
+    @Test
     fun userControlledWaitsDoNotTimeOut() {
         listOf(
             AgentWorkspaceStatus.WAITING_CONFIRMATION,

@@ -1225,6 +1225,7 @@
     <string name="agent_task_status_cancelled">Cancelled</string>
     <string name="agent_task_status_timed_out">Timed out</string>
     <string name="agent_task_watchdog_stalled">No progress reported. SignalASI is checking the task connection.</string>
+    <string name="agent_task_liveness_assessment">The task stopped reporting progress. The model is reviewing the latest evidence and deciding the next step.</string>
     <string name="agent_task_watchdog_timed_out">The task stopped after no progress was reported for an extended period. Retry when the connection is available.</string>
     <string name="agent_task_status_cancelling">Cancelling</string>
     <string name="agent_task_cancel_title">Cancel Agent task</string>

@@ -635,8 +635,9 @@ internal fun MobileNativeAgent.executePlannedAction(
         allowOutputHandoff = AgentModelPlannerSettingsStore(appContext).load().multiAgentCoordination ||
             hardenedAction.isSupervisedProjectConnector()
     ) ?: hardenedAction
-    val executionAction = materializedAction.copy(
-        parameters = materializedAction.parameters + mapOf(
+    val routedAction = refreshAutomaticConnectorRoute(materializedAction)
+    val executionAction = routedAction.copy(
+        parameters = routedAction.parameters + mapOf(
             "original_goal" to currentGoal,
             "_signalasi_task_id" to sessionId
         )
@@ -744,10 +745,10 @@ internal fun MobileNativeAgent.executePlannedAction(
     val specializedContinuation = updatedPlan?.plannerProfile?.startsWith("specialized-adapter:") == true &&
         hardenedAction.requiresSpecializedContinuation()
     val replanReason = when {
-        lastActionResult?.success != true && updatedPlan?.isSupervisedProjectPlan() == true ->
-            PHONE_SUPERVISED_PROJECT_REPLAN_REASON
         lastActionResult?.success != true &&
             lastActionResult?.metadata?.get("non_retriable") == "true" -> ""
+        lastActionResult?.success != true && updatedPlan?.isSupervisedProjectPlan() == true ->
+            PHONE_SUPERVISED_PROJECT_REPLAN_REASON
         lastActionResult?.success != true && hardenedAction.isPhoneDevelopmentRuntimeHandoff() ->
             PHONE_DEVELOPMENT_REPLAN_REASON
         lastActionResult?.success != true -> "action_failed:${hardenedAction.kind.name}"
@@ -805,6 +806,46 @@ internal fun MobileNativeAgent.executePlannedAction(
     return snapshot()
 }
 
+internal fun MobileNativeAgent.refreshAutomaticConnectorRoute(action: AgentAction): AgentAction {
+    if (action.kind != AgentActionKind.CALL_CONNECTOR ||
+        action.parameters["manual_target_locked"] == "true" ||
+        action.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()
+    ) {
+        return action
+    }
+    val targets = connectorRegistry.availableTargets()
+    val routing = AgentResourceRouter(appContext).route(
+        goal = currentGoal,
+        targets = targets,
+        tools = emptyList()
+    )
+    val selection = AgentConnectorRouteSelector.select(
+        targets = targets,
+        decision = routing
+    ) ?: return action
+    val selected = selection.target
+    val fallbackIds = selection.decision?.fallbacks.orEmpty()
+        .map { candidate -> candidate.resource.targetId }
+        .filter(String::isNotBlank)
+        .distinct()
+    Log.i(
+        "SignalASIAgentRoute",
+        "dispatch_refresh action=${action.id.take(32)} selected=${selected.id} " +
+            "fallbacks=${fallbackIds.joinToString(",")}"
+    )
+    return action.copy(
+        target = selected.title,
+        parameters = action.parameters + mapOf(
+            "connector_id" to selected.id,
+            "connector_kind" to selected.kind.name.lowercase(Locale.ROOT),
+            "connector_adapter_type" to selected.adapterType,
+            "connector_failure_domain" to selected.failureDomain,
+            "routing_fallback_ids" to fallbackIds.joinToString(","),
+            "manual_target_locked" to "false"
+        )
+    )
+}
+
 internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
     plan: AgentPlan,
     completedAction: AgentAction,
@@ -822,9 +863,38 @@ internal fun MobileNativeAgent.ensureSupervisedProjectContinuation(
         .lastOrNull(AgentAction::isSupervisedProjectConnector)
         ?: return plan
     val request = supervisedProjectRequest(plan, continuation = true)
+    val routing = AgentResourceRouter(appContext).route(
+        goal = currentGoal,
+        targets = request.targets,
+        tools = emptyList()
+    )
+    val routeSelection = AgentConnectorRouteSelector.select(
+        targets = request.targets,
+        decision = routing
+    )
+    val selectedTarget = routeSelection?.target
+    val fallbackIds = routeSelection?.decision?.fallbacks.orEmpty()
+        .map { candidate -> candidate.resource.targetId }
+        .filter(String::isNotBlank)
+        .distinct()
+    val routedConnector = connector.copy(
+        target = selectedTarget?.title ?: connector.target,
+        parameters = connector.parameters + mapOf(
+            "connector_id" to (selectedTarget?.id
+                ?: connector.parameters["connector_id"].orEmpty()),
+            "connector_kind" to (selectedTarget?.kind?.name?.lowercase(Locale.ROOT)
+                ?: connector.parameters["connector_kind"].orEmpty()),
+            "connector_adapter_type" to (selectedTarget?.adapterType
+                ?: connector.parameters["connector_adapter_type"].orEmpty()),
+            "connector_failure_domain" to (selectedTarget?.failureDomain
+                ?: connector.parameters["connector_failure_domain"].orEmpty()),
+            "routing_fallback_ids" to fallbackIds.joinToString(","),
+            "manual_target_locked" to "false"
+        )
+    )
     val appended = AgentSupervisedProjectLoop.appendReviewer(
         plan = plan,
-        connector = connector,
+        connector = routedConnector,
         request = request,
         idSuffix = "recovered-${plan.revision + 1}-${completedAction.id.take(24)}"
     )
@@ -948,6 +1018,11 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         null
     }
     val effectiveSuccess = success && responseSelfCheck?.accepted != false
+    val connectorProviderFailure = if (effectiveSuccess) {
+        null
+    } else {
+        AgentProviderFailurePolicy.classify(content)
+    }
     val response = when {
         effectiveSuccess -> rawResponse
         success -> appContext.getString(R.string.agent_response_self_check_failed)
@@ -974,16 +1049,19 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
         )
     }
-    pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
-        AgentResourceHealthStore(appContext).record(
-            id = "domain:$domain",
-            success = effectiveSuccess,
-            latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
-        )
+    if (pendingResult.metadata["cloud_health_recorded"] != "true") {
+        pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
+            AgentResourceHealthStore(appContext).record(
+                id = "domain:$domain",
+                success = effectiveSuccess,
+                latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
+            )
+        }
     }
     if (!effectiveSuccess) {
         val failureReason = responseSelfCheck?.diagnostic
             ?: content.trim().ifBlank { "Connector returned no usable result" }
+        val providerFailure = requireNotNull(connectorProviderFailure)
         if (!recordExecutionFailure(
                 failureClass = "connector:${pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }}",
                 reason = failureReason,
@@ -997,7 +1075,9 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             message = response,
             metadata = pendingResult.metadata + mapOf(
                 "response_self_check" to (responseSelfCheck?.status?.name?.lowercase(Locale.ROOT) ?: "not_run"),
-                "response_self_check_reasons" to responseSelfCheck?.reasons.orEmpty().joinToString(",")
+                "response_self_check_reasons" to responseSelfCheck?.reasons.orEmpty().joinToString(","),
+                "provider_failure_class" to providerFailure.failureClass.name.lowercase(Locale.ROOT),
+                "non_retriable" to providerFailure.permanent.toString()
             )
         )
         continueWithConnectorFallback(plan, failedResult)?.let { return it }
@@ -1013,7 +1093,10 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         "response_self_check_reasons" to responseSelfCheck?.reasons.orEmpty().joinToString(","),
         "response_request_digest" to responseSelfCheck?.requestDigest.orEmpty(),
         "response_digest" to responseSelfCheck?.responseDigest.orEmpty(),
-        "recovered_after_timeout" to recoveringTimeout.toString()
+        "recovered_after_timeout" to recoveringTimeout.toString(),
+        "provider_failure_class" to connectorProviderFailure?.failureClass
+            ?.name?.lowercase(Locale.ROOT).orEmpty(),
+        "non_retriable" to (connectorProviderFailure?.permanent == true).toString()
     )
     val completedResult = AgentActionResult(
         actionId = actionId,
@@ -1125,7 +1208,9 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     }
     val preservesToolGraph = effectiveSuccess && responsePlan.hasOutputHandoffFrom(actionId)
-    val shouldReplan = (hasPendingActions && !preservesToolGraph) || !effectiveSuccess
+    val nonRetriableFailure = !effectiveSuccess && completedResult.metadata["non_retriable"] == "true"
+    val shouldReplan = (hasPendingActions && !preservesToolGraph) ||
+        (!effectiveSuccess && !nonRetriableFailure)
     val continuedPlan = if (shouldReplan) {
         if (!advanceExecutionLoop(
                 nextPhase = AgentExecutionLoopPhase.REPLAN,

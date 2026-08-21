@@ -6,6 +6,50 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentExecutionContinuityTest {
+    @Test
+    fun `workspace restore prioritizes live handoffs before old paused shells`() {
+        val candidates = listOf(
+            restoreWorkspace("paused-new", AgentWorkspaceStatus.PAUSED, updatedAt = 500L),
+            restoreWorkspace("failed", AgentWorkspaceStatus.FAILED, updatedAt = 200L),
+            restoreWorkspace("waiting-old", AgentWorkspaceStatus.WAITING_RESPONSE, updatedAt = 100L),
+            restoreWorkspace("waiting-new", AgentWorkspaceStatus.WAITING_RESPONSE, updatedAt = 300L)
+        )
+
+        assertEquals(
+            listOf("waiting-new", "waiting-old", "failed", "paused-new"),
+            AgentWorkspaceRestoreCandidatePolicy.ordered(candidates).map(AgentWorkspace::workspaceId)
+        )
+    }
+
+    @Test
+    fun `workspace restore prioritizes the latest user turn over an older waiting handoff`() {
+        val candidates = listOf(
+            restoreWorkspace("older-waiting", AgentWorkspaceStatus.WAITING_RESPONSE, updatedAt = 100L),
+            restoreWorkspace("latest-turn", AgentWorkspaceStatus.RUNNING, updatedAt = 300L)
+        )
+
+        assertEquals(
+            listOf("latest-turn", "older-waiting"),
+            AgentWorkspaceRestoreCandidatePolicy.ordered(
+                candidates,
+                preferredWorkspaceId = "latest-turn"
+            ).map(AgentWorkspace::workspaceId)
+        )
+    }
+
+    private fun restoreWorkspace(
+        id: String,
+        status: AgentWorkspaceStatus,
+        updatedAt: Long
+    ) = AgentWorkspace(
+        workspaceId = id,
+        sessionId = "session-$id",
+        conversationId = "conversation",
+        taskId = id,
+        status = status,
+        updatedAtMillis = updatedAt
+    )
+
 
     @Test
     fun `persisted restore does not replace a live runtime in the active conversation`() {
@@ -18,8 +62,8 @@ class AgentExecutionContinuityTest {
     }
 
     @Test
-    fun `persisted restore does not race an active supervisor task`() {
-        assertFalse(
+    fun `persisted restore scans the active supervisor record after process death`() {
+        assertTrue(
             AgentWorkspaceRestoreArbitrationPolicy.shouldScanPersistedWorkspaces(
                 hasLiveRuntimeInConversation = false,
                 hasActiveSupervisorTaskInConversation = true
@@ -577,6 +621,33 @@ class AgentExecutionContinuityTest {
                 AgentPhase.PAUSED,
                 plan,
                 failed
+            )
+        )
+    }
+
+    @Test
+    fun orphanedTimelineStopsRunningAfterRuntimeBindGracePeriod() {
+        val startedAt = 10_000L
+
+        assertEquals(
+            AgentTimelineRuntimeResolution(AgentPhase.EXECUTING, 0L),
+            AgentTimelineOrphanPolicy.resolve(
+                hasRuntime = false,
+                startedAtMillis = startedAt,
+                completedAtMillis = null,
+                nowMillis = startedAt + 1_000L
+            )
+        )
+        assertEquals(
+            AgentTimelineRuntimeResolution(
+                AgentPhase.FAILED,
+                startedAt + AgentTimelineOrphanPolicy.RUNTIME_BIND_GRACE_MILLIS
+            ),
+            AgentTimelineOrphanPolicy.resolve(
+                hasRuntime = false,
+                startedAtMillis = startedAt,
+                completedAtMillis = null,
+                nowMillis = startedAt + AgentTimelineOrphanPolicy.RUNTIME_BIND_GRACE_MILLIS
             )
         )
     }

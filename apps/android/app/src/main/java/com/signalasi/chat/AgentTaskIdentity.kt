@@ -18,6 +18,12 @@ internal data class AgentTaskIdentity(
             turnId.isNotBlank()
 }
 
+internal data class AgentConnectorResponseIdentity(
+    val conversationId: String,
+    val taskId: String,
+    val turnId: String
+)
+
 internal object AgentTaskIdentityPolicy {
     fun conversationId(contactId: String, requested: String): String =
         requested.trim().ifBlank { "contact:${contactId.trim()}" }
@@ -67,6 +73,23 @@ internal object AgentTaskIdentityPolicy {
             taskId == expectedTaskId &&
             turnId == expectedTurnId
     }
+
+    fun canonicalConnectorResponseIdentity(
+        pendingDelivery: AgentPendingDelivery?,
+        conversationId: String,
+        taskId: String,
+        turnId: String
+    ): AgentConnectorResponseIdentity = AgentConnectorResponseIdentity(
+        conversationId = pendingDelivery?.conversationId.orEmpty().ifBlank {
+            conversationId.trim()
+        },
+        taskId = pendingDelivery?.taskId.orEmpty().ifBlank {
+            taskId.trim()
+        },
+        turnId = pendingDelivery?.turnId.orEmpty().ifBlank {
+            turnId.trim()
+        }
+    )
 
     fun routesToMainAgent(
         superseded: Boolean,

@@ -29,6 +29,7 @@ import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
 import com.signalasi.chat.voice.agent.VoiceAgentRunRequest
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.modelstream.ModelStreamEvent
+import com.signalasi.chat.voice.modelstream.ModelStreamError
 import com.signalasi.chat.voice.modelstream.ModelStreamUiMerger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -1190,9 +1191,24 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             )
         }
-        val modelCandidates = resolveCloudModelContacts(preferredContactId)
+        val modelCandidates = resolveCloudModelContacts(
+            preferredContactId = preferredContactId,
+            allowAlternatives = action.parameters["manual_target_locked"] != "true"
+        )
         val contact = modelCandidates.firstOrNull()
-            ?: return AgentActionResult(action.id, false, "No cloud model contact is configured")
+            ?: return AgentActionResult(
+                actionId = action.id,
+                success = false,
+                message = "No usable cloud model contact is configured",
+                metadata = mapOf(
+                    "non_retriable" to "true",
+                    "provider_failure_class" to AgentProviderFailureClass.PERMANENT_CREDENTIAL
+                        .name.lowercase(Locale.ROOT),
+                    "resource_id" to observationTargetId,
+                    "failure_domain" to "cloud",
+                    "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
+                )
+            )
         val contactId = contact.optString("id").ifBlank { contact.optString("signalasi_id") }
         val selectedModel = AppStore.selectedCloudModelContact(context, contactId) ?: contact
         val exhaustedCandidateIds = modelCandidates.map { candidate ->
@@ -1236,7 +1252,16 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         Thread {
             val appContext = context.applicationContext
             val turnId = connectorTurnId
-            val modelPrompt = promptWithConversationContext(action, requestPrompt, cloud = true)
+            val modelPrompt = if (
+                action.parameters["connector_task_mode"] == PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+            ) {
+                // The supervised project prompt already owns its provider-neutral
+                // conversation summary and verified observation ledger. Wrapping it
+                // as ordinary cloud chat duplicates stale context and response rules.
+                requestPrompt
+            } else {
+                promptWithConversationContext(action, requestPrompt, cloud = true)
+            }
             val cloudImages = runCatching {
                 CloudImagePayloadFactory.prepare(appContext, cloudImageAttachments)
             }
@@ -1258,19 +1283,25 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "reason=${lastError?.message.orEmpty().take(160)}"
                 )
             }
-            modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty().forEach { candidate ->
-                if (successfulModel != null) return@forEach
+            for (candidate in modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty()) {
+                if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
                 val model = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate
+                var candidateFailures = 0
+                while (successfulModel == null &&
+                    candidateFailures < AgentProviderFailurePolicy.MAX_AUTO_FAILURES_PER_RESOURCE
+                ) {
                 val startedAt = SystemClock.elapsedRealtime()
                 val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
                 val merger = ModelStreamUiMerger()
                 var usage = CloudModelUsage()
                 var streamCompleted = false
                 var streamError: Throwable? = null
+                var providerError: ModelStreamError? = null
                 Log.i(
                     "SignalASILatency",
                     "agent_cloud stage=request_start source=$messageId model=${model.optString("cloud_model")} " +
+                        "attempt=${candidateFailures + 1} " +
                         "dispatch_elapsed_ms=${SystemClock.elapsedRealtime() - dispatchStartedAt} " +
                         "prompt_chars=${modelPrompt.length} prompt_tokens=${ConversationContextCompactor.estimateTokens(modelPrompt)}"
                 )
@@ -1289,6 +1320,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             ),
                             requestId = requestId,
                             images = cloudImages.getOrThrow(),
+                            allowExternalTools = action.parameters["connector_task_mode"] !=
+                                PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                             onToolEvent = { event ->
                                 Log.i(
                                     "SignalASILatency",
@@ -1346,9 +1379,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                         )
                                     }
                                 }
-                                is ModelStreamEvent.Failed -> streamError = IllegalStateException(
-                                    event.error.message.ifBlank { event.error.code }
-                                )
+                                is ModelStreamEvent.Failed -> {
+                                    providerError = event.error
+                                    streamError = IllegalStateException(
+                                        event.error.message.ifBlank { event.error.code }
+                                    )
+                                }
                                 is ModelStreamEvent.ToolCallDelta -> Unit
                             }
                         }
@@ -1366,6 +1402,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "agent_cloud stage=completed source=$messageId elapsed_ms=$elapsedMillis chars=${response.length}"
                     )
                 } else {
+                    candidateFailures += 1
                     lastError = streamError ?: IllegalStateException(
                         if (!streamCompleted) {
                             "Model stream ended before completion"
@@ -1373,7 +1410,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             "Model response did not satisfy the live-data route"
                         }
                     )
-                    resourceHealth.record("target:$candidateId", false, elapsedMillis)
+                    val providerFailure = AgentProviderFailurePolicy.classify(providerError)
+                    if (providerFailure.permanent) {
+                        resourceHealth.recordPermanentFailure("target:$candidateId", elapsedMillis)
+                        val provider = model.optString("cloud_provider").ifBlank { candidateId }
+                        resourceHealth.recordPermanentFailure("domain:cloud:$provider", elapsedMillis)
+                    } else {
+                        resourceHealth.record("target:$candidateId", false, elapsedMillis)
+                    }
                     AgentConnectorStreamBus.publish(
                         AgentConnectorStreamUpdate(
                             sourceMessageId = messageId,
@@ -1386,8 +1430,19 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     )
                     Log.w(
                         "SignalASILatency",
-                        "agent_cloud stage=failed source=$messageId elapsed_ms=$elapsedMillis reason=${lastError?.message.orEmpty().take(120)}"
+                        "agent_cloud stage=failed source=$messageId attempt=$candidateFailures " +
+                            "elapsed_ms=$elapsedMillis reason=${lastError?.message.orEmpty().take(120)}"
                     )
+                    if (AgentProviderFailurePolicy.shouldRetrySameResource(
+                            providerFailure,
+                            candidateFailures
+                        )
+                    ) {
+                        Thread.sleep(AgentProviderFailurePolicy.retryDelayMillis(candidateFailures))
+                    } else {
+                        break
+                    }
+                }
                 }
             }
             val succeeded = successfulModel != null
@@ -1637,7 +1692,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         return null
     }
 
-    internal fun resolveCloudModelContacts(preferredContactId: String = ""): List<JSONObject> {
+    internal fun resolveCloudModelContacts(
+        preferredContactId: String = "",
+        allowAlternatives: Boolean = true
+    ): List<JSONObject> {
         val results = mutableListOf<JSONObject>()
         if (preferredContactId.isNotBlank()) {
             AppStore.selectedCloudModelContact(context, preferredContactId)?.let { contact ->
@@ -1648,22 +1706,27 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 }
             }
         }
-        val contacts = AppStore.contacts(context)
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (contact.optBoolean("deleted", false)) continue
-            if (contact.optString("delivery_mode") != "cloud_api") continue
-            val selected = AppStore.selectedCloudModelContact(context, contact.optString("id")) ?: contact
-            if (!CloudModelCredentialPolicy.isAutoRoutable(selected)) continue
-            if (results.none { existing ->
-                    existing.optString("id") == selected.optString("id") &&
-                        existing.optString("cloud_model") == selected.optString("cloud_model")
+        if (allowAlternatives) {
+            val contacts = AppStore.contacts(context)
+            for (index in 0 until contacts.length()) {
+                val contact = contacts.optJSONObject(index) ?: continue
+                if (contact.optBoolean("deleted", false)) continue
+                if (contact.optString("delivery_mode") != "cloud_api") continue
+                val selected = AppStore.selectedCloudModelContact(context, contact.optString("id")) ?: contact
+                if (!CloudModelCredentialPolicy.isAutoRoutable(selected)) continue
+                if (results.none { existing ->
+                        existing.optString("id") == selected.optString("id") &&
+                            existing.optString("cloud_model") == selected.optString("cloud_model")
+                    }
+                ) {
+                    results += selected
                 }
-            ) {
-                results += selected
             }
         }
-        return results
+        return results.filter { candidate ->
+            val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
+            candidateId.isNotBlank() && !resourceHealth.snapshot("target:$candidateId").circuitOpen
+        }
     }
 
     internal fun connectorAliases(connectorId: String): Set<String> = when (connectorId) {

@@ -8,6 +8,124 @@ import org.json.JSONObject
 
 class AgentSupervisedProjectPromptTest {
     @Test
+    fun `canonicalizes unambiguous project tool dialect aliases`() {
+        val raw = """
+            {
+              "execution_location":"phone",
+              "actions":[
+                {"ref":"branch","kind":"CALL_NATIVE_TOOL","target":"branch",
+                 "depends_on":[],"use_outputs_from":[],
+                 "parameters":{"tool_id":"signalasi.project.repository.branch","arguments":{
+                   "workspace_id":"current","branch_name":"feature/test","base":"origin/main","create_new":true
+                 }}}
+              ]
+            }
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+        val parameters = normalized.getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+        val arguments = parameters.getJSONObject("arguments")
+
+        assertEquals(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, parameters.getString("tool_id"))
+        assertEquals("feature/test", arguments.getString("branch"))
+        assertEquals("origin/main", arguments.getString("base_ref"))
+        assertTrue(arguments.getBoolean("create"))
+        assertFalse(arguments.has("branch_name"))
+        assertFalse(arguments.has("base"))
+        assertFalse(arguments.has("create_new"))
+    }
+
+    @Test
+    fun `canonicalizes unambiguous workspace list dialect alias`() {
+        val raw = """
+            {
+              "execution_location":"phone",
+              "actions":[
+                {"ref":"list","kind":"CALL_NATIVE_TOOL","target":"list",
+                 "depends_on":[],"use_outputs_from":[],
+                 "parameters":{"tool_id":"signalasi.workspace.files.list","arguments":{
+                   "workspace_id":"current","path":""
+                 }}}
+              ]
+            }
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+        val parameters = normalized.getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+
+        assertEquals(AgentPhoneNativeToolCatalog.WORKSPACE_LIST, parameters.getString("tool_id"))
+    }
+
+    @Test
+    fun `canonicalizes repository status and branch name dialect aliases`() {
+        val status = """
+            {"execution_location":"phone","actions":[
+              {"ref":"status","kind":"CALL_NATIVE_TOOL","target":"status",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.status","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+        val branch = """
+            {"execution_location":"phone","actions":[
+              {"ref":"branch","kind":"CALL_NATIVE_TOOL","target":"branch",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.branch","arguments":{
+                 "workspace_id":"current","name":"feature/test"
+               }}}
+            ]}
+        """.trimIndent()
+
+        val statusParameters = JSONObject(AgentSupervisedProjectControlPayload.normalize(status))
+            .getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+        val branchParameters = JSONObject(AgentSupervisedProjectControlPayload.normalize(branch))
+            .getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+
+        assertEquals(AgentMobileProjectNativeTools.INSPECT, statusParameters.getString("tool_id"))
+        assertEquals("feature/test", branchParameters.getJSONObject("arguments").getString("branch"))
+        assertFalse(branchParameters.getJSONObject("arguments").has("name"))
+    }
+
+    @Test
+    fun `canonicalizes repository history dialect alias`() {
+        val raw = """
+            {"execution_location":"phone","actions":[
+              {"ref":"history","kind":"CALL_NATIVE_TOOL","target":"history",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.history","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+
+        val parameters = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+            .getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+
+        assertEquals(AgentMobileProjectNativeTools.LOG, parameters.getString("tool_id"))
+    }
+
+    @Test
+    fun `canonicalizes repository pull request dialect and branch arguments`() {
+        val raw = """
+            {"execution_location":"phone","actions":[
+              {"ref":"pr","kind":"CALL_NATIVE_TOOL","target":"pull-request",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.pull_request.create","arguments":{
+                 "workspace_id":"current","title":"Improve safety",
+                 "base_branch":"main","head_branch":"feature/safety"
+               }}}
+            ]}
+        """.trimIndent()
+
+        val parameters = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+            .getJSONArray("actions").getJSONObject(0).getJSONObject("parameters")
+        val arguments = parameters.getJSONObject("arguments")
+
+        assertEquals(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST, parameters.getString("tool_id"))
+        assertEquals("main", arguments.getString("base"))
+        assertEquals("feature/safety", arguments.getString("head"))
+        assertFalse(arguments.has("base_branch"))
+        assertFalse(arguments.has("head_branch"))
+    }
+
+    @Test
     fun `each model iteration selects exactly one observable action`() {
         val first = AgentAction(
             id = "inspect",
@@ -61,6 +179,31 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `auto model continuation receives recent sanitized phone tool observations`() {
+        val failed = AgentAction(
+            id = "clone",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentMobileProjectNativeTools.CLONE,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.FAILED,
+            description = "Prepare the phone repository",
+            result = "Git failed with exit code 128; access_token=top-secret",
+            evidence = "repository_state=partial; branch=feature/unborn",
+            requiresConfirmation = false
+        )
+
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(
+            request("Continue the phone project").copy(executionHistory = listOf(failed))
+        )
+
+        assertTrue(prompt.contains("SignalASI-owned context"))
+        assertTrue(prompt.contains("Git failed with exit code 128"))
+        assertTrue(prompt.contains("repository_state=partial"))
+        assertFalse(prompt.contains("top-secret"))
+        assertTrue(prompt.contains("access_token=[redacted]"))
+    }
+
+    @Test
     fun `project loop installs evidence backed dependencies and retries the blocked step`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
             request("Clone the project on this phone, build it, and fix any failures")
@@ -75,6 +218,9 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Never invoke Git through signalasi.runtime.execute"))
         assertTrue(prompt.contains("installs Git, CA certificates, and the SSH client"))
         assertTrue(prompt.contains("GitHub pull request URL"))
+        assertTrue(prompt.contains("partial means Git metadata exists but HEAD is not usable"))
+        assertTrue(prompt.contains("do not clone, list files, or repeat inspection"))
+        assertTrue(prompt.contains("FETCH_HEAD is a valid base_ref"))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_PROJECT))
         assertTrue(prompt.contains(AgentMobileProjectArchiveTools.IMPORT_GRADLE_CACHE))
         assertTrue(prompt.contains("/root and /workspace are phone Linux guest paths"))
@@ -96,6 +242,26 @@ class AgentSupervisedProjectPromptTest {
         """.trimIndent()
 
         assertEquals(raw, AgentSupervisedProjectControlPayload.normalize(raw))
+    }
+
+    @Test
+    fun `single action iteration removes stale dependencies from earlier rounds`() {
+        val raw = """
+            {"execution_location":"phone","summary":"Create the feature branch.","actions":[
+              {"ref":"branch","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.branch.checkout",
+               "description":"Create the feature branch","depends_on":["pull_latest"],"use_outputs_from":["pull_latest"],
+               "parameters":{"tool_id":"signalasi.project.repository.branch.checkout","arguments":{
+                 "workspace_id":"current","branch":"feature/test","create":true
+               }}}
+            ]}
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+            .getJSONArray("actions")
+            .getJSONObject(0)
+
+        assertEquals(0, normalized.getJSONArray("depends_on").length())
+        assertEquals(0, normalized.getJSONArray("use_outputs_from").length())
     }
 
     @Test
@@ -239,6 +405,85 @@ class AgentSupervisedProjectPromptTest {
             "- Inspect the phone runtime\n- Run the verified program",
             AgentSupervisedProjectControlPayload.visibleModelOutput(response)
         )
+    }
+
+    @Test
+    fun `format repair preserves correction after a full provider neutral context`() {
+        val invalidTool = "signalasi.project.repository.state"
+        val request = request("Continue this phone project").copy(
+            conversationContext = AgentConversationContext(
+                conversationId = "auto-context",
+                summary = "Earlier provider summary. ".repeat(600),
+                turns = listOf(
+                    AgentTranscriptEntry(
+                        id = "older-assistant-turn",
+                        role = AgentTranscriptRole.ASSISTANT,
+                        text = "Earlier assistant inference. ".repeat(300),
+                        timestampMillis = 1L
+                    )
+                ),
+                privateMode = false
+            )
+        )
+
+        val prompt = AgentSupervisedProjectLoop.formatRepairPrompt(
+            request,
+            "{\"actions\":[{\"parameters\":{\"tool_id\":\"$invalidTool\"}}]}"
+        )
+
+        assertTrue(prompt.contains("not a valid executable ActionPlan"))
+        assertTrue(prompt.contains(invalidTool))
+        assertTrue(prompt.contains("Available phone tools"))
+        assertTrue(prompt.contains("newest verified tool observation overrides"))
+    }
+
+    @Test
+    fun `auto provider context keeps the durable summary and newest complete turn`() {
+        val conversationId = "auto-provider-context"
+        val latestMarker = "LATEST_USER_CONSTRAINT_MUST_SURVIVE"
+        val oldTurns = (1..18).flatMap { index ->
+            listOf(
+                AgentTranscriptEntry(
+                    id = "user-$index",
+                    role = AgentTranscriptRole.USER,
+                    text = "Older request $index " + "context ".repeat(180),
+                    timestampMillis = index.toLong(),
+                    conversationId = conversationId,
+                    turnId = "turn-$index"
+                ),
+                AgentTranscriptEntry(
+                    id = "assistant-$index",
+                    role = AgentTranscriptRole.ASSISTANT,
+                    text = "Older response $index " + "evidence ".repeat(180),
+                    timestampMillis = index.toLong(),
+                    conversationId = conversationId,
+                    turnId = "turn-$index"
+                )
+            )
+        }
+        val latest = AgentTranscriptEntry(
+            id = "latest-user",
+            role = AgentTranscriptRole.USER,
+            text = latestMarker,
+            timestampMillis = 100L,
+            conversationId = conversationId,
+            turnId = "latest-turn"
+        )
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(
+            request("Continue the phone project").copy(
+                conversationContext = AgentConversationContext(
+                    conversationId = conversationId,
+                    summary = "Durable cross-provider project summary",
+                    turns = oldTurns + latest,
+                    privateMode = false
+                )
+            )
+        )
+
+        assertTrue(prompt.contains("Durable cross-provider project summary"))
+        assertTrue(prompt.contains(latestMarker))
+        assertTrue(prompt.contains(AgentTranscriptStore.SIGNALASI_CONTEXT_TRANSPORT_HEADER))
+        assertTrue(prompt.length <= 24_000)
     }
 
     private fun request(goal: String): AgentRequest {

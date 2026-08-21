@@ -461,6 +461,23 @@ internal fun MobileNativeAgent.invokeNativeTool(
     )
 }
 
+internal fun MobileNativeAgent.hasDurablePullRequestEvidence(action: AgentAction): Boolean {
+    if (action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
+        action.parameters["tool_id"] != AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+    ) {
+        return false
+    }
+    val input = runCatching { JSONObject(action.parameters["input_json"].orEmpty()) }.getOrNull()
+        ?: return false
+    val head = input.optString("head").trim()
+    if (head.isBlank()) return false
+    val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        .ifBlank { activeConversationContext.conversationId }
+    val workspaceId = AgentWorkspaceScope.id(conversationId, sessionId)
+    return AgentEncryptedProjectPublicationGuard(appContext)
+        .hasPullRequestEvidence(workspaceId, head)
+}
+
 internal fun MobileNativeAgent.executeAction(
     action: AgentAction,
     screen: ScreenContext,
@@ -551,7 +568,15 @@ internal fun MobileNativeAgent.executeAction(
     Log.i(
         "SignalASILatency",
         "agent_native_tool stage=registry_return tool=${toolId.take(48)} " +
-            "status=${result.status.wireValue} invocation=${result.receipt.invocationId.take(8)}"
+            "status=${result.status.wireValue} invocation=${result.receipt.invocationId.take(8)}" +
+            if (result.isSuccess) {
+                ""
+            } else {
+                " error=${AgentPlannerObservation.sanitize(
+                    result.message.ifBlank { result.error?.message.orEmpty() },
+                    320
+                ).orEmpty()}"
+            }
     )
     val renderedOutput = AgentNativeJsonCodec.stringify(result.output).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val cancellationReason = synchronized(this) {

@@ -32,6 +32,7 @@ internal interface AgentProjectPublicationGuard {
     fun requirePushable(workspaceId: String, branch: String)
     fun recordPush(workspaceId: String, commit: String, branch: String)
     fun requirePullRequestReady(workspaceId: String, head: String)
+    fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean
 
     companion object {
         val ALLOW_ALL = object : AgentProjectPublicationGuard {
@@ -43,6 +44,7 @@ internal interface AgentProjectPublicationGuard {
             override fun requirePushable(workspaceId: String, branch: String) = Unit
             override fun recordPush(workspaceId: String, commit: String, branch: String) = Unit
             override fun requirePullRequestReady(workspaceId: String, head: String) = Unit
+            override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean = true
         }
     }
 }
@@ -126,6 +128,15 @@ internal class AgentProjectPublicationPolicy(
 
     override fun requirePushable(workspaceId: String, branch: String) {
         val ticket = ticketStore.read(workspaceId) ?: error("Commit verified project changes before publishing")
+        if (AgentProjectStateDigester.usesGuestGitMetadata(projectRoot, workspaceId)) {
+            check(ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId)) {
+                "The phone project changed after verification; verify and commit it before publishing"
+            }
+            check(ticket.commit.isNotBlank() && ticket.branch == branch) {
+                "The current phone project commit is not covered by the verification ticket"
+            }
+            return
+        }
         val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
         check(state.clean) { "The phone project changed after commit; verify and commit it before publishing" }
         check(ticket.commit.isNotBlank() && ticket.commit == state.headCommit && ticket.branch == branch) {
@@ -141,11 +152,23 @@ internal class AgentProjectPublicationPolicy(
     override fun requirePullRequestReady(workspaceId: String, head: String) {
         val ticket = ticketStore.read(workspaceId)
             ?: error("Push a verified phone project branch before creating a pull request")
+        if (AgentProjectStateDigester.usesGuestGitMetadata(projectRoot, workspaceId)) {
+            check(
+                ticket.projectDigest == AgentProjectStateDigester.digest(projectRoot, workspaceId) &&
+                    ticket.pushedCommit.isNotBlank() && ticket.pushedBranch == head
+            ) {
+                "The pull request branch is not the latest verified and pushed phone project commit"
+            }
+            return
+        }
         val state = AgentProjectStateDigester.repositoryState(projectRoot, workspaceId)
         check(state.clean && ticket.pushedCommit == state.headCommit && ticket.pushedBranch == head) {
             "The pull request branch is not the latest verified and pushed phone project commit"
         }
     }
+
+    override fun hasPullRequestEvidence(workspaceId: String, head: String): Boolean =
+        runCatching { requirePullRequestReady(workspaceId, head) }.isSuccess
 
     private fun isDocumentationPath(path: String): Boolean {
         val normalized = path.replace('\\', '/').lowercase(Locale.ROOT)
@@ -239,7 +262,11 @@ internal object AgentProjectStateDigester {
         }
     }
 
-    fun digest(projectRoot: File, workspaceId: String): String = open(projectRoot, workspaceId).use { repository ->
+    fun digest(projectRoot: File, workspaceId: String): String {
+        if (usesGuestGitMetadata(projectRoot, workspaceId)) {
+            return digestGuestWorkspace(workspaceDirectory(projectRoot, workspaceId))
+        }
+        return open(projectRoot, workspaceId).use { repository ->
         Git(repository).use { git ->
             val status = git.status().call()
             check(status.conflicting.isEmpty()) { "Resolve Git conflicts before verifying the phone project" }
@@ -268,6 +295,7 @@ internal object AgentProjectStateDigester {
             }
             digest.digest().joinToString("") { "%02x".format(it) }
         }
+        }
     }
 
     fun changedFiles(projectRoot: File, workspaceId: String): List<String> =
@@ -280,7 +308,12 @@ internal object AgentProjectStateDigester {
         }
 
     fun isRepository(projectRoot: File, workspaceId: String): Boolean = runCatching {
-        workspaceDirectory(projectRoot, workspaceId).resolve(".git").isDirectory
+        val git = workspaceDirectory(projectRoot, workspaceId).resolve(".git")
+        git.isDirectory || validGuestGitPointer(git, workspaceId)
+    }.getOrDefault(false)
+
+    fun usesGuestGitMetadata(projectRoot: File, workspaceId: String): Boolean = runCatching {
+        validGuestGitPointer(workspaceDirectory(projectRoot, workspaceId).resolve(".git"), workspaceId)
     }.getOrDefault(false)
 
     private fun open(projectRoot: File, workspaceId: String) = run {
@@ -297,4 +330,54 @@ internal object AgentProjectStateDigester {
         require(workspace.path.startsWith(root.path + File.separator)) { "Phone project path escapes app storage" }
         return workspace
     }
+
+    private fun validGuestGitPointer(git: File, workspaceId: String): Boolean {
+        if (!git.isFile || git.length() !in 1..512) return false
+        return git.readText(Charsets.UTF_8).trim() == "gitdir: /var/lib/signalasi/git/$workspaceId"
+    }
+
+    private fun digestGuestWorkspace(workspace: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        Files.walk(workspace.toPath()).use { paths ->
+            paths.filter { path ->
+                Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) &&
+                    !Files.isSymbolicLink(path) &&
+                    !isRuntimeManaged(workspace.toPath().relativize(path).toString())
+            }.sorted().forEach { path ->
+                val relative = workspace.toPath().relativize(path).toString().replace(File.separatorChar, '/')
+                digest.update(relative.toByteArray(Charsets.UTF_8))
+                digest.update(0)
+                Files.newInputStream(path).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        digest.update(buffer, 0, read)
+                    }
+                }
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun isRuntimeManaged(relativePath: String): Boolean {
+        val normalized = relativePath.replace('\\', '/')
+        val first = normalized.substringBefore('/')
+        return first in RUNTIME_MANAGED_DIRECTORIES || first in RUNTIME_MANAGED_FILES
+    }
+
+    private val RUNTIME_MANAGED_DIRECTORIES = setOf(
+        ".git",
+        ".tmp",
+        ".signalasi-runtime",
+        ".signalasi-inputs",
+        ".signalasi-tools"
+    )
+
+    private val RUNTIME_MANAGED_FILES = setOf(
+        ".signalasi-checkpoint.json",
+        ".signalasi-stdout",
+        ".signalasi-stderr",
+        ".signalasi-main"
+    )
 }

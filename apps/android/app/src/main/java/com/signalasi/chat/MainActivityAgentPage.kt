@@ -793,11 +793,14 @@ internal fun MainActivity.agentExecutionPresentation(
     }
     val state = agentTimelineRuntime(entry)?.snapshot()
     val route = state?.plan?.route
-    val phase = state?.phase ?: if (completedAtMillis == null) {
-        AgentPhase.EXECUTING
-    } else {
-        AgentPhase.COMPLETED
-    }
+    val orphanResolution = AgentTimelineOrphanPolicy.resolve(
+        hasRuntime = state != null,
+        startedAtMillis = startedAtMillis,
+        completedAtMillis = completedAtMillis
+    )
+    val phase = state?.phase ?: orphanResolution.phase
+    val effectiveCompletedAtMillis = completedAtMillis
+        ?: orphanResolution.completedAtMillis.takeIf { it > 0L }
     val latestStep = state?.pendingAction?.description
         .orEmpty()
         .ifBlank {
@@ -820,7 +823,7 @@ internal fun MainActivity.agentExecutionPresentation(
         phase = phase,
         currentStep = localizedAgentProcessText(latestStep),
         startedAtMillis = startedAtMillis,
-        completedAtMillis = completedAtMillis ?: 0L
+        completedAtMillis = effectiveCompletedAtMillis ?: 0L
     )
 }
 
@@ -1141,8 +1144,10 @@ internal fun MainActivity.submitAgentGoal(
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
     val turnId = UUID.randomUUID().toString()
-    agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
-        agentContextBeforeTurn[turnId] = prepared
+    if (!initialAgentHydrationPending) {
+        agentTranscriptStore.preparedContext(conversation.id)?.let { prepared ->
+            agentContextBeforeTurn[turnId] = prepared
+        }
     }
     if (agentContextBeforeTurn.size > 2_000) {
         agentContextBeforeTurn.keys.take(400).forEach(agentContextBeforeTurn::remove)
@@ -1381,6 +1386,15 @@ internal fun MainActivity.continueAgentGoalSubmission(
         handleAgentSkillCommand(goal, conversationId, turnId)
     ) return
     agentRoutingExecutor.execute {
+        if (initialAgentHydrationPending) {
+            val hydrationWaitStartedAt = SystemClock.elapsedRealtime()
+            initialAgentHydrationReady.await()
+            Log.i(
+                "SignalASILatency",
+                "agent_route stage=hydration_ready turn=${turnId.take(8)} " +
+                    "wait_ms=${SystemClock.elapsedRealtime() - hydrationWaitStartedAt}"
+            )
+        }
         val baseConversationContext = agentContextBeforeTurn.remove(turnId)
             ?: agentTranscriptStore.context(
                 conversationId = conversationId,
@@ -1549,10 +1563,15 @@ internal fun MainActivity.continueAgentGoalSubmission(
         } else {
             null
         }
-        val conversationContext = globalSuperAgentRuntime.augmentContext(
-            localConversationContext,
-            executionGoal
-        )
+        val conversationContext = if (modelExecutionSiteDecisionRequired) {
+            // Project execution already receives the durable conversation summary,
+            // recent turns, project ledger and tool observations. Loading the whole
+            // personal world model here blocks the foreground route and duplicates
+            // context without improving the next executable decision.
+            localConversationContext.copy(globalContext = "")
+        } else {
+            globalSuperAgentRuntime.augmentContext(localConversationContext, executionGoal)
+        }
         Log.i(
             "SignalASILatency",
             "agent_route stage=context_augmented turn=${turnId.take(8)} " +

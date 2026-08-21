@@ -59,6 +59,67 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun repositoryTaskInspectsDurablePhoneWorkspaceBeforeModelReasoning() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val inspect = nativeDescriptor(
+            AgentMobileProjectNativeTools.INSPECT,
+            "Inspect phone repository",
+            AgentNativeToolRisk.LOW
+        )
+        val request = request(
+            goal = "Continue https://github.com/signalasi/SignalASI and create a PR",
+            screen = screen,
+            nativeTools = listOf(inspect)
+        )
+        val provider = AgentAction(
+            id = "ask-model",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Cloud model",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask model",
+            parameters = mapOf("connector_id" to "cloud"),
+            requiresConfirmation = false
+        )
+
+        val plan = AgentPhoneReasoningProviderPlanner(provider).plan(request)
+
+        assertEquals(2, plan.actions.size)
+        assertEquals(AgentMobileProjectNativeTools.INSPECT, plan.actions.first().parameters["tool_id"])
+        assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
+        assertEquals(plan.actions.first().id, plan.actions.last().parameters["use_outputs_from"])
+    }
+
+    @Test
+    fun resumedProjectLoopInspectsDurableWorkspaceBeforeConversationHydration() {
+        val inspect = nativeDescriptor(
+            AgentMobileProjectNativeTools.INSPECT,
+            "Inspect phone repository",
+            AgentNativeToolRisk.LOW
+        )
+        val request = request(
+            goal = "Continue the current phone task",
+            screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI"),
+            nativeTools = listOf(inspect)
+        )
+        val provider = AgentAction(
+            id = "ask-model",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = "Cloud model",
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Ask model",
+            parameters = mapOf("connector_id" to "cloud"),
+            requiresConfirmation = false
+        )
+
+        val plan = AgentPhoneReasoningProviderPlanner(provider).plan(request)
+
+        assertEquals(AgentMobileProjectNativeTools.INSPECT, plan.actions.first().parameters["tool_id"])
+        assertEquals(plan.actions.first().id, plan.actions.last().parameters["depends_on"])
+    }
+
+    @Test
     fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoPhoneExecution() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
         val request = request("hello", screen, emptyList())

@@ -47,7 +47,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         turns: List<ChatMessage>,
         requestId: String,
         images: List<CloudImagePayload> = emptyList(),
-        onToolEvent: ((CloudToolEvent) -> Unit)? = null
+        onToolEvent: ((CloudToolEvent) -> Unit)? = null,
+        allowExternalTools: Boolean = true
     ): Flow<ModelStreamEvent> = flow {
         if (!contact.optBoolean("cloud_streaming_enabled", true)) {
             emitLegacy(context, contact, turns, requestId, images, onToolEvent)
@@ -80,6 +81,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             emit(ModelStreamEvent.Failed(requestId, error.toStreamError()))
             return@flow
         }
+        if (!allowExternalTools) disableExternalTools(prepared)
         val globalSequence = AtomicLong(0L)
         val executedToolKeys = linkedSetOf<String>()
         var toolCallCount = 0
@@ -185,6 +187,17 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 val rawRoundText = inlineProtocolGuard.rawText()
+                if (!allowExternalTools) {
+                    AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                    emit(
+                        ModelStreamEvent.Completed(
+                            requestId,
+                            lastFinishReason,
+                            System.nanoTime() / 1_000_000L
+                        )
+                    )
+                    return@flow
+                }
                 val structuredCalls = assembler.completedCalls()
                 val inlineCalls = CloudWebGrounding.parseInlineToolCalls(rawRoundText)
                 val usesInlineProtocol = structuredCalls.isEmpty() && inlineCalls.isNotEmpty()
@@ -315,8 +328,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         )
 
     private fun prepareFinalRound(prepared: PreparedCloudConversationStream) {
-        prepared.body.remove("tools")
-        prepared.body.remove("tool_choice")
+        disableExternalTools(prepared)
         when (prepared.provider) {
             ModelStreamProvider.OPENAI_COMPATIBLE,
             ModelStreamProvider.ANTHROPIC -> prepared.conversation.put(
@@ -330,6 +342,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     .put("parts", JSONArray().put(JSONObject().put("text", FINALIZE_PROMPT)))
             )
         }
+    }
+
+    private fun disableExternalTools(prepared: PreparedCloudConversationStream) {
+        prepared.body.remove("tools")
+        prepared.body.remove("tool_choice")
     }
 
     private fun appendToolArgumentRepairPrompt(

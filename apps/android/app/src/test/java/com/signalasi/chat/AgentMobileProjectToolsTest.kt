@@ -53,6 +53,30 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun partialRepositoryIsPresentButNotReadyForModelPlanning() {
+        val value = AgentProjectRepositorySnapshot(
+            workspaceId = "partial-project",
+            repositoryUrl = "https://github.com/signalasi/SignalASI",
+            branch = "feature/unborn",
+            headCommit = "",
+            clean = true,
+            staged = emptyList(),
+            modified = emptyList(),
+            untracked = emptyList(),
+            conflicting = emptyList(),
+            workingTreeInspected = false,
+            state = AgentProjectRepositoryState.PARTIAL
+        ).publicValue()
+
+        assertEquals(true, value["repository_present"])
+        assertEquals(false, value["repository_ready"])
+        assertEquals(false, value["head_present"])
+        assertEquals(true, value["recovery_required"])
+        assertTrue(value["recovery_hint"].toString().contains("Fetch the remote refs"))
+        assertEquals("partial", value["repository_state"])
+    }
+
+    @Test
     fun clonesInspectsDiffsBranchesCommitsAndPushesAProject() {
         val cloned = repository.clone(
             workspaceId = "conversation-project",
@@ -85,6 +109,19 @@ class AgentMobileProjectToolsTest {
         assertEquals("feature/mobile-answer", commit.branch)
         assertTrue("src/answer.kt" in commit.changedFiles)
         assertEquals(40, commit.commit.length)
+        assertEquals(
+            "compare:main...feature/mobile-answer",
+            repository.diff(
+                workspaceId = "conversation-project",
+                maxCharacters = 64 * 1024,
+                baseRef = "main",
+                headRef = "feature/mobile-answer"
+            )
+        )
+        assertTrue(
+            repository.log("conversation-project", "HEAD", maxEntries = 5, maxCharacters = 64 * 1024)
+                .contains("Add mobile answer")
+        )
 
         val pushed = repository.push(
             workspaceId = "conversation-project",
@@ -425,6 +462,56 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun guestGitPointerAcceptsVerificationAndDetectsLaterWorkspaceChanges() {
+        val tickets = mutableMapOf<String, AgentProjectVerificationTicket>()
+        val guard = AgentProjectPublicationPolicy(
+            projectRoot = projects,
+            ticketStore = object : AgentProjectVerificationTicketStore {
+                override fun read(workspaceId: String): AgentProjectVerificationTicket? = tickets[workspaceId]
+                override fun write(ticket: AgentProjectVerificationTicket) {
+                    tickets[ticket.workspaceId] = ticket
+                }
+                override fun remove(workspaceId: String) {
+                    tickets.remove(workspaceId)
+                }
+            }
+        )
+        val workspaceId = "guest-git-project"
+        val workspace = File(projects, workspaceId).apply { mkdirs() }
+        File(workspace, ".git").writeText("gitdir: /var/lib/signalasi/git/$workspaceId\n")
+        val source = File(workspace, "src/result.kt").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeText("fun result() = 1\n")
+        }
+        File(workspace, ".signalasi-stdout").writeText("runtime output")
+        File(workspace, ".signalasi-runtime/main.sh").apply {
+            parentFile?.mkdirs()
+            writeText("echo runtime")
+        }
+        File(workspace, ".signalasi-inputs/request.txt").apply {
+            parentFile?.mkdirs()
+            writeText("temporary input")
+        }
+        File(workspace, ".signalasi-tools/bin/python").apply {
+            parentFile?.mkdirs()
+            writeText("temporary tool")
+        }
+
+        guard.recordVerification(successfulVerificationReceipt(workspaceId, "guest-verification"))
+
+        assertTrue(tickets.containsKey(workspaceId))
+        assertTrue(runCatching { guard.requireVerified(workspaceId) }.isSuccess)
+        File(workspace, ".signalasi-stdout").writeText("new runtime output")
+        assertTrue(runCatching { guard.requireVerified(workspaceId) }.isSuccess)
+        File(workspace, ".signalasi-runtime").deleteRecursively()
+        File(workspace, ".signalasi-inputs").deleteRecursively()
+        File(workspace, ".signalasi-tools").deleteRecursively()
+        assertTrue(runCatching { guard.requireVerified(workspaceId) }.isSuccess)
+        source.writeText("fun result() = 2\n")
+        assertTrue(runCatching { guard.requireVerified(workspaceId) }.isFailure)
+    }
+
+    @Test
     fun validatesPublicRepositoryAndRefBoundaries() {
         assertTrue(AgentMobileProjectRepository.isTrustedRepositoryUrl("https://github.com/signalasi/SignalASI.git"))
         assertFalse(AgentMobileProjectRepository.isTrustedRepositoryUrl("http://github.com/signalasi/SignalASI.git"))
@@ -560,15 +647,50 @@ private class TestJGitBackend(
             "$unstaged\n$staged".take(maxCharacters)
         }
 
+    override fun diffRefs(
+        workspaceId: String,
+        baseRef: String,
+        headRef: String,
+        maxCharacters: Int
+    ): String = "compare:$baseRef...$headRef".take(maxCharacters)
+
+    override fun log(workspaceId: String, ref: String, maxEntries: Int, maxCharacters: Int): String =
+        Git.open(File(projectRoot, workspaceId)).use { git ->
+            git.log().add(git.repository.resolve(ref)).setMaxCount(maxEntries).call()
+                .joinToString("\n") { commit ->
+                    "${commit.name}\t${commit.authorIdent.name}\t${commit.fullMessage.trim()}"
+                }
+                .take(maxCharacters)
+        }
+
     override fun remoteUrl(workspaceId: String, remote: String): String =
         Git.open(File(projectRoot, workspaceId)).use { git ->
             git.repository.config.getString("remote", remote, "url").orEmpty()
         }
 
     override fun checkoutBranch(workspaceId: String, branch: String, create: Boolean) {
+        checkoutBranchAt(workspaceId, branch, create, "")
+    }
+
+    override fun checkoutBranchAt(workspaceId: String, branch: String, create: Boolean, baseRef: String) {
         Git.open(File(projectRoot, workspaceId)).use { git ->
-            git.checkout().setName(branch).setCreateBranch(create).call()
+            val checkout = git.checkout().setName(branch).setCreateBranch(create)
+            if (create && baseRef.isNotBlank()) checkout.setStartPoint(baseRef)
+            checkout.call()
         }
+    }
+
+    override fun fetch(
+        workspaceId: String,
+        remote: String,
+        ref: String,
+        cancellationToken: AgentNativeToolCancellationToken
+    ): List<String> = Git.open(File(projectRoot, workspaceId)).use { git ->
+        val command = git.fetch().setRemote(remote)
+        if (ref.isNotBlank()) command.setRefSpecs(ref)
+        command.call()
+        git.repository.refDatabase.getRefsByPrefix("refs/remotes/$remote/")
+            .map { it.name.removePrefix("refs/remotes/") }
     }
 
     override fun commit(workspaceId: String, message: String, authorName: String, authorEmail: String): String {

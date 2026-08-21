@@ -191,6 +191,26 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun runtimeExecutionCanonicalizesCommonShellAliasesBeforeValidation() {
+        val bound = AgentWorkspaceScope.bindToolInput(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            mapOf(
+                "workspace_id" to "current",
+                "language" to "bash",
+                "command" to "node tools/dev/check-repo.js",
+                "timeout_ms" to 300_000L,
+                "verification_kind" to "test"
+            ),
+            "conversation-project"
+        )
+
+        assertEquals("shell", bound["language"])
+        assertEquals("node tools/dev/check-repo.js", bound["source"])
+        assertFalse(bound.containsKey("command"))
+        assertFalse(bound.containsKey("workspace_id"))
+    }
+
+    @Test
     fun packagesMultipleFilesAndDirectoriesAsOneProjectArchive() {
         val request = request(
             requestId = "run-project",

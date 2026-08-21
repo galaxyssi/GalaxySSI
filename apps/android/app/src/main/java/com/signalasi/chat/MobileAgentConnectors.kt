@@ -234,6 +234,7 @@ class AppStoreAgentConnectorRegistry(
     internal val providerHealthLedger: AgentProviderHealthLedger = EncryptedAgentProviderHealthLedger(context)
 ) : AgentConnectorRegistry {
     internal val appContext = context.applicationContext
+    private val resourceHealth = AgentResourceHealthStore(appContext)
 
     override fun registrations(): List<AgentRegistration> {
         val healthSnapshots = providerHealthLedger.snapshots().associateBy { it.scopeId }
@@ -312,6 +313,7 @@ class AppStoreAgentConnectorRegistry(
     }
 
     override fun availableTargets(): List<AgentCallableTarget> {
+        val cloudProviders = cloudProviderTargets()
         val builtIn = fallback.availableTargets().map { target ->
             val contact = matchingContactIds(target.id)
                 .asSequence()
@@ -327,8 +329,11 @@ class AppStoreAgentConnectorRegistry(
                     contact?.optJSONObject("provider_profile")
                 ) ?: target.providerProfile
             )
+        }.filterNot { target ->
+            // Configured providers own their health circuit. Keeping this
+            // aggregate alias would let Auto select the failed provider again.
+            target.id == "cloud-models" && cloudProviders.isNotEmpty()
         }
-        val cloudProviders = cloudProviderTargets()
         val desktopExtensions = desktopConnectorTargets()
         val customDevices = CustomDeviceConnectorStore(appContext).list().filter { it.enabled }.map { connector ->
             AgentCallableTarget(
@@ -356,13 +361,20 @@ class AppStoreAgentConnectorRegistry(
                 if (id.isBlank()) continue
                 val selected = AppStore.selectedCloudModelContact(appContext, id) ?: contact
                 val ready = AgentConnectorAvailability.cloudModelReady(selected)
+                val provider = selected.optString("cloud_provider").ifBlank { id }
+                val circuitOpen = resourceHealth.snapshot("target:$id").circuitOpen ||
+                    resourceHealth.snapshot("domain:cloud:$provider").circuitOpen
                 val endpoint = selected.optString("cloud_endpoint")
                 val localEndpoint = endpoint.contains("127.0.0.1") ||
                     endpoint.contains("localhost") ||
                     endpoint.contains("192.168.") ||
                     endpoint.contains("10.") ||
                     endpoint.contains("172.16.")
-                val status = if (ready) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP
+                val status = when {
+                    !ready -> AgentConnectorStatus.NEEDS_SETUP
+                    circuitOpen -> AgentConnectorStatus.DISCONNECTED
+                    else -> AgentConnectorStatus.AVAILABLE
+                }
                 val profile = ProviderProfileCatalog.fromCloudContact(selected, status)
                 add(
                     AgentCallableTarget(
@@ -373,8 +385,8 @@ class AppStoreAgentConnectorRegistry(
                             .ifBlank { id },
                         kind = AgentConnectorKind.MODEL,
                         status = status,
-                        failureDomain = "cloud:${selected.optString("cloud_provider").ifBlank { id }}",
-                        runtimeFailureDomain = "cloud:${selected.optString("cloud_provider").ifBlank { id }}:$id",
+                        failureDomain = "cloud:$provider",
+                        runtimeFailureDomain = "cloud:$provider:$id",
                         adapterType = "cloud-model-api",
                         providerProfile = profile,
                         capabilities = buildList {

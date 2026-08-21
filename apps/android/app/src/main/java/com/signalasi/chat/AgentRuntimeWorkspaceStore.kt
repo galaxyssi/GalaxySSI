@@ -410,7 +410,9 @@ class AgentRuntimeWorkspaceManager private constructor(
         if (directExecution) {
             cleanupRuntimeFiles(executionDirectory)
             excludeRuntimeFilesFromGit(executionDirectory)
-            writeGitCheckpoint(executionDirectory, File(runDirectory, GIT_CHECKPOINT_MANIFEST))
+            if (request.workspaceMutationExpected) {
+                writeGitCheckpoint(executionDirectory, File(runDirectory, GIT_CHECKPOINT_MANIFEST))
+            }
         }
         val importedProjectBytes = if (directExecution) {
             0L
@@ -438,10 +440,14 @@ class AgentRuntimeWorkspaceManager private constructor(
                 StandardCopyOption.REPLACE_EXISTING
             )
         }
-        val buildArtifactBaseline = buildArtifactCandidates(executionDirectory)
-            .associate { candidate ->
-                candidate.relativeTo(executionDirectory).path.replace('\\', '/') to artifactStamp(candidate)
-            }
+        val buildArtifactBaseline = if (request.workspaceMutationExpected) {
+            buildArtifactCandidates(executionDirectory)
+                .associate { candidate ->
+                    candidate.relativeTo(executionDirectory).path.replace('\\', '/') to artifactStamp(candidate)
+                }
+        } else {
+            emptyMap()
+        }
         val sourceFile = File(executionDirectory, sourceFileName(request.language)).apply {
             val controlDirectory = requireNotNull(parentFile)
             check(controlDirectory.mkdirs() || controlDirectory.isDirectory) {

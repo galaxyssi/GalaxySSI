@@ -26,9 +26,13 @@ class GuardedModelAgentPlanner(
             )
         }
         if (fallbackPlan.actions.any(AgentAction::isSupervisedProjectConnector)) {
-            return fallbackPlan.copy(
-                plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
-                routeRationale = "The selected reasoning resource supervises an isolated phone project while Android validates and executes each tool call."
+            val provider = requireNotNull(fallbackPlan.actions.singleOrNull(AgentAction::isSupervisedProjectConnector)) {
+                "A supervised phone project must start with exactly one reasoning provider"
+            }
+            return AgentPhoneReasoningProviderPlanner(provider).plan(request).copy(
+                executionMode = fallbackPlan.executionMode,
+                expectedResult = fallbackPlan.expectedResult,
+                rollbackStrategy = fallbackPlan.rollbackStrategy
             )
         }
         val deterministicLocalAction = RuleBasedAgentPlanner(appContext).deterministicLocalAction(request)
@@ -369,6 +373,8 @@ internal object AgentModelPlanningPrompt {
         AgentMobileProjectNativeTools.CLONE,
         AgentMobileProjectNativeTools.INSPECT,
         AgentMobileProjectNativeTools.DIFF,
+        AgentMobileProjectNativeTools.LOG,
+        AgentMobileProjectNativeTools.FETCH,
         AgentMobileProjectNativeTools.CHECKOUT_BRANCH,
         AgentOnDeviceRuntimeTools.STATUS,
         AgentOnDeviceRuntimeTools.LIST_PACKS,
