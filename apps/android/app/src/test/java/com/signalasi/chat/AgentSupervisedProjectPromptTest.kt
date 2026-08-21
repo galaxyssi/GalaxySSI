@@ -523,6 +523,78 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.length <= 24_000)
     }
 
+    @Test
+    fun `large continuation keeps every executable phone tool and newest evidence`() {
+        val tools = (1..48).map { index ->
+            AgentNativeToolDescriptor(
+                id = "signalasi.project.test.tool.${index.toString().padStart(2, '0')}",
+                version = "1.0.0",
+                title = "Project tool $index",
+                description = "A deliberately verbose project tool description ".repeat(20),
+                location = AgentNativeToolLocation.PHONE,
+                inputSchema = AgentNativeJsonSchema.objectSchema(
+                    properties = mapOf(
+                        "workspace_id" to AgentNativeJsonSchema.string(description = "Workspace identifier".repeat(20)),
+                        "path" to AgentNativeJsonSchema.string(description = "Project relative path".repeat(20)),
+                        "mode" to AgentNativeJsonSchema.string(enumValues = listOf("inspect", "modify", "verify")),
+                        "recursive" to AgentNativeJsonSchema.boolean()
+                    ),
+                    required = setOf("workspace_id", "path"),
+                    additionalProperties = false
+                ),
+                outputSchema = AgentNativeJsonSchema.objectSchema(),
+                risk = AgentNativeToolRisk.LOW
+            )
+        }
+        val history = (1..20).map { index ->
+            AgentAction(
+                id = "history-$index",
+                kind = AgentActionKind.CALL_NATIVE_TOOL,
+                target = tools[index % tools.size].id,
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.COMPLETED,
+                description = "Historical project action $index " + "detail ".repeat(80),
+                result = "Historical observation $index " + "evidence ".repeat(120),
+                evidence = if (index == 20) "LATEST_VERIFIED_PHONE_EVIDENCE" else "evidence-$index",
+                requiresConfirmation = false
+            )
+        }
+        val base = request("Improve the phone project and verify the result")
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(
+            base.copy(
+                runtimeContext = base.runtimeContext.copy(
+                    nativeTools = tools,
+                    capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY
+                ),
+                conversationContext = AgentConversationContext(
+                    conversationId = "large-prompt",
+                    summary = "Durable summary " + "context ".repeat(800),
+                    turns = listOf(
+                        AgentTranscriptEntry(
+                            id = "latest-user",
+                            role = AgentTranscriptRole.USER,
+                            text = "LATEST_USER_PROJECT_CONSTRAINT",
+                            timestampMillis = 2L,
+                            conversationId = "large-prompt",
+                            turnId = "latest-turn"
+                        )
+                    ),
+                    privateMode = false
+                ),
+                executionHistory = history
+            )
+        )
+
+        val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
+        assertTrue(prompt.length <= 24_000)
+        assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
+        assertTrue(prompt.contains("LATEST_USER_PROJECT_CONSTRAINT"))
+        assertTrue(prompt.contains("LATEST_VERIFIED_PHONE_EVIDENCE"))
+        assertFalse(prompt.contains("deliberately verbose project tool description"))
+        assertTrue(prompt.contains("workspace_id!:string"))
+        assertTrue(prompt.contains("mode:string(inspect|modify|verify)"))
+    }
+
     private fun request(goal: String): AgentRequest {
         val screen = ScreenContext(
             foregroundApp = "com.signalasi.chat",

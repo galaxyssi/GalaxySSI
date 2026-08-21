@@ -206,7 +206,7 @@ internal object AgentSupervisedProjectLoop {
         }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
             append(
-                request.conversationContext.asTransportBlock(
+                request.conversationContext.forSupervisedProjectPrompt().asTransportBlock(
                     maximumTokens = MAX_CONVERSATION_TOKENS
                 )
             ).append('\n')
@@ -239,22 +239,42 @@ internal object AgentSupervisedProjectLoop {
                 append("- ").append(tool.id)
                     .append(" | risk=").append(tool.risk.wireValue)
                     .append(" | input=")
-                    .append(AgentNativeJsonCodec.stringify(tool.inputSchema.document).take(MAX_TOOL_SCHEMA_CHARACTERS))
+                    .append(
+                        AgentSupervisedProjectPromptCodec.compactInputSchema(
+                            tool.inputSchema.document,
+                            MAX_TOOL_SCHEMA_CHARACTERS
+                        )
+                    )
                     .append('\n')
             }
-    }.take(maximumCharacters.coerceAtLeast(MINIMUM_BASE_PROMPT_CHARACTERS))
+    }.let { prompt ->
+        AgentSupervisedProjectPromptCodec.preserveToolInventory(
+            prompt,
+            maximumCharacters.coerceAtLeast(MINIMUM_BASE_PROMPT_CHARACTERS)
+        )
+    }
 
-    private const val MAX_GOAL_CHARACTERS = 4_000
-    private const val MAX_CONVERSATION_TOKENS = 2_200
-    private const val MAX_HISTORY_ACTIONS = 20
+    private const val MAX_GOAL_CHARACTERS = 2_000
+    private const val MAX_CONVERSATION_TOKENS = 350
+    private const val MAX_CONVERSATION_SUMMARY_CHARACTERS = 600
+    private const val MAX_CONVERSATION_TURN_CHARACTERS = 1_200
+    private const val MAX_CONVERSATION_TURNS = 4
+    private const val MAX_HISTORY_ACTIONS = 6
     private const val MAX_TOOL_DESCRIPTORS = 48
-    private const val MAX_TOOL_SCHEMA_CHARACTERS = 700
+    private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
     private const val MINIMUM_BASE_PROMPT_CHARACTERS = 12_000
     private const val MAX_FAILURE_CHARACTERS = 1_000
     private const val MAX_FAILURE_EVIDENCE_CHARACTERS = 6_000
-    private const val MAX_LEDGER_OBSERVATION_CHARACTERS = 800
+    private const val MAX_LEDGER_OBSERVATION_CHARACTERS = 240
+
+    private fun AgentConversationContext.forSupervisedProjectPrompt(): AgentConversationContext = copy(
+        summary = summary.take(MAX_CONVERSATION_SUMMARY_CHARACTERS),
+        turns = turns.takeLast(MAX_CONVERSATION_TURNS).map { entry ->
+            entry.copy(text = entry.text.take(MAX_CONVERSATION_TURN_CHARACTERS))
+        }
+    )
 
     private fun isCjkCharacter(character: Char): Boolean = character.code in 0x3400..0x9FFF
 }
@@ -299,8 +319,8 @@ internal object AgentSupervisedProjectContext {
     }
 
     private const val MAX_PROJECT_REPOSITORIES = 4
-    private const val MAX_PRIOR_PROJECT_REQUESTS = 4
-    private const val MAX_PRIOR_REQUEST_CHARACTERS = 800
+    private const val MAX_PRIOR_PROJECT_REQUESTS = 2
+    private const val MAX_PRIOR_REQUEST_CHARACTERS = 400
 }
 
 internal object AgentSupervisedProjectToolInventory {
