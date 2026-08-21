@@ -74,6 +74,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
   static let runtimePermission = "signalasi.scope.ios_on_device_runtime"
   static let workspacePermission = "signalasi.scope.runtime_workspace"
   static let packInstallPermission = "signalasi.scope.signed_runtime_pack_install"
+  static let softwareInstallPermission = "signalasi.scope.on_device_software_install"
   static let noAdditionalConsent = "signalasi.consent.none"
 
   static let maxTimeoutMillis: Int64 = 30 * 60_000
@@ -253,7 +254,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     case .softwareInspect:
       return "Reports installation, compatibility, capability, and version details for one runtime pack or Debian package."
     case .softwareInstall:
-      return "Downloads, verifies, and installs a compatible signed runtime pack and its dependencies."
+      return "Installs a verified runtime pack or a Debian package selected by the runtime catalog in the persistent embedded Linux system."
     case .softwareRemove:
       return "Removes one non-managed Debian package from the persistent embedded Linux system; signed runtime packs remain lifecycle-managed."
     case .execute:
@@ -284,10 +285,10 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     switch operation {
     case .workspaceStatus, .workspaceRollback:
       return workspaceExecutorId
-    case .installPack, .softwareInstall:
+    case .installPack:
       return packManagerExecutorId
     case .status, .listPacks, .softwareCatalog, .softwareSearch, .softwareInspect,
-         .softwareRemove, .execute:
+         .softwareInstall, .softwareRemove, .execute:
       return brokerExecutorId
     }
   }
@@ -302,8 +303,12 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     if operation == .workspaceRollback {
       value["operation"] = "atomic_checkpoint_restore"
     }
-    if operation == .installPack || operation == .softwareInstall {
+    if operation == .installPack {
       value["verification"] = "signed_catalog_and_pack"
+    }
+    if operation == .softwareInstall {
+      value["verification"] = "source_dependent"
+      value["linux_package_access"] = "catalog_selected_and_network_opt_in"
     }
     if [.softwareCatalog, .softwareSearch, .softwareInspect, .softwareInstall, .softwareRemove].contains(operation) {
       value["software_sources"] = "runtime_pack,linux_package"
@@ -328,12 +333,21 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
         )
       )
     }
-    if operation == .installPack || operation == .softwareInstall {
+    if operation == .installPack {
       requirements.append(
         AgentNativePermissionRequirement(
           id: packInstallPermission,
           title: "Signed runtime pack install",
           description: "Requires signed runtime catalogs and verified pack archives."
+        )
+      )
+    }
+    if operation == .softwareInstall {
+      requirements.append(
+        AgentNativePermissionRequirement(
+          id: softwareInstallPermission,
+          title: "On-device software install",
+          description: "Requires a runtime-pack or Debian-package selection from the runtime catalog; Debian package installs also require network opt-in."
         )
       )
     }
