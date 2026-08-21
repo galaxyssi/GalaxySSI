@@ -1377,6 +1377,12 @@ final class MessageCoordinator: ObservableObject {
 
   /// Sends a final PCM review only to a paired Desktop that recently advertised
   /// the Android-compatible remote Whisper capability and explicit consent.
+  var verifiedRemoteWhisperNodes: [VoiceRemoteWhisperNodeCapability] {
+    remoteWhisperNodeRegistry.all { [weak self] node in
+      self?.remoteWhisperLinkIsValid(node) ?? false
+    }
+  }
+
   func transcribeWithRemoteWhisper(
     voiceSessionID: String,
     transcriptID: String,
@@ -1391,7 +1397,7 @@ final class MessageCoordinator: ObservableObject {
         message: "Remote accuracy review is disabled."
       )
     }
-    guard let node = remoteWhisperNodeRegistry.best(linkIsValid: remoteWhisperLinkIsValid) else {
+    guard let node = verifiedRemoteWhisperNodes.first else {
       throw VoiceRemoteWhisperClientError.failed(
         code: "remote_whisper_unavailable",
         message: "No verified Desktop Whisper node is available."
