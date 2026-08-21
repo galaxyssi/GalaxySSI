@@ -186,6 +186,18 @@ struct SignalASIOnDeviceRuntimeView: View {
         tint: brokerTint,
         badge: "1.3.9+"
       )
+      SignalASISecurityNavigationRow(
+        title: t("cc_runtime_software_center_title", "Software Center"),
+        subtitle: t(
+          "cc_runtime_software_center_subtitle",
+          "Find and install verified language, browser, and media tools"
+        ),
+        systemImage: "shippingbox",
+        tint: .blue,
+        badge: t("common_view", "View")
+      ) {
+        SignalASIRuntimeSoftwareCenterView()
+      }
     }
   }
 
