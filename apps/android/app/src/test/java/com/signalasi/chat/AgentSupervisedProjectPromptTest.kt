@@ -143,6 +143,17 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `prompt delegates completion intent to the model and evidence validation to Android`() {
+        val prompt = AgentSupervisedProjectLoop.planningPrompt(
+            request("Improve SignalASI and submit a pull request")
+        )
+
+        assertTrue(prompt.contains("\"completes_goal\":false"))
+        assertTrue(prompt.contains("Set completes_goal=true only when"))
+        assertTrue(prompt.contains("Android validates required publication and runtime evidence"))
+    }
+
+    @Test
     fun `project summaries are visible grounded and written in the user language`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(request("Fix the Android build on this phone"))
 

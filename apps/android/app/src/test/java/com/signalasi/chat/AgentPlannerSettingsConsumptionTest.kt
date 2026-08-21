@@ -97,6 +97,51 @@ class AgentPlannerSettingsConsumptionTest {
     }
 
     @Test
+    fun modelTerminalOutcomeDecisionSurvivesNativeToolPlanParsing() {
+        val base = request(replanReason = "continue_from_observation")
+        val descriptor = AgentNativeToolDescriptor(
+            id = AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+            version = "1.0.0",
+            title = "Create pull request",
+            description = "Create a verified pull request",
+            location = AgentNativeToolLocation.APPLICATION,
+            inputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+            outputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+            risk = AgentNativeToolRisk.HIGH
+        )
+        val request = base.copy(
+            runtimeContext = AgentRuntimeContextBuilder.build(
+                sessionId = "planner-terminal-test",
+                goal = base.goal,
+                screen = base.screen,
+                permissionMode = PermissionMode.FULL_ACCESS,
+                highRiskGuard = false,
+                memoryCapture = false,
+                callableTargets = emptyList(),
+                memories = emptyList(),
+                nativeTools = listOf(descriptor)
+            )
+        )
+        val raw = """
+            {"summary":"The verified branch is ready to publish.","actions":[
+              {"ref":"publish","kind":"CALL_NATIVE_TOOL","target":"pull request",
+               "description":"Create the verified pull request","completes_goal":true,
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"${AgentMobileProjectNativeTools.CREATE_PULL_REQUEST}","arguments":{}}}
+            ]}
+        """.trimIndent()
+
+        val plan = AgentModelPlanParser.parse(request, raw, AgentModelPlannerSettings(maxActions = 1))
+
+        assertNotNull(plan)
+        assertEquals(
+            "true",
+            plan?.actions?.single()?.parameters
+                ?.get(AgentSupervisedProjectCompletionPolicy.MODEL_TERMINAL_OUTCOME_PARAMETER)
+        )
+    }
+
+    @Test
     fun completedToolCallCountDoesNotStopForegroundAutonomousActions() {
         val completed = action("completed", AgentActionStatus.COMPLETED)
         val pending = action("pending", AgentActionStatus.PENDING_CONFIRMATION)

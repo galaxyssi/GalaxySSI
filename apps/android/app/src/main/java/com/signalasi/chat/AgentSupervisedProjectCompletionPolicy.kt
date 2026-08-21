@@ -1,6 +1,16 @@
 package com.signalasi.chat
 
+import org.json.JSONObject
+
+internal data class AgentVerifiedProjectCompletion(
+    val message: String,
+    val evidence: String,
+    val terminalToolId: String
+)
+
 internal object AgentSupervisedProjectCompletionPolicy {
+    const val MODEL_TERMINAL_OUTCOME_PARAMETER = "model_terminal_outcome"
+
     fun missingEvidence(goal: String, history: List<AgentAction>): List<String> {
         val completedTools = history.asSequence()
             .filter { action -> action.status == AgentActionStatus.COMPLETED }
@@ -17,6 +27,83 @@ internal object AgentSupervisedProjectCompletionPolicy {
                 add("a successful push of the verified project branch")
             } else if (intent.commit && AgentMobileProjectNativeTools.COMMIT !in completedTools) {
                 add("a successful commit of the verified phone project")
+            }
+        }
+    }
+
+    /**
+     * Closes only an outcome the supervising model already chose and a phone-native
+     * tool proved. This avoids another model turn whose sole purpose is to repeat an
+     * authoritative commit, push, or pull-request receipt.
+     */
+    fun verifiedTerminalOutcome(
+        goal: String,
+        history: List<AgentAction>,
+        completedAction: AgentAction,
+        result: AgentActionResult
+    ): AgentVerifiedProjectCompletion? {
+        if (!result.success || result.metadata["awaiting_response"] == "true") return null
+        if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
+        if (completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
+        val toolId = completedAction.parameters["tool_id"].orEmpty().ifBlank { completedAction.target }
+        if (result.metadata["native_tool_id"] != toolId ||
+            result.metadata["native_tool_status"] != "succeeded" ||
+            result.metadata["invocation_id"].isNullOrBlank()
+        ) {
+            return null
+        }
+        if (missingEvidence(goal, history).isNotEmpty()) return null
+        val outputText = result.metadata["native_tool_output"].orEmpty()
+        val output = runCatching { JSONObject(outputText) }.getOrNull() ?: return null
+        val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }
+        return when (toolId) {
+            AgentMobileProjectNativeTools.CREATE_PULL_REQUEST -> {
+                val number = output.optLong("number").takeIf { it > 0L } ?: return null
+                val url = output.optString("url").trim()
+                if (!GITHUB_PULL_REQUEST_URL.matches(url)) return null
+                val state = output.optString("state").trim().ifBlank { "open" }
+                AgentVerifiedProjectCompletion(
+                    message = if (chinese) {
+                        "GitHub PR #$number \u5df2\u521b\u5efa\u5e76\u5904\u4e8e $state \u72b6\u6001\uff1a$url"
+                    } else {
+                        "GitHub PR #$number was created and is $state: $url"
+                    },
+                    evidence = outputText,
+                    terminalToolId = toolId
+                )
+            }
+            AgentMobileProjectNativeTools.PUSH -> {
+                val branch = output.optString("branch").trim()
+                if (branch.isBlank()) return null
+                AgentVerifiedProjectCompletion(
+                    message = if (chinese) {
+                        "\u5df2\u63a8\u9001\u5e76\u9a8c\u8bc1\u5206\u652f $branch\u3002"
+                    } else {
+                        "Branch $branch was pushed and verified."
+                    },
+                    evidence = outputText,
+                    terminalToolId = toolId
+                )
+            }
+            AgentMobileProjectNativeTools.COMMIT -> {
+                val commit = output.optString("commit").trim()
+                if (!GIT_COMMIT.matches(commit)) return null
+                AgentVerifiedProjectCompletion(
+                    message = if (chinese) {
+                        "\u5df2\u521b\u5efa\u5e76\u9a8c\u8bc1\u63d0\u4ea4 $commit\u3002"
+                    } else {
+                        "Commit $commit was created and verified."
+                    },
+                    evidence = outputText,
+                    terminalToolId = toolId
+                )
+            }
+            else -> result.message.trim().take(6_000).takeIf(String::isNotBlank)?.let { message ->
+                AgentVerifiedProjectCompletion(
+                    message = message,
+                    evidence = outputText,
+                    terminalToolId = toolId
+                )
             }
         }
     }
@@ -81,4 +168,6 @@ internal object AgentSupervisedProjectCompletionPolicy {
         Regex("(?:\u624b\u673a|\u672c\u673a|\u672c\u4f53|\u7aef\u4fa7).{0,8}linux"),
         Regex("linux.{0,8}(?:\u5de5\u4f5c\u533a|\u7cfb\u7edf|\u73af\u5883|\u865a\u62df\u673a)")
     )
+    private val GITHUB_PULL_REQUEST_URL = Regex("https://github\\.com/[^/\\s]+/[^/\\s]+/pull/[1-9][0-9]*")
+    private val GIT_COMMIT = Regex("[0-9a-fA-F]{7,64}")
 }

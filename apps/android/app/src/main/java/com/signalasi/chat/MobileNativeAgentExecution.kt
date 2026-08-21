@@ -729,6 +729,25 @@ internal fun MobileNativeAgent.executePlannedAction(
         ?.addArtifactRichOutput(lastActionResult?.metadata?.get("rich_output").orEmpty())
         ?.markAction(hardenedAction.id, finalStatus, lastActionResult)
         ?.addVerification(AgentVerificationResult.from(hardenedAction.id, lastActionResult, recovery))
+    if (observedPlan != null) {
+        val observedResult = lastActionResult
+        if (observedResult != null) {
+            val verifiedCompletion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = currentGoal,
+                history = observedPlan.actionHistory + observedPlan.actions,
+                completedAction = hardenedAction,
+                result = observedResult
+            )
+            if (verifiedCompletion != null) {
+                return completeVerifiedProjectOutcome(
+                    plan = observedPlan,
+                    action = hardenedAction,
+                    result = observedResult,
+                    completion = verifiedCompletion
+                )
+            }
+        }
+    }
     val updatedPlan = observedPlan?.let { candidate ->
         ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult)
     }
@@ -950,6 +969,44 @@ internal fun MobileNativeAgent.completeVerifiedTaskMarker(action: AgentAction): 
     Log.i(
         "SignalASILatency",
         "agent_execute stage=completion_marker_closed action=${action.id.take(24)}"
+    )
+    return snapshot()
+}
+
+internal fun MobileNativeAgent.completeVerifiedProjectOutcome(
+    plan: AgentPlan,
+    action: AgentAction,
+    result: AgentActionResult,
+    completion: AgentVerifiedProjectCompletion
+): AgentUiState {
+    val finalResult = result.copy(
+        message = completion.message,
+        metadata = result.metadata + mapOf(
+            "verified_terminal_outcome" to "true",
+            "terminal_tool_id" to completion.terminalToolId,
+            "terminal_evidence" to completion.evidence
+        )
+    )
+    currentPlan = plan.markAction(action.id, AgentActionStatus.COMPLETED, finalResult)
+    lastActionResult = finalResult
+    if (!advanceExecutionLoop(
+            nextPhase = AgentExecutionLoopPhase.VERIFY,
+            reason = "Authoritative phone tool evidence proves the model-selected outcome",
+            actionId = action.id
+        )
+    ) {
+        return snapshot()
+    }
+    phase = AgentPhase.COMPLETED
+    recordAudit(
+        AgentAuditEvent.SCREEN_VERIFIED,
+        "verified_terminal_outcome:tool=${completion.terminalToolId}; evidence=${completion.evidence.take(2_000)}"
+    )
+    recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
+    saveTaskRecord(result = finalResult.message)
+    Log.i(
+        "SignalASILatency",
+        "agent_execute stage=verified_terminal_outcome tool=${completion.terminalToolId.take(48)}"
     )
     return snapshot()
 }
@@ -1948,6 +2005,17 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
                 evidence = evidence
             )
         )
+    val verifiedCompletion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+        goal = currentGoal,
+        history = observedPlan.actionHistory + observedPlan.actions,
+        completedAction = action,
+        result = result
+    )
+    if (verifiedCompletion != null) {
+        return reconcileExecutionLoop(
+            completeVerifiedProjectOutcome(observedPlan, action, result, verifiedCompletion)
+        )
+    }
     val continuedPlan = ensureSupervisedProjectContinuation(observedPlan, action, result)
     currentPlan = continuedPlan
     recordAudit(

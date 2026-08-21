@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -124,13 +126,153 @@ class AgentSupervisedProjectCompletionPolicyTest {
         ).isEmpty())
     }
 
-    private fun completed(toolId: String) = AgentAction(
+    @Test
+    fun verifiedPullRequestReceiptClosesTheModelSelectedPublicationOutcome() {
+        val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST, completesGoal = true)
+        val completion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Improve SignalASI and submit a PR",
+            history = listOf(action),
+            completedAction = action,
+            result = nativeResult(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
+            )
+        )
+
+        assertNotNull(completion)
+        assertEquals(
+            "GitHub PR #2241 was created and is open: https://github.com/signalasi/SignalASI/pull/2241",
+            completion?.message
+        )
+    }
+
+    @Test
+    fun chineseGoalGetsAnAccurateLocalizedPullRequestOutcome() {
+        val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST, completesGoal = true)
+        val completion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "\u4fee\u6539 SignalASI \u5e76\u63d0\u4ea4 PR",
+            history = listOf(action),
+            completedAction = action,
+            result = nativeResult(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
+            )
+        )
+
+        assertEquals(
+            "GitHub PR #2241 \u5df2\u521b\u5efa\u5e76\u5904\u4e8e open \u72b6\u6001\uff1ahttps://github.com/signalasi/SignalASI/pull/2241",
+            completion?.message
+        )
+    }
+
+    @Test
+    fun malformedOrUnprovenPullRequestReceiptReturnsControlToTheModel() {
+        val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST, completesGoal = true)
+
+        assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Improve SignalASI and submit a PR",
+            history = listOf(action),
+            completedAction = action,
+            result = nativeResult(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                """{"number":2241,"state":"open"}"""
+            )
+        ))
+        assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Improve SignalASI and submit a PR",
+            history = emptyList(),
+            completedAction = action,
+            result = nativeResult(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                """{"number":2241,"url":"https://github.com/signalasi/SignalASI/pull/2241","state":"open"}"""
+            )
+        ))
+    }
+
+    @Test
+    fun nonTerminalPhoneToolsNeverCloseAnOpenEndedModelTask() {
+        val action = completed(AgentOnDeviceRuntimeTools.EXECUTE)
+
+        assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Write and verify a Python program on this phone",
+            history = listOf(action),
+            completedAction = action,
+            result = nativeResult(AgentOnDeviceRuntimeTools.EXECUTE, """{"exit_code":0}""")
+        ))
+    }
+
+    @Test
+    fun modelCanFinishAGenericGoalWithVerifiedNativeToolEvidence() {
+        val action = completed(AgentOnDeviceRuntimeTools.EXECUTE, completesGoal = true)
+        val result = nativeResult(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            """{"exit_code":0,"stdout":"validation passed"}"""
+        ).copy(message = "The phone runtime completed and verified the requested program.")
+
+        val completion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+            goal = "Run and verify the program on this phone",
+            history = listOf(action),
+            completedAction = action,
+            result = result
+        )
+
+        assertEquals(result.message, completion?.message)
+        assertEquals(AgentOnDeviceRuntimeTools.EXECUTE, completion?.terminalToolId)
+    }
+
+    @Test
+    fun explicitPushAndCommitOutcomesUseTheirStructuredReceipts() {
+        val push = completed(AgentMobileProjectNativeTools.PUSH, completesGoal = true)
+        val commit = completed(AgentMobileProjectNativeTools.COMMIT, completesGoal = true)
+
+        assertEquals(
+            "Branch feature/model-evidence was pushed and verified.",
+            AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Push the branch to GitHub",
+                history = listOf(push),
+                completedAction = push,
+                result = nativeResult(
+                    AgentMobileProjectNativeTools.PUSH,
+                    """{"branch":"feature/model-evidence","remote_messages":[]}"""
+                )
+            )?.message
+        )
+        assertEquals(
+            "Commit 1234abc was created and verified.",
+            AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                goal = "Commit the project changes",
+                history = listOf(commit),
+                completedAction = commit,
+                result = nativeResult(
+                    AgentMobileProjectNativeTools.COMMIT,
+                    """{"commit":"1234abc","branch":"feature/model-evidence"}"""
+                )
+            )?.message
+        )
+    }
+
+    private fun completed(toolId: String, completesGoal: Boolean = false) = AgentAction(
         id = toolId,
         kind = AgentActionKind.CALL_NATIVE_TOOL,
         target = toolId,
         risk = AgentRisk.LOW,
         status = AgentActionStatus.COMPLETED,
         description = toolId,
-        parameters = mapOf("tool_id" to toolId)
+        parameters = mapOf(
+            "tool_id" to toolId,
+            AgentSupervisedProjectCompletionPolicy.MODEL_TERMINAL_OUTCOME_PARAMETER to completesGoal.toString()
+        )
+    )
+
+    private fun nativeResult(toolId: String, output: String) = AgentActionResult(
+        actionId = toolId,
+        success = true,
+        message = "Phone project operation completed",
+        metadata = mapOf(
+            "native_tool_id" to toolId,
+            "native_tool_status" to "succeeded",
+            "native_tool_output" to output,
+            "invocation_id" to "invocation-1"
+        )
     )
 }
