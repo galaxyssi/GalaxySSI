@@ -35,6 +35,8 @@ final class MessageCoordinator: ObservableObject {
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   private let connectorResponseBus: AgentConnectorResponseBus
   private let richContentMaterializer: AgentRichContentMaterializer
+  private let remoteWhisperNodeRegistry = VoiceRemoteWhisperNodeRegistry.shared
+  private let remoteWhisperNodeClient = VoiceRemoteWhisperNodeClient.shared
   let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   private let downloadCompletionCoordinator: AgentIOSDownloadCompletionCoordinator
   private let globalProactiveDeliveryListener: GlobalProactiveDeliveryListener
@@ -1371,6 +1373,43 @@ final class MessageCoordinator: ObservableObject {
     snapshot.lastActionSummary = "publish_failed"
     desktopControlSnapshots[link.desktopId] = snapshot
     return false
+  }
+
+  /// Sends a final PCM review only to a paired Desktop that recently advertised
+  /// the Android-compatible remote Whisper capability and explicit consent.
+  func transcribeWithRemoteWhisper(
+    voiceSessionID: String,
+    transcriptID: String,
+    pcm16: [Int16],
+    sampleRateHz: Int,
+    language: String
+  ) async throws -> VoiceRemoteWhisperTranscript {
+    guard VoiceFeatureFlags.isRemoteWhisperNodeEnabled(),
+          store.voiceSettings.normalized.remoteWhisperAllowed else {
+      throw VoiceRemoteWhisperClientError.failed(
+        code: "remote_whisper_not_allowed",
+        message: "Remote accuracy review is disabled."
+      )
+    }
+    guard let node = remoteWhisperNodeRegistry.best(linkIsValid: remoteWhisperLinkIsValid) else {
+      throw VoiceRemoteWhisperClientError.failed(
+        code: "remote_whisper_unavailable",
+        message: "No verified Desktop Whisper node is available."
+      )
+    }
+    let clientID = store.profile.signalASIId
+    return try await remoteWhisperNodeClient.transcribe(
+      node: node,
+      clientID: clientID,
+      voiceSessionID: voiceSessionID,
+      transcriptID: transcriptID,
+      pcm16: pcm16,
+      sampleRateHz: sampleRateHz,
+      language: language
+    ) { [weak self] desktopID, payload in
+      guard let self else { return false }
+      return await self.publishRemoteWhisperPacket(desktopID: desktopID, payload: payload)
+    }
   }
 
   @discardableResult
@@ -6200,6 +6239,7 @@ final class MessageCoordinator: ObservableObject {
           .filter { !$0.isEmpty }
       )
       if !desktopId.isEmpty {
+        remoteWhisperNodeRegistry.remove(desktopID: desktopId)
         revokedContactIds.formUnion(removeDesktopPairingState(desktopId: desktopId))
       } else if let hermes = store.contact(id: "hermes") {
         revokedContactIds.insert(hermes.id)
@@ -6316,6 +6356,22 @@ final class MessageCoordinator: ObservableObject {
         }
         publishInboundReceipt(link: link, receivedMessageId: messageId)
       }
+    }
+    let sourceDesktopID = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")
+    let trustedRemoteWhisperSource = link?.paired == true &&
+      sourceDesktopID == link?.desktopId
+    if appPayload.string("type") == "capability_manifest", trustedRemoteWhisperSource {
+      remoteWhisperNodeRegistry.ingest(
+        payload: appPayload,
+        sourceDesktopID: sourceDesktopID
+      )
+    }
+    if trustedRemoteWhisperSource,
+       remoteWhisperNodeClient.handleIncoming(appPayload, sourceDesktopID: sourceDesktopID) {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
     }
     if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
       applyAgentConnectorStreamUpdate(streamUpdate)
@@ -7355,6 +7411,28 @@ final class MessageCoordinator: ObservableObject {
           payload.string("from") == link.desktopId
       )
     }
+  }
+
+  private func remoteWhisperLinkIsValid(_ node: VoiceRemoteWhisperNodeCapability) -> Bool {
+    store.serverLinks.contains {
+      $0.paired &&
+        $0.desktopId == node.desktopID &&
+        $0.routes.clientRouteId == node.clientRouteID
+    }
+  }
+
+  private func publishRemoteWhisperPacket(
+    desktopID: String,
+    payload: [String: Any]
+  ) async -> Bool {
+    guard mqttClient.isConnected,
+          let link = store.serverLinks.first(where: {
+            $0.paired && $0.desktopId == desktopID
+          }),
+          let wire = try? linkWirePayload(payload, link: link) else {
+      return false
+    }
+    return (await mqttClient.publish(topic: link.routes.controlTopic, payload: wire.wireData)).accepted
   }
 
   private func ciphertextReplayDigest(for wire: [String: Any]) -> String {
