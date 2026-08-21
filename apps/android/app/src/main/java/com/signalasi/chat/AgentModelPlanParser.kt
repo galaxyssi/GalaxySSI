@@ -104,7 +104,9 @@ object AgentModelPlanParser {
         val parameters = resolved + mapOf(
             "node_ref" to nodeRef,
             "depends_on" to dependencyIds.joinToString(","),
-            "use_outputs_from" to outputSourceIds.joinToString(",")
+            "use_outputs_from" to outputSourceIds.joinToString(","),
+            AgentSupervisedProjectCompletionPolicy.MODEL_TERMINAL_OUTCOME_PARAMETER to
+                (kind == AgentActionKind.CALL_NATIVE_TOOL && json.optBoolean("completes_goal", false)).toString()
         )
         val target = resolveTarget(kind, json.optString("target"), parameters, request)
         val description = json.optString("description").trim().take(300)
