@@ -3826,7 +3826,8 @@
 "cc_runtime_isolation_title" = "任务工作区隔离";
 "cc_runtime_isolation_subtitle" = "每个任务都有 CPU、内存、存储、时间、输出和产物限制";
 "cc_runtime_network_title" = "客体网络默认策略";
-"cc_runtime_network_broker_subtitle" = "当前本机 Broker 仅接受离线执行";
+"cc_runtime_network_broker_subtitle" = "嵌入式 Debian 客体会在任务明确启用时通过主机中介网络访问服务";
+"cc_runtime_network_host_mediated" = "主机中介";
 "cc_runtime_network_subtitle" = "默认关闭，仅在当前任务获得范围明确的网络授权后开启";
 "cc_runtime_pack_subtitle" = "签名的模块化运行包";
 "cc_runtime_pack_linux" = "Linux 基础环境";
