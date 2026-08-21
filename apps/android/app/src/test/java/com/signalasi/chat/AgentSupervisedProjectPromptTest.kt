@@ -268,6 +268,40 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `repair plans do not count as semantically healthy model responses`() {
+        val request = request("Inspect the phone project")
+        val action = AgentAction(
+            id = "inspect",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentMobileProjectNativeTools.INSPECT,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Inspect repository",
+            requiresConfirmation = false
+        )
+        val executable = AgentPlanFactory.singleAction(request, action)
+        val repair = AgentPlanFactory.singleAction(
+            request,
+            action.copy(
+                parameters = mapOf(SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format")
+            )
+        )
+        val executableWithInheritedReviewerMarker = executable.copy(
+            actions = executable.actions + action.copy(
+                id = "review",
+                kind = AgentActionKind.CALL_CONNECTOR,
+                target = "Codex",
+                parameters = mapOf(SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format")
+            )
+        )
+
+        assertTrue(AgentSupervisedProjectLoop.isExecutableResponsePlan(executable))
+        assertTrue(AgentSupervisedProjectLoop.isExecutableResponsePlan(executableWithInheritedReviewerMarker))
+        assertFalse(AgentSupervisedProjectLoop.isExecutableResponsePlan(repair))
+        assertFalse(AgentSupervisedProjectLoop.isExecutableResponsePlan(null))
+    }
+
+    @Test
     fun `prompt delegates completion intent to the model and evidence validation to Android`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
             request("Improve SignalASI and submit a pull request")

@@ -8,6 +8,13 @@ import java.util.Locale
 internal object AgentSupervisedProjectLoop {
     fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
 
+    fun isExecutableResponsePlan(plan: AgentPlan?): Boolean =
+        plan != null && plan.actions.singleOrNull()
+            ?.parameters
+            ?.get(SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER)
+            .orEmpty()
+            .isBlank()
+
     fun needsRunnableReviewer(plan: AgentPlan): Boolean =
         plan.nextRunnableAction() == null &&
             plan.actions.none { action ->
@@ -1082,6 +1089,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         description = "Correct the structured phone project plan",
         parameters = connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.formatRepairPrompt(request, response),
+            SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format",
             "supervised_parse_attempt" to (attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
@@ -1129,6 +1137,7 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
                 response = response,
                 violation = violation
             ),
+            SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "progress",
             "supervised_progress_attempt" to (attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
@@ -1173,6 +1182,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
         description = "Continue until the requested publication result is verified",
         parameters = connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.incompleteCompletionPrompt(request, missingEvidence),
+            SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "completion",
             "supervised_completion_attempt" to (attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
@@ -1239,5 +1249,6 @@ private const val MAX_SUPERVISED_BATCH_ACTIONS = 11
 private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
 private const val MAX_SUPERVISED_FORMAT_REPAIRS = 2
 private const val MAX_SUPERVISED_COMPLETION_REPAIRS = 3
+internal const val SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER = "supervised_repair_kind"
 internal const val MAX_SUPERVISED_REPLANS = 12
 internal const val MODEL_DIRECTED_DESKTOP_EXECUTION_PROFILE = "model-directed-desktop-execution-v1"

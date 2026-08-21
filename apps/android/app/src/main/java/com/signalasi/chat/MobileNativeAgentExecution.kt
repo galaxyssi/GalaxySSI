@@ -1096,24 +1096,15 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
                 "reasons=${review.reasons.joinToString(",")}"
         )
     }
-    val resourceId = pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }
     val resourceStartedAt = pendingResult.metadata["resource_started_at"]?.toLongOrNull()
         ?: System.currentTimeMillis()
-    if (pendingResult.metadata["cloud_health_recorded"] != "true") {
-        AgentResourceHealthStore(appContext).record(
-            id = "target:$resourceId",
-            success = effectiveSuccess,
-            latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
+    if (!supervisedProjectResponse || !effectiveSuccess) {
+        recordConnectorResponseHealth(
+            pendingResult = pendingResult,
+            contactId = contactId,
+            resourceStartedAt = resourceStartedAt,
+            success = effectiveSuccess
         )
-    }
-    if (pendingResult.metadata["cloud_health_recorded"] != "true") {
-        pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
-            AgentResourceHealthStore(appContext).record(
-                id = "domain:$domain",
-                success = effectiveSuccess,
-                latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
-            )
-        }
     }
     if (!effectiveSuccess) {
         val failureReason = responseSelfCheck?.diagnostic
@@ -1166,6 +1157,14 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     if (effectiveSuccess && supervisedProjectResponse) {
         val supervisor = requireNotNull(completedAction)
         val supervisedPlan = acceptSupervisedProjectPlan(responsePlan, supervisor, response)
+        val semanticallyExecutable = AgentSupervisedProjectLoop.isExecutableResponsePlan(supervisedPlan)
+        recordConnectorResponseHealth(
+            pendingResult = pendingResult,
+            contactId = contactId,
+            resourceStartedAt = resourceStartedAt,
+            success = semanticallyExecutable,
+            force = !semanticallyExecutable
+        )
         if (supervisedPlan == null) {
             val repairAttempts = supervisor.parameters["supervised_parse_attempt"]
                 ?.toIntOrNull()
@@ -1319,6 +1318,23 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         executeFirstPendingAction()
     } else {
         snapshot()
+    }
+}
+
+private fun MobileNativeAgent.recordConnectorResponseHealth(
+    pendingResult: AgentActionResult,
+    contactId: String,
+    resourceStartedAt: Long,
+    success: Boolean,
+    force: Boolean = false
+) {
+    if (!force && pendingResult.metadata["cloud_health_recorded"] == "true") return
+    val elapsed = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
+    val resourceId = pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }
+    val health = AgentResourceHealthStore(appContext)
+    if (resourceId.isNotBlank()) health.record("target:$resourceId", success, elapsed)
+    pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
+        health.record("domain:$domain", success, elapsed)
     }
 }
 
