@@ -93,27 +93,24 @@ internal object AgentSupervisedProjectProgressPolicy {
             .filterNot(AgentAction::isSupervisedProjectConnector)
             .filter { it.status in terminalStatuses }
             .toList()
-            .takeLast(MAX_LEDGER_ACTIONS)
         if (observed.isEmpty()) return null
+        val recent = observed.takeLast(MAX_VISIBLE_LEDGER_ACTIONS)
 
         return buildString {
-            append("Verified project progress ledger (host-owned facts):\n")
-            observed.forEach { action ->
+            append("Verified project progress ledger. This is SignalASI-owned context and host facts:\n")
+            append(lifecycleSnapshot(observed)).append('\n')
+            append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
+            append("The JSON action must perform the immediate next step described by summary. ")
+            append("Recent observations follow in chronological order; the newest observation is last.\n")
+            recent.forEach { action ->
                 append("- status=").append(action.status.name)
                 append("; tool=").append(action.toolId().ifBlank { action.kind.name })
-                AgentPlannerObservation.sanitize(action.result, MAX_OBSERVATION_CHARACTERS)?.let { result ->
+                AgentPlannerObservation.from(action, MAX_ACTION_OBSERVATION_CHARACTERS)?.let { result ->
                     append("; observation=")
                         .append(result)
                 }
-                AgentPlannerObservation.sanitize(action.evidence, MAX_EVIDENCE_CHARACTERS)?.let { evidence ->
-                    append("; evidence=")
-                        .append(evidence)
-                }
                 append('\n')
             }
-            append(lifecycleSnapshot(observed)).append('\n')
-            append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
-            append("The JSON action must perform the immediate next step described by summary.")
         }
     }
 
@@ -432,8 +429,7 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentMobileProjectNativeTools.PUSH,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )
-    private const val MAX_LEDGER_ACTIONS = 16
-    private const val MAX_OBSERVATION_CHARACTERS = 700
-    private const val MAX_EVIDENCE_CHARACTERS = 300
+    private const val MAX_VISIBLE_LEDGER_ACTIONS = 8
+    private const val MAX_ACTION_OBSERVATION_CHARACTERS = 600
     private const val MAX_DISCOVERY_ACTIONS_WITHOUT_MUTATION = 4
 }

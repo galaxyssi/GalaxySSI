@@ -651,6 +651,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_USER_PROJECT_CONSTRAINT"))
         assertTrue(prompt.contains("LATEST_VERIFIED_PHONE_EVIDENCE"))
+        assertEquals(1, prompt.split("LATEST_VERIFIED_PHONE_EVIDENCE").size - 1)
         assertFalse(prompt.contains("deliberately verbose project tool description"))
         assertTrue(prompt.contains("workspace_id!:string"))
         assertTrue(prompt.contains("mode:string(inspect|modify|verify)"))
