@@ -91,6 +91,9 @@ internal object AgentSupervisedProjectLoop {
         if (plan.actions.singleOrNull()?.isTaskCompleteMarker() == true) return plan
         val dependencies = plan.actions.map(AgentAction::id)
         if (dependencies.isEmpty()) return plan
+        val continuationRequest = request.copy(
+            executionHistory = request.executionHistory.filterNot { action -> action.id in dependencies }
+        )
         val reviewer = connector.copy(
             id = "supervise-phone-project-$idSuffix",
             target = connector.target,
@@ -98,7 +101,7 @@ internal object AgentSupervisedProjectLoop {
             status = AgentActionStatus.PENDING_CONFIRMATION,
             description = "Review phone project evidence and decide the next step",
             parameters = connector.parameters + mapOf(
-                "prompt" to continuationPrompt(request),
+                "prompt" to continuationPrompt(continuationRequest),
                 "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                 "depends_on" to dependencies.joinToString(","),
                 "use_outputs_from" to dependencies.joinToString(","),

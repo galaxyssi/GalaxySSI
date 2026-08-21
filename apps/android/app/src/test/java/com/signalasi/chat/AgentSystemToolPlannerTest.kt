@@ -831,6 +831,60 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
+    fun supervisedProjectReviewerHandsOffRecoveredEvidenceExactlyOnce() {
+        val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
+        val inspect = nativeDescriptor(
+            AgentMobileProjectNativeTools.INSPECT,
+            "Inspect repository",
+            AgentNativeToolRisk.LOW
+        )
+        val target = AgentCallableTarget(
+            id = "qwen-local",
+            title = "Qwen Local",
+            kind = AgentConnectorKind.MODEL,
+            status = AgentConnectorStatus.AVAILABLE,
+            capabilities = listOf(AgentCapability.CODE, AgentCapability.REASONING)
+        )
+        val baseRequest = request(
+            "Continue https://github.com/signalasi/SignalASI on this phone",
+            screen,
+            listOf(inspect),
+            listOf(target)
+        )
+        val connector = RuleBasedAgentPlanner().supervisedProjectActions(baseRequest)!!.single()
+        val evidenceMarker = "UNIQUE_RECOVERED_NATIVE_EVIDENCE"
+        val completed = AgentAction(
+            id = "inspect-project",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = inspect.title,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.COMPLETED,
+            description = "Inspect the repository",
+            parameters = mapOf("tool_id" to inspect.id, "input_json" to "{\"workspace_id\":\"current\"}"),
+            requiresConfirmation = false,
+            result = evidenceMarker
+        )
+        val recoveredRequest = baseRequest.copy(executionHistory = listOf(completed))
+        val recoveredPlan = AgentPlanFactory.singleAction(recoveredRequest, completed).copy(
+            plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+        )
+
+        val reviewed = AgentSupervisedProjectLoop.appendReviewer(
+            recoveredPlan,
+            connector,
+            recoveredRequest,
+            "recovered"
+        )
+        val reviewer = reviewed.actions.last()
+        val promptBeforeHandoff = reviewer.parameters.getValue("prompt")
+        val materializedPrompt = reviewed.materializeToolInput(reviewer, allowOutputHandoff = true)
+            .parameters.getValue("prompt")
+
+        assertFalse(promptBeforeHandoff.contains(evidenceMarker))
+        assertEquals(1, materializedPrompt.split(evidenceMarker).size - 1)
+    }
+
+    @Test
     fun supervisedProjectRepairsAPlanWhosePendingReviewerCannotRun() {
         val blockedDependency = AgentAction(
             id = "missing-dependency-reviewer",
