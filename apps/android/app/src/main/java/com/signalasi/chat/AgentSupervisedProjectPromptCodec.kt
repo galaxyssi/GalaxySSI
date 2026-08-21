@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 internal object AgentSupervisedProjectPromptCodec {
+    const val DYNAMIC_CONTEXT_HEADER = "Current phone project context:\n"
+
     fun compactInputSchema(document: AgentNativeJsonObject, maximumCharacters: Int): String =
         schemaShape(document, depth = 0)
             .take(maximumCharacters.coerceAtLeast(MINIMUM_SCHEMA_CHARACTERS))
@@ -10,12 +12,48 @@ internal object AgentSupervisedProjectPromptCodec {
         if (prompt.length <= limit) return prompt
         val toolsAt = prompt.indexOf(TOOLS_HEADER)
         if (toolsAt < 0) return compactMiddle(prompt, limit)
+        val dynamicAt = prompt.indexOf(DYNAMIC_CONTEXT_HEADER, startIndex = toolsAt + TOOLS_HEADER.length)
+        if (dynamicAt >= 0) {
+            return preserveCacheablePrefix(
+                contract = prompt.substring(0, toolsAt),
+                tools = prompt.substring(toolsAt, dynamicAt),
+                dynamic = prompt.substring(dynamicAt),
+                limit = limit
+            )
+        }
         val tools = prompt.substring(toolsAt)
         val prefix = prompt.substring(0, toolsAt)
         if (tools.length >= limit) return compactMiddle(tools, limit)
         preserveConversationTransport(prefix, tools, limit)?.let { return it }
         val prefixBudget = limit - tools.length
         return compactMiddle(prefix, prefixBudget).trimEnd() + '\n' + tools
+    }
+
+    private fun preserveCacheablePrefix(
+        contract: String,
+        tools: String,
+        dynamic: String,
+        limit: Int
+    ): String {
+        val dynamicReserve = minOf(
+            dynamic.length,
+            MINIMUM_DYNAMIC_CONTEXT_CHARACTERS.coerceAtMost(limit / 3)
+        )
+        val stableBudget = (limit - dynamicReserve).coerceAtLeast(tools.length)
+        val stable = if (contract.length + tools.length <= stableBudget) {
+            contract + tools
+        } else {
+            val contractBudget = (stableBudget - tools.length).coerceAtLeast(0)
+            compactMiddle(contract, contractBudget).trimEnd() + '\n' + tools
+        }
+        val dynamicBudget = (limit - stable.length).coerceAtLeast(0)
+        val compactDynamic = when {
+            dynamic.length <= dynamicBudget -> dynamic
+            dynamicBudget <= 0 -> ""
+            else -> preserveConversationTransport(dynamic, tools = "", limit = dynamicBudget)
+                ?: compactMiddle(dynamic, dynamicBudget)
+        }
+        return (stable + compactDynamic).take(limit)
     }
 
     private fun preserveConversationTransport(prefix: String, tools: String, limit: Int): String? {
@@ -117,6 +155,7 @@ internal object AgentSupervisedProjectPromptCodec {
     private const val MINIMUM_PROMPT_CHARACTERS = 4_000
     private const val MINIMUM_REQUIRED_DYNAMIC_CHARACTERS = 1_000
     private const val MINIMUM_EVIDENCE_CHARACTERS = 1_200
+    private const val MINIMUM_DYNAMIC_CONTEXT_CHARACTERS = 4_000
     private const val MAX_SCHEMA_DEPTH = 2
     private const val MAX_ENUM_VALUES = 8
 }
