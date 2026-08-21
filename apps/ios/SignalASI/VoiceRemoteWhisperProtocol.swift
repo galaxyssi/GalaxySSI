@@ -3,7 +3,7 @@ import Foundation
 
 /// Wire-compatible representation of the trusted-desktop Whisper protocol used by Android.
 /// Audio is only prepared after the paired desktop advertises explicit consent support.
-struct VoiceRemoteWhisperProfile: Equatable {
+struct VoiceRemoteWhisperProfile: Codable, Equatable {
   let id: String
   let modelName: String
   let sha256: String
@@ -20,7 +20,7 @@ struct VoiceRemoteWhisperProfile: Equatable {
   }
 }
 
-struct VoiceRemoteWhisperNodeCapability: Equatable {
+struct VoiceRemoteWhisperNodeCapability: Codable, Equatable {
   let desktopID: String
   let desktopName: String
   let clientRouteID: String
