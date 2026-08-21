@@ -47,6 +47,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         turns: List<ChatMessage>,
         requestId: String,
         images: List<CloudImagePayload> = emptyList(),
+        connectTimeoutMillis: Long = 20_000L,
+        readTimeoutMillis: Long = 300_000L,
         onToolEvent: ((CloudToolEvent) -> Unit)? = null,
         allowExternalTools: Boolean = true
     ): Flow<ModelStreamEvent> = flow {
@@ -97,7 +99,13 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 val inlineProtocolGuard = InlineToolProtocolStreamGuard()
                 var roundFailure: ModelStreamEvent.Failed? = null
                 var roundCompleted = false
-                transport.stream(prepared.toRequest(roundId)).collect { event ->
+                transport.stream(
+                    prepared.toRequest(
+                        roundId = roundId,
+                        connectTimeoutMillis = connectTimeoutMillis,
+                        readTimeoutMillis = readTimeoutMillis
+                    )
+                ).collect { event ->
                     when (event) {
                         is ModelStreamEvent.Connected -> if (!connected) {
                             connected = true
@@ -317,14 +325,20 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         }
     }
 
-    private fun PreparedCloudConversationStream.toRequest(roundId: String): ModelStreamRequest =
+    private fun PreparedCloudConversationStream.toRequest(
+        roundId: String,
+        connectTimeoutMillis: Long,
+        readTimeoutMillis: Long
+    ): ModelStreamRequest =
         ModelStreamRequest(
             requestId = roundId,
             provider = provider,
             endpoint = endpoint,
             headers = headers,
             bodyJson = body.put(conversationKey, conversation).toString(),
-            transport = ModelStreamTransport.SSE
+            transport = ModelStreamTransport.SSE,
+            connectTimeoutMs = connectTimeoutMillis,
+            readTimeoutMs = readTimeoutMillis
         )
 
     private fun prepareFinalRound(prepared: PreparedCloudConversationStream) {

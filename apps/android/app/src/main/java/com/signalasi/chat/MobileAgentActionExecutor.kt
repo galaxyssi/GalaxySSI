@@ -1283,13 +1283,21 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "reason=${lastError?.message.orEmpty().take(160)}"
                 )
             }
-            for (candidate in modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty()) {
+            val cloudCandidates = modelCandidates.takeIf { cloudImages.isSuccess }.orEmpty()
+            for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("signalasi_id") }
                 val model = AppStore.selectedCloudModelContact(appContext, candidateId) ?: candidate
+                val attemptProfile = AgentProviderFailurePolicy.attemptProfile(
+                    manuallyLocked = action.parameters["manual_target_locked"] == "true",
+                    hasAlternativeResource = candidateIndex < cloudCandidates.lastIndex ||
+                        remainingFallbackIds.isNotEmpty(),
+                    supervisedProject = action.parameters["connector_task_mode"] ==
+                        PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
+                )
                 var candidateFailures = 0
                 while (successfulModel == null &&
-                    candidateFailures < AgentProviderFailurePolicy.MAX_AUTO_FAILURES_PER_RESOURCE
+                    candidateFailures < attemptProfile.maxAttempts
                 ) {
                 val startedAt = SystemClock.elapsedRealtime()
                 val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
@@ -1320,6 +1328,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             ),
                             requestId = requestId,
                             images = cloudImages.getOrThrow(),
+                            connectTimeoutMillis = attemptProfile.connectTimeoutMillis,
+                            readTimeoutMillis = attemptProfile.readTimeoutMillis,
                             allowExternalTools = action.parameters["connector_task_mode"] !=
                                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
                             onToolEvent = { event ->
@@ -1431,11 +1441,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     Log.w(
                         "SignalASILatency",
                         "agent_cloud stage=failed source=$messageId attempt=$candidateFailures " +
+                            "max_attempts=${attemptProfile.maxAttempts} " +
+                            "read_timeout_ms=${attemptProfile.readTimeoutMillis} " +
                             "elapsed_ms=$elapsedMillis reason=${lastError?.message.orEmpty().take(120)}"
                     )
                     if (AgentProviderFailurePolicy.shouldRetrySameResource(
                             providerFailure,
-                            candidateFailures
+                            candidateFailures,
+                            attemptProfile
                         )
                     ) {
                         Thread.sleep(AgentProviderFailurePolicy.retryDelayMillis(candidateFailures))

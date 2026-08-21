@@ -54,4 +54,64 @@ class AgentProviderFailurePolicyTest {
 
         assertFalse(AgentProviderFailurePolicy.shouldRetrySameResource(failure, 1))
     }
+
+    @Test
+    fun automaticInteractiveRoutingFailsOverQuicklyWhenAnAlternativeExists() {
+        val profile = AgentProviderFailurePolicy.attemptProfile(
+            manuallyLocked = false,
+            hasAlternativeResource = true,
+            supervisedProject = false
+        )
+
+        assertEquals(2, profile.maxAttempts)
+        assertEquals(10_000L, profile.connectTimeoutMillis)
+        assertEquals(15_000L, profile.readTimeoutMillis)
+    }
+
+    @Test
+    fun supervisedProjectAllowsLongerObservationBeforeFailover() {
+        val profile = AgentProviderFailurePolicy.attemptProfile(
+            manuallyLocked = false,
+            hasAlternativeResource = true,
+            supervisedProject = true
+        )
+
+        assertEquals(2, profile.maxAttempts)
+        assertEquals(15_000L, profile.connectTimeoutMillis)
+        assertEquals(60_000L, profile.readTimeoutMillis)
+    }
+
+    @Test
+    fun manualOrUniqueResourceKeepsPatientTimeouts() {
+        val locked = AgentProviderFailurePolicy.attemptProfile(
+            manuallyLocked = true,
+            hasAlternativeResource = true,
+            supervisedProject = false
+        )
+        val unique = AgentProviderFailurePolicy.attemptProfile(
+            manuallyLocked = false,
+            hasAlternativeResource = false,
+            supervisedProject = false
+        )
+
+        assertEquals(locked, unique)
+        assertEquals(5, locked.maxAttempts)
+        assertEquals(20_000L, locked.connectTimeoutMillis)
+        assertEquals(300_000L, locked.readTimeoutMillis)
+    }
+
+    @Test
+    fun automaticInteractiveRoutingStopsRetryingAfterSecondFailure() {
+        val failure = AgentProviderFailurePolicy.classify(
+            ModelStreamError("upstream_error", "Temporary outage", httpStatus = 503, retryable = true)
+        )
+        val profile = AgentProviderFailurePolicy.attemptProfile(
+            manuallyLocked = false,
+            hasAlternativeResource = true,
+            supervisedProject = false
+        )
+
+        assertTrue(AgentProviderFailurePolicy.shouldRetrySameResource(failure, 1, profile))
+        assertFalse(AgentProviderFailurePolicy.shouldRetrySameResource(failure, 2, profile))
+    }
 }
