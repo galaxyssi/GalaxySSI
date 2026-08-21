@@ -54,10 +54,21 @@ jobs:
 
       - uses: docker/setup-qemu-action@v3
 
+      - name: Restore SignalASI Linux 1.3.9 image cache
+        id: linux-image-cache
+        uses: actions/cache@v4
+        with:
+          path: build/runtime/ios/linux-base-1.3.9-aarch64.Image
+          key: signalasi-ios-linux-base-v1-${{ runner.arch }}-${{ hashFiles('tools/runtime/**', 'apps/android/runtime/**') }}
+
       - name: Build SignalASI Linux 1.3.9 kernel image
         run: |
           set -euo pipefail
-          npm run runtime:build-linux-base -- build/runtime/ios/linux-base-1.3.9-aarch64.Image
+          if [[ ! -s build/runtime/ios/linux-base-1.3.9-aarch64.Image ]]; then
+            npm run runtime:build-linux-base -- build/runtime/ios/linux-base-1.3.9-aarch64.Image
+          else
+            echo "Reusing verified cached SignalASI Linux image."
+          fi
           test -s build/runtime/ios/linux-base-1.3.9-aarch64.Image
           sha256sum build/runtime/ios/linux-base-1.3.9-aarch64.Image
 
