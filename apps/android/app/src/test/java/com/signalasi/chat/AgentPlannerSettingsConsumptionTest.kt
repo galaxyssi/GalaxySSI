@@ -231,6 +231,52 @@ class AgentPlannerSettingsConsumptionTest {
         assertTrue(decision.allowed)
     }
 
+    @Test
+    fun consecutiveIdenticalDeviceActionsAreBlockedAsANoProgressLoop() {
+        val repeated = (1..2).map { index ->
+            action("open-$index", AgentActionStatus.COMPLETED).copy(
+                kind = AgentActionKind.OPEN_APP,
+                target = "com.example.app"
+            )
+        }
+        val pending = repeated.last().copy(
+            id = "open-next",
+            status = AgentActionStatus.PENDING_CONFIRMATION
+        )
+        val plan = AgentPlanFactory.actions(request(), listOf(pending)).copy(
+            actionHistory = repeated
+        )
+
+        val decision = AgentAutonomyGuard.review(plan, pending, AgentModelPlannerSettings())
+
+        assertFalse(decision.allowed)
+        assertEquals(2, decision.repeatedCalls)
+    }
+
+    @Test
+    fun verifiedObservationResetsTheRepeatedDeviceActionGuard() {
+        val open = action("open", AgentActionStatus.COMPLETED).copy(
+            kind = AgentActionKind.OPEN_APP,
+            target = "com.example.app"
+        )
+        val observation = action("observe", AgentActionStatus.COMPLETED).copy(
+            kind = AgentActionKind.READ_SCREEN,
+            target = "screen"
+        )
+        val pending = open.copy(
+            id = "open-again",
+            status = AgentActionStatus.PENDING_CONFIRMATION
+        )
+        val plan = AgentPlanFactory.actions(request(), listOf(pending)).copy(
+            actionHistory = listOf(open, open.copy(id = "open-second"), observation)
+        )
+
+        val decision = AgentAutonomyGuard.review(plan, pending, AgentModelPlannerSettings())
+
+        assertTrue(decision.allowed)
+        assertEquals(0, decision.repeatedCalls)
+    }
+
     private fun request(replanReason: String = ""): AgentRequest {
         val screen = ScreenContext(foregroundApp = "SignalASI", pageTitle = "Agent")
         return AgentRequest(
