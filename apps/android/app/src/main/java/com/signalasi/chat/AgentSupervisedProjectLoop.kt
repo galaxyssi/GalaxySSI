@@ -230,11 +230,10 @@ internal object AgentSupervisedProjectLoop {
         append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
         append("Available phone tools:\n")
         AgentSupervisedProjectToolInventory.ordered(request.runtimeContext.nativeTools).asSequence()
-            .filter { descriptor ->
-                request.runtimeContext.isNativeToolExecutable(descriptor.id) &&
-                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id)
-            }
-            .take(MAX_TOOL_DESCRIPTORS)
+             .filter { descriptor ->
+                 request.runtimeContext.isNativeToolExecutable(descriptor.id) &&
+                     AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(descriptor.id)
+             }
             .forEach { tool ->
                 append("- ").append(tool.id)
                     .append(" | risk=").append(tool.risk.wireValue)
@@ -260,7 +259,6 @@ internal object AgentSupervisedProjectLoop {
     private const val MAX_CONVERSATION_TURN_CHARACTERS = 1_200
     private const val MAX_CONVERSATION_TURNS = 4
     private const val MAX_HISTORY_ACTIONS = 6
-    private const val MAX_TOOL_DESCRIPTORS = 48
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
