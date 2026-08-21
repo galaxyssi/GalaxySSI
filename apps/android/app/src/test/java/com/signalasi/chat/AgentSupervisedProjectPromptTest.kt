@@ -94,6 +94,44 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `defaults a missing supervised execution location to phone locally`() {
+        val raw = """
+            {"summary":"Inspect the repository.","actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+
+        val normalized = AgentSupervisedProjectControlPayload.normalize(raw)
+        val json = JSONObject(normalized)
+
+        assertEquals(AgentRequestedExecutionSite.PHONE.wireValue, json.getString("execution_location"))
+        assertEquals("", json.optString("execution_location_evidence"))
+        assertEquals(
+            AgentRequestedExecutionSite.PHONE,
+            AgentExecutionSiteDecisionCodec.parse(normalized, "Inspect the repository")?.site
+        )
+    }
+
+    @Test
+    fun `does not override an explicit desktop execution location`() {
+        val raw = """
+            {"execution_location":"desktop","execution_location_evidence":"on Desktop",
+             "actions":[
+              {"ref":"inspect","kind":"CALL_NATIVE_TOOL","target":"signalasi.project.repository.inspect",
+               "depends_on":[],"use_outputs_from":[],
+               "parameters":{"tool_id":"signalasi.project.repository.inspect","arguments":{"workspace_id":"current"}}}
+            ]}
+        """.trimIndent()
+
+        val normalized = JSONObject(AgentSupervisedProjectControlPayload.normalize(raw))
+
+        assertEquals(AgentRequestedExecutionSite.DESKTOP.wireValue, normalized.getString("execution_location"))
+        assertEquals("on Desktop", normalized.getString("execution_location_evidence"))
+    }
+
+    @Test
     fun `canonicalizes repository status and branch name dialect aliases`() {
         val status = """
             {"execution_location":"phone","actions":[

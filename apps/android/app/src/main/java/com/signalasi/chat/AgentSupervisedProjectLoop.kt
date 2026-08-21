@@ -573,6 +573,10 @@ internal object AgentSupervisedProjectControlPayload {
         val actionEnvelope = normalizeActionEnvelope(json) ?: return raw
         val actions = actionEnvelope.first
         var changed = actionEnvelope.second
+        if (json.optString("execution_location").isBlank()) {
+            json.put("execution_location", AgentRequestedExecutionSite.PHONE.wireValue)
+            changed = true
+        }
         changed = normalizeNativeToolShape(actions) || changed
         changed = AgentSupervisedProjectToolCanonicalizer.normalize(actions) || changed
         changed = removeSatisfiedHistoryReferences(actions, completedHistory) || changed
