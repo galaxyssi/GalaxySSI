@@ -58,6 +58,39 @@ class AgentProjectHistoryRetentionPolicyTest {
         assertEquals(41, retained.size)
     }
 
+    @Test
+    fun `compound runtime action retains source mutation and latest verification milestones`() {
+        val branch = action("branch", AgentMobileProjectNativeTools.CHECKOUT_BRANCH)
+        val editAndTest = action(
+            id = "edit-and-test",
+            toolId = AgentOnDeviceRuntimeTools.EXECUTE,
+            input = JSONObject()
+                .put("workspace_id", "current")
+                .put("verification_kind", "test")
+                .put("source", "python -c \"from pathlib import Path; Path('app.py').write_text('ok')\" && pytest")
+        )
+        val latestTest = action(
+            id = "latest-test",
+            toolId = AgentOnDeviceRuntimeTools.EXECUTE,
+            input = JSONObject()
+                .put("workspace_id", "current")
+                .put("verification_kind", "test")
+                .put("source", "pytest")
+        )
+        val routine = (1..45).map { index ->
+            action("routine-$index", AgentPhoneNativeToolCatalog.WORKSPACE_STAT)
+        }
+
+        val retained = AgentProjectHistoryRetentionPolicy.retain(
+            listOf(branch, editAndTest, latestTest) + routine
+        )
+
+        assertTrue(retained.any { it.id == branch.id })
+        assertTrue(retained.any { it.id == editAndTest.id })
+        assertTrue(retained.any { it.id == latestTest.id })
+        assertEquals(43, retained.size)
+    }
+
     private fun action(
         id: String,
         toolId: String,
