@@ -21,7 +21,7 @@ internal object AgentPlannerObservation {
             .toList()
         if (useful.isEmpty()) return null
         val limit = maximumCharacters.coerceAtLeast(1)
-        if (useful.size == 1) return useful.single().take(limit)
+        if (useful.size == 1) return compact(useful.single(), limit)
 
         val separatorCharacters = useful.lastIndex.coerceAtMost(limit)
         val contentBudget = (limit - separatorCharacters).coerceAtLeast(1)
@@ -29,10 +29,23 @@ internal object AgentPlannerObservation {
         var remainder = contentBudget % useful.size
         return useful.map { value ->
             val budget = baseBudget + if (remainder-- > 0) 1 else 0
-            value.take(budget)
+            compact(value, budget)
         }.joinToString("\n")
             .take(limit)
             .takeIf(String::isNotBlank)
+    }
+
+    private fun compact(value: String, maximumCharacters: Int): String {
+        if (value.length <= maximumCharacters) return value
+        if (maximumCharacters <= COMPACTION_MARKER.length + 2) {
+            return value.takeLast(maximumCharacters)
+        }
+        val contentBudget = maximumCharacters - COMPACTION_MARKER.length
+        val headBudget = contentBudget / 3
+        val tailBudget = contentBudget - headBudget
+        return value.take(headBudget).trimEnd() +
+            COMPACTION_MARKER +
+            value.takeLast(tailBudget).trimStart()
     }
 
     private fun normalize(value: String): String = value.trim()
@@ -48,4 +61,5 @@ internal object AgentPlannerObservation {
         "(?i)(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\\s*[:=]\\s*[^\\s,;]+"
     )
     private val WHITESPACE = Regex("\\s+")
+    private const val COMPACTION_MARKER = " ...[middle omitted]... "
 }
