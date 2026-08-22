@@ -339,7 +339,7 @@ internal object AgentSupervisedProjectLoop {
         }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
             append(
-                request.conversationContext.forSupervisedProjectPrompt().asTransportBlock(
+                request.conversationContext.asTransportBlock(
                     maximumTokens = MAX_CONVERSATION_TOKENS
                 )
             ).append('\n')
@@ -424,23 +424,13 @@ internal object AgentSupervisedProjectLoop {
     }
 
     private const val MAX_GOAL_CHARACTERS = 2_000
-    private const val MAX_CONVERSATION_TOKENS = 350
-    private const val MAX_CONVERSATION_SUMMARY_CHARACTERS = 600
-    private const val MAX_CONVERSATION_TURN_CHARACTERS = 1_200
-    private const val MAX_CONVERSATION_TURNS = 4
+    private const val MAX_CONVERSATION_TOKENS = 2_048
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
     private const val MAX_PROMPT_CHARACTERS = 24_000
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
     private const val MINIMUM_BASE_PROMPT_CHARACTERS = 12_000
     private const val MAX_FAILURE_CHARACTERS = 1_000
     private const val MAX_FAILURE_EVIDENCE_CHARACTERS = 6_000
-
-    private fun AgentConversationContext.forSupervisedProjectPrompt(): AgentConversationContext = copy(
-        summary = summary.take(MAX_CONVERSATION_SUMMARY_CHARACTERS),
-        turns = turns.takeLast(MAX_CONVERSATION_TURNS).map { entry ->
-            entry.copy(text = entry.text.take(MAX_CONVERSATION_TURN_CHARACTERS))
-        }
-    )
 
     private fun isCjkCharacter(character: Char): Boolean = character.code in 0x3400..0x9FFF
 }
