@@ -115,25 +115,59 @@ internal object AgentSupervisedProjectProgressPolicy {
             .filter { it.status in terminalStatuses }
             .toList()
         if (observed.isEmpty()) return null
-        val recent = observed.takeLast(MAX_VISIBLE_LEDGER_ACTIONS)
+        val recent = compactVisibleLedger(observed)
 
         return buildString {
             append("Verified project progress ledger. This is SignalASI-owned context and host facts:\n")
             append(lifecycleSnapshot(observed)).append('\n')
             append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
             append("The JSON action must perform the immediate next step described by summary. ")
-            append("Recent observations follow in chronological order; the newest observation is last.\n")
-            recent.forEach { action ->
+            append("Recent observations follow in chronological order; the newest observation is last. Consecutive equivalent observations are collapsed.\n")
+            recent.forEach { entry ->
+                val action = entry.action
                 append("- status=").append(action.status.name)
                 append("; tool=").append(action.toolId().ifBlank { action.kind.name })
-                AgentPlannerObservation.from(action, MAX_ACTION_OBSERVATION_CHARACTERS)?.let { result ->
-                    append("; observation=")
-                        .append(result)
+                if (entry.repeatCount > 1) {
+                    append("; repeat_count=").append(entry.repeatCount)
+                }
+                entry.observation?.let { observation ->
+                    append("; observation=").append(observation)
                 }
                 append('\n')
             }
         }
     }
+
+    private fun compactVisibleLedger(actions: List<AgentAction>): List<LedgerEntry> {
+        val compacted = mutableListOf<LedgerEntry>()
+        actions.forEach { action ->
+            val observation = AgentPlannerObservation.from(action, MAX_ACTION_OBSERVATION_CHARACTERS)
+            val previous = compacted.lastOrNull()
+            if (previous != null && previous.isEquivalentTo(action, observation)) {
+                compacted[compacted.lastIndex] = LedgerEntry(
+                    action = action,
+                    observation = observation,
+                    repeatCount = previous.repeatCount + 1
+                )
+            } else {
+                compacted += LedgerEntry(action, observation)
+            }
+        }
+        return compacted.takeLast(MAX_VISIBLE_LEDGER_ACTIONS)
+    }
+
+    private fun LedgerEntry.isEquivalentTo(action: AgentAction, observation: String?): Boolean =
+        this.action.status == action.status &&
+            this.action.kind == action.kind &&
+            this.action.toolId() == action.toolId() &&
+            sameStableInput(this.action, action) &&
+            this.observation == observation
+
+    private data class LedgerEntry(
+        val action: AgentAction,
+        val observation: String?,
+        val repeatCount: Int = 1
+    )
 
     private fun lifecycleSnapshot(actions: List<AgentAction>): String {
         val branchIndex = dedicatedBranchStartIndex(actions)
