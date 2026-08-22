@@ -499,6 +499,25 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `supervised project prompts stay within explicit control plane budgets`() {
+        val request = request("Improve SignalASI on this phone and submit a pull request")
+        val planning = AgentSupervisedProjectLoop.planningPrompt(request)
+        val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
+        val boundary = AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER
+        val toolsHeader = "Available phone tools:\n"
+        val planningContractLength = planning.substringBefore(toolsHeader).length
+        val planningToolLength = planning.substringAfter(toolsHeader).substringBefore(boundary).length
+        val continuationContractLength = continuation.substringBefore(toolsHeader).length
+        val continuationToolLength = continuation.substringAfter(toolsHeader).substringBefore(boundary).length
+
+        assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 5_800)
+        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 3_000)
+        assertEquals(planningToolLength, continuationToolLength)
+        assertTrue(planning.length <= 24_000)
+        assertTrue(continuation.length <= 24_000)
+    }
+
+    @Test
     fun `project loop prompt excludes unrelated memory and knowledge payloads`() {
         val base = request("Fix the current phone project")
         val marker = "UNRELATED_PRIVATE_CONTEXT_MARKER"
