@@ -116,6 +116,64 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `prompt ledger keeps more than eight short observations when they fit the context budget`() {
+        val observations = (1..10).map { index ->
+            toolAction(
+                AgentMobileProjectNativeTools.INSPECT,
+                "inspect-$index",
+                input = """{"workspace_id":"current","path":"module-$index"}"""
+            ).copy(result = "inspection-$index")
+        }
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(observations).orEmpty()
+
+        assertEquals(
+            10,
+            block.split("tool=${AgentMobileProjectNativeTools.INSPECT}").size - 1
+        )
+        assertTrue(block.contains("inspection-1"))
+        assertTrue(block.contains("inspection-10"))
+    }
+
+    @Test
+    fun `long project ledger retains lifecycle milestones failures and newest observation`() {
+        val branch = toolAction(AgentMobileProjectNativeTools.CHECKOUT_BRANCH, "branch")
+            .copy(result = "milestone-dedicated-branch")
+        val mutation = toolAction(
+            AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT,
+            "edit",
+            input = """{"workspace_id":"current","path":"README.md","text":"updated"}"""
+        ).copy(result = "milestone-source-mutation")
+        val verification = toolAction(
+            AgentOnDeviceRuntimeTools.EXECUTE,
+            "test",
+            input = shell("./gradlew test", verificationKind = "test")
+        ).copy(result = "milestone-runtime-verification")
+        val failure = toolAction(AgentMobileProjectNativeTools.FETCH, "failed-fetch")
+            .copy(status = AgentActionStatus.FAILED, result = "important-network-failure")
+        val laterObservations = (1..24).map { index ->
+            toolAction(
+                AgentMobileProjectNativeTools.INSPECT,
+                "inspect-$index",
+                input = """{"workspace_id":"current","path":"large-module-$index"}"""
+            ).copy(result = "recent-inspection-$index:" + "x".repeat(580))
+        }
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(
+            listOf(branch, mutation, verification, failure) + laterObservations
+        ).orEmpty()
+
+        assertTrue(block.contains("milestone-dedicated-branch"))
+        assertTrue(block.contains("milestone-source-mutation"))
+        assertTrue(block.contains("milestone-runtime-verification"))
+        assertTrue(block.contains("important-network-failure"))
+        assertTrue(block.contains("recent-inspection-24"))
+        assertTrue(
+            block.split("tool=${AgentMobileProjectNativeTools.INSPECT}").size - 1 < laterObservations.size
+        )
+    }
+
+    @Test
     fun `prompt lifecycle does not mistake a clean feature branch for committed work`() {
         val block = AgentSupervisedProjectProgressPolicy.promptBlock(
             listOf(
