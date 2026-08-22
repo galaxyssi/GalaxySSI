@@ -212,7 +212,6 @@ internal class AgentTranscriptEntryDatabase(
         }
     }
 
-    @Synchronized
     fun listAll(): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,
@@ -224,7 +223,6 @@ internal class AgentTranscriptEntryDatabase(
             "timestamp_millis ASC, sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
-    @Synchronized
     fun listConversation(conversationId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,
@@ -236,7 +234,6 @@ internal class AgentTranscriptEntryDatabase(
             "timestamp_millis ASC, sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
-    @Synchronized
     fun listConversationAfterEntry(
         conversationId: String,
         entryId: String
@@ -268,7 +265,6 @@ internal class AgentTranscriptEntryDatabase(
         ).use(::decodeEntries).map(::hydrateEntry)
     }
 
-    @Synchronized
     fun listConversationPage(
         conversationId: String,
         beforeSequenceExclusive: Long? = null,
@@ -309,7 +305,6 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
-    @Synchronized
     fun listConversationAfter(
         conversationId: String,
         afterSequenceExclusive: Long,
@@ -341,7 +336,6 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
-    @Synchronized
     fun listTurn(turnId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,
@@ -353,7 +347,6 @@ internal class AgentTranscriptEntryDatabase(
             "sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
-    @Synchronized
     fun listTask(taskId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,
@@ -365,11 +358,9 @@ internal class AgentTranscriptEntryDatabase(
             "sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
 
-    @Synchronized
     fun findById(entryId: String): AgentTranscriptEntry? =
         querySingle("entry_id = ?", arrayOf(entryId))
 
-    @Synchronized
     fun findByDedupeKey(conversationId: String, dedupeKey: String): AgentTranscriptEntry? {
         if (dedupeKey.isBlank()) return null
         return querySingle(
@@ -378,7 +369,6 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
-    @Synchronized
     fun textChunkPage(
         entryId: String,
         offset: Int = 0,
@@ -451,19 +441,15 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
-    @Synchronized
     fun conversationIdForTurn(turnId: String): String? =
         scalarId("turn_id = ?", arrayOf(turnId), "conversation_id")
 
-    @Synchronized
     fun conversationIdForTask(taskId: String): String? =
         scalarId("task_id = ?", arrayOf(taskId), "conversation_id")
 
-    @Synchronized
     fun turnIdForTask(taskId: String): String? =
         scalarId("task_id = ? AND turn_id != ''", arrayOf(taskId), "turn_id")
 
-    @Synchronized
     fun conversationIdsWithEntries(): Set<String> =
         readableDatabase.query(
             true,

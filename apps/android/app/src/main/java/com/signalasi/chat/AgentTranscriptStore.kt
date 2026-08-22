@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 enum class AgentTranscriptRole { USER, ASSISTANT, PROCESS }
 enum class AgentConversationStatus { ACTIVE, ARCHIVED }
@@ -721,30 +722,37 @@ private data class AgentContextWindow(
     val dialogue: List<AgentTranscriptEntry>
 )
 
+private data class AgentTranscriptMutation(
+    val eventEntry: AgentTranscriptEntry,
+    val previousEntry: AgentTranscriptEntry?,
+    val updated: Boolean
+)
+
 class AgentTranscriptStore(context: Context) {
     private val appContext = context.applicationContext
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
     private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
-    private var draftConversation: AgentConversation? = null
-    private var emptyConversationsPruned = false
-    private val preparedContextCache = linkedMapOf<String, AgentConversationContext>()
+    private val entryMutationLock = Any()
+    @Volatile private var draftConversation: AgentConversation? = null
+    @Volatile private var emptyConversationsPruned = false
+    private val preparedContextCache = ConcurrentHashMap<String, AgentConversationContext>()
 
     init {
         AgentSessionMemoryBudgetRuntime.start(appContext)
     }
 
-    @Synchronized
     fun conversations(includeArchived: Boolean = false): List<AgentConversation> {
-        if (!emptyConversationsPruned) {
-            prunePersistedEmptyConversations()
-            emptyConversationsPruned = true
+        if (!emptyConversationsPruned) synchronized(this) {
+            if (!emptyConversationsPruned) {
+                prunePersistedEmptyConversations()
+                emptyConversationsPruned = true
+            }
         }
         return decodeConversations(preferences.readString(KEY_CONVERSATIONS, "[]"))
             .filter { includeArchived || it.status == AgentConversationStatus.ACTIVE }
             .sortedWith(compareByDescending<AgentConversation> { it.pinned }.thenByDescending { it.updatedAt })
     }
 
-    @Synchronized
     fun activeConversation(): AgentConversation {
         draftConversation?.let { return it }
         loadDraftConversation()?.let {
@@ -1004,10 +1012,8 @@ class AgentTranscriptStore(context: Context) {
         return entryDatabase.turnIdForTask(cleanTaskId)
     }
 
-    @Synchronized
     fun conversation(conversationId: String): AgentConversation? = conversationForEvent(conversationId)
 
-    @Synchronized
     fun resolveMergedConversationId(conversationId: String): String? {
         val cleanId = conversationId.trim()
         if (cleanId.isBlank()) return null
@@ -1084,7 +1090,6 @@ class AgentTranscriptStore(context: Context) {
         return true
     }
 
-    @Synchronized
     fun context(
         conversationId: String = activeConversation().id,
         excludeTurnId: String = ""
@@ -1111,11 +1116,9 @@ class AgentTranscriptStore(context: Context) {
         return prepared
     }
 
-    @Synchronized
     fun preparedContext(conversationId: String): AgentConversationContext? =
         preparedContextCache[conversationId.trim()]
 
-    @Synchronized
     fun metrics(conversationId: String): AgentConversationMetrics {
         val messages = AgentFinalResponseIdentity.coalesce(list(conversationId))
         val dialogue = messages.filter { it.role != AgentTranscriptRole.PROCESS }
@@ -1141,7 +1144,6 @@ class AgentTranscriptStore(context: Context) {
     fun taskIds(conversationId: String): Set<String> =
         list(conversationId).map { it.taskId }.filter(String::isNotBlank).toSet()
 
-    @Synchronized
     fun append(
         role: AgentTranscriptRole,
         text: String,
@@ -1154,18 +1156,28 @@ class AgentTranscriptStore(context: Context) {
     ): Boolean {
         val cleanText = text.trim()
         if (cleanText.isBlank()) return false
-        persistDraftIfNeeded(conversationId)
         val cleanKey = dedupeKey.trim().take(MAX_DEDUPE_KEY_CHARACTERS)
-        if (cleanKey.isNotBlank() && entryDatabase.findByDedupeKey(conversationId, cleanKey) != null) return false
+        synchronized(this) { persistDraftIfNeeded(conversationId) }
         val entry = AgentTranscriptEntry(
             id = UUID.randomUUID().toString(), role = role, text = cleanText,
             timestampMillis = timestampMillis, dedupeKey = cleanKey,
             conversationId = conversationId, turnId = turnId, taskId = taskId,
             richOutputJson = normalizeRichOutput(richOutputJson)
         )
-        check(entryDatabase.insert(entry)) { "Agent transcript entry write failed" }
+        val inserted = synchronized(entryMutationLock) {
+            if (
+                cleanKey.isNotBlank() &&
+                entryDatabase.findByDedupeKey(conversationId, cleanKey) != null
+            ) {
+                false
+            } else {
+                check(entryDatabase.insert(entry)) { "Agent transcript entry write failed" }
+                true
+            }
+        }
+        if (!inserted) return false
         if (role != AgentTranscriptRole.PROCESS) {
-            touchConversation(entry, timestampMillis)
+            synchronized(this) { touchConversation(entry, timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(appContext, conversation, entry)
@@ -1174,7 +1186,6 @@ class AgentTranscriptStore(context: Context) {
         return true
     }
 
-    @Synchronized
     fun upsert(
         role: AgentTranscriptRole,
         text: String,
@@ -1188,45 +1199,55 @@ class AgentTranscriptStore(context: Context) {
         val cleanText = text.trim()
         val cleanKey = dedupeKey.trim().take(MAX_DEDUPE_KEY_CHARACTERS)
         if (cleanText.isBlank() || cleanKey.isBlank()) return false
-        persistDraftIfNeeded(conversationId)
-        val previous = entryDatabase.findByDedupeKey(conversationId, cleanKey)
-        val updated = previous != null
-        var supersededEntryId = ""
-        var changedPriorEntry: AgentTranscriptEntry? = null
-        val eventEntry: AgentTranscriptEntry
-        if (updated) {
-            checkNotNull(previous)
+        synchronized(this) { persistDraftIfNeeded(conversationId) }
+        val mutation = synchronized(entryMutationLock) {
+            val previous = entryDatabase.findByDedupeKey(conversationId, cleanKey)
+            val updated = previous != null
             val normalizedRichOutput = normalizeRichOutput(richOutputJson)
-            if (previous.text == cleanText && previous.role == role &&
+            if (
+                previous != null &&
+                previous.text == cleanText &&
+                previous.role == role &&
                 (normalizedRichOutput.isBlank() || normalizedRichOutput == previous.richOutputJson)
-            ) return false
-            supersededEntryId = previous.id
-            changedPriorEntry = previous
-            eventEntry = previous.copy(
-                id = UUID.randomUUID().toString(), role = role, text = cleanText,
-                timestampMillis = timestampMillis,
-                turnId = turnId.ifBlank { previous.turnId },
-                taskId = taskId.ifBlank { previous.taskId },
-                richOutputJson = normalizedRichOutput.ifBlank { previous.richOutputJson }
-            )
-        } else {
-            eventEntry = AgentTranscriptEntry(
-                UUID.randomUUID().toString(), role, cleanText, timestampMillis, cleanKey,
-                conversationId, turnId, taskId, normalizeRichOutput(richOutputJson)
-            )
-        }
-        val written = if (previous != null) {
-            entryDatabase.replace(previous.id, eventEntry)
-        } else {
-            entryDatabase.insert(eventEntry)
-        }
-        check(written) { "Agent transcript entry write failed" }
+            ) {
+                null
+            } else {
+                val eventEntry = if (previous != null) {
+                    previous.copy(
+                        id = UUID.randomUUID().toString(), role = role, text = cleanText,
+                        timestampMillis = timestampMillis,
+                        turnId = turnId.ifBlank { previous.turnId },
+                        taskId = taskId.ifBlank { previous.taskId },
+                        richOutputJson = normalizedRichOutput.ifBlank { previous.richOutputJson }
+                    )
+                } else {
+                    AgentTranscriptEntry(
+                        UUID.randomUUID().toString(), role, cleanText, timestampMillis, cleanKey,
+                        conversationId, turnId, taskId, normalizedRichOutput
+                    )
+                }
+                val written = if (previous != null) {
+                    entryDatabase.replace(previous.id, eventEntry)
+                } else {
+                    entryDatabase.insert(eventEntry)
+                }
+                check(written) { "Agent transcript entry write failed" }
+                AgentTranscriptMutation(
+                    eventEntry = eventEntry,
+                    previousEntry = previous,
+                    updated = updated
+                )
+            }
+        } ?: return false
+        val eventEntry = mutation.eventEntry
+        val previous = mutation.previousEntry
+        val updated = mutation.updated
         if (role == AgentTranscriptRole.USER && previous != null) {
             preparedContextCache.remove(conversationId)
         }
-        changedPriorEntry?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
+        previous?.let { invalidateCompactionIfNeeded(conversationId, listOf(it)) }
         if (role != AgentTranscriptRole.PROCESS) {
-            touchConversation(eventEntry, timestampMillis)
+            synchronized(this) { touchConversation(eventEntry, timestampMillis) }
             if (role == AgentTranscriptRole.ASSISTANT) compactContextIfNeeded(conversationId)
             conversationForEvent(conversationId)?.let { conversation ->
                 GlobalConversationEventBus.publishTranscriptEntryAsync(
@@ -1234,7 +1255,7 @@ class AgentTranscriptStore(context: Context) {
                     conversation,
                     eventEntry,
                     updated = updated,
-                    supersededEntryId = supersededEntryId
+                    supersededEntryId = previous?.id.orEmpty()
                 )
             }
         }
@@ -1414,14 +1435,16 @@ class AgentTranscriptStore(context: Context) {
         )
         if (!compacted.compacted) return
         val cursor = window.dialogue.lastOrNull { it.id in compacted.compactedMessageIds }
-        updateConversation(conversationId) {
-            it.copy(
-                summary = compacted.summary.take(MAX_SUMMARY_CHARACTERS),
-                contextCompactedThroughMillis = cursor?.timestampMillis
-                    ?: it.contextCompactedThroughMillis,
-                contextCompactedThroughEntryId = cursor?.id
-                    ?: it.contextCompactedThroughEntryId
-            )
+        synchronized(this) {
+            updateConversation(conversationId) {
+                it.copy(
+                    summary = compacted.summary.take(MAX_SUMMARY_CHARACTERS),
+                    contextCompactedThroughMillis = cursor?.timestampMillis
+                        ?: it.contextCompactedThroughMillis,
+                    contextCompactedThroughEntryId = cursor?.id
+                        ?: it.contextCompactedThroughEntryId
+                )
+            }
         }
     }
 

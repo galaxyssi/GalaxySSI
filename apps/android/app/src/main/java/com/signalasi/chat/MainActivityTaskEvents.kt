@@ -520,12 +520,14 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
             turnId
         )
         if (nativeState != null && conversationId != null) {
-            renderAgentState(
-                nativeState,
-                conversationId,
-                turnId,
-                syncTranscript = false
-            )
+            runOnUiThread {
+                renderAgentState(
+                    nativeState,
+                    conversationId,
+                    turnId,
+                    syncTranscript = false
+                )
+            }
         }
         return true
     }
@@ -660,12 +662,14 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     if (nativeState != null &&
         !AgentRemoteTaskStatusPolicy.settlesWithoutResponse(status)
     ) {
-        renderAgentState(
-            nativeState,
-            conversationId,
-            turnId,
-            syncTranscript = false
-        )
+        runOnUiThread {
+            renderAgentState(
+                nativeState,
+                conversationId,
+                turnId,
+                syncTranscript = false
+            )
+        }
     }
     if (taskRuntime != null &&
         AgentRemoteTaskStatusPolicy.settlesWithoutResponse(status)
@@ -738,30 +742,30 @@ internal fun MainActivity.settleAgentConnectorTerminalEvent(
             ?.get("source_message_id")
             ?.toLongOrNull()
             ?.takeIf { replacement -> replacement > 0L && replacement != sourceMessageId }
+        if (AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
+                pendingAction = settledState.pendingAction,
+                isSupervisedSource = false,
+                isSupervisedPlan = settledState.plan?.isSupervisedProjectPlan() == true,
+                terminalAccepted = true,
+                settledPhase = settledState.phase
+            ) && showFailureRecovery
+        ) {
+            syncAgentFailureRecoveryCard(
+                envelope = envelope,
+                conversationId = conversationId,
+                turnId = turnId,
+                taskId = taskId,
+                agentId = contactId,
+                targetName = contactById(contactId).name,
+                statusLabel = message
+            )
+        } else {
+            deleteAgentTranscriptByDedupeKey(
+                conversationId,
+                agentFailureRecoveryDedupeKey(taskId)
+            )
+        }
         runOnUiThread {
-            if (AgentSupervisedProjectPresentationPolicy.shouldShowFailureRecovery(
-                    pendingAction = settledState.pendingAction,
-                    isSupervisedSource = false,
-                    isSupervisedPlan = settledState.plan?.isSupervisedProjectPlan() == true,
-                    terminalAccepted = true,
-                    settledPhase = settledState.phase
-                ) && showFailureRecovery
-            ) {
-                syncAgentFailureRecoveryCard(
-                    envelope = envelope,
-                    conversationId = conversationId,
-                    turnId = turnId,
-                    taskId = taskId,
-                    agentId = contactId,
-                    targetName = contactById(contactId).name,
-                    statusLabel = message
-                )
-            } else {
-                deleteAgentTranscriptByDedupeKey(
-                    conversationId,
-                    agentFailureRecoveryDedupeKey(taskId)
-                )
-            }
             activeAgentTasks.remove(sourceMessageId)
             if (settledState.phase == AgentPhase.WAITING_RESPONSE && replacementSourceId != null) {
                 supersededConnectorSourceIds.add(sourceMessageId)

@@ -103,7 +103,7 @@ object AppStore {
 
     fun contacts(context: Context): JSONArray {
         ensureInitialized(context)
-        return readArray(context, KEY_CONTACTS)
+        return contactsSnapshot(context)
     }
 
     fun friendRequests(context: Context): JSONArray {
@@ -358,23 +358,7 @@ object AppStore {
 
     fun contactById(context: Context, hermesId: String): JSONObject? {
         ensureInitialized(context)
-        val raw = storage(context).readString(KEY_CONTACTS, "[]")
-        if (raw != contactsCacheRaw) {
-            synchronized(contactsCacheLock) {
-                if (raw != contactsCacheRaw) {
-                    val indexed = LinkedHashMap<String, String>()
-                    val contacts = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
-                    for (index in 0 until contacts.length()) {
-                        val contact = contacts.optJSONObject(index) ?: continue
-                        val serialized = contact.toString()
-                        signalasiIdOf(contact).takeIf { it.isNotBlank() }?.let { indexed[it] = serialized }
-                        contact.optString("id").takeIf { it.isNotBlank() }?.let { indexed[it] = serialized }
-                    }
-                    contactsCacheById = indexed
-                    contactsCacheRaw = raw
-                }
-            }
-        }
+        ensureContactsCache(context)
         return contactsCacheById[hermesId]?.let { JSONObject(it) }
     }
 
@@ -1732,8 +1716,36 @@ object AppStore {
     }
 
     private fun readArray(context: Context, key: String): JSONArray {
+        if (key == KEY_CONTACTS) return contactsSnapshot(context)
         val raw = storage(context).readString(key, "[]")
         return runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+    }
+
+    private fun contactsSnapshot(context: Context): JSONArray {
+        ensureContactsCache(context)
+        return runCatching { JSONArray(contactsCacheRaw) }.getOrDefault(JSONArray())
+    }
+
+    private fun ensureContactsCache(context: Context) {
+        if (contactsCacheRaw.isNotBlank()) return
+        synchronized(contactsCacheLock) {
+            if (contactsCacheRaw.isNotBlank()) return
+            updateContactsCache(storage(context).readString(KEY_CONTACTS, "[]"))
+        }
+    }
+
+    private fun updateContactsCache(raw: String) {
+        val normalizedRaw = raw.ifBlank { "[]" }
+        val indexed = LinkedHashMap<String, String>()
+        val contacts = runCatching { JSONArray(normalizedRaw) }.getOrDefault(JSONArray())
+        for (index in 0 until contacts.length()) {
+            val contact = contacts.optJSONObject(index) ?: continue
+            val serialized = contact.toString()
+            signalasiIdOf(contact).takeIf { it.isNotBlank() }?.let { indexed[it] = serialized }
+            contact.optString("id").takeIf { it.isNotBlank() }?.let { indexed[it] = serialized }
+        }
+        contactsCacheById = indexed
+        contactsCacheRaw = normalizedRaw
     }
 
     private fun signalasiIdOf(json: JSONObject): String =
@@ -1789,11 +1801,10 @@ object AppStore {
 
     private fun writeArray(context: Context, key: String, value: JSONArray) {
         val raw = value.toString()
-        if (key == KEY_CONTACTS) {
-            contactsCacheRaw = ""
-            contactsCacheById = emptyMap()
-        }
         storage(context).writeString(key, raw)
+        if (key == KEY_CONTACTS) {
+            synchronized(contactsCacheLock) { updateContactsCache(raw) }
+        }
     }
 
     private fun writeObject(context: Context, key: String, value: JSONObject) {

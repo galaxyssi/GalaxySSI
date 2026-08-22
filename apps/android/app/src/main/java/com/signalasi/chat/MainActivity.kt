@@ -414,6 +414,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskLivenessExecutor = Executors.newSingleThreadExecutor()
+    internal val agentTaskEventExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
     internal val navigationContentGate = NavigationContentGate()
     internal val cloudExecutor = Executors.newCachedThreadPool()
@@ -1194,6 +1195,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentRouteSelectionExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
         agentTaskLivenessExecutor.shutdown()
+        agentTaskEventExecutor.shutdown()
         navigationContentExecutor.shutdown()
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
@@ -1489,6 +1491,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onMessage(payload: String) {
+        val taskEnvelope = runCatching { JSONObject(payload) }.getOrNull()
+            ?.takeIf { envelope -> envelope.optString("type") == "agent_task_event" }
+        if (taskEnvelope != null) {
+            runCatching {
+                agentTaskEventExecutor.execute { handleAgentTaskEvent(taskEnvelope) }
+            }.onFailure { error ->
+                if (!isFinishing && !isDestroyed) {
+                    Log.w("SignalASIAgent", "Agent task event could not be scheduled", error)
+                }
+            }
+            return
+        }
         runOnUiThread {
             var handled = true
             try {
