@@ -69,11 +69,30 @@ class InMemoryAgentSessionStore : AgentSessionStore {
     override fun clear() { snapshot = null }
 }
 
-class SharedPreferencesAgentSessionStore(
-    context: Context,
+internal interface AgentSessionCheckpointStorage {
+    fun encodedValueLength(key: String): Int
+    fun readString(key: String, defaultValue: String): String
+    fun writeString(key: String, value: String)
+    fun remove(key: String)
+}
+
+private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSessionCheckpointStorage {
+    private val delegate = AgentEncryptedPreferences(context, SharedPreferencesAgentSessionStore.PREFS)
+
+    override fun encodedValueLength(key: String): Int = delegate.encodedValueLength(key)
+    override fun readString(key: String, defaultValue: String): String = delegate.readString(key, defaultValue)
+    override fun writeString(key: String, value: String) = delegate.writeString(key, value)
+    override fun remove(key: String) = delegate.remove(key)
+}
+
+class SharedPreferencesAgentSessionStore internal constructor(
+    internal val prefs: AgentSessionCheckpointStorage,
     internal val storageKey: String = KEY_SESSION
 ) : AgentSessionStore {
-    internal val prefs = AgentEncryptedPreferences(context, PREFS)
+    constructor(context: Context, storageKey: String = KEY_SESSION) : this(
+        EncryptedAgentSessionCheckpointStorage(context),
+        storageKey
+    )
 
     override fun load(): AgentSessionSnapshot? {
         val encodedLength = prefs.encodedValueLength(storageKey)
@@ -93,12 +112,22 @@ class SharedPreferencesAgentSessionStore(
 
     override fun save(snapshot: AgentSessionSnapshot) {
         val encoded = encodeSession(snapshot).toString()
-        val payload = if (encoded.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
-            encoded
-        } else {
-            encodeRecoverySession(snapshot).toString()
+        val payload = when {
+            encoded.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS -> encoded
+            else -> recoveryPayload(snapshot)
         }
         prefs.writeString(storageKey, payload)
+    }
+
+    private fun recoveryPayload(snapshot: AgentSessionSnapshot): String {
+        val compact = encodeRecoverySession(snapshot).toString()
+        if (compact.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) return compact
+
+        val minimal = encodeRecoverySession(snapshot, minimal = true).toString()
+        check(minimal.length <= AgentSessionPersistencePolicy.MAX_SESSION_JSON_CHARACTERS) {
+            "Minimal Agent session recovery checkpoint exceeds the persistence budget"
+        }
+        return minimal
     }
 
     override fun clear() {
@@ -127,27 +156,41 @@ class SharedPreferencesAgentSessionStore(
         .put("process_instance_id", snapshot.processInstanceId)
         .put("updated_at", snapshot.updatedAtMillis)
 
-    internal fun encodeRecoverySession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
+    internal fun encodeRecoverySession(
+        snapshot: AgentSessionSnapshot,
+        minimal: Boolean = false
+    ): JSONObject {
+        val lastActionId = snapshot.lastActionResult?.actionId.orEmpty()
+            .ifBlank { snapshot.executionLoopSnapshot?.lastActionId.orEmpty() }
+        val recoveryPlan = snapshot.currentPlan?.let { plan ->
+            AgentSessionPersistencePolicy.compactRecoveryPlan(plan, lastActionId, minimal)
+        }
+        return JSONObject()
         .put("version", 7)
+        .put("persistence_mode", if (minimal) "minimal_recovery" else "recovery")
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
         .put("current_goal", AgentSessionPersistencePolicy.compactText(snapshot.currentGoal))
         .put("current_screen", encodeScreen(snapshot.currentScreen))
-        .put("current_plan", JSONObject.NULL)
+        .put("current_plan", recoveryPlan?.let { encodePlan(it) } ?: JSONObject.NULL)
         .put("audit_trail", JSONArray().also { array ->
-            snapshot.auditTrail.takeLast(RECOVERY_AUDIT_ITEMS).forEach { array.put(encodeAudit(it)) }
+            snapshot.auditTrail.takeLast(if (minimal) 1 else RECOVERY_AUDIT_ITEMS).forEach {
+                array.put(encodeAudit(it))
+            }
         })
         .put("last_action_result", snapshot.lastActionResult?.let { encodeActionResult(it) })
-        .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId)
+        .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId.take(512))
         .put("task_execution_mode", snapshot.taskExecutionMode.name)
         .put(
             "execution_loop",
             snapshot.executionLoopSnapshot
+                ?.let { AgentSessionPersistencePolicy.compactExecutionLoop(it, minimal) }
                 ?.let(AgentExecutionLoopJsonCodec::encode)
                 ?.let(::JSONObject)
         )
         .put("process_instance_id", snapshot.processInstanceId)
         .put("updated_at", snapshot.updatedAtMillis)
+    }
 
     internal fun decodeSession(json: JSONObject): AgentSessionSnapshot = AgentSessionSnapshot(
         sessionId = json.optString("session_id"),
@@ -829,7 +872,7 @@ class SharedPreferencesAgentSessionStore(
     }
 
     companion object {
-        private const val PREFS = "signalasi_agent_runtime"
+        internal const val PREFS = "signalasi_agent_runtime"
         private const val KEY_SESSION = "session"
         private const val TASK_PREFIX = "task:"
         private const val MAX_SESSION_VISUAL_ELEMENTS = 60
@@ -868,81 +911,6 @@ class SharedPreferencesAgentSessionStore(
     }
 }
 
-internal object AgentSessionPersistencePolicy {
-    const val MAX_SESSION_JSON_CHARACTERS = 96 * 1024
-    internal const val MAX_ENCRYPTED_SESSION_CHARACTERS = 192 * 1024
-    internal const val MAX_GENERAL_TEXT_CHARACTERS = 8 * 1024
-    internal const val MAX_ACTION_TEXT_CHARACTERS = 4 * 1024
-    internal const val MAX_AUDIT_TEXT_CHARACTERS = 1 * 1024
-    internal const val MAX_METADATA_ENTRIES = 24
-    internal const val MAX_METADATA_VALUE_CHARACTERS = 2 * 1024
-    internal const val MAX_SCREEN_LABEL_CHARACTERS = 512
-
-    fun actionHistory(plan: AgentPlan): List<AgentAction> =
-        if (plan.isSupervisedProjectPlan()) {
-            AgentProjectHistoryRetentionPolicy.retainForPersistence(plan.actionHistory)
-        } else {
-            plan.actionHistory.takeLast(MAX_NON_PROJECT_ACTION_HISTORY)
-        }
-
-    fun shouldDiscardEncodedValue(encodedLength: Int): Boolean =
-        encodedLength > MAX_ENCRYPTED_SESSION_CHARACTERS
-
-    fun compactText(value: String): String = value.take(MAX_GENERAL_TEXT_CHARACTERS)
-
-    fun compactActionText(value: String): String = value.take(MAX_ACTION_TEXT_CHARACTERS)
-
-    fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)
-
-    fun compactMetadata(metadata: Map<String, String>): Map<String, String> = metadata.entries
-        .sortedBy { (key, _) -> if (key in RECOVERY_METADATA_KEYS) 0 else 1 }
-        .take(MAX_METADATA_ENTRIES)
-        .associate { (key, value) ->
-            key.take(128) to value.take(MAX_METADATA_VALUE_CHARACTERS)
-        }
-
-    private val RECOVERY_METADATA_KEYS = setOf(
-        "delivery_failed",
-        "source_message_id",
-        "awaiting_response",
-        "contact_id",
-        "resource_id",
-        "failure_domain",
-        "resource_started_at",
-        "handoff_recovery_attempt"
-    )
-
-    private const val MAX_NON_PROJECT_ACTION_HISTORY = 24
-
-    fun compactScreen(screen: ScreenContext): ScreenContext = screen.copy(
-        foregroundApp = screen.foregroundApp.take(256),
-        activityName = screen.activityName.take(256),
-        pageTitle = screen.pageTitle.take(256),
-        visibleTexts = emptyList(),
-        selectedText = screen.selectedText.take(MAX_SCREEN_LABEL_CHARACTERS),
-        focusedInputField = screen.focusedInputField?.copy(
-            label = screen.focusedInputField.label.take(MAX_SCREEN_LABEL_CHARACTERS),
-            viewId = screen.focusedInputField.viewId.take(256),
-            className = screen.focusedInputField.className.take(256),
-            bounds = screen.focusedInputField.bounds.take(128)
-        ),
-        clickableElements = emptyList(),
-        inputFields = emptyList(),
-        scrollableRegions = emptyList(),
-        sensitiveFlags = screen.sensitiveFlags.take(8).map { it.take(128) },
-        visualScene = screen.visualScene.copy(
-            modelProfile = screen.visualScene.modelProfile.take(128),
-            elements = emptyList()
-        ),
-        clipboard = ClipboardContext(),
-        notifications = AgentNotificationContext(
-            hasAccess = screen.notifications.hasAccess,
-            totalCount = screen.notifications.totalCount
-        ),
-        installedApps = emptyList(),
-        deviceStatus = screen.deviceStatus.copy(network = screen.deviceStatus.network.take(64))
-    )
-}
 
 internal inline fun <reified T : Enum<T>> enumOrDefault(value: String, default: T): T =
     runCatching { enumValueOf<T>(value) }.getOrElse { default }
