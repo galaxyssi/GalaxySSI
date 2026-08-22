@@ -569,6 +569,27 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `long project goal preserves its objective and final acceptance criteria`() {
+        val opening = "Update the SignalASI Android project on the phone."
+        val finalAcceptance = "FINAL_ACCEPTANCE: publish a verified pull request URL."
+        val goal = buildString {
+            append(opening)
+            repeat(600) {
+                append(" Inspect evidence before each implementation decision and preserve existing behavior.")
+            }
+            append(' ').append(finalAcceptance)
+        }
+
+        val prompt = AgentSupervisedProjectLoop.planningPrompt(request(goal))
+
+        assertTrue(goal.length > 8_000)
+        assertTrue(prompt.contains(opening))
+        assertTrue(prompt.contains("[middle omitted]"))
+        assertTrue(prompt.contains(finalAcceptance))
+        assertTrue(prompt.length <= 24_000)
+    }
+
+    @Test
     fun `supervised project prompts stay within explicit control plane budgets`() {
         val request = request("Improve SignalASI on this phone and submit a pull request")
         val planning = AgentSupervisedProjectLoop.planningPrompt(request)
