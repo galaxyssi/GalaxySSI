@@ -361,6 +361,7 @@ class MobileNativeAgent(
     internal val auditTrail = mutableListOf<AgentAuditEntry>()
     @Volatile internal var cachedRuntimeContext: AgentRuntimeContext? = null
     @Volatile internal var cachedRuntimeContextAtElapsedMillis: Long = 0L
+    @Volatile internal var activeRunRuntimeContext: AgentRuntimeContext? = null
     internal val nativeToolRegistry: AgentNativeToolRegistry by lazy {
         AgentPhoneNativeToolCatalog.defaultRegistry(
             context = appContext,

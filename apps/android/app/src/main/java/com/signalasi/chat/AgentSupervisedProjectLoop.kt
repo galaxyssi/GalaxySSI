@@ -465,6 +465,34 @@ internal object AgentSupervisedProjectToolInventory {
     }
 }
 
+internal object AgentSupervisedProjectRuntimeContextPolicy {
+    fun reuse(
+        base: AgentRuntimeContext,
+        goal: String,
+        screen: ScreenContext,
+        targets: List<AgentCallableTarget>
+    ): AgentRuntimeContext {
+        val capabilityMatrix = if (base.callableTargets == targets) {
+            base.capabilityMatrix
+        } else {
+            AgentRuntimeCapabilityMatrix.build(
+                nativeTools = base.nativeTools,
+                systemTools = base.systemTools,
+                targets = targets
+            )
+        }
+        return base.copy(
+            goal = goal,
+            screen = screen,
+            callableTargets = targets,
+            memories = emptyList(),
+            knowledgeItems = emptyList(),
+            knowledgeStats = AgentKnowledgeStats(),
+            capabilityMatrix = capabilityMatrix
+        )
+    }
+}
+
 internal object AgentSupervisedProjectRoutingPolicy {
     fun requiresModelDirectedExecution(
         goal: String,
@@ -1367,14 +1395,25 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
     continuation: Boolean
 ): AgentRequest {
     val targets = connectorRegistry.availableTargets()
-    val runtimeContext = buildRuntimeContext(
-        goal = currentGoal,
-        screen = currentScreen,
-        targets = targets,
-        memories = emptyList(),
-        knowledgeItems = emptyList(),
-        knowledgeStats = AgentKnowledgeStats()
-    )
+    val runtimeContext = activeRunRuntimeContext
+        ?.takeIf { context -> context.goal == currentGoal }
+        ?.let { context ->
+            AgentSupervisedProjectRuntimeContextPolicy.reuse(
+                base = context,
+                goal = currentGoal,
+                screen = currentScreen,
+                targets = targets
+            )
+                .also { refreshed -> activeRunRuntimeContext = refreshed }
+        }
+        ?: buildRuntimeContext(
+            goal = currentGoal,
+            screen = currentScreen,
+            targets = targets,
+            memories = emptyList(),
+            knowledgeItems = emptyList(),
+            knowledgeStats = AgentKnowledgeStats()
+        ).also { context -> activeRunRuntimeContext = context }
     return AgentSupervisedProjectLoop.request(
         goal = currentGoal,
         screen = currentScreen,
