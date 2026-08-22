@@ -253,6 +253,7 @@ internal fun MobileNativeAgent.buildRuntimeContext(
 internal fun MobileNativeAgent.cacheRuntimeContext(context: AgentRuntimeContext) {
     cachedRuntimeContext = context
     cachedRuntimeContextAtElapsedMillis = SystemClock.elapsedRealtime()
+    activeRunRuntimeContext = context
 }
 
 internal fun MobileNativeAgent.cachedRuntimeContext(): AgentRuntimeContext? {
@@ -265,6 +266,7 @@ internal fun MobileNativeAgent.cachedRuntimeContext(): AgentRuntimeContext? {
 internal fun MobileNativeAgent.invalidateRuntimeContext() {
     cachedRuntimeContext = null
     cachedRuntimeContextAtElapsedMillis = 0L
+    activeRunRuntimeContext = null
 }
 
 internal fun MobileNativeAgent.logPlanningLatency(stage: String, stageStartedAt: Long, planningStartedAt: Long) {

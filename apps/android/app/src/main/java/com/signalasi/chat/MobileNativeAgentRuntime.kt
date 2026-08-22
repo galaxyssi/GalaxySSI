@@ -271,6 +271,18 @@ internal fun MobileNativeAgent.captureScreen(foregroundApp: String? = null, page
 internal fun MobileNativeAgent.snapshot(): AgentUiState {
     syncActiveWorkflowExecution()
     val context = cachedRuntimeContext()
+        ?: activeRunRuntimeContext
+            ?.takeIf { runContext ->
+                runContext.goal == currentGoal && currentPlan?.isSupervisedProjectPlan() == true
+            }
+            ?.let { runContext ->
+                AgentSupervisedProjectRuntimeContextPolicy.reuse(
+                    base = runContext,
+                    goal = currentGoal,
+                    screen = currentScreen,
+                    targets = connectorRegistry.availableTargets()
+                ).also(::cacheRuntimeContext)
+            }
         ?: run {
             val targets = connectorRegistry.availableTargets()
             val memories = if (currentGoal.isNotBlank()) memoryStore.recall(currentGoal) else emptyList()
