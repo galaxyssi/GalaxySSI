@@ -111,6 +111,15 @@ object CloudModelClient {
                     .put("messages", messages)
                     .put("tools", anthropicWebTools())
                     .put("stream", true)
+                    .apply {
+                        if (CloudProviderPromptCachePolicy.shouldRequestExplicitCache(
+                                apiStyle = style,
+                                defaultSystemPrompt = isDefaultSystemPrompt(effectiveSystemPrompt)
+                            )
+                        ) {
+                            put("cache_control", JSONObject().put("type", "ephemeral"))
+                        }
+                    }
                 PreparedCloudConversationStream(
                     requestId = requestId,
                     provider = ModelStreamProvider.ANTHROPIC,
@@ -712,6 +721,15 @@ object CloudModelClient {
             .put("max_tokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
             .put("messages", messages)
             .put("tools", anthropicWebTools())
+            .apply {
+                if (CloudProviderPromptCachePolicy.shouldRequestExplicitCache(
+                        apiStyle = "anthropic",
+                        defaultSystemPrompt = isDefaultSystemPrompt(systemPrompt)
+                    )
+                ) {
+                    put("cache_control", JSONObject().put("type", "ephemeral"))
+                }
+            }
         var totalUsage = CloudModelUsage()
         var finalText = ""
         var toolCallsUsed = 0
