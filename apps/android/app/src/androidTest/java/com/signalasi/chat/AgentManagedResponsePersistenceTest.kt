@@ -12,6 +12,29 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AgentManagedResponsePersistenceTest {
     @Test
+    fun resolvedFailoverContactSurvivesPendingResponsePersistence() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        AgentConnectorResponseStore.clear(context)
+        val response = AgentConnectorResponse(
+            sourceMessageId = 9_001_338L,
+            contactId = "cloud-primary",
+            content = "fallback answer",
+            resolvedContactId = "cloud-fallback"
+        )
+
+        try {
+            AgentConnectorResponseStore.append(context, response)
+
+            val restored = AgentConnectorResponseStore.pending(context).single()
+            assertEquals("cloud-primary", restored.contactId)
+            assertEquals("cloud-fallback", restored.resolvedContactId)
+            assertEquals("cloud-fallback", restored.executionContactId)
+        } finally {
+            AgentConnectorResponseStore.clear(context)
+        }
+    }
+
+    @Test
     fun completedTeamPublishesOneDurableConversationResponse() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val sink = AgentConnectorTeamCompletionSink(context)
