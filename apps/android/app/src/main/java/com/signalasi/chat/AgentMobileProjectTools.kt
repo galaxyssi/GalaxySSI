@@ -200,7 +200,7 @@ internal class AgentMobileProjectRepository(
             }
             publicationGuard.invalidate(workspaceId)
             progress("clone", "Phone Linux repository is ready", 100)
-            backend.inspect(workspaceId)
+            backend.inspectMetadata(workspaceId)
         } catch (error: Throwable) {
             throw projectFailure("Linux repository clone failed", error)
         }
@@ -304,7 +304,7 @@ internal class AgentMobileProjectRepository(
         val changed = changedFiles(beforeCommit)
         require(changed.isNotEmpty()) { "The phone project has no changes to commit" }
         val reportedCommit = requireLinuxGitBackend().commit(workspaceId, cleanMessage, name, email)
-        val committedState = requireLinuxGitBackend().inspect(workspaceId)
+        val committedState = requireLinuxGitBackend().inspectMetadata(workspaceId)
         val commit = reportedCommit.ifBlank { committedState.headCommit }
         require(OBJECT_ID_PATTERN.matches(commit)) { "Phone Linux did not create a readable Git commit" }
         val branch = committedState.branch
@@ -323,7 +323,7 @@ internal class AgentMobileProjectRepository(
         val cleanBranch = branch.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         requireAllowedRemote(workspaceId, cleanRemote)
         val reportedHead = requireLinuxGitBackend().pull(workspaceId, cleanRemote, cleanBranch, cancellationToken)
-        val head = reportedHead.ifBlank { requireLinuxGitBackend().inspect(workspaceId).headCommit }
+        val head = reportedHead.ifBlank { requireLinuxGitBackend().inspectMetadata(workspaceId).headCommit }
         require(OBJECT_ID_PATTERN.matches(head)) { "Phone Linux updated the project but HEAD is unreadable" }
         publicationGuard.invalidate(workspaceId)
         AgentProjectPullResult(true, "updated", head)
@@ -345,7 +345,7 @@ internal class AgentMobileProjectRepository(
         AgentProjectPushResult(cleanBranch, updates).also {
             publicationGuard.recordPush(
                 workspaceId,
-                requireLinuxGitBackend().inspect(workspaceId).headCommit,
+                requireLinuxGitBackend().inspectMetadata(workspaceId).headCommit,
                 cleanBranch
             )
         }
@@ -365,7 +365,7 @@ internal class AgentMobileProjectRepository(
         val cleanBase = base.trim().ifBlank { "main" }.also(::validateRefName)
         val cleanHead = head.trim().ifBlank { currentBranch(workspaceId) }.also(::validateRefName)
         publicationGuard.requirePullRequestReady(workspaceId, cleanHead)
-        val repository = githubCoordinates(requireLinuxGitBackend().inspect(workspaceId).repositoryUrl)
+        val repository = githubCoordinates(requireLinuxGitBackend().inspectMetadata(workspaceId).repositoryUrl)
         val payload = JSONObject()
             .put("title", cleanTitle)
             .put("body", body.take(MAX_PULL_REQUEST_BODY_CHARACTERS))
@@ -410,7 +410,7 @@ internal class AgentMobileProjectRepository(
         }
     }
 
-    private fun currentBranch(workspaceId: String): String = requireLinuxGitBackend().inspect(workspaceId).branch
+    private fun currentBranch(workspaceId: String): String = requireLinuxGitBackend().inspectMetadata(workspaceId).branch
 
     private fun requireLinuxGitBackend(): AgentProjectGitBackend = gitBackend
         ?: error("Phone Linux Git backend is required for repository operations")
