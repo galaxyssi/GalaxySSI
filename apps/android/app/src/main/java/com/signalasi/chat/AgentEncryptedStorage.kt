@@ -22,18 +22,25 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
     @Synchronized
     fun readString(key: String, defaultValue: String): String {
         val raw = preferences.getString(key, null) ?: return defaultValue
-        return AgentStorageCipher.decrypt(raw, associatedData(key)) ?: defaultValue
+        val cacheKey = cacheKey(key)
+        AgentEncryptedPreferenceCache.get(cacheKey, raw)
+            ?.let { cached -> return cached }
+        return (AgentStorageCipher.decrypt(raw, associatedData(key)) ?: defaultValue).also { plaintext ->
+            AgentEncryptedPreferenceCache.put(cacheKey, raw, plaintext)
+        }
     }
 
     @Synchronized
     fun writeString(key: String, value: String) {
         val encrypted = AgentStorageCipher.encrypt(value, associatedData(key))
         check(preferences.edit().putString(key, encrypted).commit()) { "Agent encrypted storage write failed" }
+        AgentEncryptedPreferenceCache.put(cacheKey(key), encrypted, value)
     }
 
     @Synchronized
     fun remove(key: String) {
         preferences.edit().remove(key).apply()
+        AgentEncryptedPreferenceCache.remove(cacheKey(key))
     }
 
     @Synchronized
@@ -51,9 +58,44 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
     @Synchronized
     fun clear() {
         preferences.edit().clear().commit()
+        AgentEncryptedPreferenceCache.clearNamespace(preferencesName)
     }
 
     private fun associatedData(key: String): ByteArray = "$preferencesName:$key".toByteArray(Charsets.UTF_8)
+
+    private fun cacheKey(key: String): String = "$preferencesName\u0000$key"
+
+}
+
+internal object AgentEncryptedPreferenceCache {
+    private data class CachedValue(
+        val encryptedValue: String,
+        val plaintext: String
+    )
+
+    private val values = ConcurrentHashMap<String, CachedValue>()
+
+    fun get(cacheKey: String, encryptedValue: String): String? =
+        values[cacheKey]
+            ?.takeIf { cached -> cached.encryptedValue == encryptedValue }
+            ?.plaintext
+
+    fun put(cacheKey: String, encryptedValue: String, plaintext: String) {
+        values[cacheKey] = CachedValue(encryptedValue, plaintext)
+    }
+
+    fun remove(cacheKey: String) {
+        values.remove(cacheKey)
+    }
+
+    fun clearNamespace(namespace: String) {
+        val prefix = "$namespace\u0000"
+        values.keys.removeAll { cacheKey -> cacheKey.startsWith(prefix) }
+    }
+
+    internal fun clearForTest() {
+        values.clear()
+    }
 }
 
 class AgentEncryptedDatabase(

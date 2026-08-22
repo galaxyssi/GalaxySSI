@@ -370,6 +370,7 @@ internal fun MainActivity.configureMainTabs() {
 internal fun MainActivity.configureAgentPage() {
     agentOutputLayout = LinearLayoutManager(this)
     agentTranscriptAdapter = AgentTranscriptRecyclerAdapter(this)
+    var olderPageRequestedForGesture = false
     agentOutputList.apply {
         layoutManager = agentOutputLayout
         adapter = agentTranscriptAdapter
@@ -378,7 +379,6 @@ internal fun MainActivity.configureAgentPage() {
         recycledViewPool.setMaxRecycledViews(0, 8)
         addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
             private var downY = 0f
-            private var requestedForGesture = false
 
             override fun onInterceptTouchEvent(
                 recyclerView: RecyclerView,
@@ -387,11 +387,11 @@ internal fun MainActivity.configureAgentPage() {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downY = event.y
-                        requestedForGesture = false
+                        olderPageRequestedForGesture = false
                     }
                     MotionEvent.ACTION_MOVE -> {
                         if (
-                            !requestedForGesture &&
+                            !olderPageRequestedForGesture &&
                             AgentTranscriptScrollPolicy.shouldLoadOlderFromPull(
                                 downY = downY,
                                 currentY = event.y,
@@ -400,7 +400,7 @@ internal fun MainActivity.configureAgentPage() {
                                 thresholdPx = dp(12)
                             )
                         ) {
-                            requestedForGesture = true
+                            olderPageRequestedForGesture = true
                             loadOlderAgentTranscriptEntries()
                         }
                     }
@@ -437,8 +437,9 @@ internal fun MainActivity.configureAgentPage() {
                         dy = dy,
                         firstVisiblePosition = agentOutputLayout.findFirstVisibleItemPosition(),
                         hydrationPending = initialAgentHydrationPending
-                    )
+                    ) && !olderPageRequestedForGesture
                 ) {
+                    olderPageRequestedForGesture = true
                     loadOlderAgentTranscriptEntries()
                 }
             }
