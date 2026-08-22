@@ -323,7 +323,8 @@ internal object AgentSupervisedProjectLoop {
         }
         if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
             append(
-                request.conversationContext.asTransportBlock(
+                AgentConversationTransportCache.render(
+                    context = request.conversationContext,
                     maximumTokens = MAX_CONVERSATION_TOKENS
                 )
             ).append('\n')
