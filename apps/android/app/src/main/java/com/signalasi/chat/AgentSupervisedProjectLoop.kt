@@ -308,36 +308,56 @@ internal object AgentSupervisedProjectLoop {
         request: AgentRequest,
         evidenceExpected: Boolean,
         maximumCharacters: Int = MAX_PROMPT_CHARACTERS
-    ): String = buildString {
-        append(
-            AgentSupervisedProjectPromptTemplate.render(
+    ): String {
+        val key = AgentSupervisedProjectBasePromptKey(
+            stablePrefix = AgentSupervisedProjectPromptTemplate.render(
                 context = request.runtimeContext,
                 evidenceExpected = evidenceExpected,
                 maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS
-            )
+            ),
+            goal = request.goal.trim().take(MAX_GOAL_CHARACTERS),
+            durableContext = AgentSupervisedProjectContextCache.render(request).orEmpty(),
+            conversationTransport = if (
+                request.conversationContext.turns.isNotEmpty() ||
+                request.conversationContext.summary.isNotBlank()
+            ) {
+                AgentConversationTransportCache.render(
+                    context = request.conversationContext,
+                    maximumTokens = MAX_CONVERSATION_TOKENS,
+                    currentGoal = request.goal
+                )
+            } else {
+                ""
+            },
+            progressLedger = AgentSupervisedProjectProgressPolicy.promptBlock(
+                request.executionHistory
+            ).orEmpty(),
+            maximumCharacters = maximumCharacters,
+            minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS
         )
+        return AgentSupervisedProjectBasePromptCache.render(key) {
+            compilePrompt(key)
+        }
+    }
+
+    private fun compilePrompt(key: AgentSupervisedProjectBasePromptKey): String = buildString {
+        append(key.stablePrefix)
         append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
-        append("User goal: ").append(request.goal.trim().take(MAX_GOAL_CHARACTERS)).append('\n')
-        AgentSupervisedProjectContextCache.render(request)?.let { context ->
-            append(context).append('\n')
+        append("User goal: ").append(key.goal).append('\n')
+        if (key.durableContext.isNotBlank()) {
+            append(key.durableContext).append('\n')
         }
-        if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
-            AgentConversationTransportCache.render(
-                context = request.conversationContext,
-                maximumTokens = MAX_CONVERSATION_TOKENS,
-                currentGoal = request.goal
-            ).takeIf(String::isNotBlank)?.let { transport ->
-                append(transport).append('\n')
-            }
+        if (key.conversationTransport.isNotBlank()) {
+            append(key.conversationTransport).append('\n')
         }
-        AgentSupervisedProjectProgressPolicy.promptBlock(request.executionHistory)?.let { progress ->
-            append(progress).append('\n')
+        if (key.progressLedger.isNotBlank()) {
+            append(key.progressLedger).append('\n')
         }
         append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
     }.let { prompt ->
         AgentSupervisedProjectPromptCodec.preserveToolInventory(
             prompt,
-            maximumCharacters.coerceAtLeast(MINIMUM_BASE_PROMPT_CHARACTERS)
+            key.maximumCharacters.coerceAtLeast(key.minimumBaseCharacters)
         )
     }
 

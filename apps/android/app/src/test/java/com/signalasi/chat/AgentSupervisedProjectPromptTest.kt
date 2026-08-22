@@ -504,6 +504,43 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `equivalent supervised project requests reuse their complete base prompt`() {
+        val firstRequest = request("Build and verify the Android project")
+        val equivalentRequest = firstRequest.copy(
+            runtimeContext = firstRequest.runtimeContext.copy()
+        )
+
+        val first = AgentSupervisedProjectLoop.continuationPrompt(firstRequest)
+        val second = AgentSupervisedProjectLoop.continuationPrompt(equivalentRequest)
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun `new verified project observation invalidates the complete base prompt`() {
+        val base = request("Build and verify the Android project")
+        val completed = AgentAction(
+            id = "build-observation",
+            kind = AgentActionKind.CALL_NATIVE_TOOL,
+            target = AgentOnDeviceRuntimeTools.EXECUTE,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.COMPLETED,
+            description = "Run project tests",
+            result = "Tests passed",
+            evidence = "Tests passed",
+            requiresConfirmation = false
+        )
+
+        val first = AgentSupervisedProjectLoop.continuationPrompt(base)
+        val second = AgentSupervisedProjectLoop.continuationPrompt(
+            base.copy(executionHistory = listOf(completed))
+        )
+
+        assertNotSame(first, second)
+        assertTrue(second.contains("Tests passed"))
+    }
+
+    @Test
     fun `current user goal appears once in the supervised project prompt`() {
         val goal = "Update the Android project and submit a pull request"
         val base = request(goal)
