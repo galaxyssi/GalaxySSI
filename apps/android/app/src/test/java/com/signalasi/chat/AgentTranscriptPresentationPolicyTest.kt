@@ -133,6 +133,14 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun voiceRunLookupOnlyRunsForActiveCancellableTasks() {
+        assertTrue(AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(false, true, "task-1"))
+        assertFalse(AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(true, true, "task-1"))
+        assertFalse(AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(false, false, "task-1"))
+        assertFalse(AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(false, true, ""))
+    }
+
+    @Test
     fun hidesOnlySuccessfulAsynchronousConnectorDispatchCompletion() {
         assertFalse(
             AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
