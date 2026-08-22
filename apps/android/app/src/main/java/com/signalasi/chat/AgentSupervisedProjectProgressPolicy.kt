@@ -77,6 +77,7 @@ internal object AgentSupervisedProjectProgressPolicy {
                 previous.workspaceId() == action.workspaceId()
         }
         repositoryRecoveryViolation(action, sameWorkspace)?.let { return it }
+        preparedRepositoryRedundancyViolation(action, sameWorkspace)?.let { return it }
         publicationOrderViolation(action, sameWorkspace, durablePullRequestEvidence)?.let { return it }
         discoveryStagnationViolation(action, sameWorkspace)?.let { return it }
         if (toolId !in replayGuardedTools) return null
@@ -212,8 +213,18 @@ internal object AgentSupervisedProjectProgressPolicy {
         val branchActions = if (branchIndex >= 0) actions.drop(branchIndex + 1) else emptyList()
         val sourceMutation = branchActions.any(::isVerifiedSourceMutation)
         val commitIndex = branchActions.indexOfLast { it.toolId() == AgentMobileProjectNativeTools.COMMIT }
-        val pushIndex = branchActions.indexOfLast { it.toolId() == AgentMobileProjectNativeTools.PUSH }
-        val pullRequest = branchActions.any { it.toolId() == AgentMobileProjectNativeTools.CREATE_PULL_REQUEST }
+        val pushIndex = branchActions.indexOfLast { action ->
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+        }
+        val pullRequest = branchActions.any { action ->
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+        }
         val discoveries = branchActions.count(::isDiscoveryAction)
         return buildString {
             append("Verified lifecycle snapshot: dedicated_branch=").append(branchIndex >= 0)
@@ -309,6 +320,18 @@ internal object AgentSupervisedProjectProgressPolicy {
 
     private data class RepositoryRecoveryState(val baseRef: String)
 
+    private fun preparedRepositoryRedundancyViolation(
+        proposed: AgentAction,
+        sameWorkspace: List<AgentAction>
+    ): String? {
+        val latest = sameWorkspace.lastOrNull() ?: return null
+        if (!latest.observesAtomicPreparedRepository()) return null
+        if (proposed.toolId() !in postPrepareRedundantTools) return null
+        return "The atomic repository preparation already synchronized the base, created the dedicated feature " +
+            "branch, and returned verified repository metadata. Continue with focused project inspection or the " +
+            "requested change instead of repeating ${proposed.toolId()}."
+    }
+
     private val NON_BRANCH_CHARACTER = Regex("[^a-z0-9._-]+")
 
     private fun publicationOrderViolation(
@@ -338,6 +361,12 @@ internal object AgentSupervisedProjectProgressPolicy {
             AgentMobileProjectNativeTools.PUSH -> if (commitIndex < mutationIndex || commitIndex < 0) {
                 "The dedicated branch has no successful commit after its latest verified mutation. Verify and commit " +
                     "the change before pushing."
+            } else null
+            AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST -> if (
+                commitIndex < mutationIndex || commitIndex < 0
+            ) {
+                "The dedicated branch has no successful commit after its latest verified mutation. Verify and commit " +
+                    "the change before publishing its pull request."
             } else null
             AgentMobileProjectNativeTools.CREATE_PULL_REQUEST -> if (pushIndex < commitIndex || pushIndex < 0) {
                 "The verified commit has not been pushed successfully. Push the feature branch before creating a pull request."
@@ -447,7 +476,13 @@ internal object AgentSupervisedProjectProgressPolicy {
         }
 
     private fun AgentAction.observesReadyDedicatedBranch(): Boolean {
-        if (toolId() != AgentMobileProjectNativeTools.INSPECT || status != AgentActionStatus.COMPLETED) return false
+        if (status != AgentActionStatus.COMPLETED || toolId() !in setOf(
+                AgentMobileProjectNativeTools.CLONE,
+                AgentMobileProjectNativeTools.INSPECT
+            )
+        ) {
+            return false
+        }
         val observation = sequenceOf(result, evidence)
             .mapNotNull { raw -> runCatching { JSONObject(raw) }.getOrNull() }
             .firstOrNull { value -> value.optString("branch").isNotBlank() }
@@ -456,8 +491,16 @@ internal object AgentSupervisedProjectProgressPolicy {
         val ready = observation.optString("repository_state").let { state ->
             state.isBlank() || state == "ready"
         }
-        return ready && branch.isNotBlank() && branch !in setOf("main", "master")
+        val expectedFeatureBranch = inputObject().optString("feature_branch").trim()
+        return ready && when (toolId()) {
+            AgentMobileProjectNativeTools.CLONE ->
+                expectedFeatureBranch.isNotBlank() && branch == expectedFeatureBranch
+            else -> branch.isNotBlank() && branch !in setOf("main", "master")
+        }
     }
+
+    private fun AgentAction.observesAtomicPreparedRepository(): Boolean =
+        toolId() == AgentMobileProjectNativeTools.CLONE && observesReadyDedicatedBranch()
 
     private fun AgentAction.inputObject(): JSONObject =
         runCatching { JSONObject(parameters["input_json"].orEmpty()) }.getOrElse { JSONObject() }
@@ -529,8 +572,15 @@ internal object AgentSupervisedProjectProgressPolicy {
     )
     private val publicationTools = setOf(
         AgentMobileProjectNativeTools.COMMIT,
+        AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST,
         AgentMobileProjectNativeTools.PUSH,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+    )
+    private val postPrepareRedundantTools = setOf(
+        AgentMobileProjectNativeTools.INSPECT,
+        AgentMobileProjectNativeTools.FETCH,
+        AgentMobileProjectNativeTools.PULL,
+        AgentMobileProjectNativeTools.CHECKOUT_BRANCH
     )
     private const val MAX_VISIBLE_LEDGER_CHARACTERS = 12_000
     private const val LEDGER_ENTRY_PROMPT_OVERHEAD = 96
