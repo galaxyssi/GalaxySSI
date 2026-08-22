@@ -64,6 +64,77 @@ internal object AgentSupervisedProjectProgressPolicy {
         )
     }
 
+    /** Keeps each model turn focused without permanently removing a recoverable capability. */
+    fun temporarilyBlockedToolIds(history: List<AgentAction>): Set<String> {
+        val completed = history.filter { action ->
+            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
+                action.status == AgentActionStatus.COMPLETED
+        }
+        if (completed.isEmpty()) return publicationTools
+
+        val unavailable = linkedSetOf<String>()
+        if (completed.any { action -> action.toolId() == AgentMobileProjectNativeTools.CLONE }) {
+            unavailable += AgentMobileProjectNativeTools.CLONE
+        }
+        if (completed.last().observesAtomicPreparedRepository()) {
+            unavailable += postPrepareRedundantTools
+        }
+
+        val branchIndex = dedicatedBranchStartIndex(completed)
+        if (branchIndex < 0) {
+            unavailable += publicationTools
+            return unavailable
+        }
+
+        val phase = completed.drop(branchIndex + 1)
+        val mutationIndex = phase.indexOfLast(::isVerifiedSourceMutation)
+        val commitIndex = phase.indexOfLast { action ->
+            action.toolId() == AgentMobileProjectNativeTools.COMMIT
+        }
+        val pushIndex = phase.indexOfLast { action ->
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+        }
+        val pullRequestIndex = phase.indexOfLast { action ->
+            action.toolId() in setOf(
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+        }
+
+        when {
+            mutationIndex < 0 -> unavailable += publicationTools
+            commitIndex < mutationIndex -> unavailable += setOf(
+                AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+            pullRequestIndex >= commitIndex -> unavailable += publicationTools
+            pushIndex >= commitIndex -> unavailable += setOf(
+                AgentMobileProjectNativeTools.COMMIT,
+                AgentMobileProjectNativeTools.PUSH,
+                AgentMobileProjectNativeTools.PUBLISH_PULL_REQUEST
+            )
+            else -> unavailable += setOf(
+                AgentMobileProjectNativeTools.COMMIT,
+                AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
+            )
+        }
+
+        val latestPullIndex = phase.indexOfLast { action ->
+            action.toolId() == AgentMobileProjectNativeTools.PULL
+        }
+        if (latestPullIndex >= 0 && phase.drop(latestPullIndex + 1).none { action ->
+                action.toolId() == AgentMobileProjectNativeTools.CHECKOUT_BRANCH
+            }
+        ) {
+            unavailable += AgentMobileProjectNativeTools.PULL
+        }
+        return unavailable
+    }
+
     fun violation(
         action: AgentAction,
         history: List<AgentAction>,
@@ -79,7 +150,6 @@ internal object AgentSupervisedProjectProgressPolicy {
         repositoryRecoveryViolation(action, sameWorkspace)?.let { return it }
         preparedRepositoryRedundancyViolation(action, sameWorkspace)?.let { return it }
         publicationOrderViolation(action, sameWorkspace, durablePullRequestEvidence)?.let { return it }
-        discoveryStagnationViolation(action, sameWorkspace)?.let { return it }
         if (toolId !in replayGuardedTools) return null
         if (toolId == AgentMobileProjectNativeTools.CLONE &&
             sameWorkspace.any { it.toolId() == AgentMobileProjectNativeTools.CLONE }
@@ -241,7 +311,10 @@ internal object AgentSupervisedProjectProgressPolicy {
             }
             if (branchIndex >= 0 && !sourceMutation) {
                 append("A clean branch created at the baseline contains no implemented change; it is not evidence of a commit. ")
-                append("Do not publish it. Inspect only the specific evidence still needed, then make a bounded source or documentation mutation.")
+                append("Do not publish it. Inspect only the specific evidence still needed, then make a bounded source or documentation mutation. ")
+                if (discoveries >= DISCOVERY_ADVISORY_THRESHOLD) {
+                    append("Several read-only observations already exist. Further inspection remains available when it answers a new concrete question, but do not repeat equivalent reads.")
+                }
             }
         }
     }
@@ -412,22 +485,6 @@ internal object AgentSupervisedProjectProgressPolicy {
         return toolId !in readOnlyTools && toolId != AgentMobileProjectNativeTools.PULL
     }
 
-    private fun discoveryStagnationViolation(
-        proposed: AgentAction,
-        sameWorkspace: List<AgentAction>
-    ): String? {
-        val branchIndex = dedicatedBranchStartIndex(sameWorkspace)
-        if (branchIndex < 0) return null
-        val currentPhase = sameWorkspace.drop(branchIndex + 1)
-        if (currentPhase.any(::isVerifiedSourceMutation)) return null
-        val discoveries = currentPhase.count(::isDiscoveryAction)
-        if (discoveries < MAX_DISCOVERY_ACTIONS_WITHOUT_MUTATION) return null
-        if (!isDiscoveryAction(proposed) && proposed.toolId() != AgentMobileProjectNativeTools.PULL) return null
-        return "A dedicated branch is already active, but $discoveries successful read-only discovery actions " +
-            "have produced no project mutation. Use the collected evidence to make one concrete bounded change " +
-            "instead of inspecting or synchronizing the clean workspace again."
-    }
-
     private fun isVerifiedSourceMutation(action: AgentAction): Boolean =
         action.toolId() in sourceMutationTools ||
             action.isVerifiedRuntimeMutation() ||
@@ -585,5 +642,5 @@ internal object AgentSupervisedProjectProgressPolicy {
     private const val MAX_VISIBLE_LEDGER_CHARACTERS = 12_000
     private const val LEDGER_ENTRY_PROMPT_OVERHEAD = 96
     private const val MAX_ACTION_OBSERVATION_CHARACTERS = 600
-    private const val MAX_DISCOVERY_ACTIONS_WITHOUT_MUTATION = 4
+    private const val DISCOVERY_ADVISORY_THRESHOLD = 4
 }

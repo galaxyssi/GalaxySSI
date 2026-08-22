@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,18 +31,49 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertTrue(continuation.contains("Available phone tools:\n- ${AgentMobileProjectNativeTools.CLONE} |"))
     }
 
+    @Test
+    fun `working set omits only blocked tools and compiles a new reusable prefix`() {
+        val context = context()
+        val blocked = setOf(AgentMobileProjectNativeTools.CLONE)
+
+        val full = AgentSupervisedProjectPromptTemplate.render(context, false, 240)
+        val focused = AgentSupervisedProjectPromptTemplate.render(
+            context = context,
+            evidenceExpected = false,
+            maximumSchemaCharacters = 240,
+            temporarilyBlockedToolIds = blocked
+        )
+        val focusedAgain = AgentSupervisedProjectPromptTemplate.render(
+            context = context,
+            evidenceExpected = false,
+            maximumSchemaCharacters = 240,
+            temporarilyBlockedToolIds = blocked
+        )
+
+        assertNotSame(full, focused)
+        assertSame(focused, focusedAgain)
+        assertTrue(focused.length < full.length)
+        assertFalse(focused.contains("- ${AgentMobileProjectNativeTools.CLONE} |"))
+        assertTrue(focused.contains("- ${AgentMobileProjectNativeTools.CREATE_PULL_REQUEST} |"))
+        assertTrue(focused.contains("phase-blocked tools reappear when evidence changes"))
+    }
+
     private fun context(): AgentRuntimeContext {
-        val tool = AgentNativeToolDescriptor(
-            id = AgentMobileProjectNativeTools.CLONE,
+        fun tool(id: String) = AgentNativeToolDescriptor(
+            id = id,
             version = "1.0.0",
-            title = "Clone repository",
-            description = "Clone a project repository",
+            title = id,
+            description = "Phone project tool",
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(
-                properties = mapOf("repository_url" to AgentNativeJsonSchema.string())
+                properties = mapOf("workspace_id" to AgentNativeJsonSchema.string())
             ),
             outputSchema = AgentNativeJsonSchema.objectSchema(),
             risk = AgentNativeToolRisk.LOW
+        )
+        val tools = listOf(
+            tool(AgentMobileProjectNativeTools.CLONE),
+            tool(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
         )
         return AgentRuntimeContext(
             sessionId = "template-test",
@@ -51,13 +83,13 @@ class AgentSupervisedProjectPromptTemplateTest {
             highRiskGuard = false,
             memoryCapture = false,
             systemTools = emptyList(),
-            nativeTools = listOf(tool),
+            nativeTools = tools,
             callableTargets = emptyList(),
             memories = emptyList(),
             knowledgeItems = emptyList(),
             knowledgeStats = AgentKnowledgeStats(),
             capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
-                nativeTools = listOf(tool),
+                nativeTools = tools,
                 systemTools = emptyList(),
                 targets = emptyList()
             )
