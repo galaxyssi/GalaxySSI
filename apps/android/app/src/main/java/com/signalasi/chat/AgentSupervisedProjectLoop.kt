@@ -289,7 +289,6 @@ internal object AgentSupervisedProjectLoop {
         goal: String,
         screen: ScreenContext,
         targets: List<AgentCallableTarget>,
-        memories: List<AgentMemoryItem>,
         runtimeContext: AgentRuntimeContext,
         conversationContext: AgentConversationContext,
         history: List<AgentAction>,
@@ -298,7 +297,7 @@ internal object AgentSupervisedProjectLoop {
         goal = goal,
         screen = screen,
         targets = targets,
-        memories = memories,
+        memories = emptyList(),
         runtimeContext = runtimeContext,
         conversationContext = conversationContext,
         executionHistory = history,
@@ -1406,21 +1405,18 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
     continuation: Boolean
 ): AgentRequest {
     val targets = connectorRegistry.availableTargets()
-    val memories = if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
-    val knowledge = if (activeConversationContext.privateMode) emptyList() else knowledgeStore.search(currentGoal)
     val runtimeContext = buildRuntimeContext(
         goal = currentGoal,
         screen = currentScreen,
         targets = targets,
-        memories = memories,
-        knowledgeItems = knowledge,
-        knowledgeStats = knowledgeStore.stats()
+        memories = emptyList(),
+        knowledgeItems = emptyList(),
+        knowledgeStats = AgentKnowledgeStats()
     )
     return AgentSupervisedProjectLoop.request(
         goal = currentGoal,
         screen = currentScreen,
         targets = targets,
-        memories = memories,
         runtimeContext = runtimeContext,
         conversationContext = activeConversationContext,
         history = plan.historyForReplan(),

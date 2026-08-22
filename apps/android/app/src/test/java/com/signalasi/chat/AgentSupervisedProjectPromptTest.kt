@@ -499,6 +499,42 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `project loop prompt excludes unrelated memory and knowledge payloads`() {
+        val base = request("Fix the current phone project")
+        val marker = "UNRELATED_PRIVATE_CONTEXT_MARKER"
+        val enriched = base.copy(
+            memories = listOf(
+                AgentMemoryItem(
+                    kind = AgentMemoryKind.PREFERENCE,
+                    value = marker
+                )
+            ),
+            runtimeContext = base.runtimeContext.copy(
+                memories = listOf(
+                    AgentMemoryItem(
+                        kind = AgentMemoryKind.PREFERENCE,
+                        value = marker
+                    )
+                ),
+                knowledgeItems = listOf(
+                    AgentKnowledgeItem(
+                        kind = AgentKnowledgeKind.DOCUMENT,
+                        title = marker,
+                        content = marker
+                    )
+                ),
+                knowledgeStats = AgentKnowledgeStats(itemCount = 1, sourceCount = 1)
+            )
+        )
+
+        val prompt = AgentSupervisedProjectLoop.continuationPrompt(enriched)
+
+        assertFalse(prompt.contains(marker))
+        assertTrue(prompt.contains("Fix the current phone project"))
+        assertTrue(prompt.contains("Available phone tools"))
+    }
+
+    @Test
     fun `stalled action remains unknown until the model verifies its outcome`() {
         val action = AgentAction(
             id = "build",
