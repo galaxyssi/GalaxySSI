@@ -193,8 +193,8 @@ internal object AgentSupervisedProjectProgressPolicy {
             append(lifecycleSnapshot(observed)).append('\n')
             append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
             append("The JSON action must perform the immediate next step described by summary. ")
-            append("Selected observations follow in chronological order; the newest observation is last. ")
-            append("Consecutive equivalent observations are collapsed, while lifecycle milestones and recent failures remain visible.\n")
+            append("The current-state projection follows in chronological order; the newest observation is last. ")
+            append("Superseded observations and resolved failures are omitted, while lifecycle milestones and current failures remain visible.\n")
             recent.forEach { entry ->
                 val action = entry.action
                 append("- status=").append(action.status.name)
@@ -211,30 +211,33 @@ internal object AgentSupervisedProjectProgressPolicy {
     }
 
     private fun compactVisibleLedger(actions: List<AgentAction>): List<LedgerEntry> {
-        val compacted = mutableListOf<LedgerEntry>()
+        val compactedByIdentity = linkedMapOf<ObservationEquivalenceKey, LedgerEntry>()
         actions.forEach { action ->
             val observation = AgentPlannerObservation.from(action, MAX_ACTION_OBSERVATION_CHARACTERS)
-            val previous = compacted.lastOrNull()
-            if (previous != null && previous.isEquivalentTo(action, observation)) {
-                compacted[compacted.lastIndex] = LedgerEntry(
-                    action = action,
-                    observation = observation,
-                    repeatCount = previous.repeatCount + 1
-                )
-            } else {
-                compacted += LedgerEntry(action, observation)
-            }
+            val identity = ObservationEquivalenceKey(
+                state = action.observationStateKey(),
+                status = action.status,
+                observation = observation
+            )
+            val previous = compactedByIdentity.remove(identity)
+            compactedByIdentity[identity] = LedgerEntry(
+                action = action,
+                observation = observation,
+                repeatCount = (previous?.repeatCount ?: 0) + 1
+            )
         }
-        if (compacted.sumOf { entry -> entry.estimatedPromptCharacters() } <= MAX_VISIBLE_LEDGER_CHARACTERS) {
-            return compacted
+        val compacted = compactedByIdentity.values.toList()
+        val projected = currentStateProjection(compacted)
+        if (projected.sumOf { entry -> entry.estimatedPromptCharacters() } <= MAX_VISIBLE_LEDGER_CHARACTERS) {
+            return projected
         }
 
         val selectedIndexes = linkedSetOf<Int>()
-        if (compacted.isNotEmpty()) selectedIndexes += compacted.lastIndex
+        if (projected.isNotEmpty()) selectedIndexes += projected.lastIndex
 
         val latestMilestones = linkedMapOf<String, Int>()
         val latestFailures = linkedMapOf<String, Int>()
-        compacted.forEachIndexed { index, entry ->
+        projected.forEachIndexed { index, entry ->
             durableMilestoneKeys(entry.action).forEach { key -> latestMilestones[key] = index }
             if (entry.action.status in unsuccessfulStatuses) {
                 latestFailures[entry.action.failureLedgerKey()] = index
@@ -244,17 +247,32 @@ internal object AgentSupervisedProjectProgressPolicy {
         selectedIndexes += latestFailures.values
 
         var selectedCharacters = selectedIndexes.sumOf { index ->
-            compacted[index].estimatedPromptCharacters()
+            projected[index].estimatedPromptCharacters()
         }
-        compacted.indices.reversed().forEach { index ->
+        projected.indices.reversed().forEach { index ->
             if (index in selectedIndexes) return@forEach
-            val characters = compacted[index].estimatedPromptCharacters()
+            val characters = projected[index].estimatedPromptCharacters()
             if (selectedCharacters + characters <= MAX_VISIBLE_LEDGER_CHARACTERS) {
                 selectedIndexes += index
                 selectedCharacters += characters
             }
         }
-        return selectedIndexes.sorted().map(compacted::get)
+        return selectedIndexes.sorted().map(projected::get)
+    }
+
+    private fun currentStateProjection(entries: List<LedgerEntry>): List<LedgerEntry> {
+        if (entries.size < 2) return entries
+        val latestState = linkedMapOf<ObservationStateKey, Int>()
+        val latestMilestones = linkedMapOf<String, Int>()
+        entries.forEachIndexed { index, entry ->
+            latestState[entry.action.observationStateKey()] = index
+            durableMilestoneKeys(entry.action).forEach { key -> latestMilestones[key] = index }
+        }
+        val selected = linkedSetOf<Int>()
+        selected += latestState.values
+        selected += latestMilestones.values
+        selected += entries.lastIndex
+        return selected.sorted().map(entries::get)
     }
 
     private fun LedgerEntry.estimatedPromptCharacters(): Int =
@@ -265,17 +283,30 @@ internal object AgentSupervisedProjectProgressPolicy {
     private fun AgentAction.failureLedgerKey(): String =
         "${workspaceId()}:${toolId().ifBlank { kind.name }}:${status.name}"
 
-    private fun LedgerEntry.isEquivalentTo(action: AgentAction, observation: String?): Boolean =
-        this.action.status == action.status &&
-            this.action.kind == action.kind &&
-            this.action.toolId() == action.toolId() &&
-            sameStableInput(this.action, action) &&
-            this.observation == observation
+    private fun AgentAction.observationStateKey(): ObservationStateKey = ObservationStateKey(
+        workspaceId = workspaceId(),
+        kind = kind,
+        toolId = toolId().ifBlank { target },
+        canonicalInput = canonicalInput(parameters["input_json"])
+    )
 
     private data class LedgerEntry(
         val action: AgentAction,
         val observation: String?,
         val repeatCount: Int = 1
+    )
+
+    private data class ObservationStateKey(
+        val workspaceId: String,
+        val kind: AgentActionKind,
+        val toolId: String,
+        val canonicalInput: String
+    )
+
+    private data class ObservationEquivalenceKey(
+        val state: ObservationStateKey,
+        val status: AgentActionStatus,
+        val observation: String?
     )
 
     private fun lifecycleSnapshot(actions: List<AgentAction>): String {
