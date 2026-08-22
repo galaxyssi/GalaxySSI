@@ -109,6 +109,8 @@ internal class AgentTranscriptEntryDatabase(
     context: Context,
     databaseName: String = DATABASE_NAME
 ) : SQLiteOpenHelper(context.applicationContext, databaseName, null, DATABASE_VERSION) {
+    private val decodeCache = AgentTranscriptDecodeCache()
+
     init {
         setWriteAheadLoggingEnabled(true)
     }
@@ -184,7 +186,10 @@ internal class AgentTranscriptEntryDatabase(
         return try {
             db.delete(TABLE_ENTRIES, "entry_id = ?", arrayOf(previousEntryId))
             val inserted = insertEntry(db, entry) != -1L
-            if (inserted) db.setTransactionSuccessful()
+            if (inserted) {
+                db.setTransactionSuccessful()
+                decodeCache.remove(previousEntryId)
+            }
             inserted
         } finally {
             db.endTransaction()
@@ -201,6 +206,7 @@ internal class AgentTranscriptEntryDatabase(
                 check(insertEntry(db, entry) != -1L) { "Agent transcript entry write failed" }
             }
             db.setTransactionSuccessful()
+            decodeCache.clear()
         } finally {
             db.endTransaction()
         }
@@ -476,8 +482,11 @@ internal class AgentTranscriptEntryDatabase(
         }
 
     @Synchronized
-    fun deleteById(entryId: String): Boolean =
-        writableDatabase.delete(TABLE_ENTRIES, "entry_id = ?", arrayOf(entryId)) > 0
+    fun deleteById(entryId: String): Boolean {
+        val deleted = writableDatabase.delete(TABLE_ENTRIES, "entry_id = ?", arrayOf(entryId)) > 0
+        if (deleted) decodeCache.remove(entryId)
+        return deleted
+    }
 
     @Synchronized
     fun deleteEntries(entryIds: Collection<String>): Int {
@@ -490,6 +499,7 @@ internal class AgentTranscriptEntryDatabase(
                 removed += db.delete(TABLE_ENTRIES, "entry_id = ?", arrayOf(entryId))
             }
             db.setTransactionSuccessful()
+            entryIds.forEach(decodeCache::remove)
             removed
         } finally {
             db.endTransaction()
@@ -497,12 +507,16 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     @Synchronized
-    fun deleteConversation(conversationId: String): Int =
-        writableDatabase.delete(TABLE_ENTRIES, "conversation_id = ?", arrayOf(conversationId))
+    fun deleteConversation(conversationId: String): Int {
+        val deleted = writableDatabase.delete(TABLE_ENTRIES, "conversation_id = ?", arrayOf(conversationId))
+        if (deleted > 0) decodeCache.clear()
+        return deleted
+    }
 
     @Synchronized
     fun clear() {
         writableDatabase.delete(TABLE_ENTRIES, null, null)
+        decodeCache.clear()
     }
 
     private fun querySingle(selection: String, arguments: Array<String>): AgentTranscriptEntry? =
@@ -583,6 +597,7 @@ internal class AgentTranscriptEntryDatabase(
     private fun decodeEntry(cursor: Cursor): AgentTranscriptEntry {
         val entryId = cursor.getString(cursor.getColumnIndexOrThrow("entry_id"))
         val encrypted = cursor.getString(cursor.getColumnIndexOrThrow("encrypted_payload"))
+        decodeCache.get(entryId, encrypted)?.let { return it }
         val raw = AgentStorageCipher.decrypt(encrypted, associatedData(entryId))
             ?: error("Agent transcript entry could not be decrypted")
         val item = JSONObject(raw)
@@ -606,7 +621,7 @@ internal class AgentTranscriptEntryDatabase(
             richOutputChunkCount = item.optInt("rich_output_chunk_count"),
             richOutputLength = item.optInt("rich_output_length"),
             richOutputSha256 = item.optString("rich_output_sha256")
-        )
+        ).also { entry -> decodeCache.put(entryId, encrypted, entry) }
     }
 
     private fun hydrateEntry(entry: AgentTranscriptEntry): AgentTranscriptEntry {

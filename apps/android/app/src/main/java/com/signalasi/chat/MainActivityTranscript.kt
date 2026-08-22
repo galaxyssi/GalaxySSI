@@ -647,26 +647,25 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
 
 internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
     val renderStartedAt = SystemClock.elapsedRealtime()
-    val activeConversationId = agentTranscriptStore.activeConversation().id
+    val activeConversationId = agentRenderedConversationId
+        .ifBlank { agentTranscriptWindow.conversationId }
+        .ifBlank { entries.lastOrNull()?.conversationId.orEmpty() }
     val liveEntries = liveAgentConnectorStreams.values
         .filter { it.conversationId == activeConversationId }
     val hydratedEntries = (entries + liveEntries)
         .distinctBy(AgentTranscriptEntry::id)
         .sortedBy(AgentTranscriptEntry::timestampMillis)
         .map(::expandedAgentTranscriptEntry)
+    val cleanupEntryIds = mutableListOf<String>()
     val filteredEntries = hydratedEntries.filterNot { entry ->
         val leakedControlPayload = AgentSupervisedProjectControlPayload
             .isTranscriptControlPayload(entry.text, entry.richOutputJson)
-        if (leakedControlPayload && agentTranscriptStore.deleteEntry(entry.id)) {
-            agentTranscriptWindow.remove(entry.id)
-        }
         val staleApproval = isLocalAgentApprovalEntry(entry) &&
             (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
-        if (staleApproval && agentTranscriptStore.deleteEntry(entry.id)) {
-            agentTranscriptWindow.remove(entry.id)
-        }
+        if (leakedControlPayload || staleApproval) cleanupEntryIds += entry.id
         leakedControlPayload || staleApproval
     }
+    scheduleAgentTranscriptCleanup(cleanupEntryIds)
     renderedAgentTranscriptSourceEntries = filteredEntries
     val collapsedEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(
         filteredEntries
@@ -734,6 +733,17 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
             scrollAgentTranscriptToBottom()
         } else {
             restoreAgentTranscriptScrollAnchor(scrollAnchor)
+        }
+    }
+}
+
+private fun MainActivity.scheduleAgentTranscriptCleanup(entryIds: Collection<String>) {
+    val pending = entryIds.distinct().filter(agentTranscriptCleanupInFlight::add)
+    if (pending.isEmpty()) return
+    agentTranscriptContentExecutor.execute {
+        pending.forEach { entryId ->
+            runCatching { agentTranscriptStore.deleteEntry(entryId) }
+            agentTranscriptCleanupInFlight.remove(entryId)
         }
     }
 }
