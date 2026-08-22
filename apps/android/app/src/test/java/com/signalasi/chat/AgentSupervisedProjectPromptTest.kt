@@ -2,6 +2,8 @@ package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONObject
@@ -719,6 +721,60 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `project tool manifest is reused within the same runtime catalog`() {
+        val context = projectToolContext()
+
+        val first = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val second = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun `connector status changes reuse the project tool manifest`() {
+        val context = projectToolContext()
+        val connectorChanged = context.copy(
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
+                nativeTools = context.nativeTools,
+                systemTools = context.systemTools,
+                targets = supervisedTargets().take(1)
+            )
+        )
+
+        val first = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val second = AgentSupervisedProjectToolInventory.render(connectorChanged, maximumSchemaCharacters = 240)
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun `native availability changes rebuild the project tool manifest`() {
+        val context = projectToolContext()
+        val removedTool = context.nativeTools.first { tool ->
+            context.isNativeToolExecutable(tool.id) &&
+                AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
+        }
+        val changed = context.copy(
+            capabilityMatrix = context.capabilityMatrix.copy(
+                entries = context.capabilityMatrix.entries.map { entry ->
+                    if (entry.source == AgentRuntimeCapabilitySource.NATIVE_TOOL && entry.id == removedTool.id) {
+                        entry.copy(state = AgentRuntimeCapabilityState.UNAVAILABLE)
+                    } else {
+                        entry
+                    }
+                }
+            )
+        )
+
+        val first = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 240)
+        val second = AgentSupervisedProjectToolInventory.render(changed, maximumSchemaCharacters = 240)
+
+        assertNotSame(first, second)
+        assertTrue(first.contains("- ${removedTool.id} |"))
+        assertFalse(second.contains("- ${removedTool.id} |"))
+    }
+
+    @Test
     fun `generic runtime cannot execute project Git commands`() {
         val rawGitAction = """
             {"execution_location":"phone","summary":"Inspect Git.","actions":[
@@ -1153,4 +1209,33 @@ class AgentSupervisedProjectPromptTest {
             )
         )
     }
+
+    private fun projectToolContext(): AgentRuntimeContext {
+        val tools = listOf(
+            projectToolDescriptor(AgentMobileProjectNativeTools.CLONE),
+            projectToolDescriptor(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
+        )
+        val base = request("Improve the phone project").runtimeContext
+        return base.copy(
+            nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
+                nativeTools = tools,
+                systemTools = emptyList(),
+                targets = emptyList()
+            )
+        )
+    }
+
+    private fun projectToolDescriptor(id: String): AgentNativeToolDescriptor = AgentNativeToolDescriptor(
+        id = id,
+        version = "1.0.0",
+        title = id,
+        description = "Project test tool",
+        location = AgentNativeToolLocation.PHONE,
+        inputSchema = AgentNativeJsonSchema.objectSchema(
+            properties = mapOf("workspace_id" to AgentNativeJsonSchema.string())
+        ),
+        outputSchema = AgentNativeJsonSchema.objectSchema(emptyMap()),
+        risk = AgentNativeToolRisk.LOW
+    )
 }
