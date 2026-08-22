@@ -315,21 +315,6 @@ internal object AgentSupervisedProjectLoop {
         } else {
             appendInitialPlanningContract()
         }
-        append("User goal: ").append(request.goal.trim().take(MAX_GOAL_CHARACTERS)).append('\n')
-        AgentSupervisedProjectContext.promptBlock(request)?.let { context ->
-            append(context).append('\n')
-        }
-        if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
-            append(
-                request.conversationContext.forSupervisedProjectPrompt().asTransportBlock(
-                    maximumTokens = MAX_CONVERSATION_TOKENS
-                )
-            ).append('\n')
-        }
-        AgentSupervisedProjectProgressPolicy.promptBlock(request.executionHistory)?.let { progress ->
-            append(progress).append('\n')
-        }
-        append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
         append("Available phone tools:\n")
         AgentSupervisedProjectToolInventory.ordered(request.runtimeContext.nativeTools).asSequence()
              .filter { descriptor ->
@@ -348,6 +333,22 @@ internal object AgentSupervisedProjectLoop {
                     )
                     .append('\n')
             }
+        append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
+        append("User goal: ").append(request.goal.trim().take(MAX_GOAL_CHARACTERS)).append('\n')
+        AgentSupervisedProjectContext.promptBlock(request)?.let { context ->
+            append(context).append('\n')
+        }
+        if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
+            append(
+                request.conversationContext.forSupervisedProjectPrompt().asTransportBlock(
+                    maximumTokens = MAX_CONVERSATION_TOKENS
+                )
+            ).append('\n')
+        }
+        AgentSupervisedProjectProgressPolicy.promptBlock(request.executionHistory)?.let { progress ->
+            append(progress).append('\n')
+        }
+        append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
     }.let { prompt ->
         AgentSupervisedProjectPromptCodec.preserveToolInventory(
             prompt,

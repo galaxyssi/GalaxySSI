@@ -482,6 +482,23 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `stable contract and tool inventory form a reusable prompt cache prefix`() {
+        val first = AgentSupervisedProjectLoop.planningPrompt(
+            request("Fix the Android build and submit a pull request")
+        )
+        val second = AgentSupervisedProjectLoop.planningPrompt(
+            request("Update the documentation and submit a pull request")
+        )
+        val boundary = AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER
+
+        assertTrue(first.indexOf("Available phone tools:") < first.indexOf(boundary))
+        assertTrue(first.indexOf(boundary) < first.indexOf("User goal:"))
+        assertEquals(first.substringBefore(boundary), second.substringBefore(boundary))
+        assertTrue(first.substringAfter(boundary).contains("Fix the Android build"))
+        assertTrue(second.substringAfter(boundary).contains("Update the documentation"))
+    }
+
+    @Test
     fun `stalled action remains unknown until the model verifies its outcome`() {
         val action = AgentAction(
             id = "build",
