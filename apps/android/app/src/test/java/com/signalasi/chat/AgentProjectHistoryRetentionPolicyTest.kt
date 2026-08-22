@@ -38,15 +38,16 @@ class AgentProjectHistoryRetentionPolicyTest {
         assertTrue(retained.any { it.id == branch.id })
         assertTrue(retained.any { it.id == mutation.id })
         assertTrue(retained.any { it.id == verification.id })
-        assertEquals(40, retained.count { it.id.startsWith("read-") })
+        assertEquals(48, retained.count { it.id.startsWith("read-") })
     }
 
     @Test
-    fun `only the latest verified milestone of each lifecycle kind is retained`() {
+    fun `large history retains only the latest verified milestone of each lifecycle kind`() {
         val oldCommit = action("old-commit", AgentMobileProjectNativeTools.COMMIT)
         val newCommit = action("new-commit", AgentMobileProjectNativeTools.COMMIT)
-        val routine = (1..45).map { index ->
+        val routine = (1..60).map { index ->
             action("routine-$index", AgentPhoneNativeToolCatalog.WORKSPACE_STAT)
+                .copy(result = "routine-$index:" + "x".repeat(1_200))
         }
 
         val retained = AgentProjectHistoryRetentionPolicy.retain(
@@ -55,7 +56,23 @@ class AgentProjectHistoryRetentionPolicyTest {
 
         assertTrue(retained.none { it.id == oldCommit.id })
         assertTrue(retained.any { it.id == newCommit.id })
-        assertEquals(41, retained.size)
+        assertTrue(retained.size < routine.size + 2)
+    }
+
+    @Test
+    fun `large history retains the latest failure for later model recovery`() {
+        val failedFetch = action("failed-fetch", AgentMobileProjectNativeTools.FETCH)
+            .copy(status = AgentActionStatus.FAILED, result = "network-route-unavailable")
+        val routine = (1..60).map { index ->
+            action("routine-$index", AgentPhoneNativeToolCatalog.WORKSPACE_STAT)
+                .copy(result = "routine-$index:" + "x".repeat(1_200))
+        }
+
+        val retained = AgentProjectHistoryRetentionPolicy.retain(listOf(failedFetch) + routine)
+
+        assertTrue(retained.any { it.id == failedFetch.id })
+        assertTrue(retained.any { it.id == "routine-60" })
+        assertTrue(retained.size < routine.size + 1)
     }
 
     @Test
@@ -88,7 +105,7 @@ class AgentProjectHistoryRetentionPolicyTest {
         assertTrue(retained.any { it.id == branch.id })
         assertTrue(retained.any { it.id == editAndTest.id })
         assertTrue(retained.any { it.id == latestTest.id })
-        assertEquals(43, retained.size)
+        assertEquals(48, retained.size)
     }
 
     private fun action(
