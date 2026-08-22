@@ -2,6 +2,11 @@ package com.signalasi.chat
 
 import java.io.File
 import java.nio.file.Files
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.junit.After
@@ -333,6 +338,62 @@ class AgentMobileProjectToolsTest {
         )
 
         assertEquals(40, result.headCommit.length)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
+    }
+
+    @Test
+    fun pullRequestReusesOneMetadataSnapshotForHeadAndOrigin() {
+        val backend = TestJGitBackend(projects)
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(201)
+                    .message("Created")
+                    .body(
+                        """{"number":42,"html_url":"https://github.com/signalasi/SignalASI/pull/42","state":"open"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "github-token" },
+            httpClient = httpClient,
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "pull-request-metadata-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        Git.open(File(projects, "pull-request-metadata-project")).use { git ->
+            git.repository.config.apply {
+                setString("remote", "origin", "url", "https://github.com/signalasi/SignalASI.git")
+                save()
+            }
+        }
+        backend.resetInspectionCounts()
+
+        val result = optimizedRepository.createPullRequest(
+            workspaceId = "pull-request-metadata-project",
+            title = "Improve phone development",
+            body = "Validated on the phone.",
+            base = "main",
+            head = ""
+        )
+
+        assertEquals(42L, result.number)
+        assertEquals("https://github.com/signalasi/SignalASI/pull/42", result.url)
         assertEquals(0, backend.fullInspectionCount)
         assertEquals(1, backend.metadataInspectionCount)
         assertEquals(0, backend.remoteInspectionCount)
