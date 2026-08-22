@@ -968,20 +968,24 @@ internal fun MainActivity.clearAgentTaskWatchdogTranscript(conversationId: Strin
 }
 
 internal fun MainActivity.consumePendingAgentConnectorResponses() {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        consumePendingAgentConnectorResponsesAsync()
+        return
+    }
     AgentConnectorResponseStore.pending(this).forEach { response ->
         consumeAgentConnectorResponse(response)
     }
 }
 
 internal fun MainActivity.consumePendingAgentConnectorResponsesAsync() {
-    thread(name = "signalasi-pending-agent-responses") {
+    agentRuntimeRecoveryExecutor.execute {
         val pending = runCatching { AgentConnectorResponseStore.pending(applicationContext) }
             .getOrDefault(emptyList())
         Log.i(
             "SignalASIAgent",
             "Pending connector responses count=${pending.size}"
         )
-        if (pending.isEmpty()) return@thread
+        if (pending.isEmpty()) return@execute
         pending.forEach { response ->
             runtimeForConnectorResponse(
                 sourceMessageId = response.sourceMessageId,
@@ -992,7 +996,7 @@ internal fun MainActivity.consumePendingAgentConnectorResponsesAsync() {
                 restorePersisted = true
             )
         }
-        runOnUiThread { pending.forEach(::consumeAgentConnectorResponse) }
+        pending.forEach(::consumeAgentConnectorResponse)
     }
 }
 
