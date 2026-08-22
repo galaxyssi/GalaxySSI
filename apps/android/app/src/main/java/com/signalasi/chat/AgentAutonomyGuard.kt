@@ -20,11 +20,14 @@ object AgentAutonomyGuard {
         val history = plan.actionHistory + plan.actions
         val completedCalls = completedToolCalls(plan)
         val signature = action.autonomySignature()
-        val repeatedCalls = history.count { candidate ->
-            candidate.kind.isLoopSensitiveToolCall() &&
-                candidate.status in TERMINAL_TOOL_STATUSES &&
-                candidate.autonomySignature() == signature
-        }
+        val repeatedCalls = history.asReversed()
+            .asSequence()
+            .filter { candidate -> candidate.status in TERMINAL_TOOL_STATUSES }
+            .takeWhile { candidate ->
+                candidate.kind.isLoopSensitiveToolCall() &&
+                    candidate.autonomySignature() == signature
+            }
+            .count()
         if (action.kind.isLoopSensitiveToolCall() && repeatedCalls >= MAX_REPEATED_TOOL_CALLS) {
             return AgentAutonomyDecision(
                 allowed = false,
