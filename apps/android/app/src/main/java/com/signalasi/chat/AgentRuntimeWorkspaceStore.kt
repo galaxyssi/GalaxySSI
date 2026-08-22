@@ -440,7 +440,7 @@ class AgentRuntimeWorkspaceManager private constructor(
                 StandardCopyOption.REPLACE_EXISTING
             )
         }
-        val buildArtifactBaseline = if (request.workspaceMutationExpected) {
+        val buildArtifactBaseline = if (request.discoverBuildArtifacts) {
             buildArtifactCandidates(executionDirectory)
                 .associate { candidate ->
                     candidate.relativeTo(executionDirectory).path.replace('\\', '/') to artifactStamp(candidate)

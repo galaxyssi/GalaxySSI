@@ -95,6 +95,7 @@ class AgentLinuxProjectCloneTest {
 
         assertEquals(AgentRuntimeLanguage.SHELL, captured.language)
         assertTrue(captured.networkEnabled)
+        assertFalse(captured.discoverBuildArtifacts)
         assertTrue("github.com" in captured.allowedNetworkDomains)
         val shellSource = captured.source
         assertTrue("git -c credential.helper= fetch --depth 1 origin" in shellSource)

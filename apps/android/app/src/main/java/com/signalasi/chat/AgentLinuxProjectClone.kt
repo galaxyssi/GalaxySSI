@@ -634,7 +634,8 @@ internal class AgentLinuxProjectGitBackend(
                     secretEnvironment = token.takeIf(String::isNotEmpty)
                         ?.let { mapOf(GITHUB_TOKEN_ENVIRONMENT to it) }
                         .orEmpty(),
-                    workspaceMutationExpected = workspaceMutationExpected
+                    workspaceMutationExpected = workspaceMutationExpected,
+                    discoverBuildArtifacts = false
                 )
             )
         } finally {
