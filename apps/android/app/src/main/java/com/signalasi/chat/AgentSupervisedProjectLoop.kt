@@ -968,14 +968,16 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         plan = plan,
         continuation = iteration > 0
     )
-    val settings = modelPlannerSettings().copy(
-        maxActions = modelPlannerSettings().maxActions.coerceIn(1, MAX_SUPERVISED_BATCH_ACTIONS),
+    val baseSettings = modelPlannerSettings()
+    val settings = baseSettings.copy(
+        maxActions = baseSettings.maxActions.coerceIn(1, MAX_SUPERVISED_BATCH_ACTIONS),
         multiAgentCoordination = true,
-        maxAgentHops = modelPlannerSettings().maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
+        maxAgentHops = baseSettings.maxAgentHops.coerceAtLeast(MAX_SUPERVISED_GRAPH_DEPTH)
     )
+    val retainedHistory = plan.historyForReplan()
     val normalizedResponse = AgentSupervisedProjectControlPayload.normalize(
         response,
-        plan.historyForReplan()
+        retainedHistory
     )
     if (AgentSupervisedRepositoryPolicy.violatesProjectGitBoundary(normalizedResponse)) {
         logSupervisedPlanRejection("git_boundary", normalizedResponse)
@@ -1002,14 +1004,14 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
 
     val parsed = rawParsed.copy(
         actions = rawParsed.actions.map { action ->
-            AgentSupervisedProjectProgressPolicy.canonicalize(action, plan.historyForReplan())
+            AgentSupervisedProjectProgressPolicy.canonicalize(action, retainedHistory)
         }
     )
 
     val proposedAction = parsed.actions.single()
     AgentSupervisedProjectProgressPolicy.violation(
         proposedAction,
-        plan.historyForReplan(),
+        retainedHistory,
         durablePullRequestEvidence = hasDurablePullRequestEvidence(
             proposedAction.bindSupervisedProjectContext(connector)
         )
@@ -1029,7 +1031,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
             currentGoal,
-            plan.historyForReplan()
+            retainedHistory
         )
         if (missingEvidence.isNotEmpty()) {
             val repairAttempts = connector.parameters["supervised_completion_attempt"]
@@ -1049,7 +1051,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     val revision = plan.revision + 1
-    val history = plan.historyForReplan().map { action ->
+    val history = retainedHistory.map { action ->
         if (action.id == connector.id) {
             action.copy(result = parsed.routeRationale.ifBlank { "Structured project plan accepted" })
         } else {
