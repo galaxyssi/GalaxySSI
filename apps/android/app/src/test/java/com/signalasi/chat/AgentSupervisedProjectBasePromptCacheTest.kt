@@ -49,7 +49,7 @@ class AgentSupervisedProjectBasePromptCacheTest {
     }
 
     @Test
-    fun `concurrent equivalent prompt compilation converges on one cached value`() {
+    fun `concurrent equivalent prompt compilation runs once and shares one value`() {
         val key = key(
             goal = "Converge concurrent prompt compilation",
             progressLedger = "concurrent verified action"
@@ -71,8 +71,55 @@ class AgentSupervisedProjectBasePromptCacheTest {
         val results = futures.map { future -> future.get() }
         executor.shutdownNow()
 
-        assertTrue(compilations.get() in 1..8)
+        assertEquals(1, compilations.get())
         assertTrue(results.drop(1).all { result -> result === results.first() })
+    }
+
+    @Test
+    fun `different prompt keys compile concurrently`() {
+        val entered = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        val futures = listOf("first", "second").map { suffix ->
+            executor.submit<String> {
+                AgentSupervisedProjectBasePromptCache.render(
+                    key(
+                        goal = "Compile $suffix prompt",
+                        progressLedger = "$suffix observation"
+                    )
+                ) {
+                    entered.countDown()
+                    release.await()
+                    "compiled-$suffix"
+                }
+            }
+        }
+
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        release.countDown()
+        assertEquals(listOf("compiled-first", "compiled-second"), futures.map { it.get() })
+        executor.shutdownNow()
+    }
+
+    @Test
+    fun `failed compilation is not cached and can be retried`() {
+        val key = key(
+            goal = "Retry failed prompt compilation",
+            progressLedger = "failed compilation"
+        )
+
+        runCatching {
+            AgentSupervisedProjectBasePromptCache.render(key) {
+                error("synthetic compile failure")
+            }
+        }.onSuccess {
+            error("Expected prompt compilation to fail")
+        }
+
+        val recovered = AgentSupervisedProjectBasePromptCache.render(key) { "recovered prompt" }
+
+        assertEquals("recovered prompt", recovered)
     }
 
     private fun render(

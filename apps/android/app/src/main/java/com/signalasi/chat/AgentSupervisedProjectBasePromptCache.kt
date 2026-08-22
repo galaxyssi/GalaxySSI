@@ -1,5 +1,7 @@
 package com.signalasi.chat
 
+import java.util.concurrent.CountDownLatch
+
 internal data class AgentSupervisedProjectBasePromptKey(
     val stablePrefix: String,
     val goal: String,
@@ -17,26 +19,73 @@ internal object AgentSupervisedProjectBasePromptCache {
         val value: String
     )
 
+    private class InFlightPrompt(val key: AgentSupervisedProjectBasePromptKey) {
+        private val completion = CountDownLatch(1)
+
+        @Volatile
+        private var value: String? = null
+
+        @Volatile
+        private var failure: Throwable? = null
+
+        fun complete(value: String) {
+            this.value = value
+            completion.countDown()
+        }
+
+        fun fail(failure: Throwable) {
+            this.failure = failure
+            completion.countDown()
+        }
+
+        fun await(): String {
+            try {
+                completion.await()
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw interrupted
+            }
+            failure?.let { throw it }
+            return requireNotNull(value)
+        }
+    }
+
     private val cacheLock = Any()
     private val prompts = mutableListOf<CachedPrompt>()
+    private val inFlightPrompts = mutableListOf<InFlightPrompt>()
 
     fun render(
         key: AgentSupervisedProjectBasePromptKey,
         compile: () -> String
     ): String {
-        synchronized(cacheLock) {
-            takeCached(key)
-        }?.let { cached -> return cached.value }
+        var ownsCompilation = false
+        val inFlight = synchronized(cacheLock) {
+            takeCached(key)?.let { cached -> return cached.value }
+            inFlightPrompts.firstOrNull { candidate -> candidate.key == key }
+                ?: InFlightPrompt(key).also { created ->
+                    inFlightPrompts += created
+                    ownsCompilation = true
+                }
+        }
+        if (!ownsCompilation) return inFlight.await()
 
-        val value = compile()
-        return synchronized(cacheLock) {
-            val cached = takeCached(key)
-            if (cached != null) return@synchronized cached.value
-            prompts += CachedPrompt(key, value)
-            while (prompts.size > MAX_CACHED_PROMPTS) {
-                prompts.removeAt(0)
+        return try {
+            val value = compile()
+            synchronized(cacheLock) {
+                prompts += CachedPrompt(key, value)
+                while (prompts.size > MAX_CACHED_PROMPTS) {
+                    prompts.removeAt(0)
+                }
             }
+            inFlight.complete(value)
             value
+        } catch (failure: Throwable) {
+            inFlight.fail(failure)
+            throw failure
+        } finally {
+            synchronized(cacheLock) {
+                inFlightPrompts.remove(inFlight)
+            }
         }
     }
 
