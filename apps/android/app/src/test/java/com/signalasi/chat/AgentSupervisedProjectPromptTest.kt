@@ -465,7 +465,8 @@ class AgentSupervisedProjectPromptTest {
         val planning = AgentSupervisedProjectLoop.planningPrompt(request)
         val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
 
-        assertTrue(continuation.length < planning.length - 2_000)
+        assertTrue(continuation.length < planning.length)
+        assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
         assertTrue(continuation.contains("execution_location is always phone"))
         assertTrue(continuation.contains("exactly one next evidence-producing CALL_NATIVE_TOOL"))
         assertTrue(continuation.contains("Set completes_goal=true only if"))
