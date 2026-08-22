@@ -466,6 +466,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     internal var conversationHubContactsChangedListener: ((List<Contact>) -> Unit)? = null
     internal val pendingAgentConnectorStreamUpdates =
         ConcurrentHashMap<Long, AgentConnectorStreamUpdate>()
+    internal val agentConnectorStreamAttempts = AgentConnectorStreamAttemptRegistry()
     internal val agentConnectorStreamRefreshScheduled = AtomicBoolean(false)
     internal val agentConnectorStreamRefreshRunnable = Runnable {
         agentConnectorStreamRefreshScheduled.set(false)
@@ -483,6 +484,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         scheduleAgentConnectorStreamRefresh()
     }
     internal val agentConnectorResponseListener = AgentConnectorResponseListener { response ->
+        agentConnectorStreamAttempts.close(response.sourceMessageId)
         pendingAgentConnectorStreamUpdates.remove(response.sourceMessageId)
         val recoveryKey = "runtime-restore:${response.sourceMessageId}:${response.contactId}"
         if (!agentConnectorResponsesInFlight.add(recoveryKey)) return@AgentConnectorResponseListener
@@ -504,7 +506,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
     internal val agentConnectorStreamListener = AgentConnectorStreamListener { update ->
-        pendingAgentConnectorStreamUpdates[update.sourceMessageId] = update
+        if (!agentConnectorStreamAttempts.accept(update)) return@AgentConnectorStreamListener
+        pendingAgentConnectorStreamUpdates.compute(update.sourceMessageId) { _, current ->
+            when {
+                !agentConnectorStreamAttempts.isCurrent(update) -> current
+                current == null || update.attemptOrdinal >= current.attemptOrdinal -> update
+                else -> current
+            }
+        }
         scheduleAgentConnectorStreamRefresh()
     }
     internal val liveAgentConnectorStreams = ConcurrentHashMap<Long, AgentTranscriptEntry>()
@@ -1266,6 +1275,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentConnectorStreamBus.removeListener(agentConnectorStreamListener)
         handler.removeCallbacks(agentConnectorStreamRefreshRunnable)
         pendingAgentConnectorStreamUpdates.clear()
+        agentConnectorStreamAttempts.clear()
         agentConnectorStreamRefreshScheduled.set(false)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
