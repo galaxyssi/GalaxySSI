@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -77,6 +79,40 @@ class AgentSupervisedProjectProgressPolicyTest {
         assertTrue(block.contains("tool=${AgentMobileProjectNativeTools.PULL}"))
         assertTrue(block.contains("head_commit=abc123"))
         assertTrue(block.contains("Do not replay a successful action"))
+    }
+
+    @Test
+    fun `prompt ledger collapses consecutive equivalent observations`() {
+        val toolId = AgentMobileProjectNativeTools.FETCH
+        val repeated = (1..3).map { index ->
+            toolAction(toolId, "fetch-$index")
+                .copy(status = AgentActionStatus.FAILED, result = "Network unavailable")
+        }
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(repeated).orEmpty()
+
+        assertEquals(1, block.split("tool=$toolId").size - 1)
+        assertTrue(block.contains("repeat_count=3"))
+        assertTrue(block.contains("Network unavailable"))
+    }
+
+    @Test
+    fun `prompt ledger preserves changed and nonconsecutive observations`() {
+        val toolId = AgentMobileProjectNativeTools.FETCH
+        val first = toolAction(toolId, "fetch-1")
+            .copy(status = AgentActionStatus.FAILED, result = "Network unavailable")
+        val changed = first.copy(id = "fetch-2", result = "Authentication failed")
+        val inspection = toolAction(AgentMobileProjectNativeTools.INSPECT, "inspect")
+        val repeatedLater = first.copy(id = "fetch-3")
+
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(
+            listOf(first, changed, inspection, repeatedLater)
+        ).orEmpty()
+
+        assertEquals(3, block.split("tool=$toolId").size - 1)
+        assertTrue(block.contains("Network unavailable"))
+        assertTrue(block.contains("Authentication failed"))
+        assertFalse(block.contains("repeat_count="))
     }
 
     @Test
