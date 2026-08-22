@@ -42,6 +42,79 @@ internal data class AgentSupervisedProjectPlanDecision(
     }
 }
 
+internal data class AgentSupervisedProjectRepairRoute(
+    val connector: AgentAction,
+    val attempt: Int,
+    val rotated: Boolean
+)
+
+internal object AgentSupervisedProjectRepairRoutingPolicy {
+    fun select(
+        connector: AgentAction,
+        targets: List<AgentCallableTarget>,
+        attempt: Int,
+        rotateAfter: Int
+    ): AgentSupervisedProjectRepairRoute {
+        val normalizedAttempt = attempt.coerceAtLeast(0)
+        val manuallyLocked = connector.parameters["manual_target_locked"]
+            .equals("true", ignoreCase = true)
+        if (manuallyLocked || normalizedAttempt < rotateAfter.coerceAtLeast(1)) {
+            return AgentSupervisedProjectRepairRoute(connector, normalizedAttempt, rotated = false)
+        }
+
+        val currentId = connector.parameters["connector_id"].orEmpty().trim()
+        val targetsById = targets
+            .filter(::supportsSupervisedRepair)
+            .filter(AgentConnectorRouteSelector::isDeliverable)
+            .associateBy(AgentCallableTarget::id)
+        val configuredFallbackIds = connector.parameters["routing_fallback_ids"].orEmpty()
+            .split(',')
+            .map(String::trim)
+            .filter { candidateId -> candidateId.isNotBlank() && candidateId != currentId }
+            .distinct()
+        val nextTarget = configuredFallbackIds.firstNotNullOfOrNull(targetsById::get)
+            ?: return AgentSupervisedProjectRepairRoute(connector, normalizedAttempt, rotated = false)
+        val remainingFallbackIds = buildList {
+            addAll(configuredFallbackIds.filterNot { candidateId -> candidateId == nextTarget.id })
+            if (currentId.isNotBlank() && currentId != nextTarget.id && currentId in targetsById) {
+                add(currentId)
+            }
+        }.distinct()
+        val routedConnector = connector.copy(
+            target = nextTarget.title,
+            parameters = connector.parameters + mapOf(
+                "connector_id" to nextTarget.id,
+                "connector_kind" to nextTarget.kind.name.lowercase(Locale.ROOT),
+                "connector_adapter_type" to nextTarget.adapterType,
+                "connector_failure_domain" to nextTarget.failureDomain,
+                "routing_fallback_ids" to remainingFallbackIds.joinToString(","),
+                "manual_target_locked" to "false",
+                "supervised_parse_attempt" to "0",
+                "supervised_progress_attempt" to "0",
+                "supervised_completion_attempt" to "0",
+                "supervised_previous_connector_id" to currentId,
+                "supervised_provider_rotation_count" to (
+                    connector.parameters["supervised_provider_rotation_count"]
+                        ?.toIntOrNull()
+                        ?.coerceAtLeast(0)
+                        ?.plus(1)
+                        ?: 1
+                    ).toString()
+            )
+        )
+        return AgentSupervisedProjectRepairRoute(routedConnector, attempt = 0, rotated = true)
+    }
+
+    private fun supportsSupervisedRepair(target: AgentCallableTarget): Boolean =
+        target.kind != AgentConnectorKind.DEVICE && target.capabilities.any { capability ->
+            capability in setOf(
+                AgentCapability.CHAT,
+                AgentCapability.REASONING,
+                AgentCapability.RESEARCH
+            )
+        }
+}
+
 internal object AgentSupervisedProjectLoop {
     fun acceptsIteration(actions: List<AgentAction>): Boolean = actions.size == 1
 
@@ -1181,16 +1254,21 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
     response: String
 ): AgentPlan? {
     val attempt = connector.parameters["supervised_parse_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-    if (attempt >= MAX_SUPERVISED_FORMAT_REPAIRS) return null
+    val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+        connector = connector,
+        targets = connectorRegistry.availableTargets(),
+        attempt = attempt,
+        rotateAfter = FORMAT_REPAIRS_BEFORE_PROVIDER_ROTATION
+    )
     val history = plan.historyForReplan()
-    val retry = connector.copy(
-        id = "supervise-phone-project-format-${plan.revision + 1}-${attempt + 1}",
+    val retry = route.connector.copy(
+        id = "supervise-phone-project-format-${plan.revision + 1}-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Correct the structured phone project plan",
-        parameters = connector.parameters + mapOf(
+        parameters = route.connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.formatRepairPrompt(request, response),
             SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format",
-            "supervised_parse_attempt" to (attempt + 1).toString(),
+            "supervised_parse_attempt" to (route.attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
         ),
@@ -1226,19 +1304,25 @@ private fun MobileNativeAgent.supervisedProgressRepairPlan(
     violation: String
 ): AgentPlan? {
     val attempt = connector.parameters["supervised_progress_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+        connector = connector,
+        targets = connectorRegistry.availableTargets(),
+        attempt = attempt,
+        rotateAfter = PROGRESS_REPAIRS_BEFORE_PROVIDER_ROTATION
+    )
     val history = plan.historyForReplan()
-    val retry = connector.copy(
-        id = "supervise-phone-project-progress-${plan.revision + 1}-${attempt + 1}",
+    val retry = route.connector.copy(
+        id = "supervise-phone-project-progress-${plan.revision + 1}-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Choose the next project phase from verified progress",
-        parameters = connector.parameters + mapOf(
+        parameters = route.connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.progressRepairPrompt(
                 request = request,
                 response = response,
                 violation = violation
             ),
             SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "progress",
-            "supervised_progress_attempt" to (attempt + 1).toString(),
+            "supervised_progress_attempt" to (route.attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
         ),
@@ -1274,16 +1358,21 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
     missingEvidence: List<String>
 ): AgentPlan? {
     val attempt = connector.parameters["supervised_completion_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-    if (attempt >= MAX_SUPERVISED_COMPLETION_REPAIRS) return null
+    val route = AgentSupervisedProjectRepairRoutingPolicy.select(
+        connector = connector,
+        targets = connectorRegistry.availableTargets(),
+        attempt = attempt,
+        rotateAfter = COMPLETION_REPAIRS_BEFORE_PROVIDER_ROTATION
+    )
     val history = plan.historyForReplan()
-    val retry = connector.copy(
-        id = "supervise-phone-project-completion-${plan.revision + 1}-${attempt + 1}",
+    val retry = route.connector.copy(
+        id = "supervise-phone-project-completion-${plan.revision + 1}-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = "Continue until the requested publication result is verified",
-        parameters = connector.parameters + mapOf(
+        parameters = route.connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.incompleteCompletionPrompt(request, missingEvidence),
             SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "completion",
-            "supervised_completion_attempt" to (attempt + 1).toString(),
+            "supervised_completion_attempt" to (route.attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
         ),
@@ -1347,8 +1436,9 @@ private fun MobileNativeAgent.reviewSupervisedProjectPlan(plan: AgentPlan): Agen
 
 private const val MAX_SUPERVISED_BATCH_ACTIONS = 11
 private const val MAX_SUPERVISED_GRAPH_DEPTH = 8
-private const val MAX_SUPERVISED_FORMAT_REPAIRS = 2
-private const val MAX_SUPERVISED_COMPLETION_REPAIRS = 3
+private const val FORMAT_REPAIRS_BEFORE_PROVIDER_ROTATION = 2
+private const val PROGRESS_REPAIRS_BEFORE_PROVIDER_ROTATION = 3
+private const val COMPLETION_REPAIRS_BEFORE_PROVIDER_ROTATION = 3
 internal const val SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER = "supervised_repair_kind"
 private const val MAX_SUPERVISED_FAILURE_DETAIL_CHARACTERS = 1_000
 internal const val MAX_SUPERVISED_REPLANS = 12
