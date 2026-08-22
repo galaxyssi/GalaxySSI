@@ -306,6 +306,39 @@ class AgentMobileProjectToolsTest {
     }
 
     @Test
+    fun pullReusesOneMetadataSnapshotForTheDefaultBranchAndOrigin() {
+        val backend = TestJGitBackend(projects)
+        val optimizedRepository = AgentMobileProjectRepository(
+            projectRoot = projects,
+            credentialProvider = AgentProjectCredentialProvider { "local-test-token" },
+            repositoryPolicy = { true },
+            gitBackend = backend
+        )
+        optimizedRepository.clone(
+            workspaceId = "pull-metadata-project",
+            repositoryUrl = remote.toURI().toString(),
+            branch = "main",
+            depth = 1,
+            replaceExisting = false,
+            cancellationToken = AgentNativeToolCancellationToken.NONE,
+            progress = { _, _, _ -> }
+        )
+        backend.resetInspectionCounts()
+
+        val result = optimizedRepository.pull(
+            workspaceId = "pull-metadata-project",
+            remote = "origin",
+            branch = "",
+            cancellationToken = AgentNativeToolCancellationToken.NONE
+        )
+
+        assertEquals(40, result.headCommit.length)
+        assertEquals(0, backend.fullInspectionCount)
+        assertEquals(1, backend.metadataInspectionCount)
+        assertEquals(0, backend.remoteInspectionCount)
+    }
+
+    @Test
     fun linuxCloneAllowsRuntimeManagedEntriesButRejectsProjectFiles() {
         val calls = mutableListOf<String>()
         val linuxRepository = AgentMobileProjectRepository(
