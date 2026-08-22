@@ -20,24 +20,21 @@ internal object AgentSupervisedProjectPromptTemplate {
             maximumSchemaCharacters = maximumSchemaCharacters
         )
         synchronized(cacheLock) {
-            val cachedIndex = compiledPrefixes.indexOfFirst { cached ->
-                cached.toolManifest === toolManifest && cached.evidenceExpected == evidenceExpected
-            }
-            if (cachedIndex >= 0) {
-                val cached = compiledPrefixes.removeAt(cachedIndex)
-                compiledPrefixes += cached
-                return cached.value
-            }
+            takeCached(toolManifest, evidenceExpected)
+        }?.let { cached -> return cached.value }
 
-            val value = buildString {
-                if (evidenceExpected) {
-                    appendCompactContinuationContract()
-                } else {
-                    appendInitialPlanningContract()
-                }
-                append("Available phone tools:\n")
-                append(toolManifest)
+        val value = buildString {
+            if (evidenceExpected) {
+                appendCompactContinuationContract()
+            } else {
+                appendInitialPlanningContract()
             }
+            append("Available phone tools:\n")
+            append(toolManifest)
+        }
+        return synchronized(cacheLock) {
+            val cached = takeCached(toolManifest, evidenceExpected)
+            if (cached != null) return@synchronized cached.value
             compiledPrefixes += CompiledPrefix(
                 toolManifest = toolManifest,
                 evidenceExpected = evidenceExpected,
@@ -46,8 +43,16 @@ internal object AgentSupervisedProjectPromptTemplate {
             while (compiledPrefixes.size > MAX_COMPILED_PREFIXES) {
                 compiledPrefixes.removeAt(0)
             }
-            return value
+            value
         }
+    }
+
+    private fun takeCached(toolManifest: String, evidenceExpected: Boolean): CompiledPrefix? {
+        val cachedIndex = compiledPrefixes.indexOfFirst { cached ->
+            cached.toolManifest === toolManifest && cached.evidenceExpected == evidenceExpected
+        }
+        if (cachedIndex < 0) return null
+        return compiledPrefixes.removeAt(cachedIndex).also { cached -> compiledPrefixes += cached }
     }
 
     private fun StringBuilder.appendCompactContinuationContract() {

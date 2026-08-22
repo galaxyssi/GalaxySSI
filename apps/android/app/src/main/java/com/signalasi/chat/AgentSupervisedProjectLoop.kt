@@ -421,36 +421,31 @@ internal object AgentSupervisedProjectToolInventory {
             .mapTo(linkedSetOf(), AgentNativeToolDescriptor::id)
 
         synchronized(cacheLock) {
-            val cachedIndex = renderedManifestCache.indexOfFirst { cached ->
-                cached.tools === tools &&
-                    cached.executableToolIds == executableToolIds &&
-                    cached.maximumSchemaCharacters == maximumSchemaCharacters
-            }
-            if (cachedIndex >= 0) {
-                val cached = renderedManifestCache.removeAt(cachedIndex)
-                renderedManifestCache += cached
-                return cached.value
-            }
+            takeCached(tools, executableToolIds, maximumSchemaCharacters)
+        }?.let { cached -> return cached.value }
 
-            val manifest = ordered(tools).asSequence()
-                .filter { tool ->
-                    tool.id in executableToolIds &&
-                        AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
-                }
-                .joinToString(separator = "") { tool ->
-                    buildString {
-                        append("- ").append(tool.id)
-                        append(" | risk=").append(tool.risk.wireValue)
-                        append(" | input=")
-                        append(
-                            AgentSupervisedProjectPromptCodec.compactInputSchema(
-                                tool.inputSchema.document,
-                                maximumSchemaCharacters
-                            )
+        val manifest = ordered(tools).asSequence()
+            .filter { tool ->
+                tool.id in executableToolIds &&
+                    AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id)
+            }
+            .joinToString(separator = "") { tool ->
+                buildString {
+                    append("- ").append(tool.id)
+                    append(" | risk=").append(tool.risk.wireValue)
+                    append(" | input=")
+                    append(
+                        AgentSupervisedProjectPromptCodec.compactInputSchema(
+                            tool.inputSchema.document,
+                            maximumSchemaCharacters
                         )
-                        append('\n')
-                    }
+                    )
+                    append('\n')
                 }
+            }
+        return synchronized(cacheLock) {
+            val cached = takeCached(tools, executableToolIds, maximumSchemaCharacters)
+            if (cached != null) return@synchronized cached.value
             renderedManifestCache += RenderedManifest(
                 tools = tools,
                 executableToolIds = executableToolIds,
@@ -460,7 +455,23 @@ internal object AgentSupervisedProjectToolInventory {
             while (renderedManifestCache.size > MAX_RENDERED_MANIFESTS) {
                 renderedManifestCache.removeAt(0)
             }
-            return manifest
+            manifest
+        }
+    }
+
+    private fun takeCached(
+        tools: List<AgentNativeToolDescriptor>,
+        executableToolIds: Set<String>,
+        maximumSchemaCharacters: Int
+    ): RenderedManifest? {
+        val cachedIndex = renderedManifestCache.indexOfFirst { cached ->
+            cached.tools === tools &&
+                cached.executableToolIds == executableToolIds &&
+                cached.maximumSchemaCharacters == maximumSchemaCharacters
+        }
+        if (cachedIndex < 0) return null
+        return renderedManifestCache.removeAt(cachedIndex).also { cached ->
+            renderedManifestCache += cached
         }
     }
 
