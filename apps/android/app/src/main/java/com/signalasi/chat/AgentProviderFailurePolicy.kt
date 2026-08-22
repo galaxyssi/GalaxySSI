@@ -23,9 +23,31 @@ internal data class AgentProviderFailure(
         )
 }
 
+internal data class AgentProviderAttemptProfile(
+    val maxAttempts: Int,
+    val connectTimeoutMillis: Long,
+    val readTimeoutMillis: Long
+) {
+    init {
+        require(maxAttempts > 0)
+        require(connectTimeoutMillis > 0L)
+        require(readTimeoutMillis > 0L)
+    }
+}
+
 /** Keeps provider failures from turning an Auto-routed run into a retry loop. */
 internal object AgentProviderFailurePolicy {
     const val MAX_AUTO_FAILURES_PER_RESOURCE = 5
+
+    fun attemptProfile(
+        manuallyLocked: Boolean,
+        hasAlternativeResource: Boolean,
+        supervisedProject: Boolean
+    ): AgentProviderAttemptProfile = when {
+        manuallyLocked || !hasAlternativeResource -> PATIENT_SINGLE_RESOURCE_PROFILE
+        supervisedProject -> SUPERVISED_AUTO_FAILOVER_PROFILE
+        else -> INTERACTIVE_AUTO_FAILOVER_PROFILE
+    }
 
     fun classify(error: ModelStreamError?): AgentProviderFailure = classify(
         code = error?.code.orEmpty(),
@@ -79,8 +101,11 @@ internal object AgentProviderFailurePolicy {
         providerRetryable = null
     )
 
-    fun shouldRetrySameResource(failure: AgentProviderFailure, failureCount: Int): Boolean =
-        !failure.permanent && failureCount < MAX_AUTO_FAILURES_PER_RESOURCE
+    fun shouldRetrySameResource(
+        failure: AgentProviderFailure,
+        failureCount: Int,
+        profile: AgentProviderAttemptProfile = PATIENT_SINGLE_RESOURCE_PROFILE
+    ): Boolean = !failure.permanent && failureCount < profile.maxAttempts
 
     fun retryDelayMillis(failureCount: Int): Long = when (failureCount.coerceAtLeast(1)) {
         1 -> 250L
@@ -90,4 +115,20 @@ internal object AgentProviderFailurePolicy {
     }
 
     private fun String.containsAny(vararg terms: String): Boolean = terms.any(::contains)
+
+    private val INTERACTIVE_AUTO_FAILOVER_PROFILE = AgentProviderAttemptProfile(
+        maxAttempts = 2,
+        connectTimeoutMillis = 10_000L,
+        readTimeoutMillis = 15_000L
+    )
+    private val SUPERVISED_AUTO_FAILOVER_PROFILE = AgentProviderAttemptProfile(
+        maxAttempts = 2,
+        connectTimeoutMillis = 15_000L,
+        readTimeoutMillis = 60_000L
+    )
+    private val PATIENT_SINGLE_RESOURCE_PROFILE = AgentProviderAttemptProfile(
+        maxAttempts = MAX_AUTO_FAILURES_PER_RESOURCE,
+        connectTimeoutMillis = 20_000L,
+        readTimeoutMillis = 300_000L
+    )
 }
