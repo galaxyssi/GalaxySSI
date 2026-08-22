@@ -122,7 +122,8 @@ internal object AgentSupervisedProjectProgressPolicy {
             append(lifecycleSnapshot(observed)).append('\n')
             append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
             append("The JSON action must perform the immediate next step described by summary. ")
-            append("Recent observations follow in chronological order; the newest observation is last. Consecutive equivalent observations are collapsed.\n")
+            append("Selected observations follow in chronological order; the newest observation is last. ")
+            append("Consecutive equivalent observations are collapsed, while lifecycle milestones and recent failures remain visible.\n")
             recent.forEach { entry ->
                 val action = entry.action
                 append("- status=").append(action.status.name)
@@ -153,8 +154,45 @@ internal object AgentSupervisedProjectProgressPolicy {
                 compacted += LedgerEntry(action, observation)
             }
         }
-        return compacted.takeLast(MAX_VISIBLE_LEDGER_ACTIONS)
+        if (compacted.sumOf { entry -> entry.estimatedPromptCharacters() } <= MAX_VISIBLE_LEDGER_CHARACTERS) {
+            return compacted
+        }
+
+        val selectedIndexes = linkedSetOf<Int>()
+        if (compacted.isNotEmpty()) selectedIndexes += compacted.lastIndex
+
+        val latestMilestones = linkedMapOf<String, Int>()
+        val latestFailures = linkedMapOf<String, Int>()
+        compacted.forEachIndexed { index, entry ->
+            durableMilestoneKeys(entry.action).forEach { key -> latestMilestones[key] = index }
+            if (entry.action.status in unsuccessfulStatuses) {
+                latestFailures[entry.action.failureLedgerKey()] = index
+            }
+        }
+        selectedIndexes += latestMilestones.values
+        selectedIndexes += latestFailures.values
+
+        var selectedCharacters = selectedIndexes.sumOf { index ->
+            compacted[index].estimatedPromptCharacters()
+        }
+        compacted.indices.reversed().forEach { index ->
+            if (index in selectedIndexes) return@forEach
+            val characters = compacted[index].estimatedPromptCharacters()
+            if (selectedCharacters + characters <= MAX_VISIBLE_LEDGER_CHARACTERS) {
+                selectedIndexes += index
+                selectedCharacters += characters
+            }
+        }
+        return selectedIndexes.sorted().map(compacted::get)
     }
+
+    private fun LedgerEntry.estimatedPromptCharacters(): Int =
+        LEDGER_ENTRY_PROMPT_OVERHEAD +
+            action.toolId().ifBlank { action.kind.name }.length +
+            observation.orEmpty().length
+
+    private fun AgentAction.failureLedgerKey(): String =
+        "${workspaceId()}:${toolId().ifBlank { kind.name }}:${status.name}"
 
     private fun LedgerEntry.isEquivalentTo(action: AgentAction, observation: String?): Boolean =
         this.action.status == action.status &&
@@ -484,12 +522,18 @@ internal object AgentSupervisedProjectProgressPolicy {
         AgentActionStatus.BLOCKED,
         AgentActionStatus.ROLLED_BACK
     )
+    private val unsuccessfulStatuses = setOf(
+        AgentActionStatus.FAILED,
+        AgentActionStatus.BLOCKED,
+        AgentActionStatus.ROLLED_BACK
+    )
     private val publicationTools = setOf(
         AgentMobileProjectNativeTools.COMMIT,
         AgentMobileProjectNativeTools.PUSH,
         AgentMobileProjectNativeTools.CREATE_PULL_REQUEST
     )
-    private const val MAX_VISIBLE_LEDGER_ACTIONS = 8
+    private const val MAX_VISIBLE_LEDGER_CHARACTERS = 12_000
+    private const val LEDGER_ENTRY_PROMPT_OVERHEAD = 96
     private const val MAX_ACTION_OBSERVATION_CHARACTERS = 600
     private const val MAX_DISCOVERY_ACTIONS_WITHOUT_MUTATION = 4
 }
