@@ -504,6 +504,16 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `same supervised project request reuses its complete base prompt`() {
+        val request = request("Build and verify the Android project")
+
+        val first = AgentSupervisedProjectLoop.continuationPrompt(request)
+        val second = AgentSupervisedProjectLoop.continuationPrompt(request)
+
+        assertSame(first, second)
+    }
+
+    @Test
     fun `current user goal appears once in the supervised project prompt`() {
         val goal = "Update the Android project and submit a pull request"
         val base = request(goal)
