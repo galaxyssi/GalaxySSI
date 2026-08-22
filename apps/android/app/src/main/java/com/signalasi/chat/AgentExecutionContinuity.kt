@@ -406,7 +406,7 @@ fun AgentPlan.historyForReplan(): List<AgentAction> {
     return if (isSupervisedProjectPlan()) {
         AgentProjectHistoryRetentionPolicy.retain(terminalActions)
     } else {
-        terminalActions.takeLast(AgentProjectHistoryRetentionPolicy.RECENT_ACTION_LIMIT)
+        terminalActions.takeLast(AgentProjectHistoryRetentionPolicy.NON_PROJECT_RECENT_ACTION_LIMIT)
     }
 }
 
