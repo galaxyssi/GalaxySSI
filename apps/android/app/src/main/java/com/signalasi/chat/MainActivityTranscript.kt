@@ -1249,7 +1249,14 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
             .orEmpty()
     }
-    val voiceAgentRun = if (isVoiceAgentRunBridgeInitialized() && entry.taskId.isNotBlank()) {
+    val voiceAgentRun = if (
+        isVoiceAgentRunBridgeInitialized() &&
+        AgentTranscriptPresentationPolicy.shouldLookupVoiceRun(
+            completed = completed,
+            executionCancellable = execution.cancellable,
+            taskId = entry.taskId
+        )
+    ) {
         voiceAgentRunBridge.findByTaskId(entry.taskId)
     } else {
         null

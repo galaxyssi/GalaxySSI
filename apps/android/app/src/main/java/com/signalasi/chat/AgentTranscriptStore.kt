@@ -200,6 +200,12 @@ object AgentTranscriptPresentationPolicy {
         manuallyCollapsedWhileActive: Boolean
     ): Boolean = if (completed) manuallyExpanded else !manuallyCollapsedWhileActive
 
+    fun shouldLookupVoiceRun(
+        completed: Boolean,
+        executionCancellable: Boolean,
+        taskId: String
+    ): Boolean = !completed && executionCancellable && taskId.isNotBlank()
+
     fun processClockStopsFor(status: AgentWorkspaceStatus): Boolean = status in setOf(
         AgentWorkspaceStatus.WAITING_CONFIRMATION,
         AgentWorkspaceStatus.PAUSED,
