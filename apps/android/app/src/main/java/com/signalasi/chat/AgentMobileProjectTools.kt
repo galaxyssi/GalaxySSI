@@ -281,7 +281,6 @@ internal class AgentMobileProjectRepository(
         ref: String,
         cancellationToken: AgentNativeToolCancellationToken
     ): List<String> = AgentWorkspaceScope.withLock(workspaceId) {
-        require(credentialProvider.token().isNotBlank()) { "Configure a GitHub token before fetching a phone project" }
         val cleanRemote = validateRemoteName(remote)
         val cleanRef = ref.trim()
         if (cleanRef.isNotBlank()) validateRefName(cleanRef)
@@ -676,7 +675,7 @@ object AgentMobileProjectNativeTools {
         definition(
             FETCH,
             "Fetch phone project remote refs",
-            "Fetches remote Git refs in phone Linux without merging them into the current branch. Use pull only when the current branch should be updated.",
+            "Fetches remote Git refs in phone Linux without merging them into the current branch. Public repositories do not require a credential; private repositories use the encrypted GitHub credential when configured. Use pull only when the current branch should be updated.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
@@ -753,7 +752,7 @@ object AgentMobileProjectNativeTools {
         definition(
             PULL,
             "Update the phone project from its remote",
-            "Fetches and integrates the selected remote branch inside the phone Linux Guest with encrypted credentials.",
+            "Fetches and integrates the selected remote branch inside the phone Linux Guest. Public repositories work without a credential; private repositories use the encrypted GitHub credential when configured.",
             objectSchema(
                 mapOf(
                     "workspace_id" to workspaceIdSchema(),
