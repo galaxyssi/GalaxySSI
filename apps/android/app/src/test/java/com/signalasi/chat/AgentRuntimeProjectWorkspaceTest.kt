@@ -266,6 +266,22 @@ class AgentRuntimeProjectWorkspaceTest {
     }
 
     @Test
+    fun skipsBuildArtifactBaselineWhenDiscoveryIsDisabled() {
+        File(projectRoot, "workspace-one/app/build/outputs/apk/debug/app-debug.apk").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+        val request = request("run-git", "git fetch", emptyList()).copy(
+            workspaceMutationExpected = true,
+            discoverBuildArtifacts = false
+        )
+
+        val prepared = manager.prepare(request)
+
+        assertTrue(prepared.buildArtifactBaseline.isEmpty())
+    }
+
+    @Test
     fun explicitArtifactRemainsAuthoritativeWhenBuildOutputsAlsoChange() {
         val request = request("run-explicit", "echo report", listOf("report.txt"))
         val prepared = manager.prepare(request)

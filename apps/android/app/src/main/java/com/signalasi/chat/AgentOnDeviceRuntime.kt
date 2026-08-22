@@ -268,7 +268,8 @@ data class AgentRuntimeExecutionRequest(
     val guestWorkspacePath: String = "",
     val secretEnvironment: Map<String, String> = emptyMap(),
     val hostInputFiles: List<AgentRuntimeHostInput> = emptyList(),
-    val workspaceMutationExpected: Boolean = true
+    val workspaceMutationExpected: Boolean = true,
+    val discoverBuildArtifacts: Boolean = workspaceMutationExpected
 )
 
 /** A host-owned file staged read-only in spirit into one isolated guest run. */
@@ -515,7 +516,7 @@ class AgentOnDeviceRuntimeManager(
             val succeeded = rawResponse.exitCode == 0
             val artifacts = if (
                 succeeded &&
-                (normalizedRequest.artifactPaths.isNotEmpty() || normalizedRequest.workspaceMutationExpected)
+                (normalizedRequest.artifactPaths.isNotEmpty() || normalizedRequest.discoverBuildArtifacts)
             ) {
                 workspaceManager.collectArtifacts(prepared, normalizedRequest)
             } else {
