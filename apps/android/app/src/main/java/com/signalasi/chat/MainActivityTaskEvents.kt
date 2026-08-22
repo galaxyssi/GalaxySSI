@@ -1540,14 +1540,12 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
     if (conversationId.isBlank()) return
     val dedupeKey = "task-watchdog:${workspace.taskId}"
     if (AgentTaskTerminalReplyPolicy.hasTerminalReply(
-            agentTranscriptStore.list(conversationId),
+            agentTranscriptStore.entriesForTask(workspace.taskId),
             workspace.taskId
         )
     ) {
         clearAgentTaskWatchdogTranscript(conversationId, workspace.taskId)
-        if (conversationId == agentTranscriptStore.activeConversation().id) {
-            refreshAgentTranscriptWindow(conversationId)
-        }
+        requestAgentTranscriptWindowRefresh(conversationId)
         return
     }
     when (signal.kind) {
@@ -1596,26 +1594,24 @@ internal fun MainActivity.handleAgentTaskLivenessSignal(signal: AgentTaskLivenes
                         )
                         requestRecoverableAgentRunReconciliation("liveness_assessment_failed")
                     }.getOrNull() ?: return@thread
+                    deleteAgentTranscriptByDedupeKey(
+                        conversationId,
+                        "task-liveness-assessment:${workspace.taskId}"
+                    )
                     runOnUiThread {
-                        deleteAgentTranscriptByDedupeKey(
-                            conversationId,
-                            "task-liveness-assessment:${workspace.taskId}"
-                        )
                         renderAgentState(
                             assessedState,
                             conversationId = conversationId,
                             turnId = workspace.workspaceId,
                             syncTranscript = false
                         )
-                        refreshAgentTranscriptWindow(conversationId)
+                        requestAgentTranscriptWindowRefresh(conversationId)
                     }
                 }
             }
         }
     }
-    if (conversationId == agentTranscriptStore.activeConversation().id) {
-        refreshAgentTranscriptWindow(conversationId)
-    }
+    requestAgentTranscriptWindowRefresh(conversationId)
 }
 
 internal fun MainActivity.agentRuntimeForWorkspace(workspaceId: String): MobileNativeAgent? = buildList {

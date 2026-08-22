@@ -1732,7 +1732,7 @@ internal fun MainActivity.agentConversationDisplayTitle(conversation: AgentConve
 
 internal fun MainActivity.refreshGlobalAgentCognition() {
     if (!isGlobalSuperAgentRuntimeInitialized() || !isAgentTranscriptStoreInitialized()) return
-    if (AgentForegroundWorkCoordinator.hasForegroundWork || foregroundAgentTurnInProgress()) {
+    if (foregroundAgentTurnInProgress()) {
         if (globalAgentRefreshRequested.compareAndSet(false, true)) {
             handler.postDelayed({
                 globalAgentRefreshRequested.set(false)
@@ -1840,12 +1840,20 @@ internal fun MainActivity.updateAgentExecutionTarget(
 }
 
 internal fun MainActivity.foregroundAgentTurnInProgress(): Boolean {
-    val entries = agentTranscriptStore.list()
-    val latestUser = entries.lastOrNull { it.role == AgentTranscriptRole.USER } ?: return false
-    return entries.none { entry ->
-        entry.role == AgentTranscriptRole.ASSISTANT &&
-            entry.timestampMillis >= latestUser.timestampMillis &&
-            (latestUser.turnId.isBlank() || entry.turnId == latestUser.turnId)
+    if (AgentForegroundWorkCoordinator.hasForegroundWork ||
+        pendingAgentReplyIndicators.isNotEmpty() ||
+        provisionalAgentTasks.isNotEmpty() ||
+        activeAgentTasks.isNotEmpty()
+    ) {
+        return true
+    }
+    return AgentTaskRuntime.supervisor(this).activeWorkspaces().any { workspace ->
+        workspace.status in setOf(
+            AgentWorkspaceStatus.CREATED,
+            AgentWorkspaceStatus.QUEUED,
+            AgentWorkspaceStatus.RUNNING,
+            AgentWorkspaceStatus.WAITING_RESPONSE
+        )
     }
 }
 
@@ -1854,7 +1862,9 @@ internal fun MainActivity.agentConversationSourceLabel(conversation: AgentConver
     if (!selected.equals("Multiple Executors", ignoreCase = true)) {
         return agentTraceTargetLabel(selected)
     }
-    val entries = agentTranscriptStore.list(conversation.id)
+    val entries = agentTranscriptWindow.entries
+        .takeIf { agentTranscriptWindow.conversationId == conversation.id }
+        .orEmpty()
     val latestTurnId = entries.lastOrNull { it.role == AgentTranscriptRole.USER }?.turnId.orEmpty()
     val latestProcess = entries.asSequence()
         .filter { entry ->
